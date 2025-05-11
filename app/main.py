@@ -3,6 +3,7 @@ from app.api.health import router as health_router
 from app.api.guest import router as guest_router
 from app.api.admin_import import router as import_router
 from app.api.rspv import router as rsvp_router
+from app.api.plus_one import router as plus_one_router
 from app.core.database import mongo
 from app.utils.token_generator import generate_token
 
@@ -15,3 +16,5 @@ app.include_router(guest_router)
 app.include_router(import_router)
 
 app.include_router(rsvp_router)
+
+app.include_router(plus_one_router)

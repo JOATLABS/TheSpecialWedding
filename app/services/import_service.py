@@ -1,4 +1,4 @@
-# 2. File: app/services/import_service.py
+# File: app/services/import_service.py
 import csv
 from fastapi import UploadFile, HTTPException
 from app.core.database import mongo
@@ -21,9 +21,15 @@ class GuestImportService:
         for row in reader:
             name = row.get("name")
             phone = row.get("phone", None)
+            allow_plus_ones = self._parse_boolean(row.get("allow_guest_to_add_plus_ones", "false"))
+            number_of_allowed_plus_ones = self._parse_int(row.get("number_of_allowed_plus_ones", "0"))
 
             if not name or len(name) < 2:
                 continue
+
+            # Validate and adjust plus-one settings
+            if not allow_plus_ones:
+                number_of_allowed_plus_ones = 0
 
             token = generate_token()
 
@@ -31,7 +37,10 @@ class GuestImportService:
                 "name": name.strip(),
                 "phone": phone.strip() if phone else None,
                 "token": token,
-                "rsvp": None
+                "rsvp": None,
+                "allow_plus_ones": allow_plus_ones,
+                "number_of_allowed_plus_ones": number_of_allowed_plus_ones,
+                "plus_ones": []
             }
 
             try:
@@ -42,3 +51,16 @@ class GuestImportService:
                 continue
 
         return {"imported": success, "tokens": tokens}
+
+    def _parse_boolean(self, value):
+        """Convert string value to boolean"""
+        if isinstance(value, bool):
+            return value
+        return value.lower() in ('yes', 'true', '1', 'y', 't')
+
+    def _parse_int(self, value):
+        """Convert string value to integer with fallback to 0"""
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return 0
