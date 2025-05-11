@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from bson import ObjectId
 import re
@@ -9,20 +9,22 @@ class GuestModel(BaseModel):
     rsvp: Optional[dict] = None
     phone: Optional[str] = None
 
-    @validator("token")
+    @field_validator("token")
+    @classmethod
     def validate_token(cls, value):
         if not re.match(r"^[a-zA-Z0-9]+$", value):
             raise ValueError("Token must be alphanumeric")
         return value
 
-    @validator("phone")
+    @field_validator("phone")
+    @classmethod
     def validate_phone(cls, value):
         if value and not re.match(r"^\d{10,15}$", value):
             raise ValueError("Phone number must be 10 to 15 digits")
         return value
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "name": "John Doe",
                 "token": "abc123xyz",
@@ -30,3 +32,4 @@ class GuestModel(BaseModel):
                 "phone": "1234567890"
             }
         }
+    }

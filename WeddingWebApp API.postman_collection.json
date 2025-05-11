@@ -8,6 +8,24 @@
 	},
 	"item": [
 		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"health",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "Get Guest by Token",
 			"request": {
 				"method": "GET",
@@ -20,6 +38,36 @@
 					"path": [
 						"invite",
 						"abc123xyz"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Search Guest",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/invite/search?phone=1234567890&name=John",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"invite",
+						"search"
+					],
+					"query": [
+						{
+							"key": "phone",
+							"value": "1234567890",
+							"description": "Optional - phone number to search for"
+						},
+						{
+							"key": "name",
+							"value": "John",
+							"description": "Optional - name to search for"
+						}
 					]
 				}
 			},
@@ -49,6 +97,34 @@
 						"admin",
 						"guests",
 						"import"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Submit RSVP",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"attending\": [\"traditional\", \"reception\"],\n    \"dietary\": \"No peanuts please\",\n    \"phone\": \"1234567890\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/invite/abc123xyz/rsvp",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"invite",
+						"abc123xyz",
+						"rsvp"
 					]
 				}
 			},
