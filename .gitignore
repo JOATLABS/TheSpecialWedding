@@ -1,3 +1,5 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.csv
+**/.claude/settings.local.json
