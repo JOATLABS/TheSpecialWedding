@@ -1,5 +1,11 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.cpython-*.pyc
+
+# CSV files
 *.csv
+
+# Claude settings
 **/.claude/settings.local.json
