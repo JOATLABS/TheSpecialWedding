@@ -7,19 +7,22 @@ from app.api.plus_one import router as plus_one_router
 from app.core.database import mongo
 from app.utils.token_generator import generate_token
 from app.api.admin_rsvp import router as admin_rsvp_router
+from app.api.admin_auth import router as auth_router
 
 
-app = FastAPI(title="Wedding WebApp API", version="0.1.0")
+app = FastAPI(title="Wedding WebApp API", version="0.2.0")
 
 app.include_router(health_router, prefix="/health")
 
-app.include_router(guest_router)
+app.include_router(guest_router, prefix="/guest")
 
-app.include_router(import_router)
+app.include_router(import_router, prefix="/admin_import")
 
-app.include_router(rsvp_router)
+app.include_router(rsvp_router, prefix="/rsvp")
 
-app.include_router(plus_one_router)
+app.include_router(plus_one_router, prefix="/plus_one")
 
-app.include_router(admin_rsvp_router)
+app.include_router(admin_rsvp_router, prefix="/admin_rsvp")
+
+app.include_router(auth_router, prefix="/admin_auth")
 

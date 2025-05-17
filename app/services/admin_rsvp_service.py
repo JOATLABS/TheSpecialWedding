@@ -1,19 +1,36 @@
 import csv
 import io
+from bson import ObjectId
 from fastapi import HTTPException
 from app.core.database import mongo
 
 class AdminRSVPService:
     def __init__(self):
-        self.collection = mongo.get_guest_collection()
+        self.guest_collection = mongo.get_guest_collection()
+        self.rsvp_collection = mongo.db["rsvps"]
+        self.plus_one_collection = mongo.db["plus_ones"]
 
     def get_all_rsvps(self):
         try:
-            guests = list(self.collection.find({"rsvp": {"$ne": None}}))
+            guests = list(self.guest_collection.find({}))
+            result = []
+
             for guest in guests:
-                guest["id"] = str(guest["_id"])
-                guest.pop("_id", None)
-            return guests
+                guest_id = guest["_id"]
+                rsvp = self.rsvp_collection.find_one({"guest_id": guest_id})
+                plus_one = self.plus_one_collection.find_one({"guest_id": str(guest_id)})
+
+                result.append({
+                    "guest_id": str(guest_id),
+                    "name": guest.get("name"),
+                    "phone": guest.get("phone"),
+                    "token": guest.get("token"),
+                    "attending": rsvp.get("attending") if rsvp else [],
+                    "dietary": rsvp.get("dietary") if rsvp else None,
+                    "plus_one": plus_one
+                })
+
+            return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve RSVPs: {str(e)}")
 
@@ -23,16 +40,70 @@ class AdminRSVPService:
             output = io.StringIO()
             writer = csv.writer(output)
 
-            # Write header
-            writer.writerow(["Name", "Phone", "Attending", "Dietary", "Token"])
+            writer.writerow(["Guest Name", "Phone", "Attending", "Dietary", "Token", "Plus-One Name", "Plus-One Attending", "Plus-One Dietary"])
 
-            for guest in guests:
-                attending = ", ".join(guest["rsvp"].get("attending", []))
-                dietary = guest["rsvp"].get("dietary", "")
-                phone = guest.get("phone", "")
-                writer.writerow([guest["name"], phone, attending, dietary, guest["token"]])
+            for entry in guests:
+                plus_one = entry.get("plus_one")
+                writer.writerow([
+                    entry["name"],
+                    entry.get("phone", ""),
+                    ", ".join(entry.get("attending", [])),
+                    entry.get("dietary", ""),
+                    entry.get("token", ""),
+                    plus_one.get("name") if plus_one else "",
+                    ", ".join(plus_one.get("attending", [])) if plus_one else "",
+                    plus_one.get("dietary") if plus_one else ""
+                ])
 
             output.seek(0)
             return output.read()
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to export RSVPs: {str(e)}")
+    
+    def get_rsvp_by_guest_id(self, guest_id: str):
+        try:
+            guest = self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+            if not guest:
+                raise HTTPException(status_code=404, detail="Guest not found")
+
+            rsvp = self.rsvp_collection.find_one({"guest_id": ObjectId(guest_id)})
+            plus_one = self.plus_one_collection.find_one({"guest_id": str(guest_id)})
+
+            return {
+                "guest_id": str(guest["_id"]),
+                "name": guest.get("name"),
+                "phone": guest.get("phone"),
+                "token": guest.get("token"),
+                "attending": rsvp.get("attending") if rsvp else [],
+                "dietary": rsvp.get("dietary") if rsvp else None,
+                "plus_one": plus_one
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve RSVP: {str(e)}")
+    
+    def update_rsvp(self, guest_id: str, rsvp_data: dict):
+        try:
+            guest = self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+            if not guest:
+                raise HTTPException(status_code=404, detail="Guest not found")
+
+            self.rsvp_collection.update_one(
+                {"guest_id": ObjectId(guest_id)},
+                {"$set": rsvp_data}
+            )
+
+            return {"message": "RSVP updated successfully"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to update RSVP: {str(e)}")
+    
+    def delete_rsvp(self, guest_id: str):
+        try:
+            guest = self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+            if not guest:
+                raise HTTPException(status_code=404, detail="Guest not found")
+
+            self.rsvp_collection.delete_one({"guest_id": ObjectId(guest_id)})
+
+            return {"message": "RSVP deleted successfully"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete RSVP: {str(e)}")
