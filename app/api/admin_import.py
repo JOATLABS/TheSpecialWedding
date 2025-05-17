@@ -1,11 +1,12 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends
 from app.services.import_service import GuestImportService
+from app.dependencies.auth import require_admin
 
 router = APIRouter()
 
 import_service = GuestImportService()
 
-@router.post("/admin/guests/import", tags=["Admin"])
+@router.post("/guests/import", tags=["Admin"], dependencies=[Depends(require_admin)])
 def import_guests(file: UploadFile = File(...), wedding_id: str = Query(...)):
     try:
         return import_service.import_csv(file, wedding_id)

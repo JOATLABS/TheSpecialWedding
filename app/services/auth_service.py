@@ -16,5 +16,6 @@ class AuthService:
     def login_and_get_token(self, email: str, password: str):
         user = self.authenticate_user(email, password)
         token_data = {"sub": user["email"], "role": user.get("role", "admin")}
-        token = create_access_token(data=token_data, expires_delta=timedelta(minutes=60))
+        access_token_expires = timedelta(minutes=60)
+        token = create_access_token(data=token_data, expires_delta=access_token_expires)
         return {"access_token": token, "token_type": "bearer"}

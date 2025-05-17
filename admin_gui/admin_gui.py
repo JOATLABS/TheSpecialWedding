@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from api_client import ApiClient
 from rsvp_viewer import RSVPViewer
 from login_dialog import LoginDialog
+from setup_wizard import SetupWizard
 
 class DockerThread(QThread):
     output_signal = pyqtSignal(str)
@@ -215,8 +216,30 @@ class AdminGUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    gui = AdminGUI()
-    gui.show()
+    
+    # Check if setup is needed
+    import os
+    from pathlib import Path
+    
+    # Check for key setup indicators
+    env_exists = Path("../.env").exists()
+    venv_exists = Path("../venv").exists()
+    
+    if not env_exists or not venv_exists:
+        # Show setup wizard first
+        wizard = SetupWizard()
+        if wizard.exec() == 1:  # Wizard completed
+            # Now start the main GUI
+            gui = AdminGUI()
+            gui.show()
+        else:
+            # Wizard cancelled, exit
+            sys.exit(0)
+    else:
+        # Setup already done, start normally
+        gui = AdminGUI()
+        gui.show()
+    
     sys.exit(app.exec())
 
 if __name__ == "__main__":

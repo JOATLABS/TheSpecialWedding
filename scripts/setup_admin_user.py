@@ -3,6 +3,8 @@
 from passlib.context import CryptContext
 import pymongo
 import os
+import argparse
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -11,15 +13,50 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Load environment variables
 PRIMARY_ADMIN_EMAIL = os.getenv("PRIMARY_ADMIN_EMAIL")
-
+if not PRIMARY_ADMIN_EMAIL:
+    raise ValueError("PRIMARY_ADMIN_EMAIL not set in environment variables. Please set it.")
 
 def get_password_hash(password):
     return pwd_context.hash(password)
 
+def auto_create_from_env(collection):
+    email = os.getenv("PRIMARY_ADMIN_EMAIL")
+    password = os.getenv("PRIMARY_ADMIN_PASSWORD")
+    role = os.getenv("PRIMARY_ADMIN_ROLE", "admin")
+
+    if not email or not password:
+        print("Missing PRIMARY_ADMIN_EMAIL or PRIMARY_ADMIN_PASSWORD in environment.")
+        return
+
+    if collection.find_one({"email": email}):
+        print(f"Admin {email} already exists.")
+        return
+
+    hashed_password = get_password_hash(password)
+    collection.insert_one({
+        "email": email,
+        "hashed_password": hashed_password,
+        "role": role
+    })
+    print(f"Admin user {email} created from environment variables.")
+
 def main():
-    client = pymongo.MongoClient("mongodb://localhost:27017")
-    db = client["wedding"]
+    parser = argparse.ArgumentParser(description="Admin user setup tool")
+    parser.add_argument("--auto-create", action="store_true", help="Auto create user from environment variables")
+    args = parser.parse_args()
+    mongodb_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+    mongo_name = os.getenv("MONGO_NAME", "wedding")
+    # Check if MONGODB_URI is set
+    if not mongodb_uri:
+        raise ValueError("MONGODB_URI not set in environment variables. Please set it.")
+    # Connect to MongoDB
+    client = pymongo.MongoClient(mongodb_uri)
+    db = client[mongo_name]
     collection = db["admin_users"]
+
+    if args.auto_create:
+        auto_create_from_env(collection)
+        return
 
     print("Options: [create], [update], [delete]")
     action = input("Action: ").strip().lower()
@@ -74,4 +111,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
