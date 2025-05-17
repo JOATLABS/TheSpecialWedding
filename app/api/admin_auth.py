@@ -6,6 +6,6 @@ router = APIRouter()
 
 auth_service = AuthService()
 
-@router.post("/admin/token", tags=["Auth"])
+@router.post("/token", tags=["Auth"])
 def login_for_access_token(credentials: AdminLoginModel):
     return auth_service.login_and_get_token(credentials.email, credentials.password)

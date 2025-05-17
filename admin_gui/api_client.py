@@ -7,13 +7,12 @@ class ApiClient:
         self.base_url = base_url
         self.session = requests.Session()
         self.token = None
-        self.api_key = "secureadminkey123"  # Fallback for endpoints still using API key
     
     def login(self, email: str, password: str) -> bool:
         """Login and store JWT token"""
         try:
             response = self.session.post(
-                f"{self.base_url}/admin_auth/admin/token",
+                f"{self.base_url}/admin/token",
                 json={"email": email, "password": password}
             )
             if response.status_code == 200:
@@ -33,22 +32,18 @@ class ApiClient:
         with open(file_path, 'rb') as f:
             files = {'file': f}
             params = {'wedding_id': wedding_id}
-            response = self.session.post(f"{self.base_url}/admin_import/admin/guests/import", files=files, params=params)
+            response = self.session.post(f"{self.base_url}/admin/guests/import", files=files, params=params)
             if response.status_code == 200:
                 return response.json()
             else:
                 raise Exception(f"Error importing guests: {response.text}")
     
     def get_all_rsvps(self) -> Dict[str, Any]:
-        # Still uses API key authentication
-        headers = {"X-API-Key": self.api_key}
-        response = self.session.get(f"{self.base_url}/admin_rsvp/admin/rsvps", headers=headers)
+        response = self.session.get(f"{self.base_url}/admin/rsvps")
         return response.json()
 
     def export_rsvps(self) -> bytes:
-        # Still uses API key authentication
-        headers = {"X-API-Key": self.api_key}
-        response = self.session.get(f"{self.base_url}/admin_rsvp/admin/rsvps/export", headers=headers)
+        response = self.session.get(f"{self.base_url}/admin/rsvps/export")
         return response.content
     
     def get_guest_details(self, token: str) -> Dict[str, Any]:

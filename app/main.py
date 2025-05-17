@@ -13,16 +13,12 @@ from app.api.admin_auth import router as auth_router
 app = FastAPI(title="Wedding WebApp API", version="0.2.0")
 
 app.include_router(health_router, prefix="/health")
-
 app.include_router(guest_router, prefix="/guest")
-
-app.include_router(import_router, prefix="/admin_import")
-
 app.include_router(rsvp_router, prefix="/rsvp")
-
 app.include_router(plus_one_router, prefix="/plus_one")
 
-app.include_router(admin_rsvp_router, prefix="/admin_rsvp")
-
-app.include_router(auth_router, prefix="/admin_auth")
+# Admin routes - all under /admin prefix
+app.include_router(auth_router, prefix="/admin")
+app.include_router(import_router, prefix="/admin")
+app.include_router(admin_rsvp_router, prefix="/admin")
 
