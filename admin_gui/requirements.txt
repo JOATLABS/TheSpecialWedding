@@ -1,3 +1,4 @@
-PyQt6
+streamlit
+pandas
 requests
 python-dotenv
