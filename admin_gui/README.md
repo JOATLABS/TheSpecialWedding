@@ -1,15 +1,14 @@
 # Wedding Admin GUI
 
-A PyQt6-based graphical interface for managing the Wedding Web Application.
+A Streamlit-based web interface for managing the Wedding Web Application.
 
 ## Features
 
-- Docker container management (start/stop)
+- Dashboard with statistics and charts
 - CSV guest import
-- View all RSVPs
+- View and filter RSVPs
 - Export RSVPs to CSV
 - Real-time API health monitoring
-- Log panel for operation history
 
 ## Installation
 
@@ -21,14 +20,28 @@ pip install -r requirements.txt
 
 ## Usage
 
-Run the admin GUI:
+### 1. Running locally
+
+Run the admin web interface locally:
 ```bash
-python admin_gui.py
+cd admin_gui
+streamlit run admin_gui.py
 ```
+
+Then open your browser at http://localhost:8501
+
+### 2. Using Docker
+
+Use Docker Compose to start all services including the admin interface:
+```bash
+docker compose -f docker-compose.all.yml up -d
+```
+
+Then access the admin interface at http://localhost:8501
 
 ## Components
 
-- `admin_gui.py`: Main GUI application
+- `admin_gui.py`: Streamlit web application
 - `api_client.py`: HTTP client for communicating with the backend API
 - `requirements.txt`: Python dependencies
 
@@ -36,6 +49,11 @@ python admin_gui.py
 
 By default, the GUI connects to the API at `http://localhost:8000`. You can modify this in the `ApiClient` initialization if needed.
 
-## API Key
+## Authentication
 
-The admin endpoints are protected with an API key. The default key is `secureadminkey123`. This should be changed in production.
+The admin endpoints are protected with HTTP Basic Authentication. Credentials are loaded from your `.env` file with the following variables:
+
+```
+PRIMARY_ADMIN_EMAIL=your-admin-email
+PRIMARY_ADMIN_PASSWORD=your-admin-password
+```
