@@ -10,6 +10,7 @@ from app.core.database import mongo
 from app.utils.token_generator import generate_token
 from app.api.admin_rsvp import router as admin_rsvp_router
 from app.api.admin_auth import router as auth_router
+from app.api.reminder import router as reminder_router
 
 
 app = FastAPI(
@@ -35,4 +36,6 @@ app.include_router(plus_one_router, prefix="/plus_one")
 app.include_router(auth_router, prefix="/admin")
 app.include_router(import_router, prefix="/admin")
 app.include_router(admin_rsvp_router, prefix="/admin")
+app.include_router(reminder_router, prefix="/admin")
+
 
