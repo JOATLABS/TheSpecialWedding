@@ -56,3 +56,6 @@ async def require_role(required_role: str):
             )
         return current_user
     return role_checker
+
+async def get_current_admin(current_user: AuthUser = Depends(require_admin)) -> str:
+    return current_user.email
