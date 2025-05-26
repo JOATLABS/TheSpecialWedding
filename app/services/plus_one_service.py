@@ -11,7 +11,8 @@ class PlusOneService:
         try:
             # Get guest to check limits
             guest_collection = mongo.get_guest_collection()
-            guest = guest_collection.find_one({"_id": plus_one_data.guest_id})
+            guest_id = ObjectId(plus_one_data.guest_id)
+            guest = guest_collection.find_one({"_id": guest_id})
             
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
@@ -21,7 +22,7 @@ class PlusOneService:
             
             # Check number limit
             max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
-            current_count = self.collection.count_documents({"guest_id": plus_one_data.guest_id})
+            current_count = self.collection.count_documents({"guest_id": str(guest_id)})
             
             if current_count >= max_plus_ones:
                 raise HTTPException(status_code=400, detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached")
@@ -32,7 +33,7 @@ class PlusOneService:
             # Update guest if all slots filled
             if current_count + 1 >= max_plus_ones:
                 guest_collection.update_one(
-                    {"_id": plus_one_data.guest_id},
+                    {"_id": guest_id},
                     {"$set": {"plus_one_submitted": True, "updated_at": mongo.client.server_info()['localTime']}}
                 )
             
