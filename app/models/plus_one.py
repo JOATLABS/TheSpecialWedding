@@ -19,7 +19,7 @@ class PyObjectId(ObjectId):
         field_schema.update(type="string")
 
 class PlusOneModel(BaseModel):
-    guest_id: PyObjectId = Field(...)
+    guest_id: ObjectId = Field(...)
     name: str = Field(..., min_length=2, max_length=100)
     phone: Optional[str] = None
     attending: List[str] = Field(default_factory=list)
