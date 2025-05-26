@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from app.core.database import mongo
+from datetime import datetime
 
 class GuestService:
     def __init__(self):
@@ -15,6 +16,17 @@ class GuestService:
             return guest
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
+    
+    def update_guest_timestamps(self, guest_id, created=False):
+        """Update guest timestamps"""
+        update_data = {"updated_at": datetime.utcnow()}
+        if created:
+            update_data["created_at"] = datetime.utcnow()
+        
+        self.collection.update_one(
+            {"_id": guest_id},
+            {"$set": update_data}
+        )
 
     def get_guest_by_phone_or_name(self, phone: str = None, name: str = None):
         try:

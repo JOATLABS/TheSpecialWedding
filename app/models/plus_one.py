@@ -1,9 +1,25 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
+from typing import List, Optional, Any
+from bson import ObjectId
 import re
 
+class PyObjectId(ObjectId):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if not ObjectId.is_valid(v):
+            raise ValueError("Invalid ObjectId")
+        return ObjectId(v)
+
+    @classmethod
+    def __modify_schema__(cls, field_schema):
+        field_schema.update(type="string")
+
 class PlusOneModel(BaseModel):
-    guest_id: str = Field(...)
+    guest_id: PyObjectId = Field(...)
     name: str = Field(..., min_length=2, max_length=100)
     phone: Optional[str] = None
     attending: List[str] = Field(default_factory=list)
@@ -23,6 +39,8 @@ class PlusOneModel(BaseModel):
         return v
 
     class Config:
+        allow_population_by_field_name = True
+        json_encoders = {ObjectId: str}
         schema_extra = {
             "example": {
                 "guest_id": "60c7d3e9e1b1fdbb4f12d9aa",

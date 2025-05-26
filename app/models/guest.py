@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
+from datetime import datetime
+from bson import ObjectId
 import re
 
 class GuestModel(BaseModel):
@@ -11,6 +13,10 @@ class GuestModel(BaseModel):
     group_id: Optional[str] = None
     role: Optional[str] = Field("guest")
     plus_one_allowed: Optional[bool] = Field(default=False)
+    number_of_plus_ones_allowed: Optional[int] = Field(default=0, ge=0, le=10)
+    plus_one_submitted: Optional[bool] = Field(default=False)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     @field_validator("token")
     def validate_token(cls, value):
@@ -34,6 +40,8 @@ class GuestModel(BaseModel):
                 "email": "john@example.com",
                 "group_id": "grp_fam_001",
                 "role": "guest",
-                "plus_one_allowed": True
+                "plus_one_allowed": True,
+                "number_of_plus_ones_allowed": 2,
+                "plus_one_submitted": False
             }
         }
