@@ -29,27 +29,41 @@ class RSVPService:
                 upsert=True
             )
 
+            update_data = {"phone": rsvp_data.phone, "updated_at": mongo.client.server_info()['localTime']}
             self.guest_collection.update_one(
                 {"_id": guest_id},
-                {"$set": {"phone": rsvp_data.phone}}
+                {"$set": update_data}
             )
 
             if rsvp_data.plus_one:
                 if not guest.get("plus_one_allowed", False):
                     raise HTTPException(status_code=403, detail="Plus-one not allowed for this guest")
 
-                existing = self.plus_one_collection.find_one({"guest_id": str(guest_id)})
-                if existing:
-                    raise HTTPException(status_code=400, detail="Plus-one already submitted")
+                # Check number of plus-ones allowed
+                max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
+                if max_plus_ones == 0:
+                    raise HTTPException(status_code=403, detail="No plus-ones allowed for this guest")
+                
+                # Count existing plus-ones
+                existing_count = self.plus_one_collection.count_documents({"guest_id": guest_id})
+                if existing_count >= max_plus_ones:
+                    raise HTTPException(status_code=400, detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached")
 
                 plus_one = PlusOneModel(
-                    guest_id=str(guest_id),
+                    guest_id=guest_id,
                     name=rsvp_data.plus_one.name,
                     phone=rsvp_data.plus_one.phone,
                     attending=rsvp_data.plus_one.attending,
                     dietary=rsvp_data.plus_one.dietary
                 )
                 self.plus_one_collection.insert_one(plus_one.dict())
+                
+                # Update guest to mark plus_one_submitted as True only if all slots are filled
+                if existing_count + 1 >= max_plus_ones:
+                    self.guest_collection.update_one(
+                        {"_id": guest_id},
+                        {"$set": {"plus_one_submitted": True}}
+                    )
 
             return {"message": "RSVP submitted successfully"}
 

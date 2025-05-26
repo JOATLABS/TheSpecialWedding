@@ -13,6 +13,7 @@ from app.api.admin_auth import router as auth_router
 from app.api.reminder import router as reminder_router
 from app.api.checkin import router as checkin_router
 from app.api.gallery_upload import router as gallery_upload_router
+from app.api.wedding import router as wedding_router
 
 
 app = FastAPI(
@@ -41,3 +42,4 @@ app.include_router(admin_rsvp_router, prefix="/admin")
 app.include_router(reminder_router, prefix="/admin")
 app.include_router(checkin_router, prefix="/admin")
 app.include_router(gallery_upload_router)
+app.include_router(wedding_router)
