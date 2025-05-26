@@ -28,7 +28,9 @@ class GuestService:
             {"$set": update_data}
         )
 
-    def get_guest_by_phone_or_name(self, phone: str = None, name: str = None):
+    from typing import Optional
+
+    def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None):
         try:
             query = {}
             if phone:

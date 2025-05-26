@@ -50,7 +50,7 @@ class RSVPService:
                     raise HTTPException(status_code=400, detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached")
 
                 plus_one = PlusOneModel(
-                    guest_id=guest_id,
+                    guest_id=ObjectId(guest_id),
                     name=rsvp_data.plus_one.name,
                     phone=rsvp_data.plus_one.phone,
                     attending=rsvp_data.plus_one.attending,
