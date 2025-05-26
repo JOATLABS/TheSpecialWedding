@@ -45,12 +45,12 @@ class RSVPService:
                     raise HTTPException(status_code=403, detail="No plus-ones allowed for this guest")
                 
                 # Count existing plus-ones
-                existing_count = self.plus_one_collection.count_documents({"guest_id": guest_id})
+                existing_count = self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
                 if existing_count >= max_plus_ones:
                     raise HTTPException(status_code=400, detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached")
 
                 plus_one = PlusOneModel(
-                    guest_id=ObjectId(guest_id),
+                    guest_id=str(guest_id),
                     name=rsvp_data.plus_one.name,
                     phone=rsvp_data.plus_one.phone,
                     attending=rsvp_data.plus_one.attending,

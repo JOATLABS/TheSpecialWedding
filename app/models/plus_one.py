@@ -19,7 +19,7 @@ class PyObjectId(ObjectId):
         field_schema.update(type="string")
 
 class PlusOneModel(BaseModel):
-    guest_id: ObjectId = Field(...)
+    guest_id: str = Field(...)  # Store as string, convert to ObjectId when needed
     name: str = Field(..., min_length=2, max_length=100)
     phone: Optional[str] = None
     attending: List[str] = Field(default_factory=list)

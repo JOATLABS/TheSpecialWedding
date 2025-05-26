@@ -46,7 +46,7 @@ try:
 except:
     st.sidebar.error("Failed to load weddings")
 
-page = st.sidebar.radio("Navigate", ["Dashboard", "Wedding Management", "RSVP Management", "Import Guests", "Check-in Management", "Gallery Management", "SMS Reminders"])
+page = st.sidebar.radio("Navigate", ["Dashboard", "Wedding Management", "RSVP Management", "Import Guests", "Check-in Management", "Gallery Management", "SMS Reminders", "System Management"])
 
 # Check API Connection
 try:
@@ -60,20 +60,27 @@ except:
 
 # Basic auth credentials
 with st.sidebar.expander("Authentication"):
-    email = st.text_input("Email", value=EMAIL if EMAIL else "")
-    password = st.text_input("Password", type="password", value=PASSWORD if PASSWORD else "")
+    email = st.text_input("Email", value=EMAIL if EMAIL else "", key="auth_email")
+    password = st.text_input("Password", type="password", value=PASSWORD if PASSWORD else "", key="auth_password")
 
 # Get JWT token for new endpoints
 def get_jwt_token():
     try:
+        # Get credentials from session state (from the text inputs)
+        auth_email = st.session_state.get("auth_email", EMAIL)
+        auth_password = st.session_state.get("auth_password", PASSWORD)
+        
         response = requests.post(
             f"{API_BASE_URL}/admin/token",
-            data={"username": email, "password": password}
+            json={"email": auth_email, "password": auth_password}
         )
         if response.status_code == 200:
             return response.json().get("access_token")
+        else:
+            st.error(f"Auth failed: {response.status_code} - {response.text}")
         return None
-    except:
+    except Exception as e:
+        st.error(f"Auth error: {str(e)}")
         return None
 
 # Function to get all RSVPs
@@ -194,28 +201,23 @@ elif page == "Wedding Management":
         
         if st.button("Create Wedding"):
             if wedding_id and couple_names and slug:
-                token = get_jwt_token()
-                if token:
-                    headers = {"Authorization": f"Bearer {token}"}
-                    wedding_data = {
-                        "_id": wedding_id,
-                        "couple_names": couple_names,
-                        "date": str(wedding_date),
-                        "slug": slug,
-                        "events": events
-                    }
-                    response = requests.post(
-                        f"{API_BASE_URL}/weddings",
-                        headers=headers,
-                        json=wedding_data
-                    )
-                    if response.status_code == 200:
-                        st.success("Wedding created successfully!")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to create wedding: {response.text}")
+                wedding_data = {
+                    "_id": wedding_id,
+                    "couple_names": couple_names,
+                    "date": str(wedding_date),
+                    "slug": slug,
+                    "events": events
+                }
+                response = requests.post(
+                    f"{API_BASE_URL}/weddings",
+                    auth=(email, password),  # Use Basic Auth like RSVP endpoints
+                    json=wedding_data
+                )
+                if response.status_code == 200:
+                    st.success("Wedding created successfully!")
+                    st.rerun()
                 else:
-                    st.error("Authentication failed")
+                    st.error(f"Failed to create wedding: {response.text}")
             else:
                 st.warning("Please fill all required fields")
     
@@ -238,18 +240,15 @@ elif page == "Wedding Management":
                             st.write(f"- {event['type']}: {event['date']}")
                         
                         if st.button(f"Delete {wedding['_id']}", key=f"del_{wedding['_id']}"):
-                            token = get_jwt_token()
-                            if token:
-                                headers = {"Authorization": f"Bearer {token}"}
-                                del_response = requests.delete(
-                                    f"{API_BASE_URL}/weddings/{wedding['_id']}",
-                                    headers=headers
-                                )
-                                if del_response.status_code == 200:
-                                    st.success("Wedding deleted")
-                                    st.rerun()
-                                else:
-                                    st.error(f"Failed to delete: {del_response.text}")
+                            del_response = requests.delete(
+                                f"{API_BASE_URL}/weddings/{wedding['_id']}",
+                                auth=(email, password)  # Use Basic Auth
+                            )
+                            if del_response.status_code == 200:
+                                st.success("Wedding deleted")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to delete: {del_response.text}")
             else:
                 st.info("No weddings found")
         else:
@@ -323,29 +322,21 @@ elif page == "Check-in Management":
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Check In Guest"):
-                token = get_jwt_token()
-                if token:
-                    headers = {"Authorization": f"Bearer {token}"}
-                    response = requests.post(
-                        f"{API_BASE_URL}/admin/checkin/{search_token}",
-                        headers=headers
-                    )
-                    if response.status_code == 200:
-                        st.success("Guest checked in successfully!")
-                    else:
-                        st.error(f"Check-in failed: {response.text}")
+                response = requests.post(
+                    f"{API_BASE_URL}/admin/checkin/{search_token}",
+                    auth=(email, password)
+                )
+                if response.status_code == 200:
+                    st.success("Guest checked in successfully!")
                 else:
-                    st.error("Authentication failed")
+                    st.error(f"Check-in failed: {response.text}")
         
         with col2:
             if st.button("Check Status"):
-                token = get_jwt_token()
-                if token:
-                    headers = {"Authorization": f"Bearer {token}"}
-                    response = requests.get(
-                        f"{API_BASE_URL}/admin/checkin/status/{search_token}",
-                        headers=headers
-                    )
+                response = requests.get(
+                    f"{API_BASE_URL}/admin/checkin/status/{search_token}",
+                    auth=(email, password)
+                )
                     if response.status_code == 200:
                         data = response.json()
                         st.info(f"Check-in Status: {'Checked In' if data.get('checked_in') else 'Not Checked In'}")
@@ -378,32 +369,24 @@ elif page == "Gallery Management":
     
     if uploaded_file is not None:
         if st.button("Upload Photo"):
-            token = get_jwt_token()
-            if token:
-                headers = {"Authorization": f"Bearer {token}"}
-                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                response = requests.post(
-                    f"{API_BASE_URL}/gallery/upload",
-                    headers=headers,
-                    files=files
-                )
-                if response.status_code == 200:
-                    st.success("Photo uploaded successfully!")
-                else:
-                    st.error(f"Upload failed: {response.text}")
+            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+            response = requests.post(
+                f"{API_BASE_URL}/gallery/upload",
+                auth=(email, password),
+                files=files
+            )
+            if response.status_code == 200:
+                st.success("Photo uploaded successfully!")
             else:
-                st.error("Authentication failed")
+                st.error(f"Upload failed: {response.text}")
     
     # List uploaded files
     st.subheader("Uploaded Photos")
     if st.button("Refresh Gallery"):
-        token = get_jwt_token()
-        if token:
-            headers = {"Authorization": f"Bearer {token}"}
-            response = requests.get(
-                f"{API_BASE_URL}/gallery/list",
-                headers=headers
-            )
+        response = requests.get(
+            f"{API_BASE_URL}/gallery/list",
+            auth=(email, password)
+        )
             if response.status_code == 200:
                 files = response.json()
                 if files:
@@ -417,7 +400,7 @@ elif page == "Gallery Management":
                             if st.button("Delete", key=file.get('Key')):
                                 del_response = requests.delete(
                                     f"{API_BASE_URL}/gallery",
-                                    headers=headers,
+                                    auth=(email, password),
                                     params={"key": file.get('Key')}
                                 )
                                 if del_response.status_code == 200:
@@ -447,39 +430,31 @@ elif page == "SMS Reminders":
     
     if st.button("Send Reminders"):
         if message:
-            token = get_jwt_token()
-            if token:
-                headers = {"Authorization": f"Bearer {token}"}
-                data = {
-                    "event_type": event_type,
-                    "message": message,
-                    "target_group": target_group
-                }
-                response = requests.post(
-                    f"{API_BASE_URL}/admin/reminders/send",
-                    headers=headers,
-                    json=data
-                )
-                if response.status_code == 200:
-                    result = response.json()
-                    st.success(f"Sent {result.get('sent_count', 0)} reminders successfully!")
-                else:
-                    st.error(f"Failed to send reminders: {response.text}")
+            data = {
+                "event_type": event_type,
+                "message": message,
+                "target_group": target_group
+            }
+            response = requests.post(
+                f"{API_BASE_URL}/admin/reminders/send",
+                auth=(email, password),
+                json=data
+            )
+            if response.status_code == 200:
+                result = response.json()
+                st.success(f"Sent {result.get('sent_count', 0)} reminders successfully!")
             else:
-                st.error("Authentication failed")
+                st.error(f"Failed to send reminders: {response.text}")
         else:
             st.warning("Please enter a message")
     
     # View logs
     st.subheader("Reminder Logs")
     if st.button("View Logs"):
-        token = get_jwt_token()
-        if token:
-            headers = {"Authorization": f"Bearer {token}"}
-            response = requests.get(
-                f"{API_BASE_URL}/admin/reminders/logs",
-                headers=headers
-            )
+        response = requests.get(
+            f"{API_BASE_URL}/admin/reminders/logs",
+            auth=(email, password)
+        )
             if response.status_code == 200:
                 logs = response.json()
                 if logs:
@@ -491,3 +466,94 @@ elif page == "SMS Reminders":
                 st.error("Failed to fetch logs")
         else:
             st.error("Authentication failed")
+
+elif page == "System Management":
+    st.header("System Management")
+    
+    # Only allow if authenticated
+    if not email or not password:
+        st.warning("Please enter authentication credentials in the sidebar")
+    else:
+        try:
+            import docker
+            client = docker.from_env()
+            
+            # Container Management
+            st.subheader("Docker Container Management")
+            
+            # Get wedding app containers
+            containers = []
+            for container in client.containers.list(all=True):
+                if any(name in container.name for name in ['wedding-api', 'wedding-mongo', 'wedding-admin-gui']):
+                    containers.append(container)
+            
+            if containers:
+                for container in containers:
+                    with st.expander(f"🐳 {container.name} - {container.status}"):
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            if container.status == 'running':
+                                if st.button(f"Stop", key=f"stop_{container.id}"):
+                                    container.stop()
+                                    st.success(f"Stopped {container.name}")
+                                    st.rerun()
+                            else:
+                                if st.button(f"Start", key=f"start_{container.id}"):
+                                    container.start()
+                                    st.success(f"Started {container.name}")
+                                    st.rerun()
+                        
+                        with col2:
+                            if st.button(f"Restart", key=f"restart_{container.id}"):
+                                container.restart()
+                                st.success(f"Restarted {container.name}")
+                                st.rerun()
+                        
+                        with col3:
+                            if st.button(f"View Logs", key=f"logs_{container.id}"):
+                                st.session_state[f"show_logs_{container.id}"] = True
+                        
+                        with col4:
+                            st.write(f"Status: {container.status}")
+                        
+                        # Show logs if requested
+                        if st.session_state.get(f"show_logs_{container.id}", False):
+                            st.subheader(f"Logs for {container.name}")
+                            
+                            # Log options
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                lines = st.slider("Number of lines", 10, 500, 100, key=f"lines_{container.id}")
+                            with col2:
+                                if st.button("Hide Logs", key=f"hide_logs_{container.id}"):
+                                    st.session_state[f"show_logs_{container.id}"] = False
+                                    st.rerun()
+                            
+                            # Get logs
+                            try:
+                                logs = container.logs(tail=lines).decode('utf-8')
+                                st.code(logs, language='log')
+                            except Exception as e:
+                                st.error(f"Error fetching logs: {str(e)}")
+            else:
+                st.info("No wedding app containers found")
+            
+            # System Info
+            st.subheader("System Information")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Containers", len(client.containers.list(all=True)))
+            
+            with col2:
+                st.metric("Running Containers", len(client.containers.list()))
+            
+            with col3:
+                st.metric("Docker Version", client.version()['Version'])
+            
+        except ImportError:
+            st.error("Docker Python library not installed. Rebuilding container...")
+        except Exception as e:
+            st.error(f"Docker error: {str(e)}")
+            st.info("Make sure Docker socket is accessible and you have permissions")
