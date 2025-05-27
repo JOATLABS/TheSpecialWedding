@@ -337,15 +337,13 @@ elif page == "Check-in Management":
                     f"{API_BASE_URL}/admin/checkin/status/{search_token}",
                     auth=(email, password)
                 )
-                    if response.status_code == 200:
-                        data = response.json()
-                        st.info(f"Check-in Status: {'Checked In' if data.get('checked_in') else 'Not Checked In'}")
-                        if data.get('checked_in_at'):
-                            st.info(f"Checked in at: {data['checked_in_at']}")
-                    else:
-                        st.error(f"Failed to get status: {response.text}")
+                if response.status_code == 200:
+                    data = response.json()
+                    st.info(f"Check-in Status: {'Checked In' if data.get('checked_in') else 'Not Checked In'}")
+                    if data.get('checked_in_at'):
+                        st.info(f"Checked in at: {data['checked_in_at']}")
                 else:
-                    st.error("Authentication failed")
+                    st.error(f"Failed to get status: {response.text}")
     
     elif search_phone:
         # Search by phone
@@ -387,31 +385,29 @@ elif page == "Gallery Management":
             f"{API_BASE_URL}/gallery/list",
             auth=(email, password)
         )
-            if response.status_code == 200:
-                files = response.json()
-                if files:
-                    for file in files:
-                        col1, col2, col3 = st.columns([3, 1, 1])
-                        with col1:
-                            st.text(file.get('Key', 'Unknown'))
-                        with col2:
-                            st.text(f"{file.get('Size', 0) / 1024:.1f} KB")
-                        with col3:
-                            if st.button("Delete", key=file.get('Key')):
-                                del_response = requests.delete(
-                                    f"{API_BASE_URL}/gallery",
-                                    auth=(email, password),
-                                    params={"key": file.get('Key')}
-                                )
-                                if del_response.status_code == 200:
-                                    st.success("File deleted")
-                                    st.rerun()
-                else:
-                    st.info("No photos uploaded yet")
+        if response.status_code == 200:
+            files = response.json()
+            if files:
+                for file in files:
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.text(file.get('Key', 'Unknown'))
+                    with col2:
+                        st.text(f"{file.get('Size', 0) / 1024:.1f} KB")
+                    with col3:
+                        if st.button("Delete", key=file.get('Key')):
+                            del_response = requests.delete(
+                                f"{API_BASE_URL}/gallery",
+                                auth=(email, password),
+                                params={"key": file.get('Key')}
+                            )
+                            if del_response.status_code == 200:
+                                st.success("File deleted")
+                                st.rerun()
             else:
-                st.error("Failed to fetch gallery")
+                st.info("No photos uploaded yet")
         else:
-            st.error("Authentication failed")
+            st.error("Failed to fetch gallery")
 
 elif page == "SMS Reminders":
     st.header("SMS Reminders")
@@ -430,7 +426,7 @@ elif page == "SMS Reminders":
     
     if st.button("Send Reminders"):
         if message:
-            data = {
+            params = {
                 "event_type": event_type,
                 "message": message,
                 "target_group": target_group
@@ -438,7 +434,7 @@ elif page == "SMS Reminders":
             response = requests.post(
                 f"{API_BASE_URL}/admin/reminders/send",
                 auth=(email, password),
-                json=data
+                params=params
             )
             if response.status_code == 200:
                 result = response.json()
@@ -455,17 +451,15 @@ elif page == "SMS Reminders":
             f"{API_BASE_URL}/admin/reminders/logs",
             auth=(email, password)
         )
-            if response.status_code == 200:
-                logs = response.json()
-                if logs:
-                    df = pd.DataFrame(logs)
-                    st.dataframe(df)
-                else:
-                    st.info("No reminder logs found")
+        if response.status_code == 200:
+            logs = response.json()
+            if logs:
+                df = pd.DataFrame(logs)
+                st.dataframe(df)
             else:
-                st.error("Failed to fetch logs")
+                st.info("No reminder logs found")
         else:
-            st.error("Authentication failed")
+            st.error("Failed to fetch logs")
 
 elif page == "System Management":
     st.header("System Management")
