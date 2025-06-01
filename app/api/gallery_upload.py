@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Query, Depends, UploadFile, File
+from fastapi import APIRouter, Query, Depends, UploadFile, File, Form
 from app.services.gallery_upload_service import GalleryUploadService
 from app.dependencies.auth import require_admin
 
 router = APIRouter()
-
 gallery_service = GalleryUploadService()
 
 # Admin Upload URL Endpoint
@@ -26,15 +25,16 @@ def delete_file(key: str = Query(...)):
 def list_gallery_files():
     return gallery_service.list_uploaded_files()
 
-# Admin Direct Upload Endpoint
+# Admin Direct Upload Endpoint (updated to include wedding_slug)
 @router.post("/gallery/upload", tags=["Admin"], dependencies=[Depends(require_admin)])
-def upload_file(file: UploadFile = File(...)):
-    return gallery_service.upload_file_direct(file)
+def upload_file(file: UploadFile = File(...), wedding_slug: str = Form(...)):
+    return gallery_service.upload_file_direct(file, wedding_slug)
 
-# Public Guest-Facing Endpoint
+# Public Guest-Facing Endpoint (now wedding_slug required)
 @router.get("/gallery", tags=["Guest"])
-def public_gallery():
-    return gallery_service.list_uploaded_files()
+def public_gallery(wedding_slug: str = Query(...)):
+    prefix = f"gallery/{wedding_slug}/"
+    return gallery_service.list_uploaded_files(prefix=prefix)
 
 # Public QR Code Generator
 @router.get("/invite/qr", tags=["Guest"])

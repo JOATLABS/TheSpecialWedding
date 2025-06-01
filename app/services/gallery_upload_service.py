@@ -77,10 +77,14 @@ class GalleryUploadService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error generating QR code: {str(e)}")
 
-    def upload_file_direct(self, file: UploadFile):
+    def upload_file_direct(self, file: UploadFile, wedding_slug: str):
         try:
-            key = f"gallery/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.basename(str(file.filename))
+            key = f"gallery/{wedding_slug}/{timestamp}_{filename}"
+
             self.s3.upload_fileobj(file.file, self.bucket_name, key)
             return {"message": "File uploaded successfully", "key": key}
         except ClientError as e:
             raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+
