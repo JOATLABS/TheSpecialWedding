@@ -14,6 +14,7 @@ __pycache__/
 venv/
 app/api/__pycache__/health.cpython-311.pyc
 app/__pycache__/main.cpython-311.pyc
-*__pycache__/
+__pycache__/
 
-*node_modules/
+node_modules/
+.next/
