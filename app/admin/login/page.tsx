@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+
 export default function AdminLoginPage() {
   const { login } = useAdmin();
   const [email, setEmail] = useState('');
@@ -13,64 +16,69 @@ export default function AdminLoginPage() {
 
   const handleLogin = async () => {
     if (!email || !password) return;
-
     setLoading(true);
     try {
       await login(email, password, rememberMe);
-    } catch (err) {
-      // handled in AdminContext
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="max-w-md mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Admin Login</h1>
+    <div className="min-h-screen flex items-center justify-center bg-wedding-ivory">
+      <Card className="w-full max-w-md bg-opacity-60 backdrop-blur-lg animate-slide-up">
+        <CardHeader className="pb-0 text-center">
+          <CardTitle className="font-elegant text-wedding-navy text-2xl">
+            Admin Login
+          </CardTitle>
+        </CardHeader>
 
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        className="block w-full mb-2 px-3 py-2 border rounded"
-        autoFocus
-      />
+        <CardContent className="space-y-4">
+          <input
+            type="email"
+            placeholder="Email"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-rose transition"
+          />
 
-      <div className="relative w-full mb-2">
-        <input
-          type={showPassword ? 'text' : 'password'}
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="block w-full px-3 py-2 border rounded pr-10"
-        />
-        <button
-          type="button"
-          onClick={() => setShowPassword((prev) => !prev)}
-          className="absolute right-2 top-2 text-sm text-gray-600 hover:text-gray-800"
-        >
-          {showPassword ? 'Hide' : 'Show'}
-        </button>
-      </div>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg pr-10 focus:outline-none focus:ring-2 focus:ring-wedding-rose transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute inset-y-0 right-3 flex items-center text-sm text-wedding-navy hover:text-wedding-rose"
+            >
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
 
-      <label className="flex items-center text-sm mb-4">
-        <input
-          type="checkbox"
-          checked={rememberMe}
-          onChange={(e) => setRememberMe(e.target.checked)}
-          className="mr-2"
-        />
-        Remember me
-      </label>
+          <label className="flex items-center text-sm text-wedding-navy">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded transition"
+            />
+            <span className="ml-2">Remember me</span>
+          </label>
 
-      <button
-        onClick={handleLogin}
-        disabled={!email || !password || loading}
-        className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-blue-300"
-      >
-        {loading ? 'Logging in...' : 'Log In'}
-      </button>
-    </main>
+          <Button
+            onClick={handleLogin}
+            disabled={!email || !password || loading}
+            className="w-full py-2 font-medium"
+          >
+            {loading ? 'Logging in…' : 'Log In'}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

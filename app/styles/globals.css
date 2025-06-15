@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import elegant fonts for wedding theme */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600&display=swap');
+
+@layer base {
+  html {
+    font-family: 'Cormorant Garamond', serif;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Playfair Display', serif;
+  }
+}
+
+@layer components {
+  /* Custom wedding-themed components */
+  .wedding-card {
+    @apply bg-white/80 backdrop-blur-sm border border-wedding-rose/20 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300;
+  }
+  
+  .wedding-button {
+    @apply bg-gradient-to-r from-wedding-rose to-wedding-gold text-white px-6 py-3 rounded-lg font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200;
+  }
+  
+  .wedding-input {
+    @apply border border-wedding-sage/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all duration-200;
+  }
+  
+  .admin-header {
+    @apply bg-gradient-to-r from-wedding-navy to-wedding-sage text-white shadow-lg;
+  }
+  
+  .glass-effect {
+    @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl;
+  }
+}

@@ -14,7 +14,8 @@ export const metadata: Metadata = {
 };
 
 async function fetchGallery(): Promise<GalleryImage[]> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/gallery`, {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const res = await fetch(`${base}/gallery`, {
     cache: 'no-store',
   });
 

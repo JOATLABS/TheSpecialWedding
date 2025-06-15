@@ -26,7 +26,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/token`, {
+            const res = await fetch(`http://localhost:8000/admin/token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),

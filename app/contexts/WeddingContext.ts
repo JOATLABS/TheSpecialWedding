@@ -1,3 +1,5 @@
+'use client';
+
 // contexts/WeddingContext.ts
 
 import React from 'react';
