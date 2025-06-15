@@ -39,7 +39,7 @@ export default function AdminGalleryUploadPage() {
       for (const file of files) {
         const fd = new FormData();
         fd.append('file', file);
-        const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
         const res = await fetch(
           `${base}/gallery/upload`,
           {
