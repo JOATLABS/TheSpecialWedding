@@ -30,3 +30,7 @@ docs/
 # IDE specific files
 .claude/
 .vscode/
+app/__pycache__/main.cpython-311.pyc
+app/api/__pycache__/health.cpython-311.pyc
+.env.local
+*.cpython-311.pyc
