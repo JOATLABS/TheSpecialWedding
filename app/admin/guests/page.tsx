@@ -1,0 +1,511 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAdmin } from '../../contexts/AdminContext';
+
+interface Wedding {
+  id?: string;
+  _id?: string;
+  couple_names: string;
+  date: string;
+  slug: string;
+  events?: Array<{
+    type: string;
+    date: string;
+  }>;
+}
+
+interface Guest {
+  id?: string;
+  _id?: string;
+  wedding_id: string;
+  name: string;
+  token: string;
+  phone?: string;
+  email?: string;
+  role: string;
+  group_id?: string;
+  plus_one_allowed: boolean;
+  number_of_plus_ones_allowed?: number;
+  plus_one_submitted: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface RSVP {
+  _id?: string;
+  guest_id: string;
+  attending: string[];
+  dietary?: string;
+  submitted_at: string;
+}
+
+interface PlusOne {
+  _id?: string;
+  guest_id: string;
+  name: string;
+  dietary?: string;
+  attending: string[];
+}
+
+export default function AdminGuestsPage() {
+  const { token } = useAdmin();
+  const [weddings, setWeddings] = useState<Wedding[]>([]);
+  const [selectedWedding, setSelectedWedding] = useState<string>('');
+  const [guests, setGuests] = useState<Guest[]>([]);
+  const [rsvps, setRsvps] = useState<RSVP[]>([]);
+  const [plusOnes, setPlusOnes] = useState<PlusOne[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchWeddings();
+  }, []);
+
+  useEffect(() => {
+    if (selectedWedding) {
+      fetchGuestData();
+    }
+  }, [selectedWedding]);
+
+  const fetchWeddings = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/weddings');
+      const data = await response.json();
+      setWeddings(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError('Failed to load weddings');
+    }
+  };
+
+  const fetchGuestData = async () => {
+    setLoading(true);
+    try {
+      // Fetch guests
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+      const guestsResponse = await fetch(
+        `${base}/guests?wedding_id=${selectedWedding}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+      
+      if (!guestsResponse.ok) {
+        console.error('Failed to fetch guests:', guestsResponse.status);
+        throw new Error('Failed to fetch guests');
+      }
+      
+      const guestsData = await guestsResponse.json();
+      console.log('Guests data:', guestsData); // Debug log
+      console.log('Selected wedding ID:', selectedWedding); // Debug log
+      setGuests(Array.isArray(guestsData) ? guestsData : []);
+
+      // Fetch RSVPs
+      try {
+        const rsvpsResponse = await fetch(
+          `${base}/rsvps?wedding_id=${selectedWedding}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+        if (rsvpsResponse.ok) {
+          const rsvpsData = await rsvpsResponse.json();
+          console.log('RSVPs data:', rsvpsData); // Debug log
+          setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
+        } else {
+          console.log('RSVPs endpoint failed:', rsvpsResponse.status);
+          setRsvps([]);
+        }
+      } catch (rsvpError) {
+        console.log('RSVPs fetch error:', rsvpError);
+        setRsvps([]);
+      }
+
+      // TODO: Fetch plus ones when endpoint is available
+      setPlusOnes([]);
+      
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError('Failed to load guest data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendReminder = async (guestId: string) => {
+    try {
+      const guest = guests.find(g => (g.id || g._id) === guestId);
+      if (!guest) return;
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+      const response = await fetch(`${base}/reminders/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          guest_tokens: [guest.token],
+          message: `Hi ${guest.name}, please RSVP for the wedding!`,
+        }),
+      });
+
+      if (response.ok) {
+        alert('Reminder sent successfully!');
+      } else {
+        throw new Error('Failed to send reminder');
+      }
+    } catch (err) {
+      alert('Failed to send reminder');
+    }
+  };
+
+  const handleDeleteGuest = async (guestId: string) => {
+    if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
+    
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+      const response = await fetch(`${base}/guests/${guestId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        fetchGuestData(); // Refresh all data
+      } else {
+        setError('Failed to delete guest');
+      }
+    } catch (err) {
+      setError('Failed to delete guest');
+    }
+  };
+
+  // Helper function to normalize ID comparison
+  const normalizeId = (id: string | undefined) => {
+    return id?.toString() || '';
+  };
+
+  // Filter guests based on tab and search
+  const filteredGuests = guests.filter(guest => {
+    const matchesSearch = guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         guest.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         guest.phone?.includes(searchTerm);
+    
+    if (!matchesSearch) return false;
+
+    const guestId = normalizeId(guest.id || guest._id);
+    const hasRSVP = rsvps.some(r => {
+      const rsvpGuestId = normalizeId(r.guest_id);
+      return rsvpGuestId === guestId;
+    });
+    
+    switch (activeTab) {
+      case 'rsvp':
+        return hasRSVP;
+      case 'pending':
+        return !hasRSVP;
+      default:
+        return true;
+    }
+  });
+
+  const getRSVPForGuest = (guestId: string) => {
+    const normalizedGuestId = normalizeId(guestId);
+    return rsvps.find(r => normalizeId(r.guest_id) === normalizedGuestId);
+  };
+
+  const getPlusOnesForGuest = (guestId: string) => {
+    const normalizedGuestId = normalizeId(guestId);
+    return plusOnes.filter(p => normalizeId(p.guest_id) === normalizedGuestId);
+  };
+
+  const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
+          <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
+            <h1 className="text-3xl font-bold text-white">Guest Management</h1>
+            <p className="text-blue-100 mt-2">View and manage all wedding guests, RSVPs, and plus-ones</p>
+          </div>
+        </div>
+
+        {/* Wedding Selection */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 mb-2">
+            Select Wedding
+          </label>
+          <select
+            id="wedding"
+            value={selectedWedding}
+            onChange={(e) => setSelectedWedding(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+          >
+            <option value="">Choose a wedding...</option>
+            {weddings.map((wedding) => (
+              <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
+                {wedding.couple_names} - {wedding.date}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedWedding && (
+          <>
+            {/* Stats Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500">Total Guests</h3>
+                <p className="text-3xl font-bold text-wedding-navy mt-2">{guests.length}</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500">RSVPs Received</h3>
+                <p className="text-3xl font-bold text-green-600 mt-2">{rsvps.length}</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500">Pending RSVPs</h3>
+                <p className="text-3xl font-bold text-orange-600 mt-2">{guests.length - rsvps.length}</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500">Plus Ones</h3>
+                <p className="text-3xl font-bold text-wedding-sage mt-2">{plusOnes.length}</p>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+              <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                {/* Tabs */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setActiveTab('all')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      activeTab === 'all'
+                        ? 'bg-wedding-navy text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    All Guests ({guests.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('rsvp')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      activeTab === 'rsvp'
+                        ? 'bg-wedding-navy text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    RSVP'd ({rsvps.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('pending')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      activeTab === 'pending'
+                        ? 'bg-wedding-navy text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Pending ({guests.length - rsvps.length})
+                  </button>
+                </div>
+
+                {/* Search */}
+                <input
+                  type="text"
+                  placeholder="Search guests..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* Guest List */}
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
+                  <span className="ml-3 text-gray-600">Loading guests...</span>
+                </div>
+              ) : filteredGuests.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <p>No guests found.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200">
+                  {filteredGuests.map((guest) => {
+                    const guestId = guest.id || guest._id || '';
+                    const rsvp = getRSVPForGuest(guestId);
+                    const guestPlusOnes = getPlusOnesForGuest(guestId);
+                    const isExpanded = expandedGuest === guestId;
+
+                    return (
+                      <div key={guestId} className="hover:bg-gray-50 transition-colors">
+                        {/* Guest Row */}
+                        <div className="p-6">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-4">
+                                <div>
+                                  <h3 className="text-lg font-semibold text-gray-900">{guest.name}</h3>
+                                  <div className="flex gap-4 text-sm text-gray-600 mt-1">
+                                    {guest.email && <span>{guest.email}</span>}
+                                    {guest.phone && <span>{guest.phone}</span>}
+                                  </div>
+                                </div>
+                                <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                                  guest.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                                }`}>
+                                  {guest.role}
+                                </span>
+                                {rsvp && (
+                                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                    RSVP'd
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* RSVP Details */}
+                              {rsvp && (
+                                <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                  <div className="flex gap-6 text-sm">
+                                    <div>
+                                      <span className="font-medium text-gray-700">Attending:</span>
+                                      <span className="ml-2">{rsvp.attending.join(', ')}</span>
+                                    </div>
+                                    {rsvp.dietary && (
+                                      <div>
+                                        <span className="font-medium text-gray-700">Dietary:</span>
+                                        <span className="ml-2">{rsvp.dietary}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Plus One Status */}
+                              {guest.plus_one_allowed && (
+                                <div className="mt-2 text-sm text-gray-600">
+                                  Plus Ones: {guestPlusOnes.length} / {guest.number_of_plus_ones_allowed || 0}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setExpandedGuest(isExpanded ? null : guestId)}
+                                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                              >
+                                {isExpanded ? 'Hide' : 'Details'}
+                              </button>
+                              {!rsvp && (
+                                <button
+                                  onClick={() => handleSendReminder(guestId)}
+                                  className="px-3 py-1 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                                >
+                                  Send Reminder
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteGuest(guestId)}
+                                className="px-3 py-1 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                          <div className="px-6 pb-6">
+                            <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                              {/* Guest Info */}
+                              <div>
+                                <h4 className="font-medium text-gray-900 mb-2">Guest Information</h4>
+                                <dl className="space-y-1 text-sm">
+                                  <div>
+                                    <dt className="inline font-medium text-gray-700">Token:</dt>
+                                    <dd className="inline ml-2 font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                                      {guest.token}
+                                    </dd>
+                                  </div>
+                                  {guest.group_id && (
+                                    <div>
+                                      <dt className="inline font-medium text-gray-700">Group:</dt>
+                                      <dd className="inline ml-2">{guest.group_id}</dd>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <dt className="inline font-medium text-gray-700">Plus Ones Allowed:</dt>
+                                    <dd className="inline ml-2">
+                                      {guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed || 0})` : 'No'}
+                                    </dd>
+                                  </div>
+                                </dl>
+                              </div>
+
+                              {/* Plus Ones List */}
+                              {guest.plus_one_allowed && guestPlusOnes.length > 0 && (
+                                <div>
+                                  <h4 className="font-medium text-gray-900 mb-2">Plus Ones</h4>
+                                  <ul className="space-y-2">
+                                    {guestPlusOnes.map((plusOne, idx) => (
+                                      <li key={plusOne._id || idx} className="text-sm bg-gray-50 p-2 rounded">
+                                        <div className="font-medium">{plusOne.name}</div>
+                                        <div className="text-gray-600">
+                                          Attending: {plusOne.attending.join(', ')}
+                                          {plusOne.dietary && ` • Dietary: ${plusOne.dietary}`}
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Wedding Events for this guest */}
+                            {selectedWeddingData?.events && (
+                              <div className="mt-4">
+                                <h4 className="font-medium text-gray-900 mb-2">Wedding Events</h4>
+                                <div className="flex gap-2">
+                                  {selectedWeddingData.events.map((event, idx) => (
+                                    <span
+                                      key={idx}
+                                      className={`px-3 py-1 text-xs rounded-full ${
+                                        rsvp?.attending.includes(event.type)
+                                          ? 'bg-green-100 text-green-800'
+                                          : 'bg-gray-100 text-gray-600'
+                                      }`}
+                                    >
+                                      {event.type.replace('_', ' ')} - {event.date}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

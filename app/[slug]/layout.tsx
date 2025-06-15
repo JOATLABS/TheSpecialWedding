@@ -13,8 +13,9 @@ export async function fetchWeddingBySlug(slug: string) {
   return await res.json();
 }
 
-export default async function WeddingLayout({ children, params }: { children: React.ReactNode; params: { slug: string } }) {
-  const wedding = await fetchWeddingBySlug(params.slug);
+export default async function WeddingLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const wedding = await fetchWeddingBySlug(slug);
 
   if (!wedding) notFound();
 

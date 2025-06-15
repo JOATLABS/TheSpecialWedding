@@ -18,3 +18,15 @@ __pycache__/
 
 node_modules/
 .next/
+llm_information/
+archive/
+
+# Logs
+*.log
+
+# Documentation
+docs/
+
+# IDE specific files
+.claude/
+.vscode/

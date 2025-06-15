@@ -1,13 +1,12 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.utils.auth_utils import verify_password
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.utils.auth_utils import verify_token
 from typing import Optional
 import os
-import secrets
 from app.core.database import mongo
 
 # Security scheme
-security = HTTPBasic(auto_error=True)
+security = HTTPBearer(auto_error=True)
 
 # JWT settings
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -20,22 +19,39 @@ class AuthUser:
 
 # We're no longer using token-based auth, so this function is removed
 
-async def get_current_user(credentials: HTTPBasicCredentials = Depends(security)) -> AuthUser:
-    """Get current authenticated user from Basic Auth credentials"""
-    email = credentials.username
-    password = credentials.password
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> AuthUser:
+    """Get current authenticated user from JWT token"""
+    token = credentials.credentials
     
-    # Verify user exists in database
-    user = mongo.db["admin_users"].find_one({"email": email})
-    
-    if not user or not verify_password(password, user["hashed_password"]):
+    try:
+        payload = verify_token(token)
+        email = payload.get("sub")
+        role = payload.get("role", "admin")
+        
+        if email is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        # Verify user still exists in database
+        user = mongo.db["admin_users"].find_one({"email": email})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        return AuthUser(email=email, role=role)
+        
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-            headers={"WWW-Authenticate": "Basic"},
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    return AuthUser(email=email, role=user.get("role", "admin"))
 
 async def require_admin(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
     """Require admin role for access"""

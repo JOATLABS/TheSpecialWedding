@@ -28,6 +28,26 @@ class GuestService:
             {"$set": update_data}
         )
 
+    def list_guests_by_wedding(self, wedding_id: str):
+        try:
+            guests = list(self.collection.find({"wedding_id": wedding_id}))
+            for guest in guests:
+                guest["id"] = str(guest["_id"])
+                guest.pop("_id", None)
+            return guests
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")
+    
+    def delete_guest(self, guest_id: str):
+        try:
+            from bson import ObjectId
+            result = self.collection.delete_one({"_id": ObjectId(guest_id)})
+            if result.deleted_count == 0:
+                raise HTTPException(status_code=404, detail="Guest not found")
+            return {"message": "Guest deleted successfully"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error deleting guest: {str(e)}")
+
     from typing import Optional
 
     def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None):
