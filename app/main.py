@@ -41,17 +41,19 @@ app.add_middleware(
 )
 
 app.include_router(health_router, prefix="/health")
-app.include_router(guest_router, prefix="/guest")
+app.include_router(guest_router, prefix="/guest")  # Public guest endpoints (search, invite)
 app.include_router(rsvp_router, prefix="/rsvp")
 app.include_router(plus_one_router, prefix="/plus_one")
 app.include_router(wedding_router)  # Public wedding endpoints (list, get by slug)
+app.include_router(gallery_upload_router)  # Public gallery endpoints (view, QR)
 
 # Admin routes - all under /admin prefix
 app.include_router(auth_router, prefix="/admin")
 app.include_router(import_router, prefix="/admin")
+app.include_router(guest_router, prefix="/admin")  # Admin guest endpoints (list, delete)
 app.include_router(admin_rsvp_router, prefix="/admin")
 app.include_router(reminder_router, prefix="/admin")
 app.include_router(checkin_router, prefix="/admin")
-app.include_router(gallery_upload_router)
+app.include_router(gallery_upload_router, prefix="/admin")  # Admin gallery endpoints (upload, delete)
 app.include_router(wedding_router, prefix="/admin")  # Admin wedding endpoints (create, update, delete)
 app.include_router(reminder_utils_router, prefix="/admin")
