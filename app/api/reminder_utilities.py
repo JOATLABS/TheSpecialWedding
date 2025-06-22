@@ -19,10 +19,11 @@ class RSVPRequestModel(BaseModel):
 
 class SlugModel(BaseModel):
     slug: str
+    custom_message: Optional[str] = None
 
 @router.post("/admin/reminders/send-personalized-links", tags=["Admin"], dependencies=[Depends(require_admin)])
 def send_invite_links(payload: SlugModel):
-    return reminder_helper.send_personalized_rsvp_links(slug=payload.slug)
+    return reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
 
 @router.post("/admin/reminders/simulate-rsvp", tags=["Admin"], dependencies=[Depends(require_admin)])
 def simulate_rsvp(payload: RSVPRequestModel):

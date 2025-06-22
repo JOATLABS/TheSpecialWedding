@@ -2,13 +2,12 @@
 
 import React from "react";
 import { notFound } from "next/navigation";
-
-// Create wedding context
-import { WeddingContext } from '@/contexts/WeddingContext';
+import { WeddingProvider } from '@/components/WeddingProvider';
 
 export async function fetchWeddingBySlug(slug: string) {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-  const res = await fetch(`${base}/weddings/slug/${slug}`);
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+  const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
+  const res = await fetch(`${apiUrl}/weddings/slug/${slug}`);
   if (!res.ok) return null;
   return await res.json();
 }
@@ -20,12 +19,8 @@ export default async function WeddingLayout({ children, params }: { children: Re
   if (!wedding) notFound();
 
   return (
-    <html>
-      <body>
-        <WeddingContext.Provider value={wedding}>
-          {children}
-        </WeddingContext.Provider>
-      </body>
-    </html>
+    <WeddingProvider wedding={wedding}>
+      {children}
+    </WeddingProvider>
   );
 }

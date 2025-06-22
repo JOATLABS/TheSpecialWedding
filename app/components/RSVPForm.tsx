@@ -64,42 +64,84 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       <div>
-        <label className="block font-semibold">Events Attending</label>
-        <div className="space-x-2">
-          <input type="checkbox" value="traditional" {...register('attending')} /> Traditional
-          <input type="checkbox" value="white_wedding" {...register('attending')} /> White Wedding
-          <input type="checkbox" value="reception" {...register('attending')} /> Reception
+        <label className="block font-semibold text-gray-700 mb-3">Events Attending</label>
+        <div className="space-y-2 sm:space-y-0 sm:space-x-4 sm:flex">
+          <label className="flex items-center space-x-2">
+            <input type="checkbox" value="traditional" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <span>Traditional</span>
+          </label>
+          <label className="flex items-center space-x-2">
+            <input type="checkbox" value="white_wedding" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <span>White Wedding</span>
+          </label>
+          <label className="flex items-center space-x-2">
+            <input type="checkbox" value="reception" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <span>Reception</span>
+          </label>
         </div>
       </div>
 
       <div>
-        <label className="block font-semibold">Dietary Restrictions</label>
-        <input type="text" className="w-full border px-3 py-2" {...register('dietary')} placeholder="None" />
+        <label className="block font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
+        <input 
+          type="text" 
+          className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
+          {...register('dietary')} 
+          placeholder="None" 
+        />
       </div>
 
       <div>
-        <label className="block font-semibold">Phone</label>
-        <input type="tel" className="w-full border px-3 py-2" defaultValue={guest.phone} {...register('phone', {
-          required: true,
-          pattern: /^\+?\d{10,15}$/
-        })} />
-        {errors.phone && <p className="text-red-500 text-sm">Enter a valid phone number</p>}
+        <label className="block font-semibold text-gray-700 mb-2">Phone Number</label>
+        <input 
+          type="tel" 
+          className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
+          defaultValue={guest.phone} 
+          {...register('phone', {
+            required: true,
+            pattern: /^\+?\d{10,15}$/
+          })} 
+          placeholder="+1 (555) 123-4567"
+        />
+        {errors.phone && <p className="text-red-500 text-sm mt-1">Enter a valid phone number</p>}
       </div>
 
       {guest.plus_one_allowed && (
-        <div className="border-t pt-4">
-          <h2 className="text-lg font-semibold">Plus One</h2>
-          <input className="w-full border px-3 py-2" type="text" placeholder="Full Name" {...register('plus_one.name')} />
-          <input className="w-full border px-3 py-2 mt-2" type="tel" placeholder="Phone Number (optional)" {...register('plus_one.phone')} />
+        <div className="border-t pt-6 mt-6">
+          <h2 className="text-lg font-semibold text-gray-700 mb-4">Plus One Information</h2>
+          <div className="space-y-4">
+            <div>
+              <label className="block font-medium text-gray-700 mb-2">Full Name</label>
+              <input 
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
+                type="text" 
+                placeholder="Enter plus one's full name" 
+                {...register('plus_one.name')} 
+              />
+            </div>
+            <div>
+              <label className="block font-medium text-gray-700 mb-2">Phone Number (Optional)</label>
+              <input 
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
+                type="tel" 
+                placeholder="+1 (555) 123-4567" 
+                {...register('plus_one.phone')} 
+              />
+            </div>
+          </div>
         </div>
       )}
 
-      {error && <p className="text-red-600 text-center">{error}</p>}
+      {error && <p className="text-red-600 text-center p-3 bg-red-50 rounded-lg">{error}</p>}
 
-      <div className="flex justify-center pt-4">
-        <button disabled={isSubmitting} type="submit" className="bg-pink-600 text-white px-6 py-2 rounded">
+      <div className="flex justify-center pt-6">
+        <button 
+          disabled={isSubmitting} 
+          type="submit" 
+          className="w-full sm:w-auto bg-wedding-rose text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-opacity-90 focus:ring-4 focus:ring-wedding-rose focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        >
           {isSubmitting ? 'Submitting...' : 'Submit RSVP'}
         </button>
       </div>
