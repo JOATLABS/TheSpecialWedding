@@ -52,14 +52,14 @@ class GalleryUploadService:
             response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
             if 'Contents' not in response:
                 return []
+            
+            # Use custom domain for public access instead of presigned URLs
+            custom_domain = "https://media.thespecialwedding.com"
+            
             files = [
                 {
                     "key": obj["Key"],
-                    "url": self.s3.generate_presigned_url(
-                        ClientMethod="get_object",
-                        Params={"Bucket": self.bucket_name, "Key": obj["Key"]},
-                        ExpiresIn=3600
-                    )
+                    "url": f"{custom_domain}/{obj['Key']}"
                 }
                 for obj in response["Contents"]
             ]

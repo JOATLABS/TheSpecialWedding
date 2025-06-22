@@ -18,7 +18,7 @@ class RSVPReminderHelper:
         self.from_phone = os.getenv("TWILIO_PHONE_NUMBER")
         self.base_url = os.getenv("FRONTEND_URL", "https://yourdomain.com")
 
-    def send_personalized_rsvp_links(self, slug: str, event_type: str = "traditional"):
+    def send_personalized_rsvp_links(self, slug: str, custom_message: str = None, event_type: str = "traditional"):
         guests = self.guest_collection.find({})
         sent = 0
         for guest in guests:
@@ -27,7 +27,16 @@ class RSVPReminderHelper:
             if not token or not phone:
                 continue
             url = f"{self.base_url}/{slug}/invite/{token}"
-            message = f"You're invited! RSVP here: {url}"
+            
+            # Use custom message if provided, otherwise use default
+            if custom_message:
+                # Replace {url} placeholder with actual URL
+                message = custom_message.replace("{url}", url)
+                # Replace {name} placeholder with guest name if present
+                message = message.replace("{name}", guest.get("name", ""))
+            else:
+                message = f"You're invited! RSVP here: {url}"
+                
             try:
                 self.twilio_client.messages.create(to=phone, from_=self.from_phone, body=message)
                 sent += 1

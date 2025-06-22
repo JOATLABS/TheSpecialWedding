@@ -45,6 +45,12 @@ export default function AdminLayout({
               Manage Guests
             </a>
             <a
+              href="/admin/reminders"
+              className="hover:text-wedding-gold transition"
+            >
+              SMS Reminders
+            </a>
+            <a
               href="/admin/login"
               onClick={() => localStorage.removeItem('admin_token')}
               className="text-red-500 hover:underline"

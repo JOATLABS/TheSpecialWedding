@@ -13,9 +13,10 @@ export const metadata: Metadata = {
   description: 'Browse through beautiful moments from the wedding celebration.',
 };
 
-async function fetchGallery(): Promise<GalleryImage[]> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-  const res = await fetch(`${base}/gallery`, {
+async function fetchGallery(slug: string): Promise<GalleryImage[]> {
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+  const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
+  const res = await fetch(`${apiUrl}/gallery?wedding_slug=${slug}`, {
     cache: 'no-store',
   });
 
@@ -26,29 +27,108 @@ async function fetchGallery(): Promise<GalleryImage[]> {
   return res.json();
 }
 
+async function fetchWedding(slug: string) {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const res = await fetch(`${base}/weddings/slug/${slug}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export default async function GalleryPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  const images = await fetchGallery();
+  const { slug } = await params;
+  const [images, wedding] = await Promise.all([
+    fetchGallery(slug),
+    fetchWedding(slug)
+  ]);
 
   return (
-    <section className="px-4 py-8 max-w-6xl mx-auto">
-      <h1 className="text-3xl font-bold text-center mb-6">Photo Gallery</h1>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {images.map((img) => (
-          <div key={img.key} className="relative w-full h-64 rounded overflow-hidden shadow">
-            <Image
-              src={img.url}
-              alt="Wedding gallery"
-              layout="fill"
-              objectFit="cover"
-              className="rounded"
-            />
-          </div>
-        ))}
+    <div className="min-h-screen bg-gray-50">
+      {/* Header with wedding info */}
+      <div className="bg-wedding-navy text-white py-12">
+        <div className="max-w-6xl mx-auto px-4 text-center">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+            {wedding?.couple_names || "Wedding"} Gallery
+          </h1>
+          {wedding?.date && (
+            <p className="text-xl text-blue-100">
+              {(() => {
+                // Fix timezone issues by parsing date components directly
+                if (wedding.date.includes('-')) {
+                  const [year, month, day] = wedding.date.split('-');
+                  const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                  return dateObj.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  });
+                } else {
+                  return new Date(wedding.date).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  });
+                }
+              })()}
+            </p>
+          )}
+          {wedding?.venue && (
+            <p className="text-lg text-blue-200 mt-2">{wedding.venue}</p>
+          )}
+        </div>
       </div>
-    </section>
+
+      {/* Gallery */}
+      <section className="px-4 py-12 max-w-7xl mx-auto">
+        {images.length > 0 ? (
+          <>
+            <p className="text-center text-gray-600 mb-8">
+              {images.length} photo{images.length !== 1 ? 's' : ''} from our special day
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {images.map((img, index) => (
+                <div key={img.key} className="relative w-full h-64 rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-shadow group">
+                  <Image
+                    src={img.url}
+                    alt={`Wedding photo ${index + 1}`}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity duration-300" />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-24">
+            <div className="text-gray-400">
+              <svg className="mx-auto h-24 w-24 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-medium text-gray-600 mb-2">No photos yet</h3>
+            <p className="text-gray-500">Photos from the wedding will appear here soon!</p>
+          </div>
+        )}
+      </section>
+
+      {/* Back to home */}
+      <div className="text-center pb-12">
+        <a 
+          href={`/${slug}`}
+          className="inline-flex items-center bg-wedding-rose text-white px-6 py-3 rounded-lg font-semibold hover:bg-opacity-90 transition-colors"
+        >
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Wedding Page
+        </a>
+      </div>
+    </div>
   );
 }

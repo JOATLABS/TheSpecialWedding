@@ -1,43 +1,152 @@
+'use client';
+
 import React from "react";
+import Link from "next/link";
+
+import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
 import { ParallaxSlideshow } from "@/components/landing-page/ParallaxSlideshow";
 import { HeroSection } from "@/components/landing-page/HeroSection";
 import { AnchorNav } from "@/components/landing-page/AnchorNav";
+import { Card } from '@/components/ui/Card';
 import { LandingLayoutProps } from '@/types/landing';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   return (
     <main className="relative w-full min-h-screen">
-      {/* Background slideshow */}
-      <ParallaxSlideshow images={images} direction="horizontal" interval={7000} />
+      {/* Parallax Background */}
+      <ParallaxSlideshow images={images} />
 
       {/* Overlay content */}
       <div className="absolute inset-0 z-10 flex flex-col justify-between">
-        {/* Navigation Bar */}
+
+        {/* Nav */}
         <AnchorNav sections={["rsvp", "gallery", "registry", "faq"]} />
 
-        {/* Hero Section */}
-        <HeroSection coupleName={wedding.coupleName} date={wedding.date} />
+        {/* Hero */}
+        <HeroSection coupleName={wedding.couple_names} date={wedding.date} />
 
-        {/* Anchored Sections */}
-        <div id="rsvp" className="py-24 px-4 bg-white bg-opacity-80 backdrop-blur-sm">
-          {/* Placeholder for RSVP form */}
-          <h2 className="text-3xl font-bold text-center">RSVP Section</h2>
-        </div>
+        {/* RSVP */}
+        <SectionWrapper id="rsvp">
+          <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
+            <h2 className="text-4xl font-bold text-wedding-navy mb-4 text-center">RSVP</h2>
+            <p className="text-lg text-gray-700 mb-6 text-center">
+              Join us in celebrating our special day! Please let us know if you’ll be attending.
+            </p>
+            <div className="space-y-4 text-center">
+              <p className="text-gray-600">
+                Check your phone for your personal invitation link, or contact us directly.
+              </p>
+              <div className="inline-flex bg-wedding-rose text-white px-6 py-3 rounded-lg">
+                <div>
+                  <p className="font-semibold">Need help?</p>
+                  <p className="text-sm">Call us at (555) 123-4567</p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </SectionWrapper>
 
-        <div id="gallery" className="py-24 px-4 bg-white bg-opacity-80 backdrop-blur-sm">
-          {/* Placeholder for Gallery */}
-          <h2 className="text-3xl font-bold text-center">Gallery Section</h2>
-        </div>
+        {/* Gallery */}
+        <SectionWrapper id="gallery">
+          <Card className="max-w-6xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
+            <h2 className="text-4xl font-bold text-center text-wedding-navy mb-6">Gallery</h2>
+            {images.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {images.slice(0, 8).map((img, i) => (
+                  <div key={img.key} className="relative w-full h-48 rounded-lg overflow-hidden shadow-lg">
+                    <img
+                      src={img.url}
+                      alt={`Memory ${i + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-center text-gray-600 mb-6">Photos will be added soon!</p>
+            )}
+            <div className="text-center">
+              <Link
+                href={`/${wedding.slug}/gallery`}
+                className="bg-wedding-navy text-white px-8 py-3 rounded-lg font-semibold hover:bg-opacity-90 transition-colors"
+              >
+                View Full Gallery
+              </Link>
+            </div>
+          </Card>
+        </SectionWrapper>
 
-        <div id="registry" className="py-24 px-4 bg-white bg-opacity-80 backdrop-blur-sm">
-          {/* Placeholder for Registry */}
-          <h2 className="text-3xl font-bold text-center">Registry Section</h2>
-        </div>
+        {/* Registry */}
+        <SectionWrapper id="registry">
+          <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8 text-center">
+            <h2 className="text-4xl font-bold text-wedding-navy mb-6">Wedding Registry</h2>
+            <p className="text-lg text-gray-700 mb-8">
+              Your presence is the greatest gift, but if you’d like to celebrate with us, we’re registered at:
+            </p>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <h3 className="text-xl font-semibold mb-4">Target</h3>
+                <a
+                  href="https://www.target.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  View Registry
+                </a>
+              </div>
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <h3 className="text-xl font-semibold mb-4">Amazon</h3>
+                <a
+                  href="https://www.amazon.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600 transition-colors"
+                >
+                  View Registry
+                </a>
+              </div>
+            </div>
+          </Card>
+        </SectionWrapper>
 
-        <div id="faq" className="py-24 px-4 bg-white bg-opacity-80 backdrop-blur-sm">
-          {/* Placeholder for FAQ */}
-          <h2 className="text-3xl font-bold text-center">FAQ Section</h2>
-        </div>
+        {/* FAQ */}
+        <SectionWrapper id="faq">
+          <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
+            <h2 className="text-4xl font-bold text-center text-wedding-navy mb-8">Frequently Asked Questions</h2>
+            <div className="space-y-8">
+              {[
+                {
+                  q: "What should I wear?",
+                  a: "We recommend semi-formal attire. Think cocktail dress or nice slacks with a button-down shirt."
+                },
+                {
+                  q: "Where is the venue?",
+                  a: wedding.venue || "Venue details will be shared with your RSVP confirmation."
+                },
+                {
+                  q: "What time should I arrive?",
+                  a: "Please arrive 15–30 minutes before the ceremony begins. Check your invitation for specifics."
+                },
+                {
+                  q: "Can I bring a plus one?",
+                  a: "Plus ones are by invitation only. Check your RSVP to see if yours is included."
+                },
+                {
+                  q: "Is there parking available?",
+                  a: "Yes, complimentary parking is available at the venue. Details with your RSVP confirmation."
+                }
+              ].map(({ q, a }) => (
+                <div key={q} className="bg-gray-50 p-6 rounded-lg">
+                  <h3 className="text-xl font-semibold mb-2">{q}</h3>
+                  <p className="text-gray-700">{a}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </SectionWrapper>
+
       </div>
     </main>
   );
