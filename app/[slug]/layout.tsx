@@ -4,7 +4,7 @@ import React from "react";
 import { notFound } from "next/navigation";
 import { WeddingProvider } from '@/components/WeddingProvider';
 
-export async function fetchWeddingBySlug(slug: string) {
+async function fetchWeddingBySlug(slug: string) {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
   const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
   const res = await fetch(`${apiUrl}/weddings/slug/${slug}`);
