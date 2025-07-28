@@ -4,25 +4,21 @@ import React from 'react';
 import { notFound } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
 
-export async function fetchGuestByToken(slug: string, token: string) {
+export default async function InvitePage({ params }: { params: Promise<{ slug: string, token: string }> }) {
+  const { slug, token } = await params;
+  
+  // Fetch data inline to avoid any potential export detection issues
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
   const weddingRes = await fetch(`${base}/weddings/slug/${slug}`);
-  if (!weddingRes.ok) return null;
+  if (!weddingRes.ok) notFound();
   const wedding = await weddingRes.json();
 
   const guestRes = await fetch(`${base}/invite/${token}?wedding_id=${wedding._id}`);
-  if (!guestRes.ok) return null;
+  if (!guestRes.ok) notFound();
   const guest = await guestRes.json();
 
-  return { guest, wedding };
-}
-
-export default async function InvitePage({ params }: { params: Promise<{ slug: string, token: string }> }) {
-  const { slug, token } = await params;
-  const data = await fetchGuestByToken(slug, token);
-  if (!data) notFound();
-
-  const { guest, wedding } = data;
+  const data = { guest, wedding };
+  const { guest: guestData, wedding: weddingData } = data;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-wedding-blush to-white">
