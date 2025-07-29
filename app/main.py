@@ -34,12 +34,7 @@ app = FastAPI(
 
 # Add CORS middleware
 # Get allowed origins from environment variable
-allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://thespecialwedding.com",
-    "https://www.thespecialwedding.com"
-]
+allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
 
 app.add_middleware(
     CORSMiddleware,
