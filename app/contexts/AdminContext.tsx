@@ -43,6 +43,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             // Store token in localStorage or sessionStorage
             const storage = rememberMe ? localStorage : sessionStorage;
             storage.setItem('admin_token', access_token);
+            
+            // Also set cookie for middleware to check
+            document.cookie = `admin_token=${access_token}; path=/; ${rememberMe ? 'max-age=604800' : ''}`;
+            
             setToken(access_token);
 
             toast.success('Login successful');
@@ -56,6 +60,11 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
     const logout = () => {
         localStorage.removeItem('admin_token');
+        sessionStorage.removeItem('admin_token');
+        
+        // Remove cookie
+        document.cookie = 'admin_token=; path=/; max-age=0';
+        
         setToken(null);
         toast.success('Logged out');
         router.push('/admin/login');
