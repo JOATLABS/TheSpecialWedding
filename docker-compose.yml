@@ -48,7 +48,7 @@ services:
       - ./scripts:/app/scripts
       - ./.env:/app/.env
     command: python scripts/setup_admin_user.py --auto-create
-    restart: "no"
+    restart: "yes"
 
 volumes:
   mongo_data:
