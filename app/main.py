@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.security import HTTPBasic
 from fastapi.middleware.cors import CORSMiddleware
 from app.dependencies.auth import require_admin
+import os
 from app.api.health import router as health_router
 from app.api.guest import router as guest_router
 from app.api.admin_import import router as import_router
@@ -32,18 +33,22 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# Get allowed origins from environment variable
+allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://thespecialwedding.com",
+    "https://www.thespecialwedding.com"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://localhost:3001",  # Next.js dev server
-        "https://thespecialwedding.com",
-        "https://www.thespecialwedding.com"
-        
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 app.include_router(health_router, prefix="/health")
