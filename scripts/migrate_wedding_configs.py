@@ -31,12 +31,21 @@ def migrate_weddings():
     default_registries = []  # Empty by default, will use fallback in frontend
     default_faqs = []  # Empty by default, will use fallback in frontend
     
+    default_theme_config = {
+        "primary_color": "#1e3a5f",
+        "secondary_color": "#d4af37", 
+        "accent_color": "#c8847e",
+        "background_style": "gradient",
+        "font_style": "elegant"
+    }
+    
     # Find weddings without the new fields
     weddings_to_update = collection.find({
         "$or": [
             {"rsvp_config": {"$exists": False}},
             {"registries": {"$exists": False}},
-            {"faqs": {"$exists": False}}
+            {"faqs": {"$exists": False}},
+            {"theme_config": {"$exists": False}}
         ]
     })
     
@@ -54,6 +63,9 @@ def migrate_weddings():
         
         if "faqs" not in wedding:
             update_fields["faqs"] = default_faqs
+            
+        if "theme_config" not in wedding:
+            update_fields["theme_config"] = default_theme_config
         
         # Update wedding events to include details field if not present
         if "events" in wedding:
@@ -84,6 +96,7 @@ def migrate_weddings():
         print(f"- Has RSVP Config: {'rsvp_config' in sample}")
         print(f"- Has Registries: {'registries' in sample}")
         print(f"- Has FAQs: {'faqs' in sample}")
+        print(f"- Has Theme Config: {'theme_config' in sample}")
         if 'events' in sample and len(sample['events']) > 0:
             print(f"- First Event Has Details: {'details' in sample['events'][0]}")
 

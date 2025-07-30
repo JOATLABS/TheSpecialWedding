@@ -16,7 +16,7 @@ export default function WeddingDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq'>('events');
+  const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq' | 'theme'>('events');
 
   useEffect(() => {
     fetchWedding();
@@ -41,7 +41,14 @@ export default function WeddingDetailsPage() {
             phone_numbers: ["(319) 529-6088", "(405) 708-1076"]
           },
           registries: wedding.registries || [],
-          faqs: wedding.faqs || []
+          faqs: wedding.faqs || [],
+          theme_config: wedding.theme_config || {
+            primary_color: "#1e3a5f",
+            secondary_color: "#d4af37",
+            accent_color: "#c8847e",
+            background_style: "gradient",
+            font_style: "elegant"
+          }
         });
       } else {
         setError('Wedding not found');
@@ -217,7 +224,7 @@ export default function WeddingDetailsPage() {
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
           <div className="border-b border-gray-200">
             <nav className="flex">
-              {(['events', 'rsvp', 'registry', 'faq'] as const).map((tab) => (
+              {(['events', 'rsvp', 'registry', 'faq', 'theme'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -569,6 +576,221 @@ export default function WeddingDetailsPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Theme Tab */}
+            {activeTab === 'theme' && wedding.theme_config && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-wedding-navy mb-4">Theme Configuration</h2>
+
+                {/* Color Presets */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Quick Theme Presets
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    {[
+                      { name: 'Classic Navy & Gold', primary: '#1e3a5f', secondary: '#d4af37', accent: '#c8847e' },
+                      { name: 'Romantic Rose', primary: '#c8847e', secondary: '#f5e6e0', accent: '#d4af37' },
+                      { name: 'Garden Green', primary: '#4a5d3a', secondary: '#d4af37', accent: '#e8c4b8' },
+                      { name: 'Royal Purple', primary: '#4a3a5f', secondary: '#d4af37', accent: '#c8847e' },
+                      { name: 'Ocean Blue', primary: '#2c5985', secondary: '#f5e6e0', accent: '#d4af37' },
+                      { name: 'Sunset Orange', primary: '#d97638', secondary: '#f5e6e0', accent: '#4a5d3a' },
+                      { name: 'Vintage Burgundy', primary: '#800020', secondary: '#d4af37', accent: '#f5e6e0' },
+                      { name: 'Modern Minimal', primary: '#333333', secondary: '#666666', accent: '#999999' }
+                    ].map((preset) => (
+                      <button
+                        key={preset.name}
+                        onClick={() => setWedding({
+                          ...wedding,
+                          theme_config: {
+                            ...wedding.theme_config!,
+                            primary_color: preset.primary,
+                            secondary_color: preset.secondary,
+                            accent_color: preset.accent
+                          }
+                        })}
+                        className="p-3 border border-gray-200 rounded-lg hover:border-wedding-rose transition-colors"
+                      >
+                        <div className="flex gap-2 mb-2">
+                          <div 
+                            className="w-6 h-6 rounded"
+                            style={{ backgroundColor: preset.primary }}
+                          />
+                          <div 
+                            className="w-6 h-6 rounded"
+                            style={{ backgroundColor: preset.secondary }}
+                          />
+                          <div 
+                            className="w-6 h-6 rounded"
+                            style={{ backgroundColor: preset.accent }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-700">{preset.name}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Colors */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Primary Color
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={wedding.theme_config.primary_color}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          theme_config: { ...wedding.theme_config!, primary_color: e.target.value }
+                        })}
+                        className="h-10 w-20"
+                      />
+                      <input
+                        type="text"
+                        value={wedding.theme_config.primary_color}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          theme_config: { ...wedding.theme_config!, primary_color: e.target.value }
+                        })}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                        placeholder="#1e3a5f"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Used for headers and main elements</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Secondary Color
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={wedding.theme_config.secondary_color}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          theme_config: { ...wedding.theme_config!, secondary_color: e.target.value }
+                        })}
+                        className="h-10 w-20"
+                      />
+                      <input
+                        type="text"
+                        value={wedding.theme_config.secondary_color}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          theme_config: { ...wedding.theme_config!, secondary_color: e.target.value }
+                        })}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                        placeholder="#d4af37"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Used for accents and highlights</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Accent Color
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={wedding.theme_config.accent_color}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          theme_config: { ...wedding.theme_config!, accent_color: e.target.value }
+                        })}
+                        className="h-10 w-20"
+                      />
+                      <input
+                        type="text"
+                        value={wedding.theme_config.accent_color}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          theme_config: { ...wedding.theme_config!, accent_color: e.target.value }
+                        })}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                        placeholder="#c8847e"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Used for buttons and call-to-actions</p>
+                  </div>
+                </div>
+
+                {/* Style Options */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Background Style
+                    </label>
+                    <select
+                      value={wedding.theme_config.background_style}
+                      onChange={(e) => setWedding({
+                        ...wedding,
+                        theme_config: { ...wedding.theme_config!, background_style: e.target.value as any }
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="gradient">Gradient</option>
+                      <option value="solid">Solid Color</option>
+                      <option value="image">Background Image</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Font Style
+                    </label>
+                    <select
+                      value={wedding.theme_config.font_style}
+                      onChange={(e) => setWedding({
+                        ...wedding,
+                        theme_config: { ...wedding.theme_config!, font_style: e.target.value as any }
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="elegant">Elegant (Serif)</option>
+                      <option value="modern">Modern (Sans-serif)</option>
+                      <option value="classic">Classic (Traditional)</option>
+                      <option value="playful">Playful (Decorative)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold mb-3">Preview</h3>
+                  <div 
+                    className="p-6 rounded-lg"
+                    style={{
+                      background: wedding.theme_config.background_style === 'gradient' 
+                        ? `linear-gradient(135deg, ${wedding.theme_config.primary_color}20, ${wedding.theme_config.secondary_color}20)`
+                        : `${wedding.theme_config.primary_color}10`
+                    }}
+                  >
+                    <h4 
+                      className="text-2xl font-bold mb-2"
+                      style={{ color: wedding.theme_config.primary_color }}
+                    >
+                      {wedding.couple_names}
+                    </h4>
+                    <p 
+                      className="mb-4"
+                      style={{ color: wedding.theme_config.secondary_color }}
+                    >
+                      {wedding.date}
+                    </p>
+                    <button 
+                      className="px-6 py-2 rounded-lg text-white"
+                      style={{ backgroundColor: wedding.theme_config.accent_color }}
+                    >
+                      Sample Button
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

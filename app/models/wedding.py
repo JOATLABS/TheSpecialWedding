@@ -30,6 +30,13 @@ class RSVPConfigModel(BaseModel):
     phone_numbers: List[str] = Field(default_factory=lambda: ["(319) 529-6088", "(405) 708-1076"],
                                     description="Contact phone numbers")
 
+class ThemeConfigModel(BaseModel):
+    primary_color: str = Field(default="#1e3a5f", description="Primary color (wedding-navy)")
+    secondary_color: str = Field(default="#d4af37", description="Secondary color (wedding-gold)")
+    accent_color: str = Field(default="#c8847e", description="Accent color (wedding-rose)")
+    background_style: str = Field(default="gradient", description="Background style: gradient, solid, or image")
+    font_style: str = Field(default="elegant", description="Font style: elegant, modern, classic, or playful")
+
 class WeddingModel(BaseModel):
     id: str = Field(..., alias="_id")
     couple_names: str = Field(..., min_length=3, max_length=200)
@@ -39,6 +46,7 @@ class WeddingModel(BaseModel):
     rsvp_config: Optional[RSVPConfigModel] = Field(default_factory=RSVPConfigModel)
     registries: List[RegistryItemModel] = Field(default_factory=list)
     faqs: List[FAQItemModel] = Field(default_factory=list)
+    theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:
