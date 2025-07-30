@@ -18,7 +18,20 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     const [token, setToken] = useState<string | null>(null);
 
     useEffect(() => {
-        const stored = localStorage.getItem('admin_token');
+        // Check localStorage first
+        let stored = localStorage.getItem('admin_token');
+        
+        // If not in localStorage, check sessionStorage
+        if (!stored) {
+            stored = sessionStorage.getItem('admin_token');
+        }
+        
+        // If not in storage, check cookies as fallback
+        if (!stored) {
+            const match = document.cookie.match(/admin_token=([^;]+)/);
+            stored = match ? match[1] : null;
+        }
+        
         if (stored) {
             setToken(stored);
         }
