@@ -3,8 +3,9 @@ services:
     image: mongo:5.0
     container_name: wedding-mongo
     restart: always
-    ports:
-      - "27017:27017"
+    # DO NOT EXPOSE MongoDB to the internet!
+    # ports:
+    #   - "27017:27017"
     volumes:
       - mongo_data:/data/db
     environment:
