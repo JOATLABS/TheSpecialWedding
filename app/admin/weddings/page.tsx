@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useAdmin } from '../../contexts/AdminContext';
 
 interface Wedding {
@@ -384,6 +385,12 @@ export default function AdminWeddingsPage() {
                         )}
                       </div>
                       <div className="flex gap-2 ml-4">
+                        <Link
+                          href={`/admin/weddings/${wedding.id}`}
+                          className="px-4 py-2 text-sm bg-wedding-rose text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                        >
+                          Configure
+                        </Link>
                         <button
                           onClick={() => handleEdit(wedding)}
                           className="px-4 py-2 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 transition-colors"

@@ -30,16 +30,16 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
           <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
             <h2 className="text-4xl font-bold text-wedding-navy mb-4 text-center">RSVP</h2>
             <p className="text-lg text-gray-700 mb-6 text-center">
-              Join us in celebrating our special day! Please let us know if you’ll be attending.
+              {wedding.rsvp_config?.greeting || "Join us in celebrating our special day! Please let us know if you'll be attending."}
             </p>
             <div className="space-y-4 text-center">
               <p className="text-gray-600">
-                Check your phone for your personal invitation link, or contact us directly.
+                {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact us directly."}
               </p>
               <div className="inline-flex bg-wedding-rose text-white px-6 py-3 rounded-lg">
                 <div>
                   <p className="font-semibold">Need help?</p>
-                  <p className="text-sm">Call us at (555) 123-4567</p>
+                  <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "(319) 529-6088 or (405) 708-1076"}</p>
                 </div>
               </div>
             </div>
@@ -84,30 +84,48 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <p className="text-lg text-gray-700 mb-8">
               Your presence is the greatest gift, but if you’d like to celebrate with us, we’re registered at:
             </p>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-gray-50 p-6 rounded-lg">
-                <h3 className="text-xl font-semibold mb-4">Target</h3>
-                <a
-                  href="https://www.target.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  View Registry
-                </a>
+            {wedding.registries && wedding.registries.length > 0 ? (
+              <div className="grid md:grid-cols-2 gap-6">
+                {wedding.registries.map((registry, index) => (
+                  <div key={index} className="bg-gray-50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-4">{registry.name}</h3>
+                    <a
+                      href={registry.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`${registry.color || 'bg-gray-600'} text-white px-6 py-2 rounded-lg hover:opacity-90 transition-opacity inline-block`}
+                    >
+                      View Registry
+                    </a>
+                  </div>
+                ))}
               </div>
-              <div className="bg-gray-50 p-6 rounded-lg">
-                <h3 className="text-xl font-semibold mb-4">Amazon</h3>
-                <a
-                  href="https://www.amazon.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600 transition-colors"
-                >
-                  View Registry
-                </a>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="bg-gray-50 p-6 rounded-lg">
+                  <h3 className="text-xl font-semibold mb-4">Target</h3>
+                  <a
+                    href="https://www.target.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    View Registry
+                  </a>
+                </div>
+                <div className="bg-gray-50 p-6 rounded-lg">
+                  <h3 className="text-xl font-semibold mb-4">Amazon</h3>
+                  <a
+                    href="https://www.amazon.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600 transition-colors"
+                  >
+                    View Registry
+                  </a>
+                </div>
               </div>
-            </div>
+            )}
           </Card>
         </SectionWrapper>
 
@@ -116,33 +134,42 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
           <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
             <h2 className="text-4xl font-bold text-center text-wedding-navy mb-8">Frequently Asked Questions</h2>
             <div className="space-y-8">
-              {[
-                {
-                  q: "What should I wear?",
-                  a: "We recommend semi-formal attire. Think cocktail dress or nice slacks with a button-down shirt."
-                },
-                {
-                  q: "Where is the venue?",
-                  a: wedding.venue || "Venue details will be shared with your RSVP confirmation."
-                },
-                {
-                  q: "What time should I arrive?",
-                  a: "Please arrive 15–30 minutes before the ceremony begins. Check your invitation for specifics."
-                },
-                {
-                  q: "Can I bring a plus one?",
-                  a: "Plus ones are by invitation only. Check your RSVP to see if yours is included."
-                },
-                {
-                  q: "Is there parking available?",
-                  a: "Yes, complimentary parking is available at the venue. Details with your RSVP confirmation."
-                }
-              ].map(({ q, a }) => (
-                <div key={q} className="bg-gray-50 p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold mb-2">{q}</h3>
-                  <p className="text-gray-700">{a}</p>
-                </div>
-              ))}
+              {wedding.faqs && wedding.faqs.length > 0 ? (
+                wedding.faqs.map((faq, index) => (
+                  <div key={index} className="bg-gray-50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
+                    <p className="text-gray-700">{faq.answer}</p>
+                  </div>
+                ))
+              ) : (
+                [
+                  {
+                    q: "What should I wear?",
+                    a: "We recommend semi-formal attire. Think cocktail dress or nice slacks with a button-down shirt."
+                  },
+                  {
+                    q: "Where is the venue?",
+                    a: wedding.venue || "Venue details will be shared with your RSVP confirmation."
+                  },
+                  {
+                    q: "What time should I arrive?",
+                    a: "Please arrive 15–30 minutes before the ceremony begins. Check your invitation for specifics."
+                  },
+                  {
+                    q: "Can I bring a plus one?",
+                    a: "Plus ones are by invitation only. Check your RSVP to see if yours is included."
+                  },
+                  {
+                    q: "Is there parking available?",
+                    a: "Yes, complimentary parking is available at the venue. Details with your RSVP confirmation."
+                  }
+                ].map(({ q, a }) => (
+                  <div key={q} className="bg-gray-50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-2">{q}</h3>
+                    <p className="text-gray-700">{a}</p>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
         </SectionWrapper>
