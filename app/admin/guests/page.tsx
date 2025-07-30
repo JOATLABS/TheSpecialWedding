@@ -73,7 +73,8 @@ export default function AdminGuestsPage() {
 
   const fetchWeddings = async () => {
     try {
-      const response = await fetch('http://localhost:8000/weddings');
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/weddings`);
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -85,8 +86,9 @@ export default function AdminGuestsPage() {
     setLoading(true);
     try {
       // Fetch guests
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const guestsResponse = await fetch(
-        `http://localhost:8000/admin/guests?wedding_id=${selectedWedding}`,
+        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -107,7 +109,7 @@ export default function AdminGuestsPage() {
       // Fetch RSVPs
       try {
         const rsvpsResponse = await fetch(
-          `http://localhost:8000/admin/rsvps?wedding_id=${selectedWedding}`,
+          `${baseUrl}/admin/rsvps?wedding_id=${selectedWedding}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -142,7 +144,8 @@ export default function AdminGuestsPage() {
     try {
       const guest = guests.find(g => (g.id || g._id) === guestId);
       if (!guest) return;
-      const response = await fetch(`http://localhost:8000/admin/reminders/send`, {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/reminders/send`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -168,7 +171,8 @@ export default function AdminGuestsPage() {
     if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
     
     try {
-      const response = await fetch(`http://localhost:8000/admin/guests/${guestId}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
