@@ -14,18 +14,22 @@ import { useTheme } from '@/hooks/useTheme';
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   const theme = useTheme(wedding);
   return (
-    <main 
-      className="relative w-full min-h-screen"
-      style={{
-        background: theme.getBackgroundStyle() === 'gradient' 
-          ? `linear-gradient(135deg, ${theme.getPrimaryColor()}10, ${theme.getSecondaryColor()}10)`
-          : theme.getBackgroundStyle() === 'solid'
-          ? `${theme.getPrimaryColor()}05`
-          : undefined
-      }}
-    >
-      {/* Parallax Background */}
+    <main className="relative w-full min-h-screen">
+      {/* Parallax Background with couple's images */}
       <ParallaxSlideshow images={images} />
+      
+      {/* Optional theme color overlay (very subtle) */}
+      {theme.getBackgroundStyle() !== 'image' && (
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: theme.getBackgroundStyle() === 'gradient' 
+              ? `linear-gradient(135deg, ${theme.getPrimaryColor()}08, ${theme.getSecondaryColor()}08)`
+              : `${theme.getPrimaryColor()}05`,
+            opacity: 0.3
+          }}
+        />
+      )}
 
       {/* Overlay content */}
       <div className="absolute inset-0 z-10 flex flex-col justify-between">
