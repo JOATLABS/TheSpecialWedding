@@ -70,7 +70,8 @@ export default function AdminRemindersPage() {
 
   const fetchWeddings = async () => {
     try {
-      const response = await fetch('http://localhost:8000/weddings');
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/weddings`);
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -82,8 +83,9 @@ export default function AdminRemindersPage() {
     if (!selectedWedding || !token) return;
     
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(
-        `http://localhost:8000/admin/guests?wedding_id=${selectedWedding}`,
+        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -106,7 +108,8 @@ export default function AdminRemindersPage() {
     if (!token) return;
     
     try {
-      const response = await fetch('http://localhost:8000/admin/reminders/logs', {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/reminders/logs`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       
@@ -139,7 +142,8 @@ export default function AdminRemindersPage() {
     setSuccess('');
 
     try {
-      const response = await fetch('http://localhost:8000/admin/admin/reminders/send-personalized-links', {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/admin/reminders/send-personalized-links`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -183,7 +187,8 @@ export default function AdminRemindersPage() {
         target_group: targetGroup,
       });
 
-      const response = await fetch(`http://localhost:8000/admin/reminders/send?${params}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/reminders/send?${params}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -221,7 +226,8 @@ export default function AdminRemindersPage() {
     setSuccess('');
 
     try {
-      const response = await fetch('http://localhost:8000/admin/reminders/send', {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/reminders/send`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
