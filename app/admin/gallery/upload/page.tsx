@@ -41,7 +41,8 @@ export default function AdminGalleryUploadPage() {
 
   const fetchWeddings = async () => {
     try {
-      const response = await fetch('http://localhost:8000/weddings');
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/weddings`);
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -61,8 +62,9 @@ export default function AdminGalleryUploadPage() {
   const fetchUploadedImages = async (weddingSlug: string) => {
     setLoadingImages(true);
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(
-        `http://localhost:8000/gallery?wedding_slug=${weddingSlug}`,
+        `${baseUrl}/gallery?wedding_slug=${weddingSlug}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -85,8 +87,9 @@ export default function AdminGalleryUploadPage() {
     if (!confirm('Are you sure you want to delete this image?')) return;
     
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(
-        `http://localhost:8000/admin/gallery?key=${encodeURIComponent(imageKey)}`,
+        `${baseUrl}/admin/gallery?key=${encodeURIComponent(imageKey)}`,
         {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
@@ -131,8 +134,9 @@ export default function AdminGalleryUploadPage() {
         fd.append('file', file);
         fd.append('wedding_slug', selectedWeddingSlug);
         
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
         const res = await fetch(
-          `http://localhost:8000/admin/gallery/upload`,
+          `${baseUrl}/admin/gallery/upload`,
           {
             method: 'POST',
             body: fd,
