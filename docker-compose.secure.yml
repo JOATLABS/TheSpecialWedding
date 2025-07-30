@@ -1,0 +1,61 @@
+services:
+  mongo:
+    image: mongo:5.0
+    container_name: wedding-mongo
+    restart: always
+    # NEVER expose MongoDB ports to the internet!
+    # Internal Docker network communication only
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: wedding
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme}
+    networks:
+      - wedding-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wedding-api
+    restart: always
+    ports:
+      - "8000:8000"  # Only expose the API
+    depends_on:
+      - mongo
+    env_file:
+      - .env
+    environment:
+      # Use authenticated MongoDB connection
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-changeme}@mongo:27017/wedding?authSource=admin
+      PYTHONPATH: /app
+    networks:
+      - wedding-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  # Admin setup job - runs once to create admin user
+  admin-setup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wedding-admin-setup
+    depends_on:
+      - mongo
+      - api
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-changeme}@mongo:27017/wedding?authSource=admin
+      PYTHONPATH: /app
+    networks:
+      - wedding-network
+    command: python scripts/setup_admin_user.py --auto-create
+    restart: "no"
+
+volumes:
+  mongo_data:
+
+networks:
+  wedding-network:
+    driver: bridge
