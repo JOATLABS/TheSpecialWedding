@@ -2,6 +2,7 @@
 
 import { useAdmin } from '@/contexts/AdminContext';
 import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 
 export default function AdminHeader() {
   const { logout } = useAdmin();
@@ -16,36 +17,36 @@ export default function AdminHeader() {
         Admin Panel
       </h1>
       <nav className="space-x-6 font-medium">
-        <a
+        <Link
           href="/admin/weddings"
           className="hover:text-wedding-gold transition"
         >
           Weddings
-        </a>
-        <a
+        </Link>
+        <Link
           href="/admin/gallery/upload"
           className="hover:text-wedding-gold transition"
         >
           Gallery
-        </a>
-        <a
+        </Link>
+        <Link
           href="/admin/import"
           className="hover:text-wedding-gold transition"
         >
           Import Guests
-        </a>
-        <a
+        </Link>
+        <Link
           href="/admin/guests"
           className="hover:text-wedding-gold transition"
         >
           Manage Guests
-        </a>
-        <a
+        </Link>
+        <Link
           href="/admin/reminders"
           className="hover:text-wedding-gold transition"
         >
           SMS Reminders
-        </a>
+        </Link>
         <button
           onClick={logout}
           className="text-red-500 hover:underline"
