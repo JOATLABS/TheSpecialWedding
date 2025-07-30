@@ -46,7 +46,8 @@ export default function AdminWeddingsPage() {
   const fetchWeddings = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/weddings');
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/weddings`);
       if (!response.ok) {
         throw new Error('Failed to fetch weddings');
       }
@@ -77,9 +78,10 @@ export default function AdminWeddingsPage() {
     setLoading(true);
 
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const url = editingId 
-        ? `http://localhost:8000/admin/weddings/${editingId}`
-        : 'http://localhost:8000/admin/weddings';
+        ? `${baseUrl}/admin/weddings/${editingId}`
+        : `${baseUrl}/admin/weddings`;
       
       const method = editingId ? 'PUT' : 'POST';
       
@@ -129,7 +131,8 @@ export default function AdminWeddingsPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/admin/weddings/${weddingId}`, {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
