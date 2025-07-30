@@ -30,6 +30,14 @@ export interface RSVPConfig {
   phone_numbers: string[];
 }
 
+export interface ThemeConfig {
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  background_style: 'gradient' | 'solid' | 'image';
+  font_style: 'elegant' | 'modern' | 'classic' | 'playful';
+}
+
 export interface Wedding {
   id: string;
   slug: string;
@@ -39,6 +47,7 @@ export interface Wedding {
   rsvp_config?: RSVPConfig;
   registries?: RegistryItem[];
   faqs?: FAQItem[];
+  theme_config?: ThemeConfig;
   created_at?: string;
   [key: string]: any; // for flexibility (additional fields)
 }

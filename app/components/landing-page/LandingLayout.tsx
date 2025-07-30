@@ -5,14 +5,25 @@ import Link from "next/link";
 
 import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
 import { ParallaxSlideshow } from "@/components/landing-page/ParallaxSlideshow";
-import { HeroSection } from "@/components/landing-page/HeroSection";
+import { ThemedHeroSection } from "@/components/landing-page/ThemedHeroSection";
 import { AnchorNav } from "@/components/landing-page/AnchorNav";
 import { Card } from '@/components/ui/Card';
 import { LandingLayoutProps } from '@/types/landing';
+import { useTheme } from '@/hooks/useTheme';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
+  const theme = useTheme(wedding);
   return (
-    <main className="relative w-full min-h-screen">
+    <main 
+      className="relative w-full min-h-screen"
+      style={{
+        background: theme.getBackgroundStyle() === 'gradient' 
+          ? `linear-gradient(135deg, ${theme.getPrimaryColor()}10, ${theme.getSecondaryColor()}10)`
+          : theme.getBackgroundStyle() === 'solid'
+          ? `${theme.getPrimaryColor()}05`
+          : undefined
+      }}
+    >
       {/* Parallax Background */}
       <ParallaxSlideshow images={images} />
 
@@ -23,12 +34,12 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         <AnchorNav sections={["rsvp", "gallery", "registry", "faq"]} />
 
         {/* Hero */}
-        <HeroSection coupleName={wedding.couple_names} date={wedding.date} />
+        <ThemedHeroSection wedding={wedding} />
 
         {/* RSVP */}
         <SectionWrapper id="rsvp">
           <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
-            <h2 className="text-4xl font-bold text-wedding-navy mb-4 text-center">RSVP</h2>
+            <h2 className="text-4xl font-bold mb-4 text-center theme-primary">RSVP</h2>
             <p className="text-lg text-gray-700 mb-6 text-center">
               {wedding.rsvp_config?.greeting || "Join us in celebrating our special day! Please let us know if you'll be attending."}
             </p>
@@ -36,7 +47,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               <p className="text-gray-600">
                 {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact us directly."}
               </p>
-              <div className="inline-flex bg-wedding-rose text-white px-6 py-3 rounded-lg">
+              <div className="inline-flex text-white px-6 py-3 rounded-lg theme-bg-accent">
                 <div>
                   <p className="font-semibold">Need help?</p>
                   <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "(319) 529-6088 or (405) 708-1076"}</p>
@@ -49,7 +60,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         {/* Gallery */}
         <SectionWrapper id="gallery">
           <Card className="max-w-6xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
-            <h2 className="text-4xl font-bold text-center text-wedding-navy mb-6">Gallery</h2>
+            <h2 className="text-4xl font-bold text-center mb-6 theme-primary">Gallery</h2>
             {images.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 {images.slice(0, 8).map((img, i) => (
@@ -69,7 +80,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <div className="text-center">
               <Link
                 href={`/${wedding.slug}/gallery`}
-                className="bg-wedding-navy text-white px-8 py-3 rounded-lg font-semibold hover:bg-opacity-90 transition-colors"
+                className="text-white px-8 py-3 rounded-lg font-semibold hover:opacity-90 transition-colors theme-bg-primary"
               >
                 View Full Gallery
               </Link>
@@ -80,7 +91,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         {/* Registry */}
         <SectionWrapper id="registry">
           <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8 text-center">
-            <h2 className="text-4xl font-bold text-wedding-navy mb-6">Wedding Registry</h2>
+            <h2 className="text-4xl font-bold mb-6 theme-primary">Wedding Registry</h2>
             <p className="text-lg text-gray-700 mb-8">
               Your presence is the greatest gift, but if you’d like to celebrate with us, we’re registered at:
             </p>
@@ -132,7 +143,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         {/* FAQ */}
         <SectionWrapper id="faq">
           <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
-            <h2 className="text-4xl font-bold text-center text-wedding-navy mb-8">Frequently Asked Questions</h2>
+            <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Frequently Asked Questions</h2>
             <div className="space-y-8">
               {wedding.faqs && wedding.faqs.length > 0 ? (
                 wedding.faqs.map((faq, index) => (
