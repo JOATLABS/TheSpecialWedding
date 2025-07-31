@@ -223,80 +223,79 @@ export default function AdminGalleryUploadPage() {
             {/* Upload Tab */}
             {activeTab === 'upload' && (
               <Card className="backdrop-blur-sm bg-white/60">
-                <div className="space-y-4">
+                <div className="space-y-4 p-6">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileChange}
+                    className="w-full text-sm file:py-2 file:px-4
+                               file:rounded-full file:border-0
+                               file:text-sm file:font-medium
+                               file:bg-wedding-sage file:text-wedding-navy
+                               hover:file:bg-wedding-rose"
+                  />
 
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleFileChange}
-              className="w-full text-sm file:py-2 file:px-4
-                         file:rounded-full file:border-0
-                         file:text-sm file:font-medium
-                         file:bg-wedding-sage file:text-wedding-navy
-                         hover:file:bg-wedding-rose"
-            />
+                  {previews.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      {previews.map((url, i) => (
+                        <div
+                          key={i}
+                          className="relative rounded-lg overflow-hidden shadow-lg"
+                        >
+                          <img
+                            src={url}
+                            alt={`Preview ${i + 1}`}
+                            className="w-full h-40 object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const key = decodeURIComponent(
+                                url.split('/').pop() || ''
+                              );
+                              try {
+                                const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+                                const res = await fetch(
+                                  `${base}/gallery?key=${encodeURIComponent(
+                                    'gallery/' + key
+                                  )}`,
+                                  {
+                                    method: 'DELETE',
+                                    headers: { Authorization: `Bearer ${token}` },
+                                  }
+                                );
+                                if (!res.ok) throw new Error('Delete failed');
+                                setStatus((s) => `${s}Deleted ${key}\n`);
+                                setFiles((f) => f.filter((_, idx) => idx !== i));
+                              } catch (err: any) {
+                                setStatus(`Error: ${err.message}`);
+                              }
+                            }}
+                            className="absolute top-2 right-2 bg-red-600
+                                       text-white text-xs px-2 py-1 rounded
+                                       hover:bg-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-            {previews.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {previews.map((url, i) => (
-                  <div
-                    key={i}
-                    className="relative rounded-lg overflow-hidden shadow-lg"
+                  <Button
+                    onClick={handleUpload}
+                    disabled={!files.length || uploading || !selectedWedding}
+                    className="w-full"
                   >
-                    <img
-                      src={url}
-                      alt={`Preview ${i + 1}`}
-                      className="w-full h-40 object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const key = decodeURIComponent(
-                          url.split('/').pop() || ''
-                        );
-                        try {
-                          const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-                          const res = await fetch(
-                            `${base}/gallery?key=${encodeURIComponent(
-                              'gallery/' + key
-                            )}`,
-                            {
-                              method: 'DELETE',
-                              headers: { Authorization: `Bearer ${token}` },
-                            }
-                          );
-                          if (!res.ok) throw new Error('Delete failed');
-                          setStatus((s) => `${s}Deleted ${key}\n`);
-                          setFiles((f) => f.filter((_, idx) => idx !== i));
-                        } catch (err: any) {
-                          setStatus(`Error: ${err.message}`);
-                        }
-                      }}
-                      className="absolute top-2 right-2 bg-red-600
-                                 text-white text-xs px-2 py-1 rounded
-                                 hover:bg-red-700"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                    {uploading ? 'Uploading…' : 'Upload Images'}
+                  </Button>
 
-            <Button
-              onClick={handleUpload}
-              disabled={!files.length || uploading || !selectedWedding}
-              className="w-full"
-            >
-              {uploading ? 'Uploading…' : 'Upload Images'}
-            </Button>
-
-            {!selectedWedding && (
-              <p className="text-sm text-gray-600 text-center">
-                Please select a wedding before uploading images
-              </p>
-            )}
+                  {!selectedWedding && (
+                    <p className="text-sm text-gray-600 text-center">
+                      Please select a wedding before uploading images
+                    </p>
+                  )}
 
                   {status && (
                     <pre className="mt-2 text-sm whitespace-pre-wrap text-wedding-navy">
@@ -414,7 +413,8 @@ export default function AdminGalleryUploadPage() {
                             Set as Background
                           </button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
