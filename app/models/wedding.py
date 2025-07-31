@@ -47,6 +47,7 @@ class WeddingModel(BaseModel):
     registries: List[RegistryItemModel] = Field(default_factory=list)
     faqs: List[FAQItemModel] = Field(default_factory=list)
     theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)
+    featured_image: Optional[str] = Field(None, description="S3 key for the featured background image")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:

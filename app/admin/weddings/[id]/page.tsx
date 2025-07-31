@@ -734,9 +734,9 @@ export default function WeddingDetailsPage() {
                       })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     >
-                      <option value="gradient">Gradient</option>
-                      <option value="solid">Solid Color</option>
-                      <option value="image">Background Image</option>
+                      <option value="gradient">Frosted Glass with Gradient</option>
+                      <option value="solid">Frosted Glass with Solid Color</option>
+                      <option value="image">Pure Image (No Overlay)</option>
                     </select>
                   </div>
 
