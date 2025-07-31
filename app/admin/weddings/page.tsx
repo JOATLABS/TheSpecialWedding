@@ -6,6 +6,7 @@ import { useAdmin } from '../../contexts/AdminContext';
 
 interface Wedding {
   id: string;
+  _id: string;
   couple_names: string;
   date: string;
   slug: string;
@@ -157,7 +158,7 @@ export default function AdminWeddingsPage() {
       slug: wedding.slug,
       events: wedding.events || []
     });
-    setEditingId(wedding.id);
+    setEditingId(wedding._id);
     setShowForm(true);
   };
 
@@ -360,7 +361,7 @@ export default function AdminWeddingsPage() {
             ) : (
               <div className="grid gap-6">
                 {weddings.map((wedding) => (
-                  <div key={wedding.id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
+                  <div key={wedding._id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <h3 className="text-xl font-bold text-wedding-navy">{wedding.couple_names}</h3>
@@ -386,7 +387,7 @@ export default function AdminWeddingsPage() {
                       </div>
                       <div className="flex gap-2 ml-4">
                         <Link
-                          href={`/admin/weddings/${wedding.id}`}
+                          href={`/admin/weddings/${wedding._id}`}
                           className="px-4 py-2 text-sm bg-wedding-rose text-white rounded-lg hover:bg-opacity-90 transition-colors"
                         >
                           Configure
@@ -398,7 +399,7 @@ export default function AdminWeddingsPage() {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDelete(wedding.id)}
+                          onClick={() => handleDelete(wedding._id)}
                           className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                         >
                           Delete
