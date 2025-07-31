@@ -1,7 +1,7 @@
 // app/[slug]/gallery/page.tsx
 
 import { Metadata } from 'next';
-import Image from 'next/image';
+import { GalleryGrid } from '@/components/GalleryGrid';
 
 type GalleryImage = {
   key: string;
@@ -90,19 +90,7 @@ export default async function GalleryPage({
             <p className="text-center text-gray-600 mb-8">
               {images.length} photo{images.length !== 1 ? 's' : ''} from our special day
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {images.map((img, index) => (
-                <div key={img.key} className="relative w-full h-64 rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-shadow group">
-                  <Image
-                    src={img.url}
-                    alt={`Wedding photo ${index + 1}`}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity duration-300" />
-                </div>
-              ))}
-            </div>
+            <GalleryGrid images={images} />
           </>
         ) : (
           <div className="text-center py-24">
