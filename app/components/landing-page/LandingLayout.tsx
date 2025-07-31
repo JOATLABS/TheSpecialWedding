@@ -30,7 +30,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       />
 
       {/* Content with 3D glass cards */}
-      <div className="relative z-10 min-h-screen">
+      <div className="relative z-10">
 
         {/* Nav */}
         <AnchorNav sections={["rsvp", "gallery", "registry", "venue", "faq"]} />

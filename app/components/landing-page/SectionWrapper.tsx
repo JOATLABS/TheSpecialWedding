@@ -9,7 +9,7 @@ interface SectionWrapperProps {
 export const SectionWrapper: React.FC<SectionWrapperProps> = ({
   id,
   children,
-  backgroundColor = "bg-white bg-opacity-80 backdrop-blur-sm",
+  backgroundColor = "",
 }) => {
   return (
     <section

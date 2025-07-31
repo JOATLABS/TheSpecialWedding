@@ -46,12 +46,13 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
     <>
       {/* Fixed background container */}
       <div className="fixed inset-0 -z-10 overflow-hidden">
-        {/* Parallax image layer - larger scale to ensure coverage */}
+        {/* Parallax image layer */}
         <div 
-          className="absolute -inset-y-1/2 inset-x-0 scale-150"
+          className="absolute inset-0"
           style={{
             transform: `translateY(${parallaxOffset}px)`,
-            willChange: 'transform'
+            willChange: 'transform',
+            height: '150%' // Extra height for parallax movement
           }}
         >
           <Image
@@ -98,9 +99,6 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
         {/* Depth gradient - darker at bottom for valley effect */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/50" />
       </div>
-
-      {/* Spacer for content */}
-      <div className="relative z-0" />
     </>
   );
 };
