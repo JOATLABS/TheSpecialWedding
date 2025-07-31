@@ -1,5 +1,6 @@
 import React from "react";
 import { Wedding } from "@/types/wedding";
+import { GlassCard } from "@/components/ui/GlassCard";
 
 interface ThemedHeroSectionProps {
   wedding: Wedding;
@@ -57,45 +58,46 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding })
   })();
 
   return (
-    <section className="flex flex-col items-center justify-center text-white text-center py-16 sm:py-24 md:py-32 px-4">
-      <div className="max-w-4xl mx-auto">
+    <section className="flex flex-col items-center justify-center text-center py-16 sm:py-24 md:py-32 px-4">
+      <GlassCard 
+        className="max-w-4xl mx-auto p-8 sm:p-12 md:p-16" 
+        depth="near" 
+        theme={theme}
+      >
         <h1 
-          className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold drop-shadow-lg leading-tight"
-          style={{ color: theme?.primary_color || '#ffffff' }}
+          className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight"
+          style={{ color: theme?.primary_color || '#1e3a5f' }}
         >
           {wedding.couple_names}
         </h1>
         <div 
-          className="w-16 sm:w-24 h-1 mx-auto mt-4 mb-6 drop-shadow-sm"
-          style={{ backgroundColor: theme?.secondary_color || '#ffffff' }}
+          className="w-16 sm:w-24 h-1 mx-auto mt-4 mb-6"
+          style={{ backgroundColor: theme?.secondary_color || '#d4af37' }}
         ></div>
         {formattedDates && (
           <p 
-            className="text-base sm:text-lg md:text-xl lg:text-2xl font-light drop-shadow-md"
-            style={{ color: theme?.secondary_color || '#ffffff' }}
+            className="text-base sm:text-lg md:text-xl lg:text-2xl font-light"
+            style={{ color: theme?.primary_color || '#1e3a5f' }}
           >
             {formattedDates}
           </p>
         )}
         <div className="mt-8 sm:mt-12">
           <div 
-            className="inline-block px-6 py-3 backdrop-blur-sm rounded-full"
+            className="inline-block px-6 py-3 rounded-full"
             style={{ 
-              backgroundColor: `${theme?.accent_color || '#ffffff'}20`,
-              borderColor: theme?.accent_color || '#ffffff',
-              borderWidth: '1px',
-              borderStyle: 'solid'
+              backgroundColor: theme?.accent_color || '#c8847e',
+              color: '#ffffff'
             }}
           >
             <p 
-              className="text-sm sm:text-base font-medium"
-              style={{ color: theme?.accent_color || '#ffffff' }}
+              className="text-sm sm:text-base font-medium text-white"
             >
               Celebrate with us
             </p>
           </div>
         </div>
-      </div>
+      </GlassCard>
     </section>
   );
 };
