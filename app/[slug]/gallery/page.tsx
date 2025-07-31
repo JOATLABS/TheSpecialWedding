@@ -88,7 +88,7 @@ export default async function GalleryPage({
         {images.length > 0 ? (
           <>
             <p className="text-center text-gray-600 mb-8">
-              {images.length} photo{images.length !== 1 ? 's' : ''} from our special day
+              {images.length} photo{images.length !== 1 ? 's' : ''}
             </p>
             <GalleryGrid images={images} />
           </>
