@@ -48,6 +48,7 @@ export interface Wedding {
   registries?: RegistryItem[];
   faqs?: FAQItem[];
   theme_config?: ThemeConfig;
+  featured_image?: string;
   created_at?: string;
   [key: string]: any; // for flexibility (additional fields)
 }

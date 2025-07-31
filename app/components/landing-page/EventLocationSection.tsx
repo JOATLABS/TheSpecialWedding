@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wedding, WeddingEvent } from '@/types/wedding';
-import { Card } from '@/components/ui/Card';
+import { GlassCard } from '@/components/ui/GlassCard';
 
 interface EventLocationSectionProps {
   wedding: Wedding;
@@ -110,7 +110,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
   return (
     <div className="max-w-4xl mx-auto">
       {/* Glass panel container */}
-      <Card className="bg-white bg-opacity-60 backdrop-blur-lg p-6 overflow-hidden">
+      <GlassCard className="p-6 overflow-hidden" depth="near" theme={wedding.theme_config}>
         <div className="flex flex-col h-[600px]">
           
           {/* Top card - Event dropdown (10%) */}
@@ -222,7 +222,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
             </div>
           </div>
         </div>
-      </Card>
+      </GlassCard>
     </div>
   );
 };

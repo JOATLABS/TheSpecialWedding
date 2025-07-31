@@ -4,36 +4,33 @@ import React from "react";
 import Link from "next/link";
 
 import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
-import { ParallaxSlideshow } from "@/components/landing-page/ParallaxSlideshow";
+import { Modern3DBackground } from "@/components/landing-page/Modern3DBackground";
 import { ThemedHeroSection } from "@/components/landing-page/ThemedHeroSection";
 import { AnchorNav } from "@/components/landing-page/AnchorNav";
 import { EventLocationSection } from "@/components/landing-page/EventLocationSection";
-import { Card } from '@/components/ui/Card';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   const theme = useTheme(wedding);
-  return (
-    <main className="relative w-full min-h-screen">
-      {/* Parallax Background with couple's images */}
-      <ParallaxSlideshow images={images} />
-      
-      {/* Optional theme color overlay (very subtle) */}
-      {theme.getBackgroundStyle() !== 'image' && (
-        <div 
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: theme.getBackgroundStyle() === 'gradient' 
-              ? `linear-gradient(135deg, ${theme.getPrimaryColor()}08, ${theme.getSecondaryColor()}08)`
-              : `${theme.getPrimaryColor()}05`,
-            opacity: 0.3
-          }}
-        />
-      )}
+  
+  // Get featured image from wedding or use first gallery image
+  const featuredImage = wedding.featured_image 
+    ? `${process.env.NEXT_PUBLIC_API_BASE_URL?.replace('/admin', '')}/gallery/image/${wedding.featured_image}`
+    : images.length > 0 ? images[0].url : undefined;
 
-      {/* Overlay content */}
-      <div className="absolute inset-0 z-10 flex flex-col justify-between">
+  return (
+    <main className="relative w-full">
+      {/* Modern 3D Background */}
+      <Modern3DBackground 
+        imageUrl={featuredImage}
+        fallbackImages={images.map(img => img.url)}
+        theme={wedding.theme_config}
+      />
+
+      {/* Content with 3D glass cards */}
+      <div className="relative z-10 min-h-screen">
 
         {/* Nav */}
         <AnchorNav sections={["rsvp", "gallery", "registry", "venue", "faq"]} />
@@ -43,7 +40,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
         {/* RSVP */}
         <SectionWrapper id="rsvp">
-          <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
+          <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold mb-4 text-center theme-primary">RSVP</h2>
             <p className="text-lg text-gray-700 mb-6 text-center">
               {wedding.rsvp_config?.greeting || "Join us in celebrating our special day! Please let us know if you'll be attending."}
@@ -59,12 +56,12 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                 </div>
               </div>
             </div>
-          </Card>
+          </GlassCard>
         </SectionWrapper>
 
         {/* Gallery */}
         <SectionWrapper id="gallery">
-          <Card className="max-w-6xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
+          <GlassCard className="max-w-6xl mx-auto p-8" depth="mid" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold text-center mb-6 theme-primary">Gallery</h2>
             {images.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -90,12 +87,12 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                 View Full Gallery
               </Link>
             </div>
-          </Card>
+          </GlassCard>
         </SectionWrapper>
 
         {/* Registry */}
         <SectionWrapper id="registry">
-          <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8 text-center">
+          <GlassCard className="max-w-4xl mx-auto p-8 text-center" depth="far" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold mb-6 theme-primary">Wedding Registry</h2>
             <p className="text-lg text-gray-700 mb-8">
               Your presence is the greatest gift, but if you’d like to celebrate with us, we’re registered at:
@@ -142,7 +139,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                 </div>
               </div>
             )}
-          </Card>
+          </GlassCard>
         </SectionWrapper>
 
         {/* Venue */}
@@ -153,7 +150,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
         {/* FAQ */}
         <SectionWrapper id="faq">
-          <Card className="max-w-4xl mx-auto bg-white bg-opacity-60 backdrop-blur-lg p-8">
+          <GlassCard className="max-w-4xl mx-auto p-8" depth="mid" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Frequently Asked Questions</h2>
             <div className="space-y-8">
               {wedding.faqs && wedding.faqs.length > 0 ? (
@@ -193,7 +190,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                 ))
               )}
             </div>
-          </Card>
+          </GlassCard>
         </SectionWrapper>
 
       </div>
