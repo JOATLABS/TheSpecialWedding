@@ -11,6 +11,7 @@ interface EventLocationSectionProps {
 export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedding }) => {
   const [selectedEventType, setSelectedEventType] = useState<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapUrl, setMapUrl] = useState<string>('');
   
   // Get events with location details
   const eventsWithLocation = useMemo(() => {
@@ -28,6 +29,25 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
 
   // Get selected event details
   const selectedEvent = eventsWithLocation.find(e => e.type === selectedEventType);
+
+  // Fetch secure map URL when location changes
+  useEffect(() => {
+    const fetchMapUrl = async () => {
+      if (selectedEvent?.details?.location) {
+        try {
+          const response = await fetch(`/api/maps?location=${encodeURIComponent(selectedEvent.details.location)}`);
+          if (response.ok) {
+            const data = await response.json();
+            setMapUrl(data.embedUrl);
+          }
+        } catch (error) {
+          console.error('Failed to load map:', error);
+        }
+      }
+    };
+
+    fetchMapUrl();
+  }, [selectedEvent?.details?.location]);
 
   // Format event type for display
   const formatEventType = (type: string) => {
@@ -158,7 +178,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
           {/* Bottom card - Map (65%) */}
           <div className="h-[65%]">
             <div className="bg-white bg-opacity-70 rounded-lg overflow-hidden h-full relative group cursor-pointer" onClick={handleMapClick}>
-              {selectedEvent?.details?.location ? (
+              {selectedEvent?.details?.location && mapUrl ? (
                 <>
                   <iframe
                     width="100%"
@@ -166,7 +186,8 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                     style={{ border: 0 }}
                     loading="lazy"
                     allowFullScreen
-                    src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&q=${encodeURIComponent(selectedEvent.details.location)}`}
+                    referrerPolicy="no-referrer-when-downgrade"
+                    src={mapUrl}
                     onLoad={() => setMapLoaded(true)}
                   />
                   
@@ -189,6 +210,10 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                     </div>
                   )}
                 </>
+              ) : selectedEvent?.details?.location && !mapUrl ? (
+                <div className="h-full flex items-center justify-center bg-gray-100">
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-transparent"></div>
+                </div>
               ) : (
                 <div className="h-full flex items-center justify-center bg-gray-100">
                   <p className="text-gray-500">No location available</p>
