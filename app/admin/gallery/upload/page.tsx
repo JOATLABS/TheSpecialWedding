@@ -12,6 +12,7 @@ interface Wedding {
   couple_names: string;
   date: string;
   slug: string;
+  featured_image?: string;
 }
 
 export default function AdminGalleryUploadPage() {
@@ -28,6 +29,7 @@ export default function AdminGalleryUploadPage() {
   const [uploadedImages, setUploadedImages] = useState<any[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'manage'>('upload');
+  const [currentFeaturedImage, setCurrentFeaturedImage] = useState<string | null>(null);
 
   // redirect if not logged in
   useEffect(() => {
@@ -54,6 +56,7 @@ export default function AdminGalleryUploadPage() {
     setSelectedWedding(weddingId);
     const wedding = weddings.find(w => (w.id || w._id) === weddingId);
     setSelectedWeddingSlug(wedding?.slug || '');
+    setCurrentFeaturedImage(wedding?.featured_image || null);
     if (wedding?.slug) {
       fetchUploadedImages(wedding.slug);
     }
@@ -97,7 +100,7 @@ export default function AdminGalleryUploadPage() {
       );
       
       if (response.ok) {
-        setStatus((s) => `${s}🗑️ Deleted ${imageKey}\n`);
+        setStatus((s) => `${s}Deleted ${imageKey}\n`);
         // Refresh the image list
         if (selectedWeddingSlug) {
           fetchUploadedImages(selectedWeddingSlug);
@@ -106,7 +109,7 @@ export default function AdminGalleryUploadPage() {
         throw new Error('Delete failed');
       }
     } catch (err: any) {
-      setStatus(`❌ ${err.message}`);
+      setStatus(`Error: ${err.message}`);
     }
   };
 
@@ -123,7 +126,7 @@ export default function AdminGalleryUploadPage() {
 
   const handleUpload = async () => {
     if (!token || !files.length || !selectedWeddingSlug) {
-      setStatus('❌ Please select a wedding and files to upload');
+      setStatus('Error: Please select a wedding and files to upload');
       return;
     }
     setUploading(true);
@@ -148,7 +151,7 @@ export default function AdminGalleryUploadPage() {
           throw new Error(errorData.detail || 'Upload failed');
         }
         const result = await res.json();
-        setStatus((s) => `${s}✅ ${file.name} → ${result.key || 'uploaded'}\n`);
+        setStatus((s) => `${s}Uploaded ${file.name} -> ${result.key || 'uploaded'}\n`);
       }
       setFiles([]);
       // Refresh the uploaded images list
@@ -156,7 +159,7 @@ export default function AdminGalleryUploadPage() {
         fetchUploadedImages(selectedWeddingSlug);
       }
     } catch (err: any) {
-      setStatus(`❌ ${err.message}`);
+      setStatus(`Error: ${err.message}`);
     } finally {
       setUploading(false);
     }
@@ -264,10 +267,10 @@ export default function AdminGalleryUploadPage() {
                             }
                           );
                           if (!res.ok) throw new Error('Delete failed');
-                          setStatus((s) => `${s}🗑️ Deleted ${key}\n`);
+                          setStatus((s) => `${s}Deleted ${key}\n`);
                           setFiles((f) => f.filter((_, idx) => idx !== i));
                         } catch (err: any) {
-                          setStatus(`❌ ${err.message}`);
+                          setStatus(`Error: ${err.message}`);
                         }
                       }}
                       className="absolute top-2 right-2 bg-red-600
@@ -324,18 +327,30 @@ export default function AdminGalleryUploadPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                      {uploadedImages.map((image, index) => (
-                        <div key={index} className="relative group">
-                          <div className="aspect-square rounded-lg overflow-hidden shadow-lg bg-gray-100">
-                            <img
-                              src={image.url || image.file_url || '#'}
-                              alt={`Gallery image ${index + 1}`}
-                              className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                              onError={(e) => {
-                                e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlPC90ZXh0Pjwvc3ZnPg==';
-                              }}
-                            />
-                          </div>
+                      {uploadedImages.map((image, index) => {
+                        const isFeatured = currentFeaturedImage === (image.key || image.filename);
+                        return (
+                          <div key={index} className="relative group">
+                            <div className={`aspect-square rounded-lg overflow-hidden shadow-lg bg-gray-100 ${isFeatured ? 'ring-4 ring-purple-600' : ''}`}>
+                              <img
+                                src={image.url || image.file_url || '#'}
+                                alt={`Gallery image ${index + 1}`}
+                                className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                onError={(e) => {
+                                  e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlPC90ZXh0Pjwvc3ZnPg==';
+                                }}
+                              />
+                              {isFeatured && (
+                                <div className="absolute top-0 left-0 right-0 bg-purple-600 text-white text-xs px-2 py-1 text-center">
+                                  <span className="flex items-center justify-center gap-1">
+                                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                    </svg>
+                                    Featured Background
+                                  </span>
+                                </div>
+                              )}
+                            </div>
                           
                           {/* Image Info */}
                           <div className="mt-2">
@@ -361,11 +376,42 @@ export default function AdminGalleryUploadPage() {
                           <button
                             onClick={() => {
                               navigator.clipboard.writeText(image.url || image.file_url || '');
-                              setStatus((s) => `${s}📋 Copied URL for ${image.key}\n`);
+                              setStatus((s) => `${s}Copied URL for ${image.key}\n`);
                             }}
                             className="absolute top-2 left-2 bg-wedding-sage text-white text-xs px-2 py-1 rounded hover:bg-wedding-rose opacity-0 group-hover:opacity-100 transition-opacity"
                           >
                             Copy URL
+                          </button>
+
+                          {/* Set as Featured Button */}
+                          <button
+                            onClick={async () => {
+                              try {
+                                const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+                                const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
+                                  method: 'PUT',
+                                  headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json',
+                                  },
+                                  body: JSON.stringify({
+                                    featured_image: image.key || image.filename
+                                  }),
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error('Failed to set featured image');
+                                }
+
+                                setStatus((s) => `${s}Set ${image.key} as featured background\n`);
+                                setCurrentFeaturedImage(image.key || image.filename);
+                              } catch (err: any) {
+                                setStatus(`Error: ${err.message}`);
+                              }
+                            }}
+                            className="absolute bottom-2 left-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded hover:bg-purple-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            Set as Background
                           </button>
                         </div>
                       ))}
