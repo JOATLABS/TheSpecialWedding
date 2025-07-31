@@ -29,7 +29,7 @@ export default function WeddingDetailsPage() {
       if (!response.ok) throw new Error('Failed to fetch weddings');
       
       const weddings = await response.json();
-      const wedding = weddings.find((w: Wedding) => w.id === weddingId);
+      const wedding = weddings.find((w: any) => (w.id || w._id) === weddingId);
       
       if (wedding) {
         // Initialize default values if not present
