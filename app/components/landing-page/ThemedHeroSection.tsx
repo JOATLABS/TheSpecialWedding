@@ -8,28 +8,53 @@ interface ThemedHeroSectionProps {
 export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding }) => {
   const theme = wedding.theme_config;
   
-  // Fix timezone issues by parsing date components directly
-  const formattedDate = wedding.date ? (() => {
-    // If date is in YYYY-MM-DD format, parse manually to avoid timezone conversion
-    if (wedding.date.includes('-')) {
-      const [year, month, day] = wedding.date.split('-');
-      const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      return dateObj.toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    } else {
-      // For other date formats, use direct parsing
-      return new Date(wedding.date).toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
+  // Format all event dates
+  const formattedDates = (() => {
+    // Collect all unique dates from events
+    const allDates = new Set<string>();
+    
+    // Add main wedding date
+    if (wedding.date) {
+      allDates.add(wedding.date);
+    }
+    
+    // Add event dates
+    if (wedding.events && wedding.events.length > 0) {
+      wedding.events.forEach(event => {
+        if (event.date) {
+          allDates.add(event.date);
+        }
       });
     }
-  })() : '';
+    
+    // Sort dates chronologically
+    const sortedDates = Array.from(allDates).sort();
+    
+    // Format each date
+    const formatted = sortedDates.map(date => {
+      if (date.includes('-')) {
+        const [year, month, day] = date.split('-');
+        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        return dateObj.toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      } else {
+        return new Date(date).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      }
+    });
+    
+    // Join with separator
+    if (formatted.length === 0) return '';
+    if (formatted.length === 1) return formatted[0];
+    if (formatted.length === 2) return formatted.join(' - ');
+    return `${formatted[0]} - ${formatted[formatted.length - 1]}`;
+  })();
 
   return (
     <section className="flex flex-col items-center justify-center text-white text-center py-16 sm:py-24 md:py-32 px-4">
@@ -44,12 +69,12 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding })
           className="w-16 sm:w-24 h-1 mx-auto mt-4 mb-6 drop-shadow-sm"
           style={{ backgroundColor: theme?.secondary_color || '#ffffff' }}
         ></div>
-        {formattedDate && (
+        {formattedDates && (
           <p 
             className="text-base sm:text-lg md:text-xl lg:text-2xl font-light drop-shadow-md"
             style={{ color: theme?.secondary_color || '#ffffff' }}
           >
-            {formattedDate}
+            {formattedDates}
           </p>
         )}
         <div className="mt-8 sm:mt-12">
