@@ -7,6 +7,7 @@ import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
 import { ParallaxSlideshow } from "@/components/landing-page/ParallaxSlideshow";
 import { ThemedHeroSection } from "@/components/landing-page/ThemedHeroSection";
 import { AnchorNav } from "@/components/landing-page/AnchorNav";
+import { EventLocationSection } from "@/components/landing-page/EventLocationSection";
 import { Card } from '@/components/ui/Card';
 import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
@@ -35,7 +36,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       <div className="absolute inset-0 z-10 flex flex-col justify-between">
 
         {/* Nav */}
-        <AnchorNav sections={["rsvp", "gallery", "registry", "faq"]} />
+        <AnchorNav sections={["rsvp", "gallery", "registry", "venue", "faq"]} />
 
         {/* Hero */}
         <ThemedHeroSection wedding={wedding} />
@@ -142,6 +143,12 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               </div>
             )}
           </Card>
+        </SectionWrapper>
+
+        {/* Venue */}
+        <SectionWrapper id="venue">
+          <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Venue</h2>
+          <EventLocationSection wedding={wedding} />
         </SectionWrapper>
 
         {/* FAQ */}
