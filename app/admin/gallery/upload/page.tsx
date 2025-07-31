@@ -74,6 +74,7 @@ export default function AdminGalleryUploadPage() {
       );
       if (response.ok) {
         const data = await response.json();
+        console.log('Fetched images data:', data);
         setUploadedImages(Array.isArray(data) ? data : []);
       } else {
         setUploadedImages([]);
@@ -91,8 +92,10 @@ export default function AdminGalleryUploadPage() {
     
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      console.log('Deleting image with key:', imageKey);
+      
       const response = await fetch(
-        `${baseUrl}/admin/gallery?key=${encodeURIComponent(imageKey)}`,
+        `${baseUrl}/admin/gallery/delete?key=${encodeURIComponent(imageKey)}`,
         {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
@@ -106,9 +109,12 @@ export default function AdminGalleryUploadPage() {
           fetchUploadedImages(selectedWeddingSlug);
         }
       } else {
-        throw new Error('Delete failed');
+        const errorText = await response.text();
+        console.error('Delete failed:', response.status, errorText);
+        throw new Error(`Delete failed: ${response.status}`);
       }
     } catch (err: any) {
+      console.error('Delete error:', err);
       setStatus(`Error: ${err.message}`);
     }
   };
@@ -365,8 +371,11 @@ export default function AdminGalleryUploadPage() {
 
                           {/* Delete Button */}
                           <button
-                            onClick={() => handleDeleteImage(image.key || image.filename)}
-                            className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2 py-1 rounded hover:bg-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => {
+                              console.log('Delete button clicked for:', image.key || image.filename);
+                              handleDeleteImage(image.key || image.filename);
+                            }}
+                            className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2 py-1 rounded hover:bg-red-700 opacity-0 group-hover:opacity-100 transition-opacity z-10"
                           >
                             Delete
                           </button>
@@ -374,10 +383,11 @@ export default function AdminGalleryUploadPage() {
                           {/* Copy URL Button */}
                           <button
                             onClick={() => {
+                              console.log('Copy URL button clicked for:', image.key);
                               navigator.clipboard.writeText(image.url || image.file_url || '');
                               setStatus((s) => `${s}Copied URL for ${image.key}\n`);
                             }}
-                            className="absolute top-2 left-2 bg-wedding-sage text-white text-xs px-2 py-1 rounded hover:bg-wedding-rose opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="absolute top-2 left-2 bg-wedding-sage text-white text-xs px-2 py-1 rounded hover:bg-wedding-rose opacity-0 group-hover:opacity-100 transition-opacity z-10"
                           >
                             Copy URL
                           </button>
@@ -385,6 +395,8 @@ export default function AdminGalleryUploadPage() {
                           {/* Set as Featured Button */}
                           <button
                             onClick={async () => {
+                              console.log('Set as Background clicked for:', image.key || image.filename);
+                              console.log('Selected wedding ID:', selectedWedding);
                               try {
                                 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
                                 const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
@@ -398,17 +410,21 @@ export default function AdminGalleryUploadPage() {
                                   }),
                                 });
 
+                                console.log('Response status:', response.status);
                                 if (!response.ok) {
+                                  const errorText = await response.text();
+                                  console.error('Failed to set featured image:', errorText);
                                   throw new Error('Failed to set featured image');
                                 }
 
                                 setStatus((s) => `${s}Set ${image.key} as featured background\n`);
                                 setCurrentFeaturedImage(image.key || image.filename);
                               } catch (err: any) {
+                                console.error('Error setting featured image:', err);
                                 setStatus(`Error: ${err.message}`);
                               }
                             }}
-                            className="absolute bottom-2 left-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded hover:bg-purple-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="absolute bottom-2 left-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded hover:bg-purple-700 opacity-0 group-hover:opacity-100 transition-opacity z-20"
                           >
                             Set as Background
                           </button>

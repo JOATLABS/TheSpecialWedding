@@ -13,7 +13,8 @@ def get_upload_url(filename: str = Query(...)):
 def get_file_url(key: str = Query(...)):
     return gallery_service.get_file_url(key)
 
-# Admin Delete File Endpoint\@router.delete("/gallery", tags=["Admin"], dependencies=[Depends(require_admin)])
+# Admin Delete File Endpoint
+@router.delete("/gallery/delete", tags=["Admin"], dependencies=[Depends(require_admin)])
 def delete_file(key: str = Query(...)):
     return gallery_service.delete_file(key)
 
