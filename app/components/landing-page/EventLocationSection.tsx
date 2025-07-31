@@ -99,11 +99,10 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
               <select
                 value={selectedEventType}
                 onChange={(e) => setSelectedEventType(e.target.value)}
-                className="w-full px-4 py-2 bg-transparent border-2 rounded-lg font-medium text-lg focus:outline-none focus:ring-2 transition-all"
+                className="w-full px-4 py-2 bg-transparent border-2 rounded-lg font-medium text-lg focus:outline-none focus:ring-2 focus:ring-wedding-rose transition-all"
                 style={{ 
                   borderColor: theme?.primary_color || '#1e3a5f',
-                  color: theme?.primary_color || '#1e3a5f',
-                  focusRingColor: theme?.accent_color || '#c8847e'
+                  color: theme?.primary_color || '#1e3a5f'
                 }}
               >
                 {eventsWithLocation.map((event) => (
