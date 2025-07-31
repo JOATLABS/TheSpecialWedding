@@ -95,7 +95,7 @@ export default function AdminGalleryUploadPage() {
       console.log('Deleting image with key:', imageKey);
       
       const response = await fetch(
-        `${baseUrl}/admin/gallery/delete?key=${encodeURIComponent(imageKey)}`,
+        `${baseUrl}/admin/gallery?key=${encodeURIComponent(imageKey)}`,
         {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
