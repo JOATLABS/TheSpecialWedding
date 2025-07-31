@@ -38,18 +38,19 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
     );
   }
 
-  // Deep parallax effect - background moves slower than scroll
-  const parallaxOffset = scrollY * 0.5;
+  // Deep parallax effect - background moves slower and opposite to scroll
+  // Negative value makes it move down as you scroll down (stays visible longer)
+  const parallaxOffset = scrollY * -0.3;
   
   return (
     <>
       {/* Fixed background container */}
       <div className="fixed inset-0 -z-10 overflow-hidden">
-        {/* Parallax image layer */}
+        {/* Parallax image layer - larger scale to ensure coverage */}
         <div 
-          className="absolute inset-0 scale-110"
+          className="absolute -inset-y-1/2 inset-x-0 scale-150"
           style={{
-            transform: `translateY(${parallaxOffset}px) scale(1.1)`,
+            transform: `translateY(${parallaxOffset}px)`,
             willChange: 'transform'
           }}
         >
