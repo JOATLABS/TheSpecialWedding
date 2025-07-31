@@ -360,7 +360,7 @@ export default function AdminWeddingsPage() {
             ) : (
               <div className="grid gap-6">
                 {weddings.map((wedding) => (
-                  <div key={wedding.id || wedding._id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
+                  <div key={wedding.id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <h3 className="text-xl font-bold text-wedding-navy">{wedding.couple_names}</h3>
@@ -386,7 +386,7 @@ export default function AdminWeddingsPage() {
                       </div>
                       <div className="flex gap-2 ml-4">
                         <Link
-                          href={`/admin/weddings/${wedding.id || wedding._id}`}
+                          href={`/admin/weddings/${wedding.id}`}
                           className="px-4 py-2 text-sm bg-wedding-rose text-white rounded-lg hover:bg-opacity-90 transition-colors"
                         >
                           Configure
@@ -398,7 +398,7 @@ export default function AdminWeddingsPage() {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDelete(wedding.id || wedding._id)}
+                          onClick={() => handleDelete(wedding.id)}
                           className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                         >
                           Delete
