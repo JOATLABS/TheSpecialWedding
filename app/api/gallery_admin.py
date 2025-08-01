@@ -25,12 +25,12 @@ def delete_file(key: str = Query(...)):
 
 # Admin List Files Endpoint
 @router.get("/gallery/list", tags=["Admin"], dependencies=[Depends(require_admin)])
-def list_gallery_files():
+def list_gallery_files(prefix: str = Query("gallery/")):
     """List all uploaded files (admin view)"""
-    return gallery_service.list_uploaded_files()
+    return gallery_service.list_uploaded_files(prefix=prefix)
 
 # Admin Direct Upload Endpoint
 @router.post("/gallery/upload", tags=["Admin"], dependencies=[Depends(require_admin)])
-def upload_file(file: UploadFile = File(...), wedding_slug: str = Form(...)):
+def upload_file(file: UploadFile = File(...), wedding_slug: str = Form(...), folder: str = Form("gallery")):
     """Upload image directly to gallery"""
-    return gallery_service.upload_file_direct(file, wedding_slug)
+    return gallery_service.upload_file_direct(file, wedding_slug, folder)
