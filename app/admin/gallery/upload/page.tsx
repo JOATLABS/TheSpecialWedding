@@ -30,6 +30,7 @@ export default function AdminGalleryUploadPage() {
   const [loadingImages, setLoadingImages] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'manage'>('upload');
   const [currentFeaturedImage, setCurrentFeaturedImage] = useState<string | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string>('gallery');
 
   // redirect if not logged in
   useEffect(() => {
@@ -66,19 +67,26 @@ export default function AdminGalleryUploadPage() {
     setLoadingImages(true);
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(
-        `${baseUrl}/gallery?wedding_slug=${weddingSlug}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
+      
+      // Fetch from all folders
+      const folders = ['gallery', 'our-story', 'wedding-party'];
+      const allImages = [];
+      
+      for (const folder of folders) {
+        const response = await fetch(
+          `${baseUrl}/admin/gallery/list?prefix=${folder}/${weddingSlug}/`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          allImages.push(...(Array.isArray(data) ? data : []));
         }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Fetched images data:', data);
-        setUploadedImages(Array.isArray(data) ? data : []);
-      } else {
-        setUploadedImages([]);
       }
+      
+      console.log('Fetched all images:', allImages);
+      setUploadedImages(allImages);
     } catch (err) {
       console.error('Failed to fetch images:', err);
       setUploadedImages([]);
@@ -142,6 +150,7 @@ export default function AdminGalleryUploadPage() {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('wedding_slug', selectedWeddingSlug);
+        fd.append('folder', selectedFolder);
         
         const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
         const res = await fetch(
@@ -230,6 +239,29 @@ export default function AdminGalleryUploadPage() {
             {activeTab === 'upload' && (
               <Card className="backdrop-blur-sm bg-white/60">
                 <div className="space-y-4 p-6">
+                  {/* Folder Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-wedding-navy mb-2">
+                      Upload to Folder
+                    </label>
+                    <select
+                      value={selectedFolder}
+                      onChange={(e) => setSelectedFolder(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+                    >
+                      <option value="gallery">Public Gallery</option>
+                      <option value="our-story">Our Story</option>
+                      <option value="wedding-party">Wedding Party</option>
+                    </select>
+                    <p className="mt-2 text-sm text-gray-600">
+                      • <strong>Public Gallery</strong>: Photos visible to all guests
+                      <br />
+                      • <strong>Our Story</strong>: Couple photos for the story section
+                      <br />
+                      • <strong>Wedding Party</strong>: Individual member photos
+                    </p>
+                  </div>
+
                   <input
                     type="file"
                     accept="image/*"
@@ -362,11 +394,25 @@ export default function AdminGalleryUploadPage() {
                             <p className="text-xs text-gray-600 truncate">
                               {image.key || image.filename || `image-${index + 1}`}
                             </p>
-                            {image.size && (
-                              <p className="text-xs text-gray-500">
-                                {(image.size / 1024).toFixed(1)} KB
-                              </p>
-                            )}
+                            <div className="flex items-center gap-2 mt-1">
+                              {/* Folder Badge */}
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                image.key?.startsWith('gallery/') ? 'bg-blue-100 text-blue-700' :
+                                image.key?.startsWith('our-story/') ? 'bg-pink-100 text-pink-700' :
+                                image.key?.startsWith('wedding-party/') ? 'bg-purple-100 text-purple-700' :
+                                'bg-gray-100 text-gray-700'
+                              }`}>
+                                {image.key?.startsWith('gallery/') ? 'Gallery' :
+                                 image.key?.startsWith('our-story/') ? 'Our Story' :
+                                 image.key?.startsWith('wedding-party/') ? 'Wedding Party' :
+                                 'Unknown'}
+                              </span>
+                              {image.size && (
+                                <span className="text-xs text-gray-500">
+                                  {(image.size / 1024).toFixed(1)} KB
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {/* Delete Button */}

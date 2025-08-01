@@ -36,3 +36,7 @@ app/api/__pycache__/health.cpython-311.pyc
 *.cpython-311.pyc
 ssh-to-backend.sh
 backend-manager.sh
+backup-mongodb.sh
+start-wedding-backend.sh
+setup-auto-start.sh
+wedding-backend.service
