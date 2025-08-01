@@ -38,6 +38,23 @@ export interface ThemeConfig {
   font_style: 'elegant' | 'modern' | 'classic' | 'playful';
 }
 
+export interface OurStory {
+  text: string;
+  image_url?: string;
+  image_shape?: 'circle' | 'heart' | 'square' | 'hexagon';
+}
+
+export interface WeddingPartyMember {
+  id: string;
+  name: string;
+  role: 'maid_of_honor' | 'bridesmaid' | 'best_man' | 'groomsman' | string;
+  image_url?: string;
+  display_order?: number;
+  side: 'bride' | 'groom';
+  linked_guest_id?: string;
+  linked_guest_email?: string;
+}
+
 export interface Wedding {
   id: string;
   slug: string;
@@ -49,6 +66,8 @@ export interface Wedding {
   faqs?: FAQItem[];
   theme_config?: ThemeConfig;
   featured_image?: string;
+  our_story?: OurStory;
+  wedding_party?: WeddingPartyMember[];
   created_at?: string;
   [key: string]: any; // for flexibility (additional fields)
 }

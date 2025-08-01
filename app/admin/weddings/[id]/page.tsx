@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '../../../contexts/AdminContext';
-import { Wedding, WeddingEvent, RegistryItem, FAQItem } from '@/types/wedding';
+import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember } from '@/types/wedding';
 
 export default function WeddingDetailsPage() {
   const { token } = useAdmin();
@@ -16,7 +16,7 @@ export default function WeddingDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq' | 'theme'>('events');
+  const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq' | 'theme' | 'story'>('events');
 
   useEffect(() => {
     fetchWedding();
@@ -48,7 +48,13 @@ export default function WeddingDetailsPage() {
             accent_color: "#c8847e",
             background_style: "gradient",
             font_style: "elegant"
-          }
+          },
+          our_story: wedding.our_story || {
+            text: "",
+            image_url: "",
+            image_shape: "circle"
+          },
+          wedding_party: wedding.wedding_party || []
         });
       } else {
         setError('Wedding not found');
@@ -224,7 +230,7 @@ export default function WeddingDetailsPage() {
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
           <div className="border-b border-gray-200">
             <nav className="flex">
-              {(['events', 'rsvp', 'registry', 'faq', 'theme'] as const).map((tab) => (
+              {(['events', 'rsvp', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -789,6 +795,216 @@ export default function WeddingDetailsPage() {
                     >
                       Sample Button
                     </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Story & Party Tab */}
+            {activeTab === 'story' && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-wedding-navy mb-4">Story & Wedding Party</h2>
+                
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold text-blue-900 mb-2">📁 Image Organization</h4>
+                  <p className="text-sm text-blue-800 mb-2">
+                    To keep wedding party photos separate from the public gallery, use these folder structures:
+                  </p>
+                  <ul className="text-sm text-blue-700 space-y-1">
+                    <li>• <code className="bg-blue-100 px-1 rounded">gallery/{wedding.slug}/</code> - Public gallery photos</li>
+                    <li>• <code className="bg-blue-100 px-1 rounded">our-story/{wedding.slug}/</code> - Couple photos for story section</li>
+                    <li>• <code className="bg-blue-100 px-1 rounded">wedding-party/{wedding.slug}/</code> - Wedding party member photos</li>
+                  </ul>
+                </div>
+                
+                {/* Our Story Section */}
+                <div className="border border-gray-200 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4">Our Story</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Story Text
+                      </label>
+                      <textarea
+                        value={wedding.our_story?.text || ''}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          our_story: { ...wedding.our_story!, text: e.target.value }
+                        })}
+                        rows={6}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+                        placeholder="Tell your love story..."
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Image Shape
+                      </label>
+                      <select
+                        value={wedding.our_story?.image_shape || 'circle'}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          our_story: { ...wedding.our_story!, image_shape: e.target.value as any }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      >
+                        <option value="circle">Circle</option>
+                        <option value="heart">Heart</option>
+                        <option value="square">Square (Rounded)</option>
+                        <option value="hexagon">Hexagon</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Couple Photo
+                      </label>
+                      <p className="text-sm text-gray-500 mb-2">
+                        Upload to gallery, then use format: our-story/{wedding.slug}/filename.jpg
+                      </p>
+                      <input
+                        type="text"
+                        value={wedding.our_story?.image_url || ''}
+                        onChange={(e) => setWedding({
+                          ...wedding,
+                          our_story: { ...wedding.our_story!, image_url: e.target.value }
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        placeholder="our-story/wedding-slug/image.jpg"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Wedding Party Section */}
+                <div className="border border-gray-200 rounded-lg p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Wedding Party</h3>
+                    <button
+                      onClick={() => {
+                        const newMember: WeddingPartyMember = {
+                          id: Date.now().toString(),
+                          name: '',
+                          role: 'bridesmaid',
+                          side: 'bride',
+                          display_order: wedding.wedding_party?.length || 0
+                        };
+                        setWedding({
+                          ...wedding,
+                          wedding_party: [...(wedding.wedding_party || []), newMember]
+                        });
+                      }}
+                      className="bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90"
+                    >
+                      Add Member
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {wedding.wedding_party?.map((member, index) => (
+                      <div key={member.id} className="border border-gray-200 rounded-lg p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Name
+                            </label>
+                            <input
+                              type="text"
+                              value={member.name}
+                              onChange={(e) => {
+                                const updated = [...wedding.wedding_party!];
+                                updated[index] = { ...member, name: e.target.value };
+                                setWedding({ ...wedding, wedding_party: updated });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              placeholder="John Doe"
+                            />
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Side
+                            </label>
+                            <select
+                              value={member.side}
+                              onChange={(e) => {
+                                const updated = [...wedding.wedding_party!];
+                                updated[index] = { ...member, side: e.target.value as 'bride' | 'groom' };
+                                setWedding({ ...wedding, wedding_party: updated });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            >
+                              <option value="bride">Bride</option>
+                              <option value="groom">Groom</option>
+                            </select>
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Role
+                            </label>
+                            <select
+                              value={member.role}
+                              onChange={(e) => {
+                                const updated = [...wedding.wedding_party!];
+                                updated[index] = { ...member, role: e.target.value };
+                                setWedding({ ...wedding, wedding_party: updated });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            >
+                              <optgroup label="Bride's Side">
+                                <option value="maid_of_honor">Maid of Honor</option>
+                                <option value="bridesmaid">Bridesmaid</option>
+                              </optgroup>
+                              <optgroup label="Groom's Side">
+                                <option value="best_man">Best Man</option>
+                                <option value="groomsman">Groomsman</option>
+                              </optgroup>
+                            </select>
+                          </div>
+                          
+                          <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Photo (optional) - Use format: wedding-party/{wedding.slug}/name.jpg
+                            </label>
+                            <input
+                              type="text"
+                              value={member.image_url || ''}
+                              onChange={(e) => {
+                                const updated = [...wedding.wedding_party!];
+                                updated[index] = { ...member, image_url: e.target.value };
+                                setWedding({ ...wedding, wedding_party: updated });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              placeholder="wedding-party/wedding-slug/member-photo.jpg"
+                            />
+                          </div>
+                          
+                          <div className="flex items-end">
+                            <button
+                              onClick={() => {
+                                setWedding({
+                                  ...wedding,
+                                  wedding_party: wedding.wedding_party!.filter((_, i) => i !== index)
+                                });
+                              }}
+                              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 w-full"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {(!wedding.wedding_party || wedding.wedding_party.length === 0) && (
+                      <p className="text-gray-500 text-center py-8">
+                        No wedding party members added yet. Click "Add Member" to get started.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

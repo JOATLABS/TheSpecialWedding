@@ -8,6 +8,7 @@ import { Modern3DBackground } from "@/components/landing-page/Modern3DBackground
 import { ThemedHeroSection } from "@/components/landing-page/ThemedHeroSection";
 import { AnchorNav } from "@/components/landing-page/AnchorNav";
 import { EventLocationSection } from "@/components/landing-page/EventLocationSection";
+import { OurStorySection } from "@/components/landing-page/OurStorySection";
 import { GlassCard } from '@/components/ui/GlassCard';
 import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
@@ -33,7 +34,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       <div className="relative z-10">
 
         {/* Nav */}
-        <AnchorNav sections={["rsvp", "gallery", "registry", "venue", "faq"]} />
+        <AnchorNav sections={["rsvp", "story", "gallery", "registry", "venue", "faq"]} />
 
         {/* Hero */}
         <ThemedHeroSection wedding={wedding} />
@@ -57,6 +58,11 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               </div>
             </div>
           </GlassCard>
+        </SectionWrapper>
+
+        {/* Our Story & Wedding Party */}
+        <SectionWrapper id="story">
+          <OurStorySection wedding={wedding} />
         </SectionWrapper>
 
         {/* Gallery */}
