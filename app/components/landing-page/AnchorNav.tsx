@@ -11,7 +11,7 @@ export const AnchorNav: React.FC<AnchorNavProps> = ({ sections }) => {
         <a
           key={id}
           href={`#${id}`}
-          className="text-[10px] sm:text-xs md:text-sm lg:text-base hover:underline focus:outline-none focus:ring focus:ring-white"
+          className="text-xs sm:text-sm md:text-base lg:text-lg hover:underline focus:outline-none focus:ring focus:ring-white"
         >
           {id === 'venue' ? (
             <>
