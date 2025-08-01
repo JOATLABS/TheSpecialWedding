@@ -174,42 +174,9 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
       </GlassCard>
 
       <style jsx>{`
-        .heart-shape {
-          width: 192px;
-          height: 192px;
-          position: relative;
-          transform: rotate(-45deg);
-        }
-        
-        .heart-shape::before,
-        .heart-shape::after {
-          content: '';
-          width: 100px;
-          height: 160px;
-          position: absolute;
-          left: 96px;
-          top: 0;
-          background: red;
-          border-radius: 96px 96px 0 0;
-          transform: rotate(-45deg);
-          transform-origin: 0 100%;
-        }
-        
-        .heart-shape::after {
-          left: 0;
-          transform: rotate(45deg);
-          transform-origin: 100% 100%;
-        }
-        
-        .heart-shape img {
-          position: absolute;
-          width: 136px;
-          height: 136px;
-          top: 28px;
-          left: 28px;
-          transform: rotate(45deg);
-          border-radius: 20px;
-          object-fit: cover;
+        .heart-mask {
+          -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M462.3 62.6C407.5 15.9 326 24.3 275.7 76.2L256 96.5l-19.7-20.3C186.1 24.3 104.5 15.9 49.7 62.6c-62.8 53.6-66.1 149.8-9.9 207.9l193.5 199.8c12.5 12.9 32.8 12.9 45.3 0l193.5-199.8c56.3-58.1 53-154.3-9.8-207.9z'/%3E%3C/svg%3E") center/contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M462.3 62.6C407.5 15.9 326 24.3 275.7 76.2L256 96.5l-19.7-20.3C186.1 24.3 104.5 15.9 49.7 62.6c-62.8 53.6-66.1 149.8-9.9 207.9l193.5 199.8c12.5 12.9 32.8 12.9 45.3 0l193.5-199.8c56.3-58.1 53-154.3-9.8-207.9z'/%3E%3C/svg%3E") center/contain no-repeat;
         }
         
         .hexagon-shape {
