@@ -183,7 +183,7 @@ export default function AdminWeddingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
@@ -300,7 +300,7 @@ export default function AdminWeddingsPage() {
                   </div>
 
                   {formData.events.map((event, index) => (
-                    <div key={index} className="flex gap-4 mb-3">
+                    <div key={index} className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-3">
                       <select
                         value={event.type}
                         onChange={(e) => updateEvent(index, 'type', e.target.value)}
@@ -324,7 +324,7 @@ export default function AdminWeddingsPage() {
                       <button
                         type="button"
                         onClick={() => removeEvent(index)}
-                        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors self-start sm:self-auto"
                       >
                         Remove
                       </button>

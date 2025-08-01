@@ -175,7 +175,7 @@ export default function AdminImportPage() {
   };
 
   return (
-    <div className="min-h-screen bg-wedding-ivory p-6">
+    <div className="min-h-screen bg-wedding-ivory p-4 sm:p-6">
       <div className="max-w-4xl mx-auto space-y-8">
         {/* === IMPORT FORM CARD === */}
         <Card className="overflow-hidden">
@@ -187,9 +187,9 @@ export default function AdminImportPage() {
             </p>
           </div>
 
-          <div className="p-8 space-y-8">
+          <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
             {/* CSV Format Documentation */}
-            <div className="p-6 bg-wedding-ivory rounded-xl border border-wedding-sage">
+            <div className="p-4 sm:p-6 bg-wedding-ivory rounded-xl border border-wedding-sage">
               <h2 className="text-lg font-semibold text-wedding-navy mb-3">
                 CSV Format Requirements
               </h2>
@@ -272,7 +272,7 @@ export default function AdminImportPage() {
                 </div>
               )}
               {result && (
-                <div className="p-6 bg-green-50 border border-green-200 rounded-lg">
+                <div className="p-4 sm:p-6 bg-green-50 border border-green-200 rounded-lg">
                   {/* … */}
                 </div>
               )}
@@ -308,7 +308,7 @@ export default function AdminImportPage() {
               </p>
             </div>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               {loadingGuests ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
@@ -320,90 +320,145 @@ export default function AdminImportPage() {
                   <p className="text-sm mt-2">Import a CSV file to get started.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Name
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Contact
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Role
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Plus Ones
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Token
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {guests.map((guest) => (
-                        <tr key={guest.id || guest._id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{guest.name}</div>
+                <>
+                  {/* Mobile Card View */}
+                  <div className="md:hidden space-y-4">
+                    {guests.map((guest) => (
+                      <div key={guest.id || guest._id} className="bg-gray-50 rounded-lg p-4 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{guest.name}</h3>
                             {guest.group_id && (
-                              <div className="text-xs text-gray-500">Group: {guest.group_id}</div>
+                              <p className="text-xs text-gray-500">Group: {guest.group_id}</p>
                             )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {guest.email && <div>{guest.email}</div>}
-                              {guest.phone && <div>{guest.phone}</div>}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                              {guest.role}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          </div>
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                            {guest.role}
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-1 text-sm">
+                          {guest.email && <div className="text-gray-600">📧 {guest.email}</div>}
+                          {guest.phone && <div className="text-gray-600">📱 {guest.phone}</div>}
+                        </div>
+                        
+                        <div className="flex justify-between items-center">
+                          <div className="text-sm">
                             {guest.plus_one_allowed ? (
                               <div>
-                                <span className="text-green-600">✓ Allowed</span>
-                                <div className="text-xs text-gray-500">
-                                  Max: {guest.number_of_plus_ones_allowed || 0}
-                                </div>
+                                <span className="text-green-600">✓ Plus one allowed</span>
+                                <span className="text-xs text-gray-500 ml-1">(Max: {guest.number_of_plus_ones_allowed || 0})</span>
                                 {guest.plus_one_submitted && (
-                                  <div className="text-xs text-blue-600">Submitted</div>
+                                  <span className="text-xs text-blue-600 ml-1">• Submitted</span>
                                 )}
                               </div>
                             ) : (
-                              <span className="text-gray-400">Not allowed</span>
+                              <span className="text-gray-400">No plus one</span>
                             )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                              {guest.token}
-                            </code>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button
-                              onClick={() => handleDeleteGuest(guest.id || guest._id || '')}
-                              className="text-red-600 hover:text-red-900 transition-colors"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteGuest(guest.id || guest._id || '')}
+                            className="text-red-600 hover:text-red-900 transition-colors text-sm font-medium"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                        
+                        <div className="pt-2 border-t border-gray-200">
+                          <code className="text-xs bg-gray-200 px-2 py-1 rounded">
+                            {guest.token}
+                          </code>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-                  <div className="mt-4 flex justify-between items-center text-sm text-gray-600">
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Name
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Contact
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Role
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Plus Ones
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Token
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {guests.map((guest) => (
+                          <tr key={guest.id || guest._id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{guest.name}</div>
+                              {guest.group_id && (
+                                <div className="text-xs text-gray-500">Group: {guest.group_id}</div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                {guest.email && <div>{guest.email}</div>}
+                                {guest.phone && <div>{guest.phone}</div>}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                {guest.role}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {guest.plus_one_allowed ? (
+                                <div>
+                                  <span className="text-green-600">✓ Allowed</span>
+                                  <div className="text-xs text-gray-500">
+                                    Max: {guest.number_of_plus_ones_allowed || 0}
+                                  </div>
+                                  {guest.plus_one_submitted && (
+                                    <div className="text-xs text-blue-600">Submitted</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">Not allowed</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                                {guest.token}
+                              </code>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                              <button
+                                onClick={() => handleDeleteGuest(guest.id || guest._id || '')}
+                                className="text-red-600 hover:text-red-900 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-4 flex flex-col sm:flex-row sm:justify-between items-center text-sm text-gray-600 gap-2">
                     <span>Total guests: {guests.length}</span>
                     <span>
                       Plus one eligible: {guests.filter(g => g.plus_one_allowed).length}
                     </span>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
