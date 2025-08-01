@@ -37,6 +37,21 @@ class ThemeConfigModel(BaseModel):
     background_style: str = Field(default="gradient", description="Background style: gradient, solid, or image")
     font_style: str = Field(default="elegant", description="Font style: elegant, modern, classic, or playful")
 
+class OurStoryModel(BaseModel):
+    text: str = Field(..., description="Our story text/paragraph")
+    image_url: Optional[str] = Field(None, description="S3 key for couple photo")
+    image_shape: str = Field(default="circle", description="Image shape: circle, heart, square, or hexagon")
+
+class WeddingPartyMemberModel(BaseModel):
+    id: str = Field(..., description="Unique identifier for the wedding party member")
+    name: str = Field(..., description="Full name of the wedding party member")
+    role: str = Field(..., description="Role: maid_of_honor, bridesmaid, best_man, groomsman, or custom")
+    image_url: Optional[str] = Field(None, description="S3 key for member photo")
+    display_order: Optional[int] = Field(default=0, description="Display order within their role group")
+    side: str = Field(..., description="bride or groom")
+    linked_guest_id: Optional[str] = Field(None, description="ID of linked guest if applicable")
+    linked_guest_email: Optional[str] = Field(None, description="Email of linked guest for matching")
+
 class WeddingModel(BaseModel):
     id: str = Field(..., alias="_id")
     couple_names: str = Field(..., min_length=3, max_length=200)
@@ -48,6 +63,8 @@ class WeddingModel(BaseModel):
     faqs: List[FAQItemModel] = Field(default_factory=list)
     theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)
     featured_image: Optional[str] = Field(None, description="S3 key for the featured background image")
+    our_story: Optional[OurStoryModel] = Field(None, description="Our story content and image")
+    wedding_party: List[WeddingPartyMemberModel] = Field(default_factory=list, description="Wedding party members")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:

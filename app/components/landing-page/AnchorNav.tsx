@@ -13,7 +13,7 @@ export const AnchorNav: React.FC<AnchorNavProps> = ({ sections }) => {
           href={`#${id}`}
           className="text-sm md:text-base hover:underline focus:outline-none focus:ring focus:ring-white"
         >
-          {id === 'venue' ? 'WEDDING DETAILS' : id.replace(/-/g, ' ').toUpperCase()}
+          {id === 'venue' ? 'WEDDING DETAILS' : id === 'story' ? 'OUR STORY' : id.replace(/-/g, ' ').toUpperCase()}
         </a>
       ))}
     </nav>
