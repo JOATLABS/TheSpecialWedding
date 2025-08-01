@@ -190,7 +190,7 @@ export default function WeddingDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
@@ -274,7 +274,7 @@ export default function WeddingDetailsPage() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Event Type
@@ -476,7 +476,7 @@ export default function WeddingDetailsPage() {
 
                 {(wedding.registries || []).map((registry, index) => (
                   <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Registry Name
