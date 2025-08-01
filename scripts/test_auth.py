@@ -11,7 +11,7 @@ def test_auth(base_url="http://localhost:8000"):
     # Test login
     print("Testing login...")
     login_data = {
-        "email": "emmanuel.t.akinwale@gmail.com",
+        "email": "test-email",
         "password": "change-me-in-production"  # Use your actual test credentials
     }
     
