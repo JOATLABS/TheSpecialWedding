@@ -6,5 +6,7 @@ python-multipart
 python-jose[cryptography]
 passlib[bcrypt]
 twilio
+telnyx
 boto3
 qrcode[pil]
+requests

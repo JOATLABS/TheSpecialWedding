@@ -108,6 +108,26 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         {errors.phone && <p className="text-red-500 text-sm mt-1">Enter a valid phone number</p>}
       </div>
 
+      {/* SMS Opt-in */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <label className="flex items-start space-x-3">
+          <input 
+            type="checkbox" 
+            {...register('sms_opt_in')} 
+            className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose" 
+          />
+          <div className="flex-1">
+            <span className="block font-medium text-gray-700">
+              📱 Send me SMS reminders
+            </span>
+            <span className="block text-sm text-gray-600 mt-1">
+              Get helpful reminders about the wedding date, venue details, and any updates. 
+              You can opt out anytime by replying STOP.
+            </span>
+          </div>
+        </label>
+      </div>
+
       {guest.plus_one_allowed && (
         <div className="border-t pt-6 mt-6">
           <h2 className="text-lg font-semibold text-gray-700 mb-4">Plus One Information</h2>
