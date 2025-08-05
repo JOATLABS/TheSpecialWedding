@@ -194,23 +194,23 @@ export default function WeddingDetailsPage() {
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
-          <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
-            <div className="flex justify-between items-center">
+          <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-white">{wedding.couple_names}</h1>
-                <p className="text-blue-100 mt-2">Configure wedding details and content</p>
+                <h1 className="text-xl sm:text-3xl font-bold text-white break-words">{wedding.couple_names}</h1>
+                <p className="text-blue-100 mt-1 sm:mt-2 text-sm sm:text-base">Configure wedding details and content</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
                 <Link
                   href="/admin/weddings"
-                  className="bg-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition-colors"
+                  className="bg-white/20 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-white/30 transition-colors text-sm sm:text-base flex-1 sm:flex-initial text-center"
                 >
                   Back
                 </Link>
                 <button
                   onClick={saveWedding}
                   disabled={saving}
-                  className="bg-white text-wedding-navy px-6 py-3 rounded-lg font-semibold hover:bg-wedding-ivory transition-colors disabled:opacity-50"
+                  className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-wedding-ivory transition-colors disabled:opacity-50 text-sm sm:text-base flex-1 sm:flex-initial"
                 >
                   {saving ? 'Saving...' : 'Save Changes'}
                 </button>
@@ -229,24 +229,24 @@ export default function WeddingDetailsPage() {
         {/* Tabs */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
           <div className="border-b border-gray-200">
-            <nav className="flex">
+            <nav className="flex overflow-x-auto scrollbar-hide">
               {(['events', 'rsvp', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-4 text-sm font-medium capitalize ${
+                  className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium capitalize whitespace-nowrap ${
                     activeTab === tab
                       ? 'text-wedding-navy border-b-2 border-wedding-rose'
                       : 'text-gray-600 hover:text-wedding-navy'
                   }`}
                 >
-                  {tab === 'rsvp' ? 'RSVP Settings' : tab === 'faq' ? 'FAQ' : tab}
+                  {tab === 'rsvp' ? 'RSVP' : tab === 'faq' ? 'FAQ' : tab === 'story' ? 'Story' : tab}
                 </button>
               ))}
             </nav>
           </div>
 
-          <div className="p-8">
+          <div className="p-4 sm:p-8">
             {/* Events Tab */}
             {activeTab === 'events' && (
               <div className="space-y-6">
@@ -274,7 +274,7 @@ export default function WeddingDetailsPage() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Event Type
@@ -336,7 +336,7 @@ export default function WeddingDetailsPage() {
                         />
                       </div>
 
-                      <div className="col-span-2">
+                      <div className="lg:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Location/Address
                         </label>
@@ -352,7 +352,7 @@ export default function WeddingDetailsPage() {
                         />
                       </div>
 
-                      <div className="col-span-2">
+                      <div className="lg:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Dress Code/Attire
                         </label>
