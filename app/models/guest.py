@@ -15,6 +15,9 @@ class GuestModel(BaseModel):
     plus_one_allowed: Optional[bool] = Field(default=False)
     number_of_plus_ones_allowed: Optional[int] = Field(default=0, ge=0, le=10)
     plus_one_submitted: Optional[bool] = Field(default=False)
+    sms_opt_in: Optional[bool] = Field(default=False, description="Guest opted in to receive SMS reminders")
+    sms_opt_in_date: Optional[datetime] = Field(None, description="When guest opted in to SMS")
+    sms_opt_out_date: Optional[datetime] = Field(None, description="When guest opted out of SMS")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

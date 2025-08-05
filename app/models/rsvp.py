@@ -25,6 +25,7 @@ class RSVPModel(BaseModel):
     attending: List[str] = Field(..., example=["traditional", "reception"])
     dietary: Optional[str] = Field(None, max_length=250)
     phone: Optional[str] = None
+    sms_opt_in: Optional[bool] = Field(default=False, description="Opt-in to receive SMS reminders")
     plus_one: Optional[PlusOneInputModel] = None
 
     @field_validator("attending")

@@ -29,7 +29,17 @@ class RSVPService:
                 upsert=True
             )
 
-            update_data = {"phone": rsvp_data.phone, "updated_at": mongo.client.server_info()['localTime']}
+            update_data = {
+                "phone": rsvp_data.phone, 
+                "updated_at": mongo.client.server_info()['localTime']
+            }
+            
+            # Handle SMS opt-in
+            if hasattr(rsvp_data, 'sms_opt_in'):
+                update_data["sms_opt_in"] = rsvp_data.sms_opt_in
+                if rsvp_data.sms_opt_in:
+                    update_data["sms_opt_in_date"] = mongo.client.server_info()['localTime']
+            
             self.guest_collection.update_one(
                 {"_id": guest_id},
                 {"$set": update_data}

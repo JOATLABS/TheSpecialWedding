@@ -22,7 +22,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
     : images.length > 0 ? images[0].url : undefined;
 
   return (
-    <main className="relative w-full">
+    <>
+      <main className="relative w-full">
       {/* Modern 3D Background */}
       <Modern3DBackground 
         imageUrl={featuredImage}
@@ -203,5 +204,24 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
       </div>
     </main>
+    
+    {/* Footer */}
+    <footer className="bg-black bg-opacity-40 backdrop-blur-sm text-white py-6 mt-12">
+      <div className="max-w-4xl mx-auto px-6 text-center">
+        <div className="mb-3">
+          <p className="text-lg font-semibold">TheSpecialWedding</p>
+        </div>
+        <div className="text-sm text-gray-300">
+          <p>Developed by Emmanuel Akinwale</p>
+          <a 
+            href="mailto:thedeveloper@thespecialwedding.com" 
+            className="hover:text-white transition-colors"
+          >
+            thedeveloper@thespecialwedding.com
+          </a>
+        </div>
+      </div>
+    </footer>
+    </>
   );
 };

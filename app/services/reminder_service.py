@@ -59,7 +59,9 @@ class ReminderService:
                 rsvp = self.rsvp_collection.find_one({"guest_id": guest["_id"]})
                 if rsvp and event_type in rsvp.get("attending", []):
                     phone = guest.get("phone")
-                    if phone:
+                    # Check if guest has opted in for SMS reminders
+                    sms_opt_in = guest.get("sms_opt_in", False)
+                    if phone and sms_opt_in:
                         status = self._send_sms(phone, message)
                         logs.append(self._log(
                             phone,
