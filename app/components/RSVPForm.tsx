@@ -108,24 +108,62 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         {errors.phone && <p className="text-red-500 text-sm mt-1">Enter a valid phone number</p>}
       </div>
 
-      {/* SMS Opt-in */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <label className="flex items-start space-x-3">
+      {/* SMS Opt-in - Compliant with Toll-Free Requirements */}
+      <div className="border border-gray-300 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-700 mb-3">SMS Notifications</h3>
+        
+        <label className="flex items-start space-x-3 mb-4">
           <input 
             type="checkbox" 
-            {...register('sms_opt_in')} 
+            {...register('sms_opt_in')}
+            defaultChecked={false}
             className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose" 
           />
           <div className="flex-1">
             <span className="block font-medium text-gray-700">
-              📱 Send me SMS reminders
+              Receive wedding reminders and updates from {wedding.couple_names || 'the couple'}
             </span>
             <span className="block text-sm text-gray-600 mt-1">
-              Get helpful reminders about the wedding date, venue details, and any updates. 
-              You can opt out anytime by replying STOP.
+              Important reminders about wedding events, venue details, and schedule updates
             </span>
           </div>
         </label>
+
+        <div className="bg-gray-50 p-3 rounded text-xs text-gray-600 leading-relaxed">
+          <p className="mb-2">
+            <strong>By checking the box above, you consent to receive automated text messages from {wedding.couple_names || 'this wedding'}.</strong>
+          </p>
+          <p className="mb-2">
+            Reply STOP to opt out. Reply HELP for help. Standard message and data rates may apply. 
+            Message frequency may vary. Consent is not a condition of attending the wedding.
+          </p>
+          <p>
+            <a 
+              href="#" 
+              onClick={(e) => {
+                e.preventDefault();
+                window.open(window.location.origin + '/' + wedding.slug + '#footer', '_blank');
+              }}
+              className="text-wedding-rose hover:underline"
+            >
+              Terms & Conditions
+            </a>
+            {' | '}
+            <a 
+              href="#" 
+              onClick={(e) => {
+                e.preventDefault();
+                window.open(window.location.origin + '/' + wedding.slug + '#footer', '_blank');
+              }}
+              className="text-wedding-rose hover:underline"
+            >
+              Privacy Policy
+            </a>
+          </p>
+          <p className="mt-2 font-medium">
+            We will not share or sell your mobile information with third parties.
+          </p>
+        </div>
       </div>
 
       {guest.plus_one_allowed && (
