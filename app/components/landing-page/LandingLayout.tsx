@@ -1,6 +1,6 @@
 'use client';
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 
 import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
@@ -12,9 +12,13 @@ import { OurStorySection } from "@/components/landing-page/OurStorySection";
 import { GlassCard } from '@/components/ui/GlassCard';
 import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
+import TermsModal from '@/components/TermsModal';
+import PrivacyModal from '@/components/PrivacyModal';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   const theme = useTheme(wedding);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
   
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image 
@@ -211,6 +215,24 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         <div className="mb-3">
           <p className="text-lg font-semibold">TheSpecialWedding</p>
         </div>
+        
+        {/* Legal Links */}
+        <div className="mb-4">
+          <button 
+            onClick={() => setShowTerms(true)}
+            className="text-gray-300 hover:text-white transition-colors mx-3 underline"
+          >
+            Terms of Service
+          </button>
+          <span className="text-gray-500">|</span>
+          <button 
+            onClick={() => setShowPrivacy(true)}
+            className="text-gray-300 hover:text-white transition-colors mx-3 underline"
+          >
+            Privacy Policy
+          </button>
+        </div>
+        
         <div className="text-sm text-gray-300">
           <p>Developed by Emmanuel Akinwale</p>
           <a 
@@ -222,6 +244,18 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         </div>
       </div>
     </footer>
+    
+    {/* Modals */}
+    <TermsModal 
+      isOpen={showTerms} 
+      onClose={() => setShowTerms(false)} 
+      weddingName={wedding.couple_names}
+    />
+    <PrivacyModal 
+      isOpen={showPrivacy} 
+      onClose={() => setShowPrivacy(false)} 
+      weddingName={wedding.couple_names}
+    />
     </>
   );
 };
