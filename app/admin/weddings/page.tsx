@@ -361,12 +361,12 @@ export default function AdminWeddingsPage() {
             ) : (
               <div className="grid gap-6">
                 {weddings.map((wedding) => (
-                  <div key={wedding._id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
-                    <div className="flex justify-between items-start">
+                  <div key={wedding._id} className="border border-gray-200 rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
+                    <div className="flex flex-col space-y-4">
                       <div className="flex-1">
-                        <h3 className="text-xl font-bold text-wedding-navy">{wedding.couple_names}</h3>
-                        <p className="text-gray-600 mt-1">Date: {wedding.date}</p>
-                        <p className="text-sm text-gray-500 mt-1">
+                        <h3 className="text-lg sm:text-xl font-bold text-wedding-navy">{wedding.couple_names}</h3>
+                        <p className="text-gray-600 mt-1 text-sm sm:text-base">Date: {wedding.date}</p>
+                        <p className="text-xs sm:text-sm text-gray-500 mt-1 break-all">
                           URL: thespecialwedding.com/{wedding.slug}
                         </p>
                         {wedding.events && wedding.events.length > 0 && (
@@ -376,7 +376,7 @@ export default function AdminWeddingsPage() {
                               {wedding.events.map((event, index) => (
                                 <span 
                                   key={index}
-                                  className="inline-flex px-3 py-1 text-xs font-semibold rounded-full bg-wedding-sage bg-opacity-20 text-wedding-navy"
+                                  className="inline-flex px-2 sm:px-3 py-1 text-xs font-semibold rounded-full bg-wedding-sage bg-opacity-20 text-wedding-navy"
                                 >
                                   {event.type.replace('_', ' ')} - {event.date}
                                 </span>
@@ -385,22 +385,22 @@ export default function AdminWeddingsPage() {
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-2 ml-4">
+                      <div className="flex flex-col sm:flex-row gap-2 w-full">
                         <Link
                           href={`/admin/weddings/${wedding._id}`}
-                          className="px-4 py-2 text-sm bg-wedding-rose text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                          className="w-full sm:w-auto px-4 py-2 text-sm bg-wedding-rose text-white rounded-lg hover:bg-opacity-90 transition-colors text-center"
                         >
                           Configure
                         </Link>
                         <button
                           onClick={() => handleEdit(wedding)}
-                          className="px-4 py-2 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                          className="w-full sm:w-auto px-4 py-2 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 transition-colors"
                         >
                           Edit
                         </button>
                         <button
                           onClick={() => handleDelete(wedding._id)}
-                          className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                          className="w-full sm:w-auto px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                         >
                           Delete
                         </button>

@@ -65,6 +65,7 @@ class WeddingModel(BaseModel):
     featured_image: Optional[str] = Field(None, description="S3 key for the featured background image")
     our_story: Optional[OurStoryModel] = Field(None, description="Our story content and image")
     wedding_party: List[WeddingPartyMemberModel] = Field(default_factory=list, description="Wedding party members")
+    reminder_from_email: Optional[str] = Field(None, description="Custom from email for reminders (e.g., couple@example.com)")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:
