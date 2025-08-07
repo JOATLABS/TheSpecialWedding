@@ -14,6 +14,7 @@ from app.api.admin_rsvp import router as admin_rsvp_router
 from app.api.admin_auth import router as auth_router
 from app.api.reminder import router as reminder_router
 from app.api.reminder_telnyx import router as reminder_telnyx_router
+from app.api.email_reminders import router as email_reminder_router
 from app.api.checkin import router as checkin_router
 from app.api.gallery_public import router as gallery_public_router
 from app.api.gallery_admin import router as gallery_admin_router
@@ -62,6 +63,7 @@ app.include_router(guest_router, prefix="/admin")  # Admin guest endpoints (list
 app.include_router(admin_rsvp_router, prefix="/admin")
 app.include_router(reminder_router, prefix="/admin")
 app.include_router(reminder_telnyx_router, prefix="/admin")  # Telnyx SMS endpoints
+app.include_router(email_reminder_router, prefix="/admin")  # Email endpoints
 app.include_router(checkin_router, prefix="/admin")
 app.include_router(gallery_admin_router, prefix="/admin")  # Admin gallery endpoints (upload, delete)
 app.include_router(wedding_router, prefix="/admin")  # Admin wedding endpoints (create, update, delete)
