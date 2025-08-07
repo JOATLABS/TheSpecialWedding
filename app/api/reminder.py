@@ -18,6 +18,14 @@ def send_reminder(event_type: str, message: str, target_group: str):
 def get_logs():
     return reminder_service.get_logs()
 
+@router.get("/reminders/sms-callback", tags=["Webhooks"])
+async def verify_sms_callback():
+    """
+    Handle GET requests for webhook verification
+    Returns 200 OK to confirm the endpoint is active
+    """
+    return {"status": "ok", "message": "SMS webhook endpoint active"}
+
 @router.post("/reminders/sms-callback", tags=["Webhooks"])
 async def handle_sms_callback(request: Request):
     """
