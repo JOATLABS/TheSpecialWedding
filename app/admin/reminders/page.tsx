@@ -28,13 +28,17 @@ interface Guest {
 }
 
 interface MessageLog {
-  phone: string;
+  phone?: string;
+  to?: string;  // For email logs
   guest_id: string;
-  message: string;
+  message?: string;
+  subject?: string;  // For email logs
   target_type: 'guest' | 'plus-one';
-  event_type: string;
+  event_type?: string;
+  email_type?: string;  // For email logs
   status: string;
   sent_at: string;
+  provider?: 'twilio' | 'telnyx' | 'resend';  // Track which service was used
 }
 
 export default function AdminRemindersPage() {
@@ -47,6 +51,11 @@ export default function AdminRemindersPage() {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'invites' | 'reminders' | 'individual' | 'history'>('invites');
+  const [channel, setChannel] = useState<'sms' | 'email' | 'both'>('sms');
+  const [emailSubject, setEmailSubject] = useState<string>('');
+  const [emailHtml, setEmailHtml] = useState<string>('');
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState<string>('');
 
   // Form states
   const [eventType, setEventType] = useState<string>('traditional');
@@ -109,17 +118,27 @@ export default function AdminRemindersPage() {
     
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/reminders/logs`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
       
-      if (!response.ok) {
-        console.error('Failed to fetch message history:', response.status);
-        return;
-      }
+      // Fetch both SMS and Email logs
+      const [smsResponse, emailResponse] = await Promise.all([
+        fetch(`${baseUrl}/admin/reminders/logs`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+        fetch(`${baseUrl}/admin/email/logs?limit=100`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        })
+      ]);
       
-      const data = await response.json();
-      setMessageHistory(Array.isArray(data) ? data : []);
+      const smsData = smsResponse.ok ? await smsResponse.json() : [];
+      const emailData = emailResponse.ok ? await emailResponse.json() : { logs: [] };
+      
+      // Combine and sort by date
+      const combined = [
+        ...(Array.isArray(smsData) ? smsData : []),
+        ...(Array.isArray(emailData.logs) ? emailData.logs : [])
+      ].sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime());
+      
+      setMessageHistory(combined);
     } catch (err) {
       console.error('Failed to load message history:', err);
     }
@@ -143,25 +162,53 @@ export default function AdminRemindersPage() {
 
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/admin/reminders/send-personalized-links`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          slug: selectedWeddingData.slug,
-          custom_message: inviteMessage.trim() || null
-        }),
-      });
+      let totalSent = 0;
+      let totalFailed = 0;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to send invites');
+      // Send SMS invites
+      if (channel === 'sms' || channel === 'both') {
+        const response = await fetch(`${baseUrl}/admin/admin/reminders/send-personalized-links`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            slug: selectedWeddingData.slug,
+            custom_message: inviteMessage.trim() || null
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          totalSent += result.sent || 0;
+        }
       }
 
-      const result = await response.json();
-      setSuccess(`Successfully sent ${result.sent} invite links!`);
+      // Send Email invites
+      if (channel === 'email' || channel === 'both') {
+        const response = await fetch(`${baseUrl}/admin/email/send-invites`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            wedding_slug: selectedWeddingData.slug,
+            custom_subject: emailSubject || null,
+            custom_html: emailHtml || null
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          totalSent += result.sent || 0;
+          totalFailed += result.failed || 0;
+        }
+      }
+
+      const channelText = channel === 'both' ? 'SMS and email' : channel;
+      setSuccess(`Successfully sent ${totalSent} invites via ${channelText}!${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`);
       fetchMessageHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send invites');
@@ -171,7 +218,18 @@ export default function AdminRemindersPage() {
   };
 
   const handleSendEventReminder = async () => {
-    if (!customMessage.trim()) {
+    if (!selectedWedding) {
+      setError('Please select a wedding');
+      return;
+    }
+
+    const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
+    if (!selectedWeddingData?.slug) {
+      setError('Wedding slug not found');
+      return;
+    }
+
+    if (!customMessage.trim() && channel !== 'email') {
       setError('Please enter a message');
       return;
     }
@@ -181,31 +239,63 @@ export default function AdminRemindersPage() {
     setSuccess('');
 
     try {
-      const params = new URLSearchParams({
-        event_type: eventType,
-        message: customMessage,
-        target_group: targetGroup,
-      });
-
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/reminders/send?${params}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      let totalSent = 0;
+      let totalFailed = 0;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to send reminders');
+      // Send SMS reminders
+      if (channel === 'sms' || channel === 'both') {
+        const params = new URLSearchParams({
+          event_type: eventType,
+          message: customMessage,
+          target_group: targetGroup,
+        });
+
+        const response = await fetch(`${baseUrl}/admin/reminders/send?${params}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          totalSent += result.sent || 0;
+        }
       }
 
-      const result = await response.json();
-      if (result.sent === 0) {
+      // Send Email reminders
+      if (channel === 'email' || channel === 'both') {
+        const response = await fetch(`${baseUrl}/admin/email/send-reminders`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            wedding_slug: selectedWeddingData.slug,
+            event_type: eventType,
+            custom_subject: emailSubject || null,
+            custom_html: emailHtml || customMessage || null,
+            target_group: targetGroup
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          totalSent += result.sent || 0;
+          totalFailed += result.failed || 0;
+        }
+      }
+
+      if (totalSent === 0) {
         setError('No reminders sent. Make sure guests have RSVP\'d for the selected event type.');
       } else {
-        setSuccess(`Successfully sent ${result.sent} reminders!`);
+        const channelText = channel === 'both' ? 'SMS and email' : channel;
+        setSuccess(`Successfully sent ${totalSent} reminders via ${channelText}!${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`);
         setCustomMessage('');
+        setEmailSubject('');
+        setEmailHtml('');
         fetchMessageHistory();
       }
     } catch (err) {
@@ -257,6 +347,10 @@ export default function AdminRemindersPage() {
 
   const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
   const guestsWithPhone = guests.filter(g => g.phone && g.phone.trim() !== '');
+  const guestsWithEmail = guests.filter(g => g.email && g.email.trim() !== '');
+  const guestsWithPhoneOrEmail = guests.filter(g => 
+    (g.phone && g.phone.trim() !== '') || (g.email && g.email.trim() !== '')
+  );
   console.log('All guests:', guests);
   console.log('Guests with phone:', guestsWithPhone);
   console.log('Selected wedding:', selectedWedding);
@@ -268,29 +362,71 @@ export default function AdminRemindersPage() {
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
           <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
-            <h1 className="text-3xl font-bold text-white">SMS Reminders & Invites</h1>
-            <p className="text-blue-100 mt-2">Send invitations and reminders via SMS using Twilio</p>
+            <h1 className="text-3xl font-bold text-white">Reminders & Invites</h1>
+            <p className="text-blue-100 mt-2">Send invitations and reminders via SMS or Email</p>
           </div>
         </div>
 
-        {/* Wedding Selection */}
+        {/* Wedding Selection and Channel */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 mb-2">
-            Select Wedding
-          </label>
-          <select
-            id="wedding"
-            value={selectedWedding}
-            onChange={(e) => setSelectedWedding(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-          >
-            <option value="">Choose a wedding...</option>
-            {weddings.map((wedding) => (
-              <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                {wedding.couple_names} - {wedding.date}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 mb-2">
+                Select Wedding
+              </label>
+              <select
+                id="wedding"
+                value={selectedWedding}
+                onChange={(e) => setSelectedWedding(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+              >
+                <option value="">Choose a wedding...</option>
+                {weddings.map((wedding) => (
+                  <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
+                    {wedding.couple_names} - {wedding.date}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Communication Channel
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    value="sms"
+                    checked={channel === 'sms'}
+                    onChange={(e) => setChannel(e.target.value as 'sms' | 'email' | 'both')}
+                    className="mr-2"
+                  />
+                  <span>SMS</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    value="email"
+                    checked={channel === 'email'}
+                    onChange={(e) => setChannel(e.target.value as 'sms' | 'email' | 'both')}
+                    className="mr-2"
+                  />
+                  <span>Email</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    value="both"
+                    checked={channel === 'both'}
+                    onChange={(e) => setChannel(e.target.value as 'sms' | 'email' | 'both')}
+                    className="mr-2"
+                  />
+                  <span>Both</span>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Status Messages */}
@@ -361,42 +497,134 @@ export default function AdminRemindersPage() {
                   <p className="text-wedding-navy">{selectedWeddingData?.couple_names}</p>
                   <p className="text-sm text-gray-600">Date: {selectedWeddingData?.date}</p>
                   <p className="text-sm text-gray-600">Slug: {selectedWeddingData?.slug}</p>
-                  <p className="text-sm text-gray-600">Guests with phone numbers: {guestsWithPhone.length}</p>
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm text-gray-600">
+                      Guests with phone numbers: {guestsWithPhone.length}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Guests with email addresses: {guestsWithEmail.length}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Total reachable guests: {guestsWithPhoneOrEmail.length}
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Custom Invitation Message (Optional)
-                  </label>
-                  <textarea
-                    value={inviteMessage}
-                    onChange={(e) => setInviteMessage(e.target.value)}
-                    placeholder="Enter custom invitation message..."
-                    rows={3}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-                  />
-                  <p className="text-sm text-gray-500 mt-1">
-                    Use {"{url}"} for the RSVP link and {"{name}"} for the guest's name. Leave empty to use default message.
-                  </p>
-                </div>
+                {/* SMS Message Fields */}
+                {(channel === 'sms' || channel === 'both') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      SMS Invitation Message (Optional)
+                    </label>
+                    <textarea
+                      value={inviteMessage}
+                      onChange={(e) => setInviteMessage(e.target.value)}
+                      placeholder="Enter custom SMS message..."
+                      rows={3}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                      Use {"{url}"} for the RSVP link and {"{name}"} for the guest's name. Leave empty to use default message.
+                    </p>
+                  </div>
+                )}
 
-                <div className="p-6 bg-blue-50 rounded-lg">
-                  <h4 className="font-medium text-blue-900 mb-2">Message Preview:</h4>
-                  <p className="text-blue-700 text-sm">
-                    {inviteMessage.trim() ? (
-                      <>"{inviteMessage.replace('{url}', `https://thespecialwedding.com/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}"</>
-                    ) : (
-                      <>"You're invited! RSVP here: https://thespecialwedding.com/{selectedWeddingData?.slug}/invite/[token]"</>
-                    )}
-                  </p>
-                </div>
+                {/* Email Fields */}
+                {(channel === 'email' || channel === 'both') && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email Subject (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={emailSubject}
+                        onChange={(e) => setEmailSubject(e.target.value)}
+                        placeholder={`You're Invited - ${selectedWeddingData?.couple_names}`}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Custom Email HTML (Optional)
+                      </label>
+                      <textarea
+                        value={emailHtml}
+                        onChange={(e) => setEmailHtml(e.target.value)}
+                        placeholder="Enter custom HTML for email body. Leave empty to use beautiful default template..."
+                        rows={6}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent font-mono text-sm"
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        Available placeholders: {"{name}"}, {"{guest_name}"}, {"{url}"}, {"{rsvp_url}"}, {"{couple_names}"}, {"{wedding_date}"}
+                      </p>
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+                            const response = await fetch(`${baseUrl}/admin/email/preview-invitation?guest_name=John Doe&couple_names=${selectedWeddingData?.couple_names}&wedding_date=${selectedWeddingData?.date}`, {
+                              headers: { 'Authorization': `Bearer ${token}` },
+                            });
+                            if (response.ok) {
+                              const data = await response.json();
+                              setEmailPreviewHtml(data.html);
+                              setShowEmailPreview(true);
+                            }
+                          }}
+                          className="text-sm text-wedding-rose hover:text-wedding-navy"
+                        >
+                          Preview Default Email Template →
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Message Preview */}
+                {channel === 'sms' && inviteMessage.trim() && (
+                  <div className="p-6 bg-blue-50 rounded-lg">
+                    <h4 className="font-medium text-blue-900 mb-2">SMS Preview:</h4>
+                    <p className="text-blue-700 text-sm">
+                      "{inviteMessage.replace('{url}', `https://thespecialwedding.com/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Email Preview Modal */}
+                {showEmailPreview && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-hidden">
+                      <div className="p-4 border-b flex justify-between items-center">
+                        <h3 className="text-lg font-semibold">Email Preview</h3>
+                        <button
+                          onClick={() => setShowEmailPreview(false)}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="p-4 overflow-y-auto max-h-[70vh]">
+                        <iframe 
+                          srcDoc={emailPreviewHtml}
+                          className="w-full h-[600px] border rounded"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <button
                   onClick={handleSendInviteLinks}
                   disabled={loading || !selectedWedding}
                   className="w-full bg-gradient-to-r from-wedding-sage to-wedding-gold text-white py-3 px-6 rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
-                  {loading ? 'Sending...' : `Send Invites to ${guestsWithPhone.length} Guests`}
+                  {loading ? 'Sending...' : (
+                    channel === 'sms' ? `Send SMS Invites to ${guestsWithPhone.length} Guests` :
+                    channel === 'email' ? `Send Email Invites to ${guestsWithEmail.length} Guests` :
+                    `Send Invites to ${guestsWithPhoneOrEmail.length} Guests (SMS & Email)`
+                  )}
                 </button>
               </div>
             ) : (
@@ -549,16 +777,23 @@ export default function AdminRemindersPage() {
                           {log.status}
                         </span>
                       </div>
-                      <div className="font-semibold text-sm">{log.phone}</div>
+                      <div className="font-semibold text-sm">{log.phone || log.to || 'N/A'}</div>
                       <div className="flex gap-2">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          log.target_type === 'guest' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                          log.provider === 'resend' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800'
                         }`}>
-                          {log.target_type}
+                          {log.provider === 'resend' ? 'Email' : 'SMS'}
                         </span>
-                        <span className="text-xs text-gray-600">{log.event_type}</span>
+                        {log.target_type && (
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            log.target_type === 'guest' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {log.target_type}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-600">{log.event_type || log.email_type || ''}</span>
                       </div>
-                      <div className="text-sm text-gray-700 break-words">{log.message}</div>
+                      <div className="text-sm text-gray-700 break-words">{log.message || log.subject || ''}</div>
                     </div>
                   ))}
                 </div>
@@ -572,19 +807,19 @@ export default function AdminRemindersPage() {
                           Date/Time
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Phone
+                          To
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Channel
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Type
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Event
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Message
+                          Content
                         </th>
                       </tr>
                     </thead>
@@ -595,17 +830,17 @@ export default function AdminRemindersPage() {
                             {new Date(log.sent_at).toLocaleString()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {log.phone}
+                            {log.phone || log.to || 'N/A'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              log.target_type === 'guest' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                              log.provider === 'resend' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800'
                             }`}>
-                              {log.target_type}
+                              {log.provider === 'resend' ? 'Email' : 'SMS'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {log.event_type}
+                            {log.target_type || log.email_type || log.event_type || '-'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -615,7 +850,7 @@ export default function AdminRemindersPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                            {log.message}
+                            {log.message || log.subject || ''}
                           </td>
                         </tr>
                       ))}
