@@ -1,6 +1,6 @@
 # app/api/email_reminders.py
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, Query
 from app.services.email_service_resend import ResendEmailService
 from app.dependencies.auth import require_admin
 from pydantic import BaseModel
@@ -40,30 +40,46 @@ def get_email_status():
     }
 
 @router.post("/email/send-invites", tags=["Admin"], dependencies=[Depends(require_admin)])
-async def send_email_invites(
-    payload: EmailInviteModel,
-    attachment: Optional[UploadFile] = File(None)
-):
-    """Send RSVP invitation emails"""
+async def send_email_invites(payload: EmailInviteModel):
+    """Send RSVP invitation emails (JSON endpoint)"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
-    
-    # Handle attachment if provided
-    attachments = []
-    if attachment:
-        try:
-            content = await attachment.read()
-            attachments.append({
-                "filename": attachment.filename,
-                "content": base64.b64encode(content).decode('utf-8')
-            })
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to process attachment: {str(e)}")
     
     result = email_service.send_rsvp_invitations(
         wedding_slug=payload.wedding_slug,
         custom_html=payload.custom_html,
         custom_subject=payload.custom_subject,
+        attachments=[]
+    )
+    
+    return result
+
+@router.post("/email/send-invites-with-attachment", tags=["Admin"], dependencies=[Depends(require_admin)])
+async def send_email_invites_with_attachment(
+    wedding_slug: str = Form(...),
+    custom_subject: Optional[str] = Form(None),
+    custom_html: Optional[str] = Form(None),
+    attachment: UploadFile = File(...)
+):
+    """Send RSVP invitation emails with attachment (multipart/form-data endpoint)"""
+    if not email_available:
+        raise HTTPException(status_code=503, detail="Email service not configured")
+    
+    # Handle attachment
+    attachments = []
+    try:
+        content = await attachment.read()
+        attachments.append({
+            "filename": attachment.filename,
+            "content": base64.b64encode(content).decode('utf-8')
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process attachment: {str(e)}")
+    
+    result = email_service.send_rsvp_invitations(
+        wedding_slug=wedding_slug,
+        custom_html=custom_html,
+        custom_subject=custom_subject,
         attachments=attachments
     )
     
