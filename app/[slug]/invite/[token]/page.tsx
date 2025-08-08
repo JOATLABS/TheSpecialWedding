@@ -22,7 +22,7 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
     }
     const wedding = await weddingRes.json();
 
-    const guestRes = await fetch(`${apiUrl}/invite/${token}?wedding_id=${wedding._id}`, { cache: 'no-store' });
+    const guestRes = await fetch(`${apiUrl}/guest/invite/${token}?wedding_id=${wedding._id}`, { cache: 'no-store' });
     if (!guestRes.ok) {
       console.error(`Guest not found: token=${token}, wedding_id=${wedding._id}`);
       notFound();
