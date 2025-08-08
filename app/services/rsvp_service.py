@@ -3,6 +3,7 @@ from app.core.database import mongo
 from app.models.rsvp import RSVPModel
 from app.models.plus_one import PlusOneModel
 from bson import ObjectId
+from datetime import datetime
 
 class RSVPService:
     def __init__(self):
@@ -24,21 +25,21 @@ class RSVPService:
                     "guest_id": guest_id,
                     "attending": rsvp_data.attending,
                     "dietary": rsvp_data.dietary,
-                    "submitted_at": mongo.client.server_info()['localTime']
+                    "submitted_at": datetime.utcnow()
                 }},
                 upsert=True
             )
 
             update_data = {
                 "phone": rsvp_data.phone, 
-                "updated_at": mongo.client.server_info()['localTime']
+                "updated_at": datetime.utcnow()
             }
             
             # Handle SMS opt-in
             if hasattr(rsvp_data, 'sms_opt_in'):
                 update_data["sms_opt_in"] = rsvp_data.sms_opt_in
                 if rsvp_data.sms_opt_in:
-                    update_data["sms_opt_in_date"] = mongo.client.server_info()['localTime']
+                    update_data["sms_opt_in_date"] = datetime.utcnow()
             
             self.guest_collection.update_one(
                 {"_id": guest_id},

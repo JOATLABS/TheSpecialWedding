@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from bson import ObjectId
 from app.core.database import mongo
 from app.models.plus_one import PlusOneModel
+from datetime import datetime
 
 class PlusOneService:
     def __init__(self):
@@ -34,7 +35,7 @@ class PlusOneService:
             if current_count + 1 >= max_plus_ones:
                 guest_collection.update_one(
                     {"_id": guest_id},
-                    {"$set": {"plus_one_submitted": True, "updated_at": mongo.client.server_info()['localTime']}}
+                    {"$set": {"plus_one_submitted": True, "updated_at": datetime.utcnow()}}
                 )
             
             return {"id": str(result.inserted_id), "message": "Plus-one added successfully"}
@@ -88,7 +89,7 @@ class PlusOneService:
                 if current_count < max_plus_ones:
                     guest_collection.update_one(
                         {"_id": guest_id},
-                        {"$set": {"plus_one_submitted": False, "updated_at": mongo.client.server_info()['localTime']}}
+                        {"$set": {"plus_one_submitted": False, "updated_at": datetime.utcnow()}}
                     )
             
             return {"message": "Plus-one deleted successfully"}

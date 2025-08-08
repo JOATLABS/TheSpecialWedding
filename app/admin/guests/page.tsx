@@ -60,6 +60,15 @@ export default function AdminGuestsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
+  const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    role: 'guest',
+    plus_one_allowed: false,
+    number_of_plus_ones_allowed: 0
+  });
 
   useEffect(() => {
     fetchWeddings();
@@ -164,6 +173,43 @@ export default function AdminGuestsPage() {
       }
     } catch (err) {
       alert('Failed to send reminder');
+    }
+  };
+
+  const handleEditGuest = (guest: Guest) => {
+    setEditingGuest(guest);
+    setEditForm({
+      name: guest.name,
+      email: guest.email || '',
+      phone: guest.phone || '',
+      role: guest.role,
+      plus_one_allowed: guest.plus_one_allowed,
+      number_of_plus_ones_allowed: guest.number_of_plus_ones_allowed || 0
+    });
+  };
+
+  const handleSaveGuest = async () => {
+    if (!editingGuest) return;
+    
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/guests/${editingGuest.id || editingGuest._id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(editForm),
+      });
+      
+      if (response.ok) {
+        setEditingGuest(null);
+        fetchGuestData(); // Refresh all data
+      } else {
+        setError('Failed to update guest');
+      }
+    } catch (err) {
+      setError('Failed to update guest');
     }
   };
 
@@ -410,6 +456,12 @@ export default function AdminGuestsPage() {
                               >
                                 {isExpanded ? 'Hide' : 'Details'}
                               </button>
+                              <button
+                                onClick={() => handleEditGuest(guest)}
+                                className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                              >
+                                Edit
+                              </button>
                               {!rsvp && (
                                 <button
                                   onClick={() => handleSendReminder(guestId)}
@@ -505,6 +557,102 @@ export default function AdminGuestsPage() {
               )}
             </div>
           </>
+        )}
+        
+        {/* Edit Guest Modal */}
+        {editingGuest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+              <h2 className="text-2xl font-bold text-wedding-navy mb-4">Edit Guest</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <select
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  >
+                    <option value="guest">Guest</option>
+                    <option value="admin">Admin</option>
+                    <option value="groom">Groom</option>
+                    <option value="bride">Bride</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={editForm.plus_one_allowed}
+                      onChange={(e) => setEditForm({ ...editForm, plus_one_allowed: e.target.checked })}
+                      className="rounded text-wedding-rose focus:ring-wedding-rose"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Allow Plus Ones</span>
+                  </label>
+                </div>
+                
+                {editForm.plus_one_allowed && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Number of Plus Ones Allowed</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="10"
+                      value={editForm.number_of_plus_ones_allowed}
+                      onChange={(e) => setEditForm({ ...editForm, number_of_plus_ones_allowed: parseInt(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    />
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={handleSaveGuest}
+                  className="flex-1 bg-wedding-navy text-white px-4 py-2 rounded-lg hover:bg-opacity-90 transition-colors"
+                >
+                  Save Changes
+                </button>
+                <button
+                  onClick={() => setEditingGuest(null)}
+                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -11,11 +11,32 @@ interface RSVPFormProps {
   token: string;
 }
 
+interface PlusOneData {
+  name: string;
+  phone?: string;
+  attending?: string[];
+  dietary?: string;
+}
+
 export default function RSVPForm({ guest, token }: RSVPFormProps) {
   const wedding = useWedding();
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
+  const { register, handleSubmit, formState: { errors, isSubmitting }, watch, setValue } = useForm();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
+  
+  // Initialize plus-ones array based on allowed number
+  useState(() => {
+    if (guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0) {
+      const initialPlusOnes = Array(guest.number_of_plus_ones_allowed).fill(null).map(() => ({
+        name: '',
+        phone: '',
+        attending: [],
+        dietary: ''
+      }));
+      setPlusOnes(initialPlusOnes);
+    }
+  });
 
   const generateICS = () => {
     const eventDate = wedding.events?.find(e => e.type === 'white_wedding')?.date || wedding.date;
@@ -41,13 +62,47 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const apiUrl = baseUrl.replace('/admin', '');
       
+      // Get filled plus-ones from form data
+      const filledPlusOnes = [];
+      for (let i = 0; i < guest.number_of_plus_ones_allowed; i++) {
+        const plusOneName = data[`plus_one_${i}_name`];
+        if (plusOneName && plusOneName.trim()) {
+          filledPlusOnes.push({
+            name: plusOneName,
+            phone: data[`plus_one_${i}_phone`] || '',
+            attending: data.attending || [], // Plus-ones attend same events as main guest
+            dietary: data[`plus_one_${i}_dietary`] || ''
+          });
+        }
+      }
+      
+      // Submit main RSVP with first plus-one (if any)
+      const mainRsvpData = {
+        ...data,
+        wedding_id: wedding.id,
+        plus_one: filledPlusOnes.length > 0 ? filledPlusOnes[0] : null
+      };
+      
+      // Remove individual plus-one fields from main data
+      for (let i = 0; i < guest.number_of_plus_ones_allowed; i++) {
+        delete mainRsvpData[`plus_one_${i}_name`];
+        delete mainRsvpData[`plus_one_${i}_phone`];
+        delete mainRsvpData[`plus_one_${i}_dietary`];
+      }
+      
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, wedding_id: wedding.id })
+        body: JSON.stringify(mainRsvpData)
       });
 
       if (!res.ok) throw new Error('RSVP failed');
+      
+      // For now, additional plus-ones beyond the first would need to be handled separately
+      // The backend currently only supports one plus-one per RSVP submission
+      if (filledPlusOnes.length > 1) {
+        console.log('Note: Currently only the first guest will be submitted. Additional guests need separate handling.');
+      }
 
       localStorage.setItem(`rsvp-${token}`, 'true');
       setSubmitted(true);
@@ -169,28 +224,52 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         </div>
       </div>
 
-      {guest.plus_one_allowed && (
+      {guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0 && (
         <div className="border-t pt-6 mt-6">
-          <h2 className="text-lg font-semibold text-gray-700 mb-4">Plus One Information</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block font-medium text-gray-700 mb-2">Full Name</label>
-              <input 
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-                type="text" 
-                placeholder="Enter plus one's full name" 
-                {...register('plus_one.name')} 
-              />
-            </div>
-            <div>
-              <label className="block font-medium text-gray-700 mb-2">Phone Number (Optional)</label>
-              <input 
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-                type="tel" 
-                placeholder="+1 (555) 123-4567" 
-                {...register('plus_one.phone')} 
-              />
-            </div>
+          <h2 className="text-lg font-semibold text-gray-700 mb-4">
+            Guest Information 
+            <span className="text-sm font-normal text-gray-500 ml-2">
+              (You can bring up to {guest.number_of_plus_ones_allowed} {guest.number_of_plus_ones_allowed === 1 ? 'guest' : 'guests'})
+            </span>
+          </h2>
+          <div className="space-y-6">
+            {Array.from({ length: guest.number_of_plus_ones_allowed }).map((_, index) => (
+              <div key={index} className="p-4 bg-gray-50 rounded-lg">
+                <h3 className="font-medium text-gray-700 mb-3">Guest {index + 1}</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block font-medium text-gray-700 mb-2">Full Name</label>
+                    <input 
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
+                      type="text" 
+                      placeholder="Enter guest's full name" 
+                      {...register(`plus_one_${index}_name`)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-gray-700 mb-2">Phone Number (Optional)</label>
+                    <input 
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
+                      type="tel" 
+                      placeholder="+1 (555) 123-4567" 
+                      {...register(`plus_one_${index}_phone`)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-gray-700 mb-2">Dietary Restrictions (Optional)</label>
+                    <input 
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
+                      type="text" 
+                      placeholder="e.g., Vegetarian, Gluten-free, etc." 
+                      {...register(`plus_one_${index}_dietary`)} 
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+            <p className="text-sm text-gray-600 italic">
+              * Leave blank if you're not bringing additional guests
+            </p>
           </div>
         </div>
       )}
