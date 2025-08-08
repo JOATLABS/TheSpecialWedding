@@ -3,7 +3,6 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
-
 // Force dynamic rendering for this page
 export const dynamic = 'force-dynamic';
 
