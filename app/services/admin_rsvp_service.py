@@ -40,7 +40,7 @@ class AdminRSVPService:
                         "token": guest.get("token"),
                         "attending": rsvp.get("attending", []),
                         "dietary": rsvp.get("dietary"),
-                        "submitted_at": rsvp.get("submitted_at"),
+                        "submitted_at": rsvp.get("submitted_at").isoformat() if rsvp.get("submitted_at") else None,
                         "plus_one": plus_one
                     })
 
