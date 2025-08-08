@@ -9,16 +9,17 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
   
   // Fetch data inline to avoid any potential export detection issues
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-  const weddingRes = await fetch(`${base}/weddings/slug/${slug}`);
+  // Remove /admin if present since these are public endpoints
+  const apiUrl = base.replace('/admin', '');
+  
+  const weddingRes = await fetch(`${apiUrl}/weddings/slug/${slug}`, { cache: 'no-store' });
   if (!weddingRes.ok) notFound();
   const wedding = await weddingRes.json();
 
-  const guestRes = await fetch(`${base}/invite/${token}?wedding_id=${wedding._id}`);
+  const guestRes = await fetch(`${apiUrl}/invite/${token}?wedding_id=${wedding._id}`, { cache: 'no-store' });
   if (!guestRes.ok) notFound();
   const guest = await guestRes.json();
 
-  const data = { guest, wedding };
-  const { guest: guestData, wedding: weddingData } = data;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-wedding-blush to-white">
