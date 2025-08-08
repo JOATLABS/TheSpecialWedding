@@ -9,21 +9,27 @@ export const dynamic = 'force-dynamic';
 export default async function InvitePage({ params }: { params: Promise<{ slug: string, token: string }> }) {
   const { slug, token } = await params;
   
-  // Fetch data inline to avoid any potential export detection issues
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-  // Remove /admin if present since these are public endpoints
-  const apiUrl = base.replace('/admin', '');
-  
-  const weddingRes = await fetch(`${apiUrl}/weddings/slug/${slug}`, { cache: 'no-store' });
-  if (!weddingRes.ok) notFound();
-  const wedding = await weddingRes.json();
+  try {
+    // Fetch data inline to avoid any potential export detection issues
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    // Remove /admin if present since these are public endpoints
+    const apiUrl = base.replace('/admin', '');
+    
+    const weddingRes = await fetch(`${apiUrl}/weddings/slug/${slug}`, { cache: 'no-store' });
+    if (!weddingRes.ok) {
+      console.error(`Wedding not found: ${slug}`);
+      notFound();
+    }
+    const wedding = await weddingRes.json();
 
-  const guestRes = await fetch(`${apiUrl}/invite/${token}?wedding_id=${wedding._id}`, { cache: 'no-store' });
-  if (!guestRes.ok) notFound();
-  const guest = await guestRes.json();
+    const guestRes = await fetch(`${apiUrl}/invite/${token}?wedding_id=${wedding._id}`, { cache: 'no-store' });
+    if (!guestRes.ok) {
+      console.error(`Guest not found: token=${token}, wedding_id=${wedding._id}`);
+      notFound();
+    }
+    const guest = await guestRes.json();
 
-
-  return (
+    return (
     <div className="min-h-screen bg-gradient-to-br from-wedding-blush to-white">
       <div className="max-w-3xl mx-auto p-6 space-y-8">
         {/* Header */}
@@ -102,4 +108,8 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
       </div>
     </div>
   );
+  } catch (error) {
+    console.error('Error in InvitePage:', error);
+    notFound();
+  }
 }
