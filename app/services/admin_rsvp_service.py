@@ -10,25 +10,31 @@ class AdminRSVPService:
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
 
-    def get_all_rsvps(self):
+    def get_all_rsvps(self, wedding_id=None):
         try:
-            guests = list(self.guest_collection.find({}))
+            # Filter by wedding_id if provided
+            query = {"wedding_id": wedding_id} if wedding_id else {}
+            guests = list(self.guest_collection.find(query))
             result = []
 
             for guest in guests:
                 guest_id = guest["_id"]
                 rsvp = self.rsvp_collection.find_one({"guest_id": guest_id})
-                plus_one = self.plus_one_collection.find_one({"guest_id": str(guest_id)})
-
-                result.append({
-                    "guest_id": str(guest_id),
-                    "name": guest.get("name"),
-                    "phone": guest.get("phone"),
-                    "token": guest.get("token"),
-                    "attending": rsvp.get("attending") if rsvp else [],
-                    "dietary": rsvp.get("dietary") if rsvp else None,
-                    "plus_one": plus_one
-                })
+                
+                # Only include guests who have actually RSVP'd
+                if rsvp:
+                    plus_one = self.plus_one_collection.find_one({"guest_id": str(guest_id)})
+                    
+                    result.append({
+                        "guest_id": str(guest_id),
+                        "name": guest.get("name"),
+                        "phone": guest.get("phone"),
+                        "token": guest.get("token"),
+                        "attending": rsvp.get("attending", []),
+                        "dietary": rsvp.get("dietary"),
+                        "submitted_at": rsvp.get("submitted_at"),
+                        "plus_one": plus_one
+                    })
 
             return result
         except Exception as e:
