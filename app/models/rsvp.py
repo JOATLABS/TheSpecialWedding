@@ -10,8 +10,8 @@ class PlusOneInputModel(BaseModel):
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\d{10,15}$", value):
-            raise ValueError("Phone number must be 10 to 15 digits")
+        if value and not re.match(r"^\+?\d{10,15}$", value):
+            raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
 
     @field_validator("attending")
@@ -22,8 +22,8 @@ class PlusOneInputModel(BaseModel):
         return v
 
 class RSVPModel(BaseModel):
-    attending: List[str] = Field(..., example=["traditional", "reception"])
-    dietary: Optional[str] = Field(None, max_length=250)
+    attending: List[str]
+    dietary: Optional[str] = Field(default=None, max_length=250)
     phone: Optional[str] = None
     sms_opt_in: Optional[bool] = Field(default=False, description="Opt-in to receive SMS reminders")
     plus_one: Optional[PlusOneInputModel] = None
@@ -31,12 +31,13 @@ class RSVPModel(BaseModel):
     @field_validator("attending")
     def validate_attending(cls, v):
         valid_events = {"traditional", "white_wedding", "reception"}
-        if not v or not all(event in valid_events for event in v):
+        # Allow empty list (guest not attending any events) or valid events
+        if v and not all(event in valid_events for event in v):
             raise ValueError("Invalid event(s) in attending list")
         return v
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\d{10,15}$", value):
-            raise ValueError("Phone number must be 10 to 15 digits")
+        if value and not re.match(r"^\+?\d{10,15}$", value):
+            raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
