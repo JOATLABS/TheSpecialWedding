@@ -33,6 +33,10 @@ class AdminRSVPService:
                 if rsvp:
                     plus_one = self.plus_one_collection.find_one({"guest_id": guest_id_str})
                     
+                    # Convert plus_one _id to string if it exists
+                    if plus_one and "_id" in plus_one:
+                        plus_one["_id"] = str(plus_one["_id"])
+                    
                     result.append({
                         "guest_id": guest_id_str,
                         "name": guest.get("name"),
@@ -88,6 +92,10 @@ class AdminRSVPService:
                 ]
             })
             plus_one = self.plus_one_collection.find_one({"guest_id": guest_id})
+            
+            # Convert plus_one _id to string if it exists
+            if plus_one and "_id" in plus_one:
+                plus_one["_id"] = str(plus_one["_id"])
 
             return {
                 "guest_id": str(guest["_id"]),

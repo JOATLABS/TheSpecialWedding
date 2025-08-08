@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Any
 import logging
 from app.core.database import mongo
 import base64
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,9 @@ class ResendEmailService:
                 sent += 1
             else:
                 failed += 1
+            
+            # Add delay to respect Resend rate limit (2 requests per second)
+            time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
         
         return {"sent": sent, "failed": failed}
     
@@ -270,6 +274,9 @@ class ResendEmailService:
                     sent += 1
                 else:
                     failed += 1
+                
+                # Add delay to respect Resend rate limit (2 requests per second)
+                time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
         
         # TODO: Add plus-ones support if needed
         
