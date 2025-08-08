@@ -18,11 +18,14 @@ class RSVPService:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             guest_id = ObjectId(guest["_id"])
+            guest_id_str = str(guest_id)
+            wedding_id_str = str(guest.get("wedding_id", ""))
 
             self.rsvp_collection.update_one(
-                {"guest_id": guest_id},
+                {"guest_id": guest_id_str},
                 {"$set": {
-                    "guest_id": guest_id,
+                    "guest_id": guest_id_str,
+                    "wedding_id": wedding_id_str,
                     "attending": rsvp_data.attending,
                     "dietary": rsvp_data.dietary,
                     "submitted_at": datetime.utcnow()
