@@ -54,6 +54,7 @@ export default function AdminRemindersPage() {
   const [channel, setChannel] = useState<'sms' | 'email' | 'both'>('sms');
   const [emailSubject, setEmailSubject] = useState<string>('');
   const [emailHtml, setEmailHtml] = useState<string>('');
+  const [emailAttachment, setEmailAttachment] = useState<File | null>(null);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [emailPreviewHtml, setEmailPreviewHtml] = useState<string>('');
 
@@ -187,18 +188,38 @@ export default function AdminRemindersPage() {
 
       // Send Email invites
       if (channel === 'email' || channel === 'both') {
-        const response = await fetch(`${baseUrl}/admin/email/send-invites`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            wedding_slug: selectedWeddingData.slug,
-            custom_subject: emailSubject || null,
-            custom_html: emailHtml || null
-          }),
-        });
+        let response;
+        
+        if (emailAttachment) {
+          // Use multipart/form-data endpoint when attachment is present
+          const formData = new FormData();
+          formData.append('wedding_slug', selectedWeddingData.slug);
+          if (emailSubject) formData.append('custom_subject', emailSubject);
+          if (emailHtml) formData.append('custom_html', emailHtml);
+          formData.append('attachment', emailAttachment);
+          
+          response = await fetch(`${baseUrl}/admin/email/send-invites-with-attachment`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            body: formData,
+          });
+        } else {
+          // Use JSON endpoint when no attachment
+          response = await fetch(`${baseUrl}/admin/email/send-invites`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              wedding_slug: selectedWeddingData.slug,
+              custom_subject: emailSubject || null,
+              custom_html: emailHtml || null
+            }),
+          });
+        }
 
         if (response.ok) {
           const result = await response.json();
@@ -578,6 +599,52 @@ export default function AdminRemindersPage() {
                           Preview Default Email Template →
                         </button>
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email Attachment (Optional)
+                      </label>
+                      <div className="mt-1 flex items-center">
+                        <input
+                          type="file"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              // Limit file size to 10MB
+                              if (file.size > 10 * 1024 * 1024) {
+                                setError('File size must be less than 10MB');
+                                return;
+                              }
+                              setEmailAttachment(file);
+                            }
+                          }}
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif"
+                          className="block w-full text-sm text-gray-500
+                            file:mr-4 file:py-2 file:px-4
+                            file:rounded-full file:border-0
+                            file:text-sm file:font-semibold
+                            file:bg-wedding-rose file:text-white
+                            hover:file:bg-wedding-rose-dark"
+                        />
+                      </div>
+                      {emailAttachment && (
+                        <div className="mt-2 flex items-center justify-between bg-gray-50 p-2 rounded">
+                          <span className="text-sm text-gray-600">
+                            {emailAttachment.name} ({(emailAttachment.size / 1024 / 1024).toFixed(2)} MB)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEmailAttachment(null)}
+                            className="text-red-500 hover:text-red-700 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-sm text-gray-500 mt-1">
+                        Accepted formats: PDF, Word documents, or images (max 10MB)
+                      </p>
                     </div>
                   </>
                 )}
