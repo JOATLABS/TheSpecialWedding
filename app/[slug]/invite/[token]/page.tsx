@@ -4,6 +4,9 @@ import React from 'react';
 import { notFound } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
 
+// Force dynamic rendering for this page
+export const dynamic = 'force-dynamic';
+
 export default async function InvitePage({ params }: { params: Promise<{ slug: string, token: string }> }) {
   const { slug, token } = await params;
   
