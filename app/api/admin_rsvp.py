@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Response, Depends
+from fastapi import APIRouter, Response, Depends, Query
 from app.services.admin_rsvp_service import AdminRSVPService
 from app.dependencies.auth import require_admin
+from typing import Optional
 
 router = APIRouter()
 
 admin_service = AdminRSVPService()
 
 @router.get("/rsvps", tags=["Admin"], dependencies=[Depends(require_admin)])
-def get_rsvps():
-    return admin_service.get_all_rsvps()
+def get_rsvps(wedding_id: Optional[str] = Query(None)):
+    return admin_service.get_all_rsvps(wedding_id)
 
 @router.get("/rsvps/export", tags=["Admin"], dependencies=[Depends(require_admin)])
 def export_rsvps():
