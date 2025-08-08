@@ -71,10 +71,47 @@ class GuestService:
     def delete_guest(self, guest_id: str):
         try:
             from bson import ObjectId
-            result = self.collection.delete_one({"_id": ObjectId(guest_id)})
-            if result.deleted_count == 0:
+            
+            # Convert guest_id to ObjectId
+            guest_obj_id = ObjectId(guest_id)
+            guest_id_str = str(guest_obj_id)
+            
+            # Check if guest exists
+            guest = self.collection.find_one({"_id": guest_obj_id})
+            if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
-            return {"message": "Guest deleted successfully"}
+            
+            # Get collections for RSVPs and plus-ones
+            rsvp_collection = mongo.db["rsvps"]
+            plus_one_collection = mongo.db["plus_ones"]
+            
+            # Delete associated RSVPs (handle both ObjectId and string formats)
+            rsvp_result = rsvp_collection.delete_many({
+                "$or": [
+                    {"guest_id": guest_obj_id},
+                    {"guest_id": guest_id_str}
+                ]
+            })
+            
+            # Delete associated plus-ones (typically stored with string guest_id)
+            plus_one_result = plus_one_collection.delete_many({
+                "$or": [
+                    {"guest_id": guest_obj_id},
+                    {"guest_id": guest_id_str}
+                ]
+            })
+            
+            # Delete the guest
+            guest_result = self.collection.delete_one({"_id": guest_obj_id})
+            
+            return {
+                "message": "Guest and associated data deleted successfully",
+                "deleted": {
+                    "guest": guest_result.deleted_count,
+                    "rsvps": rsvp_result.deleted_count,
+                    "plus_ones": plus_one_result.deleted_count
+                }
+            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error deleting guest: {str(e)}")
 
