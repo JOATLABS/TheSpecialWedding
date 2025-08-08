@@ -32,12 +32,12 @@ class ResendEmailService:
         to_email: str, 
         subject: str, 
         html_content: str, 
-        from_email: str = None,
-        from_name: str = None,
-        attachments: List[Dict[str, Any]] = None,
-        reply_to: str = None,
-        wedding_id: str = None,
-        email_type: str = None
+        from_email: Optional[str] = None,
+        from_name: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        reply_to: Optional[str] = None,
+        wedding_id: Optional[str] = None,
+        email_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """Send a single email using Resend"""
         if not self.configured:
@@ -70,7 +70,9 @@ class ResendEmailService:
                 params["attachments"] = attachments
             
             # Send email
-            email_response = resend.Emails.send(params)
+            from typing import cast, Any
+            email_response = resend.Emails.send(cast(Any, params))
+
             
             # Log the email
             log_entry = {
@@ -113,9 +115,9 @@ class ResendEmailService:
     def send_rsvp_invitations(
         self, 
         wedding_slug: str, 
-        custom_html: str = None,
-        custom_subject: str = None,
-        attachments: List[Dict[str, Any]] = None
+        custom_html: Optional[str] = None,
+        custom_subject: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Send RSVP invitation emails to guests with email addresses"""
         # Get wedding details
@@ -191,10 +193,10 @@ class ResendEmailService:
         self,
         wedding_slug: str,
         event_type: str,
-        custom_html: str = None,
-        custom_subject: str = None,
+        custom_html: Optional[str] = None,
+        custom_subject: Optional[str] = None,
         target_group: str = "all"
-    ) -> Dict[str, int]:
+    ) -> Dict[str, Any]:
         """Send reminder emails to guests who have RSVP'd"""
         # Get wedding details
         wedding = self.wedding_collection.find_one({"slug": wedding_slug})
@@ -273,7 +275,7 @@ class ResendEmailService:
         
         return {"sent": sent, "failed": failed}
     
-    def get_email_logs(self, wedding_id: str = None, limit: int = 100) -> List[Dict]:
+    def get_email_logs(self, wedding_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """Get email logs, optionally filtered by wedding"""
         query = {}
         if wedding_id:
