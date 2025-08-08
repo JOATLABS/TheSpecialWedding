@@ -38,6 +38,36 @@ class GuestService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")
     
+    def update_guest(self, guest_id: str, update_data: dict):
+        try:
+            from bson import ObjectId
+            
+            # Remove fields that shouldn't be updated
+            update_data.pop("_id", None)
+            update_data.pop("id", None)
+            update_data.pop("token", None)  # Don't allow token changes
+            update_data.pop("wedding_id", None)  # Don't allow wedding changes
+            
+            # Add timestamp
+            update_data["updated_at"] = datetime.utcnow()
+            
+            result = self.collection.update_one(
+                {"_id": ObjectId(guest_id)},
+                {"$set": update_data}
+            )
+            
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Guest not found")
+                
+            # Return updated guest
+            updated_guest = self.collection.find_one({"_id": ObjectId(guest_id)})
+            updated_guest["id"] = str(updated_guest["_id"])
+            updated_guest.pop("_id", None)
+            
+            return updated_guest
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error updating guest: {str(e)}")
+    
     def delete_guest(self, guest_id: str):
         try:
             from bson import ObjectId

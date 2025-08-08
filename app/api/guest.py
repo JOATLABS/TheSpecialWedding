@@ -33,6 +33,15 @@ def list_guests(wedding_id: str = Query(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
+@router.put("/guests/{guest_id}", tags=["Admin"], dependencies=[Depends(require_admin)])
+def update_guest(guest_id: str, update_data: dict):
+    try:
+        return guest_service.update_guest(guest_id, update_data)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Unexpected error occurred")
+
 @router.delete("/guests/{guest_id}", tags=["Admin"], dependencies=[Depends(require_admin)])
 def delete_guest(guest_id: str):
     try:
