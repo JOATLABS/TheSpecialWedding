@@ -116,7 +116,7 @@ class ResendEmailService:
         custom_html: str = None,
         custom_subject: str = None,
         attachments: List[Dict[str, Any]] = None
-    ) -> Dict[str, int]:
+    ) -> Dict[str, Any]:
         """Send RSVP invitation emails to guests with email addresses"""
         # Get wedding details
         wedding = self.wedding_collection.find_one({"slug": wedding_slug})
@@ -131,7 +131,7 @@ class ResendEmailService:
         if not custom_subject:
             custom_subject = f"You're Invited - {from_name}"
         
-        base_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.com")
+        base_url = os.getenv("FRONTEND_URL", "https://www.thespecialwedding.com")
         sent = 0
         failed = 0
         
