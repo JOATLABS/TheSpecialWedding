@@ -19,14 +19,22 @@ class AdminRSVPService:
 
             for guest in guests:
                 guest_id = guest["_id"]
-                rsvp = self.rsvp_collection.find_one({"guest_id": guest_id})
+                guest_id_str = str(guest_id)
+                
+                # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
+                rsvp = self.rsvp_collection.find_one({
+                    "$or": [
+                        {"guest_id": guest_id},      # Old format: ObjectId
+                        {"guest_id": guest_id_str}   # New format: string
+                    ]
+                })
                 
                 # Only include guests who have actually RSVP'd
                 if rsvp:
-                    plus_one = self.plus_one_collection.find_one({"guest_id": str(guest_id)})
+                    plus_one = self.plus_one_collection.find_one({"guest_id": guest_id_str})
                     
                     result.append({
-                        "guest_id": str(guest_id),
+                        "guest_id": guest_id_str,
                         "name": guest.get("name"),
                         "phone": guest.get("phone"),
                         "token": guest.get("token"),
@@ -72,8 +80,14 @@ class AdminRSVPService:
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
-            rsvp = self.rsvp_collection.find_one({"guest_id": ObjectId(guest_id)})
-            plus_one = self.plus_one_collection.find_one({"guest_id": str(guest_id)})
+            # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
+            rsvp = self.rsvp_collection.find_one({
+                "$or": [
+                    {"guest_id": ObjectId(guest_id)},  # Old format: ObjectId
+                    {"guest_id": guest_id}             # New format: string
+                ]
+            })
+            plus_one = self.plus_one_collection.find_one({"guest_id": guest_id})
 
             return {
                 "guest_id": str(guest["_id"]),
@@ -93,8 +107,14 @@ class AdminRSVPService:
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
+            # Update RSVP - handle both old ObjectId and new string format
             self.rsvp_collection.update_one(
-                {"guest_id": ObjectId(guest_id)},
+                {
+                    "$or": [
+                        {"guest_id": ObjectId(guest_id)},  # Old format
+                        {"guest_id": guest_id}             # New format
+                    ]
+                },
                 {"$set": rsvp_data}
             )
 
@@ -108,7 +128,13 @@ class AdminRSVPService:
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
-            self.rsvp_collection.delete_one({"guest_id": ObjectId(guest_id)})
+            # Delete RSVP - handle both old ObjectId and new string format
+            self.rsvp_collection.delete_one({
+                "$or": [
+                    {"guest_id": ObjectId(guest_id)},  # Old format
+                    {"guest_id": guest_id}             # New format
+                ]
+            })
 
             return {"message": "RSVP deleted successfully"}
         except Exception as e:
