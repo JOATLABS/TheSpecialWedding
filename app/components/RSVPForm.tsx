@@ -41,7 +41,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const apiUrl = baseUrl.replace('/admin', '');
       
-      const res = await fetch(`${apiUrl}/invite/${token}/rsvp`, {
+      const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, wedding_id: wedding.id })
