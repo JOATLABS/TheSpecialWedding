@@ -4,11 +4,22 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
+interface UserProfile {
+    email: string;
+    role: string;
+    is_root_admin: boolean;
+    is_wedding_planner: boolean;
+    is_vendor: boolean;
+    user_data?: any;
+}
+
 type AdminContextType = {
     isAuthenticated: boolean;
     token: string | null;
+    userProfile: UserProfile | null;
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
     logout: () => void;
+    fetchUserProfile: () => Promise<void>;
 };
 
 const AdminContext = createContext<AdminContextType | null>(null);
@@ -16,6 +27,7 @@ const AdminContext = createContext<AdminContextType | null>(null);
 export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     const router = useRouter();
     const [token, setToken] = useState<string | null>(null);
+    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
     useEffect(() => {
         // Check localStorage first
@@ -36,6 +48,27 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             setToken(stored);
         }
     }, []);
+
+    const fetchUserProfile = async () => {
+        if (!token) return;
+        
+        try {
+            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+            const response = await fetch(`${baseUrl}/admin/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const profile = await response.json();
+                setUserProfile(profile);
+            }
+        } catch (error) {
+            console.error('Failed to fetch user profile:', error);
+        }
+    };
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {
@@ -65,7 +98,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             setToken(access_token);
 
             toast.success('Login successful');
-            router.push('/admin/gallery/upload');
+            router.push('/admin');
         } catch (err: any) {
             toast.error(err.message);
             throw err;
@@ -81,6 +114,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         document.cookie = 'admin_token=; path=/; max-age=0';
         
         setToken(null);
+        setUserProfile(null);
         toast.success('Logged out');
         router.push('/admin/login');
     };
@@ -90,8 +124,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             value={{
                 isAuthenticated: !!token,
                 token,
+                userProfile,
                 login,
                 logout,
+                fetchUserProfile,
             }}
         >
             {children}

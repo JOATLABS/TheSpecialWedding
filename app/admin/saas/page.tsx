@@ -1,18 +1,29 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card } from '@/app/components/ui/Card';
+import { Card } from '../../components/ui/Card';
 
 interface SubscriptionPlan {
-  id: string;
+  _id: string;
   name: string;
-  price: number;
-  features: string[];
-  maxWeddings: number;
-  aiCreditsMonthly: number;
-  storageGb: number;
-  vendorSeats: number;
-  isActive: boolean;
+  description?: string;
+  price_monthly: number;
+  price_yearly?: number;
+  max_weddings: number;
+  max_guests_per_wedding: number;
+  ai_credits_monthly: number;
+  storage_gb: number;
+  vendor_seats: number;
+  staff_seats: number;
+  features: {
+    [key: string]: boolean;
+  };
+  is_featured: boolean;
+  is_active: boolean;
+  display_order: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface SaasContentSection {
@@ -32,125 +43,414 @@ interface WeddingPlanner {
   subscriptionPlanId: string;
   subscriptionStatus: string;
   maxWeddings: number;
-  isActive: boolean;
+  is_active: boolean;
   createdAt: string;
   lastLogin?: string;
 }
 
+interface ThemeConfig {
+  primary_color: string;
+  secondary_color: string;
+  background_image?: string;
+  fallback_images: string[];
+}
+
+interface SaasFullConfig {
+  hero_title: string;
+  hero_subtitle: string;
+  hero_description: string;
+  hero_cta_primary: string;
+  hero_cta_secondary: string;
+  trust_indicators: string[];
+  statistics: Array<{
+    label: string;
+    value: string;
+  }>;
+  features: Array<{
+    title: string;
+    description: string;
+    status: 'available' | 'coming_soon';
+    order: number;
+  }>;
+  benefits: Array<{
+    title: string;
+    description: string;
+    order: number;
+  }>;
+  testimonials: Array<{
+    name: string;
+    company: string;
+    role: string;
+    content: string;
+    order: number;
+  }>;
+  features_enabled: boolean;
+  benefits_enabled: boolean;
+  testimonials_enabled: boolean;
+  statistics_enabled: boolean;
+  theme: ThemeConfig;
+}
+
 const SaasAdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'content' | 'planners'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'content' | 'theme' | 'planners'>('overview');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [contentSections, setContentSections] = useState<SaasContentSection[]>([]);
   const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
+  const [saasConfig, setSaasConfig] = useState<SaasFullConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data for now - will be replaced with API calls
+  // Fetch real data from API
   useEffect(() => {
-    // Simulate API loading
-    setTimeout(() => {
-      setPlans([
-        {
-          id: "plan_starter",
-          name: "Starter",
-          price: 0,
-          features: ["1 Wedding", "Basic RSVP Management", "Simple Wedding Website"],
-          maxWeddings: 1,
-          aiCreditsMonthly: 10,
-          storageGb: 1,
-          vendorSeats: 0,
-          isActive: true
-        },
-        {
-          id: "plan_professional",
-          name: "Professional",
-          price: 49,
-          features: ["Up to 5 Weddings", "Advanced RSVP Management", "AI-Powered Tools"],
-          maxWeddings: 5,
-          aiCreditsMonthly: 100,
-          storageGb: 10,
-          vendorSeats: 10,
-          isActive: true
-        },
-        {
-          id: "plan_enterprise",
-          name: "Enterprise",
-          price: 149,
-          features: ["Unlimited Weddings", "White-label Solution", "Advanced AI Features"],
-          maxWeddings: -1,
-          aiCreditsMonthly: 500,
-          storageGb: 100,
-          vendorSeats: 50,
-          isActive: true
+    const fetchData = async () => {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+        
+        if (!token) {
+          setLoading(false);
+          return;
         }
-      ]);
 
-      setContentSections([
-        {
-          id: "hero_section",
-          section: "hero",
-          content: {
-            title: "Welcome to Special Wedding",
-            subtitle: "Wedding Planning Made Simple",
-            description: "The ultimate wedding planning platform..."
-          },
-          isActive: true,
-          displayOrder: 1,
-          updatedBy: "thedeveloper@thespecialwedding.com",
-          updatedAt: "2024-08-18T00:00:00Z"
-        },
-        {
-          id: "features_section",
-          section: "features",
-          content: {
-            title: "Powerful Features for Wedding Professionals",
-            features: []
-          },
-          isActive: true,
-          displayOrder: 2,
-          updatedBy: "thedeveloper@thespecialwedding.com",
-          updatedAt: "2024-08-18T00:00:00Z"
+        const headers = {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        };
+
+        // Fetch subscription plans
+        const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, { headers });
+        if (plansResponse.ok) {
+          const plansData = await plansResponse.json();
+          setPlans(plansData);
         }
-      ]);
 
-      setPlanners([
-        {
-          id: "planner_001",
-          email: "sarah@elegantevents.com",
-          companyName: "Elegant Events Planning",
-          subscriptionPlanId: "plan_professional",
-          subscriptionStatus: "active",
-          maxWeddings: 5,
-          isActive: true,
-          createdAt: "2024-08-15T00:00:00Z",
-          lastLogin: "2024-08-17T14:30:00Z"
+        // Fetch wedding planners
+        const plannersResponse = await fetch(`${baseUrl}/admin/wedding-planners`, { headers });
+        if (plannersResponse.ok) {
+          const plannersData = await plannersResponse.json();
+          setPlanners(plannersData.map((planner: any) => ({
+            id: planner.id,
+            email: planner.email,
+            companyName: planner.company_name,
+            subscriptionPlanId: planner.subscription_plan_id,
+            subscriptionStatus: planner.subscription_status,
+            maxWeddings: planner.max_weddings,
+            is_active: planner.is_active,
+            createdAt: planner.created_at,
+            lastLogin: planner.last_login
+          })));
         }
-      ]);
 
-      setLoading(false);
-    }, 1000);
+        // Fetch SAAS configuration
+        const configResponse = await fetch(`${baseUrl}/admin/saas-config`, { headers });
+        if (configResponse.ok) {
+          const configData = await configResponse.json();
+          setSaasConfig(configData);
+        } else {
+          // Set default config if API fails
+          setSaasConfig({
+            hero_title: "Welcome to Special Wedding",
+            hero_subtitle: "Wedding Planning Made Simple",
+            hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+            hero_cta_primary: "Start Free Trial",
+            hero_cta_secondary: "Watch Demo",
+            trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+            statistics: [
+              { label: "Wedding Planners Trust Us", value: "500+" },
+              { label: "Weddings Managed", value: "10K+" },
+              { label: "Uptime Guarantee", value: "99.9%" }
+            ],
+            features: [
+              {
+                title: "Complete Wedding Management",
+                description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
+                status: "available" as const,
+                order: 1
+              },
+              {
+                title: "AI Presentation Generator",
+                description: "Create stunning wedding presentations in minutes with our AI-powered design tools.",
+                status: "coming_soon" as const,
+                order: 5
+              }
+            ],
+            benefits: [
+              {
+                title: "Save Time",
+                description: "Automate repetitive tasks and streamline wedding planning operations",
+                order: 1
+              },
+              {
+                title: "Scale Your Business",
+                description: "Manage multiple weddings efficiently and grow your planning business",
+                order: 2
+              }
+            ],
+            testimonials: [
+              {
+                name: "Sarah Johnson",
+                company: "Elegant Events Planning",
+                role: "Senior Wedding Planner",
+                content: "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
+                order: 1
+              }
+            ],
+            features_enabled: true,
+            benefits_enabled: true,
+            testimonials_enabled: true,
+            statistics_enabled: true,
+            theme: {
+              primary_color: "#1e3a5f",
+              secondary_color: "#d4af37",
+              fallback_images: [
+                "/wedding-images/wedding-ceremony.jpg",
+                "/wedding-images/wedding-reception.jpg"
+              ]
+            }
+          });
+        }
+
+        // Fetch content sections
+        const sectionsResponse = await fetch(`${baseUrl}/admin/content-sections`, { headers });
+        if (sectionsResponse.ok) {
+          const sectionsData = await sectionsResponse.json();
+          setContentSections(sectionsData.map((section: any) => ({
+            id: section._id || section.id,
+            section: section.section,
+            content: section.content,
+            isActive: section.is_active,
+            displayOrder: section.display_order,
+            updatedBy: section.updated_by,
+            updatedAt: section.updated_at
+          })));
+        }
+
+      } catch (error) {
+        console.error('Error fetching SAAS data:', error);
+        // Set default saasConfig if there's an error
+        if (!saasConfig) {
+          setSaasConfig({
+            hero_title: "Welcome to Special Wedding",
+            hero_subtitle: "Wedding Planning Made Simple",
+            hero_description: "The ultimate wedding planning platform for professional wedding planners.",
+            hero_cta_primary: "Start Free Trial",
+            hero_cta_secondary: "Watch Demo",
+            trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+            statistics: [
+              { label: "Wedding Planners Trust Us", value: "500+" },
+              { label: "Weddings Managed", value: "10K+" },
+              { label: "Uptime Guarantee", value: "99.9%" }
+            ],
+            features: [],
+            benefits: [],
+            testimonials: [],
+            features_enabled: true,
+            benefits_enabled: true,
+            testimonials_enabled: true,
+            statistics_enabled: true,
+            theme: {
+              primary_color: "#1e3a5f",
+              secondary_color: "#d4af37",
+              fallback_images: [
+                "/wedding-images/wedding-ceremony.jpg",
+                "/wedding-images/wedding-reception.jpg"
+              ]
+            }
+          });
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
   }, []);
 
   const handleCreatePlan = () => {
-    // TODO: Implement plan creation
-    console.log('Create new subscription plan');
+    setEditingPlan(null);
+    setShowCreatePlanModal(true);
+  };
+
+  const handleEditPlan = (plan: SubscriptionPlan) => {
+    setEditingPlan(plan);
+    setShowCreatePlanModal(true);
+  };
+
+  const handleDeletePlan = async (planId: string) => {
+    if (!confirm('Are you sure you want to delete this subscription plan?')) {
+      return;
+    }
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+      
+      const response = await fetch(`${baseUrl}/admin/subscription-plans/${planId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        setPlans(prev => prev.filter(plan => plan._id !== planId));
+        alert('Subscription plan deleted successfully');
+      } else {
+        throw new Error('Failed to delete plan');
+      }
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+      alert('Failed to delete subscription plan');
+    }
+  };
+
+  const handleSavePlan = async (planData: any) => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+      
+      const isEditing = !!editingPlan;
+      const url = isEditing 
+        ? `${baseUrl}/admin/subscription-plans/${editingPlan._id}`
+        : `${baseUrl}/admin/subscription-plans`;
+      
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(planData)
+      });
+
+      if (response.ok) {
+        // Refresh plans data
+        const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (plansResponse.ok) {
+          const updatedPlans = await plansResponse.json();
+          setPlans(updatedPlans);
+        }
+
+        setShowCreatePlanModal(false);
+        setEditingPlan(null);
+        alert(`Subscription plan ${isEditing ? 'updated' : 'created'} successfully`);
+      } else {
+        throw new Error(`Failed to ${isEditing ? 'update' : 'create'} plan`);
+      }
+    } catch (error) {
+      console.error('Error saving plan:', error);
+      alert(`Failed to ${editingPlan ? 'update' : 'create'} subscription plan`);
+    }
+  };
+
+  const handleSaveSaasConfig = async () => {
+    if (!saasConfig) return;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+      
+      const response = await fetch(`${baseUrl}/admin/saas-config`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(saasConfig)
+      });
+
+      if (response.ok) {
+        alert('SAAS configuration saved successfully');
+      } else {
+        throw new Error('Failed to save configuration');
+      }
+    } catch (error) {
+      console.error('Error saving SAAS config:', error);
+      alert('Failed to save SAAS configuration');
+    }
   };
 
   const handleEditContent = (sectionId: string) => {
-    // TODO: Implement content editing
+    // TODO: Implement content editing modal
     console.log('Edit content section:', sectionId);
   };
 
-  const handleCreatePlanner = () => {
-    // TODO: Implement planner creation
-    console.log('Create new wedding planner');
+  const handleCreatePlanner = async () => {
+    const email = prompt('Enter planner email:');
+    const companyName = prompt('Enter company name:');
+    
+    if (!email || !companyName) return;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+      
+      const response = await fetch(`${baseUrl}/admin/wedding-planners`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          company_name: companyName
+        })
+      });
+
+      if (response.ok) {
+        alert('Wedding planner created successfully');
+        // Refresh planners data
+        window.location.reload();
+      } else {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to create planner');
+      }
+    } catch (error: any) {
+      console.error('Error creating planner:', error);
+      alert(`Failed to create wedding planner: ${error.message}`);
+    }
   };
 
-  const handleTogglePlannerStatus = (plannerId: string) => {
-    setPlanners(prev => prev.map(planner => 
-      planner.id === plannerId 
-        ? { ...planner, isActive: !planner.isActive }
-        : planner
-    ));
+  const handleTogglePlannerStatus = async (plannerId: string) => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+      
+      const response = await fetch(`${baseUrl}/admin/wedding-planners/${plannerId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Update local state
+        setPlanners(prev => prev.map(planner => 
+          planner.id === plannerId 
+            ? { ...planner, is_active: result.new_status }
+            : planner
+        ));
+        alert(result.message);
+      } else {
+        throw new Error('Failed to update planner status');
+      }
+    } catch (error) {
+      console.error('Error updating planner status:', error);
+      alert('Failed to update planner status');
+    }
   };
 
   if (loading) {
@@ -189,10 +489,11 @@ const SaasAdminDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8">
             {[
-              { key: 'overview', label: 'Overview', icon: '📊' },
-              { key: 'plans', label: 'Subscription Plans', icon: '💳' },
-              { key: 'content', label: 'SAAS Content', icon: '✏️' },
-              { key: 'planners', label: 'Wedding Planners', icon: '👥' }
+              { key: 'overview', label: 'Overview' },
+              { key: 'plans', label: 'Subscription Plans' },
+              { key: 'content', label: 'SAAS Content' },
+              { key: 'theme', label: 'Theme & Design' },
+              { key: 'planners', label: 'Wedding Planners' }
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -203,7 +504,6 @@ const SaasAdminDashboard = () => {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
@@ -220,7 +520,7 @@ const SaasAdminDashboard = () => {
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
                     <div className="w-8 h-8 bg-blue-100 rounded-md flex items-center justify-center">
-                      <span className="text-blue-600">👥</span>
+                      <div className="w-4 h-4 bg-blue-600 rounded"></div>
                     </div>
                   </div>
                   <div className="ml-5 w-0 flex-1">
@@ -236,13 +536,13 @@ const SaasAdminDashboard = () => {
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
                     <div className="w-8 h-8 bg-green-100 rounded-md flex items-center justify-center">
-                      <span className="text-green-600">💳</span>
+                      <div className="w-4 h-4 bg-green-600 rounded"></div>
                     </div>
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
                       <dt className="text-sm font-medium text-gray-500 truncate">Active Plans</dt>
-                      <dd className="text-lg font-medium text-gray-900">{plans.filter(p => p.isActive).length}</dd>
+                      <dd className="text-lg font-medium text-gray-900">{plans.filter(p => p.is_active).length}</dd>
                     </dl>
                   </div>
                 </div>
@@ -252,7 +552,7 @@ const SaasAdminDashboard = () => {
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
                     <div className="w-8 h-8 bg-purple-100 rounded-md flex items-center justify-center">
-                      <span className="text-purple-600">💍</span>
+                      <div className="w-4 h-4 bg-purple-600 rounded"></div>
                     </div>
                   </div>
                   <div className="ml-5 w-0 flex-1">
@@ -268,7 +568,7 @@ const SaasAdminDashboard = () => {
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
                     <div className="w-8 h-8 bg-yellow-100 rounded-md flex items-center justify-center">
-                      <span className="text-yellow-600">💰</span>
+                      <div className="w-4 h-4 bg-yellow-600 rounded"></div>
                     </div>
                   </div>
                   <div className="ml-5 w-0 flex-1">
@@ -303,7 +603,7 @@ const SaasAdminDashboard = () => {
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Plan Distribution</h3>
                 <div className="space-y-3">
                   {plans.map((plan) => (
-                    <div key={plan.id} className="flex items-center justify-between">
+                    <div key={plan._id} className="flex items-center justify-between">
                       <span className="text-sm text-gray-900">{plan.name}</span>
                       <span className="text-sm text-gray-500">
                         {plan.name === 'Professional' ? '1 user' : '0 users'}
@@ -329,96 +629,432 @@ const SaasAdminDashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {plans.map((plan) => (
-                <Card key={plan.id} className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <h3 className="text-xl font-semibold">{plan.name}</h3>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      plan.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {plan.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                  
-                  <div className="text-3xl font-bold text-blue-600 mb-4">
-                    {plan.price === 0 ? 'Free' : `$${plan.price}/month`}
-                  </div>
-                  
-                  <ul className="space-y-2 mb-6">
-                    {plan.features.slice(0, 3).map((feature, idx) => (
-                      <li key={idx} className="text-sm text-gray-600 flex items-center">
-                        <span className="text-green-500 mr-2">✓</span>
-                        {feature}
-                      </li>
-                    ))}
-                    {plan.features.length > 3 && (
-                      <li className="text-sm text-gray-500">
-                        +{plan.features.length - 3} more features
-                      </li>
+              {plans.map((plan) => {
+                // Convert features object to array for display
+                const featuresArray = plan.features ? Object.entries(plan.features)
+                  .filter(([key, value]) => value === true)
+                  .map(([key]) => key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))
+                  : [];
+
+                return (
+                  <Card key={plan._id} className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <h3 className="text-xl font-semibold">{plan.name}</h3>
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        plan.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {plan.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    
+                    {plan.description && (
+                      <p className="text-sm text-gray-600 mb-3">{plan.description}</p>
                     )}
-                  </ul>
-                  
-                  <div className="text-xs text-gray-500 space-y-1 mb-4">
-                    <p>Max Weddings: {plan.maxWeddings === -1 ? 'Unlimited' : plan.maxWeddings}</p>
-                    <p>AI Credits: {plan.aiCreditsMonthly}/month</p>
-                    <p>Storage: {plan.storageGb}GB</p>
-                  </div>
-                  
-                  <button className="w-full bg-gray-100 text-gray-800 py-2 px-4 rounded hover:bg-gray-200 transition-colors">
-                    Edit Plan
-                  </button>
-                </Card>
-              ))}
+                    
+                    <div className="text-3xl font-bold text-blue-600 mb-4">
+                      {plan.price_monthly === 0 ? 'Free' : `$${plan.price_monthly}/month`}
+                    </div>
+                    
+                    <ul className="space-y-2 mb-6">
+                      {featuresArray.slice(0, 4).map((feature, idx) => (
+                        <li key={idx} className="text-sm text-gray-600 flex items-center">
+                          <span className="text-green-500 mr-2">✓</span>
+                          {feature}
+                        </li>
+                      ))}
+                      {featuresArray.length > 4 && (
+                        <li className="text-sm text-gray-500">
+                          +{featuresArray.length - 4} more features
+                        </li>
+                      )}
+                    </ul>
+                    
+                    <div className="text-xs text-gray-500 space-y-1 mb-4">
+                      <p>Max Weddings: {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings}</p>
+                      <p>AI Credits: {plan.ai_credits_monthly}/month</p>
+                      <p>Storage: {plan.storage_gb}GB</p>
+                      <p>Vendor Seats: {plan.vendor_seats === -1 ? 'Unlimited' : plan.vendor_seats}</p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <button 
+                        onClick={() => handleEditPlan(plan)}
+                        className="w-full bg-blue-100 text-blue-800 py-2 px-4 rounded hover:bg-blue-200 transition-colors"
+                      >
+                        Edit Plan
+                      </button>
+                      <button 
+                        onClick={() => handleDeletePlan(plan._id)}
+                        className="w-full bg-red-100 text-red-800 py-2 px-4 rounded hover:bg-red-200 transition-colors"
+                      >
+                        Delete Plan
+                      </button>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {activeTab === 'content' && (
+        {activeTab === 'content' && saasConfig && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-bold text-gray-900">SAAS Landing Page Content</h2>
-              <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                Add New Section
+              <button 
+                onClick={handleSaveSaasConfig}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Save All Changes
               </button>
             </div>
 
-            <div className="space-y-4">
-              {contentSections.map((section) => (
-                <Card key={section.id} className="p-6">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center mb-2">
-                        <h3 className="text-lg font-semibold capitalize">{section.section.replace('_', ' ')}</h3>
-                        <span className={`ml-3 px-2 py-1 rounded text-xs ${
-                          section.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {section.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </div>
-                      <p className="text-gray-600 text-sm mb-2">
-                        {typeof section.content === 'object' && section.content.title 
-                          ? section.content.title 
-                          : `${section.section} section content`}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Last updated: {new Date(section.updatedAt).toLocaleDateString()} by {section.updatedBy}
-                      </p>
-                    </div>
-                    <div className="flex space-x-2">
+            <div className="space-y-6">
+              {/* Hero Section Editor */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Hero Section</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                    <input
+                      type="text"
+                      value={saasConfig.hero_title}
+                      onChange={(e) => setSaasConfig({...saasConfig, hero_title: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Subtitle</label>
+                    <input
+                      type="text"
+                      value={saasConfig.hero_subtitle}
+                      onChange={(e) => setSaasConfig({...saasConfig, hero_subtitle: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    <textarea
+                      value={saasConfig.hero_description}
+                      onChange={(e) => setSaasConfig({...saasConfig, hero_description: e.target.value})}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Primary CTA</label>
+                    <input
+                      type="text"
+                      value={saasConfig.hero_cta_primary}
+                      onChange={(e) => setSaasConfig({...saasConfig, hero_cta_primary: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Secondary CTA</label>
+                    <input
+                      type="text"
+                      value={saasConfig.hero_cta_secondary}
+                      onChange={(e) => setSaasConfig({...saasConfig, hero_cta_secondary: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              {/* Statistics Section */}
+              <Card className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold">Statistics</h3>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={saasConfig.statistics_enabled}
+                      onChange={(e) => setSaasConfig({...saasConfig, statistics_enabled: e.target.checked})}
+                      className="mr-2"
+                    />
+                    Enable Section
+                  </label>
+                </div>
+                <div className="space-y-3">
+                  {saasConfig.statistics.map((stat, index) => (
+                    <div key={index} className="flex items-center space-x-3">
+                      <input
+                        type="text"
+                        value={stat.value}
+                        onChange={(e) => {
+                          const newStats = [...saasConfig.statistics];
+                          newStats[index] = {...stat, value: e.target.value};
+                          setSaasConfig({...saasConfig, statistics: newStats});
+                        }}
+                        placeholder="500+"
+                        className="w-24 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="text"
+                        value={stat.label}
+                        onChange={(e) => {
+                          const newStats = [...saasConfig.statistics];
+                          newStats[index] = {...stat, label: e.target.value};
+                          setSaasConfig({...saasConfig, statistics: newStats});
+                        }}
+                        placeholder="Label"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
                       <button
-                        onClick={() => handleEditContent(section.id)}
-                        className="bg-blue-100 text-blue-700 px-3 py-1 rounded text-sm hover:bg-blue-200 transition-colors"
+                        onClick={() => {
+                          const newStats = saasConfig.statistics.filter((_, i) => i !== index);
+                          setSaasConfig({...saasConfig, statistics: newStats});
+                        }}
+                        className="text-red-600 hover:text-red-800"
                       >
-                        Edit
+                        Remove
                       </button>
-                      <button className="bg-gray-100 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-200 transition-colors">
-                        Preview
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setSaasConfig({
+                      ...saasConfig,
+                      statistics: [...saasConfig.statistics, {label: '', value: ''}]
+                    })}
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    + Add Statistic
+                  </button>
+                </div>
+              </Card>
+
+              {/* Trust Indicators */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Trust Indicators</h3>
+                <div className="space-y-3">
+                  {saasConfig.trust_indicators.map((indicator, index) => (
+                    <div key={index} className="flex items-center space-x-3">
+                      <input
+                        type="text"
+                        value={indicator}
+                        onChange={(e) => {
+                          const newIndicators = [...saasConfig.trust_indicators];
+                          newIndicators[index] = e.target.value;
+                          setSaasConfig({...saasConfig, trust_indicators: newIndicators});
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Free 30-day trial"
+                      />
+                      <button
+                        onClick={() => {
+                          const newIndicators = saasConfig.trust_indicators.filter((_, i) => i !== index);
+                          setSaasConfig({...saasConfig, trust_indicators: newIndicators});
+                        }}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setSaasConfig({
+                      ...saasConfig,
+                      trust_indicators: [...saasConfig.trust_indicators, '']
+                    })}
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    + Add Trust Indicator
+                  </button>
+                </div>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'theme' && saasConfig && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Theme & Design</h2>
+              <button 
+                onClick={handleSaveSaasConfig}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Theme Colors */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Brand Colors</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Primary Color
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="color"
+                        value={saasConfig.theme.primary_color}
+                        onChange={(e) => setSaasConfig({
+                          ...saasConfig,
+                          theme: { ...saasConfig.theme, primary_color: e.target.value }
+                        })}
+                        className="w-12 h-12 rounded border-2 border-gray-300 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={saasConfig.theme.primary_color}
+                        onChange={(e) => setSaasConfig({
+                          ...saasConfig,
+                          theme: { ...saasConfig.theme, primary_color: e.target.value }
+                        })}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="#1e3a5f"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Secondary Color
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="color"
+                        value={saasConfig.theme.secondary_color}
+                        onChange={(e) => setSaasConfig({
+                          ...saasConfig,
+                          theme: { ...saasConfig.theme, secondary_color: e.target.value }
+                        })}
+                        className="w-12 h-12 rounded border-2 border-gray-300 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={saasConfig.theme.secondary_color}
+                        onChange={(e) => setSaasConfig({
+                          ...saasConfig,
+                          theme: { ...saasConfig.theme, secondary_color: e.target.value }
+                        })}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="#d4af37"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Color Preview */}
+                  <div className="mt-6 p-4 rounded-lg border-2 border-gray-200">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3">Preview</h4>
+                    <div className="flex space-x-4">
+                      <div 
+                        className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
+                        style={{ backgroundColor: saasConfig.theme.primary_color }}
+                      >
+                        Primary
+                      </div>
+                      <div 
+                        className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
+                        style={{ backgroundColor: saasConfig.theme.secondary_color }}
+                      >
+                        Secondary
+                      </div>
+                      <div 
+                        className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
+                        style={{ 
+                          background: `linear-gradient(135deg, ${saasConfig.theme.primary_color}, ${saasConfig.theme.secondary_color})`
+                        }}
+                      >
+                        Gradient
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Background Settings */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Background Settings</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Custom Background Image URL
+                    </label>
+                    <input
+                      type="url"
+                      value={saasConfig.theme.background_image || ''}
+                      onChange={(e) => setSaasConfig({
+                        ...saasConfig,
+                        theme: { ...saasConfig.theme, background_image: e.target.value }
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="https://example.com/image.jpg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Fallback Images
+                    </label>
+                    <div className="space-y-2">
+                      {saasConfig.theme.fallback_images.map((image, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={image}
+                            onChange={(e) => {
+                              const newImages = [...saasConfig.theme.fallback_images];
+                              newImages[index] = e.target.value;
+                              setSaasConfig({
+                                ...saasConfig,
+                                theme: { ...saasConfig.theme, fallback_images: newImages }
+                              });
+                            }}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="/path/to/image.jpg"
+                          />
+                          <button
+                            onClick={() => {
+                              const newImages = saasConfig.theme.fallback_images.filter((_, i) => i !== index);
+                              setSaasConfig({
+                                ...saasConfig,
+                                theme: { ...saasConfig.theme, fallback_images: newImages }
+                              });
+                            }}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setSaasConfig({
+                          ...saasConfig,
+                          theme: { 
+                            ...saasConfig.theme, 
+                            fallback_images: [...saasConfig.theme.fallback_images, ''] 
+                          }
+                        })}
+                        className="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        + Add Fallback Image
                       </button>
                     </div>
                   </div>
-                </Card>
-              ))}
+                </div>
+              </Card>
             </div>
+
+            {/* Live Preview Button */}
+            <Card className="p-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-semibold">Live Preview</h3>
+                  <p className="text-gray-600 text-sm">See how your changes look on the landing page</p>
+                </div>
+                <button
+                  onClick={() => window.open('/', '_blank')}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Open Landing Page
+                </button>
+              </div>
+            </Card>
           </div>
         )}
 
@@ -467,16 +1103,16 @@ const SaasAdminDashboard = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {plans.find(p => p.id === planner.subscriptionPlanId)?.name || 'Unknown'}
+                            {plans.find(p => p._id === planner.subscriptionPlanId)?.name || 'Unknown'}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            planner.isActive && planner.subscriptionStatus === 'active'
+                            planner.is_active && planner.subscriptionStatus === 'active'
                               ? 'bg-green-100 text-green-800'
                               : 'bg-red-100 text-red-800'
                           }`}>
-                            {planner.isActive && planner.subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
+                            {planner.is_active && planner.subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -489,10 +1125,10 @@ const SaasAdminDashboard = () => {
                           <button
                             onClick={() => handleTogglePlannerStatus(planner.id)}
                             className={`${
-                              planner.isActive ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'
+                              planner.is_active ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'
                             }`}
                           >
-                            {planner.isActive ? 'Deactivate' : 'Activate'}
+                            {planner.is_active ? 'Deactivate' : 'Activate'}
                           </button>
                           <button className="text-blue-600 hover:text-blue-900">
                             Edit
@@ -509,6 +1145,200 @@ const SaasAdminDashboard = () => {
             </Card>
           </div>
         )}
+      </div>
+
+      {/* Create/Edit Plan Modal */}
+      {showCreatePlanModal && (
+        <PlanModal
+          isEditing={!!editingPlan}
+          plan={editingPlan}
+          onSave={handleSavePlan}
+          onClose={() => {
+            setShowCreatePlanModal(false);
+            setEditingPlan(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// Simple Plan Modal Component
+const PlanModal = ({ isEditing, plan, onSave, onClose }: {
+  isEditing: boolean;
+  plan: SubscriptionPlan | null;
+  onSave: (planData: any) => void;
+  onClose: () => void;
+}) => {
+  const [formData, setFormData] = useState({
+    name: plan?.name || '',
+    description: plan?.description || '',
+    price_monthly: plan?.price_monthly || 0,
+    price_yearly: plan?.price_yearly || 0,
+    max_weddings: plan?.max_weddings || 1,
+    max_guests_per_wedding: plan?.max_guests_per_wedding || 100,
+    ai_credits_monthly: plan?.ai_credits_monthly || 10,
+    storage_gb: plan?.storage_gb || 1,
+    vendor_seats: plan?.vendor_seats || 1,
+    staff_seats: plan?.staff_seats || 0,
+    is_featured: plan?.is_featured || false,
+    is_active: plan?.is_active !== false,
+    display_order: plan?.display_order || 0,
+    features: {
+      basic_website_builder: plan?.features?.basic_website_builder || false,
+      guest_management: plan?.features?.guest_management || false,
+      rsvp_system: plan?.features?.rsvp_system || false,
+      ai_tools: plan?.features?.ai_tools || false,
+      advanced_reporting: plan?.features?.advanced_reporting || false,
+      white_label: plan?.features?.white_label || false,
+      custom_integrations: plan?.features?.custom_integrations || false,
+      multi_user_collaboration: plan?.features?.multi_user_collaboration || false,
+      priority_support: plan?.features?.priority_support || false,
+    }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <h2 className="text-2xl font-bold mb-4">
+          {isEditing ? 'Edit Plan' : 'Create New Plan'}
+        </h2>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Plan Name</label>
+              <input
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Price ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.price_monthly}
+                onChange={(e) => setFormData(prev => ({ ...prev, price_monthly: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={2}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Max Weddings</label>
+              <input
+                type="number"
+                min="-1"
+                value={formData.max_weddings}
+                onChange={(e) => setFormData(prev => ({ ...prev, max_weddings: parseInt(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="-1 for unlimited"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">AI Credits/Month</label>
+              <input
+                type="number"
+                min="0"
+                value={formData.ai_credits_monthly}
+                onChange={(e) => setFormData(prev => ({ ...prev, ai_credits_monthly: parseInt(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Storage (GB)</label>
+              <input
+                type="number"
+                min="0"
+                value={formData.storage_gb}
+                onChange={(e) => setFormData(prev => ({ ...prev, storage_gb: parseInt(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Features</label>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(formData.features).map(([key, value]) => (
+                <label key={key} className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={value}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      features: { ...prev.features, [key]: e.target.checked }
+                    }))}
+                    className="rounded"
+                  />
+                  <span className="text-sm">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.is_active}
+                onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                className="rounded"
+              />
+              <span className="text-sm">Active</span>
+            </label>
+            
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.is_featured}
+                onChange={(e) => setFormData(prev => ({ ...prev, is_featured: e.target.checked }))}
+                className="rounded"
+              />
+              <span className="text-sm">Featured</span>
+            </label>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              {isEditing ? 'Update Plan' : 'Create Plan'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
