@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.reminder_service import ReminderService
-from app.dependencies.auth import require_admin
+from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
 from datetime import datetime, timezone
 import logging
@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 
 reminder_service = ReminderService()
 
-@router.post("/reminders/send", tags=["Admin"], dependencies=[Depends(require_admin)])
-def send_reminder(event_type: str, message: str, target_group: str):
+@router.post("/reminders/send", tags=["Admin"])
+def send_reminder(event_type: str, message: str, target_group: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     return reminder_service.send_reminders(event_type, message, target_group)
 
-@router.get("/reminders/logs", tags=["Admin"], dependencies=[Depends(require_admin)])
-def get_logs():
+@router.get("/reminders/logs", tags=["Admin"])
+def get_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     return reminder_service.get_logs()
 
 @router.get("/reminders/sms-callback", tags=["Webhooks"])

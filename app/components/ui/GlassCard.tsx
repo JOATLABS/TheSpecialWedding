@@ -16,27 +16,27 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   blur = 'lg',
   theme
 }) => {
-  // Depth-based styling
+  // Depth-based styling - More transparent
   const depthStyles = {
     near: {
       shadow: 'shadow-2xl',
       scale: 'scale-[1.02]',
       blur: 'backdrop-blur-xl',
-      bg: 'bg-white/80',
+      bg: 'bg-white/40',  // Reduced from 80% to 40%
       zIndex: 'z-30'
     },
     mid: {
       shadow: 'shadow-xl',
       scale: 'scale-100',
       blur: 'backdrop-blur-lg',
-      bg: 'bg-white/70',
+      bg: 'bg-white/30',  // Reduced from 70% to 30%
       zIndex: 'z-20'
     },
     far: {
       shadow: 'shadow-lg',
       scale: 'scale-[0.98]',
       blur: 'backdrop-blur-md',
-      bg: 'bg-white/60',
+      bg: 'bg-white/20',  // Reduced from 60% to 20%
       zIndex: 'z-10'
     }
   };

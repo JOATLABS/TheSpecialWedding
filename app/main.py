@@ -20,6 +20,9 @@ from app.api.gallery_public import router as gallery_public_router
 from app.api.gallery_admin import router as gallery_admin_router
 from app.api.wedding import router as wedding_router
 from app.api.reminder_utilities import router as reminder_utils_router
+from app.api.user_management import router as user_management_router
+from app.api.subscription_management import router as subscription_router
+from app.api.saas_config import router as saas_config_router
 
 app = FastAPI(
     title="Wedding WebApp API",
@@ -55,6 +58,8 @@ app.include_router(rsvp_router, prefix="/rsvp")
 app.include_router(plus_one_router, prefix="/plus_one")
 app.include_router(wedding_router)  # Public wedding endpoints (list, get by slug)
 app.include_router(gallery_public_router)  # Public gallery endpoints (view, QR)
+app.include_router(subscription_router)  # Public subscription plan endpoints
+app.include_router(saas_config_router, prefix="/saas")  # Public SAAS config endpoints
 
 # Admin routes - all under /admin prefix
 app.include_router(auth_router, prefix="/admin")
@@ -68,3 +73,6 @@ app.include_router(checkin_router, prefix="/admin")
 app.include_router(gallery_admin_router, prefix="/admin")  # Admin gallery endpoints (upload, delete)
 app.include_router(wedding_router, prefix="/admin")  # Admin wedding endpoints (create, update, delete)
 app.include_router(reminder_utils_router, prefix="/admin")
+app.include_router(user_management_router, prefix="/admin")  # ROOT_ADMIN user management
+app.include_router(subscription_router, prefix="/admin")  # Subscription management
+app.include_router(saas_config_router, prefix="/admin")  # SAAS configuration management

@@ -1,23 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React from 'react';
+import { SaasLandingPage } from './components/saas/SaasLandingPage';
 
 export default function HomePage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    // Redirect to SAAS landing page when visiting the root domain
-    router.replace('/saas');
-  }, [router]);
-
-  // Show loading state while redirecting
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading Special Wedding...</p>
-      </div>
-    </div>
-  );
+  return <SaasLandingPage />;
 }

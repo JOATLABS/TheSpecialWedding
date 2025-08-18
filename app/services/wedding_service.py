@@ -7,10 +7,14 @@ class WeddingService:
     def __init__(self):
         self.collection = mongo.db["weddings"]
     
-    def create_wedding(self, wedding: WeddingModel):
+    def create_wedding(self, wedding_data: dict):
         """Create a new wedding"""
         try:
-            wedding_dict = wedding.dict(by_alias=True)
+            # Handle both WeddingModel instances and raw dicts
+            if hasattr(wedding_data, 'dict'):
+                wedding_dict = wedding_data.dict(by_alias=True)
+            else:
+                wedding_dict = wedding_data
             
             # Check if wedding ID already exists
             existing = self.collection.find_one({"_id": wedding_dict["_id"]})
@@ -55,6 +59,14 @@ class WeddingService:
             return weddings
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing weddings: {str(e)}")
+    
+    def list_weddings_for_planner(self, planner_email: str) -> List[dict]:
+        """List weddings assigned to a specific planner"""
+        try:
+            weddings = list(self.collection.find({"assigned_planner_email": planner_email}))
+            return weddings
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error listing weddings for planner: {str(e)}")
     
     def update_wedding(self, wedding_id: str, wedding_data: dict):
         """Update a wedding"""

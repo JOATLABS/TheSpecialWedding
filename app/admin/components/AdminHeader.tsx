@@ -3,30 +3,75 @@
 import { useAdmin } from '@/contexts/AdminContext';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function AdminHeader() {
-  const { logout } = useAdmin();
+  const { logout, userProfile, fetchUserProfile } = useAdmin();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isLoginPage = pathname === '/admin/login';
 
+  useEffect(() => {
+    if (!userProfile) {
+      fetchUserProfile();
+    }
+  }, [userProfile, fetchUserProfile]);
+
   if (isLoginPage) return null;
 
-  const navLinks = [
-    { href: '/admin/weddings', label: 'Weddings' },
-    { href: '/admin/gallery/upload', label: 'Gallery' },
-    { href: '/admin/import', label: 'Import Guests' },
-    { href: '/admin/guests', label: 'Manage Guests' },
-    { href: '/admin/reminders', label: 'SMS Reminders' },
-  ];
+  // Role-based navigation links
+  const getNavLinks = () => {
+    if (!userProfile) return [];
+
+    const baseLinks = [
+      { href: '/admin', label: 'Dashboard', roles: ['ROOT_ADMIN', 'admin', 'wedding_planner', 'vendor'] }
+    ];
+
+    if (userProfile.is_root_admin) {
+      return [
+        ...baseLinks,
+        { href: '/admin/saas', label: 'SAAS Config', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/weddings', label: 'All Weddings', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/gallery/upload', label: 'Gallery', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/import', label: 'Import Guests', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/guests', label: 'Manage Guests', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/reminders', label: 'SMS Reminders', roles: ['ROOT_ADMIN'] },
+      ];
+    } else if (userProfile.is_wedding_planner) {
+      return [
+        ...baseLinks,
+        { href: '/admin/weddings', label: 'My Weddings', roles: ['wedding_planner'] },
+        { href: '/admin/gallery/upload', label: 'Gallery', roles: ['wedding_planner'] },
+        { href: '/admin/guests', label: 'Guests', roles: ['wedding_planner'] },
+        { href: '/admin/reminders', label: 'Reminders', roles: ['wedding_planner'] },
+      ];
+    } else if (userProfile.is_vendor) {
+      return [
+        ...baseLinks,
+        { href: '/admin/vendor', label: 'My Tasks', roles: ['vendor'] },
+      ];
+    }
+
+    return baseLinks;
+  };
+
+  const navLinks = getNavLinks();
 
   return (
     <>
       <header className="glass px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between relative">
-        <h1 className="font-heading text-xl sm:text-2xl text-wedding-rose">
-          Admin Panel
-        </h1>
+        <div>
+          <h1 className="font-heading text-xl sm:text-2xl text-wedding-rose">
+            {userProfile?.is_root_admin ? 'Admin Panel' : 
+             userProfile?.is_wedding_planner ? 'Wedding Planner' : 
+             userProfile?.is_vendor ? 'Vendor Portal' : 'Admin Panel'}
+          </h1>
+          {userProfile && (
+            <p className="text-sm text-gray-600">
+              {userProfile.user_data?.company_name || userProfile.email}
+            </p>
+          )}
+        </div>
         
         {/* Desktop Navigation */}
         <nav className="hidden lg:flex space-x-4 xl:space-x-6 font-medium">
