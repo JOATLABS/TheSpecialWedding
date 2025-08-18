@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Card } from '../components/ui/Card';
+import { Modern3DBackground } from '../components/landing-page/Modern3DBackground';
 
 interface SubscriptionPlan {
   id: string;
@@ -189,9 +190,17 @@ const SaasLandingPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen">
+      {/* Cool 3D Background */}
+      <Modern3DBackground 
+        theme={{
+          primary_color: '#1e3a5f',
+          secondary_color: '#6366f1',
+          background_style: 'gradient'
+        }}
+      />
       {/* Hero Section */}
-      <section className="relative py-20 px-4 text-center bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+      <section className="relative py-20 px-4 text-center text-white bg-black/20 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto">
           <div className="mb-6">
             <h1 className="text-5xl font-bold mb-4">{content.hero.title}</h1>
@@ -210,9 +219,9 @@ const SaasLandingPage = () => {
       </section>
 
       {/* Features Section */}
-      <section className="py-20 px-4">
+      <section className="relative py-20 px-4 bg-white/10 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-bold text-center mb-16 text-gray-800">
+          <h2 className="text-4xl font-bold text-center mb-16 text-white">
             Powerful Features for Wedding Professionals
           </h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -227,17 +236,17 @@ const SaasLandingPage = () => {
       </section>
 
       {/* Pricing Section */}
-      <section className="py-20 px-4 bg-white">
+      <section className="relative py-20 px-4 bg-white/20 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4 text-gray-800">Simple, Transparent Pricing</h2>
-            <p className="text-xl text-gray-600 mb-8">
+            <h2 className="text-4xl font-bold mb-4 text-white">Simple, Transparent Pricing</h2>
+            <p className="text-xl text-gray-100 mb-8">
               Choose the perfect plan for your wedding planning business. All plans include a free trial.
             </p>
             
             {/* Pricing Toggle */}
             <div className="flex items-center justify-center mb-8">
-              <span className={`mr-3 ${!isYearly ? 'text-blue-600 font-semibold' : 'text-gray-500'}`}>
+              <span className={`mr-3 ${!isYearly ? 'text-blue-300 font-semibold' : 'text-gray-300'}`}>
                 Monthly
               </span>
               <button
@@ -250,7 +259,7 @@ const SaasLandingPage = () => {
                   }`}
                 />
               </button>
-              <span className={`ml-3 ${isYearly ? 'text-blue-600 font-semibold' : 'text-gray-500'}`}>
+              <span className={`ml-3 ${isYearly ? 'text-blue-300 font-semibold' : 'text-gray-300'}`}>
                 Yearly
               </span>
               {isYearly && (
