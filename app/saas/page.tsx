@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Card } from '@/app/components/ui/Card';
+import { Card } from '../components/ui/Card';
 
 interface SubscriptionPlan {
   id: string;
@@ -56,37 +56,37 @@ const SaasLandingPage = () => {
         id: "wedding_management",
         title: "Complete Wedding Management",
         description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
-        icon: "📅"
+        icon: ""
       },
       {
         id: "ai_presentation",
         title: "AI Presentation Generator",
         description: "Create stunning wedding presentations in minutes with our AI-powered tools.",
-        icon: "🎨"
+        icon: ""
       },
       {
         id: "smart_email",
         title: "Smart Email Assistant",
         description: "Send professional emails with embedded reports and updates using AI.",
-        icon: "✉️"
+        icon: ""
       },
       {
         id: "budget_optimization",
         title: "Budget Optimization Engine",
         description: "Calculate optimal spending for maximum impact on your client's special day.",
-        icon: "💰"
+        icon: ""
       },
       {
         id: "design_research",
         title: "Design Research AI",
         description: "Get color palettes, themes, and design inspiration tailored to your clients.",
-        icon: "🎨"
+        icon: ""
       },
       {
         id: "vendor_management",
         title: "Vendor Collaboration",
         description: "Give vendors access to update their portions of the wedding checklist.",
-        icon: "🤝"
+        icon: ""
       }
     ],
     testimonials: [
@@ -194,7 +194,6 @@ const SaasLandingPage = () => {
       <section className="relative py-20 px-4 text-center bg-gradient-to-r from-blue-600 to-purple-600 text-white">
         <div className="max-w-6xl mx-auto">
           <div className="mb-6">
-            <div className="text-6xl mb-4">💍</div>
             <h1 className="text-5xl font-bold mb-4">{content.hero.title}</h1>
             <h2 className="text-2xl font-light mb-6">{content.hero.subtitle}</h2>
           </div>
@@ -219,7 +218,6 @@ const SaasLandingPage = () => {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {content.features.map((feature) => (
               <Card key={feature.id} className="p-6 hover:shadow-lg transition-shadow">
-                <div className="text-4xl mb-4">{feature.icon}</div>
                 <h3 className="text-xl font-semibold mb-3 text-gray-800">{feature.title}</h3>
                 <p className="text-gray-600">{feature.description}</p>
               </Card>
@@ -280,10 +278,6 @@ const SaasLandingPage = () => {
                 )}
                 
                 <div className="text-center mb-6">
-                  {plan.name === 'Starter' && <div className="text-4xl mb-2">🆓</div>}
-                  {plan.name === 'Professional' && <div className="text-4xl mb-2">⭐</div>}
-                  {plan.name === 'Enterprise' && <div className="text-4xl mb-2">👑</div>}
-                  
                   <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
                   <p className="text-gray-600 mb-4">
                     {plan.name === 'Starter' && 'Perfect for getting started'}
