@@ -66,7 +66,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 setUserProfile(profile);
             }
         } catch (error) {
-            console.error('Failed to fetch user profile:', error);
+            // Log error without exposing sensitive information
+            console.error('Failed to fetch user profile');
         }
     };
 
@@ -74,7 +75,6 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         try {
             const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
             const loginUrl = `${baseUrl}/admin/token`;
-            console.log('Login URL:', loginUrl); // Debug log
             const res = await fetch(loginUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

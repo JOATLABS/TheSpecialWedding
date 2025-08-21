@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card } from '../../components/ui/Card';
+import { ContentEditModal } from '../components/ContentEditModal';
 
 interface SubscriptionPlan {
   _id: string;
@@ -101,6 +102,9 @@ const SaasAdminDashboard = () => {
   const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingSectionType, setEditingSectionType] = useState<string>('');
+  const [editingSectionData, setEditingSectionData] = useState<any>(null);
 
   // Fetch real data from API
   useEffect(() => {
@@ -354,12 +358,49 @@ const SaasAdminDashboard = () => {
     }
   };
 
-  const handleSaveSaasConfig = async () => {
-    if (!saasConfig) return;
+  const handleSaveSaasConfig = async (configToSave?: SaasFullConfig | React.MouseEvent) => {
+    // Handle both direct config object and mouse event from button clicks
+    const configData = (configToSave && 'hero_title' in configToSave) ? configToSave : saasConfig;
+    
+    if (!configData) {
+      alert('No configuration data to save');
+      return;
+    }
 
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+      
+      if (!token) {
+        alert('Authentication token not found. Please log in again.');
+        return;
+      }
+
+      // Create a clean copy of the config to avoid circular references
+      const cleanConfig: SaasFullConfig = {
+        hero_title: configData.hero_title,
+        hero_subtitle: configData.hero_subtitle,
+        hero_description: configData.hero_description,
+        hero_cta_primary: configData.hero_cta_primary,
+        hero_cta_secondary: configData.hero_cta_secondary,
+        trust_indicators: configData.trust_indicators || [],
+        statistics: configData.statistics || [],
+        features: configData.features || [],
+        benefits: configData.benefits || [],
+        testimonials: configData.testimonials || [],
+        features_enabled: configData.features_enabled,
+        benefits_enabled: configData.benefits_enabled,
+        testimonials_enabled: configData.testimonials_enabled,
+        statistics_enabled: configData.statistics_enabled,
+        theme: {
+          primary_color: configData.theme.primary_color,
+          secondary_color: configData.theme.secondary_color,
+          background_image: configData.theme.background_image,
+          fallback_images: configData.theme.fallback_images || []
+        }
+      };
+
+      console.log('Saving SAAS config:', cleanConfig);
       
       const response = await fetch(`${baseUrl}/admin/saas-config`, {
         method: 'PUT',
@@ -367,23 +408,66 @@ const SaasAdminDashboard = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(saasConfig)
+        body: JSON.stringify(cleanConfig)
       });
+
+      const responseData = await response.text();
+      console.log('Response status:', response.status);
+      console.log('Response data:', responseData);
 
       if (response.ok) {
         alert('SAAS configuration saved successfully');
       } else {
-        throw new Error('Failed to save configuration');
+        let errorMessage = 'Failed to save configuration';
+        try {
+          const errorData = JSON.parse(responseData);
+          errorMessage = errorData.detail || errorMessage;
+        } catch (parseError) {
+          errorMessage = responseData || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Error saving SAAS config:', error);
-      alert('Failed to save SAAS configuration');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Failed to save SAAS configuration: ${errorMessage}`);
+      throw error; // Re-throw so caller can handle it
     }
   };
 
-  const handleEditContent = (sectionId: string) => {
-    // TODO: Implement content editing modal
-    console.log('Edit content section:', sectionId);
+  const handleEditContent = (sectionType: string) => {
+    if (!saasConfig) return;
+    
+    let sectionData = {};
+    
+    switch (sectionType) {
+      case 'hero':
+        sectionData = {
+          hero_title: saasConfig.hero_title,
+          hero_subtitle: saasConfig.hero_subtitle,
+          hero_description: saasConfig.hero_description,
+          hero_cta_primary: saasConfig.hero_cta_primary,
+          hero_cta_secondary: saasConfig.hero_cta_secondary
+        };
+        break;
+      case 'statistics':
+        sectionData = {
+          statistics: saasConfig.statistics || []
+        };
+        break;
+      case 'trust_indicators':
+        sectionData = {
+          trust_indicators: saasConfig.trust_indicators || []
+        };
+        break;
+      default:
+        console.warn('Unknown section type:', sectionType);
+        return;
+    }
+    
+    setEditingSectionType(sectionType);
+    setEditingSectionData(sectionData);
+    setEditModalOpen(true);
   };
 
   const handleCreatePlanner = async () => {
@@ -712,7 +796,15 @@ const SaasAdminDashboard = () => {
             <div className="space-y-6">
               {/* Hero Section Editor */}
               <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Hero Section</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold">Hero Section</h3>
+                  <button
+                    onClick={() => handleEditContent('hero')}
+                    className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                  >
+                    Edit in Modal
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
@@ -766,7 +858,14 @@ const SaasAdminDashboard = () => {
               <Card className="p-6">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold">Statistics</h3>
-                  <label className="flex items-center">
+                  <div className="flex items-center space-x-4">
+                    <button
+                      onClick={() => handleEditContent('statistics')}
+                      className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                    >
+                      Edit in Modal
+                    </button>
+                    <label className="flex items-center">
                     <input
                       type="checkbox"
                       checked={saasConfig.statistics_enabled}
@@ -775,6 +874,7 @@ const SaasAdminDashboard = () => {
                     />
                     Enable Section
                   </label>
+                  </div>
                 </div>
                 <div className="space-y-3">
                   {saasConfig.statistics.map((stat, index) => (
@@ -826,7 +926,15 @@ const SaasAdminDashboard = () => {
 
               {/* Trust Indicators */}
               <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Trust Indicators</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold">Trust Indicators</h3>
+                  <button
+                    onClick={() => handleEditContent('trust_indicators')}
+                    className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                  >
+                    Edit in Modal
+                  </button>
+                </div>
                 <div className="space-y-3">
                   {saasConfig.trust_indicators.map((indicator, index) => (
                     <div key={index} className="flex items-center space-x-3">
@@ -1159,6 +1267,50 @@ const SaasAdminDashboard = () => {
           }}
         />
       )}
+      
+      {/* Content Edit Modal */}
+      <ContentEditModal
+        isOpen={editModalOpen}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditingSectionType('');
+          setEditingSectionData(null);
+        }}
+        sectionType={editingSectionType}
+        sectionData={editingSectionData}
+        onSave={async (updatedData) => {
+          if (!saasConfig) return;
+          
+          try {
+            // Update the saasConfig with the new data
+            const updatedConfig = { ...saasConfig };
+            
+            switch (editingSectionType) {
+              case 'hero':
+                Object.assign(updatedConfig, updatedData);
+                break;
+              case 'statistics':
+                updatedConfig.statistics = updatedData.statistics;
+                break;
+              case 'trust_indicators':
+                updatedConfig.trust_indicators = updatedData.trust_indicators;
+                break;
+            }
+            
+            // Save to backend with the updated config
+            await handleSaveSaasConfig(updatedConfig);
+            
+            // Only update state and close modal if save was successful
+            setSaasConfig(updatedConfig);
+            setEditModalOpen(false);
+            setEditingSectionType('');
+            setEditingSectionData(null);
+          } catch (error) {
+            console.error('Error in modal save:', error);
+            // Don't close modal if save failed, so user can retry
+          }
+        }}
+      />
     </div>
   );
 };

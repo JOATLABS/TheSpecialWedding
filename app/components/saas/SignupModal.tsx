@@ -104,9 +104,9 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Special Wedding!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Check Your Email!</h2>
           <p className="text-gray-600 mb-6">
-            Your account has been created successfully. You can now log in and start planning amazing weddings!
+            Your account has been created successfully. We've sent a verification email to your address. Please check your email and click the verification link to activate your account before logging in.
           </p>
           <div className="space-y-3">
             <button
@@ -114,7 +114,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               className="w-full py-3 px-4 text-white font-medium rounded-lg transition-colors"
               style={{ backgroundColor: theme.primary_color }}
             >
-              Go to Login
+              Go to Login (After Email Verification)
             </button>
             <button
               onClick={onClose}

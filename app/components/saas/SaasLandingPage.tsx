@@ -199,7 +199,7 @@ export const SaasLandingPage: React.FC = () => {
         setConfig(prev => ({ ...prev, ...data }));
       }
     } catch (error) {
-      console.error('Failed to load SAAS config:', error);
+      // Failed to load SAAS config - will use defaults
     } finally {
       setLoading(false);
     }

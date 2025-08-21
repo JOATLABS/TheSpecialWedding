@@ -33,6 +33,14 @@ class AccountSetupModel(BaseModel):
     def validate_password(cls, v):
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one number')
+        if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in v):
+            raise ValueError('Password must contain at least one special character')
         return v
     
     @validator('confirm_password')
@@ -54,6 +62,14 @@ class PublicRegistrationModel(BaseModel):
     def validate_password(cls, v):
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one number')
+        if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in v):
+            raise ValueError('Password must contain at least one special character')
         return v
 
 @router.post("/users/invite", tags=["ROOT_ADMIN"])
@@ -117,3 +133,8 @@ def complete_account_setup(setup_data: AccountSetupModel):
 def register_wedding_planner(registration_data: PublicRegistrationModel):
     """Public registration for wedding planners - No auth required"""
     return user_service.register_wedding_planner(registration_data.dict())
+
+@router.get("/verify-email/{token}", tags=["Public"])
+def verify_email(token: str):
+    """Verify email address using token - No auth required"""
+    return user_service.verify_email(token)

@@ -32,7 +32,7 @@ def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depen
                 )
     
     # Add created_by and assigned_planner fields
-    wedding_data = wedding.dict()
+    wedding_data = wedding.dict(by_alias=True)
     wedding_data["created_by"] = current_user.email
     
     # If created by wedding planner, assign them as the planner
@@ -72,8 +72,24 @@ def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(requir
 
 @router.get("/weddings/slug/{slug}", tags=["Wedding"])
 def get_wedding_by_slug(slug: str):
-    """Get a wedding by slug"""
-    return wedding_service.get_wedding_by_slug(slug)
+    """
+    Get a wedding by slug - DEPRECATED for security reasons.
+    This endpoint now returns minimal public information only.
+    Use guest verification endpoints for full wedding details.
+    """
+    from app.services.guest_verification_service import GuestVerificationService
+    
+    verification_service = GuestVerificationService()
+    privacy_info = verification_service.get_wedding_privacy_info(slug)
+    
+    # Only return basic info to show what authentication is required
+    return {
+        "couple_names": privacy_info.get("couple_names"),
+        "slug": slug,
+        "privacy_mode": privacy_info.get("privacy_mode"),
+        "requires_authentication": privacy_info.get("privacy_mode") != "public",
+        "message": "Use /weddings/verify-guest-access/{slug} with proper authentication to access full wedding details"
+    }
 
 @router.put("/weddings/{wedding_id}", tags=["Admin"])
 def update_wedding(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):

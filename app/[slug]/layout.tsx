@@ -4,22 +4,36 @@ import React from "react";
 import { notFound } from "next/navigation";
 import { WeddingProvider } from '@/components/WeddingProvider';
 
-async function fetchWeddingBySlug(slug: string) {
+async function fetchWeddingPrivacyInfo(slug: string) {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
   const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
-  const res = await fetch(`${apiUrl}/weddings/slug/${slug}`);
-  if (!res.ok) return null;
-  return await res.json();
+  
+  try {
+    const res = await fetch(`${apiUrl}/weddings/privacy-info/${slug}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (error) {
+    return null;
+  }
 }
 
 export default async function WeddingLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const wedding = await fetchWeddingBySlug(slug);
+  const privacyInfo = await fetchWeddingPrivacyInfo(slug);
 
-  if (!wedding) notFound();
+  if (!privacyInfo) notFound();
+
+  // Pass minimal wedding info for the layout
+  // The actual wedding data will be loaded by the client-side verification
+  const minimalWedding = {
+    couple_names: privacyInfo.couple_names,
+    slug: slug,
+    privacy_mode: privacyInfo.privacy_mode,
+    requires_authentication: privacyInfo.privacy_mode !== 'public'
+  };
 
   return (
-    <WeddingProvider wedding={wedding}>
+    <WeddingProvider wedding={minimalWedding}>
       {children}
     </WeddingProvider>
   );

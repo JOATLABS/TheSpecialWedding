@@ -100,8 +100,9 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       
       // For now, additional plus-ones beyond the first would need to be handled separately
       // The backend currently only supports one plus-one per RSVP submission
+      // TODO: Add support for multiple plus-ones in backend
       if (filledPlusOnes.length > 1) {
-        console.log('Note: Currently only the first guest will be submitted. Additional guests need separate handling.');
+        // Only submit the first plus-one for now
       }
 
       localStorage.setItem(`rsvp-${token}`, 'true');

@@ -29,13 +29,13 @@ export const CallToActionSection: React.FC<CallToActionSectionProps> = ({ config
     if (onGetStarted) {
       onGetStarted();
     } else {
-      console.log('Getting started...');
+      // No get started handler configured
     }
   };
 
   const handleContact = () => {
     // This could open a contact form or scroll to contact section
-    console.log('Contact us...');
+    // Contact functionality not yet implemented
   };
 
   return (

@@ -32,6 +32,7 @@ export default function AdminHeader() {
         ...baseLinks,
         { href: '/admin/saas', label: 'SAAS Config', roles: ['ROOT_ADMIN'] },
         { href: '/admin/weddings', label: 'All Weddings', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/forms', label: 'Forms', roles: ['ROOT_ADMIN'] },
         { href: '/admin/gallery/upload', label: 'Gallery', roles: ['ROOT_ADMIN'] },
         { href: '/admin/import', label: 'Import Guests', roles: ['ROOT_ADMIN'] },
         { href: '/admin/guests', label: 'Manage Guests', roles: ['ROOT_ADMIN'] },
@@ -41,6 +42,7 @@ export default function AdminHeader() {
       return [
         ...baseLinks,
         { href: '/admin/weddings', label: 'My Weddings', roles: ['wedding_planner'] },
+        { href: '/admin/forms', label: 'Forms', roles: ['wedding_planner'] },
         { href: '/admin/gallery/upload', label: 'Gallery', roles: ['wedding_planner'] },
         { href: '/admin/guests', label: 'Guests', roles: ['wedding_planner'] },
         { href: '/admin/reminders', label: 'Reminders', roles: ['wedding_planner'] },

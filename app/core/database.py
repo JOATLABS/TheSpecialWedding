@@ -54,5 +54,17 @@ class MongoConnector:
     def get_gallery_collection(self):
         """Gallery collection - existing functionality"""
         return self.db["gallery"]
+    
+    def get_forms_collection(self):
+        """Forms collection - custom form builder"""
+        return self.db["forms"]
+        
+    def get_form_responses_collection(self):
+        """Form responses collection - form submissions"""
+        return self.db["form_responses"]
+        
+    def get_form_distributions_collection(self):
+        """Form distributions collection - email tracking"""
+        return self.db["form_distributions"]
 
 mongo = MongoConnector(settings.MONGO_URI, settings.MONGO_DB)
