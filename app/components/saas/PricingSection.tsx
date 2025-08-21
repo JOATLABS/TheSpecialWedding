@@ -137,19 +137,19 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
         </div>
 
         {/* Pricing Cards */}
-        <div className={`grid gap-6 ${plans.length <= 3 ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'}`}>
+        <div className={`grid gap-6 mt-8 ${plans.length <= 3 ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'}`}>
           {plans.map((plan) => (
             <GlassCard
               key={plan._id}
               depth={plan.is_featured ? 'near' : 'mid'}
-              className={`text-center relative ${
-                plan.is_featured ? 'ring-2 ring-white/50 scale-105 pt-8 px-6 pb-6' : 'p-6'
+              className={`p-6 text-center relative ${
+                plan.is_featured ? 'ring-2 ring-white/50 scale-105' : ''
               }`}
               theme={theme}
             >
               {plan.is_featured && (
                 <div 
-                  className="absolute -top-4 left-1/2 transform -translate-x-1/2 px-4 py-1 rounded-full text-white text-sm font-medium"
+                  className="absolute -top-5 left-1/2 transform -translate-x-1/2 px-4 py-1 rounded-full text-white text-sm font-medium"
                   style={{ backgroundColor: theme.secondary_color }}
                 >
                   Most Popular
