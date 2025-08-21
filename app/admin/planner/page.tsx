@@ -5,13 +5,28 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 
 interface Wedding {
-  _id: string;
-  couple_name: string;
-  event_date: string;
+  id: string;
+  couple_names: string;
+  date: string;
   slug: string;
   venue?: string;
   guest_count?: number;
   assigned_planner_email?: string;
+  status?: string;
+  events?: Array<{
+    type: string;
+    date: string;
+    details?: any;
+  }>;
+  created_at?: string;
+  rsvp_stats?: {
+    confirmed: number;
+    declined: number;
+    pending: number;
+    response_rate: number;
+  };
+  progress_percentage?: number;
+  days_until_wedding?: number;
 }
 
 interface RSVPStats {
@@ -28,6 +43,7 @@ export default function WeddingPlannerDashboard() {
   const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, confirmed: 0, declined: 0, pending: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   useEffect(() => {
     if (!token) {
@@ -51,7 +67,9 @@ export default function WeddingPlannerDashboard() {
   const fetchMyWeddings = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/weddings`, {
+      
+      // Use the new optimized metrics API
+      const response = await fetch(`${baseUrl}/admin/planner/metrics`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -60,28 +78,24 @@ export default function WeddingPlannerDashboard() {
 
       if (response.ok) {
         const data = await response.json();
-        setWeddings(data);
-        calculateStats(data);
+        setWeddings(data.weddings);
+        setStats({
+          total_guests: data.summary.total_guests,
+          confirmed: data.summary.confirmed_rsvps,
+          declined: data.summary.declined_rsvps,
+          pending: data.summary.pending_rsvps
+        });
+        setRecentActivity(data.recent_activity);
       } else {
-        setError('Failed to fetch weddings');
+        setError('Failed to fetch dashboard data');
       }
     } catch (error) {
-      setError('Failed to fetch weddings');
+      setError('Failed to fetch dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateStats = (weddingList: Wedding[]) => {
-    // This would typically fetch RSVP stats for all weddings
-    // For now, we'll show wedding count as a placeholder
-    setStats({
-      total_guests: 0,
-      confirmed: 0,
-      declined: 0,
-      pending: weddingList.length
-    });
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -210,21 +224,28 @@ export default function WeddingPlannerDashboard() {
             </div>
           ) : (
             weddings.map((wedding) => (
-              <div key={wedding._id} className="p-6 hover:bg-gray-50 transition-colors">
+              <div key={wedding.id} className="p-6 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                      {wedding.couple_name}
+                      {wedding.couple_names}
                     </h3>
                     <div className="flex items-center space-x-4 text-sm text-gray-500">
-                      <span>📅 {formatDate(wedding.event_date)}</span>
+                      <span>📅 {formatDate(wedding.date)}</span>
                       {wedding.venue && <span>📍 {wedding.venue}</span>}
                       {wedding.guest_count && <span>👥 {wedding.guest_count} guests</span>}
+                      <span className={`px-2 py-1 rounded-full text-xs ${
+                        wedding.status === 'active' ? 'bg-green-100 text-green-800' :
+                        wedding.status === 'planning' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {wedding.status || 'active'}
+                      </span>
                     </div>
                   </div>
                   <div className="flex space-x-2">
                     <button
-                      onClick={() => router.push(`/admin/weddings/${wedding._id}`)}
+                      onClick={() => router.push(`/admin/weddings/${wedding.id}`)}
                       className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm hover:bg-blue-200 transition-colors"
                     >
                       Manage
@@ -291,6 +312,76 @@ export default function WeddingPlannerDashboard() {
               <p className="font-medium text-gray-900">Upload Photos</p>
               <p className="text-sm text-gray-500">Add to wedding galleries</p>
             </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Recent Activity & Progress Tracking */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Progress Overview */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Wedding Progress</h2>
+          <div className="space-y-4">
+            {weddings.slice(0, 3).map((wedding) => {
+              const progressPercentage = wedding.progress_percentage || 0;
+              const daysUntilWedding = wedding.days_until_wedding || 0;
+              
+              return (
+                <div key={wedding.id} className="border-b border-gray-100 pb-4 last:border-b-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium text-gray-900">{wedding.couple_names}</h4>
+                    <span className="text-sm text-gray-500">
+                      {daysUntilWedding > 0 ? `${daysUntilWedding} days left` : 
+                       daysUntilWedding === 0 ? 'Today!' :
+                       'Wedding passed'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                    <div 
+                      className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${progressPercentage}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>{progressPercentage}% complete</span>
+                    <span>{wedding.rsvp_stats?.confirmed || 0} / {wedding.guest_count || 0} RSVPs</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h2>
+          <div className="space-y-4">
+            {recentActivity.length > 0 ? recentActivity.map((activity, index) => (
+              <div key={index} className="flex items-start space-x-3">
+                <div className={`w-2 h-2 rounded-full mt-2 ${
+                  activity.type === 'rsvp_received' ? 'bg-green-500' :
+                  activity.type === 'guest_updated' ? 'bg-blue-500' :
+                  activity.type === 'email_sent' ? 'bg-yellow-500' :
+                  'bg-purple-500'
+                }`}></div>
+                <div>
+                  <p className="text-sm text-gray-900">{activity.message}</p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(activity.timestamp).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center text-gray-500 py-4">
+                <p className="text-sm">No recent activity</p>
+              </div>
+            )}
+          </div>
+          <button 
+            className="mt-4 text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
+            onClick={() => router.push('/admin/activity-log')}
+          >
+            View all activity →
           </button>
         </div>
       </div>

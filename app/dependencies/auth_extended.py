@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
 from typing import Optional, List
 import os
+from datetime import datetime
 from app.core.database import mongo
 
 # Security scheme
@@ -20,7 +21,8 @@ class ExtendedAuthUser:
         self.user_data = user_data or {}
         
         # Role-specific properties
-        self.is_root_admin = (role == "ROOT_ADMIN" and email == "thedeveloper@thespecialwedding.com")
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
         
@@ -46,7 +48,8 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
         user_data = {}
         
         # Check if this is the ROOT_ADMIN
-        if email == "thedeveloper@thespecialwedding.com":
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        if email == root_admin_email:
             # Check both legacy admin_users and new users collections
             legacy_user = mongo.get_admin_users_collection().find_one({"email": email})
             new_user = mongo.get_users_collection().find_one({"email": email})
@@ -88,6 +91,41 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                         detail="Account is deactivated",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
+                
+                # Check email verification for new accounts
+                if user_data.get("email_verified") is False:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Email address not verified. Please check your email and verify your account.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                
+                # Check trial expiration for wedding planners
+                if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
+                    trial_end_date = user_data.get("trial_end_date")
+                    if trial_end_date:
+                        # Handle both datetime objects and ISO strings
+                        if isinstance(trial_end_date, str):
+                            try:
+                                trial_end_date = datetime.fromisoformat(trial_end_date.replace('Z', '+00:00'))
+                            except:
+                                trial_end_date = datetime.fromisoformat(trial_end_date)
+                        
+                        if datetime.utcnow() > trial_end_date:
+                            # Auto-expire the trial
+                            mongo.get_users_collection().update_one(
+                                {"email": email},
+                                {"$set": {
+                                    "subscription_status": "expired",
+                                    "is_active": False,
+                                    "trial_expired_at": datetime.utcnow()
+                                }}
+                            )
+                            raise HTTPException(
+                                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                                detail="Free trial has expired. Please upgrade your subscription to continue using the platform.",
+                                headers={"WWW-Authenticate": "Bearer"},
+                            )
             
         return ExtendedAuthUser(email=email, role=role, user_data=user_data)
         

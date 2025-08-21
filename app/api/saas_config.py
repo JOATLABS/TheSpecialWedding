@@ -23,6 +23,12 @@ def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_admin)
                 "hero_cta_primary": "Start Free Trial",
                 "hero_cta_secondary": "Watch Demo",
                 "trust_indicators": ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+                "trial_settings": {
+                    "default_trial_days": 30,
+                    "trial_warning_days": 7,
+                    "auto_expire_trials": True,
+                    "allow_multiple_trials": False
+                },
                 "statistics": [
                     {"label": "Wedding Planners Trust Us", "value": "500+"},
                     {"label": "Weddings Managed", "value": "10K+"},
@@ -310,6 +316,12 @@ def get_public_saas_config():
                 "hero_cta_primary": "Start Free Trial",
                 "hero_cta_secondary": "Watch Demo",
                 "trust_indicators": ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+                "trial_settings": {
+                    "default_trial_days": 30,
+                    "trial_warning_days": 7,
+                    "auto_expire_trials": True,
+                    "allow_multiple_trials": False
+                },
                 "statistics": [
                     {"label": "Wedding Planners Trust Us", "value": "500+"},
                     {"label": "Weddings Managed", "value": "10K+"},
@@ -404,16 +416,133 @@ def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root
         total_weddings = mongo.get_weddings_collection().count_documents({})
         active_plans = mongo.get_subscription_plans_collection().count_documents({"is_active": True})
         
-        # Calculate revenue (mock for now - would need subscription data)
-        monthly_revenue = 0  # TODO: Calculate based on active subscriptions
+        # Calculate revenue based on active subscriptions
+        monthly_revenue = 0
+        yearly_revenue = 0
+        
+        # Get all users with active subscriptions
+        active_users = mongo.get_users_collection().find({
+            "subscription_status": {"$in": ["trial", "active"]},
+            "is_active": True
+        })
+        
+        for user in active_users:
+            # Skip trial users for revenue calculation
+            if user.get("subscription_status") == "trial":
+                continue
+                
+            plan_id = user.get("subscription_plan_id")
+            if plan_id:
+                # Get the subscription plan
+                plan = mongo.get_subscription_plans_collection().find_one({"_id": plan_id})
+                if plan:
+                    monthly_revenue += plan.get("price_monthly", 0)
+                    yearly_revenue += plan.get("price_yearly", 0)
+        
+        # Calculate projected annual revenue from current monthly subscriptions
+        projected_annual_revenue = monthly_revenue * 12
         
         return {
             "total_planners": total_planners,
             "active_planners": active_planners,
             "total_weddings": total_weddings,
             "active_plans": active_plans,
-            "monthly_revenue": monthly_revenue
+            "monthly_revenue": monthly_revenue,
+            "yearly_revenue": yearly_revenue,
+            "projected_annual_revenue": projected_annual_revenue
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching overview analytics: {str(e)}")
+
+@router.get("/analytics/revenue", tags=["ROOT_ADMIN"])
+def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+    """Get detailed revenue analytics for ROOT_ADMIN"""
+    try:
+        # Revenue by subscription plan
+        plan_revenue = []
+        plans = mongo.get_subscription_plans_collection().find({"is_active": True})
+        
+        for plan in plans:
+            plan_id = plan["_id"]
+            
+            # Count active users on this plan
+            active_users_count = mongo.get_users_collection().count_documents({
+                "subscription_plan_id": plan_id,
+                "subscription_status": "active",
+                "is_active": True
+            })
+            
+            # Count trial users on this plan
+            trial_users_count = mongo.get_users_collection().count_documents({
+                "subscription_plan_id": plan_id,
+                "subscription_status": "trial",
+                "is_active": True
+            })
+            
+            plan_monthly_revenue = active_users_count * plan.get("price_monthly", 0)
+            plan_yearly_revenue = active_users_count * plan.get("price_yearly", 0)
+            
+            plan_revenue.append({
+                "plan_name": plan.get("name"),
+                "plan_id": str(plan_id),
+                "active_users": active_users_count,
+                "trial_users": trial_users_count,
+                "monthly_revenue": plan_monthly_revenue,
+                "yearly_revenue": plan_yearly_revenue,
+                "price_monthly": plan.get("price_monthly", 0),
+                "price_yearly": plan.get("price_yearly", 0)
+            })
+        
+        # Calculate totals
+        total_monthly_revenue = sum(plan["monthly_revenue"] for plan in plan_revenue)
+        total_yearly_revenue = sum(plan["yearly_revenue"] for plan in plan_revenue)
+        total_active_users = sum(plan["active_users"] for plan in plan_revenue)
+        total_trial_users = sum(plan["trial_users"] for plan in plan_revenue)
+        
+        # Average revenue per user
+        arpu_monthly = total_monthly_revenue / total_active_users if total_active_users > 0 else 0
+        arpu_yearly = total_yearly_revenue / total_active_users if total_active_users > 0 else 0
+        
+        return {
+            "summary": {
+                "total_monthly_revenue": total_monthly_revenue,
+                "total_yearly_revenue": total_yearly_revenue,
+                "projected_annual_revenue": total_monthly_revenue * 12,
+                "total_active_users": total_active_users,
+                "total_trial_users": total_trial_users,
+                "arpu_monthly": arpu_monthly,
+                "arpu_yearly": arpu_yearly
+            },
+            "plan_breakdown": plan_revenue,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")
+
+@router.get("/trial-settings", tags=["ROOT_ADMIN", "Public"])
+def get_trial_settings():
+    """Get trial settings from SAAS config - Can be used by both admin and registration"""
+    try:
+        config = mongo.db["saas_config"].find_one({"type": "main_config"})
+        
+        if config and "trial_settings" in config:
+            return config["trial_settings"]
+        
+        # Return default trial settings if none configured
+        return {
+            "default_trial_days": 30,
+            "trial_warning_days": 7,
+            "auto_expire_trials": True,
+            "allow_multiple_trials": False
+        }
+        
+    except Exception as e:
+        # Return defaults on error to prevent registration failures
+        return {
+            "default_trial_days": 30,
+            "trial_warning_days": 7,
+            "auto_expire_trials": True,
+            "allow_multiple_trials": False
+        }

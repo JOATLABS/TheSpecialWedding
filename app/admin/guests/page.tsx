@@ -138,8 +138,42 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // TODO: Fetch plus ones when endpoint is available
-      setPlusOnes([]);
+      // Fetch plus ones for all guests
+      try {
+        const plusOnesResponse = await Promise.all(
+          guests.map(async (guest: any) => {
+            try {
+              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+              
+              if (response.ok) {
+                const guestPlusOnes = await response.json();
+                return guestPlusOnes.map((po: any) => ({
+                  ...po,
+                  guest_id: guest.id,
+                  guest_name: guest.name
+                }));
+              }
+              return [];
+            } catch (error) {
+              console.log(`Plus-ones fetch error for guest ${guest.id}:`, error);
+              return [];
+            }
+          })
+        );
+        
+        // Flatten the array of arrays
+        const allPlusOnes = plusOnesResponse.flat();
+        setPlusOnes(allPlusOnes);
+        console.log('Plus-ones loaded:', allPlusOnes.length);
+      } catch (error) {
+        console.log('Plus-ones fetch error:', error);
+        setPlusOnes([]);
+      }
       
     } catch (err) {
       console.error('Error fetching data:', err);

@@ -1,0 +1,215 @@
+{
+  "epic": {
+    "title": "Q1 2025 Technical Debt Cleanup",
+    "description": "Comprehensive cleanup of TODO comments, technical debt, and code quality improvements for the Wedding WebApp SAAS platform.",
+    "priority": "High",
+    "labels": ["epic", "technical-debt", "q1-2025"],
+    "estimate": 39
+  },
+  "parent_tasks": [
+    {
+      "title": "Complete Email Service Integration",
+      "description": "Implement missing email service functionality across the application",
+      "priority": "High",
+      "estimate": 8,
+      "labels": ["email-service", "high-priority", "backend"],
+      "children": [
+        {
+          "title": "Implement actual email service in user management",
+          "description": "Replace placeholder email service with actual email provider integration (Resend/SendGrid)\n\nFile: /app/services/user_management_service.py:106\nTODO: Implement actual email service",
+          "priority": "High",
+          "estimate": 3,
+          "labels": ["email-service", "backend", "todo"],
+          "acceptance_criteria": [
+            "Replace TODO comment with working email service",
+            "Integrate with existing email provider",
+            "Add error handling and logging",
+            "Update tests"
+          ]
+        },
+        {
+          "title": "Implement welcome email functionality",
+          "description": "Add welcome email sending when new users register\n\nFile: /app/services/user_management_service.py:373\nTODO: Send welcome email",
+          "priority": "High",
+          "estimate": 2,
+          "labels": ["email-service", "backend", "todo"],
+          "acceptance_criteria": [
+            "Send welcome email on successful registration",
+            "Include user onboarding information",
+            "Handle email failures gracefully"
+          ]
+        },
+        {
+          "title": "Complete EmailService class implementation",
+          "description": "Implement the send_email method in EmailService class\n\nFile: /app/services/user_management_service.py:390\nTODO: Implement actual email sending",
+          "priority": "High",
+          "estimate": 3,
+          "labels": ["email-service", "backend", "todo"],
+          "acceptance_criteria": [
+            "Complete email sending functionality",
+            "Add email templates support",
+            "Implement retry logic",
+            "Add email logging"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complete SAAS Dashboard Features",
+      "description": "Implement missing revenue calculation and dashboard enhancements",
+      "priority": "High",
+      "estimate": 5,
+      "labels": ["saas", "dashboard", "revenue"],
+      "children": [
+        {
+          "title": "Implement revenue calculation",
+          "description": "Calculate monthly revenue based on active subscriptions\n\nFile: /app/api/saas_config.py:408\nTODO: Calculate revenue based on active subscriptions",
+          "priority": "High",
+          "estimate": 5,
+          "labels": ["saas", "revenue", "backend", "todo"],
+          "acceptance_criteria": [
+            "Query subscription data from database",
+            "Calculate monthly recurring revenue (MRR)",
+            "Include different subscription tiers",
+            "Add revenue analytics endpoint",
+            "Update dashboard to display revenue metrics"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Implement Content Management Features",
+      "description": "Add missing content editing and plus-ones support",
+      "priority": "Medium",
+      "estimate": 8,
+      "labels": ["cms", "admin", "frontend"],
+      "children": [
+        {
+          "title": "Implement content editing modal",
+          "description": "Create modal interface for editing website content sections\n\nFile: /app/admin/saas/page.tsx:385\nTODO: Implement content editing modal",
+          "priority": "Medium",
+          "estimate": 5,
+          "labels": ["cms", "frontend", "todo"],
+          "acceptance_criteria": [
+            "Create modal component for content editing",
+            "Add rich text editor",
+            "Save content changes to backend",
+            "Preview functionality"
+          ]
+        },
+        {
+          "title": "Add plus-ones support to email service",
+          "description": "Extend email service to handle plus-one guest invitations\n\nFile: /app/services/email_service_resend.py:281\nTODO: Add plus-ones support if needed",
+          "priority": "Medium",
+          "estimate": 3,
+          "labels": ["email-service", "plus-ones", "todo"],
+          "acceptance_criteria": [
+            "Identify plus-one guests in email sending",
+            "Customize email content for plus-ones",
+            "Update email templates"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complete Guest Management Features",
+      "description": "Implement missing plus-ones API endpoint",
+      "priority": "Medium",
+      "estimate": 3,
+      "labels": ["guest-management", "api"],
+      "children": [
+        {
+          "title": "Implement plus ones API endpoint",
+          "description": "Create API endpoint for fetching plus-one guest data\n\nFile: /app/admin/guests/page.tsx:141\nTODO: Fetch plus ones when endpoint is available",
+          "priority": "Medium",
+          "estimate": 3,
+          "labels": ["api", "plus-ones", "backend", "todo"],
+          "acceptance_criteria": [
+            "Create plus-ones API endpoint",
+            "Update frontend to fetch plus-ones data",
+            "Add plus-ones to guest list display"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Refactor Large React Components",
+      "description": "Break down large components for better maintainability",
+      "priority": "Low-Medium",
+      "estimate": 13,
+      "labels": ["refactoring", "maintainability", "frontend"],
+      "children": [
+        {
+          "title": "Refactor SAAS admin page component",
+          "description": "Break down large SAAS admin component (1346 lines) into smaller, reusable components\n\nFile: /app/admin/saas/page.tsx",
+          "priority": "Medium",
+          "estimate": 5,
+          "labels": ["refactoring", "frontend", "technical-debt"],
+          "acceptance_criteria": [
+            "Split into logical sub-components (Analytics, Configuration, User Management)",
+            "Maintain existing functionality",
+            "Improve component testability",
+            "Add proper TypeScript interfaces"
+          ]
+        },
+        {
+          "title": "Refactor wedding admin page component",
+          "description": "Break down large wedding admin component (1016 lines) into smaller components\n\nFile: /app/admin/weddings/[id]/page.tsx",
+          "priority": "Medium",
+          "estimate": 5,
+          "labels": ["refactoring", "frontend", "technical-debt"],
+          "acceptance_criteria": [
+            "Split into feature-specific components",
+            "Extract custom hooks for data management",
+            "Improve performance with proper memoization"
+          ]
+        },
+        {
+          "title": "Refactor reminders admin page component",
+          "description": "Break down reminders component (933 lines) into smaller, manageable pieces\n\nFile: /app/admin/reminders/page.tsx",
+          "priority": "Low",
+          "estimate": 3,
+          "labels": ["refactoring", "frontend", "technical-debt"],
+          "acceptance_criteria": [
+            "Create separate components for reminder creation and management",
+            "Extract reminder logic into custom hooks",
+            "Improve code readability"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Update Dependencies and Remove Deprecated Packages",
+      "description": "Clean up deprecated dependencies",
+      "priority": "Low",
+      "estimate": 2,
+      "labels": ["dependencies", "maintenance"],
+      "children": [
+        {
+          "title": "Replace deprecated @types/puppeteer package",
+          "description": "Update to supported Puppeteer types or find alternative",
+          "priority": "Low",
+          "estimate": 2,
+          "labels": ["dependencies", "maintenance", "technical-debt"],
+          "acceptance_criteria": [
+            "Research current Puppeteer typing solution",
+            "Update package.json",
+            "Fix any type issues",
+            "Test PDF generation functionality"
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "total_tasks": 11,
+    "total_todo_comments": 7,
+    "total_story_points": 39,
+    "estimated_duration": "6-8 weeks",
+    "priority_breakdown": {
+      "high": 5,
+      "medium": 4,
+      "low": 2
+    }
+  }
+}

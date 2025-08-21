@@ -22,6 +22,14 @@ class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
 
+class PrivacySettingsModel(BaseModel):
+    privacy_mode: str = Field(default="private", description="Privacy mode: private, password, public")
+    guest_auth_required: bool = Field(default=True, description="Whether guest authentication is required")
+    password_protection: Optional[str] = Field(None, description="Password for password-protected weddings")
+    allow_guest_sharing: bool = Field(default=False, description="Whether guests can share wedding links")
+    require_phone_verification: bool = Field(default=True, description="Require phone number for guest verification")
+    require_name_verification: bool = Field(default=True, description="Require name for guest verification")
+
 class RSVPConfigModel(BaseModel):
     greeting: str = Field(default="Join us in celebrating our special day! Please let us know if you'll be attending.", 
                          description="RSVP greeting message")
@@ -59,6 +67,7 @@ class WeddingModel(BaseModel):
     slug: str = Field(..., description="URL-friendly slug for the wedding")
     events: List[EventModel] = Field(default_factory=list)
     rsvp_config: Optional[RSVPConfigModel] = Field(default_factory=RSVPConfigModel)
+    privacy_settings: Optional[PrivacySettingsModel] = Field(default_factory=PrivacySettingsModel)
     registries: List[RegistryItemModel] = Field(default_factory=list)
     faqs: List[FAQItemModel] = Field(default_factory=list)
     theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)

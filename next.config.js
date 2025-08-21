@@ -16,6 +16,23 @@ const nextConfig = {
       },
     ],
   },
+  transpilePackages: ['@hello-pangea/dnd'],
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+      };
+    }
+    
+    // Fix for @hello-pangea/dnd dependency issues
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'tiny-invariant': require.resolve('tiny-invariant'),
+    };
+    
+    return config;
+  },
 }
 
 module.exports = nextConfig
