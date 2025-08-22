@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
+from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.user_management_service import UserManagementService
 from app.models.user_extended import UserModel
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, EmailStr
 
 router = APIRouter()
 user_service = UserManagementService()
@@ -72,15 +72,44 @@ class PublicRegistrationModel(BaseModel):
             raise ValueError('Password must contain at least one special character')
         return v
 
+class ChangePasswordModel(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+    
+    @validator('new_password')
+    def validate_new_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one number')
+        if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in v):
+            raise ValueError('Password must contain at least one special character')
+        return v
+    
+    @validator('confirm_password')
+    def passwords_match(cls, v, values):
+        if 'new_password' in values and v != values['new_password']:
+            raise ValueError('Passwords do not match')
+        return v
+
+class ChangeEmailModel(BaseModel):
+    new_email: EmailStr
+    password: str  # Require password confirmation for email changes
+
 @router.post("/users/invite", tags=["ROOT_ADMIN"])
 def invite_user(invite_data: UserInviteModel, current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Invite a new user to the platform - ROOT_ADMIN only"""
     return user_service.invite_user(invite_data.dict(), current_user.email)
 
 @router.get("/users", tags=["ROOT_ADMIN"])
-def list_users(current_user: ExtendedAuthUser = Depends(require_root_admin)):
-    """List all users - ROOT_ADMIN only"""
-    return user_service.list_users()
+def list_users(role: Optional[str] = None, current_user: ExtendedAuthUser = Depends(require_root_admin)):
+    """List all users with optional role filter - ROOT_ADMIN only"""
+    return user_service.list_users(role_filter=role)
 
 @router.get("/users/{user_id}", tags=["ROOT_ADMIN"])
 def get_user(user_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
@@ -138,3 +167,33 @@ def register_wedding_planner(registration_data: PublicRegistrationModel):
 def verify_email(token: str):
     """Verify email address using token - No auth required"""
     return user_service.verify_email(token)
+
+@router.get("/verify-email-change/{token}", tags=["Public"])
+async def verify_email_change(token: str):
+    """Verify email address change using token - No auth required"""
+    return await user_service.verify_email_change(token)
+
+# ==================== USER PROFILE MANAGEMENT ====================
+
+@router.put("/profile/password", tags=["Profile"])
+async def change_password(password_data: ChangePasswordModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Change user password - Authenticated users only"""
+    return await user_service.change_password(
+        current_user.email, 
+        password_data.current_password, 
+        password_data.new_password
+    )
+
+@router.put("/profile/email", tags=["Profile"])
+async def change_email(email_data: ChangeEmailModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Change user email address - Authenticated users only"""
+    return await user_service.change_email(
+        current_user.email, 
+        email_data.new_email, 
+        email_data.password
+    )
+
+@router.get("/profile", tags=["Profile"])
+def get_user_profile(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Get current user profile information"""
+    return user_service.get_user_profile(current_user.email)

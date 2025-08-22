@@ -6,8 +6,9 @@ import secrets
 import string
 import os
 import requests
-from app.utils.auth_utils import get_password_hash
+from app.utils.auth_utils import get_password_hash, verify_password
 from app.services.email_service_resend import ResendEmailService
+from app.core.events import event_bus, EventFactory
 
 class UserManagementService:
     def __init__(self):
@@ -197,10 +198,19 @@ class UserManagementService:
             # Log error without exposing sensitive information
             return False
 
-    def list_users(self) -> List[dict]:
-        """List all users"""
+    def list_users(self, role_filter: Optional[str] = None) -> List[dict]:
+        """List all users with optional role filter"""
         try:
-            users = list(self.users_collection.find({}, {"password_hash": 0}))  # Exclude password hash
+            query = {}
+            if role_filter:
+                query["role"] = role_filter
+            
+            users = list(self.users_collection.find(query, {"password_hash": 0, "password": 0}))  # Exclude password fields
+            
+            # Convert ObjectId to string for JSON serialization
+            for user in users:
+                user["_id"] = str(user["_id"])
+            
             return users
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing users: {str(e)}")
@@ -861,3 +871,197 @@ class UserManagementService:
         </body>
         </html>
         """
+    async def change_password(self, user_email: str, current_password: str, new_password: str) -> dict:
+        """Change user password after verifying current password"""
+        try:
+            # Find the user
+            user = self.users_collection.find_one({"email": user_email})
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Verify current password
+            if not verify_password(current_password, user["password_hash"]):
+                raise HTTPException(status_code=400, detail="Current password is incorrect")
+            
+            # Hash new password
+            new_password_hash = get_password_hash(new_password)
+            
+            # Update password in database
+            result = self.users_collection.update_one(
+                {"email": user_email},
+                {
+                    "$set": {
+                        "password_hash": new_password_hash,
+                        "password_changed_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count == 0:
+                raise HTTPException(status_code=500, detail="Failed to update password")
+            
+            # Publish password changed event
+            try:
+                event = EventFactory.password_changed(
+                    user_id=str(user["_id"]),
+                    email=user_email
+                )
+                await event_bus.publish(event)
+            except Exception as e:
+                # Log but don't fail the password change if event publishing fails
+                print(f"Failed to publish password change event: {e}")
+            
+            return {
+                "message": "Password changed successfully",
+                "changed_at": datetime.utcnow().isoformat()
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error changing password: {str(e)}")
+
+    async def change_email(self, current_email: str, new_email: str, password: str) -> dict:
+        """Change user email address after password verification"""
+        try:
+            # Find the user
+            user = self.users_collection.find_one({"email": current_email})
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Verify password
+            if not verify_password(password, user["password_hash"]):
+                raise HTTPException(status_code=400, detail="Password is incorrect")
+            
+            # Check if new email is already in use
+            existing_user = self.users_collection.find_one({"email": new_email})
+            if existing_user:
+                raise HTTPException(status_code=400, detail="Email address is already in use")
+            
+            # Generate email verification token for new email
+            verification_token = self.generate_invitation_token()
+            verification_expires = datetime.utcnow() + timedelta(hours=24)  # 24 hours to verify
+            
+            # Update user with new email (but keep it unverified until verification)
+            result = self.users_collection.update_one(
+                {"email": current_email},
+                {
+                    "$set": {
+                        "pending_email": new_email,
+                        "email_change_token": verification_token,
+                        "email_change_token_expires": verification_expires,
+                        "email_change_requested_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count == 0:
+                raise HTTPException(status_code=500, detail="Failed to initiate email change")
+            
+            # Publish email change requested event
+            try:
+                event = EventFactory.email_change_requested(
+                    user_id=str(user["_id"]),
+                    old_email=current_email,
+                    new_email=new_email
+                )
+                await event_bus.publish(event)
+            except Exception as e:
+                # Log but don't fail the email change if event publishing fails
+                print(f"Failed to publish email change requested event: {e}")
+            
+            return {
+                "message": "Email change requested. Please check your new email address to verify the change.",
+                "pending_email": new_email,
+                "verification_required": True,
+                "expires_at": verification_expires.isoformat()
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error changing email: {str(e)}")
+
+    async def verify_email_change(self, token: str) -> dict:
+        """Verify email change using verification token"""
+        try:
+            # Find user with matching email change token
+            user = self.users_collection.find_one({
+                "email_change_token": token
+            })
+            
+            if not user:
+                raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+            
+            # Check if token has expired
+            if user.get("email_change_token_expires") and user["email_change_token_expires"] < datetime.utcnow():
+                raise HTTPException(status_code=400, detail="Verification token has expired. Please request a new email change.")
+            
+            # Update user email to the new email
+            old_email = user["email"]
+            new_email = user["pending_email"]
+            
+            self.users_collection.update_one(
+                {"_id": user["_id"]},
+                {
+                    "$set": {
+                        "email": new_email,
+                        "email_changed_at": datetime.utcnow()
+                    },
+                    "$unset": {
+                        "pending_email": "",
+                        "email_change_token": "",
+                        "email_change_token_expires": "",
+                        "email_change_requested_at": ""
+                    }
+                }
+            )
+            
+            # Publish email changed event
+            try:
+                event = EventFactory.email_changed(
+                    user_id=str(user["_id"]),
+                    old_email=old_email,
+                    new_email=new_email
+                )
+                await event_bus.publish(event)
+            except Exception as e:
+                # Log but don't fail the email change if event publishing fails
+                print(f"Failed to publish email changed event: {e}")
+            
+            return {
+                "message": "Email address changed successfully",
+                "old_email": old_email,
+                "new_email": new_email,
+                "changed_at": datetime.utcnow().isoformat()
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error verifying email change: {str(e)}")
+
+    def get_user_profile(self, user_email: str) -> dict:
+        """Get user profile information"""
+        try:
+            user = self.users_collection.find_one(
+                {"email": user_email},
+                {
+                    "password_hash": 0,  # Don't return password hash
+                    "email_verification_token": 0,  # Don't return sensitive tokens
+                    "email_change_token": 0
+                }
+            )
+            
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Convert ObjectId to string
+            user["_id"] = str(user["_id"])
+            
+            return user
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error retrieving user profile: {str(e)}")
