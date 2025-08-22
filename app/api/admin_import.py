@@ -1,13 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends
 from app.services.import_service import GuestImportService
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
 
 router = APIRouter()
 
 import_service = GuestImportService()
 
 @router.post("/guests/import", tags=["Admin"])
-def import_guests(file: UploadFile = File(...), wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+def import_guests(file: UploadFile = File(...), wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
