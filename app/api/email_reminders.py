@@ -2,12 +2,14 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
 from app.services.email_service_resend import ResendEmailService
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.services.wedding_service import WeddingService
 from pydantic import BaseModel
 from typing import Optional, List
 import base64
 
 router = APIRouter()
+wedding_service = WeddingService()
 
 # Initialize email service
 try:
@@ -40,10 +42,18 @@ def get_email_status():
     }
 
 @router.post("/email/send-invites", tags=["Admin"])
-async def send_email_invites(payload: EmailInviteModel):
+async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send RSVP invitation emails (JSON endpoint)"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
+    
+    # Get wedding and verify access
+    wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    
+    if not check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
     
     result = email_service.send_rsvp_invitations(
         wedding_slug=payload.wedding_slug,
@@ -59,11 +69,20 @@ async def send_email_invites_with_attachment(
     wedding_slug: str = Form(...),
     custom_subject: Optional[str] = Form(None),
     custom_html: Optional[str] = Form(None),
-    attachment: UploadFile = File(...)
+    attachment: UploadFile = File(...),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Send RSVP invitation emails with attachment (multipart/form-data endpoint)"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
+    
+    # Get wedding and verify access
+    wedding = wedding_service.get_wedding_by_slug(wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    
+    if not check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
     
     # Handle attachment
     attachments = []
@@ -90,6 +109,14 @@ def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuth
     """Send event reminder emails"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
+    
+    # Get wedding and verify access
+    wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    
+    if not check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
     
     result = email_service.send_reminders(
         wedding_slug=payload.wedding_slug,

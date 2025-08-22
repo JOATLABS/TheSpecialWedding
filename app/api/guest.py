@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.services.guest_service import GuestService
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
 
 router = APIRouter()
 
@@ -25,7 +25,7 @@ def search_guest(phone: str = Query(None), name: str = Query(None)):
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 @router.get("/guests", tags=["Admin"])
-def list_guests(wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+def list_guests(wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -37,7 +37,7 @@ def list_guests(wedding_id: str = Query(...), current_user: ExtendedAuthUser = D
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 @router.put("/guests/{guest_id}", tags=["Admin"])
-def update_guest(guest_id: str, update_data: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+def update_guest(guest_id: str, update_data: dict, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get guest to check wedding access
     guest = guest_service.get_guest(guest_id)
     if not check_wedding_access(current_user, guest.get("wedding_id")):
@@ -50,7 +50,7 @@ def update_guest(guest_id: str, update_data: dict, current_user: ExtendedAuthUse
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 @router.delete("/guests/{guest_id}", tags=["Admin"])
-def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get guest to check wedding access
     guest = guest_service.get_guest(guest_id)
     if not check_wedding_access(current_user, guest.get("wedding_id")):

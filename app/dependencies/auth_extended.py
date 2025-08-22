@@ -182,10 +182,19 @@ async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current
         )
     return current_user
 
+async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+    """Require wedding planner access only (excludes root admin)"""
+    if not (current_user.is_wedding_planner or current_user.is_legacy_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Wedding planner access required"
+        )
+    return current_user
+
 def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     """Check if user has access to a specific wedding"""
-    if user.is_root_admin:
-        return True  # ROOT_ADMIN has access to all weddings
+    # ROOT_ADMIN is platform admin - they don't access wedding content/data
+    # They only manage platform features, users, and can delete weddings
     
     if user.is_legacy_admin:
         return True  # Legacy admin has access to all weddings for backward compatibility
@@ -193,15 +202,25 @@ def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     if user.is_wedding_planner:
         # Check if this wedding is assigned to this planner
         from bson import ObjectId
+        import re
+        
+        # Validate and sanitize wedding_id
+        if not wedding_id or not isinstance(wedding_id, str):
+            return False
+        
+        # Prevent NoSQL injection by validating input
+        if len(wedding_id) > 100:  # Reasonable limit
+            return False
+        
         try:
             # Handle both string and ObjectId formats
             if isinstance(wedding_id, str):
-                # Try ObjectId conversion first
-                try:
+                # Check if it looks like a valid ObjectId (24 hex characters)
+                if re.match(r'^[0-9a-fA-F]{24}$', wedding_id):
                     query_id = ObjectId(wedding_id)
-                except:
-                    # If not a valid ObjectId, use as string
-                    query_id = wedding_id
+                else:
+                    # Use as string for slug-based lookups, but sanitize
+                    query_id = wedding_id.strip()
             else:
                 query_id = wedding_id
                 
@@ -209,7 +228,7 @@ def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
             if wedding:
                 return wedding.get("assigned_planner_email") == user.email
         except Exception:
-            pass
+            return False
     
     if user.is_vendor:
         # Check if vendor has access to this wedding

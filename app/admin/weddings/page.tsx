@@ -59,6 +59,59 @@ export default function AdminWeddingsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'upcoming' | 'past' | 'this_month' | 'this_year'>('all');
+  const [selectedWeddings, setSelectedWeddings] = useState<string[]>([]);
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+
+  // Wedding templates
+  const weddingTemplates = [
+    {
+      id: 'traditional-nigerian',
+      name: 'Traditional Nigerian Wedding',
+      description: 'Complete traditional Nigerian wedding with engagement and white wedding',
+      events: [
+        { type: 'engagement', date: '' },
+        { type: 'traditional', date: '' },
+        { type: 'white_wedding', date: '' },
+        { type: 'reception', date: '' }
+      ],
+      status: 'planning'
+    },
+    {
+      id: 'simple-ceremony',
+      name: 'Simple Wedding Ceremony',
+      description: 'Intimate ceremony with reception',
+      events: [
+        { type: 'white_wedding', date: '' },
+        { type: 'reception', date: '' }
+      ],
+      status: 'planning'
+    },
+    {
+      id: 'destination-wedding',
+      name: 'Destination Wedding',
+      description: 'Wedding ceremony and reception at destination venue',
+      events: [
+        { type: 'rehearsal', date: '' },
+        { type: 'white_wedding', date: '' },
+        { type: 'reception', date: '' }
+      ],
+      status: 'planning'
+    },
+    {
+      id: 'court-wedding',
+      name: 'Court Wedding',
+      description: 'Simple court ceremony with small reception',
+      events: [
+        { type: 'white_wedding', date: '' },
+        { type: 'reception', date: '' }
+      ],
+      status: 'active'
+    }
+  ];
   
   const [formData, setFormData] = useState<WeddingForm>({
     couple_names: '',
@@ -83,7 +136,7 @@ export default function AdminWeddingsPage() {
 
   useEffect(() => {
     filterWeddings();
-  }, [allWeddings, filter, userProfile]);
+  }, [allWeddings, filter, userProfile, searchTerm, statusFilter, dateFilter]);
 
   const fetchWeddings = async () => {
     setLoading(true);
@@ -161,6 +214,68 @@ export default function AdminWeddingsPage() {
         filtered = filtered.filter(wedding => !wedding.assigned_planner_email);
       }
     }
+
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(wedding => 
+        wedding.couple_names?.toLowerCase().includes(search) ||
+        wedding.venue?.toLowerCase().includes(search) ||
+        wedding.assigned_planner_email?.toLowerCase().includes(search) ||
+        wedding.slug?.toLowerCase().includes(search)
+      );
+    }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(wedding => wedding.status === statusFilter);
+    }
+
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const currentDate = new Date();
+      filtered = filtered.filter(wedding => {
+        try {
+          const weddingDate = new Date(wedding.date);
+          
+          switch (dateFilter) {
+            case 'upcoming':
+              return weddingDate >= currentDate;
+            case 'past':
+              return weddingDate < currentDate;
+            case 'this_month':
+              return weddingDate.getMonth() === currentDate.getMonth() && 
+                     weddingDate.getFullYear() === currentDate.getFullYear();
+            case 'this_year':
+              return weddingDate.getFullYear() === currentDate.getFullYear();
+            default:
+              return true;
+          }
+        } catch {
+          return true; // Include weddings with invalid dates
+        }
+      });
+    }
+
+    // Sort by date (upcoming first, then by date)
+    filtered.sort((a, b) => {
+      try {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        const currentDate = new Date();
+        
+        // Upcoming weddings first, sorted by date ascending
+        const aUpcoming = dateA >= currentDate;
+        const bUpcoming = dateB >= currentDate;
+        
+        if (aUpcoming && !bUpcoming) return -1;
+        if (!aUpcoming && bUpcoming) return 1;
+        
+        return dateA.getTime() - dateB.getTime();
+      } catch {
+        return 0;
+      }
+    });
 
     setWeddings(filtered);
   };
@@ -288,6 +403,99 @@ export default function AdminWeddingsPage() {
     setFormData({ ...formData, events: newEvents });
   };
 
+  const handleSelectWedding = (weddingId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedWeddings([...selectedWeddings, weddingId]);
+    } else {
+      setSelectedWeddings(selectedWeddings.filter(id => id !== weddingId));
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedWeddings(weddings.map(w => w._id));
+    } else {
+      setSelectedWeddings([]);
+    }
+  };
+
+  const handleBulkStatusChange = async (newStatus: string) => {
+    if (selectedWeddings.length === 0) return;
+    
+    try {
+      setLoading(true);
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      
+      // Update each selected wedding
+      const updatePromises = selectedWeddings.map(weddingId =>
+        fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: newStatus }),
+        })
+      );
+
+      await Promise.all(updatePromises);
+      
+      // Refresh wedding list
+      await fetchWeddings();
+      setSelectedWeddings([]);
+      setShowBulkActions(false);
+      
+    } catch (err) {
+      setError('Failed to update wedding statuses');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedWeddings.length === 0) return;
+    
+    if (!confirm(`Are you sure you want to delete ${selectedWeddings.length} wedding(s)? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      
+      // Delete each selected wedding
+      const deletePromises = selectedWeddings.map(weddingId =>
+        fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        })
+      );
+
+      await Promise.all(deletePromises);
+      
+      // Refresh wedding list
+      await fetchWeddings();
+      setSelectedWeddings([]);
+      setShowBulkActions(false);
+      
+    } catch (err) {
+      setError('Failed to delete weddings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyTemplate = (template: any) => {
+    setFormData({
+      ...formData,
+      events: template.events,
+      status: template.status
+    });
+    setShowTemplates(false);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
@@ -343,6 +551,141 @@ export default function AdminWeddingsPage() {
           </div>
         </div>
 
+        {/* Search and Filter Section */}
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
+          <div className="p-4 sm:p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Search & Filter</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Search Input */}
+              <div>
+                <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2">
+                  Search Weddings
+                </label>
+                <input
+                  type="text"
+                  id="search"
+                  placeholder="Couple names, venue, planner..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent text-sm"
+                />
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label htmlFor="statusFilter" className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                <select
+                  id="statusFilter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent text-sm"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="planning">Planning</option>
+                  <option value="active">Active</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="postponed">Postponed</option>
+                </select>
+              </div>
+
+              {/* Date Filter */}
+              <div>
+                <label htmlFor="dateFilter" className="block text-sm font-medium text-gray-700 mb-2">
+                  Date Range
+                </label>
+                <select
+                  id="dateFilter"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent text-sm"
+                >
+                  <option value="all">All Dates</option>
+                  <option value="upcoming">Upcoming</option>
+                  <option value="past">Past</option>
+                  <option value="this_month">This Month</option>
+                  <option value="this_year">This Year</option>
+                </select>
+              </div>
+
+              {/* Clear Filters */}
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setStatusFilter('all');
+                    setDateFilter('all');
+                    setFilter('all');
+                  }}
+                  className="w-full px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+
+            {/* Results Summary */}
+            <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+              <span>
+                Showing {weddings.length} of {allWeddings.length} wedding{allWeddings.length !== 1 ? 's' : ''}
+              </span>
+              {(searchTerm || statusFilter !== 'all' || dateFilter !== 'all') && (
+                <span className="text-wedding-rose">
+                  Filters active
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Bulk Actions */}
+        {selectedWeddings.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <span className="text-blue-800 font-medium">
+                {selectedWeddings.length} wedding{selectedWeddings.length !== 1 ? 's' : ''} selected
+              </span>
+              <div className="flex space-x-2">
+                <select
+                  onChange={(e) => e.target.value && handleBulkStatusChange(e.target.value)}
+                  className="px-3 py-1 text-sm border border-blue-300 rounded focus:ring-2 focus:ring-blue-500"
+                  defaultValue=""
+                >
+                  <option value="">Change Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="planning">Planning</option>
+                  <option value="active">Active</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="postponed">Postponed</option>
+                </select>
+                {userProfile?.is_root_admin && (
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  >
+                    Delete Selected
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedWeddings([])}
+                  className="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Error Display */}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -354,9 +697,49 @@ export default function AdminWeddingsPage() {
         {showForm && (
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
             <div className="p-4 sm:p-8">
-              <h2 className="text-xl sm:text-2xl font-bold text-wedding-navy mb-4 sm:mb-6">
-                {editingId ? 'Edit Wedding' : 'Create New Wedding'}
-              </h2>
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-wedding-navy">
+                  {editingId ? 'Edit Wedding' : 'Create New Wedding'}
+                </h2>
+                {!editingId && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplates(!showTemplates)}
+                    className="px-4 py-2 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                  >
+                    {showTemplates ? 'Hide Templates' : 'Use Template'}
+                  </button>
+                )}
+              </div>
+
+              {/* Wedding Templates */}
+              {showTemplates && !editingId && (
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Choose a Template</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {weddingTemplates.map((template) => (
+                      <div
+                        key={template.id}
+                        className="p-4 bg-white border border-gray-200 rounded-lg hover:border-wedding-rose cursor-pointer transition-colors"
+                        onClick={() => applyTemplate(template)}
+                      >
+                        <h4 className="font-semibold text-wedding-navy">{template.name}</h4>
+                        <p className="text-sm text-gray-600 mt-1">{template.description}</p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {template.events.map((event, index) => (
+                            <span 
+                              key={index}
+                              className="inline-flex px-2 py-1 text-xs bg-wedding-sage bg-opacity-20 text-wedding-navy rounded"
+                            >
+                              {event.type.replace('_', ' ')}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Couple Names */}
@@ -466,10 +849,14 @@ export default function AdminWeddingsPage() {
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   >
-                    <option value="active">Active</option>
+                    <option value="draft">Draft</option>
                     <option value="planning">Planning</option>
+                    <option value="active">Active</option>
+                    <option value="confirmed">Confirmed</option>
                     <option value="completed">Completed</option>
+                    <option value="archived">Archived</option>
                     <option value="cancelled">Cancelled</option>
+                    <option value="postponed">Postponed</option>
                   </select>
                 </div>
 
@@ -537,6 +924,26 @@ export default function AdminWeddingsPage() {
         {/* Weddings List */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
           <div className="p-4 sm:p-8">
+            {/* Select All Header */}
+            {weddings.length > 0 && !loading && (
+              <div className="flex items-center mb-6 pb-4 border-b border-gray-200">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedWeddings.length === weddings.length && weddings.length > 0}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Select all ({weddings.length})
+                  </span>
+                </label>
+                <div className="ml-auto text-sm text-gray-500">
+                  {selectedWeddings.length} of {weddings.length} selected
+                </div>
+              </div>
+            )}
+
             {loading && !showForm ? (
               <div className="flex items-center justify-center py-8">
                 <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
@@ -545,21 +952,38 @@ export default function AdminWeddingsPage() {
             ) : weddings.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <p className="text-lg">No weddings found.</p>
-                <p className="text-sm mt-2">Click "Create Wedding" to get started.</p>
+                <p className="text-sm mt-2">
+                  {userProfile?.is_root_admin ? 'Click "Create Wedding" to get started.' : 'No weddings assigned to you yet.'}
+                </p>
               </div>
             ) : (
               <div className="grid gap-6">
                 {weddings.map((wedding) => (
                   <div key={wedding._id} className="border border-gray-200 rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
-                    <div className="flex flex-col space-y-4">
-                      <div className="flex-1">
+                    <div className="flex space-x-4">
+                      {/* Selection Checkbox */}
+                      <div className="flex-shrink-0 pt-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedWeddings.includes(wedding._id)}
+                          onChange={(e) => handleSelectWedding(wedding._id, e.target.checked)}
+                          className="h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
+                        />
+                      </div>
+                      
+                      <div className="flex-1 space-y-4">
                         <div className="flex items-start justify-between">
                           <h3 className="text-lg sm:text-xl font-bold text-wedding-navy">{wedding.couple_names}</h3>
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                             wedding.status === 'active' ? 'bg-green-100 text-green-800' :
+                            wedding.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' :
                             wedding.status === 'planning' ? 'bg-blue-100 text-blue-800' :
-                            wedding.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                            'bg-red-100 text-red-800'
+                            wedding.status === 'draft' ? 'bg-slate-100 text-slate-800' :
+                            wedding.status === 'completed' ? 'bg-purple-100 text-purple-800' :
+                            wedding.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                            wedding.status === 'postponed' ? 'bg-yellow-100 text-yellow-800' :
+                            wedding.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
                           }`}>
                             {wedding.status || 'active'}
                           </span>
@@ -622,6 +1046,7 @@ export default function AdminWeddingsPage() {
                         >
                           Delete
                         </button>
+                        </div>
                       </div>
                     </div>
                   </div>
