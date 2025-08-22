@@ -68,6 +68,34 @@ class WeddingService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing weddings for planner: {str(e)}")
     
+    def list_weddings_with_planner_info(self) -> List[dict]:
+        """List all weddings with enhanced planner information for admin interface"""
+        try:
+            weddings = list(self.collection.find())
+            
+            # Convert ObjectId to string and add admin-specific fields
+            for wedding in weddings:
+                wedding["id"] = str(wedding["_id"])
+                wedding["_id"] = str(wedding["_id"])
+                
+                # Ensure all expected fields exist
+                if "assigned_planner_email" not in wedding:
+                    wedding["assigned_planner_email"] = None
+                if "assigned_planner_id" not in wedding:
+                    wedding["assigned_planner_id"] = None
+                if "status" not in wedding:
+                    wedding["status"] = "active"
+                if "venue" not in wedding:
+                    wedding["venue"] = None
+                if "guest_count" not in wedding:
+                    wedding["guest_count"] = 0
+                if "events" not in wedding:
+                    wedding["events"] = []
+            
+            return weddings
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error listing weddings: {str(e)}")
+    
     def update_wedding(self, wedding_id: str, wedding_data: dict):
         """Update a wedding"""
         try:

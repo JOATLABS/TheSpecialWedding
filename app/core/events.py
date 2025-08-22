@@ -42,6 +42,9 @@ class EventType(str, Enum):
     LOGIN_ATTEMPTED = "security.login_attempted"
     LOGIN_FAILED = "security.login_failed"
     SUSPICIOUS_ACTIVITY = "security.suspicious_activity"
+    PASSWORD_CHANGED = "security.password_changed"
+    EMAIL_CHANGED = "security.email_changed"
+    EMAIL_CHANGE_REQUESTED = "security.email_change_requested"
     
     # System events
     SUBSCRIPTION_LIMIT_EXCEEDED = "system.subscription_limit_exceeded"
@@ -315,6 +318,61 @@ class EventFactory:
                 "security_event": True,
                 "severity": "medium"
             }
+        )
+    
+    @staticmethod
+    def password_changed(user_id: str, email: str, ip_address: str = None) -> DomainEvent:
+        return DomainEvent(
+            event_type=EventType.PASSWORD_CHANGED,
+            aggregate_id=user_id,
+            aggregate_type="user",
+            event_data={
+                "email": email,
+                "ip_address": ip_address,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            metadata={
+                "security_event": True,
+                "severity": "low"
+            },
+            user_id=user_id
+        )
+    
+    @staticmethod
+    def email_change_requested(user_id: str, old_email: str, new_email: str, ip_address: str = None) -> DomainEvent:
+        return DomainEvent(
+            event_type=EventType.EMAIL_CHANGE_REQUESTED,
+            aggregate_id=user_id,
+            aggregate_type="user",
+            event_data={
+                "old_email": old_email,
+                "new_email": new_email,
+                "ip_address": ip_address,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            metadata={
+                "security_event": True,
+                "severity": "medium"
+            },
+            user_id=user_id
+        )
+    
+    @staticmethod
+    def email_changed(user_id: str, old_email: str, new_email: str) -> DomainEvent:
+        return DomainEvent(
+            event_type=EventType.EMAIL_CHANGED,
+            aggregate_id=user_id,
+            aggregate_type="user",
+            event_data={
+                "old_email": old_email,
+                "new_email": new_email,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            metadata={
+                "security_event": True,
+                "severity": "medium"
+            },
+            user_id=user_id
         )
 
 

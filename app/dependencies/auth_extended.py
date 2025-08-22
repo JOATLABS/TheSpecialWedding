@@ -192,9 +192,24 @@ def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     
     if user.is_wedding_planner:
         # Check if this wedding is assigned to this planner
-        wedding = mongo.get_weddings_collection().find_one({"_id": wedding_id})
-        if wedding:
-            return wedding.get("assigned_planner_email") == user.email
+        from bson import ObjectId
+        try:
+            # Handle both string and ObjectId formats
+            if isinstance(wedding_id, str):
+                # Try ObjectId conversion first
+                try:
+                    query_id = ObjectId(wedding_id)
+                except:
+                    # If not a valid ObjectId, use as string
+                    query_id = wedding_id
+            else:
+                query_id = wedding_id
+                
+            wedding = mongo.get_weddings_collection().find_one({"_id": query_id})
+            if wedding:
+                return wedding.get("assigned_planner_email") == user.email
+        except Exception:
+            pass
     
     if user.is_vendor:
         # Check if vendor has access to this wedding

@@ -10,6 +10,12 @@ interface Wedding {
   couple_names: string;
   date: string;
   slug: string;
+  assigned_planner_email?: string;
+  assigned_planner_id?: string;
+  status?: string;
+  venue?: string;
+  guest_count?: number;
+  created_at?: string;
   events?: Array<{
     type: string;
     date: string;
@@ -20,49 +26,143 @@ interface WeddingForm {
   couple_names: string;
   date: string;
   slug: string;
+  assigned_planner_email?: string;
+  venue?: string;
+  status?: string;
   events: Array<{
     type: string;
     date: string;
   }>;
 }
 
+interface UserProfile {
+  email: string;
+  role: string;
+  is_root_admin: boolean;
+  is_wedding_planner: boolean;
+  user_data?: any;
+}
+
+interface PlannerOption {
+  email: string;
+  name: string;
+  id: string;
+}
+
 export default function AdminWeddingsPage() {
-  const { token } = useAdmin();
+  const { token, userProfile, fetchUserProfile } = useAdmin();
   const [weddings, setWeddings] = useState<Wedding[]>([]);
+  const [allWeddings, setAllWeddings] = useState<Wedding[]>([]);
+  const [planners, setPlanners] = useState<PlannerOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   
   const [formData, setFormData] = useState<WeddingForm>({
     couple_names: '',
     date: '',
     slug: '',
+    assigned_planner_email: '',
+    venue: '',
+    status: 'active',
     events: []
   });
 
   useEffect(() => {
-    fetchWeddings();
-  }, []);
+    if (!userProfile) {
+      fetchUserProfile();
+    } else {
+      fetchWeddings();
+      if (userProfile.is_root_admin) {
+        fetchPlanners();
+      }
+    }
+  }, [userProfile]);
+
+  useEffect(() => {
+    filterWeddings();
+  }, [allWeddings, filter, userProfile]);
 
   const fetchWeddings = async () => {
     setLoading(true);
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/weddings`);
+      
+      // Choose API endpoint based on user role
+      const endpoint = userProfile?.is_root_admin 
+        ? `${baseUrl}/admin/weddings` // ROOT_ADMIN sees all weddings
+        : `${baseUrl}/admin/planner/weddings`; // Planners see only assigned weddings
+      
+      const response = await fetch(endpoint, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
       if (!response.ok) {
         throw new Error('Failed to fetch weddings');
       }
       const data = await response.json();
       // Ensure data is an array
-      setWeddings(Array.isArray(data) ? data : []);
+      const weddingList = Array.isArray(data) ? data : [];
+      setAllWeddings(weddingList);
     } catch (err) {
       console.error('Error fetching weddings:', err);
       setError('Failed to load weddings');
-      setWeddings([]); // Set to empty array on error
+      setAllWeddings([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchPlanners = async () => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/users?role=wedding_planner`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const plannerOptions = data.map((user: any) => ({
+          email: user.email,
+          name: user.user_data?.company_name || `${user.user_data?.first_name || ''} ${user.user_data?.last_name || ''}`.trim() || user.email,
+          id: user._id
+        }));
+        setPlanners(plannerOptions);
+      }
+    } catch (err) {
+      console.error('Error fetching planners:', err);
+    }
+  };
+
+  const filterWeddings = () => {
+    if (!userProfile) return;
+
+    let filtered = [...allWeddings];
+
+    // Apply role-based filtering
+    if (!userProfile.is_root_admin) {
+      // Wedding planners only see their assigned weddings
+      filtered = filtered.filter(wedding => 
+        wedding.assigned_planner_email === userProfile.email
+      );
+    } else {
+      // ROOT_ADMIN can filter by assignment status
+      if (filter === 'assigned') {
+        filtered = filtered.filter(wedding => wedding.assigned_planner_email);
+      } else if (filter === 'unassigned') {
+        filtered = filtered.filter(wedding => !wedding.assigned_planner_email);
+      }
+    }
+
+    setWeddings(filtered);
   };
 
   const generateSlug = (coupleNames: string) => {
@@ -115,6 +215,9 @@ export default function AdminWeddingsPage() {
         couple_names: '',
         date: '',
         slug: '',
+        assigned_planner_email: '',
+        venue: '',
+        status: 'active',
         events: []
       });
       setShowForm(false);
@@ -156,6 +259,9 @@ export default function AdminWeddingsPage() {
       couple_names: wedding.couple_names,
       date: wedding.date,
       slug: wedding.slug,
+      assigned_planner_email: wedding.assigned_planner_email || '',
+      venue: wedding.venue || '',
+      status: wedding.status || 'active',
       events: wedding.events || []
     });
     setEditingId(wedding._id);
@@ -190,24 +296,49 @@ export default function AdminWeddingsPage() {
           <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white">Wedding Management</h1>
-                <p className="text-blue-100 mt-1 sm:mt-2 text-sm sm:text-base">Create and manage wedding events</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white">
+                  {userProfile?.is_root_admin ? 'Wedding Management' : 'My Weddings'}
+                </h1>
+                <p className="text-blue-100 mt-1 sm:mt-2 text-sm sm:text-base">
+                  {userProfile?.is_root_admin 
+                    ? 'Create and manage wedding events for all planners' 
+                    : 'Manage your assigned wedding events'
+                  }
+                </p>
               </div>
-              <button
-                onClick={() => {
-                  setShowForm(!showForm);
-                  setEditingId(null);
-                  setFormData({
-                    couple_names: '',
-                    date: '',
-                    slug: '',
-                    events: []
-                  });
-                }}
-                className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-wedding-ivory transition-colors text-sm sm:text-base w-full sm:w-auto"
-              >
-                {showForm ? 'Cancel' : 'Create Wedding'}
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                {userProfile?.is_root_admin && (
+                  <select
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value as 'all' | 'assigned' | 'unassigned')}
+                    className="bg-white text-wedding-navy px-4 py-2 rounded-lg border-0 text-sm focus:ring-2 focus:ring-blue-300"
+                  >
+                    <option value="all">All Weddings ({allWeddings.length})</option>
+                    <option value="assigned">Assigned ({allWeddings.filter(w => w.assigned_planner_email).length})</option>
+                    <option value="unassigned">Unassigned ({allWeddings.filter(w => !w.assigned_planner_email).length})</option>
+                  </select>
+                )}
+                {userProfile?.is_root_admin && (
+                  <button
+                    onClick={() => {
+                      setShowForm(!showForm);
+                      setEditingId(null);
+                      setFormData({
+                        couple_names: '',
+                        date: '',
+                        slug: '',
+                        assigned_planner_email: '',
+                        venue: '',
+                        status: 'active',
+                        events: []
+                      });
+                    }}
+                    className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-wedding-ivory transition-colors text-sm sm:text-base w-full sm:w-auto"
+                  >
+                    {showForm ? 'Cancel' : 'Create Wedding'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -282,6 +413,64 @@ export default function AdminWeddingsPage() {
                   <p className="mt-1 text-sm text-gray-500">
                     This will be used in the URL: thespecialwedding.com/{formData.slug || 'your-wedding'}
                   </p>
+                </div>
+
+                {/* Venue */}
+                <div>
+                  <label htmlFor="venue" className="block text-sm font-medium text-gray-700 mb-2">
+                    Venue (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    id="venue"
+                    value={formData.venue}
+                    onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    placeholder="Wedding Venue Name"
+                  />
+                </div>
+
+                {/* Assigned Planner (ROOT_ADMIN only) */}
+                {userProfile?.is_root_admin && (
+                  <div>
+                    <label htmlFor="assigned_planner" className="block text-sm font-medium text-gray-700 mb-2">
+                      Assign Wedding Planner
+                    </label>
+                    <select
+                      id="assigned_planner"
+                      value={formData.assigned_planner_email}
+                      onChange={(e) => setFormData({ ...formData, assigned_planner_email: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    >
+                      <option value="">Select a wedding planner...</option>
+                      {planners.map((planner) => (
+                        <option key={planner.id} value={planner.email}>
+                          {planner.name} ({planner.email})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Choose which wedding planner will manage this wedding
+                    </p>
+                  </div>
+                )}
+
+                {/* Status */}
+                <div>
+                  <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-2">
+                    Wedding Status
+                  </label>
+                  <select
+                    id="status"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  >
+                    <option value="active">Active</option>
+                    <option value="planning">Planning</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
                 </div>
 
                 {/* Events Section */}
@@ -364,11 +553,40 @@ export default function AdminWeddingsPage() {
                   <div key={wedding._id} className="border border-gray-200 rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
                     <div className="flex flex-col space-y-4">
                       <div className="flex-1">
-                        <h3 className="text-lg sm:text-xl font-bold text-wedding-navy">{wedding.couple_names}</h3>
-                        <p className="text-gray-600 mt-1 text-sm sm:text-base">Date: {wedding.date}</p>
+                        <div className="flex items-start justify-between">
+                          <h3 className="text-lg sm:text-xl font-bold text-wedding-navy">{wedding.couple_names}</h3>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            wedding.status === 'active' ? 'bg-green-100 text-green-800' :
+                            wedding.status === 'planning' ? 'bg-blue-100 text-blue-800' :
+                            wedding.status === 'completed' ? 'bg-gray-100 text-gray-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {wedding.status || 'active'}
+                          </span>
+                        </div>
+                        <p className="text-gray-600 mt-1 text-sm sm:text-base">📅 {wedding.date}</p>
+                        {wedding.venue && (
+                          <p className="text-gray-600 text-sm">📍 {wedding.venue}</p>
+                        )}
                         <p className="text-xs sm:text-sm text-gray-500 mt-1 break-all">
-                          URL: thespecialwedding.com/{wedding.slug}
+                          🔗 thespecialwedding.com/{wedding.slug}
                         </p>
+                        
+                        {/* Planner Assignment */}
+                        {userProfile?.is_root_admin && (
+                          <div className="mt-2">
+                            {wedding.assigned_planner_email ? (
+                              <p className="text-sm text-green-600">
+                                👤 Assigned to: {wedding.assigned_planner_email}
+                              </p>
+                            ) : (
+                              <p className="text-sm text-orange-600">
+                                ⚠️ No planner assigned
+                              </p>
+                            )}
+                          </div>
+                        )}
+
                         {wedding.events && wedding.events.length > 0 && (
                           <div className="mt-3">
                             <p className="text-sm font-medium text-gray-700">Events:</p>

@@ -209,3 +209,49 @@ def get_activity_log(current_user: ExtendedAuthUser = Depends(get_current_user_e
     except Exception as e:
         logging.error(f"Error fetching activity log: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch activity log: {str(e)}")
+
+@router.get("/planner/weddings", tags=["Wedding Planner"])
+def get_planner_weddings(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
+    """Get all weddings assigned to the current planner"""
+    
+    if not (current_user.is_wedding_planner or current_user.is_root_admin):
+        raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
+    
+    try:
+        weddings_collection = mongo.get_weddings_collection()
+        
+        # Query for planner's assigned weddings
+        query = {"assigned_planner_email": current_user.email}
+        if current_user.is_root_admin:
+            # ROOT_ADMIN can see all weddings, but this endpoint is for planner view
+            query = {"assigned_planner_email": current_user.email}
+        
+        weddings = list(weddings_collection.find(query))
+        
+        # Convert ObjectId to string and format response
+        wedding_list = []
+        for wedding in weddings:
+            wedding_data = {
+                "id": str(wedding["_id"]),
+                "_id": str(wedding["_id"]),
+                "couple_names": wedding.get("couple_names", ""),
+                "date": wedding.get("date", ""),
+                "slug": wedding.get("slug", ""),
+                "assigned_planner_email": wedding.get("assigned_planner_email"),
+                "assigned_planner_id": wedding.get("assigned_planner_id"),
+                "status": wedding.get("status", "active"),
+                "venue": wedding.get("venue"),
+                "guest_count": wedding.get("guest_count", 0),
+                "created_at": wedding.get("created_at"),
+                "events": wedding.get("events", [])
+            }
+            wedding_list.append(wedding_data)
+        
+        # Sort by date
+        wedding_list.sort(key=lambda x: x["date"])
+        
+        return wedding_list
+        
+    except Exception as e:
+        logging.error(f"Error fetching planner weddings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch weddings: {str(e)}")

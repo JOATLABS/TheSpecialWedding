@@ -48,3 +48,6 @@ ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
 app/middleware/security_headers.py
 app/middleware/security_headers.py
 app/main_optimized.py
+app/__pycache__/main.cpython-311.pyc
+CLAUDE.md
+app/__pycache__/main.cpython-311.pyc
