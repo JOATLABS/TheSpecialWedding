@@ -40,3 +40,11 @@ backup-mongodb.sh
 start-wedding-backend.sh
 setup-auto-start.sh
 wedding-backend.service
+.secrets.baseline
+test-results/
+tests/
+
+ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
+app/middleware/security_headers.py
+app/middleware/security_headers.py
+app/main_optimized.py

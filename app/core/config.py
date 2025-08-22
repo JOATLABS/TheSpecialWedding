@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,10 +9,10 @@ class Settings:
     VERSION: str = "0.1.0"
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://mongo:27017")
     MONGO_DB: str = os.getenv("MONGO_DB", "wedding")
-    SECRET_KEY: str = os.getenv("SECRET_KEY")
-    API_KEY: str = os.getenv("API_KEY")
+    SECRET_KEY: Optional[str] = os.getenv("SECRET_KEY")
+    API_KEY: Optional[str] = os.getenv("API_KEY")
     
-    def __post_init__(self):
+    def __init__(self):
         """Validate required environment variables"""
         if not self.SECRET_KEY:
             raise ValueError("SECRET_KEY environment variable is required")
