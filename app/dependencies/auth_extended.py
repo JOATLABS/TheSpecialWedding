@@ -129,6 +129,9 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
             
         return ExtendedAuthUser(email=email, role=role, user_data=user_data)
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (including trial expiration 402) as-is
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

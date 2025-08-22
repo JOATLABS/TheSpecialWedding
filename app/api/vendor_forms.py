@@ -20,7 +20,7 @@ class VendorFormService:
     
     def generate_form_token(self) -> str:
         """Generate a secure token for vendor form access"""
-        return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
+        return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
     
     def create_vendor_form(self, form_data: dict, created_by: str) -> dict:
         """Create a new vendor form"""

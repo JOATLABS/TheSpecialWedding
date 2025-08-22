@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
 from app.services.email_service_resend import ResendEmailService
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner
 from app.services.wedding_service import WeddingService
 from pydantic import BaseModel
 from typing import Optional, List
