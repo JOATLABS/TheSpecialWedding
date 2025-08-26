@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
+from fastapi.responses import Response as FastAPIResponse
 from app.models.form import (
     CreateFormRequest, UpdateFormRequest, SendFormRequest, SubmitFormRequest,
     FormModel, FormResponse
@@ -389,6 +390,177 @@ def get_form_analytics(
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
     
     return form_service.get_form_analytics(form_id, current_user.email)
+
+@router.get("/forms/{form_id}/export/csv", tags=["Forms"])
+def export_form_responses_csv(
+    form_id: str,
+    request: Request,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    date_from: Optional[str] = Query(None, description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
+    date_to: Optional[str] = Query(None, description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
+    include_metadata: bool = Query(True, description="Include submission metadata (date, IP, etc.)")
+):
+    """
+    Export form responses to CSV format with enhanced security and filtering.
+    
+    This endpoint allows authorized users to export form responses as CSV files
+    with comprehensive security measures and filtering options.
+    
+    Features:
+    - Role-based access control (wedding planners and root admins only)
+    - Wedding assignment validation (planners can only export their forms)
+    - Rate limiting (5 exports per hour per user)
+    - Data sanitization and CSV injection protection
+    - Optional date range filtering
+    - Configurable metadata inclusion
+    - Audit logging for security monitoring
+    
+    Args:
+        form_id: The ID of the form to export responses for
+        date_from: Optional start date for filtering responses (ISO format)
+        date_to: Optional end date for filtering responses (ISO format)
+        include_metadata: Whether to include submission metadata columns
+        
+    Returns:
+        CSV file download with form responses
+        
+    Raises:
+        403: Access denied (insufficient permissions or wedding access)
+        404: Form not found
+        400: Invalid parameters (malformed dates, invalid form ID)
+        429: Rate limit exceeded (too many exports)
+        500: Server error during export processing
+    """
+    try:
+        # Enhanced authorization check
+        if not (current_user.is_wedding_planner or current_user.is_root_admin):
+            # Log unauthorized access attempt
+            client_ip = getattr(request.client, 'host', None) if request.client else None
+            security_audit.log_security_event(
+                event_type=SecurityEventType.UNAUTHORIZED_ACCESS,
+                severity=SecuritySeverity.HIGH,
+                user_email=current_user.email,
+                ip_address=client_ip,
+                user_agent=request.headers.get('user-agent'),
+                resource="forms",
+                action="csv_export",
+                details={
+                    "form_id": form_id,
+                    "user_role": current_user.role,
+                    "required_role": "wedding_planner"
+                },
+                success=False,
+                error_message="Insufficient privileges for CSV export"
+            )
+            
+            logger.warning(
+                f"Unauthorized CSV export attempt by {current_user.email} "
+                f"with role {current_user.role} for form {form_id}"
+            )
+            raise HTTPException(
+                status_code=403, 
+                detail="Access denied. Wedding planner role required for CSV export."
+            )
+        
+        # Validate form_id format
+        if not form_id or not isinstance(form_id, str):
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+        
+        form_id = InputSanitizer.sanitize_text(form_id, 100)
+        if not form_id:
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+        
+        # Get form to check wedding access before export
+        try:
+            form = form_service.get_form(form_id, current_user.email)
+            
+            # Additional wedding access check if form has wedding_id
+            if form.get('wedding_id') and not check_wedding_access(current_user, form['wedding_id']):
+                logger.warning(
+                    f"User {current_user.email} attempted to export CSV for form {form_id} "
+                    f"for wedding {form['wedding_id']} without access"
+                )
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Access denied. You don't have access to this wedding's forms."
+                )
+        except HTTPException as e:
+            if e.status_code == 404:
+                logger.info(f"CSV export attempted for non-existent form {form_id} by {current_user.email}")
+            raise
+        
+        # Log CSV export attempt for security audit
+        client_ip = getattr(request.client, 'host', None) if request.client else None
+        logger.info(
+            f"CSV export attempt: form_id={form_id}, user={current_user.email}, "
+            f"ip={client_ip}, date_from={date_from}, date_to={date_to}, "
+            f"include_metadata={include_metadata}"
+        )
+        
+        # Call the form service to generate CSV
+        export_result = form_service.export_form_responses_csv(
+            form_id=form_id,
+            created_by=current_user.email,
+            date_from=date_from,
+            date_to=date_to,
+            include_metadata=include_metadata
+        )
+        
+        # Log successful export for audit
+        security_audit.log_security_event(
+            event_type=SecurityEventType.DATA_EXPORT,
+            severity=SecuritySeverity.MEDIUM,
+            user_email=current_user.email,
+            ip_address=client_ip,
+            user_agent=request.headers.get('user-agent'),
+            resource="forms",
+            action="csv_export",
+            details={
+                "form_id": form_id,
+                "form_name": export_result.get('form_name'),
+                "exported_count": export_result.get('exported_count', 0),
+                "file_size": export_result.get('size', 0),
+                "filters": {
+                    "date_from": date_from,
+                    "date_to": date_to,
+                    "include_metadata": include_metadata
+                }
+            },
+            success=True,
+            form_id=form_id,
+            wedding_id=form.get('wedding_id')
+        )
+        
+        logger.info(
+            f"CSV export successful: form_id={form_id}, user={current_user.email}, "
+            f"exported_count={export_result.get('exported_count', 0)}, "
+            f"file_size={export_result.get('size', 0)} bytes"
+        )
+        
+        # Return CSV file as download
+        return FastAPIResponse(
+            content=export_result['content'],
+            media_type=export_result['content_type'],
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{export_result['filename']}\"",
+                "Content-Length": str(export_result['size']),
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"CSV export failed: form_id={form_id}, user={current_user.email}, "
+            f"error={str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to export form responses. Please try again later."
+        )
 
 # Public endpoints (no authentication required) - Enhanced security
 @router.get("/public/forms/{form_id}", tags=["Public Forms"])
