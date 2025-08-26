@@ -14,7 +14,6 @@ interface SubscriptionPlan {
   max_guests_per_wedding: number;
   ai_credits_monthly: number;
   storage_gb: number;
-  vendor_seats: number;
   features: string[];
   is_featured: boolean;
   is_active: boolean;
@@ -190,10 +189,6 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Storage:</span>
                   <span className="font-medium text-gray-900">{plan.storage_gb}GB</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Vendor seats:</span>
-                  <span className="font-medium text-gray-900">{plan.vendor_seats}</span>
                 </div>
               </div>
 
