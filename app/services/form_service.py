@@ -6,10 +6,17 @@ from app.models.form import (
     CreateFormRequest, UpdateFormRequest, SendFormRequest, SubmitFormRequest
 )
 from app.services.email_service_resend import ResendEmailService
+from app.utils.security_utils import (
+    FormSecurityValidator, InputSanitizer, SecurityHeaders, rate_limiter
+)
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import logging
 import uuid
+import os
+import html
+
+logger = logging.getLogger(__name__)
 
 class FormService:
     def __init__(self):
@@ -19,25 +26,47 @@ class FormService:
         self.email_service = ResendEmailService()
 
     def create_form(self, form_data: CreateFormRequest, created_by: str) -> Dict[str, Any]:
-        """Create a new form"""
+        """Create a new form with enhanced security validation"""
         try:
+            # Rate limiting check
+            if not rate_limiter.check_rate_limit(
+                f"form_creation_{created_by}", 
+                limit=10, 
+                window_seconds=3600
+            ):
+                raise HTTPException(
+                    status_code=429, 
+                    detail="Too many forms created. Please try again later."
+                )
+            
+            # Validate and sanitize form data
+            try:
+                sanitized_data = FormSecurityValidator.validate_form_data(form_data.dict())
+            except ValueError as e:
+                logger.warning(f"Form validation failed for user {created_by}: {str(e)}")
+                raise HTTPException(status_code=400, detail=str(e))
+            
             # Generate unique form ID
             form_id = f"form_{int(datetime.now().timestamp() * 1000)}"
             
-            # Validate field IDs are unique
-            field_ids = [field.id for field in form_data.fields]
+            # Validate field IDs are unique (double-check after sanitization)
+            field_ids = [field['id'] for field in sanitized_data['fields']]
             if len(field_ids) != len(set(field_ids)):
                 raise HTTPException(status_code=400, detail="Field IDs must be unique")
             
-            # Create form document
+            # Sanitize created_by email
+            if not InputSanitizer.validate_email(created_by):
+                raise HTTPException(status_code=400, detail="Invalid creator email")
+            
+            # Create form document with sanitized data
             form_doc = {
                 "_id": form_id,
-                "name": form_data.name,
-                "settings": form_data.settings.dict(),
-                "fields": [field.dict() for field in form_data.fields],
-                "created_by": created_by,
-                "wedding_id": form_data.wedding_id,
-                "template_type": form_data.template_type,
+                "name": InputSanitizer.sanitize_text(sanitized_data['name'], 100),
+                "settings": sanitized_data['settings'],
+                "fields": sanitized_data['fields'],
+                "created_by": created_by.lower().strip(),
+                "wedding_id": sanitized_data.get('wedding_id'),
+                "template_type": sanitized_data.get('template_type'),
                 "is_active": True,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
@@ -79,19 +108,58 @@ class FormService:
             raise HTTPException(status_code=500, detail=f"Failed to fetch forms: {str(e)}")
 
     def get_form(self, form_id: str, created_by: Optional[str] = None) -> Dict[str, Any]:
-        """Get a specific form"""
+        """Get a specific form with security validation"""
         try:
+            # Validate form_id format to prevent injection
+            if not form_id or not isinstance(form_id, str):
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+            
+            # Sanitize form_id
+            form_id = InputSanitizer.sanitize_text(form_id, 100)
+            if not form_id:
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+            
             query = {"_id": form_id, "is_active": True}
             if created_by:
-                query["created_by"] = created_by
+                # Validate and sanitize created_by email
+                if not InputSanitizer.validate_email(created_by):
+                    raise HTTPException(status_code=400, detail="Invalid creator email")
+                query["created_by"] = created_by.lower().strip()
                 
             form = self.forms_collection.find_one(query)
             
             if not form:
+                logger.info(f"Form not found: {form_id} for user: {created_by}")
                 raise HTTPException(status_code=404, detail="Form not found")
                 
+            # Sanitize form data before returning
             form["id"] = form["_id"]
             form.pop("_id", None)
+            
+            # Sanitize sensitive data for public access
+            if not created_by:  # Public access
+                # Remove sensitive information
+                form.pop("created_by", None)
+                form.pop("template_type", None)
+                form.pop("submission_count", None)
+                
+                # Sanitize settings for XSS protection
+                if "settings" in form:
+                    settings = form["settings"]
+                    if "title" in settings:
+                        settings["title"] = html.escape(settings["title"])
+                    if "description" in settings:
+                        settings["description"] = html.escape(settings["description"])
+                
+                # Sanitize field labels and descriptions
+                if "fields" in form:
+                    for field in form["fields"]:
+                        if "label" in field:
+                            field["label"] = html.escape(field["label"])
+                        if "description" in field:
+                            field["description"] = html.escape(field["description"])
+                        if "placeholder" in field:
+                            field["placeholder"] = html.escape(field["placeholder"])
             
             return form
             
@@ -102,33 +170,69 @@ class FormService:
             raise HTTPException(status_code=500, detail=f"Failed to fetch form: {str(e)}")
 
     def update_form(self, form_id: str, form_data: UpdateFormRequest, created_by: str) -> Dict[str, Any]:
-        """Update an existing form"""
+        """Update an existing form with security validation"""
         try:
+            # Validate inputs
+            if not form_id or not isinstance(form_id, str):
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+            
+            if not InputSanitizer.validate_email(created_by):
+                raise HTTPException(status_code=400, detail="Invalid creator email")
+            
+            # Sanitize form_id
+            form_id = InputSanitizer.sanitize_text(form_id, 100)
+            
             # Check if form exists and user owns it
             existing_form = self.forms_collection.find_one({
                 "_id": form_id, 
-                "created_by": created_by,
+                "created_by": created_by.lower().strip(),
                 "is_active": True
             })
             
             if not existing_form:
+                logger.warning(f"Update attempt on non-existent form {form_id} by {created_by}")
                 raise HTTPException(status_code=404, detail="Form not found")
             
-            # Build update document
+            # Build update document with sanitization
             update_doc = {"updated_at": datetime.utcnow()}
             
             if form_data.name is not None:
-                update_doc["name"] = form_data.name
+                sanitized_name = InputSanitizer.sanitize_text(form_data.name, 100)
+                if not sanitized_name:
+                    raise HTTPException(status_code=400, detail="Invalid form name")
+                update_doc["name"] = sanitized_name
+                
             if form_data.settings is not None:
-                update_doc["settings"] = form_data.settings.dict()
+                try:
+                    sanitized_settings = FormSecurityValidator.validate_form_settings(
+                        form_data.settings.dict()
+                    )
+                    update_doc["settings"] = sanitized_settings
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                    
             if form_data.fields is not None:
-                # Validate field IDs are unique
-                field_ids = [field.id for field in form_data.fields]
-                if len(field_ids) != len(set(field_ids)):
-                    raise HTTPException(status_code=400, detail="Field IDs must be unique")
-                update_doc["fields"] = [field.dict() for field in form_data.fields]
+                try:
+                    # Validate and sanitize fields
+                    sanitized_fields = []
+                    field_ids = []
+                    
+                    for field in form_data.fields:
+                        sanitized_field = FormSecurityValidator.validate_form_field(field.dict())
+                        sanitized_fields.append(sanitized_field)
+                        field_ids.append(sanitized_field['id'])
+                    
+                    # Check for unique field IDs
+                    if len(field_ids) != len(set(field_ids)):
+                        raise HTTPException(status_code=400, detail="Field IDs must be unique")
+                    
+                    update_doc["fields"] = sanitized_fields
+                    
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                    
             if form_data.is_active is not None:
-                update_doc["is_active"] = form_data.is_active
+                update_doc["is_active"] = bool(form_data.is_active)
             
             # Update form
             result = self.forms_collection.update_one(
@@ -243,28 +347,69 @@ class FormService:
 
     def submit_form_response(self, form_id: str, response_data: SubmitFormRequest, 
                            ip_address: str = None, user_agent: str = None) -> Dict[str, Any]:
-        """Submit a form response"""
+        """Submit a form response with security validation"""
         try:
+            # Rate limiting for form submissions
+            rate_key = f"form_submission_{ip_address or 'unknown'}"
+            if not rate_limiter.check_rate_limit(rate_key, limit=100, window_seconds=3600):
+                raise HTTPException(
+                    status_code=429, 
+                    detail="Too many form submissions. Please try again later."
+                )
+            
+            # Validate form_id
+            if not form_id or not isinstance(form_id, str):
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+            
+            form_id = InputSanitizer.sanitize_text(form_id, 100)
+            if not form_id:
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+            
             # Get form (public access)
             form = self.get_form(form_id)
             
             if not form["is_active"]:
+                logger.info(f"Submission attempt to inactive form: {form_id}")
                 raise HTTPException(status_code=400, detail="Form is no longer accepting responses")
+            
+            # Validate and sanitize response data
+            try:
+                sanitized_responses = FormSecurityValidator.validate_form_response(
+                    response_data.responses, form["fields"]
+                )
+            except ValueError as e:
+                logger.warning(f"Invalid form response for form {form_id}: {str(e)}")
+                raise HTTPException(status_code=400, detail="Invalid response data")
             
             # Validate required fields
             for field in form["fields"]:
-                if field["required"] and field["id"] not in response_data.responses:
+                if field["required"] and field["id"] not in sanitized_responses:
                     raise HTTPException(
                         status_code=400, 
-                        detail=f"Required field '{field['label']}' is missing"
+                        detail=f"Required field '{html.escape(field['label'])}' is missing"
                     )
+            
+            # Sanitize submitter information
+            submitted_by_email = None
+            submitted_by_name = None
+            
+            if response_data.submitted_by_email:
+                if InputSanitizer.validate_email(response_data.submitted_by_email):
+                    submitted_by_email = response_data.submitted_by_email.lower().strip()
+                else:
+                    raise HTTPException(status_code=400, detail="Invalid email address")
+            
+            if response_data.submitted_by_name:
+                submitted_by_name = InputSanitizer.sanitize_text(
+                    response_data.submitted_by_name, 100
+                )
             
             # Check if multiple submissions are allowed
             if not form["settings"].get("allow_multiple_submissions", False):
-                if response_data.submitted_by_email:
+                if submitted_by_email:
                     existing_response = self.responses_collection.find_one({
                         "form_id": form_id,
-                        "submitted_by_email": response_data.submitted_by_email
+                        "submitted_by_email": submitted_by_email
                     })
                     if existing_response:
                         raise HTTPException(
@@ -272,19 +417,27 @@ class FormService:
                             detail="You have already submitted a response to this form"
                         )
             
-            # Create response document
+            # Create response document with sanitized data
             response_id = str(uuid.uuid4())
+            
+            # Sanitize IP address and user agent
+            safe_ip = InputSanitizer.sanitize_text(ip_address, 45) if ip_address else None
+            safe_user_agent = InputSanitizer.sanitize_text(user_agent, 500) if user_agent else None
+            
             response_doc = {
                 "_id": response_id,
                 "form_id": form_id,
-                "responses": response_data.responses,
-                "submitted_by_email": response_data.submitted_by_email,
-                "submitted_by_name": response_data.submitted_by_name,
+                "responses": sanitized_responses,
+                "submitted_by_email": submitted_by_email,
+                "submitted_by_name": submitted_by_name,
                 "wedding_id": form.get("wedding_id"),
-                "ip_address": ip_address,
-                "user_agent": user_agent,
+                "ip_address": safe_ip,
+                "user_agent": safe_user_agent,
                 "submitted_at": datetime.utcnow(),
-                "metadata": {}
+                "metadata": {
+                    "security_validated": True,
+                    "sanitized_at": datetime.utcnow().isoformat()
+                }
             }
             
             # Save response
@@ -298,16 +451,33 @@ class FormService:
                 )
                 
                 # Update distribution status if applicable
-                if response_data.submitted_by_email:
+                if submitted_by_email:
                     self.distributions_collection.update_one(
-                        {"form_id": form_id, "recipient_email": response_data.submitted_by_email},
+                        {"form_id": form_id, "recipient_email": submitted_by_email},
                         {"$set": {"submitted_at": datetime.utcnow(), "status": "submitted"}}
                     )
                 
+                # Log successful submission for security monitoring
+                logger.info(
+                    f"Form submission successful: form_id={form_id}, "
+                    f"email={submitted_by_email}, ip={safe_ip}"
+                )
+                
+                # Sanitize response message to prevent XSS
+                success_message = form["settings"].get(
+                    "success_message", "Thank you for your submission!"
+                )
+                safe_success_message = html.escape(success_message)
+                
+                redirect_url = form["settings"].get("redirect_url")
+                safe_redirect_url = None
+                if redirect_url and InputSanitizer.validate_url(redirect_url):
+                    safe_redirect_url = redirect_url
+                
                 return {
                     "id": response_id,
-                    "message": form["settings"].get("success_message", "Thank you for your submission!"),
-                    "redirect_url": form["settings"].get("redirect_url")
+                    "message": safe_success_message,
+                    "redirect_url": safe_redirect_url
                 }
             else:
                 raise HTTPException(status_code=500, detail="Failed to save response")

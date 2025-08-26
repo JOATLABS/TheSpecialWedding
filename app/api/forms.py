@@ -1,12 +1,24 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from app.models.form import (
     CreateFormRequest, UpdateFormRequest, SendFormRequest, SubmitFormRequest,
     FormModel, FormResponse
 )
 from app.services.form_service import FormService
-from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    get_current_user_extended, ExtendedAuthUser, check_wedding_access
+)
+from app.utils.security_utils import (
+    InputSanitizer, SecurityHeaders, rate_limiter, FormSecurityValidator
+)
+from app.services.security_audit_service import (
+    security_audit, SecurityEventType, SecuritySeverity
+)
 from typing import List, Dict, Any, Optional
 import logging
+import html
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 form_service = FormService()
@@ -15,58 +27,334 @@ form_service = FormService()
 @router.post("/forms", tags=["Forms"])
 def create_form(
     form_data: CreateFormRequest,
+    request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
-    """Create a new form"""
+    """Create a new form with enhanced security validation"""
+    # Enhanced authorization check
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+        # Log unauthorized access attempt
+        client_ip = getattr(request.client, 'host', None) if request.client else None
+        security_audit.log_security_event(
+            event_type=SecurityEventType.UNAUTHORIZED_ACCESS,
+            severity=SecuritySeverity.HIGH,
+            user_email=current_user.email,
+            ip_address=client_ip,
+            user_agent=request.headers.get('user-agent'),
+            resource="forms",
+            action="create",
+            details={
+                "user_role": current_user.role,
+                "required_role": "wedding_planner"
+            },
+            success=False,
+            error_message="Insufficient privileges"
+        )
+        
+        logger.warning(
+            f"Unauthorized form creation attempt by {current_user.email} "
+            f"with role {current_user.role}"
+        )
+        raise HTTPException(
+            status_code=403, 
+            detail="Access denied. Wedding planner role required."
+        )
     
-    return form_service.create_form(form_data, current_user.email)
+    # Validate wedding access if wedding_id is provided
+    if form_data.wedding_id:
+        if not check_wedding_access(current_user, form_data.wedding_id):
+            logger.warning(
+                f"User {current_user.email} attempted to create form for "
+                f"wedding {form_data.wedding_id} without access"
+            )
+            raise HTTPException(
+                status_code=403, 
+                detail="Access denied. You don't have access to this wedding."
+            )
+    
+    # Log form creation attempt
+    client_ip = getattr(request.client, 'host', None) if request.client else None
+    logger.info(
+        f"Form creation attempt: user={current_user.email}, "
+        f"ip={client_ip}, wedding_id={form_data.wedding_id}"
+    )
+    
+    try:
+        result = form_service.create_form(form_data, current_user.email)
+        
+        # Log successful creation
+        logger.info(
+            f"Form created successfully: id={result.get('id')}, "
+            f"user={current_user.email}"
+        )
+        
+        # Security audit log
+        security_audit.log_security_event(
+            event_type=SecurityEventType.FORM_CREATION,
+            severity=SecuritySeverity.MEDIUM,
+            user_email=current_user.email,
+            ip_address=client_ip,
+            user_agent=request.headers.get('user-agent'),
+            resource="forms",
+            action="create",
+            details={
+                "form_id": result.get('id'),
+                "wedding_id": form_data.wedding_id,
+                "form_name": form_data.name,
+                "field_count": len(form_data.fields)
+            },
+            success=True,
+            form_id=result.get('id'),
+            wedding_id=form_data.wedding_id
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(
+            f"Form creation failed: user={current_user.email}, "
+            f"error={str(e)}"
+        )
+        raise
 
 @router.get("/forms", tags=["Forms"])
 def get_forms(
     wedding_id: Optional[str] = None,
+    request: Request = None,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
-    """Get all forms for the current user"""
+    """Get all forms for the current user with security validation"""
+    # Enhanced authorization check
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+        logger.warning(
+            f"Unauthorized forms access attempt by {current_user.email}"
+        )
+        raise HTTPException(
+            status_code=403, 
+            detail="Access denied. Wedding planner role required."
+        )
     
-    return form_service.get_forms(current_user.email, wedding_id)
+    # Validate wedding_id if provided
+    if wedding_id:
+        # Sanitize wedding_id
+        wedding_id = InputSanitizer.sanitize_text(wedding_id, 100)
+        
+        # Check wedding access
+        if not check_wedding_access(current_user, wedding_id):
+            logger.warning(
+                f"User {current_user.email} attempted to access forms for "
+                f"wedding {wedding_id} without access"
+            )
+            raise HTTPException(
+                status_code=403, 
+                detail="Access denied. You don't have access to this wedding."
+            )
+    
+    try:
+        forms = form_service.get_forms(current_user.email, wedding_id)
+        
+        # Log access
+        logger.info(
+            f"Forms accessed: user={current_user.email}, "
+            f"wedding_id={wedding_id}, count={len(forms)}"
+        )
+        
+        return forms
+        
+    except Exception as e:
+        logger.error(
+            f"Forms access failed: user={current_user.email}, "
+            f"wedding_id={wedding_id}, error={str(e)}"
+        )
+        raise
 
 @router.get("/forms/{form_id}", tags=["Forms"])
 def get_form(
     form_id: str,
+    request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
-    """Get a specific form"""
+    """Get a specific form with authorization validation"""
+    # Enhanced authorization check
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+        logger.warning(
+            f"Unauthorized form access attempt by {current_user.email} for form {form_id}"
+        )
+        raise HTTPException(
+            status_code=403, 
+            detail="Access denied. Wedding planner role required."
+        )
     
-    return form_service.get_form(form_id, current_user.email)
+    # Validate form_id
+    if not form_id or not isinstance(form_id, str):
+        raise HTTPException(status_code=400, detail="Invalid form ID")
+    
+    form_id = InputSanitizer.sanitize_text(form_id, 100)
+    if not form_id:
+        raise HTTPException(status_code=400, detail="Invalid form ID")
+    
+    try:
+        form = form_service.get_form(form_id, current_user.email)
+        
+        # Additional wedding access check if form has wedding_id
+        if form.get('wedding_id') and not check_wedding_access(current_user, form['wedding_id']):
+            logger.warning(
+                f"User {current_user.email} attempted to access form {form_id} "
+                f"for wedding {form['wedding_id']} without access"
+            )
+            raise HTTPException(
+                status_code=403, 
+                detail="Access denied. You don't have access to this wedding."
+            )
+        
+        # Log access
+        logger.info(
+            f"Form accessed: id={form_id}, user={current_user.email}"
+        )
+        
+        return form
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Form access failed: id={form_id}, user={current_user.email}, "
+            f"error={str(e)}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve form")
 
 @router.put("/forms/{form_id}", tags=["Forms"])
 def update_form(
     form_id: str,
     form_data: UpdateFormRequest,
+    request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
-    """Update a form"""
+    """Update a form with enhanced security validation"""
+    # Enhanced authorization check
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+        logger.warning(
+            f"Unauthorized form update attempt by {current_user.email} for form {form_id}"
+        )
+        raise HTTPException(
+            status_code=403, 
+            detail="Access denied. Wedding planner role required."
+        )
     
-    return form_service.update_form(form_id, form_data, current_user.email)
+    # Validate form_id
+    if not form_id or not isinstance(form_id, str):
+        raise HTTPException(status_code=400, detail="Invalid form ID")
+    
+    form_id = InputSanitizer.sanitize_text(form_id, 100)
+    if not form_id:
+        raise HTTPException(status_code=400, detail="Invalid form ID")
+    
+    # Get existing form to check wedding access
+    try:
+        existing_form = form_service.get_form(form_id, current_user.email)
+        
+        # Check wedding access if form has wedding_id
+        if existing_form.get('wedding_id'):
+            if not check_wedding_access(current_user, existing_form['wedding_id']):
+                logger.warning(
+                    f"User {current_user.email} attempted to update form {form_id} "
+                    f"for wedding {existing_form['wedding_id']} without access"
+                )
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Access denied. You don't have access to this wedding."
+                )
+        
+        # Log update attempt
+        client_ip = getattr(request.client, 'host', None) if request.client else None
+        logger.info(
+            f"Form update attempt: id={form_id}, user={current_user.email}, "
+            f"ip={client_ip}"
+        )
+        
+        result = form_service.update_form(form_id, form_data, current_user.email)
+        
+        # Log successful update
+        logger.info(
+            f"Form updated successfully: id={form_id}, user={current_user.email}"
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Form update failed: id={form_id}, user={current_user.email}, "
+            f"error={str(e)}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to update form")
 
 @router.delete("/forms/{form_id}", tags=["Forms"])
 def delete_form(
     form_id: str,
+    request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
-    """Delete a form"""
+    """Delete a form with enhanced security validation"""
+    # Enhanced authorization check
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+        logger.warning(
+            f"Unauthorized form deletion attempt by {current_user.email} for form {form_id}"
+        )
+        raise HTTPException(
+            status_code=403, 
+            detail="Access denied. Wedding planner role required."
+        )
     
-    return form_service.delete_form(form_id, current_user.email)
+    # Validate form_id
+    if not form_id or not isinstance(form_id, str):
+        raise HTTPException(status_code=400, detail="Invalid form ID")
+    
+    form_id = InputSanitizer.sanitize_text(form_id, 100)
+    if not form_id:
+        raise HTTPException(status_code=400, detail="Invalid form ID")
+    
+    try:
+        # Get existing form to check wedding access
+        existing_form = form_service.get_form(form_id, current_user.email)
+        
+        # Check wedding access if form has wedding_id
+        if existing_form.get('wedding_id'):
+            if not check_wedding_access(current_user, existing_form['wedding_id']):
+                logger.warning(
+                    f"User {current_user.email} attempted to delete form {form_id} "
+                    f"for wedding {existing_form['wedding_id']} without access"
+                )
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Access denied. You don't have access to this wedding."
+                )
+        
+        # Log deletion attempt
+        client_ip = getattr(request.client, 'host', None) if request.client else None
+        logger.warning(
+            f"Form deletion attempt: id={form_id}, user={current_user.email}, "
+            f"ip={client_ip}"
+        )
+        
+        result = form_service.delete_form(form_id, current_user.email)
+        
+        # Log successful deletion
+        logger.warning(
+            f"Form deleted: id={form_id}, user={current_user.email}"
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Form deletion failed: id={form_id}, user={current_user.email}, "
+            f"error={str(e)}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to delete form")
 
 @router.post("/forms/{form_id}/send", tags=["Forms"])
 def send_form(
@@ -102,48 +390,177 @@ def get_form_analytics(
     
     return form_service.get_form_analytics(form_id, current_user.email)
 
-# Public endpoints (no authentication required)
+# Public endpoints (no authentication required) - Enhanced security
 @router.get("/public/forms/{form_id}", tags=["Public Forms"])
-def get_public_form(form_id: str):
-    """Get a form for public submission (no auth required)"""
+def get_public_form(form_id: str, request: Request, response: Response):
+    """Get a form for public submission with security validation"""
     try:
+        # Rate limiting for public form access
+        client_ip = getattr(request.client, 'host', None) if request.client else 'unknown'
+        if not rate_limiter.check_rate_limit(
+            f"public_form_access_{client_ip}", 
+            limit=50, 
+            window_seconds=3600
+        ):
+            logger.warning(f"Rate limit exceeded for public form access from IP: {client_ip}")
+            raise HTTPException(
+                status_code=429, 
+                detail="Too many requests. Please try again later."
+            )
+        
+        # Validate form_id
+        if not form_id or not isinstance(form_id, str):
+            logger.warning(f"Invalid form ID in public access: {form_id} from IP: {client_ip}")
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+        
+        form_id = InputSanitizer.sanitize_text(form_id, 100)
+        if not form_id:
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+        
+        # Get form with public access (no creator email)
         form = form_service.get_form(form_id)
         
-        # Only return necessary fields for public access
+        # Verify form is public
+        if not form.get("settings", {}).get("is_public", False):
+            logger.warning(
+                f"Attempt to access non-public form {form_id} from IP: {client_ip}"
+            )
+            raise HTTPException(status_code=403, detail="Form is not publicly accessible")
+        
+        # Only return necessary fields for public access with sanitization
         public_form = {
             "id": form["id"],
-            "settings": form["settings"],
-            "fields": form["fields"],
+            "settings": {
+                "title": html.escape(form["settings"].get("title", "")),
+                "description": html.escape(form["settings"].get("description", "")),
+                "submit_button_text": html.escape(
+                    form["settings"].get("submit_button_text", "Submit")
+                ),
+                "collect_email": form["settings"].get("collect_email", True),
+                "allow_multiple_submissions": form["settings"].get(
+                    "allow_multiple_submissions", False
+                )
+            },
+            "fields": [
+                {
+                    "id": field["id"],
+                    "label": html.escape(field.get("label", "")),
+                    "type": field["type"],
+                    "placeholder": html.escape(field.get("placeholder", "")),
+                    "required": field.get("required", False),
+                    "description": html.escape(field.get("description", "")),
+                    "options": [html.escape(opt) for opt in field.get("options", [])],
+                    "order": field.get("order", 0)
+                }
+                for field in form["fields"]
+            ],
             "is_active": form["is_active"]
         }
         
+        # Add security headers
+        for header_name, header_value in SecurityHeaders.get_form_security_headers().items():
+            response.headers[header_name] = header_value
+        
+        # Log public access
+        logger.info(
+            f"Public form accessed: id={form_id}, ip={client_ip}"
+        )
+        
         return public_form
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error fetching public form: {str(e)}")
+        logger.error(f"Error fetching public form {form_id}: {str(e)}")
         raise HTTPException(status_code=404, detail="Form not found")
 
 @router.post("/public/forms/{form_id}/submit", tags=["Public Forms"])
 def submit_form(
     form_id: str,
     response_data: SubmitFormRequest,
-    request: Request
+    request: Request,
+    response: Response
 ):
-    """Submit a form response (no auth required)"""
+    """Submit a form response with enhanced security validation"""
     try:
-        # Get client IP and user agent
-        ip_address = getattr(request.client, 'host', None) if request.client else None
-        user_agent = request.headers.get('user-agent')
+        # Get client information
+        client_ip = getattr(request.client, 'host', None) if request.client else 'unknown'
+        user_agent = request.headers.get('user-agent', '')
         
-        return form_service.submit_form_response(
+        # Enhanced rate limiting for form submissions
+        if not rate_limiter.check_rate_limit(
+            f"form_submission_{client_ip}", 
+            limit=20, 
+            window_seconds=3600
+        ):
+            logger.warning(
+                f"Rate limit exceeded for form submission from IP: {client_ip}"
+            )
+            raise HTTPException(
+                status_code=429, 
+                detail="Too many form submissions. Please try again later."
+            )
+        
+        # Validate form_id
+        if not form_id or not isinstance(form_id, str):
+            logger.warning(
+                f"Invalid form ID in submission: {form_id} from IP: {client_ip}"
+            )
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+        
+        form_id = InputSanitizer.sanitize_text(form_id, 100)
+        if not form_id:
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+        
+        # Additional validation: Check if form allows public submissions
+        try:
+            form = form_service.get_form(form_id)
+            if not form.get("settings", {}).get("is_public", False):
+                logger.warning(
+                    f"Attempt to submit to non-public form {form_id} from IP: {client_ip}"
+                )
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Form is not publicly accessible"
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.error(f"Failed to validate form {form_id} for public submission")
+            raise HTTPException(status_code=404, detail="Form not found")
+        
+        # Log submission attempt
+        logger.info(
+            f"Form submission attempt: id={form_id}, ip={client_ip}, "
+            f"email={response_data.submitted_by_email}"
+        )
+        
+        # Submit form with security validation
+        result = form_service.submit_form_response(
             form_id, 
             response_data, 
-            ip_address, 
+            client_ip, 
             user_agent
         )
         
+        # Add security headers
+        for header_name, header_value in SecurityHeaders.get_form_security_headers().items():
+            response.headers[header_name] = header_value
+        
+        # Log successful submission
+        logger.info(
+            f"Form submitted successfully: id={form_id}, "
+            f"response_id={result.get('id')}, ip={client_ip}"
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error submitting form: {str(e)}")
+        logger.error(
+            f"Error submitting form {form_id}: {str(e)}, ip={client_ip}"
+        )
         raise HTTPException(status_code=500, detail="Failed to submit form")
 
 # Form template endpoints
