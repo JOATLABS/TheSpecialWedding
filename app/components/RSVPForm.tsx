@@ -80,7 +80,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       const mainRsvpData = {
         ...data,
         wedding_id: wedding.id,
-        plus_one: filledPlusOnes.length > 0 ? filledPlusOnes[0] : null
+        plus_ones: filledPlusOnes // Send all plus-ones in array format
       };
       
       // Remove individual plus-one fields from main data
@@ -97,13 +97,6 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       });
 
       if (!res.ok) throw new Error('RSVP failed');
-      
-      // For now, additional plus-ones beyond the first would need to be handled separately
-      // The backend currently only supports one plus-one per RSVP submission
-      // TODO: Add support for multiple plus-ones in backend
-      if (filledPlusOnes.length > 1) {
-        // Only submit the first plus-one for now
-      }
 
       localStorage.setItem(`rsvp-${token}`, 'true');
       setSubmitted(true);

@@ -49,9 +49,9 @@ class RSVPService:
                 {"$set": update_data}
             )
 
-            if rsvp_data.plus_one:
+            if rsvp_data.plus_ones and len(rsvp_data.plus_ones) > 0:
                 if not guest.get("plus_one_allowed", False):
-                    raise HTTPException(status_code=403, detail="Plus-one not allowed for this guest")
+                    raise HTTPException(status_code=403, detail="Plus-ones not allowed for this guest")
 
                 # Check number of plus-ones allowed
                 max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
@@ -60,20 +60,31 @@ class RSVPService:
                 
                 # Count existing plus-ones
                 existing_count = self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
-                if existing_count >= max_plus_ones:
-                    raise HTTPException(status_code=400, detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached")
+                new_plus_ones_count = len(rsvp_data.plus_ones)
+                
+                if existing_count + new_plus_ones_count > max_plus_ones:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Cannot add {new_plus_ones_count} plus-ones. Maximum allowed: {max_plus_ones}, already have: {existing_count}"
+                    )
 
-                plus_one = PlusOneModel(
-                    guest_id=str(guest_id),
-                    name=rsvp_data.plus_one.name,
-                    phone=rsvp_data.plus_one.phone,
-                    attending=rsvp_data.plus_one.attending,
-                    dietary=rsvp_data.plus_one.dietary
-                )
-                self.plus_one_collection.insert_one(plus_one.dict())
+                # Insert all new plus-ones
+                plus_ones_to_insert = []
+                for plus_one_data in rsvp_data.plus_ones:
+                    plus_one = PlusOneModel(
+                        guest_id=str(guest_id),
+                        name=plus_one_data.name,
+                        phone=plus_one_data.phone,
+                        attending=plus_one_data.attending,
+                        dietary=plus_one_data.dietary
+                    )
+                    plus_ones_to_insert.append(plus_one.dict())
+                
+                if plus_ones_to_insert:
+                    self.plus_one_collection.insert_many(plus_ones_to_insert)
                 
                 # Update guest to mark plus_one_submitted as True only if all slots are filled
-                if existing_count + 1 >= max_plus_ones:
+                if existing_count + new_plus_ones_count >= max_plus_ones:
                     self.guest_collection.update_one(
                         {"_id": guest_id},
                         {"$set": {"plus_one_submitted": True}}

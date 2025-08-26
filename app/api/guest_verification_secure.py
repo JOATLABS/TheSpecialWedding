@@ -369,14 +369,17 @@ async def get_wedding_access_logs_secure(
             }
         ).sort("timestamp", -1).limit(limit))
         
-        # Sanitize IP addresses for privacy (keep only first 3 octets)
-        for log in logs:
-            if "client_ip" in log and log["client_ip"] != "unknown":
-                ip_parts = log["client_ip"].split(".")
+        # Sanitize IP addresses for privacy in display only - keep full IPs for security analysis
+        sanitized_logs = []
+        for log in logs.copy():
+            display_log = log.copy()
+            if "client_ip" in display_log and display_log["client_ip"] != "unknown":
+                ip_parts = display_log["client_ip"].split(".")
                 if len(ip_parts) == 4:
-                    log["client_ip"] = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.xxx"
+                    display_log["client_ip"] = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.xxx"
+            sanitized_logs.append(display_log)
         
-        return {"logs": logs, "total": len(logs)}
+        return {"logs": sanitized_logs, "total": len(sanitized_logs)}
         
     except WeddingAppException:
         raise
