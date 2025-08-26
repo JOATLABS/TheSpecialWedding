@@ -55,3 +55,4 @@ TEST_RESULTS_ORGANIZATION_SUMMARY.md
 TEST_ORGANIZATION_SUMMARY.md
 app/__pycache__/
 remove_emojis.sh
+nextjs.log
