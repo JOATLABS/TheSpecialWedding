@@ -10,134 +10,134 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8
 const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
 export default function WeddingLandingPage() {
-  const contextWedding = useContext(WeddingContext);
-  const params = useParams();
-  const slug = params.slug as string;
-  
-  const [wedding, setWedding] = useState<any>(null);
-  const [guest, setGuest] = useState<any>(null);
-  const [images, setImages] = useState<GalleryImage[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [accessGranted, setAccessGranted] = useState(false);
-  const [loading, setLoading] = useState(true);
+ const contextWedding = useContext(WeddingContext);
+ const params = useParams();
+ const slug = params.slug as string;
+ 
+ const [wedding, setWedding] = useState<any>(null);
+ const [guest, setGuest] = useState<any>(null);
+ const [images, setImages] = useState<GalleryImage[]>([]);
+ const [error, setError] = useState<string | null>(null);
+ const [accessGranted, setAccessGranted] = useState(false);
+ const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Check if wedding requires authentication
-    if (contextWedding?.requires_authentication === false || contextWedding?.privacy_mode === 'public') {
-      // Wedding is public, grant access immediately
-      setWedding(contextWedding);
-      setAccessGranted(true);
-      setLoading(false);
-    } else {
-      // Wedding requires authentication
-      setLoading(false);
-    }
-  }, [contextWedding]);
+ useEffect(() => {
+ // Check if wedding requires authentication
+ if (contextWedding?.requires_authentication === false || contextWedding?.privacy_mode === 'public') {
+ // Wedding is public, grant access immediately
+ setWedding(contextWedding);
+ setAccessGranted(true);
+ setLoading(false);
+ } else {
+ // Wedding requires authentication
+ setLoading(false);
+ }
+ }, [contextWedding]);
 
-  const handleGuestVerified = (weddingData: any, guestData?: any) => {
-    setWedding(weddingData);
-    setGuest(guestData);
-    setAccessGranted(true);
-    
-    // Fetch gallery for verified users
-    fetchGallery(weddingData, guestData);
-  };
+ const handleGuestVerified = (weddingData: any, guestData?: any) => {
+ setWedding(weddingData);
+ setGuest(guestData);
+ setAccessGranted(true);
+ 
+ // Fetch gallery for verified users
+ fetchGallery(weddingData, guestData);
+ };
 
-  const fetchGallery = async (weddingData?: any, guestData?: any) => {
-    if (!slug) return;
-    
-    const targetWedding = weddingData || wedding;
-    const targetGuest = guestData || guest;
-    
-    try {
-      // Use the verified gallery endpoint
-      const requestBody = new URLSearchParams({
-        wedding_slug: slug,
-      });
+ const fetchGallery = async (weddingData?: any, guestData?: any) => {
+ if (!slug) return;
+ 
+ const targetWedding = weddingData || wedding;
+ const targetGuest = guestData || guest;
+ 
+ try {
+ // Use the verified gallery endpoint
+ const requestBody = new URLSearchParams({
+ wedding_slug: slug,
+ });
 
-      // Add authentication parameters based on what we have
-      if (targetGuest?.token) {
-        requestBody.append('token', targetGuest.token);
-      } else if (targetGuest?.name) {
-        requestBody.append('name', targetGuest.name);
-        if (targetGuest.phone) {
-          requestBody.append('phone', targetGuest.phone);
-        }
-      }
+ // Add authentication parameters based on what we have
+ if (targetGuest?.token) {
+ requestBody.append('token', targetGuest.token);
+ } else if (targetGuest?.name) {
+ requestBody.append('name', targetGuest.name);
+ if (targetGuest.phone) {
+ requestBody.append('phone', targetGuest.phone);
+ }
+ }
 
-      const res = await fetch(`${API_URL}/gallery/verified`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: requestBody.toString(),
-      });
+ const res = await fetch(`${API_URL}/gallery/verified`, {
+ method: 'POST',
+ headers: {
+ 'Content-Type': 'application/x-www-form-urlencoded',
+ },
+ body: requestBody.toString(),
+ });
 
-      if (res.ok) {
-        const data = await res.json();
-        setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
-      } else {
-        // If gallery fails, don't show error - just continue without images
-        console.warn('Gallery access failed, continuing without images');
-        setImages([]);
-      }
-    } catch (err: any) {
-      console.warn('Gallery could not be loaded:', err);
-      setImages([]); // Continue without gallery instead of showing error
-    }
-  };
+ if (res.ok) {
+ const data = await res.json();
+ setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
+ } else {
+ // If gallery fails, don't show error - just continue without images
+ console.warn('Gallery access failed, continuing without images');
+ setImages([]);
+ }
+ } catch (err: any) {
+ console.warn('Gallery could not be loaded:', err);
+ setImages([]); // Continue without gallery instead of showing error
+ }
+ };
 
-  // Fetch gallery when access is granted and we have wedding data
-  useEffect(() => {
-    if (accessGranted && wedding) {
-      fetchGallery();
-    }
-  }, [accessGranted, wedding, guest, slug]);
+ // Fetch gallery when access is granted and we have wedding data
+ useEffect(() => {
+ if (accessGranted && wedding) {
+ fetchGallery();
+ }
+ }, [accessGranted, wedding, guest, slug]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading wedding...</p>
-        </div>
-      </div>
-    );
-  }
+ if (loading) {
+ return (
+ <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
+ <div className="text-center">
+ <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
+ <p className="text-gray-600">Loading wedding...</p>
+ </div>
+ </div>
+ );
+ }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
-        <div className="text-center bg-white p-8 rounded-lg shadow-sm max-w-md">
-          <div className="text-4xl mb-4 text-red-500">⚠️</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Wedding</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
-        </div>
-      </div>
-    );
-  }
+ if (error) {
+ return (
+ <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
+ <div className="text-center bg-white p-8 rounded-lg shadow-sm max-w-md">
+ <div className="text-4xl mb-4 text-red-500"></div>
+ <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Wedding</h2>
+ <p className="text-gray-600 mb-4">{error}</p>
+ </div>
+ </div>
+ );
+ }
 
-  // Show verification modal if access not granted
-  if (!accessGranted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
-        <GuestVerificationModal
-          slug={slug}
-          onVerified={handleGuestVerified}
-        />
-      </div>
-    );
-  }
+ // Show verification modal if access not granted
+ if (!accessGranted) {
+ return (
+ <div className="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
+ <GuestVerificationModal
+ slug={slug}
+ onVerified={handleGuestVerified}
+ />
+ </div>
+ );
+ }
 
-  if (!wedding) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
-        <div className="text-center">
-          <p className="text-gray-600">Wedding not found</p>
-        </div>
-      </div>
-    );
-  }
+ if (!wedding) {
+ return (
+ <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
+ <div className="text-center">
+ <p className="text-gray-600">Wedding not found</p>
+ </div>
+ </div>
+ );
+ }
 
-  return <LandingLayout wedding={wedding} images={images} guest={guest} />;
+ return <LandingLayout wedding={wedding} images={images} guest={guest} />;
 }
