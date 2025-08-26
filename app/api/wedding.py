@@ -48,9 +48,15 @@ def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depen
     return result
 
 @router.get("/weddings", tags=["Wedding"])
-def list_weddings_public():
-    """List all weddings - public endpoint"""
-    return wedding_service.list_weddings()
+def list_weddings_public(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """List weddings - PROTECTED endpoint requiring authentication"""
+    # This endpoint now requires authentication for security
+    # Use the admin endpoint for authenticated access
+    if current_user.is_root_admin or current_user.is_legacy_admin:
+        return wedding_service.list_weddings_with_planner_info()
+    else:
+        # Wedding planners see only their assigned weddings
+        return wedding_service.list_weddings_for_planner(current_user.email)
 
 @router.get("/admin/weddings", tags=["Admin"])
 def list_weddings_admin(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):

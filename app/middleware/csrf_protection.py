@@ -30,7 +30,12 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         self.cookie_name = cookie_name
         self.header_name = header_name
         self.safe_methods = safe_methods or ["GET", "HEAD", "OPTIONS", "TRACE"]
-        self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json", "/admin/token"]
+        self.exclude_paths = exclude_paths or [
+            "/health", "/docs", "/openapi.json", "/admin/token",
+            "/weddings/verify-guest-access",  # Guest verification endpoints
+            "/weddings/privacy-info",         # Public privacy info
+            "/weddings/guest-access"           # Token-based access
+        ]
         
         # Store tokens with expiration
         self.token_store: Dict[str, float] = {}
@@ -104,6 +109,15 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         if self._is_excluded_path(request.url.path):
             response = await call_next(request)
             return response
+        
+        # Skip CSRF for GET requests to admin endpoints that don't modify state
+        if request.method == "GET" and "/admin/" in request.url.path:
+            # Allow GET requests for admin dashboard access
+            if any(safe_path in request.url.path for safe_path in [
+                "/admin/weddings", "/admin/users", "/admin/forms", "/admin/stats"
+            ]):
+                response = await call_next(request)
+                return response
         
         # Get session ID
         session_id = self._get_session_id(request)

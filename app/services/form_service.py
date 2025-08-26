@@ -9,6 +9,7 @@ from app.services.email_service_resend import ResendEmailService
 from app.utils.security_utils import (
     FormSecurityValidator, InputSanitizer, SecurityHeaders, rate_limiter
 )
+from app.utils.csv_export import FormResponseCSVExporter, CSVSecurityError
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import logging
@@ -628,3 +629,152 @@ class FormService:
         </body>
         </html>
         """
+
+    def export_form_responses_csv(
+        self, 
+        form_id: str, 
+        created_by: str,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        include_metadata: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Export form responses to CSV format with enhanced security validation.
+        
+        Args:
+            form_id: The form ID to export responses for
+            created_by: Email of the user requesting the export (for authorization)
+            date_from: Optional start date filter (ISO format string)
+            date_to: Optional end date filter (ISO format string)  
+            include_metadata: Whether to include submission metadata columns
+            
+        Returns:
+            Dict containing CSV content and export metadata
+            
+        Raises:
+            HTTPException: For validation, authorization, or processing errors
+            CSVSecurityError: For CSV security-related issues
+        """
+        try:
+            # Rate limiting for CSV exports (more restrictive than regular API calls)
+            if not rate_limiter.check_rate_limit(
+                f"csv_export_{created_by}", 
+                limit=5, 
+                window_seconds=3600
+            ):
+                raise HTTPException(
+                    status_code=429, 
+                    detail="Too many CSV exports requested. Please try again later."
+                )
+            
+            # Validate and sanitize inputs
+            if not form_id or not isinstance(form_id, str):
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+            
+            if not InputSanitizer.validate_email(created_by):
+                raise HTTPException(status_code=400, detail="Invalid creator email")
+            
+            form_id = InputSanitizer.sanitize_text(form_id, 100)
+            if not form_id:
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+            
+            # Get form (this also verifies user ownership)
+            form = self.get_form(form_id, created_by)
+            if not form:
+                raise HTTPException(status_code=404, detail="Form not found")
+            
+            # Get all responses for the form
+            responses = self.get_form_responses(form_id, created_by)
+            
+            # Validate date parameters
+            parsed_date_from = None
+            parsed_date_to = None
+            
+            if date_from:
+                try:
+                    # Support various date formats
+                    date_from = InputSanitizer.sanitize_text(date_from, 50)
+                    parsed_date_from = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    logger.warning(f"Invalid date_from parameter: {date_from}")
+                    raise HTTPException(status_code=400, detail="Invalid date_from format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+            
+            if date_to:
+                try:
+                    date_to = InputSanitizer.sanitize_text(date_to, 50)
+                    parsed_date_to = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    logger.warning(f"Invalid date_to parameter: {date_to}")
+                    raise HTTPException(status_code=400, detail="Invalid date_to format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+            
+            # Validate date range
+            if parsed_date_from and parsed_date_to and parsed_date_from > parsed_date_to:
+                raise HTTPException(status_code=400, detail="date_from cannot be after date_to")
+            
+            # Log export attempt for security audit
+            logger.info(
+                f"CSV export requested: form_id={form_id}, user={created_by}, "
+                f"responses_count={len(responses)}, date_from={date_from}, date_to={date_to}"
+            )
+            
+            # Check if there are any responses to export
+            if not responses:
+                logger.info(f"No responses to export for form {form_id}")
+                # Still generate empty CSV with headers
+            
+            # Limit export size to prevent DoS
+            max_export_size = 10000  # Maximum number of responses to export
+            if len(responses) > max_export_size:
+                logger.warning(
+                    f"Export size limited: {len(responses)} responses truncated to {max_export_size}"
+                )
+                responses = responses[:max_export_size]
+            
+            # Prepare export options
+            export_options = {
+                'include_metadata': include_metadata,
+                'date_from': parsed_date_from,
+                'date_to': parsed_date_to,
+                'max_responses': max_export_size
+            }
+            
+            # Use the CSV exporter utility
+            csv_exporter = FormResponseCSVExporter()
+            export_result = csv_exporter.export_responses(
+                form_data=form,
+                responses=responses,
+                options=export_options
+            )
+            
+            # Add additional metadata
+            export_result.update({
+                'form_id': form_id,
+                'form_name': form.get('name', 'Unknown Form'),
+                'exported_by': created_by,
+                'request_params': {
+                    'date_from': date_from,
+                    'date_to': date_to,
+                    'include_metadata': include_metadata
+                }
+            })
+            
+            # Log successful export
+            logger.info(
+                f"CSV export completed: form_id={form_id}, user={created_by}, "
+                f"exported_count={export_result.get('exported_count', 0)}, "
+                f"file_size={export_result.get('size', 0)} bytes"
+            )
+            
+            return export_result
+            
+        except HTTPException:
+            raise
+        except CSVSecurityError as e:
+            logger.error(f"CSV security error in export: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Export failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error exporting form responses to CSV: {str(e)}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to export form responses. Please try again later."
+            )
