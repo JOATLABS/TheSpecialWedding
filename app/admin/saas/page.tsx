@@ -14,7 +14,6 @@ interface SubscriptionPlan {
  max_guests_per_wedding: number;
  ai_credits_monthly: number;
  storage_gb: number;
- vendor_seats: number;
  staff_seats: number;
  features: {
  [key: string]: boolean;
@@ -757,7 +756,6 @@ const SaasAdminDashboard = () => {
  <p>Max Weddings: {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings}</p>
  <p>AI Credits: {plan.ai_credits_monthly}/month</p>
  <p>Storage: {plan.storage_gb}GB</p>
- <p>Vendor Seats: {plan.vendor_seats === -1 ? 'Unlimited' : plan.vendor_seats}</p>
  </div>
  
  <div className="space-y-2">
@@ -1331,7 +1329,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  max_guests_per_wedding: plan?.max_guests_per_wedding || 100,
  ai_credits_monthly: plan?.ai_credits_monthly || 10,
  storage_gb: plan?.storage_gb || 1,
- vendor_seats: plan?.vendor_seats || 1,
  staff_seats: plan?.staff_seats || 0,
  is_featured: plan?.is_featured || false,
  is_active: plan?.is_active !== false,

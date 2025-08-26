@@ -29,7 +29,6 @@ def create_default_plans():
  "max_guests_per_wedding": 150,
  "ai_credits_monthly": 50,
  "storage_gb": 5,
- "vendor_seats": 2,
  "staff_seats": 1,
  "features": {
  "basic_website_builder": True,
@@ -61,7 +60,6 @@ def create_default_plans():
  "max_guests_per_wedding": 300,
  "ai_credits_monthly": 200,
  "storage_gb": 25,
- "vendor_seats": 8,
  "staff_seats": 3,
  "features": {
  "basic_website_builder": True,
@@ -93,7 +91,6 @@ def create_default_plans():
  "max_guests_per_wedding": -1, # Unlimited
  "ai_credits_monthly": 1000,
  "storage_gb": 100,
- "vendor_seats": -1, # Unlimited
  "staff_seats": -1, # Unlimited
  "features": {
  "basic_website_builder": True,
@@ -125,7 +122,6 @@ def create_default_plans():
  "max_guests_per_wedding": 50,
  "ai_credits_monthly": 10,
  "storage_gb": 1,
- "vendor_seats": 1,
  "staff_seats": 0,
  "features": {
  "basic_website_builder": True,

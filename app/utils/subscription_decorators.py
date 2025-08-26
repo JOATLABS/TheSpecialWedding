@@ -10,7 +10,7 @@ def enforce_subscription_limit(resource_type: str, amount: int = 1):
     Decorator to enforce subscription limits on endpoints
     
     Args:
-        resource_type: Type of resource (weddings, ai_credits, vendor_seats, staff_seats)
+        resource_type: Type of resource (weddings, ai_credits, staff_seats)
         amount: Amount of resource being used (default: 1)
     """
     def decorator(func):
@@ -115,9 +115,6 @@ def limit_ai_credits(amount: int = 1):
     """Enforce AI credits usage limits"""
     return enforce_subscription_limit("ai_credits", amount)
 
-def limit_vendor_seats(amount: int = 1):
-    """Enforce vendor seats limits"""
-    return enforce_subscription_limit("vendor_seats", amount)
 
 def limit_staff_seats(amount: int = 1):
     """Enforce staff seats limits"""

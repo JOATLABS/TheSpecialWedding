@@ -164,7 +164,6 @@ class SubscriptionService:
                     "weddings_created": 0,
                     "ai_credits_used": 0,
                     "storage_used_gb": 0,
-                    "vendor_seats_used": 0,
                     "staff_seats_used": 0
                 },
                 "created_at": now,
@@ -264,7 +263,6 @@ class SubscriptionService:
                 "weddings_count": 0,
                 "ai_credits_used_month": 0,
                 "storage_used_gb": 0.0,
-                "vendor_seats_used": 0,
                 "staff_seats_used": 0,
                 "current_month": current_month,
                 "credits_reset_date": credits_reset,
@@ -339,16 +337,6 @@ class SubscriptionService:
                         "message": f"AI credits limit exceeded. Plan allows {limit} credits per month, you have used {current}"
                     }
             
-            elif resource_type == "vendor_seats":
-                current = usage.get("vendor_seats_used", 0)
-                limit = plan.get("vendor_seats", 0)
-                if current + requested_amount > limit:
-                    return {
-                        "allowed": False,
-                        "current_usage": current,
-                        "limit": limit,
-                        "message": f"Vendor seats limit exceeded. Plan allows {limit} vendor accounts"
-                    }
             
             elif resource_type == "staff_seats":
                 current = usage.get("staff_seats_used", 0)
@@ -377,7 +365,6 @@ class SubscriptionService:
             field_mapping = {
                 "weddings": "weddings_count",
                 "ai_credits": "ai_credits_used_month",
-                "vendor_seats": "vendor_seats_used", 
                 "staff_seats": "staff_seats_used"
             }
             
@@ -430,7 +417,6 @@ class SubscriptionService:
                 "weddings_count": 0,  # Keep wedding count (doesn't reset monthly)
                 "ai_credits_used_month": 0,  # Reset monthly credits
                 "storage_used_gb": 0.0,  # Keep storage count
-                "vendor_seats_used": 0,  # Keep seat counts
                 "staff_seats_used": 0,
                 "current_month": current_month,
                 "credits_reset_date": next_reset,

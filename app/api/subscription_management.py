@@ -115,7 +115,7 @@ def get_user_usage_stats(
 @router.post("/users/{user_id}/usage/check", tags=["ROOT_ADMIN", "User"])
 def check_usage_limits(
     user_id: str,
-    resource_type: str = Query(..., description="Resource type: weddings, ai_credits, vendor_seats, staff_seats"),
+    resource_type: str = Query(..., description="Resource type: weddings, ai_credits, staff_seats"),
     amount: int = Query(1, description="Amount to check"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -129,7 +129,7 @@ def check_usage_limits(
 @router.post("/users/{user_id}/usage/increment", tags=["ROOT_ADMIN"])
 def increment_user_usage(
     user_id: str,
-    resource_type: str = Query(..., description="Resource type: weddings, ai_credits, vendor_seats, staff_seats"),
+    resource_type: str = Query(..., description="Resource type: weddings, ai_credits, staff_seats"),
     amount: int = Query(1, description="Amount to increment"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
@@ -194,7 +194,6 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
             "max_guests_per_wedding": 50,
             "ai_credits_monthly": 10,
             "storage_gb": 1,
-            "vendor_seats": 1,
             "staff_seats": 0,
             "features": {
                 "basic_website_builder": True,
@@ -226,7 +225,6 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
             "max_guests_per_wedding": 150,
             "ai_credits_monthly": 50,
             "storage_gb": 5,
-            "vendor_seats": 2,
             "staff_seats": 1,
             "features": {
                 "basic_website_builder": True,
@@ -258,7 +256,6 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
             "max_guests_per_wedding": 300,
             "ai_credits_monthly": 200,
             "storage_gb": 25,
-            "vendor_seats": 8,
             "staff_seats": 3,
             "features": {
                 "basic_website_builder": True,
@@ -290,7 +287,6 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
             "max_guests_per_wedding": -1,
             "ai_credits_monthly": 1000,
             "storage_gb": 100,
-            "vendor_seats": -1,
             "staff_seats": -1,
             "features": {
                 "basic_website_builder": True,
@@ -366,7 +362,6 @@ def get_public_subscription_plan(plan_id: str):
         "max_guests_per_wedding": plan["max_guests_per_wedding"],
         "ai_credits_monthly": plan["ai_credits_monthly"],
         "storage_gb": plan["storage_gb"],
-        "vendor_seats": plan["vendor_seats"],
         "staff_seats": plan["staff_seats"],
         "features": plan.get("features", {}),
         "is_featured": plan.get("is_featured", False)

@@ -32,7 +32,6 @@ class SubscriptionPlanModel(BaseModel):
     max_guests_per_wedding: int = Field(100, description="Maximum guests per wedding (-1 for unlimited)")
     ai_credits_monthly: int = Field(10, description="AI credits per month")
     storage_gb: int = Field(1, description="Storage limit in GB")
-    vendor_seats: int = Field(0, description="Number of vendor accounts allowed")
     staff_seats: int = Field(0, description="Number of staff accounts allowed")
     
     # Feature flags
@@ -59,7 +58,6 @@ class SubscriptionPlanModel(BaseModel):
                 "max_guests_per_wedding": 100,
                 "ai_credits_monthly": 10,
                 "storage_gb": 1,
-                "vendor_seats": 0,
                 "staff_seats": 0,
                 "features": {
                     "basic_rsvp": True,
@@ -121,7 +119,6 @@ class UserSubscriptionModel(BaseModel):
                     "weddings_created": 2,
                     "ai_credits_used": 45,
                     "storage_used_gb": 2.3,
-                    "vendor_seats_used": 3,
                     "staff_seats_used": 1
                 },
                 "created_by": "thedeveloper@thespecialwedding.com"
@@ -137,7 +134,6 @@ class UsageTrackingModel(BaseModel):
     weddings_count: int = Field(0, description="Current number of weddings")
     ai_credits_used_month: int = Field(0, description="AI credits used this month")
     storage_used_gb: float = Field(0, description="Storage used in GB")
-    vendor_seats_used: int = Field(0, description="Active vendor accounts")
     staff_seats_used: int = Field(0, description="Active staff accounts")
     
     # Monthly tracking
@@ -155,7 +151,6 @@ class UsageTrackingModel(BaseModel):
                 "weddings_count": 3,
                 "ai_credits_used_month": 75,
                 "storage_used_gb": 4.2,
-                "vendor_seats_used": 5,
                 "staff_seats_used": 2,
                 "current_month": "2025-08",
                 "credits_reset_date": "2025-09-01T00:00:00Z"
@@ -173,7 +168,6 @@ class CreateSubscriptionPlanRequest(BaseModel):
     max_guests_per_wedding: int = 100
     ai_credits_monthly: int = 10
     storage_gb: int = 1
-    vendor_seats: int = 0
     staff_seats: int = 0
     features: Dict[str, bool] = Field(default_factory=dict)
     is_featured: bool = False
@@ -189,7 +183,6 @@ class UpdateSubscriptionPlanRequest(BaseModel):
     max_guests_per_wedding: Optional[int] = None
     ai_credits_monthly: Optional[int] = None
     storage_gb: Optional[int] = None
-    vendor_seats: Optional[int] = None
     staff_seats: Optional[int] = None
     features: Optional[Dict[str, bool]] = None
     is_active: Optional[bool] = None
