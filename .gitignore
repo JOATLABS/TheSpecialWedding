@@ -53,3 +53,4 @@ task-orchestration/
 app/__pycache__/
 TEST_RESULTS_ORGANIZATION_SUMMARY.md
 TEST_ORGANIZATION_SUMMARY.md
+app/__pycache__/main.cpython-311.pyc
