@@ -29,7 +29,7 @@ export default async function WeddingLayout({ children, params }: { children: Re
     couple_names: privacyInfo.couple_names,
     slug: slug,
     privacy_mode: privacyInfo.privacy_mode,
-    requires_authentication: privacyInfo.privacy_mode !== 'public'
+    requires_authentication: privacyInfo.privacy_mode === 'public' ? false : true
   };
 
   return (

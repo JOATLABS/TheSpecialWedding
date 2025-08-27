@@ -10,7 +10,7 @@ interface TermsModalProps {
   weddingName?: string;
 }
 
-export default function TermsModal({ isOpen, onClose, weddingName = "The Special Wedding" }: TermsModalProps) {
+export default function TermsModal({ isOpen, onClose, weddingName = "JOAT Labs' The Special Wedding platform" }: TermsModalProps) {
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>

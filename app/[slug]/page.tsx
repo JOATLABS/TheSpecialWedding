@@ -23,13 +23,13 @@ export default function WeddingLandingPage() {
 
  useEffect(() => {
  // Check if wedding requires authentication
- if (contextWedding?.requires_authentication === false || contextWedding?.privacy_mode === 'public') {
- // Wedding is public, grant access immediately
+ if (contextWedding?.privacy_mode === 'public') {
+ // Wedding is explicitly set to public, grant access immediately
  setWedding(contextWedding);
  setAccessGranted(true);
  setLoading(false);
  } else {
- // Wedding requires authentication
+ // Wedding requires authentication (default: private)
  setLoading(false);
  }
  }, [contextWedding]);

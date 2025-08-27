@@ -44,6 +44,7 @@ from app.api.forms import router as forms_router
 from app.api.guest_verification import router as guest_verification_router
 from app.api.trial_management import router as trial_management_router
 from app.api.vendor_forms import router as vendor_forms_router
+from app.api.budget import router as budget_router
 
 # Setup logging
 logging.basicConfig(
@@ -420,6 +421,7 @@ if __name__ == "__main__":
 # app.include_router(subscription_router, prefix="/admin")  # Subscription management
 # app.include_router(saas_config_router, prefix="/admin")  # SAAS configuration management
 app.include_router(planner_metrics_router, prefix="/admin")  # Wedding planner metrics and analytics
+app.include_router(budget_router, prefix="/admin")  # Budget management system
 # app.include_router(forms_router, prefix="/admin")  # Form builder and management (admin endpoints)
 # app.include_router(trial_management_router, prefix="/admin")  # Trial management endpoints (ROOT_ADMIN only)
 
