@@ -214,7 +214,7 @@ def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_root_a
                 "assigned_weddings_count": weddings_count,
                 "is_active": planner.get("is_active", True),
                 "created_at": planner.get("created_at", datetime.utcnow()).isoformat(),
-                "last_login": planner.get("last_login", {}).get("$date") if planner.get("last_login") else None
+                "last_login": planner.get("last_login").isoformat() if planner.get("last_login") else None
             }
             formatted_planners.append(formatted_planner)
         

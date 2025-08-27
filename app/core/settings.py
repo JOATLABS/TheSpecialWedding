@@ -1,11 +1,8 @@
 """
 Centralized configuration management using Pydantic Settings
 """
-try:
-    from pydantic_settings import BaseSettings
-except ImportError:
-    # Fallback for older pydantic versions
-    from pydantic import BaseSettings
+# Use pydantic-settings for proper Pydantic v2 compatibility
+from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List, Optional, Dict, Any
 from functools import lru_cache

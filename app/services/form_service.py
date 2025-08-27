@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class FormService:
     def __init__(self):
-        self.forms_collection = mongo.db["forms"]
+        self.forms_collection = mongo.get_forms_collection()
         self.responses_collection = mongo.db["form_responses"]
         self.distributions_collection = mongo.db["form_distributions"]
         self.email_service = ResendEmailService()
@@ -88,10 +88,15 @@ class FormService:
             logging.error(f"Error creating form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create form: {str(e)}")
 
-    def get_forms(self, created_by: str, wedding_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_forms(self, created_by: str, wedding_id: Optional[str] = None, is_root_admin: bool = False) -> List[Dict[str, Any]]:
         """Get forms for a user"""
         try:
-            query = {"created_by": created_by, "is_active": True}
+            # ROOT_ADMIN can see all forms, others see only their own
+            if is_root_admin:
+                query = {"is_active": True}
+            else:
+                query = {"created_by": created_by, "is_active": True}
+            
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
@@ -111,23 +116,30 @@ class FormService:
     def get_form(self, form_id: str, created_by: Optional[str] = None) -> Dict[str, Any]:
         """Get a specific form with security validation"""
         try:
+            logger.info(f"get_form called: form_id={form_id}, created_by={created_by}")
+            
             # Validate form_id format to prevent injection
             if not form_id or not isinstance(form_id, str):
                 raise HTTPException(status_code=400, detail="Invalid form ID")
 
             # Sanitize form_id
+            logger.info(f"Sanitizing form_id: {form_id}")
             form_id = InputSanitizer.sanitize_text(form_id, 100)
             if not form_id:
                 raise HTTPException(status_code=400, detail="Invalid form ID")
+            logger.info(f"Form ID after sanitization: {form_id}")
 
             query = {"_id": form_id, "is_active": True}
-            if created_by:
+            if created_by is not None:
+                logger.info(f"Validating created_by email: {created_by}")
                 # Validate and sanitize created_by email
                 if not InputSanitizer.validate_email(created_by):
                     raise HTTPException(status_code=400, detail="Invalid creator email")
                 query["created_by"] = created_by.lower().strip()
-
+            
+            logger.info(f"Database query: {query}")
             form = self.forms_collection.find_one(query)
+            logger.info(f"Form found: {form is not None}")
 
             if not form:
                 logger.info(f"Form not found: {form_id} for user: {created_by}")
@@ -252,23 +264,45 @@ class FormService:
             logging.error(f"Error updating form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to update form: {str(e)}")
 
-    def delete_form(self, form_id: str, created_by: str) -> Dict[str, Any]:
+    def delete_form(self, form_id: str, created_by: str, is_root_admin: bool = False) -> Dict[str, Any]:
         """Soft delete a form"""
         try:
+            logger.info(f"delete_form called: form_id={form_id}, created_by={created_by}, is_root_admin={is_root_admin}")
+            
+            # ROOT_ADMIN can delete any form, others can only delete their own
+            if is_root_admin:
+                query = {"_id": form_id}
+                logger.info(f"Using ROOT_ADMIN query: {query}")
+            else:
+                query = {"_id": form_id, "created_by": created_by}
+                logger.info(f"Using regular user query: {query}")
+            
+            # First, check if form exists
+            existing_form = self.forms_collection.find_one({"_id": form_id})
+            logger.info(f"Form exists check: {existing_form is not None}")
+            if existing_form:
+                logger.info(f"Form details: _id={existing_form.get('_id')}, created_by={existing_form.get('created_by')}, is_active={existing_form.get('is_active')}")
+            
             result = self.forms_collection.update_one(
-                {"_id": form_id, "created_by": created_by},
+                query,
                 {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
             )
+            
+            logger.info(f"Update result: matched_count={result.matched_count}, modified_count={result.modified_count}")
 
             if result.matched_count == 0:
+                logger.warning(f"No form matched for deletion: form_id={form_id}, query={query}")
                 raise HTTPException(status_code=404, detail="Form not found")
 
+            logger.info(f"Form {form_id} deleted successfully")
             return {"message": "Form deleted successfully"}
 
         except HTTPException:
             raise
         except Exception as e:
-            logging.error(f"Error deleting form: {str(e)}")
+            logger.error(f"Error deleting form: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Failed to delete form: {str(e)}")
 
     def send_form(self, form_id: str, send_data: SendFormRequest, created_by: str) -> Dict[str, Any]:

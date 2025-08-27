@@ -1,5 +1,5 @@
 # Python
-__pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 *.cpython-*.pyc
@@ -56,3 +56,4 @@ TEST_ORGANIZATION_SUMMARY.md
 app/__pycache__/
 remove_emojis.sh
 nextjs.log
+.playwright-mcp/
