@@ -136,6 +136,21 @@ class AsyncMongoConnector:
         """Get audit logs collection"""
         return self._get_collection("audit_logs")
     
+    @property
+    def otp_codes(self):
+        """Get OTP codes collection"""
+        return self._get_collection("otp_codes")
+    
+    @property
+    def otp_audit_log(self):
+        """Get OTP audit log collection"""
+        return self._get_collection("otp_audit_log")
+    
+    @property
+    def access_logs(self):
+        """Get access logs collection"""
+        return self._get_collection("access_logs")
+    
     async def create_indexes(self):
         """Create database indexes for performance optimization"""
         try:
@@ -187,7 +202,58 @@ class AsyncMongoConnector:
             await self.audit_logs.create_index("ip_address")
             await self.audit_logs.create_index([("timestamp", -1), ("event_type", 1)])
             
-            logger.info("Database indexes created successfully")
+            # OTP codes indexes (Context7 best practices)
+            await self.otp_codes.create_index(
+                "expires_at",
+                expireAfterSeconds=0,  # TTL index for automatic cleanup
+                background=True
+            )
+            await self.otp_codes.create_index(
+                [("wedding_id", 1), ("contact", 1), ("verified", 1)],
+                name="otp_lookup_idx",
+                background=True
+            )
+            await self.otp_codes.create_index(
+                [("guest_id", 1), ("contact_type", 1), ("created_at", -1)],
+                name="rate_limit_idx",
+                background=True
+            )
+            await self.otp_codes.create_index(
+                [("guest_id", 1), ("verified", 1)],
+                name="guest_otp_idx",
+                background=True
+            )
+            await self.otp_codes.create_index(
+                [("verified", 1), ("created_at", 1)],
+                name="cleanup_idx",
+                background=True
+            )
+            
+            # OTP audit log indexes
+            await self.otp_audit_log.create_index(
+                "timestamp",
+                expireAfterSeconds=7776000,  # 90-day TTL
+                name="audit_ttl_idx",
+                background=True
+            )
+            await self.otp_audit_log.create_index(
+                [("wedding_id", 1), ("timestamp", -1)],
+                name="audit_wedding_idx",
+                background=True
+            )
+            await self.otp_audit_log.create_index(
+                [("event_type", 1), ("success", 1), ("timestamp", -1)],
+                name="audit_event_idx",
+                background=True
+            )
+            
+            # Access logs indexes
+            await self.access_logs.create_index("timestamp")
+            await self.access_logs.create_index("type")
+            await self.access_logs.create_index("wedding_id")
+            await self.access_logs.create_index([("timestamp", -1), ("type", 1)])
+            
+            logger.info("Database indexes created successfully (including OTP security indexes)")
             
         except Exception as e:
             logger.error(f"Failed to create indexes: {str(e)}")

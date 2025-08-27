@@ -196,8 +196,9 @@ async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(
 
 def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     """Check if user has access to a specific wedding"""
-    # ROOT_ADMIN is platform admin - they don't access wedding content/data
-    # They only manage platform features, users, and can delete weddings
+    # ROOT_ADMIN has full access to all weddings for platform management
+    if user.is_root_admin:
+        return True
     
     if user.is_legacy_admin:
         return True  # Legacy admin has access to all weddings for backward compatibility

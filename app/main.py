@@ -45,6 +45,7 @@ from app.api.guest_verification import router as guest_verification_router
 from app.api.trial_management import router as trial_management_router
 from app.api.vendor_forms import router as vendor_forms_router
 from app.api.budget import router as budget_router
+from app.api.otp import router as otp_router
 
 # Setup logging
 logging.basicConfig(
@@ -206,6 +207,7 @@ app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
+app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
 
 # Admin routes (authentication required)
 admin_routers = [
@@ -405,7 +407,7 @@ if __name__ == "__main__":
 # app.include_router(guest_verification_router)  # Guest verification endpoints
 
 # # Admin routes - all under /admin prefix
-# app.include_router(auth_router, prefix="/admin")
+app.include_router(auth_router, prefix="/admin")
 # app.include_router(import_router, prefix="/admin")
 # app.include_router(guest_router, prefix="/admin")  # Admin guest endpoints (list, delete)
 # app.include_router(admin_rsvp_router, prefix="/admin")
@@ -414,7 +416,7 @@ if __name__ == "__main__":
 # app.include_router(email_reminder_router, prefix="/admin")  # Email endpoints
 # app.include_router(checkin_router, prefix="/admin")
 # app.include_router(gallery_admin_router, prefix="/admin")  # Admin gallery endpoints (upload, delete)
-# app.include_router(wedding_router, prefix="/admin")  # Admin wedding endpoints (create, update, delete)
+# app.include_router(wedding_router, prefix="/admin")  # Admin wedding endpoints (create, update, delete) - DUPLICATE REMOVED
 # app.include_router(reminder_utils_router, prefix="/admin")
 # app.include_router(user_management_router, prefix="/admin")  # ROOT_ADMIN user management
 # app.include_router(user_management_router)  # Public registration endpoints (no prefix)

@@ -5,11 +5,13 @@ from datetime import datetime
 import re
 from app.services.guest_service import GuestService
 from app.services.wedding_service import WeddingService
+from app.services.otp_service import OTPService
 
 class GuestVerificationService:
     def __init__(self):
         self.guest_service = GuestService()
         self.wedding_service = WeddingService()
+        self.otp_service = OTPService()
         self.weddings_collection = mongo.db["weddings"]
         self.guests_collection = mongo.get_guest_collection()
 
@@ -67,19 +69,44 @@ class GuestVerificationService:
                     except:
                         pass  # Continue to other methods
 
-                # Method 2: Name and phone verification
-                name = verification_data.get("name", "").strip()
-                phone = verification_data.get("phone", "").strip()
+                # Method 2: OTP verification (replaces name/phone verification)
+                # Check if this is an OTP verification
+                otp_code = verification_data.get("otp_code")
+                contact = verification_data.get("contact", "").strip()
                 
-                if name or phone:
-                    guest = self._find_guest_by_verification(wedding["_id"], name, phone, privacy_settings)
-                    if guest:
-                        return {
-                            "access": True,
-                            "wedding": wedding,
-                            "guest": guest,
-                            "auth_method": "verification"
-                        }
+                if otp_code and contact:
+                    # Verify OTP
+                    try:
+                        otp_result = self.otp_service.verify_otp(
+                            wedding_id=wedding["_id"],
+                            contact=contact,
+                            otp_code=otp_code
+                        )
+                        if otp_result.get("success"):
+                            return {
+                                "access": True,
+                                "wedding": wedding,
+                                "guest": otp_result.get("guest"),
+                                "auth_method": otp_result.get("auth_method", "otp")
+                            }
+                    except:
+                        pass  # OTP verification failed
+                
+                # Method 3: Request OTP (when phone/email provided without code)
+                phone = verification_data.get("phone", "").strip()
+                email = verification_data.get("email", "").strip()
+                
+                if phone or email:
+                    # Return special response indicating OTP should be sent
+                    return {
+                        "access": False,
+                        "wedding": None,
+                        "guest": None,
+                        "otp_required": True,
+                        "contact": phone if phone else email,
+                        "contact_type": "phone" if phone else "email",
+                        "message": "Verification code will be sent to your contact"
+                    }
 
             # Access denied
             return {
@@ -100,95 +127,14 @@ class GuestVerificationService:
             raise HTTPException(status_code=500, detail=f"Error verifying guest access: {str(e)}")
 
     def _find_guest_by_verification(self, wedding_id: str, name: str, phone: str, privacy_settings: Dict) -> Optional[Dict]:
-        """Find guest by name and/or phone verification"""
-        try:
-            # Build query based on privacy settings
-            query = {"wedding_id": wedding_id}
-            
-            require_name = privacy_settings.get("require_name_verification", True)
-            require_phone = privacy_settings.get("require_phone_verification", True)
-            
-            # If both are required, we need both to match
-            if require_name and require_phone:
-                if not name or not phone:
-                    return None
-                
-                # Normalize phone number for comparison
-                normalized_phone = self._normalize_phone(phone)
-                
-                # Find guest with matching name and phone
-                guest = self.guests_collection.find_one({
-                    "wedding_id": wedding_id,
-                    "$and": [
-                        {"name": {"$regex": re.escape(name), "$options": "i"}},
-                        {"$or": [
-                            {"phone": phone},
-                            {"phone": normalized_phone},
-                            {"phone": {"$regex": re.escape(normalized_phone.replace("+1", "")), "$options": "i"}}
-                        ]}
-                    ]
-                })
-                
-            # If only name is required
-            elif require_name and not require_phone:
-                if not name:
-                    return None
-                guest = self.guests_collection.find_one({
-                    "wedding_id": wedding_id,
-                    "name": {"$regex": re.escape(name), "$options": "i"}
-                })
-                
-            # If only phone is required
-            elif require_phone and not require_name:
-                if not phone:
-                    return None
-                normalized_phone = self._normalize_phone(phone)
-                guest = self.guests_collection.find_one({
-                    "wedding_id": wedding_id,
-                    "$or": [
-                        {"phone": phone},
-                        {"phone": normalized_phone},
-                        {"phone": {"$regex": re.escape(normalized_phone.replace("+1", "")), "$options": "i"}}
-                    ]
-                })
-                
-            # If neither is required (fallback to any match)
-            else:
-                conditions = []
-                if name:
-                    conditions.append({"name": {"$regex": re.escape(name), "$options": "i"}})
-                if phone:
-                    normalized_phone = self._normalize_phone(phone)
-                    conditions.append({
-                        "$or": [
-                            {"phone": phone},
-                            {"phone": normalized_phone},
-                            {"phone": {"$regex": re.escape(normalized_phone.replace("+1", "")), "$options": "i"}}
-                        ]
-                    })
-                
-                if conditions:
-                    guest = self.guests_collection.find_one({
-                        "wedding_id": wedding_id,
-                        "$or": conditions
-                    })
-                else:
-                    return None
-
-            if guest:
-                # Convert ObjectId to string and clean up
-                guest["id"] = str(guest["_id"])
-                guest.pop("_id", None)
-                
-                # Log successful verification (for analytics)
-                self._log_guest_verification(wedding_id, guest["id"], "verification")
-                
-            return guest
-
-        except Exception as e:
-            # Log error but don't expose details
-            print(f"Error in guest verification: {str(e)}")
-            return None
+        """
+        DEPRECATED: This method is replaced by OTP verification.
+        Keeping for backward compatibility but should not be used for new implementations.
+        All guest verification should use the OTP flow for better security.
+        """
+        # This method is intentionally disabled for security
+        # Direct name/phone matching is vulnerable to social engineering
+        return None
 
     def _normalize_phone(self, phone: str) -> str:
         """Normalize phone number for comparison"""
@@ -242,8 +188,9 @@ class GuestVerificationService:
                 "requires_password": privacy_settings.get("privacy_mode") == "password",
                 "requires_guest_verification": privacy_settings.get("privacy_mode") == "private",
                 "verification_requirements": {
-                    "require_phone": privacy_settings.get("require_phone_verification", True),
-                    "require_name": privacy_settings.get("require_name_verification", True)
+                    "otp_enabled": True,
+                    "supports_phone": True,
+                    "supports_email": True
                 }
             }
 

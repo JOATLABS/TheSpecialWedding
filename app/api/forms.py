@@ -152,7 +152,7 @@ def get_forms(
             )
     
     try:
-        forms = form_service.get_forms(current_user.email, wedding_id)
+        forms = form_service.get_forms(current_user.email, wedding_id, current_user.is_root_admin)
         
         # Log access
         logger.info(
@@ -298,6 +298,8 @@ def delete_form(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Delete a form with enhanced security validation"""
+    logger.info(f"DELETE /forms/{form_id} called by {current_user.email}, is_root_admin={current_user.is_root_admin}")
+    
     # Enhanced authorization check
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         logger.warning(
@@ -310,18 +312,30 @@ def delete_form(
     
     # Validate form_id
     if not form_id or not isinstance(form_id, str):
+        logger.error(f"Invalid form_id type: {type(form_id)}, value: {form_id}")
         raise HTTPException(status_code=400, detail="Invalid form ID")
     
     form_id = InputSanitizer.sanitize_text(form_id, 100)
     if not form_id:
+        logger.error(f"Form ID sanitization failed")
         raise HTTPException(status_code=400, detail="Invalid form ID")
     
+    logger.info(f"Form ID after sanitization: {form_id}")
+    
     try:
-        # Get existing form to check wedding access
-        existing_form = form_service.get_form(form_id, current_user.email)
+        logger.info(f"About to get existing form for access check...")
+        
+        # For ROOT_ADMIN, get form without created_by constraint
+        if current_user.is_root_admin:
+            existing_form = form_service.get_form(form_id)  # No created_by for ROOT_ADMIN
+            logger.info(f"ROOT_ADMIN form retrieval successful")
+        else:
+            existing_form = form_service.get_form(form_id, current_user.email)
+            logger.info(f"Regular user form retrieval successful")
         
         # Check wedding access if form has wedding_id
         if existing_form.get('wedding_id'):
+            logger.info(f"Checking wedding access for wedding_id: {existing_form['wedding_id']}")
             if not check_wedding_access(current_user, existing_form['wedding_id']):
                 logger.warning(
                     f"User {current_user.email} attempted to delete form {form_id} "
@@ -339,7 +353,8 @@ def delete_form(
             f"ip={client_ip}"
         )
         
-        result = form_service.delete_form(form_id, current_user.email)
+        logger.info(f"About to call form_service.delete_form...")
+        result = form_service.delete_form(form_id, current_user.email, current_user.is_root_admin)
         
         # Log successful deletion
         logger.warning(
@@ -355,6 +370,8 @@ def delete_form(
             f"Form deletion failed: id={form_id}, user={current_user.email}, "
             f"error={str(e)}"
         )
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to delete form")
 
 @router.post("/forms/{form_id}/send", tags=["Forms"])

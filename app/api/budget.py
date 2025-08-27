@@ -26,11 +26,11 @@ class UpdateBudgetCategoryRequest(BaseModel):
     budgeted_amount: Optional[float] = Field(None, ge=0)
     actual_spent: Optional[float] = Field(None, ge=0)
     priority: Optional[int] = Field(None, ge=1, le=5)
-    payment_status: Optional[str] = Field(None, regex="^(pending|partial|paid|overdue)$")
+    payment_status: Optional[str] = Field(None, pattern="^(pending|partial|paid|overdue)$")
 
 class CreateVendorQuoteRequest(BaseModel):
     vendor_name: str = Field(..., min_length=1, max_length=200)
-    vendor_email: Optional[str] = Field(None, regex=r'^[\w\.-]+@[\w\.-]+\.\w+$')
+    vendor_email: Optional[str] = Field(None, pattern=r'^[\w\.-]+@[\w\.-]+\.\w+$')
     vendor_phone: Optional[str] = Field(None)
     service_category: str = Field(..., min_length=1)
     quote_amount: float = Field(..., ge=0)

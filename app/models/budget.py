@@ -1,26 +1,12 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from typing import List, Dict, Optional
 from datetime import datetime
 from bson import ObjectId
-
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-
-    @classmethod
-    def __modify_schema__(cls, field_schema):
-        field_schema.update(type="string")
+from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 
 class BudgetSubcategory(BaseModel):
     """Subcategory within a budget category"""
-    id: str = Field(default_factory=lambda: str(ObjectId()), description="Unique subcategory ID")
+    id: PyObjectId = Field(default_factory=generate_object_id, description="Unique subcategory ID")
     name: str = Field(..., min_length=1, max_length=100, description="Subcategory name")
     budgeted_amount: float = Field(ge=0, description="Budgeted amount for this subcategory")
     actual_spent: float = Field(default=0.0, ge=0, description="Actual amount spent")
@@ -28,7 +14,7 @@ class BudgetSubcategory(BaseModel):
 
 class BudgetCategory(BaseModel):
     """Main budget category for a wedding"""
-    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     wedding_id: str = Field(..., description="ID of the wedding this budget belongs to")
     name: str = Field(..., min_length=1, max_length=100, description="Category name")
     description: Optional[str] = Field(None, max_length=500, description="Category description")
@@ -43,33 +29,44 @@ class BudgetCategory(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-        json_encoders = {ObjectId: str}
-        schema_extra = {
-            "example": {
-                "_id": "60c7d3e9e1b1fdbb4f12d9aa",
-                "wedding_id": "60c7d3e9e1b1fdbb4f12d9bb",
-                "name": "Venue & Catering",
-                "description": "Reception venue and catering costs",
-                "budgeted_amount": 25000.00,
-                "actual_spent": 22500.00,
-                "payment_status": "partial",
-                "priority": 1,
-                "percentage_of_total": 50.0,
-                "subcategories": [
-                    {
-                        "name": "Venue Rental",
-                        "budgeted_amount": 15000.00,
-                        "actual_spent": 15000.00
-                    }
-                ]
-            }
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        str_strip_whitespace=True
+    )
+    
+    @field_serializer('id', when_used='json')
+    def serialize_id(self, value) -> str:
+        """Serialize ObjectId to string for JSON output."""
+        return str(value) if value else None
+
+    @classmethod
+    def model_json_schema(cls, by_alias: bool = True) -> dict:
+        """Generate JSON schema with example."""
+        schema = super().model_json_schema(by_alias=by_alias)
+        schema["example"] = {
+            "_id": "60c7d3e9e1b1fdbb4f12d9aa",
+            "wedding_id": "60c7d3e9e1b1fdbb4f12d9bb",
+            "name": "Venue & Catering",
+            "description": "Reception venue and catering costs",
+            "budgeted_amount": 25000.00,
+            "actual_spent": 22500.00,
+            "payment_status": "partial",
+            "priority": 1,
+            "percentage_of_total": 50.0,
+            "subcategories": [
+                {
+                    "name": "Venue Rental",
+                    "budgeted_amount": 15000.00,
+                    "actual_spent": 15000.00
+                }
+            ]
         }
+        return schema
 
 class VendorQuote(BaseModel):
     """Vendor quote for budget comparison"""
-    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     wedding_id: str = Field(..., description="ID of the wedding")
     vendor_id: Optional[str] = Field(None, description="ID of the vendor (if registered)")
     vendor_name: str = Field(..., min_length=1, max_length=200, description="Vendor name")
@@ -88,31 +85,42 @@ class VendorQuote(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-        json_encoders = {ObjectId: str}
-        schema_extra = {
-            "example": {
-                "vendor_name": "Perfect Photos Studio",
-                "vendor_email": "info@perfectphotos.com",
-                "service_category": "photography",
-                "quote_amount": 3500.00,
-                "quote_details": {
-                    "hours": 8,
-                    "photographers": 2,
-                    "edited_photos": 500,
-                    "prints": "100 4x6 prints included"
-                },
-                "includes": ["8 hours coverage", "2 photographers", "500 edited photos", "online gallery"],
-                "excludes": ["Video", "Albums", "Engagement session"],
-                "valid_until": "2024-02-01T00:00:00Z",
-                "status": "pending"
-            }
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        str_strip_whitespace=True
+    )
+    
+    @field_serializer('id', when_used='json')
+    def serialize_id(self, value) -> str:
+        """Serialize ObjectId to string for JSON output."""
+        return str(value) if value else None
+
+    @classmethod
+    def model_json_schema(cls, by_alias: bool = True) -> dict:
+        """Generate JSON schema with example."""
+        schema = super().model_json_schema(by_alias=by_alias)
+        schema["example"] = {
+            "vendor_name": "Perfect Photos Studio",
+            "vendor_email": "info@perfectphotos.com",
+            "service_category": "photography",
+            "quote_amount": 3500.00,
+            "quote_details": {
+                "hours": 8,
+                "photographers": 2,
+                "edited_photos": 500,
+                "prints": "100 4x6 prints included"
+            },
+            "includes": ["8 hours coverage", "2 photographers", "500 edited photos", "online gallery"],
+            "excludes": ["Video", "Albums", "Engagement session"],
+            "valid_until": "2024-02-01T00:00:00Z",
+            "status": "pending"
         }
+        return schema
 
 class BudgetTemplate(BaseModel):
     """Pre-built budget template for different wedding types"""
-    id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     name: str = Field(..., min_length=1, max_length=100, description="Template name")
     description: Optional[str] = Field(None, max_length=500, description="Template description")
     wedding_type: str = Field(..., description="Type of wedding: traditional, modern, destination, intimate, etc.")
@@ -125,25 +133,36 @@ class BudgetTemplate(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-        json_encoders = {ObjectId: str}
-        schema_extra = {
-            "example": {
-                "name": "Traditional Wedding Template",
-                "description": "Standard template for traditional weddings with 100-150 guests",
-                "wedding_type": "traditional",
-                "target_budget_min": 25000.00,
-                "target_budget_max": 50000.00,
-                "guest_count_range": {"min": 100, "max": 150},
-                "categories": [
-                    {"name": "Venue & Catering", "percentage": 45.0, "priority": 1},
-                    {"name": "Photography & Videography", "percentage": 12.0, "priority": 2},
-                    {"name": "Music & Entertainment", "percentage": 10.0, "priority": 3},
-                    {"name": "Flowers & Decorations", "percentage": 8.0, "priority": 4}
-                ]
-            }
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        str_strip_whitespace=True
+    )
+    
+    @field_serializer('id', when_used='json')
+    def serialize_id(self, value) -> str:
+        """Serialize ObjectId to string for JSON output."""
+        return str(value) if value else None
+
+    @classmethod
+    def model_json_schema(cls, by_alias: bool = True) -> dict:
+        """Generate JSON schema with example."""
+        schema = super().model_json_schema(by_alias=by_alias)
+        schema["example"] = {
+            "name": "Traditional Wedding Template",
+            "description": "Standard template for traditional weddings with 100-150 guests",
+            "wedding_type": "traditional",
+            "target_budget_min": 25000.00,
+            "target_budget_max": 50000.00,
+            "guest_count_range": {"min": 100, "max": 150},
+            "categories": [
+                {"name": "Venue & Catering", "percentage": 45.0, "priority": 1},
+                {"name": "Photography & Videography", "percentage": 12.0, "priority": 2},
+                {"name": "Music & Entertainment", "percentage": 10.0, "priority": 3},
+                {"name": "Flowers & Decorations", "percentage": 8.0, "priority": 4}
+            ]
         }
+        return schema
 
 class BudgetSummary(BaseModel):
     """Budget summary for reporting"""
@@ -162,7 +181,7 @@ class BudgetSummary(BaseModel):
 
 class PaymentRecord(BaseModel):
     """Individual payment record"""
-    id: str = Field(default_factory=lambda: str(ObjectId()))
+    id: PyObjectId = Field(default_factory=generate_object_id)
     category_id: str = Field(..., description="Budget category this payment belongs to")
     vendor_name: Optional[str] = Field(None, description="Vendor who received payment")
     amount: float = Field(gt=0, description="Payment amount")
@@ -176,7 +195,7 @@ class PaymentRecord(BaseModel):
 
 class BudgetAlert(BaseModel):
     """Budget alerts and notifications"""
-    id: str = Field(default_factory=lambda: str(ObjectId()))
+    id: PyObjectId = Field(default_factory=generate_object_id)
     wedding_id: str = Field(..., description="Wedding ID")
     category_id: Optional[str] = Field(None, description="Specific category if applicable")
     alert_type: str = Field(..., description="Alert type: over_budget, payment_due, quote_expired")

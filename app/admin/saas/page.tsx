@@ -130,7 +130,7 @@ const SaasAdminDashboard = () => {
  }
 
  // Fetch wedding planners
- const plannersResponse = await fetch(`${baseUrl}/admin/wedding-planners`, { headers });
+ const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers });
  if (plannersResponse.ok) {
  const plannersData = await plannersResponse.json();
  setPlanners(plannersData.map((planner: any) => ({
@@ -479,7 +479,7 @@ const SaasAdminDashboard = () => {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
- const response = await fetch(`${baseUrl}/admin/wedding-planners`, {
+ const response = await fetch(`${baseUrl}/saas/wedding-planners`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -510,7 +510,7 @@ const SaasAdminDashboard = () => {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
- const response = await fetch(`${baseUrl}/admin/wedding-planners/${plannerId}/status`, {
+ const response = await fetch(`${baseUrl}/saas/wedding-planners/${plannerId}/status`, {
  method: 'PUT',
  headers: {
  'Authorization': `Bearer ${token}`,

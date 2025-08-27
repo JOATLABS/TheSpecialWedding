@@ -58,7 +58,7 @@ def list_weddings_public(current_user: ExtendedAuthUser = Depends(require_admin_
         # Wedding planners see only their assigned weddings
         return wedding_service.list_weddings_for_planner(current_user.email)
 
-@router.get("/admin/weddings", tags=["Admin"])
+@router.get("/weddings", tags=["Admin"])
 def list_weddings_admin(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """List weddings - ROOT_ADMIN sees all, planners see only assigned"""
     if current_user.is_root_admin or current_user.is_legacy_admin:
@@ -68,7 +68,7 @@ def list_weddings_admin(current_user: ExtendedAuthUser = Depends(require_admin_o
         # Wedding planners see only their assigned weddings
         return wedding_service.list_weddings_for_planner(current_user.email)
 
-@router.post("/admin/weddings", tags=["Admin"])
+@router.post("/weddings", tags=["Admin"])
 def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new wedding via admin interface - ROOT_ADMIN or wedding planners with subscription limits"""
     
@@ -100,7 +100,7 @@ def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends
     
     return result
 
-@router.put("/admin/weddings/{wedding_id}", tags=["Admin"])
+@router.put("/weddings/{wedding_id}", tags=["Admin"])
 def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Update a wedding via admin interface - with access control"""
     # Check if user has access to this wedding
@@ -112,7 +112,7 @@ def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedA
     
     return wedding_service.update_wedding(wedding_id, wedding)
 
-@router.delete("/admin/weddings/{wedding_id}", tags=["Admin"])
+@router.delete("/weddings/{wedding_id}", tags=["Admin"])
 def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Delete a wedding via admin interface - Only ROOT_ADMIN can delete weddings"""
     return wedding_service.delete_wedding(wedding_id)
