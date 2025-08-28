@@ -5,6 +5,7 @@ from typing import Optional, List
 import os
 from datetime import datetime
 from app.core.database import mongo
+from bson import ObjectId
 
 # Security scheme
 security = HTTPBearer(auto_error=True)
@@ -57,7 +58,10 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
             if legacy_user or new_user:
                 # ROOT_ADMIN always has full access
                 role = "ROOT_ADMIN"
-                user_data = new_user or legacy_user or {}
+                user_data = (new_user or legacy_user or {}).copy()
+                # Convert ObjectId to string for consistent data types
+                if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
+                    user_data["_id"] = str(user_data["_id"])
             else:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -72,7 +76,10 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                 # Fallback to legacy admin_users collection for backward compatibility
                 legacy_user = mongo.get_admin_users_collection().find_one({"email": email})
                 if legacy_user:
-                    user_data = legacy_user
+                    user_data = legacy_user.copy()
+                    # Convert ObjectId to string for consistent data types
+                    if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
+                        user_data["_id"] = str(user_data["_id"])
                     role = "admin"  # Keep legacy role
                 else:
                     raise HTTPException(
@@ -81,7 +88,10 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                         headers={"WWW-Authenticate": "Bearer"},
                     )
             else:
-                user_data = user
+                user_data = user.copy()  # Make a copy to avoid modifying the original
+                # Convert ObjectId to string for consistent data types
+                if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
+                    user_data["_id"] = str(user_data["_id"])
                 role = user.get("role", "wedding_planner")
                 
                 # Check if account is active

@@ -10,6 +10,7 @@ from app.models.subscription import (
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import calendar
+from bson import ObjectId
 
 class SubscriptionService:
     def __init__(self):
@@ -120,7 +121,7 @@ class SubscriptionService:
         """Assign subscription plan to user"""
         try:
             # Verify user exists
-            user = self.users_collection.find_one({"_id": user_id})
+            user = self.users_collection.find_one({"_id": ObjectId(user_id)})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
             
@@ -178,7 +179,7 @@ class SubscriptionService:
             
             # Update user subscription info
             self.users_collection.update_one(
-                {"_id": user_id},
+                {"_id": ObjectId(user_id)},
                 {"$set": {
                     "subscription_plan_id": plan_id,
                     "subscription_status": subscription_data["status"],
@@ -229,7 +230,7 @@ class SubscriptionService:
             
             # Update user status
             self.users_collection.update_one(
-                {"_id": user_id},
+                {"_id": ObjectId(user_id)},
                 {"$set": {
                     "subscription_status": "cancelled",
                     "updated_at": now
