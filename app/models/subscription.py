@@ -191,7 +191,6 @@ class UpdateSubscriptionPlanRequest(BaseModel):
 
 class AssignSubscriptionRequest(BaseModel):
     """Request model for assigning subscription to user"""
-    user_id: str
     plan_id: str
     billing_interval: BillingInterval = BillingInterval.MONTHLY
     trial_days: Optional[int] = 14

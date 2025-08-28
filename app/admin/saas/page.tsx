@@ -510,7 +510,17 @@ const SaasAdminDashboard = () => {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
- const response = await fetch(`${baseUrl}/saas/wedding-planners/${plannerId}/status`, {
+ // Find the planner to get current status
+ const planner = planners.find(p => p.id === plannerId);
+ if (!planner) {
+ alert('Planner not found');
+ return;
+ }
+ 
+ const isActivating = !planner.is_active;
+ 
+ // First toggle the user status
+ const statusResponse = await fetch(`${baseUrl}/saas/wedding-planners/${plannerId}/status`, {
  method: 'PUT',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -518,21 +528,121 @@ const SaasAdminDashboard = () => {
  }
  });
 
- if (response.ok) {
- const result = await response.json();
- // Update local state
- setPlanners(prev => prev.map(planner => 
- planner.id === plannerId 
- ? { ...planner, is_active: result.new_status }
- : planner
- ));
- alert(result.message);
- } else {
+ if (!statusResponse.ok) {
  throw new Error('Failed to update planner status');
  }
+
+ const statusResult = await statusResponse.json();
+ 
+ // If activating and no subscription plan assigned, assign default plan
+ if (isActivating) {
+ // Find a default plan (preferably Free Trial or the first active plan)
+ const defaultPlan = plans.find(p => p.name.toLowerCase().includes('trial')) || 
+ plans.find(p => p.is_active) || 
+ plans[0];
+ 
+ if (defaultPlan) {
+ try {
+ // Create subscription for the planner
+ const subscriptionResponse = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ method: 'POST',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json'
+ },
+ body: JSON.stringify({
+ plan_id: defaultPlan._id,
+ billing_interval: 'monthly',
+ trial_days: 14
+ })
+ });
+
+ if (!subscriptionResponse.ok) {
+ // If subscription creation fails, don't fail the whole operation
+ // The user might already have a subscription
+ const subError = await subscriptionResponse.text();
+ console.warn('Subscription creation failed:', subError);
+ }
+ } catch (subError) {
+ console.warn('Error creating subscription:', subError);
+ }
+ }
+ } else {
+ // If deactivating, cancel the subscription
+ try {
+ await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ method: 'DELETE',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json'
+ }
+ });
+ } catch (subError) {
+ console.warn('Error cancelling subscription:', subError);
+ }
+ }
+ 
+ // Update local state
+ setPlanners(prev => prev.map(p => 
+ p.id === plannerId 
+ ? { ...p, is_active: statusResult.new_status }
+ : p
+ ));
+ 
+ alert(`Planner ${isActivating ? 'activated' : 'deactivated'} successfully`);
+ 
+ // Refresh data to get updated subscription info
+ setTimeout(() => window.location.reload(), 1000);
+ 
  } catch (error) {
  console.error('Error updating planner status:', error);
  alert('Failed to update planner status');
+ }
+ };
+
+ const handleAssignPlan = async (plannerId: string, planId: string) => {
+ try {
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+ 
+ // First, cancel existing subscription if any
+ try {
+ await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ method: 'DELETE',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json'
+ }
+ });
+ } catch (error) {
+ // Ignore if no existing subscription
+ }
+ 
+ // Assign new subscription
+ const response = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ method: 'POST',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json'
+ },
+ body: JSON.stringify({
+ plan_id: planId,
+ billing_interval: 'monthly',
+ trial_days: 14
+ })
+ });
+
+ if (response.ok) {
+ alert('Plan assigned successfully');
+ // Refresh to get updated data
+ window.location.reload();
+ } else {
+ const error = await response.text();
+ throw new Error(error);
+ }
+ } catch (error) {
+ console.error('Error assigning plan:', error);
+ alert('Failed to assign plan');
  }
  };
 
@@ -1208,9 +1318,23 @@ const SaasAdminDashboard = () => {
  </div>
  </td>
  <td className="px-6 py-4 whitespace-nowrap">
+ <div className="flex items-center space-x-2">
+ <select
+ value={planner.subscriptionPlanId || ''}
+ onChange={(e) => handleAssignPlan(planner.id, e.target.value)}
+ className="text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+ >
+ <option value="">Select Plan</option>
+ {plans.filter(p => p.is_active).map(plan => (
+ <option key={plan._id} value={plan._id}>
+ {plan.name}
+ </option>
+ ))}
+ </select>
  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
  {plans.find(p => p._id === planner.subscriptionPlanId)?.name || 'Unknown'}
  </span>
+ </div>
  </td>
  <td className="px-6 py-4 whitespace-nowrap">
  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${

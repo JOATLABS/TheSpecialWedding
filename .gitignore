@@ -57,3 +57,5 @@ app/__pycache__/
 remove_emojis.sh
 nextjs.log
 .playwright-mcp/
+app/admin/weddings/page.tsx.broken
+app/__pycache__/main.cpython-311.pyc
