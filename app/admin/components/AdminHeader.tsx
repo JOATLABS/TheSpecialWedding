@@ -44,6 +44,7 @@ export default function AdminHeader() {
         { href: '/admin/gallery/upload', label: 'Gallery', roles: ['wedding_planner'] },
         { href: '/admin/guests', label: 'Guests', roles: ['wedding_planner'] },
         { href: '/admin/reminders', label: 'Reminders', roles: ['wedding_planner'] },
+        { href: '/admin/profile', label: 'Profile', roles: ['wedding_planner'] },
       ];
     } else if (userProfile.is_vendor) {
       return [
