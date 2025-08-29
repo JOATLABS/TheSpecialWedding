@@ -119,7 +119,7 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
                 },
                 "progress_percentage": min(100, round(progress_score)),
                 "days_until_wedding": days_until_wedding,
-                "created_at": wedding.get("created_at", "")
+                "created_at": wedding.get("created_at").isoformat() if isinstance(wedding.get("created_at"), datetime) else wedding.get("created_at", "")
             }
             
             metrics["weddings"].append(wedding_metrics)
@@ -153,7 +153,10 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
         if metrics["weddings"]:
             metrics["revenue_metrics"]["monthly_bookings"] = len([
                 w for w in metrics["weddings"] 
-                if w["created_at"] and datetime.fromisoformat(w["created_at"]).month == current_date.month
+                if w["created_at"] and (
+                    isinstance(w["created_at"], datetime) and w["created_at"].month == current_date.month
+                    or isinstance(w["created_at"], str) and datetime.fromisoformat(w["created_at"]).month == current_date.month
+                )
             ])
             metrics["revenue_metrics"]["total_revenue"] = len(metrics["weddings"]) * 500  # Placeholder
             metrics["revenue_metrics"]["average_wedding_value"] = 500  # Placeholder

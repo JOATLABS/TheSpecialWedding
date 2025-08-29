@@ -61,7 +61,12 @@ export default function BudgetDashboard() {
   const fetchWeddings = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/weddings`);
+      const response = await fetch(`${baseUrl}/admin/weddings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
