@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any, List
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
-from bson import ObjectId
+from app.utils.pydantic_objectid import PyObjectId
 from datetime import datetime
 
 router = APIRouter()
@@ -272,7 +272,7 @@ def toggle_planner_status(
     """Toggle wedding planner active status - ROOT_ADMIN only"""
     try:
         # Get current status
-        planner = mongo.get_users_collection().find_one({"_id": ObjectId(planner_id)})
+        planner = mongo.get_users_collection().find_one({"_id": PyObjectId(planner_id)})
         if not planner:
             raise HTTPException(status_code=404, detail="Wedding planner not found")
         
@@ -280,7 +280,7 @@ def toggle_planner_status(
         
         # Update status
         mongo.get_users_collection().update_one(
-            {"_id": ObjectId(planner_id)},
+            {"_id": PyObjectId(planner_id)},
             {
                 "$set": {
                     "is_active": new_status,

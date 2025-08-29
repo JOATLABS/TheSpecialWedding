@@ -30,14 +30,10 @@ export default function AdminHeader() {
     if (userProfile.is_root_admin) {
       return [
         ...baseLinks,
-        { href: '/admin/saas', label: 'SAAS Config', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/weddings', label: 'All Weddings', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/budget', label: 'Budget', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/forms', label: 'Forms', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/gallery/upload', label: 'Gallery', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/import', label: 'Import Guests', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/guests', label: 'Manage Guests', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/reminders', label: 'SMS Reminders', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/saas', label: 'Platform Management', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/metrics', label: 'Platform Metrics', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/notifications', label: 'Notifications', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/support', label: 'Support', roles: ['ROOT_ADMIN'] },
       ];
     } else if (userProfile.is_wedding_planner) {
       return [

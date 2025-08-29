@@ -31,11 +31,15 @@ export default function AdminDashboardPage() {
   const fetchUserProfile = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/profile`, {
+      const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
+        cache: 'no-store',
       });
 
       if (response.ok) {
