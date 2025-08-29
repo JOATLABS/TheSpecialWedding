@@ -32,7 +32,7 @@ class BudgetService:
         """Create a new budget category for a wedding"""
         try:
             # Validate wedding exists and user has access
-            wedding = self.weddings.find_one({"_id": ObjectId(wedding_id)})
+            wedding = self.weddings.find_one({"_id": wedding_id})
             if not wedding:
                 raise ValueError("Wedding not found")
             

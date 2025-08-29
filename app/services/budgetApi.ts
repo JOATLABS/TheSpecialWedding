@@ -23,16 +23,17 @@ class BudgetApiService {
   // Budget Categories
   async getBudgetCategories(token: string, weddingId: string): Promise<BudgetCategory[]> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/categories`,
+      `${BASE_URL}/admin/weddings/${weddingId}/budget`,
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget categories');
-    return response.json();
+    const budgetData = await response.json();
+    return budgetData.categories || [];
   }
 
   async createBudgetCategory(token: string, data: CreateBudgetCategoryRequest): Promise<BudgetCategory> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${data.wedding_id}/budget/categories`,
+      `${BASE_URL}/admin/weddings/${data.wedding_id}/budget/category`,
       {
         method: 'POST',
         headers: this.getHeaders(token),
@@ -45,7 +46,7 @@ class BudgetApiService {
 
   async updateBudgetCategory(token: string, categoryId: string, data: UpdateBudgetCategoryRequest): Promise<BudgetCategory> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/categories/${categoryId}`,
+      `${BASE_URL}/admin/budget/category/${categoryId}`,
       {
         method: 'PUT',
         headers: this.getHeaders(token),
