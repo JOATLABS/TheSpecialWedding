@@ -6,16 +6,16 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 
 export default function AdminHeader() {
-  const { logout, userProfile, fetchUserProfile } = useAdmin();
+  const { logout, userProfile, fetchUserProfile, isAuthenticated, token } = useAdmin();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isLoginPage = pathname === '/admin/login';
 
   useEffect(() => {
-    if (!userProfile) {
+    if (!userProfile && isAuthenticated && token) {
       fetchUserProfile();
     }
-  }, [userProfile, fetchUserProfile]);
+  }, [userProfile, fetchUserProfile, isAuthenticated, token]);
 
   if (isLoginPage) return null;
 

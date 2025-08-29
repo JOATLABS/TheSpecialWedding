@@ -50,7 +50,7 @@ class Settings(BaseSettings):
         alias="CORS_METHODS"
     )
     cors_headers: List[str] = Field(
-        default=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+        default=["Authorization", "Content-Type", "Accept", "X-Requested-With", "Cache-Control", "Pragma"],
         alias="CORS_HEADERS"
     )
     

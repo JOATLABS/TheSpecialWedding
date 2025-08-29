@@ -55,8 +55,9 @@ export default function AdminDashboardPage() {
           if (payload?.role) {
             redirectToRoleDashboard(payload.role);
           } else {
-            // Fallback to SAAS dashboard for unknown roles
-            router.push('/admin/saas');
+            // SECURITY: Unknown role from JWT - redirect to login
+            console.warn('No role found in JWT token');
+            router.push('/admin/login');
           }
         } else {
           router.push('/admin/login');
@@ -64,8 +65,8 @@ export default function AdminDashboardPage() {
       }
     } catch (error) {
       console.error('Failed to fetch user profile:', error);
-      // Fallback to SAAS dashboard on error
-      router.push('/admin/saas');
+      // SECURITY: Never default to admin interface on errors - redirect to login
+      router.push('/admin/login');
     } finally {
       setLoading(false);
     }
@@ -95,8 +96,9 @@ export default function AdminDashboardPage() {
         router.push('/admin/vendor');
         break;
       default:
-        // Unknown role - default to SAAS dashboard
-        router.push('/admin/saas');
+        // SECURITY: Unknown role - redirect to login, never grant admin access
+        console.warn(`Unknown user role: ${role}`);
+        router.push('/admin/login');
     }
   };
 
