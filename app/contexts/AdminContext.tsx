@@ -49,6 +49,13 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
+    // Automatically fetch user profile when token is set
+    useEffect(() => {
+        if (token && !userProfile) {
+            fetchUserProfile();
+        }
+    }, [token, userProfile]);
+
     const fetchUserProfile = async () => {
         if (!token) return;
         
@@ -71,7 +78,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             }
         } catch (error) {
             // Log error without exposing sensitive information
-            console.error('Failed to fetch user profile');
+            // Only log if we have a token, to avoid noisy logs during login flow
+            if (token) {
+                console.error('Failed to fetch user profile');
+            }
         }
     };
 
