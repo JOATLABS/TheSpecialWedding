@@ -54,11 +54,15 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         
         try {
             const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-            const response = await fetch(`${baseUrl}/admin/profile`, {
+            const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
+                method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
                 },
+                cache: 'no-store' // Force fresh request, no caching
             });
 
             if (response.ok) {
@@ -73,6 +77,11 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {
+            // SECURITY: Clear any existing sessions first to prevent session mixing
+            localStorage.removeItem('admin_token');
+            sessionStorage.removeItem('admin_token');
+            document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+            
             const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
             const loginUrl = `${baseUrl}/admin/token`;
             const res = await fetch(loginUrl, {
@@ -92,8 +101,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             const storage = rememberMe ? localStorage : sessionStorage;
             storage.setItem('admin_token', access_token);
             
-            // Also set cookie for middleware to check
-            document.cookie = `admin_token=${access_token}; path=/; ${rememberMe ? 'max-age=604800' : ''}`;
+            // Set cookie for middleware to check (with secure attributes)
+            const cookieString = `admin_token=${access_token}; path=/; SameSite=Strict; ${rememberMe ? 'max-age=604800;' : 'max-age=3600;'} ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+            document.cookie = cookieString;
             
             setToken(access_token);
 
@@ -107,16 +117,35 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
 
     const logout = () => {
-        localStorage.removeItem('admin_token');
-        sessionStorage.removeItem('admin_token');
+        // Clear all possible storage locations
+        localStorage.clear(); // Clear ALL localStorage, not just admin_token
+        sessionStorage.clear(); // Clear ALL sessionStorage
         
-        // Remove cookie
-        document.cookie = 'admin_token=; path=/; max-age=0';
+        // Clear ALL cookies, not just admin_token
+        document.cookie.split(";").forEach(cookie => {
+            const eqPos = cookie.indexOf("=");
+            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+            // Clear for current path and domain
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;`;
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
+        });
         
+        // Clear React state
         setToken(null);
         setUserProfile(null);
-        toast.success('Logged out');
-        router.push('/admin/login');
+        
+        // Clear any cached API responses by making a dummy request
+        try {
+            fetch('/api/clear-cache', { method: 'POST' }).catch(() => {});
+        } catch (error) {
+            // Ignore cache clear errors
+        }
+        
+        toast.success('Logged out successfully');
+        
+        // Force complete page refresh to clear ALL cached data and state
+        window.location.href = '/admin/login';
     };
 
     return (

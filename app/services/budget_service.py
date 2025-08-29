@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
-from bson import ObjectId
+from app.utils.pydantic_objectid import PyObjectId
 from app.core.database import mongo
 from app.models.budget import (
     BudgetCategory, 
@@ -89,7 +89,7 @@ class BudgetService:
         """Update an existing budget category"""
         try:
             # Validate category exists
-            category = self.budget_categories.find_one({"_id": ObjectId(category_id)})
+            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
             if not category:
                 raise ValueError("Budget category not found")
             
@@ -98,7 +98,7 @@ class BudgetService:
             
             # Update category
             result = self.budget_categories.update_one(
-                {"_id": ObjectId(category_id)},
+                {"_id": PyObjectId(category_id)},
                 {"$set": update_data}
             )
             
@@ -106,7 +106,7 @@ class BudgetService:
                 raise ValueError("No changes made to category")
             
             # Get updated category
-            updated_category = self.budget_categories.find_one({"_id": ObjectId(category_id)})
+            updated_category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
             
             # Update wedding totals
             self._update_wedding_budget_total(category["wedding_id"])
@@ -125,7 +125,7 @@ class BudgetService:
         """Delete a budget category"""
         try:
             # Get category to get wedding_id
-            category = self.budget_categories.find_one({"_id": ObjectId(category_id)})
+            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
             if not category:
                 raise ValueError("Budget category not found")
             
@@ -136,7 +136,7 @@ class BudgetService:
             self.payment_records.delete_many({"category_id": category_id})
             
             # Delete category
-            result = self.budget_categories.delete_one({"_id": ObjectId(category_id)})
+            result = self.budget_categories.delete_one({"_id": PyObjectId(category_id)})
             
             if result.deleted_count == 0:
                 raise ValueError("Failed to delete category")
@@ -243,7 +243,7 @@ class BudgetService:
                 update_data["notes"] = notes
             
             result = self.vendor_quotes.update_one(
-                {"_id": ObjectId(quote_id)},
+                {"_id": PyObjectId(quote_id)},
                 {"$set": update_data}
             )
             
@@ -251,7 +251,7 @@ class BudgetService:
                 raise ValueError("Quote not found or no changes made")
             
             # Get updated quote
-            updated_quote = self.vendor_quotes.find_one({"_id": ObjectId(quote_id)})
+            updated_quote = self.vendor_quotes.find_one({"_id": PyObjectId(quote_id)})
             
             # If quote was accepted, update budget category actual spending
             if status == "accepted":
@@ -284,7 +284,7 @@ class BudgetService:
         """Apply a budget template to a wedding"""
         try:
             # Get template
-            template = self.budget_templates.find_one({"_id": ObjectId(template_id)})
+            template = self.budget_templates.find_one({"_id": PyObjectId(template_id)})
             if not template:
                 raise ValueError("Budget template not found")
             
@@ -311,7 +311,7 @@ class BudgetService:
             
             # Update wedding with total budget
             self.weddings.update_one(
-                {"_id": ObjectId(wedding_id)},
+                {"_id": wedding_id},
                 {"$set": {"total_budget": total_budget, "budget_template_applied": template_id}}
             )
             
@@ -341,11 +341,11 @@ class BudgetService:
             payment.id = str(result.inserted_id)
             
             # Update category actual spending
-            category = self.budget_categories.find_one({"_id": ObjectId(category_id)})
+            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
             if category:
                 new_actual_spent = category.get("actual_spent", 0) + payment.amount
                 self.budget_categories.update_one(
-                    {"_id": ObjectId(category_id)},
+                    {"_id": PyObjectId(category_id)},
                     {"$set": {
                         "actual_spent": new_actual_spent,
                         "updated_at": datetime.utcnow()
@@ -362,7 +362,7 @@ class BudgetService:
                     payment_status = "pending"
                 
                 self.budget_categories.update_one(
-                    {"_id": ObjectId(category_id)},
+                    {"_id": PyObjectId(category_id)},
                     {"$set": {"payment_status": payment_status}}
                 )
                 
@@ -546,7 +546,7 @@ class BudgetService:
         total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
         
         self.weddings.update_one(
-            {"_id": ObjectId(wedding_id)},
+            {"_id": wedding_id},
             {"$set": {"total_budget": total_budget}}
         )
     

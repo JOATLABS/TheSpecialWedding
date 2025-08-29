@@ -421,7 +421,7 @@ app.include_router(auth_router, prefix="/admin")
 # app.include_router(user_management_router, prefix="/admin")  # ROOT_ADMIN user management
 # app.include_router(user_management_router)  # Public registration endpoints (no prefix)
 # app.include_router(subscription_router, prefix="/admin")  # Subscription management
-# app.include_router(saas_config_router, prefix="/admin")  # SAAS configuration management
+app.include_router(saas_config_router, prefix="/admin")  # SAAS configuration management
 app.include_router(planner_metrics_router, prefix="/admin")  # Wedding planner metrics and analytics
 app.include_router(budget_router, prefix="/admin")  # Budget management system
 # app.include_router(forms_router, prefix="/admin")  # Form builder and management (admin endpoints)
