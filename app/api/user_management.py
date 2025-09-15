@@ -101,6 +101,12 @@ class ChangeEmailModel(BaseModel):
     new_email: EmailStr
     password: str  # Require password confirmation for email changes
 
+class ProfileInfoModel(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    company_name: Optional[str] = None
+    phone: Optional[str] = None
+
 @router.post("/users/invite", tags=["ROOT_ADMIN"])
 def invite_user(invite_data: UserInviteModel, current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Invite a new user to the platform - ROOT_ADMIN only"""
@@ -197,3 +203,11 @@ async def change_email(email_data: ChangeEmailModel, current_user: ExtendedAuthU
 def get_user_profile(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get current user profile information"""
     return user_service.get_user_profile(current_user.email)
+
+@router.put("/profile/info", tags=["Profile"])
+async def update_profile_info(profile_data: ProfileInfoModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Update user profile information - Authenticated users only"""
+    return await user_service.update_profile_info(
+        current_user.email,
+        profile_data.dict(exclude_unset=True)
+    )

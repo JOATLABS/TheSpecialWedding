@@ -1065,3 +1065,54 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving user profile: {str(e)}")
+
+    async def update_profile_info(self, user_email: str, profile_data: dict) -> dict:
+        """Update user profile information"""
+        try:
+            # Validate user exists
+            user = self.users_collection.find_one({"email": user_email})
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            # Prepare update data
+            update_data = {}
+            if profile_data.get("first_name") is not None:
+                update_data["first_name"] = profile_data["first_name"].strip()
+            if profile_data.get("last_name") is not None:
+                update_data["last_name"] = profile_data["last_name"].strip()
+            if profile_data.get("company_name") is not None:
+                update_data["company_name"] = profile_data["company_name"].strip()
+            if profile_data.get("phone") is not None:
+                update_data["phone"] = profile_data["phone"].strip()
+
+            if not update_data:
+                raise HTTPException(status_code=400, detail="No valid profile data provided")
+
+            # Add updated timestamp
+            update_data["updated_at"] = datetime.utcnow()
+
+            # Update user profile
+            result = self.users_collection.update_one(
+                {"email": user_email},
+                {"$set": update_data}
+            )
+
+            if result.modified_count == 0:
+                raise HTTPException(status_code=400, detail="Profile update failed")
+
+            # Emit profile updated event
+            await event_bus.emit(EventFactory.create_user_profile_updated_event(
+                user_id=str(user["_id"]),
+                email=user_email,
+                updated_fields=list(update_data.keys())
+            ))
+
+            return {
+                "message": "Profile updated successfully",
+                "updated_fields": list(update_data.keys())
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error updating profile: {str(e)}")

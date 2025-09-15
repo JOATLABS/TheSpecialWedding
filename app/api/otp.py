@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, validator, EmailStr
 from typing import Optional
 from app.services.otp_service import OTPService
+from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 import re
 import logging
 
@@ -136,10 +137,10 @@ async def verify_otp(request: VerifyOTPRequest):
         raise HTTPException(status_code=500, detail="Failed to verify code")
 
 @router.delete("/cleanup", response_model=dict)
-async def cleanup_expired_otps():
+async def cleanup_expired_otps(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """
     Clean up expired OTP codes from database (admin endpoint)
-    TODO: Add admin authentication when dependency is available
+    Requires ROOT_ADMIN authentication
     """
     try:
         otp_service = OTPService()

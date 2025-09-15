@@ -46,6 +46,8 @@ from app.api.trial_management import router as trial_management_router
 from app.api.vendor_forms import router as vendor_forms_router
 from app.api.budget import router as budget_router
 from app.api.otp import router as otp_router
+from app.api.notification_management import router as notification_router
+from app.api.support_management import router as support_router
 
 # Setup logging
 logging.basicConfig(
@@ -226,7 +228,9 @@ admin_routers = [
     (planner_metrics_router, "Metrics"),
     (forms_router, "Forms"),
     (trial_management_router, "Admin"),
-    (vendor_forms_router, "Vendor Management")
+    (vendor_forms_router, "Vendor Management"),
+    (notification_router, "Notifications"),
+    (support_router, "Support")
 ]
 
 for router, tag in admin_routers:
