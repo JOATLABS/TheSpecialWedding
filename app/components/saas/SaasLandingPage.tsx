@@ -10,6 +10,7 @@ import { BenefitsSection } from './BenefitsSection';
 import { TestimonialsSection } from './TestimonialsSection';
 import { CallToActionSection } from './CallToActionSection';
 import { PricingSection } from './PricingSection';
+import { ContactFormSection } from './ContactFormSection';
 import { SignupModal } from './SignupModal';
 
 interface Feature {
@@ -56,6 +57,8 @@ interface SaasConfig {
   benefits_enabled: boolean;
   testimonials_enabled: boolean;
   statistics_enabled: boolean;
+  subscription_enabled: boolean;
+  contact_form_enabled: boolean;
   demo_url?: string;
   primary_color: string;
   secondary_color: string;
@@ -180,6 +183,8 @@ export const SaasLandingPage: React.FC = () => {
     benefits_enabled: true,
     testimonials_enabled: true,
     statistics_enabled: true,
+    subscription_enabled: true,
+    contact_form_enabled: false,
     demo_url: process.env.NEXT_PUBLIC_SAAS_DEMO_URL || "https://demo.thespecialwedding.com",
     primary_color: process.env.NEXT_PUBLIC_DEFAULT_PRIMARY_COLOR || "#1e3a5f",
     secondary_color: process.env.NEXT_PUBLIC_DEFAULT_SECONDARY_COLOR || "#d4af37"
@@ -272,26 +277,36 @@ export const SaasLandingPage: React.FC = () => {
           </SectionWrapper>
         )}
         
-        {/* Pricing Section */}
-        <SectionWrapper id="pricing" glassEffect={false}>
-          <PricingSection theme={theme} onPlanSelect={handlePlanSelect} />
-        </SectionWrapper>
+        {/* Pricing Section or Contact Form */}
+        {config.subscription_enabled ? (
+          <SectionWrapper id="pricing" glassEffect={false}>
+            <PricingSection theme={theme} onPlanSelect={handlePlanSelect} />
+          </SectionWrapper>
+        ) : config.contact_form_enabled ? (
+          <SectionWrapper id="contact" glassEffect={false}>
+            <ContactFormSection theme={theme} />
+          </SectionWrapper>
+        ) : null}
         
-        {/* Call to Action Section - Single card, no section background */}
-        <SectionWrapper id="sign-up" glassEffect={false}>
-          <div className="max-w-4xl mx-auto">
-            <CallToActionSection config={config} theme={theme} onGetStarted={() => setShowSignupModal(true)} />
-          </div>
-        </SectionWrapper>
+        {/* Call to Action Section - Only show if subscription is enabled */}
+        {config.subscription_enabled && (
+          <SectionWrapper id="sign-up" glassEffect={false}>
+            <div className="max-w-4xl mx-auto">
+              <CallToActionSection config={config} theme={theme} onGetStarted={() => setShowSignupModal(true)} />
+            </div>
+          </SectionWrapper>
+        )}
       </div>
 
-      {/* Signup Modal */}
-      <SignupModal
-        isOpen={showSignupModal}
-        onClose={() => setShowSignupModal(false)}
-        selectedPlanId={selectedPlanId}
-        theme={theme}
-      />
+      {/* Signup Modal - Only show if subscription is enabled */}
+      {config.subscription_enabled && (
+        <SignupModal
+          isOpen={showSignupModal}
+          onClose={() => setShowSignupModal(false)}
+          selectedPlanId={selectedPlanId}
+          theme={theme}
+        />
+      )}
     </div>
   );
 };

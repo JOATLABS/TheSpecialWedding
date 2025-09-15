@@ -73,6 +73,8 @@ def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_admin)
                 "benefits_enabled": True,
                 "testimonials_enabled": True,
                 "statistics_enabled": True,
+                "subscription_enabled": True,
+                "contact_form_enabled": False,
                 "theme": {
                     "primary_color": "#1e3a5f",
                     "secondary_color": "#d4af37",
@@ -366,6 +368,8 @@ def get_public_saas_config():
                 "benefits_enabled": True,
                 "testimonials_enabled": True,
                 "statistics_enabled": True,
+                "subscription_enabled": True,
+                "contact_form_enabled": False,
                 "primary_color": "#1e3a5f",
                 "secondary_color": "#d4af37",
                 "fallback_images": [
@@ -390,6 +394,8 @@ def get_public_saas_config():
             "benefits_enabled": config.get("benefits_enabled", True),
             "testimonials_enabled": config.get("testimonials_enabled", True),
             "statistics_enabled": config.get("statistics_enabled", True),
+            "subscription_enabled": config.get("subscription_enabled", True),
+            "contact_form_enabled": config.get("contact_form_enabled", False),
             "primary_color": config.get("theme", {}).get("primary_color", "#1e3a5f"),
             "secondary_color": config.get("theme", {}).get("secondary_color", "#d4af37"),
             "fallback_images": config.get("theme", {}).get("fallback_images", [

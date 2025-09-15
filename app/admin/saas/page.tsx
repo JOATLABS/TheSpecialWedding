@@ -88,6 +88,8 @@ interface SaasFullConfig {
  benefits_enabled: boolean;
  testimonials_enabled: boolean;
  statistics_enabled: boolean;
+ subscription_enabled: boolean;
+ contact_form_enabled: boolean;
  theme: ThemeConfig;
 }
 
@@ -204,6 +206,8 @@ const SaasAdminDashboard = () => {
  benefits_enabled: true,
  testimonials_enabled: true,
  statistics_enabled: true,
+ subscription_enabled: true,
+ contact_form_enabled: false,
  theme: {
  primary_color: "#1e3a5f",
  secondary_color: "#d4af37",
@@ -253,6 +257,8 @@ const SaasAdminDashboard = () => {
  benefits_enabled: true,
  testimonials_enabled: true,
  statistics_enabled: true,
+ subscription_enabled: true,
+ contact_form_enabled: false,
  theme: {
  primary_color: "#1e3a5f",
  secondary_color: "#d4af37",
@@ -391,6 +397,8 @@ const SaasAdminDashboard = () => {
  benefits_enabled: configData.benefits_enabled,
  testimonials_enabled: configData.testimonials_enabled,
  statistics_enabled: configData.statistics_enabled,
+ subscription_enabled: configData.subscription_enabled,
+ contact_form_enabled: configData.contact_form_enabled,
  theme: {
  primary_color: configData.theme.primary_color,
  secondary_color: configData.theme.secondary_color,
@@ -1077,6 +1085,50 @@ const SaasAdminDashboard = () => {
  >
  + Add Trust Indicator
  </button>
+ </div>
+ </Card>
+
+ {/* Subscription Settings */}
+ <Card className="p-6">
+ <div className="flex justify-between items-center mb-4">
+ <h3 className="text-lg font-semibold">Subscription & Contact Settings</h3>
+ </div>
+ <div className="space-y-4">
+ <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div>
+ <h4 className="font-medium text-gray-900">Subscription Section</h4>
+ <p className="text-sm text-gray-600">Show pricing plans and subscription options</p>
+ </div>
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={saasConfig.subscription_enabled}
+ onChange={(e) => setSaasConfig({...saasConfig, subscription_enabled: e.target.checked, contact_form_enabled: !e.target.checked})}
+ className="mr-2"
+ />
+ Enable Subscription
+ </label>
+ </div>
+ <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div>
+ <h4 className="font-medium text-gray-900">Contact Form</h4>
+ <p className="text-sm text-gray-600">Replace subscription section with contact form for inquiries</p>
+ </div>
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={saasConfig.contact_form_enabled}
+ onChange={(e) => setSaasConfig({...saasConfig, contact_form_enabled: e.target.checked, subscription_enabled: !e.target.checked})}
+ className="mr-2"
+ />
+ Enable Contact Form
+ </label>
+ </div>
+ <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+ <p className="text-sm text-blue-800">
+ <strong>Note:</strong> Only one option can be enabled at a time. The contact form will replace the subscription section when enabled.
+ </p>
+ </div>
  </div>
  </Card>
  </div>

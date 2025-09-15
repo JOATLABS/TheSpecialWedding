@@ -48,6 +48,7 @@ from app.api.budget import router as budget_router
 from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
 from app.api.support_management import router as support_router
+from app.api.public_endpoints import router as public_endpoints_router
 
 # Setup logging
 logging.basicConfig(
@@ -210,6 +211,7 @@ app.include_router(forms_router, tags=["Forms"])  # Public form submission endpo
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
+app.include_router(public_endpoints_router, prefix="/public", tags=["Public"])  # Public contact form and other endpoints
 
 # Admin routes (authentication required)
 admin_routers = [
