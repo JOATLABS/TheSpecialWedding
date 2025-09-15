@@ -154,6 +154,41 @@ export default function ProfilePage() {
     }
   };
 
+  const handleProfileUpdate = async () => {
+    try {
+      const updateData = {
+        first_name: profileData.first_name,
+        last_name: profileData.last_name,
+        company_name: profileData.company_name
+      };
+
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/profile/info`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        },
+        body: JSON.stringify(updateData),
+        cache: 'no-store'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast.success('Profile updated successfully');
+        fetchUserProfile(); // Refresh profile data
+      } else {
+        const error = await response.json();
+        toast.error(error.detail || 'Failed to update profile');
+      }
+    } catch (error) {
+      console.error('Profile update failed:', error);
+      toast.error('Profile update failed');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -282,7 +317,7 @@ export default function ProfilePage() {
                 <button
                   type="button"
                   className="bg-wedding-rose text-white px-6 py-2 rounded-md hover:bg-wedding-gold transition"
-                  onClick={() => toast.info('Profile update functionality coming soon')}
+                  onClick={handleProfileUpdate}
                 >
                   Update Profile
                 </button>
