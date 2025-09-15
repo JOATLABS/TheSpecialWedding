@@ -1,64 +1,51 @@
-# Python
-__pycache__
-*.py[cod]
+
 *$py.class
-*.cpython-*.pyc
-
-# CSV files
-*.csv
-
-# Claude settings
-**/.claude/settings.local.json
-# Environment variables
-.env
-venv/
-app/api/__pycache__/health.cpython-311.pyc
-app/__pycache__/main.cpython-311.pyc
-__pycache__/
-
-node_modules/
-.next/
-llm_information/
-archive/
-
-# Logs
-*.log
-
-# Documentation
-docs/
-
-# IDE specific files
-.claude/
-.vscode/
+app/admin/weddings/page.tsx.broken
 app/api/__pycache__/
-.env.local
-*.cpython-311.pyc
-ssh-to-backend.sh
+app/api/__pycache__/health.cpython-311.pyc
+app/main_optimized.py
+app/middleware/security_headers.py
+app/__pycache__/
+app/__pycache__/main.cpython-311.pyc
+ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
+archive/
 backend-manager.sh
 backup-mongodb.sh
-start-wedding-backend.sh
-setup-auto-start.sh
-wedding-backend.service
-.secrets.baseline
-test-results/
-tests/
-
-ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
-app/middleware/security_headers.py
-app/middleware/security_headers.py
-app/main_optimized.py
-app/__pycache__/main.cpython-311.pyc
+.claude/
 CLAUDE.md
-task-orchestration/
-app/__pycache__/
-TEST_RESULTS_ORGANIZATION_SUMMARY.md
-TEST_ORGANIZATION_SUMMARY.md
-app/__pycache__/
-remove_emojis.sh
+# Claude settings
+**/.claude/settings.local.json
+*.cpython-311.pyc
+*.cpython-*.pyc
+*.csv
+# CSV files
+docs/
+# Documentation
+.env
+# Environment variables
+.env.local
+# IDE specific files
+llm_information/
+*.log
+# Logs
+.next/
 nextjs.log
+node_modules/
 .playwright-mcp/
-app/admin/weddings/page.tsx.broken
-app/__pycache__/main.cpython-311.pyc
-app/__pycache__/main.cpython-311.pyc
-app/__pycache__/main.cpython-311.pyc
-app/__pycache__/main.cpython-311.pyc
+__pycache__
+__pycache__/
+*.py[cod]
+# Python
+remove_emojis.sh
+.secrets.baseline
+setup-auto-start.sh
+ssh-to-backend.sh
+start-wedding-backend.sh
+task-orchestration/
+TEST_ORGANIZATION_SUMMARY.md
+test-results/
+TEST_RESULTS_ORGANIZATION_SUMMARY.md
+tests/
+venv/
+.vscode/
+wedding-backend.service
