@@ -10,7 +10,7 @@ import { BenefitsSection } from './BenefitsSection';
 import { TestimonialsSection } from './TestimonialsSection';
 import { CallToActionSection } from './CallToActionSection';
 import { PricingSection } from './PricingSection';
-import { ContactFormSection } from './ContactFormSection';
+import { ContactModal } from './ContactModal';
 import { SignupModal } from './SignupModal';
 
 interface Feature {
@@ -66,6 +66,7 @@ interface SaasConfig {
 
 export const SaasLandingPage: React.FC = () => {
   const [showSignupModal, setShowSignupModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [config, setConfig] = useState<SaasConfig>({
     hero_title: "Welcome to Special Wedding",
@@ -246,7 +247,12 @@ export const SaasLandingPage: React.FC = () => {
       {/* Main Content */}
       <div className="relative z-10">
         {/* Hero Section */}
-        <SaasHeroSection config={config} theme={theme} />
+        <SaasHeroSection
+          config={config}
+          theme={theme}
+          contactMode={config.contact_form_enabled}
+          onContactClick={() => setShowContactModal(true)}
+        />
         
         {/* Feature Carousel - Single card, no section background */}
         {config.features_enabled && (
@@ -279,23 +285,35 @@ export const SaasLandingPage: React.FC = () => {
         
         {/* Pricing Section or Contact Form */}
         {config.subscription_enabled ? (
-          <SectionWrapper id="pricing" glassEffect={false}>
-            <PricingSection theme={theme} onPlanSelect={handlePlanSelect} />
-          </SectionWrapper>
+          <>
+            <SectionWrapper id="pricing" glassEffect={false}>
+              <PricingSection theme={theme} onPlanSelect={handlePlanSelect} />
+            </SectionWrapper>
+
+            {/* Call to Action Section - Only show if subscription is enabled */}
+            <SectionWrapper id="sign-up" glassEffect={false}>
+              <div className="max-w-4xl mx-auto">
+                <CallToActionSection config={config} theme={theme} onGetStarted={() => setShowSignupModal(true)} />
+              </div>
+            </SectionWrapper>
+          </>
         ) : config.contact_form_enabled ? (
           <SectionWrapper id="contact" glassEffect={false}>
-            <ContactFormSection theme={theme} />
-          </SectionWrapper>
-        ) : null}
-        
-        {/* Call to Action Section - Only show if subscription is enabled */}
-        {config.subscription_enabled && (
-          <SectionWrapper id="sign-up" glassEffect={false}>
             <div className="max-w-4xl mx-auto">
-              <CallToActionSection config={config} theme={theme} onGetStarted={() => setShowSignupModal(true)} />
+              <CallToActionSection
+                config={{
+                  ...config,
+                  hero_cta_primary: "Contact Us",
+                  hero_cta_secondary: "",
+                  trust_indicators: ["Get in touch today", "Free consultation", "No commitment required"]
+                }}
+                theme={theme}
+                contactMode={true}
+                onContactClick={() => setShowContactModal(true)}
+              />
             </div>
           </SectionWrapper>
-        )}
+        ) : null}
       </div>
 
       {/* Signup Modal - Only show if subscription is enabled */}
@@ -304,6 +322,15 @@ export const SaasLandingPage: React.FC = () => {
           isOpen={showSignupModal}
           onClose={() => setShowSignupModal(false)}
           selectedPlanId={selectedPlanId}
+          theme={theme}
+        />
+      )}
+
+      {/* Contact Modal - Only show if contact form is enabled */}
+      {config.contact_form_enabled && (
+        <ContactModal
+          isOpen={showContactModal}
+          onClose={() => setShowContactModal(false)}
           theme={theme}
         />
       )}

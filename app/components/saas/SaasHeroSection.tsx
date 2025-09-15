@@ -28,14 +28,21 @@ interface SaasHeroSectionProps {
     secondary_color: string;
     background_style: 'gradient' | 'solid';
   };
+  contactMode?: boolean;
+  onContactClick?: () => void;
 }
 
-export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({ config, theme }) => {
+export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({ config, theme, contactMode = false, onContactClick }) => {
   const handleGetStarted = () => {
-    // Scroll to sign-up section or open modal
-    const signUpSection = document.getElementById('sign-up');
-    if (signUpSection) {
-      signUpSection.scrollIntoView({ behavior: 'smooth' });
+    if (contactMode && onContactClick) {
+      // Open contact modal in contact mode
+      onContactClick();
+    } else {
+      // Scroll to sign-up section in subscription mode
+      const signUpSection = document.getElementById('sign-up');
+      if (signUpSection) {
+        signUpSection.scrollIntoView({ behavior: 'smooth' });
+      }
     }
   };
 
@@ -88,14 +95,14 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({ config, theme 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
             <button
               onClick={handleGetStarted}
-              className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 text-white font-semibold rounded-full 
-                         shadow-xl hover:shadow-2xl transform hover:scale-105 
+              className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 text-white font-semibold rounded-full
+                         shadow-xl hover:shadow-2xl transform hover:scale-105
                          transition-all duration-300 text-base sm:text-lg min-w-[200px]"
               style={{
                 backgroundColor: theme?.primary_color || '#1e3a5f'
               }}
             >
-              {config.hero_cta_primary}
+              {contactMode ? "Contact Us" : config.hero_cta_primary}
             </button>
             
             <button
@@ -117,10 +124,13 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({ config, theme 
         {/* Trust Indicators */}
         {config.trust_indicators && config.trust_indicators.length > 0 && (
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 text-sm text-gray-600">
-            {config.trust_indicators.map((indicator, index) => (
+            {(contactMode
+              ? ["Free consultation", "No obligation", "Quick response time"]
+              : config.trust_indicators
+            ).map((indicator, index) => (
               <div key={index} className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${
-                  index === 0 ? 'bg-green-500 animate-pulse' : 
+                  index === 0 ? 'bg-green-500 animate-pulse' :
                   index === 1 ? 'bg-blue-500' : 'bg-purple-500'
                 }`}></div>
                 <span>{indicator}</span>
