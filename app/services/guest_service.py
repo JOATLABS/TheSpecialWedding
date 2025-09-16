@@ -200,6 +200,19 @@ class GuestService:
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
 
+    def get_guest(self, guest_id: str):
+        try:
+            from bson import ObjectId
+
+            guest = self.collection.find_one({"_id": ObjectId(guest_id)})
+            if not guest:
+                raise HTTPException(status_code=404, detail="Guest not found")
+            guest["id"] = str(guest["_id"])
+            guest.pop("_id", None)
+            return guest
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
+
 
 
 

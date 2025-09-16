@@ -52,13 +52,13 @@ class BudgetService:
             # Insert into database
             result = self.budget_categories.insert_one(category.dict(by_alias=True))
             category.id = str(result.inserted_id)
-            
+
             # Update wedding total budget if needed
             self._update_wedding_budget_total(wedding_id)
-            
+
             # Check for budget alerts
             self._check_budget_alerts(wedding_id)
-            
+
             logger.info(f"Created budget category {category.name} for wedding {wedding_id}")
             return category.dict()
             
@@ -70,16 +70,32 @@ class BudgetService:
         """Get complete budget for a wedding"""
         try:
             # Get all categories for this wedding
-            categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
-            
+            raw_categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+
+            # Convert categories to serializable format
+            categories = []
+            for cat in raw_categories:
+                if '_id' in cat:
+                    cat['_id'] = str(cat['_id'])
+                categories.append(cat)
+
             # Get budget summary
             summary = self._calculate_budget_summary(wedding_id)
-            
+
             # Get recent alerts
-            alerts = list(self.budget_alerts.find(
+            raw_alerts = list(self.budget_alerts.find(
                 {"wedding_id": wedding_id, "is_resolved": False}
             ).sort("created_at", -1).limit(10))
-            
+
+            # Convert alerts to serializable format
+            alerts = []
+            for alert in raw_alerts:
+                if '_id' in alert:
+                    alert['_id'] = str(alert['_id'])
+                if 'id' in alert:
+                    alert['id'] = str(alert['id'])
+                alerts.append(alert)
+
             return {
                 "wedding_id": wedding_id,
                 "summary": summary.dict(),
@@ -114,13 +130,17 @@ class BudgetService:
             
             # Get updated category
             updated_category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
-            
+
+            # Convert ObjectId to string for JSON serialization
+            if updated_category and '_id' in updated_category:
+                updated_category['_id'] = str(updated_category['_id'])
+
             # Update wedding totals
             self._update_wedding_budget_total(category["wedding_id"])
-            
+
             # Check for alerts
             self._check_budget_alerts(category["wedding_id"])
-            
+
             logger.info(f"Updated budget category {category_id}")
             return updated_category
             
@@ -170,7 +190,7 @@ class BudgetService:
             
             result = self.vendor_quotes.insert_one(quote.dict(by_alias=True))
             quote.id = str(result.inserted_id)
-            
+
             logger.info(f"Created vendor quote from {quote.vendor_name} for wedding {wedding_id}")
             return quote.dict()
             

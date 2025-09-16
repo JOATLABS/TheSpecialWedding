@@ -158,7 +158,6 @@ class AsyncMongoConnector:
             await self.guests.create_index("wedding_id")
             await self.guests.create_index("email")
             await self.guests.create_index("invitation_code")
-            await self.guests.create_index([("wedding_id", 1), ("email", 1)], unique=True)
             
             # Users indexes
             await self.users.create_index("email", unique=True)

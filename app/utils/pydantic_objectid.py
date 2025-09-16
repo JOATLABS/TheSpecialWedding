@@ -35,7 +35,7 @@ class PyObjectId(ObjectId):
         )
     
     @classmethod
-    def _validate_object_id(cls, value: Any) -> 'PyObjectId':
+    def _validate_object_id(cls, value: Any, validation_info=None) -> 'PyObjectId':
         """
         Validate and convert input to ObjectId.
         
@@ -91,7 +91,7 @@ class PyObjectId(ObjectId):
     
     def __str__(self) -> str:
         """String representation for serialization."""
-        return str(super())
+        return super().__str__()
     
     def __repr__(self) -> str:
         """Developer-friendly representation."""
@@ -116,7 +116,7 @@ def generate_object_id() -> PyObjectId:
 def is_valid_object_id(value: Any) -> bool:
     """Check if a value can be converted to a valid ObjectId."""
     try:
-        PyObjectId._validate_object_id(value)
+        PyObjectId._validate_object_id(value, None)
         return True
     except ValueError:
         return False
@@ -124,7 +124,7 @@ def is_valid_object_id(value: Any) -> bool:
 
 def str_to_object_id(value: str) -> PyObjectId:
     """Convert string to ObjectId with validation."""
-    return PyObjectId._validate_object_id(value)
+    return PyObjectId._validate_object_id(value, None)
 
 
 # Type alias for easier imports
