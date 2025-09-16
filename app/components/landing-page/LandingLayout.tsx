@@ -14,6 +14,7 @@ import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
+import WeddingCountdown from '@/components/ui/WeddingCountdown';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   const theme = useTheme(wedding);
@@ -41,8 +42,32 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         {/* Nav */}
         <AnchorNav sections={["rsvp", "story", "gallery", "registry", "venue", "faq"]} />
 
+        {/* Header Countdown */}
+        {wedding.countdown_config?.enabled && wedding.countdown_config?.position === 'header' && (
+          <div className="py-6 px-4">
+            <WeddingCountdown
+              weddingDate={wedding.date}
+              countdownConfig={wedding.countdown_config}
+              themeConfig={wedding.theme_config}
+            />
+          </div>
+        )}
+
         {/* Hero */}
         <ThemedHeroSection wedding={wedding} />
+
+        {/* Hero Countdown */}
+        {wedding.countdown_config?.enabled && wedding.countdown_config?.position === 'hero' && (
+          <SectionWrapper>
+            <div className="py-8 px-4">
+              <WeddingCountdown
+                weddingDate={wedding.date}
+                countdownConfig={wedding.countdown_config}
+                themeConfig={wedding.theme_config}
+              />
+            </div>
+          </SectionWrapper>
+        )}
 
         {/* RSVP */}
         <SectionWrapper id="rsvp">
@@ -208,7 +233,19 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
       </div>
     </main>
-    
+
+    {/* Floating Countdown */}
+    {wedding.countdown_config?.enabled && wedding.countdown_config?.position === 'floating' && (
+      <div className="fixed bottom-6 right-6 z-50 max-w-sm">
+        <WeddingCountdown
+          weddingDate={wedding.date}
+          countdownConfig={wedding.countdown_config}
+          themeConfig={wedding.theme_config}
+          className="transform scale-75 origin-bottom-right"
+        />
+      </div>
+    )}
+
     {/* Footer */}
     <footer className="bg-black bg-opacity-40 backdrop-blur-sm text-white py-6 mt-12">
       <div className="max-w-4xl mx-auto px-6 text-center">
