@@ -28,6 +28,70 @@ class GuestService:
             {"$set": update_data}
         )
 
+    def create_guest(self, guest_data: dict):
+        try:
+            from app.utils.token_generator import generate_token
+
+            # Validate required fields
+            name = guest_data.get("name", "").strip()
+            wedding_id = guest_data.get("wedding_id")
+
+            if not name or len(name) < 2:
+                raise HTTPException(status_code=400, detail="Name is required and must be at least 2 characters")
+
+            if not wedding_id:
+                raise HTTPException(status_code=400, detail="Wedding ID is required")
+
+            # Validate contact info - require at least phone or email
+            phone = guest_data.get("phone", "").strip() if guest_data.get("phone") else None
+            email = guest_data.get("email", "").strip() if guest_data.get("email") else None
+
+            if not phone and not email:
+                raise HTTPException(status_code=400, detail="At least phone or email is required")
+
+            # Generate unique token
+            token = generate_token()
+
+            # Set default values
+            role = guest_data.get("role", "guest")
+            plus_one_allowed = guest_data.get("plus_one_allowed", False)
+            number_of_plus_ones_allowed = int(guest_data.get("number_of_plus_ones_allowed", 0)) if guest_data.get("number_of_plus_ones_allowed") else 0
+            group_id = guest_data.get("group_id")
+
+            # Ensure logical consistency
+            if not plus_one_allowed:
+                number_of_plus_ones_allowed = 0
+
+            # Create guest document
+            doc = {
+                "wedding_id": wedding_id,
+                "name": name,
+                "token": token,
+                "phone": phone,
+                "email": email,
+                "role": role,
+                "group_id": group_id,
+                "plus_one_allowed": plus_one_allowed,
+                "number_of_plus_ones_allowed": number_of_plus_ones_allowed,
+                "plus_one_submitted": False,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+
+            # Insert guest
+            result = self.collection.insert_one(doc)
+
+            # Return created guest
+            created_guest = self.collection.find_one({"_id": result.inserted_id})
+            created_guest["id"] = str(created_guest["_id"])
+            created_guest.pop("_id", None)
+
+            return created_guest
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error creating guest: {str(e)}")
+
     def list_guests_by_wedding(self, wedding_id: str):
         try:
             guests = list(self.collection.find({"wedding_id": wedding_id}))
