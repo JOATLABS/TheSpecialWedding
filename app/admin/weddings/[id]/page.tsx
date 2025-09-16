@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '../../../contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember } from '@/types/wedding';
+import { Switch } from '@/components/ui/switch';
 
 export default function WeddingDetailsPage() {
  const { token } = useAdmin();
@@ -16,7 +17,7 @@ export default function WeddingDetailsPage() {
  const [loading, setLoading] = useState(true);
  const [saving, setSaving] = useState(false);
  const [error, setError] = useState<string>('');
- const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq' | 'theme' | 'story'>('events');
+ const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq' | 'theme' | 'story' | 'countdown'>('events');
 
  useEffect(() => {
  fetchWedding();
@@ -59,7 +60,16 @@ export default function WeddingDetailsPage() {
  image_url: "",
  image_shape: "circle"
  },
- wedding_party: wedding.wedding_party || []
+ wedding_party: wedding.wedding_party || [],
+ countdown_config: wedding.countdown_config || {
+ enabled: false,
+ target_date: null,
+ display_style: "elegant",
+ show_seconds: true,
+ show_labels: true,
+ custom_message: null,
+ position: "hero"
+ }
  });
  } else {
  setError('Wedding not found');
@@ -235,7 +245,7 @@ export default function WeddingDetailsPage() {
  <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="border-b border-gray-200">
  <nav className="flex overflow-x-auto scrollbar-hide">
- {(['events', 'rsvp', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
+ {(['events', 'rsvp', 'registry', 'faq', 'theme', 'story', 'countdown'] as const).map((tab) => (
  <button
  key={tab}
  onClick={() => setActiveTab(tab)}
@@ -1012,6 +1022,215 @@ export default function WeddingDetailsPage() {
  )}
  </div>
  </div>
+ </div>
+ )}
+
+ {/* Countdown Tab */}
+ {activeTab === 'countdown' && wedding.countdown_config && (
+ <div className="space-y-6">
+ <h2 className="text-2xl font-bold text-wedding-navy mb-4">Countdown Timer Configuration</h2>
+
+ {/* Enable/Disable Toggle */}
+ <div className="bg-gray-50 p-4 rounded-lg">
+ <div className="flex items-center justify-between">
+ <div>
+ <h3 className="text-lg font-semibold text-gray-900">Enable Countdown Timer</h3>
+ <p className="text-sm text-gray-600 mt-1">
+ Display a countdown timer on your wedding website
+ </p>
+ </div>
+ <Switch
+ checked={wedding.countdown_config.enabled}
+ onCheckedChange={(enabled) => setWedding({
+ ...wedding,
+ countdown_config: { ...wedding.countdown_config!, enabled }
+ })}
+ />
+ </div>
+ </div>
+
+ {wedding.countdown_config.enabled && (
+ <div className="space-y-6">
+ {/* Target Date */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Target Date
+ </label>
+ <div className="space-y-2">
+ <input
+ type="date"
+ value={wedding.countdown_config.target_date || wedding.date}
+ onChange={(e) => setWedding({
+ ...wedding,
+ countdown_config: { ...wedding.countdown_config!, target_date: e.target.value }
+ })}
+ className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ />
+ <p className="text-xs text-gray-500">
+ Leave blank to use main wedding date ({wedding.date}). Or set a specific countdown target.
+ </p>
+ </div>
+ </div>
+
+ {/* Display Style */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Display Style
+ </label>
+ <select
+ value={wedding.countdown_config.display_style}
+ onChange={(e) => setWedding({
+ ...wedding,
+ countdown_config: { ...wedding.countdown_config!, display_style: e.target.value as any }
+ })}
+ className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ >
+ <option value="elegant">Elegant - Bordered boxes with soft shadows</option>
+ <option value="modern">Modern - Clean geometric shapes</option>
+ <option value="minimal">Minimal - Simple text-based display</option>
+ <option value="bold">Bold - Large prominent numbers</option>
+ </select>
+ </div>
+
+ {/* Position */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Position on Page
+ </label>
+ <select
+ value={wedding.countdown_config.position}
+ onChange={(e) => setWedding({
+ ...wedding,
+ countdown_config: { ...wedding.countdown_config!, position: e.target.value as any }
+ })}
+ className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ >
+ <option value="hero">Hero Section - Below main wedding information</option>
+ <option value="header">Header - Compact display in header area</option>
+ <option value="floating">Floating - Fixed position overlay</option>
+ </select>
+ </div>
+
+ {/* Display Options */}
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+ <div className="bg-gray-50 p-4 rounded-lg">
+ <div className="flex items-center justify-between">
+ <div>
+ <h4 className="font-medium text-gray-900">Show Seconds</h4>
+ <p className="text-sm text-gray-600">Include seconds in the countdown</p>
+ </div>
+ <Switch
+ checked={wedding.countdown_config.show_seconds}
+ onCheckedChange={(show_seconds) => setWedding({
+ ...wedding,
+ countdown_config: { ...wedding.countdown_config!, show_seconds }
+ })}
+ />
+ </div>
+ </div>
+
+ <div className="bg-gray-50 p-4 rounded-lg">
+ <div className="flex items-center justify-between">
+ <div>
+ <h4 className="font-medium text-gray-900">Show Labels</h4>
+ <p className="text-sm text-gray-600">Display "Days", "Hours", etc.</p>
+ </div>
+ <Switch
+ checked={wedding.countdown_config.show_labels}
+ onCheckedChange={(show_labels) => setWedding({
+ ...wedding,
+ countdown_config: { ...wedding.countdown_config!, show_labels }
+ })}
+ />
+ </div>
+ </div>
+ </div>
+
+ {/* Custom Message */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Custom Message (Optional)
+ </label>
+ <textarea
+ value={wedding.countdown_config.custom_message || ''}
+ onChange={(e) => setWedding({
+ ...wedding,
+ countdown_config: { ...wedding.countdown_config!, custom_message: e.target.value || null }
+ })}
+ className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ rows={2}
+ placeholder="e.g., 'Can't wait to celebrate with you!' or 'The countdown begins...'"
+ />
+ <p className="text-xs text-gray-500 mt-1">
+ This message will appear above or below the countdown timer
+ </p>
+ </div>
+
+ {/* Preview Section */}
+ <div className="bg-gradient-to-br from-blue-50 to-purple-50 p-6 rounded-lg border">
+ <h3 className="text-lg font-semibold text-gray-900 mb-4">Live Preview</h3>
+ <div className="text-center">
+ <div className="text-sm text-gray-600 mb-2">
+ Style: {wedding.countdown_config.display_style} | Position: {wedding.countdown_config.position}
+ </div>
+ <div className={`inline-flex gap-4 p-4 rounded-lg ${
+ wedding.countdown_config.display_style === 'elegant' ? 'bg-white shadow-lg border' :
+ wedding.countdown_config.display_style === 'modern' ? 'bg-gray-900 text-white' :
+ wedding.countdown_config.display_style === 'minimal' ? 'bg-transparent' :
+ 'bg-red-600 text-white shadow-xl'
+ }`}>
+ <div className="text-center">
+ <div className={`text-2xl font-bold ${
+ wedding.countdown_config.display_style === 'bold' ? 'text-4xl' : ''
+ }`}>
+ 30
+ </div>
+ {wedding.countdown_config.show_labels && (
+ <div className="text-xs uppercase tracking-wide">Days</div>
+ )}
+ </div>
+ <div className="text-center">
+ <div className={`text-2xl font-bold ${
+ wedding.countdown_config.display_style === 'bold' ? 'text-4xl' : ''
+ }`}>
+ 12
+ </div>
+ {wedding.countdown_config.show_labels && (
+ <div className="text-xs uppercase tracking-wide">Hours</div>
+ )}
+ </div>
+ <div className="text-center">
+ <div className={`text-2xl font-bold ${
+ wedding.countdown_config.display_style === 'bold' ? 'text-4xl' : ''
+ }`}>
+ 45
+ </div>
+ {wedding.countdown_config.show_labels && (
+ <div className="text-xs uppercase tracking-wide">Minutes</div>
+ )}
+ </div>
+ {wedding.countdown_config.show_seconds && (
+ <div className="text-center">
+ <div className={`text-2xl font-bold ${
+ wedding.countdown_config.display_style === 'bold' ? 'text-4xl' : ''
+ }`}>
+ 23
+ </div>
+ {wedding.countdown_config.show_labels && (
+ <div className="text-xs uppercase tracking-wide">Seconds</div>
+ )}
+ </div>
+ )}
+ </div>
+ {wedding.countdown_config.custom_message && (
+ <div className="mt-4 text-center text-gray-700">
+ "{wedding.countdown_config.custom_message}"
+ </div>
+ )}
+ </div>
+ </div>
+ </div>
+ )}
  </div>
  )}
  </div>

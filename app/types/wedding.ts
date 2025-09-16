@@ -55,6 +55,16 @@ export interface WeddingPartyMember {
   linked_guest_email?: string;
 }
 
+export interface CountdownConfig {
+  enabled: boolean;
+  target_date?: string;
+  display_style: 'elegant' | 'modern' | 'minimal' | 'bold';
+  show_seconds: boolean;
+  show_labels: boolean;
+  custom_message?: string;
+  position: 'hero' | 'header' | 'floating';
+}
+
 export interface Wedding {
   id: string;
   slug: string;
@@ -68,6 +78,7 @@ export interface Wedding {
   featured_image?: string;
   our_story?: OurStory;
   wedding_party?: WeddingPartyMember[];
+  countdown_config?: CountdownConfig;
   created_at?: string;
   [key: string]: any; // for flexibility (additional fields)
 }

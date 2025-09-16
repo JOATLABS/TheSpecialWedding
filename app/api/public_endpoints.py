@@ -28,6 +28,86 @@ class ContactFormSubmission(BaseModel):
             raise ValueError('Invalid email format')
         return v.lower()
 
+class SimpleContactForm(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., min_length=1, max_length=255)
+    company: Optional[str] = Field(None, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    message: str = Field(..., min_length=1, max_length=2000)
+
+    @validator('email')
+    def validate_email(cls, v):
+        import re
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
+        return v.lower()
+
+@router.post("/contact-form", tags=["Public"])
+async def submit_simple_contact_form(form_data: SimpleContactForm):
+    """Simple contact form submission - No auth required"""
+    try:
+        # Create submission document
+        submission_doc = {
+            "name": form_data.name,
+            "email": form_data.email,
+            "company": form_data.company,
+            "phone": form_data.phone,
+            "message": form_data.message,
+            "source": "contact_form_e2e",
+            "status": "new",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "is_read": False,
+            "notes": []
+        }
+
+        # Save to database
+        result = mongo.db["contact_submissions"].insert_one(submission_doc)
+
+        # Create notification for admin using the enhanced notification service
+        from app.services.notification_service import NotificationService
+        notification_service = NotificationService()
+
+        # Create a comprehensive notification that includes all the form data
+        notification_data = {
+            "title": f"🧾 New Contact Form Submission from {form_data.name}",
+            "message": f"A new contact form has been submitted via the website contact form.\n\n📧 From: {form_data.name} ({form_data.email})\n🏢 Company: {form_data.company or 'Not specified'}\n📞 Phone: {form_data.phone or 'Not provided'}\n\n💬 Message:\n{form_data.message}",
+            "type": "info",
+            "target_audience": "root_admin",
+            "priority": "medium",
+            "source": "contact_form",
+            "is_dismissible": True
+        }
+
+        # Create the notification (this will automatically trigger email sending)
+        notification_result = await notification_service.create_notification(notification_data, "system")
+
+        # Also queue a direct admin email with the contact form data
+        await notification_service._queue_admin_email({
+            "title": f"New Contact Form Submission from {form_data.name}",
+            "message": f"Contact form submission details:\n\nName: {form_data.name}\nEmail: {form_data.email}\nCompany: {form_data.company or 'Not specified'}\nPhone: {form_data.phone or 'Not provided'}\nMessage: {form_data.message}",
+            "type": "contact_form",
+            "source": "website_contact_form",
+            "email": form_data.email,
+            "name": form_data.name,
+            "company": form_data.company,
+            "phone": form_data.phone
+        })
+
+        # Log the submission
+        logger.info(f"Simple contact form submission received from {form_data.email} ({form_data.name})")
+
+        return {
+            "success": True,
+            "message": "Thank you for your message! We'll get back to you soon.",
+            "submission_id": str(result.inserted_id),
+            "notification_id": notification_result.get("id")
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing simple contact form submission: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing your message. Please try again.")
+
 @router.post("/contact-form-submission", tags=["Public"])
 async def submit_contact_form(submission: ContactFormSubmission):
     """Submit contact form from SAAS landing page - No auth required"""

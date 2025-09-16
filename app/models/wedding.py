@@ -60,6 +60,15 @@ class WeddingPartyMemberModel(BaseModel):
     linked_guest_id: Optional[str] = Field(None, description="ID of linked guest if applicable")
     linked_guest_email: Optional[str] = Field(None, description="Email of linked guest for matching")
 
+class CountdownConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Whether countdown is enabled on the public website")
+    target_date: Optional[str] = Field(None, description="Optional override date (YYYY-MM-DD). If None, uses main wedding date")
+    display_style: str = Field(default="elegant", description="Style variant: elegant, modern, minimal, bold")
+    show_seconds: bool = Field(default=True, description="Whether to display seconds in countdown")
+    show_labels: bool = Field(default=True, description="Whether to show labels like 'Days', 'Hours', etc.")
+    custom_message: Optional[str] = Field(None, description="Optional message above/below countdown")
+    position: str = Field(default="hero", description="Position on page: hero, header, or floating")
+
 class WeddingModel(BaseModel):
     id: str = Field(..., alias="_id")
     couple_names: str = Field(..., min_length=3, max_length=200)
@@ -75,7 +84,8 @@ class WeddingModel(BaseModel):
     our_story: Optional[OurStoryModel] = Field(None, description="Our story content and image")
     wedding_party: List[WeddingPartyMemberModel] = Field(default_factory=list, description="Wedding party members")
     reminder_from_email: Optional[str] = Field(None, description="Custom from email for reminders (e.g., couple@example.com)")
-    
+    countdown_config: Optional[CountdownConfig] = Field(default_factory=lambda: CountdownConfig(), description="Countdown timer configuration")
+
     # SAAS Multi-tenancy fields (backward compatible - won't break existing weddings)
     assigned_planner_email: Optional[str] = Field(None, description="Wedding planner responsible for this wedding")
     created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.com)")
