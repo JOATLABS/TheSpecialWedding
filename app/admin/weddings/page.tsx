@@ -413,7 +413,7 @@ export default function AdminWeddingsPage() {
     <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden mb-8">
           <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
@@ -429,7 +429,7 @@ export default function AdminWeddingsPage() {
               </div>
               <button
                 onClick={() => setShowForm(true)}
-                className="px-4 py-2 bg-white text-wedding-navy font-semibold rounded-lg hover:bg-wedding-ivory transition"
+                className="px-4 py-2 bg-white dark:bg-gray-700 text-wedding-navy dark:text-gray-100 font-semibold rounded-lg hover:bg-wedding-ivory dark:hover:bg-gray-600 transition"
               >
                 + Add Wedding
               </button>
@@ -439,21 +439,21 @@ export default function AdminWeddingsPage() {
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <p className="text-red-700">{error}</p>
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+            <p className="text-red-700 dark:text-red-300">{error}</p>
           </div>
         )}
 
         {/* Add/Edit Wedding Form */}
         {showForm && (
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                 {editingId ? 'Edit Wedding' : 'Add New Wedding'}
               </h2>
               <button
                 onClick={() => setShowTemplates(!showTemplates)}
-                className="px-4 py-2 bg-wedding-sage text-white rounded-lg hover:bg-opacity-90"
+                className="px-4 py-2 bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 dark:bg-wedding-sage dark:hover:bg-opacity-80"
               >
                 Use Template
               </button>
@@ -465,9 +465,9 @@ export default function AdminWeddingsPage() {
                 <h3 className="text-lg font-medium mb-3">Choose a Template:</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {weddingTemplates.map((template) => (
-                    <div key={template.id} className="p-3 bg-white rounded border hover:border-wedding-gold cursor-pointer" onClick={() => applyTemplate(template)}>
+                    <div key={template.id} className="p-3 bg-white dark:bg-gray-700 rounded border dark:border-gray-600 hover:border-wedding-gold dark:hover:border-wedding-gold cursor-pointer" onClick={() => applyTemplate(template)}>
                       <h4 className="font-medium">{template.name}</h4>
-                      <p className="text-sm text-gray-600">{template.description}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">{template.description}</p>
                     </div>
                   ))}
                 </div>
@@ -477,7 +477,7 @@ export default function AdminWeddingsPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Couple Names *
                   </label>
                   <input
@@ -489,7 +489,7 @@ export default function AdminWeddingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Wedding Date *
                   </label>
                   <input
@@ -501,7 +501,7 @@ export default function AdminWeddingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Venue
                   </label>
                   <input
@@ -512,7 +512,7 @@ export default function AdminWeddingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Guest Count
                   </label>
                   <input
@@ -523,7 +523,7 @@ export default function AdminWeddingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Total Budget
                   </label>
                   <input
@@ -535,7 +535,7 @@ export default function AdminWeddingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Status
                   </label>
                   <select
@@ -553,7 +553,7 @@ export default function AdminWeddingsPage() {
                 {/* Only show planner assignment for root admin */}
                 {userProfile?.is_root_admin && (
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Assign to Planner
                     </label>
                     <select
@@ -586,7 +586,7 @@ export default function AdminWeddingsPage() {
                         className={`px-3 py-1 text-sm rounded transition ${
                           showEventDetails 
                             ? 'bg-wedding-gold text-white' 
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
                         }`}
                       >
                         {showEventDetails ? 'Hide Details' : 'Show Details'}
@@ -602,7 +602,7 @@ export default function AdminWeddingsPage() {
                   </div>
                 </div>
                 {formData.status === 'active' && (
-                  <p className="text-xs text-gray-500 mb-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                     Event details are automatically shown for active weddings
                   </p>
                 )}
@@ -612,7 +612,7 @@ export default function AdminWeddingsPage() {
                     <div key={index} className="mb-4 p-4 border border-gray-200 rounded-lg">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Event Type</label>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Event Type</label>
                           <select
                             value={event.type}
                             onChange={(e) => {
@@ -631,7 +631,7 @@ export default function AdminWeddingsPage() {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Date</label>
                           <input
                             type="date"
                             value={event.date}
@@ -644,7 +644,7 @@ export default function AdminWeddingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Venue Name</label>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Venue Name</label>
                           <input
                             type="text"
                             value={event.details?.venue_name || ''}
@@ -659,7 +659,7 @@ export default function AdminWeddingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Time</label>
                           <input
                             type="text"
                             value={event.details?.time || ''}
@@ -674,7 +674,7 @@ export default function AdminWeddingsPage() {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Location/Address</label>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Location/Address</label>
                           <input
                             type="text"
                             value={event.details?.location || ''}
@@ -689,7 +689,7 @@ export default function AdminWeddingsPage() {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Attire/Dress Code</label>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Attire/Dress Code</label>
                           <input
                             type="text"
                             value={event.details?.attire || ''}
@@ -798,12 +798,12 @@ export default function AdminWeddingsPage() {
               placeholder="Search weddings..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -814,7 +814,7 @@ export default function AdminWeddingsPage() {
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value as any)}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             >
               <option value="all">All Dates</option>
               <option value="upcoming">Upcoming</option>
@@ -827,7 +827,7 @@ export default function AdminWeddingsPage() {
               <select
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as any)}
-                className="px-3 py-2 border border-gray-300 rounded-lg"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="all">All Weddings</option>
                 <option value="assigned">Assigned</option>
@@ -838,22 +838,22 @@ export default function AdminWeddingsPage() {
         </div>
 
         {/* Weddings List */}
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
               {userProfile?.is_root_admin ? 'All Weddings' : 'Your Weddings'} ({weddings.length})
             </h2>
           </div>
           
           {loading && (
             <div className="p-6 text-center">
-              <p className="text-gray-600">Loading weddings...</p>
+              <p className="text-gray-600 dark:text-gray-300">Loading weddings...</p>
             </div>
           )}
           
           {!loading && weddings.length === 0 && (
             <div className="p-6 text-center">
-              <p className="text-gray-600">
+              <p className="text-gray-600 dark:text-gray-300">
                 {userProfile?.is_root_admin 
                   ? 'No weddings found.'
                   : 'No weddings found. Create your first wedding to get started.'
@@ -863,19 +863,19 @@ export default function AdminWeddingsPage() {
           )}
           
           {!loading && weddings.length > 0 && (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {weddings.map((wedding) => (
-                <div key={wedding._id} className="p-6 hover:bg-gray-50 transition">
+                <div key={wedding._id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-800">
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
                         {wedding.couple_names}
                       </h3>
-                      <p className="text-gray-600">
+                      <p className="text-gray-600 dark:text-gray-300">
                         {new Date(wedding.date).toLocaleDateString()} 
                         {wedding.venue && ` • ${wedding.venue}`}
                       </p>
-                      <div className="flex gap-4 mt-2 text-sm text-gray-500">
+                      <div className="flex gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400">
                         {wedding.guest_count && (
                           <span>{wedding.guest_count} guests</span>
                         )}
@@ -885,7 +885,7 @@ export default function AdminWeddingsPage() {
                         <span className="capitalize">{wedding.status || 'active'}</span>
                       </div>
                       {userProfile?.is_root_admin && wedding.assigned_planner_email && (
-                        <p className="text-sm text-blue-600 mt-1">
+                        <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
                           Assigned to: {wedding.assigned_planner_email}
                         </p>
                       )}
@@ -893,13 +893,13 @@ export default function AdminWeddingsPage() {
                     <div className="flex gap-2 ml-4">
                       <Link
                         href={`/admin/weddings/${wedding._id}`}
-                        className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                        className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded transition"
                       >
                         Configure
                       </Link>
                       <button 
                         onClick={() => handleEdit(wedding)}
-                        className="px-3 py-1 text-sm bg-wedding-gold text-white rounded hover:bg-wedding-rose transition"
+                        className="px-3 py-1 text-sm bg-wedding-gold hover:bg-wedding-rose dark:bg-wedding-gold dark:hover:bg-wedding-rose text-white rounded transition"
                       >
                         Edit
                       </button>

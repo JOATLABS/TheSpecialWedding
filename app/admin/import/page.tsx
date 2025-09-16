@@ -175,7 +175,7 @@ export default function AdminImportPage() {
  };
 
  return (
- <div className="min-h-screen bg-wedding-ivory p-4 sm:p-6">
+ <div className="min-h-screen bg-wedding-ivory dark:bg-gray-900 p-4 sm:p-6">
  <div className="max-w-4xl mx-auto space-y-8">
  {/* === IMPORT FORM CARD === */}
  <Card className="overflow-hidden">
@@ -300,7 +300,7 @@ export default function AdminImportPage() {
  </Card>
  {/* Guest Management Table */}
  {selectedWedding && (
- <div className="mt-8 bg-white rounded-2xl shadow-xl overflow-hidden">
+ <div className="mt-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
  <div className="bg-gradient-to-r from-wedding-navy to-wedding-sage px-8 py-6">
  <h2 className="text-2xl font-bold text-white">Guest Management</h2>
  <p className="text-blue-100 mt-2">
@@ -398,7 +398,7 @@ export default function AdminImportPage() {
  </th>
  </tr>
  </thead>
- <tbody className="bg-white divide-y divide-gray-200">
+ <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
  {guests.map((guest) => (
  <tr key={guest.id || guest._id} className="hover:bg-gray-50">
  <td className="px-6 py-4 whitespace-nowrap">

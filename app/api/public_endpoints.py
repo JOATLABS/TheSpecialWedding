@@ -52,23 +52,28 @@ async def submit_contact_form(submission: ContactFormSubmission):
         # Save to database
         result = mongo.db["contact_submissions"].insert_one(submission_doc)
 
-        # Create notification for admin
-        notification_doc = {
+        # Create notification for admin (will automatically queue email)
+        from app.services.notification_service import NotificationService
+        notification_service = NotificationService()
+
+        notification_data = {
             "title": f"New Contact Form Submission from {submission.name}",
             "message": f"A new contact form has been submitted by {submission.name} ({submission.email}) from {submission.company or 'an unnamed company'}. Message: {submission.message[:200]}{'...' if len(submission.message) > 200 else ''}",
             "type": "info",
             "target_audience": "root_admin",
             "priority": "medium",
             "source": "contact_form",
-            "submission_id": str(result.inserted_id),
-            "status": "active",
             "is_dismissible": True,
-            "created_at": datetime.utcnow(),
-            "read_by": [],
-            "dismissed_by": []
+            # Include metadata for email template
+            "submission_id": str(result.inserted_id),
+            "name": submission.name,
+            "email": submission.email,
+            "company": submission.company,
+            "phone": submission.phone,
+            "message": submission.message
         }
 
-        mongo.db["notifications"].insert_one(notification_doc)
+        await notification_service.create_notification(notification_data, "system")
 
         # Log the submission
         logger.info(f"Contact form submission received from {submission.email} ({submission.name})")

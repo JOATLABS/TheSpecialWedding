@@ -41,6 +41,10 @@ class NotificationService:
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create notification")
 
+            # If this is a root admin notification, queue email
+            if notification_data["target_audience"] == "root_admin":
+                await self._queue_admin_email(notification_data)
+
             return {
                 "id": str(result.inserted_id),
                 "message": "Notification created successfully",
@@ -185,27 +189,136 @@ class NotificationService:
             raise HTTPException(status_code=500, detail=f"Error deleting notification: {str(e)}")
 
     async def send_notification(self, notification_id: str) -> dict:
-        """Send notification to target audience"""
+        """Send notification to target audience via email"""
         try:
             # Get notification
             notification = await self.get_notification(notification_id)
 
-            # For now, this is a placeholder for actual notification sending
-            # In a real implementation, you would:
-            # 1. Get target audience based on notification.target_audience
-            # 2. Send emails/SMS/push notifications
-            # 3. Update notification status
+            # Get target audience
+            target_audience = notification["target_audience"]
+            sent_count = 0
+            failed_count = 0
 
-            # Mark as sent
+            # Get recipients based on target audience
+            recipients = []
+            if target_audience == "all":
+                # Get all active users
+                users_cursor = self.users_collection.find({"is_active": True, "email": {"$exists": True}})
+                recipients = [{"email": user["email"], "role": user.get("role", "user")} for user in users_cursor]
+            elif target_audience == "wedding_planners":
+                # Get wedding planners only
+                users_cursor = self.users_collection.find({"role": "wedding_planner", "is_active": True, "email": {"$exists": True}})
+                recipients = [{"email": user["email"], "role": "wedding_planner"} for user in users_cursor]
+            elif target_audience == "vendors":
+                # Get vendors only
+                users_cursor = self.users_collection.find({"role": "vendor", "is_active": True, "email": {"$exists": True}})
+                recipients = [{"email": user["email"], "role": "vendor"} for user in users_cursor]
+            elif target_audience == "root_admin":
+                # Send to root admin only - this was already handled in create_notification
+                pass
+            elif notification.get("user_id"):
+                # Send to specific user
+                user = self.users_collection.find_one({"email": notification["user_id"], "is_active": True})
+                if user:
+                    recipients = [{"email": user["email"], "role": user.get("role", "user")}]
+
+            # Send emails to recipients using Celery task queue
+            if recipients:
+                from app.tasks.email_tasks import send_email_notification
+                from app.services.email_template_service import EmailTemplateService
+                from app.models.email_template import TemplateType
+
+                # Try to get appropriate email template
+                template_service = EmailTemplateService()
+                notification_type = notification.get("type", "info")
+
+                # Map notification type to template type
+                if notification_type == "success":
+                    template_type = TemplateType.GENERAL
+                elif notification_type == "warning":
+                    template_type = TemplateType.SYSTEM_ALERT
+                elif notification_type == "error":
+                    template_type = TemplateType.SYSTEM_ALERT
+                else:
+                    template_type = TemplateType.GENERAL
+
+                # Try to get template
+                try:
+                    template = await template_service.get_template_by_type(template_type)
+                except:
+                    template = None
+
+                # Prepare template data
+                template_data = {
+                    "title": notification["title"],
+                    "message": notification["message"],
+                    "type": notification_type,
+                    "priority": notification.get("priority", "medium"),
+                    "admin_link": "https://www.thespecialwedding.com/admin"
+                }
+
+                for recipient in recipients:
+                    try:
+                        if template:
+                            # Use database template
+                            html_content = template_service._render_template(template["html_content"], template_data)
+                            subject = template_service._render_template(template["subject"], template_data)
+                        else:
+                            # Generate simple fallback HTML
+                            subject = f"🔔 {notification['title']}"
+                            html_content = self._generate_simple_notification_email(
+                                notification["title"],
+                                notification["message"],
+                                notification_type,
+                                notification.get("priority", "medium")
+                            )
+
+                        # Queue email via Celery
+                        send_email_notification.apply_async(
+                            args=[
+                                recipient["email"],
+                                subject,
+                                html_content,
+                                f"notification_{notification_type}",
+                                "noreply@thespecialwedding.com",
+                                "TheSpecialWedding Platform"
+                            ],
+                            kwargs={
+                                "metadata": {
+                                    "notification_id": notification_id,
+                                    "recipient_role": recipient["role"],
+                                    "priority": notification.get("priority", "medium")
+                                },
+                                "template_id": template["id"] if template else None
+                            }
+                        )
+                        sent_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Failed to queue email for {recipient['email']}: {str(e)}")
+                        failed_count += 1
+
+            # Mark notification as sent
             obj_id = ObjectId(notification_id)
             self.notifications_collection.update_one(
                 {"_id": obj_id},
-                {"$set": {"status": "sent", "sent_at": datetime.utcnow()}}
+                {
+                    "$set": {
+                        "status": "sent",
+                        "sent_at": datetime.utcnow(),
+                        "email_sent_count": sent_count,
+                        "email_failed_count": failed_count
+                    }
+                }
             )
+
+            logger.info(f"Notification {notification_id} sent to {sent_count} recipients, {failed_count} failed")
 
             return {
                 "message": "Notification sent successfully",
-                "recipients": notification["total_recipients"]
+                "recipients": len(recipients),
+                "emails_queued": sent_count,
+                "emails_failed": failed_count
             }
 
         except HTTPException:
@@ -213,6 +326,64 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error sending notification: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error sending notification: {str(e)}")
+
+    def _generate_simple_notification_email(self, title: str, message: str, notification_type: str, priority: str) -> str:
+        """Generate simple fallback notification email HTML"""
+        # Choose color based on notification type
+        type_colors = {
+            "info": "#3b82f6",
+            "success": "#10b981",
+            "warning": "#f59e0b",
+            "error": "#ef4444"
+        }
+        color = type_colors.get(notification_type, "#3b82f6")
+
+        # Choose icon based on type
+        type_icons = {
+            "info": "ℹ️",
+            "success": "✅",
+            "warning": "⚠️",
+            "error": "❌"
+        }
+        icon = type_icons.get(notification_type, "🔔")
+
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }}
+                .container {{ max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                .header {{ background: {color}; color: white; padding: 30px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 24px; font-weight: 600; }}
+                .content {{ padding: 30px; }}
+                .message {{ background: #f9fafb; border-left: 4px solid {color}; padding: 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }}
+                .priority {{ display: inline-block; padding: 4px 8px; background: {color}; color: white; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }}
+                .footer {{ text-align: center; padding: 20px; color: #6b7280; font-size: 12px; background: #f9fafb; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>{icon} {title}</h1>
+                    <p>TheSpecialWedding Platform</p>
+                </div>
+                <div class="content">
+                    <div class="message">
+                        <p>{message}</p>
+                    </div>
+                    <p><span class="priority">Priority: {priority}</span></p>
+                    <p><a href="https://www.thespecialwedding.com/admin" style="color: {color};">Go to Admin Panel</a></p>
+                </div>
+                <div class="footer">
+                    <p>© JOAT Labs - TheSpecialWedding Platform</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
 
     async def get_user_notifications(self, user_email: str, user_role: str, page: int = 1, limit: int = 20, unread_only: bool = False) -> dict:
         """Get notifications for a specific user"""
@@ -437,3 +608,55 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error counting target audience: {str(e)}")
             return 0
+
+    async def _queue_admin_email(self, notification_data: dict):
+        """Queue admin email notification"""
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            email_service = ResendEmailService()
+
+            # Determine notification type for email template
+            notification_type = notification_data.get("source", "general")
+            if notification_type == "contact_form":
+                notification_type = "contact_form"
+            elif notification_type == "new_user":
+                notification_type = "new_user"
+            elif notification_type == "payment":
+                notification_type = "payment"
+            elif notification_data.get("type") == "error":
+                notification_type = "system_alert"
+            else:
+                notification_type = "general"
+
+            # Extract metadata from notification
+            metadata = {}
+            if hasattr(notification_data, 'submission_id'):
+                metadata["submission_id"] = notification_data.get("submission_id")
+            if hasattr(notification_data, 'email'):
+                metadata["email"] = notification_data.get("email")
+            if hasattr(notification_data, 'name'):
+                metadata["name"] = notification_data.get("name")
+            if hasattr(notification_data, 'company'):
+                metadata["company"] = notification_data.get("company")
+            if hasattr(notification_data, 'phone'):
+                metadata["phone"] = notification_data.get("phone")
+            if hasattr(notification_data, 'message'):
+                metadata["message"] = notification_data.get("message")
+
+            # Queue the admin notification email
+            result = email_service.send_admin_notification(
+                notification_type=notification_type,
+                subject=notification_data["title"],
+                content=notification_data["message"],
+                metadata=metadata
+            )
+
+            if result.get("success"):
+                logger.info(f"Admin email queued successfully for notification type: {notification_type}")
+            else:
+                logger.error(f"Failed to queue admin email: {result.get('error')}")
+
+        except Exception as e:
+            logger.error(f"Error queuing admin email: {str(e)}")
+            # Don't raise exception - notification should still be created even if email fails

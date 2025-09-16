@@ -261,13 +261,13 @@ export default function FormsManagementPage() {
  <a
  href={`${window.location.protocol}//${window.location.host}/forms/${form.id}`}
  target="_blank"
- className="bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-sm hover:bg-gray-200 transition-colors inline-block"
+ className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1 rounded-lg text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors inline-block"
  >
  Preview
  </a>
  <button
  onClick={() => deleteForm(form.id)}
- className="bg-red-100 text-red-700 px-3 py-1 rounded-lg text-sm hover:bg-red-200 transition-colors"
+ className="bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 px-3 py-1 rounded-lg text-sm hover:bg-red-200 dark:hover:bg-red-800 transition-colors"
  >
  Delete
  </button>

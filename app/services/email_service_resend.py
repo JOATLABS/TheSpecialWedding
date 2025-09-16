@@ -29,16 +29,17 @@ class ResendEmailService:
         self.wedding_collection = mongo.db["weddings"]
     
     def send_email(
-        self, 
-        to_email: str, 
-        subject: str, 
-        html_content: str, 
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
         from_email: Optional[str] = None,
         from_name: Optional[str] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
         reply_to: Optional[str] = None,
         wedding_id: Optional[str] = None,
-        email_type: Optional[str] = None
+        email_type: Optional[str] = None,
+        template_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Send a single email using Resend"""
         if not self.configured:
@@ -83,6 +84,7 @@ class ResendEmailService:
                 "from_name": from_name,
                 "wedding_id": wedding_id,
                 "email_type": email_type,
+                "template_id": template_id,
                 "sent_at": datetime.utcnow(),
                 "status": "success",
                 "resend_id": email_response.get("id"),
@@ -104,6 +106,7 @@ class ResendEmailService:
                 "from_name": from_name,
                 "wedding_id": wedding_id,
                 "email_type": email_type,
+                "template_id": template_id,
                 "sent_at": datetime.utcnow(),
                 "status": "failed",
                 "error": str(e),
@@ -308,6 +311,30 @@ class ResendEmailService:
         ).sort("sent_at", -1).limit(limit))
         
         return logs
+
+    def send_admin_notification(
+        self,
+        notification_type: str,
+        subject: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Send notification email to root admin using task queue"""
+        try:
+            from app.tasks.email_tasks import send_admin_notification
+
+            # Queue the admin notification task
+            result = send_admin_notification.apply_async(
+                args=[subject, content, notification_type],
+                kwargs={"metadata": metadata or {}}
+            )
+
+            logger.info(f"Queued admin notification for {notification_type}, task ID: {result.id}")
+            return {"success": True, "task_id": result.id}
+
+        except Exception as e:
+            logger.error(f"Error queuing admin notification: {str(e)}")
+            return {"success": False, "error": str(e)}
     
     def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str, plus_ones: list = None) -> str:
         """Generate default RSVP invitation HTML"""
@@ -367,7 +394,7 @@ class ResendEmailService:
                     <p>If the button doesn't work, copy and paste this link:</p>
                     <p style="word-break: break-all; color: #c8847e;">{rsvp_url}</p>
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-                    <p>&copy; TheSpecialWedding</p>
+                    <p>&copy; JOAT Labs - TheSpecialWedding Platform</p>
                 </div>
             </div>
         </body>
@@ -461,7 +488,7 @@ class ResendEmailService:
                 <div class="footer">
                     <p>If you have any questions, please don't hesitate to reach out.</p>
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-                    <p>&copy; TheSpecialWedding</p>
+                    <p>&copy; JOAT Labs - TheSpecialWedding Platform</p>
                 </div>
             </div>
         </body>

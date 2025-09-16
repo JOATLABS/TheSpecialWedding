@@ -458,15 +458,15 @@ export default function AdminGuestsPage() {
 
                               {/* RSVP Details */}
                               {rsvp && (
-                                <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-600 rounded-lg">
                                   <div className="flex gap-6 text-sm">
                                     <div>
-                                      <span className="font-medium text-gray-700">Attending:</span>
+                                      <span className="font-medium text-gray-700 dark:text-gray-200">Attending:</span>
                                       <span className="ml-2">{rsvp.attending.join(', ')}</span>
                                     </div>
                                     {rsvp.dietary && (
                                       <div>
-                                        <span className="font-medium text-gray-700">Dietary:</span>
+                                        <span className="font-medium text-gray-700 dark:text-gray-200">Dietary:</span>
                                         <span className="ml-2">{rsvp.dietary}</span>
                                       </div>
                                     )}
@@ -476,7 +476,7 @@ export default function AdminGuestsPage() {
 
                               {/* Plus One Status */}
                               {guest.plus_one_allowed && (
-                                <div className="mt-2 text-sm text-gray-600">
+                                <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                                   Plus Ones: {guestPlusOnes.length} / {guest.number_of_plus_ones_allowed || 0}
                                 </div>
                               )}
@@ -486,7 +486,7 @@ export default function AdminGuestsPage() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => setExpandedGuest(isExpanded ? null : guestId)}
-                                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                                className="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
                               >
                                 {isExpanded ? 'Hide' : 'Details'}
                               </button>
@@ -520,22 +520,22 @@ export default function AdminGuestsPage() {
                             <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
                               {/* Guest Info */}
                               <div>
-                                <h4 className="font-medium text-gray-900 mb-2">Guest Information</h4>
+                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Guest Information</h4>
                                 <dl className="space-y-1 text-sm">
                                   <div>
-                                    <dt className="inline font-medium text-gray-700">Token:</dt>
-                                    <dd className="inline ml-2 font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                                    <dt className="inline font-medium text-gray-700 dark:text-gray-200">Token:</dt>
+                                    <dd className="inline ml-2 font-mono text-xs bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded">
                                       {guest.token}
                                     </dd>
                                   </div>
                                   {guest.group_id && (
                                     <div>
-                                      <dt className="inline font-medium text-gray-700">Group:</dt>
+                                      <dt className="inline font-medium text-gray-700 dark:text-gray-200">Group:</dt>
                                       <dd className="inline ml-2">{guest.group_id}</dd>
                                     </div>
                                   )}
                                   <div>
-                                    <dt className="inline font-medium text-gray-700">Plus Ones Allowed:</dt>
+                                    <dt className="inline font-medium text-gray-700 dark:text-gray-200">Plus Ones Allowed:</dt>
                                     <dd className="inline ml-2">
                                       {guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed || 0})` : 'No'}
                                     </dd>
@@ -546,12 +546,12 @@ export default function AdminGuestsPage() {
                               {/* Plus Ones List */}
                               {guest.plus_one_allowed && guestPlusOnes.length > 0 && (
                                 <div>
-                                  <h4 className="font-medium text-gray-900 mb-2">Plus Ones</h4>
+                                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Plus Ones</h4>
                                   <ul className="space-y-2">
                                     {guestPlusOnes.map((plusOne, idx) => (
-                                      <li key={plusOne._id || idx} className="text-sm bg-gray-50 p-2 rounded">
+                                      <li key={plusOne._id || idx} className="text-sm bg-gray-50 dark:bg-gray-600 p-2 rounded">
                                         <div className="font-medium">{plusOne.name}</div>
-                                        <div className="text-gray-600">
+                                        <div className="text-gray-600 dark:text-gray-300">
                                           Attending: {plusOne.attending.join(', ')}
                                           {plusOne.dietary && ` • Dietary: ${plusOne.dietary}`}
                                         </div>
@@ -565,15 +565,15 @@ export default function AdminGuestsPage() {
                             {/* Wedding Events for this guest */}
                             {selectedWeddingData?.events && (
                               <div className="mt-4">
-                                <h4 className="font-medium text-gray-900 mb-2">Wedding Events</h4>
+                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Wedding Events</h4>
                                 <div className="flex gap-2">
                                   {selectedWeddingData.events.map((event, idx) => (
                                     <span
                                       key={idx}
                                       className={`px-3 py-1 text-xs rounded-full ${
                                         rsvp?.attending.includes(event.type)
-                                          ? 'bg-green-100 text-green-800'
-                                          : 'bg-gray-100 text-gray-600'
+                                          ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                          : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
                                       }`}
                                     >
                                       {event.type.replace('_', ' ')} - {event.date}
@@ -652,7 +652,7 @@ export default function AdminGuestsPage() {
                       onChange={(e) => setEditForm({ ...editForm, plus_one_allowed: e.target.checked })}
                       className="rounded text-wedding-rose focus:ring-wedding-rose"
                     />
-                    <span className="text-sm font-medium text-gray-700">Allow Plus Ones</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Allow Plus Ones</span>
                   </label>
                 </div>
                 
@@ -680,7 +680,7 @@ export default function AdminGuestsPage() {
                 </button>
                 <button
                   onClick={() => setEditingGuest(null)}
-                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                  className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
                 >
                   Cancel
                 </button>

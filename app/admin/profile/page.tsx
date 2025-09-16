@@ -194,7 +194,7 @@ export default function ProfilePage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading profile...</p>
+          <p className="text-gray-600 dark:text-gray-300">Loading profile...</p>
         </div>
       </div>
     );
@@ -209,11 +209,11 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 to-rose-100 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 to-rose-100 dark:from-gray-900 dark:to-gray-800 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl sm:text-3xl font-heading text-wedding-rose mb-8">Account Settings</h1>
+        <h1 className="text-2xl sm:text-3xl font-heading text-wedding-rose dark:text-gray-100 mb-8">Account Settings</h1>
         
-        <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
           {/* Tab Navigation */}
           {/* Mobile: Dropdown Select */}
           <div className="sm:hidden py-4">
@@ -235,7 +235,7 @@ export default function ProfilePage() {
               className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
                 activeTab === 'profile'
                   ? 'bg-wedding-rose text-white'
-                  : 'text-gray-500 hover:text-wedding-rose'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-wedding-rose'
               }`}
             >
               Profile Info
@@ -245,7 +245,7 @@ export default function ProfilePage() {
               className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
                 activeTab === 'password'
                   ? 'bg-wedding-rose text-white'
-                  : 'text-gray-500 hover:text-wedding-rose'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-wedding-rose'
               }`}
             >
               Change Password
@@ -255,7 +255,7 @@ export default function ProfilePage() {
               className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
                 activeTab === 'email'
                   ? 'bg-wedding-rose text-white'
-                  : 'text-gray-500 hover:text-wedding-rose'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-wedding-rose'
               }`}
             >
               Change Email
@@ -265,33 +265,33 @@ export default function ProfilePage() {
           {/* Profile Info Tab */}
           {activeTab === 'profile' && (
             <div>
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">Profile Information</h2>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Profile Information</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Email Address
                   </label>
                   <input
                     type="email"
                     value={userProfile.email}
                     disabled
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500 dark:text-gray-400"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Use the "Change Email" tab to modify</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Use the "Change Email" tab to modify</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Role
                   </label>
                   <input
                     type="text"
                     value={userProfile.role.replace('_', ' ').toUpperCase()}
                     disabled
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500 dark:text-gray-400"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     First Name
                   </label>
                   <input
@@ -303,7 +303,7 @@ export default function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Last Name
                   </label>
                   <input
@@ -315,7 +315,7 @@ export default function ProfilePage() {
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Company Name
                   </label>
                   <input
@@ -342,10 +342,10 @@ export default function ProfilePage() {
           {/* Change Password Tab */}
           {activeTab === 'password' && (
             <form onSubmit={handlePasswordChange}>
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">Change Password</h2>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Change Password</h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Current Password
                   </label>
                   <input
@@ -357,7 +357,7 @@ export default function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     New Password
                   </label>
                   <input
@@ -367,12 +367,12 @@ export default function ProfilePage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Must be at least 8 characters with uppercase, lowercase, number, and special character
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Confirm New Password
                   </label>
                   <input
@@ -398,21 +398,21 @@ export default function ProfilePage() {
           {/* Change Email Tab */}
           {activeTab === 'email' && (
             <form onSubmit={handleEmailChange}>
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">Change Email Address</h2>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Change Email Address</h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Current Email
                   </label>
                   <input
                     type="email"
                     value={userProfile.email}
                     disabled
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500 dark:text-gray-400"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     New Email Address
                   </label>
                   <input
@@ -424,7 +424,7 @@ export default function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Current Password (for confirmation)
                   </label>
                   <input
@@ -434,7 +434,7 @@ export default function ProfilePage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Enter your current password to confirm this change
                   </p>
                 </div>

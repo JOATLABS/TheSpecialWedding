@@ -11,6 +11,16 @@ services:
     environment:
       MONGO_INITDB_DATABASE: wedding
 
+  redis:
+    image: redis:7-alpine
+    container_name: wedding-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
   api:
     build:
       context: .
@@ -21,15 +31,37 @@ services:
       - "8000:8000"
     depends_on:
       - mongo
+      - redis
     env_file:
       - .env
     environment:
       MONGO_URI: mongodb://mongo:27017
+      REDIS_HOST: redis
       PYTHONPATH: /app
     volumes:
       - ./app:/app/app
       - ./.env:/app/.env
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wedding-celery-worker
+    restart: always
+    depends_on:
+      - mongo
+      - redis
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      REDIS_HOST: redis
+      PYTHONPATH: /app
+    volumes:
+      - ./app:/app/app
+      - ./.env:/app/.env
+    command: celery -A app.tasks.email_tasks worker --loglevel=info
 
   # Admin setup job - runs once to create admin user
   admin-setup:
@@ -53,3 +85,4 @@ services:
 
 volumes:
   mongo_data:
+  redis_data:

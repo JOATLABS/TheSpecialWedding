@@ -49,6 +49,8 @@ from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
 from app.api.support_management import router as support_router
 from app.api.public_endpoints import router as public_endpoints_router
+from app.api.email_templates import router as email_templates_router
+from app.api.webhooks import router as webhooks_router
 
 # Setup logging
 logging.basicConfig(
@@ -212,6 +214,7 @@ app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor For
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
 app.include_router(public_endpoints_router, prefix="/public", tags=["Public"])  # Public contact form and other endpoints
+app.include_router(webhooks_router, tags=["Webhooks"])  # Webhook endpoints for email tracking
 
 # Admin routes (authentication required)
 admin_routers = [
@@ -232,7 +235,8 @@ admin_routers = [
     (trial_management_router, "Admin"),
     (vendor_forms_router, "Vendor Management"),
     (notification_router, "Notifications"),
-    (support_router, "Support")
+    (support_router, "Support"),
+    (email_templates_router, "Email Templates")
 ]
 
 for router, tag in admin_routers:

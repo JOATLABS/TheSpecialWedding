@@ -181,22 +181,22 @@ export default function AdminGalleryUploadPage() {
   };
 
   return (
-    <main className="min-h-screen bg-wedding-ivory p-6">
+    <main className="min-h-screen bg-wedding-ivory dark:bg-gray-900 p-6">
       <div className="w-full max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-elegant text-wedding-navy">Gallery Management</h1>
+          <h1 className="text-3xl font-elegant text-wedding-navy dark:text-gray-100">Gallery Management</h1>
         </div>
 
         {/* Wedding Selection - Global */}
         <Card className="mb-6">
           <div className="p-6">
-            <label className="block text-sm font-medium text-wedding-navy mb-2">
+            <label className="block text-sm font-medium text-wedding-navy dark:text-gray-100 mb-2">
               Select Wedding
             </label>
             <select
               value={selectedWedding}
               onChange={(e) => handleWeddingChange(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
               required
             >
               <option value="">Choose a wedding...</option>
@@ -218,7 +218,7 @@ export default function AdminGalleryUploadPage() {
                 className={`px-6 py-3 rounded-lg font-medium transition-colors ${
                   activeTab === 'upload'
                     ? 'bg-wedding-sage text-white'
-                    : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+                    : 'bg-white dark:bg-gray-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-gray-600'
                 }`}
               >
                 Upload Images
@@ -228,7 +228,7 @@ export default function AdminGalleryUploadPage() {
                 className={`px-6 py-3 rounded-lg font-medium transition-colors ${
                   activeTab === 'manage'
                     ? 'bg-wedding-sage text-white'
-                    : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+                    : 'bg-white dark:bg-gray-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-gray-600'
                 }`}
               >
                 Manage Gallery ({uploadedImages.length})
@@ -237,7 +237,7 @@ export default function AdminGalleryUploadPage() {
 
             {/* Upload Tab */}
             {activeTab === 'upload' && (
-              <Card className="backdrop-blur-sm bg-white/60">
+              <Card className="backdrop-blur-sm bg-white/60 dark:bg-gray-800/60">
                 <div className="space-y-4 p-6">
                   {/* Folder Selection */}
                   <div>
@@ -346,7 +346,7 @@ export default function AdminGalleryUploadPage() {
 
             {/* Gallery Management Tab */}
             {activeTab === 'manage' && (
-              <Card className="backdrop-blur-sm bg-white/60">
+              <Card className="backdrop-blur-sm bg-white/60 dark:bg-gray-800/60">
                 <div className="p-6">
                   <h2 className="text-xl font-semibold text-wedding-navy mb-4">
                     Uploaded Images for {weddings.find(w => (w.id || w._id) === selectedWedding)?.couple_names}

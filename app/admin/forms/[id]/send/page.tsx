@@ -188,7 +188,7 @@ export default function SendFormPage() {
  <div className="min-h-screen flex items-center justify-center">
  <div className="text-center">
  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
- <p className="text-gray-600">Loading form...</p>
+ <p className="text-gray-600 dark:text-gray-300">Loading form...</p>
  </div>
  </div>
  );
@@ -218,7 +218,7 @@ export default function SendFormPage() {
  <div className="flex items-center justify-between mb-4">
  <button
  onClick={() => router.push('/admin/forms')}
- className="flex items-center text-gray-600 hover:text-gray-800"
+ className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-800"
  >
  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -227,15 +227,15 @@ export default function SendFormPage() {
  </button>
  </div>
  
- <div className="bg-white rounded-lg shadow-sm border p-6">
- <h1 className="text-3xl font-bold text-gray-900 mb-2">Send Form</h1>
- <div className="flex items-center text-gray-600">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
+ <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Send Form</h1>
+ <div className="flex items-center text-gray-600 dark:text-gray-300">
  <span className="text-lg font-medium">{form.name}</span>
  <span className="mx-2">•</span>
  <span>{form.settings.title}</span>
  </div>
  {form.settings.description && (
- <p className="text-gray-500 mt-2">{form.settings.description}</p>
+ <p className="text-gray-500 dark:text-gray-400 mt-2">{form.settings.description}</p>
  )}
  </div>
  </div>
@@ -244,12 +244,12 @@ export default function SendFormPage() {
  {/* Main Content */}
  <div className="lg:col-span-2 space-y-6">
  {/* Recipients */}
- <div className="bg-white rounded-lg shadow-sm border p-6">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
  <h2 className="text-xl font-semibold mb-4">Recipients</h2>
  
  {/* Quick Categories */}
  <div className="mb-6">
- <p className="text-sm text-gray-600 mb-3">Quick add recipients:</p>
+ <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">Quick add recipients:</p>
  <div className="flex flex-wrap gap-2">
  <button
  onClick={() => loadPredefinedRecipients('couples')}
@@ -304,12 +304,12 @@ export default function SendFormPage() {
  </div>
 
  {/* Email Settings */}
- <div className="bg-white rounded-lg shadow-sm border p-6">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
  <h2 className="text-xl font-semibold mb-4">Email Settings</h2>
  
  <div className="space-y-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Your Name
  </label>
  <input
@@ -322,7 +322,7 @@ export default function SendFormPage() {
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Email Subject
  </label>
  <input
@@ -335,7 +335,7 @@ export default function SendFormPage() {
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Personal Message
  </label>
  <textarea
@@ -345,14 +345,14 @@ export default function SendFormPage() {
  placeholder="Add a personal message to your recipients..."
  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
- <p className="text-sm text-gray-500 mt-1">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  This message will appear before the form link in the email.
  </p>
  </div>
 
  {/* Advanced Options */}
  <div className="border-t pt-4">
- <h3 className="text-sm font-medium text-gray-700 mb-3">Advanced Options</h3>
+ <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Advanced Options</h3>
  
  <div className="space-y-3">
  <label className="flex items-center">
@@ -377,7 +377,7 @@ export default function SendFormPage() {
 
  {emailSettings.send_reminder && (
  <div className="ml-6">
- <label className="block text-sm text-gray-600">
+ <label className="block text-sm text-gray-600 dark:text-gray-300">
  Send reminder after:
  <select
  value={emailSettings.reminder_days}
@@ -400,13 +400,13 @@ export default function SendFormPage() {
  {/* Sidebar */}
  <div className="space-y-6">
  {/* Send Button */}
- <div className="bg-white rounded-lg shadow-sm border p-6">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
  <button
  onClick={sendForm}
  disabled={sending}
  className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
  sending
- ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+ ? 'bg-gray-300 text-gray-500 dark:text-gray-400 cursor-not-allowed'
  : 'bg-blue-600 text-white hover:bg-blue-700'
  }`}
  >
@@ -420,7 +420,7 @@ export default function SendFormPage() {
  )}
  </button>
 
- <p className="text-sm text-gray-500 mt-2 text-center">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">
  Recipients will receive an email with a link to complete the form
  </p>
  </div>
@@ -449,9 +449,9 @@ export default function SendFormPage() {
  )}
 
  {/* Form Preview */}
- <div className="bg-white rounded-lg shadow-sm border p-6">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
  <h3 className="text-lg font-semibold mb-4">Form Preview</h3>
- <div className="text-sm text-gray-600 space-y-2">
+ <div className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
  <p><strong>Title:</strong> {form.settings.title}</p>
  {form.settings.description && (
  <p><strong>Description:</strong> {form.settings.description}</p>
@@ -460,7 +460,7 @@ export default function SendFormPage() {
  
  <button
  onClick={() => window.open(`/forms/${form.id}`, '_blank')}
- className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+ className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 transition-colors"
  >
  Preview Form →
  </button>

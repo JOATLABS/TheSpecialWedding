@@ -193,8 +193,8 @@ export default function WeddingPlannerDashboard() {
  </div>
 
  {/* Weddings List */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200">
- <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+ <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700">
  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Your Weddings</h2>
  <button
@@ -212,10 +212,10 @@ export default function WeddingPlannerDashboard() {
  </div>
  )}
 
- <div className="divide-y divide-gray-200">
+ <div className="divide-y divide-gray-200 dark:divide-gray-700">
  {weddings.length === 0 ? (
  <div className="p-6 text-center text-gray-500 dark:text-gray-400">
- <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+ <svg className="w-12 h-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
  </svg>
  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No weddings assigned</h3>

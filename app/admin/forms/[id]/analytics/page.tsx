@@ -105,15 +105,15 @@ export default function FormAnalyticsPage() {
     };
 
     return (
-      <div className="bg-white rounded-lg shadow-sm border p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
         <div className="flex items-center">
           <div className={`p-3 rounded-lg ${colorClasses[color]} mr-4`}>
             {icon}
           </div>
           <div className="flex-1">
-            <p className="text-sm font-medium text-gray-600">{title}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
-            {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-300 dark:text-gray-300">{title}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 dark:text-gray-100">{value}</p>
+            {subtitle && <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-400">{subtitle}</p>}
           </div>
         </div>
       </div>
@@ -143,7 +143,7 @@ export default function FormAnalyticsPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading analytics...</p>
+          <p className="text-gray-600 dark:text-gray-300 dark:text-gray-300">Loading analytics...</p>
         </div>
       </div>
     );
@@ -173,7 +173,7 @@ export default function FormAnalyticsPage() {
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => router.push('/admin/forms')}
-              className="flex items-center text-gray-600 hover:text-gray-800"
+              className="flex items-center text-gray-600 dark:text-gray-300 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100"
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -197,15 +197,15 @@ export default function FormAnalyticsPage() {
             </div>
           </div>
           
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Form Analytics</h1>
-            <div className="flex items-center text-gray-600">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 dark:text-gray-100 mb-2">Form Analytics</h1>
+            <div className="flex items-center text-gray-600 dark:text-gray-300 dark:text-gray-300">
               <span className="text-lg font-medium">{form.name}</span>
               <span className="mx-2">•</span>
               <span>{form.settings.title}</span>
             </div>
             {form.settings.description && (
-              <p className="text-gray-500 mt-2">{form.settings.description}</p>
+              <p className="text-gray-500 dark:text-gray-400 dark:text-gray-400 mt-2">{form.settings.description}</p>
             )}
           </div>
         </div>
@@ -263,22 +263,22 @@ export default function FormAnalyticsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Email Performance */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Email Performance</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">Email Performance</h3>
             
             <div className="space-y-6">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Emails Sent</span>
-                  <span className="text-sm text-gray-900">{analytics.distribution_stats.sent}</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Emails Sent</span>
+                  <span className="text-sm text-gray-900 dark:text-gray-100">{analytics.distribution_stats.sent}</span>
                 </div>
                 <ProgressBar percentage={100} color="blue" />
               </div>
               
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Emails Opened</span>
-                  <span className="text-sm text-gray-900">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Emails Opened</span>
+                  <span className="text-sm text-gray-900 dark:text-gray-100">
                     {analytics.distribution_stats.opened} ({analytics.distribution_stats.open_rate}%)
                   </span>
                 </div>
@@ -290,8 +290,8 @@ export default function FormAnalyticsPage() {
               
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Form Link Clicked</span>
-                  <span className="text-sm text-gray-900">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Form Link Clicked</span>
+                  <span className="text-sm text-gray-900 dark:text-gray-100">
                     {analytics.distribution_stats.clicked} ({analytics.distribution_stats.click_rate}%)
                   </span>
                 </div>
@@ -303,8 +303,8 @@ export default function FormAnalyticsPage() {
               
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Form Completed</span>
-                  <span className="text-sm text-gray-900">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Form Completed</span>
+                  <span className="text-sm text-gray-900 dark:text-gray-100">
                     {analytics.distribution_stats.submitted} ({analytics.distribution_stats.completion_rate}%)
                   </span>
                 </div>
@@ -317,30 +317,30 @@ export default function FormAnalyticsPage() {
           </div>
 
           {/* Form Insights */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Form Insights</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">Form Insights</h3>
             
             <div className="space-y-4">
               <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
                 <div>
-                  <p className="font-medium text-gray-900">Form Fields</p>
-                  <p className="text-sm text-gray-600">Total questions in form</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">Form Fields</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">Total questions in form</p>
                 </div>
-                <div className="text-2xl font-bold text-gray-900">
+                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                   {form.fields.length}
                 </div>
               </div>
               
               <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
                 <div>
-                  <p className="font-medium text-gray-900">Form Created</p>
-                  <p className="text-sm text-gray-600">Initial creation date</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">Form Created</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">Initial creation date</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-gray-900">
+                  <p className="font-bold text-gray-900 dark:text-gray-100">
                     {new Date(analytics.created_at).toLocaleDateString()}
                   </p>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
                     {new Date(analytics.created_at).toLocaleDateString('en-US', { 
                       weekday: 'long', 
                       year: 'numeric', 
@@ -354,14 +354,14 @@ export default function FormAnalyticsPage() {
               {analytics.last_response && (
                 <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">Last Response</p>
-                    <p className="text-sm text-gray-600">Most recent submission</p>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">Last Response</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">Most recent submission</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-gray-900">
+                    <p className="font-bold text-gray-900 dark:text-gray-100">
                       {new Date(analytics.last_response).toLocaleDateString()}
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
                       {new Date(analytics.last_response).toLocaleTimeString()}
                     </p>
                   </div>
@@ -372,8 +372,8 @@ export default function FormAnalyticsPage() {
         </div>
 
         {/* Performance Tips */}
-        <div className="mt-8 bg-white rounded-lg shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Tips</h3>
+        <div className="mt-8 bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Performance Tips</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {analytics.distribution_stats.open_rate < 50 && (
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">

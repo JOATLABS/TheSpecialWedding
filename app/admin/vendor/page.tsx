@@ -125,7 +125,7 @@ export default function VendorDashboard() {
  <div className="min-h-screen flex items-center justify-center">
  <div className="text-center">
  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
- <p className="text-gray-600">Loading your tasks...</p>
+ <p className="text-gray-600 dark:text-gray-300">Loading your tasks...</p>
  </div>
  </div>
  );
@@ -134,16 +134,16 @@ export default function VendorDashboard() {
  return (
  <div className="space-y-6">
  {/* Welcome Header */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
- <h1 className="text-2xl font-bold text-gray-900 mb-2">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+ <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
  Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
  </h1>
- <p className="text-gray-600">Here are your assigned tasks and wedding projects.</p>
+ <p className="text-gray-600 dark:text-gray-300">Here are your assigned tasks and wedding projects.</p>
  </div>
 
  {/* Stats Cards */}
  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
  <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
@@ -153,13 +153,13 @@ export default function VendorDashboard() {
  </div>
  </div>
  <div className="ml-4">
- <p className="text-sm font-medium text-gray-500">Total Tasks</p>
- <p className="text-2xl font-semibold text-gray-900">{tasks.length}</p>
+ <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Tasks</p>
+ <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{tasks.length}</p>
  </div>
  </div>
  </div>
 
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
  <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center">
@@ -169,15 +169,15 @@ export default function VendorDashboard() {
  </div>
  </div>
  <div className="ml-4">
- <p className="text-sm font-medium text-gray-500">Pending Tasks</p>
- <p className="text-2xl font-semibold text-gray-900">
+ <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending Tasks</p>
+ <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
  {tasks.filter(t => t.status === 'pending').length}
  </p>
  </div>
  </div>
  </div>
 
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
  <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
@@ -187,17 +187,17 @@ export default function VendorDashboard() {
  </div>
  </div>
  <div className="ml-4">
- <p className="text-sm font-medium text-gray-500">Active Weddings</p>
- <p className="text-2xl font-semibold text-gray-900">{weddings.length}</p>
+ <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Weddings</p>
+ <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{weddings.length}</p>
  </div>
  </div>
  </div>
  </div>
 
  {/* Tasks List */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
  <div className="px-6 py-4 border-b border-gray-200">
- <h2 className="text-lg font-semibold text-gray-900">Your Tasks</h2>
+ <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Your Tasks</h2>
  </div>
 
  {error && (
@@ -208,12 +208,12 @@ export default function VendorDashboard() {
 
  <div className="divide-y divide-gray-200">
  {tasks.length === 0 ? (
- <div className="p-6 text-center text-gray-500">
+ <div className="p-6 text-center text-gray-500 dark:text-gray-400">
  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
  </svg>
- <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks assigned</h3>
- <p className="text-gray-500">Wait for wedding planners to assign tasks to you.</p>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No tasks assigned</h3>
+ <p className="text-gray-500 dark:text-gray-400">Wait for wedding planners to assign tasks to you.</p>
  </div>
  ) : (
  tasks.map((task) => (
@@ -221,13 +221,13 @@ export default function VendorDashboard() {
  <div className="flex items-start justify-between">
  <div className="flex-1">
  <div className="flex items-center space-x-2 mb-2">
- <h3 className="text-lg font-semibold text-gray-900">{task.title}</h3>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{task.title}</h3>
  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
  {task.status.replace('_', ' ')}
  </span>
  </div>
- <p className="text-gray-600 mb-2">{task.description}</p>
- <div className="flex items-center space-x-4 text-sm text-gray-500">
+ <p className="text-gray-600 dark:text-gray-300 mb-2">{task.description}</p>
+ <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
  <span> {task.wedding_name}</span>
  {task.due_date && <span> Due: {formatDate(task.due_date)}</span>}
  </div>
@@ -249,7 +249,7 @@ export default function VendorDashboard() {
  Complete
  </button>
  )}
- <button className="bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-sm hover:bg-gray-200 transition-colors">
+ <button className="bg-gray-100 text-gray-700 dark:text-gray-300 px-3 py-1 rounded-lg text-sm hover:bg-gray-200 transition-colors">
  Details
  </button>
  </div>
@@ -261,29 +261,29 @@ export default function VendorDashboard() {
  </div>
 
  {/* Wedding Projects */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
  <div className="px-6 py-4 border-b border-gray-200">
- <h2 className="text-lg font-semibold text-gray-900">Your Wedding Projects</h2>
+ <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Your Wedding Projects</h2>
  </div>
 
  <div className="divide-y divide-gray-200">
  {weddings.length === 0 ? (
- <div className="p-6 text-center text-gray-500">
+ <div className="p-6 text-center text-gray-500 dark:text-gray-400">
  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
  </svg>
- <h3 className="text-lg font-medium text-gray-900 mb-2">No weddings assigned</h3>
- <p className="text-gray-500">Wedding planners will assign you to wedding projects.</p>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No weddings assigned</h3>
+ <p className="text-gray-500 dark:text-gray-400">Wedding planners will assign you to wedding projects.</p>
  </div>
  ) : (
  weddings.map((wedding) => (
  <div key={wedding._id} className="p-6 hover:bg-gray-50 transition-colors">
  <div className="flex items-center justify-between">
  <div className="flex-1">
- <h3 className="text-lg font-semibold text-gray-900 mb-1">
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
  {wedding.couple_name}
  </h3>
- <div className="flex items-center space-x-4 text-sm text-gray-500">
+ <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
  <span> {formatDate(wedding.event_date)}</span>
  <span> {wedding.slug}</span>
  </div>
@@ -305,14 +305,14 @@ export default function VendorDashboard() {
  </div>
 
  {/* Communication */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
- <h2 className="text-lg font-semibold text-gray-900 mb-4">Communication</h2>
- <div className="text-center text-gray-500 py-8">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+ <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Communication</h2>
+ <div className="text-center text-gray-500 dark:text-gray-400 py-8">
  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
  </svg>
- <h3 className="text-lg font-medium text-gray-900 mb-2">Messages Coming Soon</h3>
- <p className="text-gray-500">Direct communication with wedding planners will be available here.</p>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Messages Coming Soon</h3>
+ <p className="text-gray-500 dark:text-gray-400">Direct communication with wedding planners will be available here.</p>
  </div>
  </div>
  </div>
