@@ -76,23 +76,16 @@ async def submit_simple_contact_form(form_data: SimpleContactForm):
             "target_audience": "root_admin",
             "priority": "medium",
             "source": "contact_form",
-            "is_dismissible": True
-        }
-
-        # Create the notification (this will automatically trigger email sending)
-        notification_result = await notification_service.create_notification(notification_data, "system")
-
-        # Also queue a direct admin email with the contact form data
-        await notification_service._queue_admin_email({
-            "title": f"New Contact Form Submission from {form_data.name}",
-            "message": f"Contact form submission details:\n\nName: {form_data.name}\nEmail: {form_data.email}\nCompany: {form_data.company or 'Not specified'}\nPhone: {form_data.phone or 'Not provided'}\nMessage: {form_data.message}",
-            "type": "contact_form",
-            "source": "website_contact_form",
+            "is_dismissible": True,
+            # Include individual form fields for email template
             "email": form_data.email,
             "name": form_data.name,
             "company": form_data.company,
             "phone": form_data.phone
-        })
+        }
+
+        # Create the notification (this will automatically trigger email sending)
+        notification_result = await notification_service.create_notification(notification_data, "system")
 
         # Log the submission
         logger.info(f"Simple contact form submission received from {form_data.email} ({form_data.name})")

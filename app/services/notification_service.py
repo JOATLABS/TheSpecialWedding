@@ -631,17 +631,17 @@ class NotificationService:
 
             # Extract metadata from notification
             metadata = {}
-            if hasattr(notification_data, 'submission_id'):
+            if 'submission_id' in notification_data:
                 metadata["submission_id"] = notification_data.get("submission_id")
-            if hasattr(notification_data, 'email'):
+            if 'email' in notification_data:
                 metadata["email"] = notification_data.get("email")
-            if hasattr(notification_data, 'name'):
+            if 'name' in notification_data:
                 metadata["name"] = notification_data.get("name")
-            if hasattr(notification_data, 'company'):
+            if 'company' in notification_data:
                 metadata["company"] = notification_data.get("company")
-            if hasattr(notification_data, 'phone'):
+            if 'phone' in notification_data:
                 metadata["phone"] = notification_data.get("phone")
-            if hasattr(notification_data, 'message'):
+            if 'message' in notification_data:
                 metadata["message"] = notification_data.get("message")
 
             # Queue the admin notification email
