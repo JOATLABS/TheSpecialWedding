@@ -211,11 +211,25 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-rose-100 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-heading text-wedding-rose mb-8">Account Settings</h1>
+        <h1 className="text-2xl sm:text-3xl font-heading text-wedding-rose mb-8">Account Settings</h1>
         
         <div className="bg-white rounded-lg shadow-lg p-6">
           {/* Tab Navigation */}
-          <div className="flex space-x-1 mb-6 border-b">
+          {/* Mobile: Dropdown Select */}
+          <div className="sm:hidden py-4">
+            <select
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value as 'profile' | 'password' | 'email')}
+              className="block w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-md shadow-sm text-sm"
+            >
+              <option value="profile">Profile Info</option>
+              <option value="password">Change Password</option>
+              <option value="email">Change Email</option>
+            </select>
+          </div>
+
+          {/* Desktop: Tab Navigation */}
+          <div className="hidden sm:flex space-x-1 mb-6 border-b">
             <button
               onClick={() => setActiveTab('profile')}
               className={`px-4 py-2 font-medium text-sm rounded-t-lg ${

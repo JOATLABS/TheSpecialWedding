@@ -116,17 +116,17 @@ export default function WeddingPlannerDashboard() {
  }
 
  return (
- <div className="space-y-6">
+ <div className="space-y-6 p-4 sm:p-6">
  {/* Welcome Header */}
- <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+ <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+ <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
  Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
  </h1>
  <p className="text-gray-600 dark:text-gray-300">Here's what's happening with your weddings today.</p>
  </div>
 
  {/* Stats Cards */}
- <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+ <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
@@ -194,12 +194,12 @@ export default function WeddingPlannerDashboard() {
 
  {/* Weddings List */}
  <div className="bg-white rounded-lg shadow-sm border border-gray-200">
- <div className="px-6 py-4 border-b border-gray-200">
- <div className="flex items-center justify-between">
+ <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+ <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Your Weddings</h2>
  <button
  onClick={() => router.push('/admin/weddings')}
- className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+ className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm transition-colors w-full sm:w-auto"
  >
  View All
  </button>

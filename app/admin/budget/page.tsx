@@ -238,27 +238,27 @@ export default function BudgetDashboard() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-wedding-navy mb-4">Access Denied</h2>
-          <p>Please log in to access the budget dashboard.</p>
+          <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-4">Access Denied</h2>
+          <p className="text-gray-600 dark:text-gray-300">Please log in to access the budget dashboard.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-heading font-bold text-wedding-navy">
+          <h1 className="text-2xl sm:text-3xl font-heading font-bold text-wedding-navy dark:text-gray-100">
             Budget Management
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-gray-600 dark:text-gray-300 mt-1">
             Manage wedding budgets, track expenses, and compare vendor quotes
           </p>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <Button onClick={() => exportBudgetReport('pdf')}>
             Export PDF
           </Button>
@@ -269,15 +269,15 @@ export default function BudgetDashboard() {
       </div>
 
       {/* Wedding Selection */}
-      <Card className="p-4">
+      <Card className="p-4 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <div className="flex flex-col sm:flex-row gap-4 items-center">
-          <label className="font-medium text-wedding-navy whitespace-nowrap">
+          <label className="font-medium text-wedding-navy dark:text-gray-100 whitespace-nowrap">
             Select Wedding:
           </label>
           <select
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="flex-1 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
@@ -306,14 +306,14 @@ export default function BudgetDashboard() {
                 placeholder="Search categories..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               />
               
               {/* Status Filter */}
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="all">All Status</option>
                 <option value="pending">Pending</option>
@@ -326,7 +326,7 @@ export default function BudgetDashboard() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="priority">Sort by Priority</option>
                 <option value="name">Sort by Name</option>
@@ -347,16 +347,16 @@ export default function BudgetDashboard() {
           {loading ? (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
-              <p className="mt-2 text-gray-600">Loading budget data...</p>
+              <p className="mt-2 text-gray-600 dark:text-gray-300">Loading budget data...</p>
             </div>
           ) : error ? (
-            <Card className="p-8 text-center">
-              <p className="text-red-600 mb-4">{error}</p>
+            <Card className="p-8 text-center bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+              <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
               <Button onClick={fetchBudgetData}>Retry</Button>
             </Card>
           ) : filteredCategories.length === 0 ? (
-            <Card className="p-8 text-center">
-              <p className="text-gray-600 mb-4">
+            <Card className="p-8 text-center bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
                 {categories.length === 0 
                   ? "No budget categories found. Create your first category to get started."
                   : "No categories match your search criteria."
@@ -386,41 +386,41 @@ export default function BudgetDashboard() {
 
       {/* Category Modal */}
       {showCategoryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4 text-wedding-navy">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full border border-gray-200 dark:border-gray-700">
+            <h2 className="text-xl font-bold mb-4 text-wedding-navy dark:text-gray-100">
               {editingCategory ? 'Edit Category' : 'Add New Category'}
             </h2>
             
             <form onSubmit={editingCategory ? handleUpdateCategory : handleCreateCategory}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Category Name *
                   </label>
                   <input
                     type="text"
                     value={categoryForm.name}
                     onChange={(e) => setCategoryForm({...categoryForm, name: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
                   <textarea
                     value={categoryForm.description}
                     onChange={(e) => setCategoryForm({...categoryForm, description: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     rows={2}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Budget Amount *
                   </label>
                   <input
@@ -429,19 +429,19 @@ export default function BudgetDashboard() {
                     step="0.01"
                     value={categoryForm.budgeted_amount}
                     onChange={(e) => setCategoryForm({...categoryForm, budgeted_amount: parseFloat(e.target.value) || 0})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Priority (1 = Highest, 5 = Lowest)
                   </label>
                   <select
                     value={categoryForm.priority}
                     onChange={(e) => setCategoryForm({...categoryForm, priority: parseInt(e.target.value) as 1|2|3|4|5})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   >
                     <option value={1}>1 - Highest Priority</option>
                     <option value={2}>2 - High Priority</option>
@@ -452,7 +452,7 @@ export default function BudgetDashboard() {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Percentage of Total Budget
                   </label>
                   <input
@@ -462,7 +462,7 @@ export default function BudgetDashboard() {
                     step="0.1"
                     value={categoryForm.percentage_of_total}
                     onChange={(e) => setCategoryForm({...categoryForm, percentage_of_total: parseFloat(e.target.value) || 0})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                 </div>
               </div>

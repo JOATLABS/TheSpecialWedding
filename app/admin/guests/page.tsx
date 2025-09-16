@@ -311,26 +311,26 @@ export default function AdminGuestsPage() {
   const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-gray-900 dark:to-gray-800 p-4 sm:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
-          <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
-            <h1 className="text-3xl font-bold text-white">Guest Management</h1>
-            <p className="text-blue-100 mt-2">View and manage all wedding guests, RSVPs, and plus-ones</p>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden mb-8">
+          <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-6">
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">Guest Management</h1>
+            <p className="text-blue-100 dark:text-blue-200 mt-2">View and manage all wedding guests, RSVPs, and plus-ones</p>
           </div>
         </div>
 
         {/* Wedding Selection */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 mb-2">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Select Wedding
           </label>
           <select
             id="wedding"
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
@@ -345,26 +345,26 @@ export default function AdminGuestsPage() {
           <>
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">Total Guests</h3>
-                <p className="text-3xl font-bold text-wedding-navy mt-2">{guests.length}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</h3>
+                <p className="text-3xl font-bold text-wedding-navy dark:text-gray-100 mt-2">{guests.length}</p>
               </div>
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">RSVPs Received</h3>
-                <p className="text-3xl font-bold text-green-600 mt-2">{rsvps.length}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs Received</h3>
+                <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">{rsvps.length}</p>
               </div>
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">Pending RSVPs</h3>
-                <p className="text-3xl font-bold text-orange-600 mt-2">{guests.length - rsvps.length}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending RSVPs</h3>
+                <p className="text-3xl font-bold text-orange-600 dark:text-orange-400 mt-2">{guests.length - rsvps.length}</p>
               </div>
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">Plus Ones</h3>
-                <p className="text-3xl font-bold text-wedding-sage mt-2">{plusOnes.length}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Plus Ones</h3>
+                <p className="text-3xl font-bold text-wedding-sage dark:text-green-400 mt-2">{plusOnes.length}</p>
               </div>
             </div>
 
             {/* Controls */}
-            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8">
               <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                 {/* Tabs */}
                 <div className="flex gap-2">
@@ -373,7 +373,7 @@ export default function AdminGuestsPage() {
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       activeTab === 'all'
                         ? 'bg-wedding-navy text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
                     }`}
                   >
                     All Guests ({guests.length})
@@ -383,7 +383,7 @@ export default function AdminGuestsPage() {
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       activeTab === 'rsvp'
                         ? 'bg-wedding-navy text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
                     }`}
                   >
                     RSVP'd ({rsvps.length})
@@ -393,7 +393,7 @@ export default function AdminGuestsPage() {
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       activeTab === 'pending'
                         ? 'bg-wedding-navy text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
                     }`}
                   >
                     Pending ({guests.length - rsvps.length})
@@ -406,24 +406,24 @@ export default function AdminGuestsPage() {
                   placeholder="Search guests..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 />
               </div>
             </div>
 
             {/* Guest List */}
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
-                  <span className="ml-3 text-gray-600">Loading guests...</span>
+                  <span className="ml-3 text-gray-600 dark:text-gray-300">Loading guests...</span>
                 </div>
               ) : filteredGuests.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                   <p>No guests found.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
                   {filteredGuests.map((guest) => {
                     const guestId = guest.id || guest._id || '';
                     const rsvp = getRSVPForGuest(guestId);
@@ -431,26 +431,26 @@ export default function AdminGuestsPage() {
                     const isExpanded = expandedGuest === guestId;
 
                     return (
-                      <div key={guestId} className="hover:bg-gray-50 transition-colors">
+                      <div key={guestId} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                         {/* Guest Row */}
                         <div className="p-6">
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-4">
                                 <div>
-                                  <h3 className="text-lg font-semibold text-gray-900">{guest.name}</h3>
-                                  <div className="flex gap-4 text-sm text-gray-600 mt-1">
+                                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{guest.name}</h3>
+                                  <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-300 mt-1">
                                     {guest.email && <span>{guest.email}</span>}
                                     {guest.phone && <span>{guest.phone}</span>}
                                   </div>
                                 </div>
                                 <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                                  guest.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                                  guest.role === 'admin' ? 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200' : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
                                 }`}>
                                   {guest.role}
                                 </span>
                                 {rsvp && (
-                                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
                                     RSVP'd
                                   </span>
                                 )}
@@ -595,47 +595,47 @@ export default function AdminGuestsPage() {
         
         {/* Edit Guest Modal */}
         {editingGuest && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-              <h2 className="text-2xl font-bold text-wedding-navy mb-4">Edit Guest</h2>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+              <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-4">Edit Guest</h2>
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
                   <input
                     type="text"
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                   <input
                     type="email"
                     value={editForm.email}
                     onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
                   <input
                     type="tel"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
                   <select
                     value={editForm.role}
                     onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   >
                     <option value="guest">Guest</option>
                     <option value="admin">Admin</option>
@@ -658,14 +658,14 @@ export default function AdminGuestsPage() {
                 
                 {editForm.plus_one_allowed && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Number of Plus Ones Allowed</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Number of Plus Ones Allowed</label>
                     <input
                       type="number"
                       min="0"
                       max="10"
                       value={editForm.number_of_plus_ones_allowed}
                       onChange={(e) => setEditForm({ ...editForm, number_of_plus_ones_allowed: parseInt(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
                 )}

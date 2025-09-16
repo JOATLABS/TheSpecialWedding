@@ -166,7 +166,7 @@ export default function PlatformMetricsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-heading text-wedding-rose">Platform Metrics</h1>
+          <h1 className="text-2xl sm:text-3xl font-heading text-wedding-rose">Platform Metrics</h1>
           <p className="text-gray-600 dark:text-gray-300">Monitor platform performance and growth</p>
         </div>
         
@@ -191,7 +191,7 @@ export default function PlatformMetricsPage() {
       {/* User Metrics */}
       <div>
         <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">User Growth</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           <Card className="p-6">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Users</h3>
             <p className="text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.total)}</p>
@@ -233,7 +233,7 @@ export default function PlatformMetricsPage() {
       {/* Revenue Metrics */}
       <div>
         <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">Revenue</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           <Card className="p-6">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Monthly Recurring Revenue</h3>
             <p className="text-3xl font-bold text-wedding-rose">{formatCurrency(metrics.subscriptions.mrr)}</p>
@@ -273,7 +273,7 @@ export default function PlatformMetricsPage() {
       {/* Subscription Metrics */}
       <div>
         <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">Subscriptions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           <Card className="p-6">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Subscriptions</h3>
             <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.subscriptions.active)}</p>
@@ -315,7 +315,7 @@ export default function PlatformMetricsPage() {
       {/* Usage Metrics */}
       <div>
         <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">Platform Usage</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           <Card className="p-6">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Weddings Created</h3>
             <p className="text-3xl font-bold text-wedding-rose">{formatNumber(metrics.usage.weddings_created)}</p>
