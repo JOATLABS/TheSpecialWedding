@@ -410,7 +410,7 @@ export default function AdminWeddingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-gray-900 dark:to-gray-800 p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden mb-8">
@@ -461,7 +461,7 @@ export default function AdminWeddingsPage() {
 
             {/* Template Selection */}
             {showTemplates && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+              <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <h3 className="text-lg font-medium mb-3">Choose a Template:</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {weddingTemplates.map((template) => (
@@ -477,53 +477,53 @@ export default function AdminWeddingsPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Couple Names *
                   </label>
                   <input
                     type="text"
                     value={formData.couple_names}
                     onChange={(e) => setFormData({...formData, couple_names: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Wedding Date *
                   </label>
                   <input
                     type="date"
                     value={formData.date}
                     onChange={(e) => setFormData({...formData, date: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Venue
                   </label>
                   <input
                     type="text"
                     value={formData.venue}
                     onChange={(e) => setFormData({...formData, venue: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Guest Count
                   </label>
                   <input
                     type="number"
                     value={formData.guest_count}
                     onChange={(e) => setFormData({...formData, guest_count: parseInt(e.target.value) || 0})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Total Budget
                   </label>
                   <input
@@ -531,17 +531,17 @@ export default function AdminWeddingsPage() {
                     step="0.01"
                     value={formData.total_budget}
                     onChange={(e) => setFormData({...formData, total_budget: parseFloat(e.target.value) || 0})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Status
                   </label>
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({...formData, status: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
                   >
                     <option value="active">Active</option>
                     <option value="planning">Planning</option>
@@ -553,13 +553,13 @@ export default function AdminWeddingsPage() {
                 {/* Only show planner assignment for root admin */}
                 {userProfile?.is_root_admin && (
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Assign to Planner
                     </label>
                     <select
                       value={formData.assigned_planner_email}
                       onChange={(e) => setFormData({...formData, assigned_planner_email: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
                     >
                       <option value="">Unassigned</option>
                       {planners.map((planner) => (
@@ -575,7 +575,7 @@ export default function AdminWeddingsPage() {
               {/* Events Section */}
               <div>
                 <div className="flex justify-between items-center mb-3">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Events
                   </label>
                   <div className="flex gap-2">
@@ -586,7 +586,7 @@ export default function AdminWeddingsPage() {
                         className={`px-3 py-1 text-sm rounded transition ${
                           showEventDetails 
                             ? 'bg-wedding-gold text-white' 
-                            : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                            : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
                         }`}
                       >
                         {showEventDetails ? 'Hide Details' : 'Show Details'}
@@ -609,7 +609,7 @@ export default function AdminWeddingsPage() {
                 {formData.events.map((event, index) => (
                   showEventDetails || formData.status === 'active' ? (
                     // Detailed card layout
-                    <div key={index} className="mb-4 p-4 border border-gray-200 rounded-lg">
+                    <div key={index} className="mb-4 p-4 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 rounded-lg">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Event Type</label>
@@ -620,7 +620,7 @@ export default function AdminWeddingsPage() {
                               newEvents[index].type = e.target.value;
                               setFormData({...formData, events: newEvents});
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm"
                           >
                             <option value="">Select Type</option>
                             <option value="traditional">Traditional</option>
@@ -640,7 +640,7 @@ export default function AdminWeddingsPage() {
                               newEvents[index].date = e.target.value;
                               setFormData({...formData, events: newEvents});
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm"
                           />
                         </div>
                         <div>
@@ -654,7 +654,7 @@ export default function AdminWeddingsPage() {
                               newEvents[index].details!.venue_name = e.target.value;
                               setFormData({...formData, events: newEvents});
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm"
                             placeholder="e.g., St. Mary's Church"
                           />
                         </div>
@@ -669,7 +669,7 @@ export default function AdminWeddingsPage() {
                               newEvents[index].details!.time = e.target.value;
                               setFormData({...formData, events: newEvents});
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm"
                             placeholder="e.g., 3:00 PM"
                           />
                         </div>
@@ -684,7 +684,7 @@ export default function AdminWeddingsPage() {
                               newEvents[index].details!.location = e.target.value;
                               setFormData({...formData, events: newEvents});
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm"
                             placeholder="e.g., 123 Main St, City, State"
                           />
                         </div>
@@ -699,7 +699,7 @@ export default function AdminWeddingsPage() {
                               newEvents[index].details!.attire = e.target.value;
                               setFormData({...formData, events: newEvents});
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg text-sm"
                             placeholder="e.g., Formal attire, Traditional wear"
                           />
                         </div>
@@ -724,7 +724,7 @@ export default function AdminWeddingsPage() {
                           newEvents[index].type = e.target.value;
                           setFormData({...formData, events: newEvents});
                         }}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
                       >
                         <option value="">Select Type</option>
                         <option value="traditional">Traditional</option>
@@ -741,7 +741,7 @@ export default function AdminWeddingsPage() {
                           newEvents[index].date = e.target.value;
                           setFormData({...formData, events: newEvents});
                         }}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
                       />
                       <button
                         type="button"
@@ -791,7 +791,7 @@ export default function AdminWeddingsPage() {
         )}
 
         {/* Filters */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <input
               type="text"
