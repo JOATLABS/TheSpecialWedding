@@ -20,6 +20,7 @@ type AdminContextType = {
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
     logout: () => void;
     fetchUserProfile: () => Promise<void>;
+    apiRequest: (path: string, method?: string, body?: any) => Promise<any>;
 };
 
 const AdminContext = createContext<AdminContextType | null>(null);
@@ -56,11 +57,48 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, [token, userProfile]);
 
+    const apiRequest = async (path: string, method: string = 'GET', body?: any) => {
+        if (!token) {
+            throw new Error('No authentication token available');
+        }
+
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+        if (!baseUrl) {
+            throw new Error('API base URL not configured');
+        }
+
+        const url = `${baseUrl}${path}`;
+        const options: RequestInit = {
+            method,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+        };
+
+        if (body && method !== 'GET') {
+            options.body = JSON.stringify(body);
+        }
+
+        const response = await fetch(url, options);
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+            throw new Error(error.detail || `Request failed with status ${response.status}`);
+        }
+
+        return await response.json();
+    };
+
     const fetchUserProfile = async () => {
         if (!token) return;
-        
+
         try {
-            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+            if (!baseUrl) {
+                console.error('API base URL not configured');
+                return;
+            }
             const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
                 method: 'GET',
                 headers: {
@@ -92,7 +130,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             sessionStorage.removeItem('admin_token');
             document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
             
-            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+            if (!baseUrl) {
+                throw new Error('API base URL not configured');
+            }
             const loginUrl = `${baseUrl}/admin/token`;
             const res = await fetch(loginUrl, {
                 method: 'POST',
@@ -167,6 +208,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 login,
                 logout,
                 fetchUserProfile,
+                apiRequest,
             }}
         >
             {children}

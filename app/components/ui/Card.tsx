@@ -11,7 +11,7 @@ export function Card({ className = '', children }: CardProps) {
   return (
     <div
       className={
-        `bg-white bg-opacity-60 backdrop-blur-lg rounded-2xl shadow-lg p-6 space-y-4 animate-fade-in ${className}`
+        `bg-white dark:bg-gray-800 bg-opacity-60 dark:bg-opacity-60 backdrop-blur-lg rounded-2xl shadow-lg p-6 space-y-4 animate-fade-in ${className}`
       }
     >
       {children}
@@ -30,7 +30,7 @@ export function CardHeader({ className = '', children }: CardProps) {
 export function CardTitle({ className = '', children }: CardProps) {
   return (
     <h2
-      className={`text-2xl font-elegant text-wedding-navy ${className}`}
+      className={`text-2xl font-elegant text-wedding-navy dark:text-gray-100 ${className}`}
     >
       {children}
     </h2>

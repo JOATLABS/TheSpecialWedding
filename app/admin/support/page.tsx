@@ -146,21 +146,21 @@ export default function SupportPage() {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'urgent': return 'bg-red-100 text-red-800';
-      case 'high': return 'bg-orange-100 text-orange-800';
-      case 'medium': return 'bg-yellow-100 text-yellow-800';
-      case 'low': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'urgent': return 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200';
+      case 'high': return 'bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200';
+      case 'medium': return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200';
+      case 'low': return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
+      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'open': return 'bg-blue-100 text-blue-800';
-      case 'in_progress': return 'bg-yellow-100 text-yellow-800';
-      case 'resolved': return 'bg-green-100 text-green-800';
-      case 'closed': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'open': return 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
+      case 'in_progress': return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200';
+      case 'resolved': return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
+      case 'closed': return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
     }
   };
 
@@ -178,7 +178,7 @@ export default function SupportPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
-        <div className="text-lg">Loading support data...</div>
+        <div className="text-lg text-gray-900 dark:text-gray-100">Loading support data...</div>
       </div>
     );
   }
@@ -188,11 +188,11 @@ export default function SupportPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-heading text-wedding-rose">Support Center</h1>
-        <p className="text-gray-600">Manage user support tickets and help resources</p>
+        <p className="text-gray-600 dark:text-gray-300">Manage user support tickets and help resources</p>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex space-x-8">
           {[
             { key: 'tickets', label: 'Support Tickets' },
@@ -205,7 +205,7 @@ export default function SupportPage() {
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === tab.key
                   ? 'border-wedding-rose text-wedding-rose'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
               }`}
             >
               {tab.label}
@@ -218,12 +218,12 @@ export default function SupportPage() {
       {activeTab === 'tickets' && (
         <div className="space-y-6">
           {/* Filters */}
-          <div className="bg-white p-4 rounded-lg shadow-sm border">
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <div className="flex flex-col sm:flex-row gap-4">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="all">All Statuses</option>
                 <option value="open">Open</option>
@@ -235,7 +235,7 @@ export default function SupportPage() {
               <select
                 value={priorityFilter}
                 onChange={(e) => setPriorityFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="all">All Priorities</option>
                 <option value="urgent">Urgent</option>
@@ -247,42 +247,42 @@ export default function SupportPage() {
           </div>
 
           {/* Tickets List */}
-          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b">
+                <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Ticket
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       User
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Priority
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Created
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                   {filteredTickets.map((ticket) => (
-                    <tr key={ticket._id} className="hover:bg-gray-50">
+                    <tr key={ticket._id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-start space-x-3">
                           <span className="text-lg">{getCategoryIcon(ticket.category)}</span>
                           <div>
-                            <div className="text-sm font-medium text-gray-900">
+                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                               {ticket.subject}
                             </div>
-                            <div className="text-sm text-gray-500">
+                            <div className="text-sm text-gray-500 dark:text-gray-400">
                               {ticket.category.replace('_', ' ')}
                             </div>
                           </div>
@@ -293,7 +293,7 @@ export default function SupportPage() {
                           <div className="text-sm font-medium text-gray-900">
                             {ticket.user_name || 'Unknown User'}
                           </div>
-                          <div className="text-sm text-gray-500">{ticket.user_email}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{ticket.user_email}</div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -306,7 +306,7 @@ export default function SupportPage() {
                           {ticket.status.replace('_', ' ')}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {new Date(ticket.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -320,7 +320,7 @@ export default function SupportPage() {
                           {ticket.status !== 'resolved' && (
                             <button
                               onClick={() => updateTicketStatus(ticket._id, 'resolved')}
-                              className="text-green-600 hover:text-green-900"
+                              className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300"
                             >
                               Resolve
                             </button>
@@ -335,7 +335,7 @@ export default function SupportPage() {
           </div>
 
           {filteredTickets.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
               No tickets found matching your criteria.
             </div>
           )}
@@ -345,31 +345,31 @@ export default function SupportPage() {
       {/* Support Metrics Tab */}
       {activeTab === 'metrics' && metrics && (
         <div className="space-y-6">
-          <h2 className="text-xl font-semibold text-wedding-navy">Support Performance</h2>
+          <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100">Support Performance</h2>
           
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <h3 className="text-sm font-medium text-gray-500">Total Tickets</h3>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Tickets</h3>
               <p className="text-3xl font-bold text-wedding-navy">{metrics.total_tickets}</p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <h3 className="text-sm font-medium text-gray-500">Open Tickets</h3>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Open Tickets</h3>
               <p className="text-3xl font-bold text-blue-600">{metrics.open_tickets}</p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <h3 className="text-sm font-medium text-gray-500">Resolved Today</h3>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Resolved Today</h3>
               <p className="text-3xl font-bold text-green-600">{metrics.resolved_today}</p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <h3 className="text-sm font-medium text-gray-500">Avg Response Time</h3>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Response Time</h3>
               <p className="text-3xl font-bold text-yellow-600">{metrics.avg_response_time}h</p>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <h3 className="text-sm font-medium text-gray-500">Satisfaction Score</h3>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Satisfaction Score</h3>
               <p className="text-3xl font-bold text-purple-600">{metrics.satisfaction_score}/5</p>
             </div>
           </div>
@@ -380,15 +380,15 @@ export default function SupportPage() {
       {activeTab === 'knowledge_base' && (
         <div className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-wedding-navy">Knowledge Base</h2>
+            <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100">Knowledge Base</h2>
             <button className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80">
               Create Article
             </button>
           </div>
           
-          <div className="bg-white p-8 rounded-lg shadow-sm border text-center">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Knowledge Base Coming Soon</h3>
-            <p className="text-gray-600">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 text-center">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Knowledge Base Coming Soon</h3>
+            <p className="text-gray-600 dark:text-gray-300">
               Create and manage help articles, FAQs, and documentation for your users.
             </p>
           </div>
@@ -398,29 +398,29 @@ export default function SupportPage() {
       {/* Response Modal */}
       {selectedTicket && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <h2 className="text-xl font-semibold text-wedding-navy mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">
               Respond to Ticket: {selectedTicket.subject}
             </h2>
             
-            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+            <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
               <div className="flex justify-between items-start mb-2">
                 <span className="font-medium">{selectedTicket.user_name}</span>
-                <span className="text-sm text-gray-500">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
                   {new Date(selectedTicket.created_at).toLocaleDateString()}
                 </span>
               </div>
-              <p className="text-gray-700">{selectedTicket.message}</p>
+              <p className="text-gray-700 dark:text-gray-300">{selectedTicket.message}</p>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Your Response</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Your Response</label>
               <textarea
                 value={responseMessage}
                 onChange={(e) => setResponseMessage(e.target.value)}
                 placeholder="Enter your response..."
                 rows={6}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               />
             </div>
 
@@ -430,7 +430,7 @@ export default function SupportPage() {
                   setSelectedTicket(null);
                   setResponseMessage('');
                 }}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600"
               >
                 Cancel
               </button>

@@ -656,39 +656,55 @@ const SaasAdminDashboard = () => {
 
  if (loading) {
  return (
- <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+ <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
  <div className="text-center">
  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
- <p className="text-gray-600">Loading SAAS Dashboard...</p>
+ <p className="text-gray-600 dark:text-gray-300">Loading SAAS Dashboard...</p>
  </div>
  </div>
  );
  }
 
  return (
- <div className="min-h-screen bg-gray-50">
+ <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
  {/* Header */}
- <div className="bg-white shadow-sm border-b">
- <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
- <div className="flex justify-between items-center py-6">
- <div>
- <h1 className="text-3xl font-bold text-gray-900">SAAS Admin Dashboard</h1>
- <p className="text-gray-600">Manage your wedding planning platform</p>
+ <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+ <div className="mx-auto px-4 sm:px-6 lg:px-8">
+ <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 sm:py-6">
+ <div className="mb-4 sm:mb-0">
+ <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">SAAS Admin Dashboard</h1>
+ <p className="text-gray-600 dark:text-gray-300">Manage your wedding planning platform</p>
  </div>
- <div className="flex items-center space-x-4">
- <span className="text-sm text-gray-500">ROOT_ADMIN</span>
- <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
- <span className="text-white font-semibold">TD</span>
+ <div className="flex items-center space-x-2 sm:space-x-4">
+ <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">ROOT_ADMIN</span>
+ <div className="w-6 h-6 sm:w-8 sm:h-8 bg-blue-600 rounded-full flex items-center justify-center">
+ <span className="text-white font-semibold text-xs sm:text-sm">TD</span>
  </div>
  </div>
  </div>
  </div>
  </div>
 
- {/* Navigation Tabs */}
- <div className="bg-white border-b">
- <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
- <nav className="flex space-x-8">
+ {/* Navigation - Mobile Friendly */}
+ <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+ <div className="mx-auto px-4 sm:px-6 lg:px-8">
+ {/* Mobile: Dropdown Select */}
+ <div className="sm:hidden py-4">
+ <select
+ value={activeTab}
+ onChange={(e) => setActiveTab(e.target.value as any)}
+ className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+ >
+ <option value="overview">Overview</option>
+ <option value="plans">Subscription Plans</option>
+ <option value="content">SAAS Content</option>
+ <option value="theme">Theme & Design</option>
+ <option value="planners">Wedding Planners</option>
+ </select>
+ </div>
+
+ {/* Desktop: Tab Navigation */}
+ <nav className="hidden sm:flex sm:space-x-8">
  {[
  { key: 'overview', label: 'Overview' },
  { key: 'plans', label: 'Subscription Plans' },
@@ -699,10 +715,10 @@ const SaasAdminDashboard = () => {
  <button
  key={tab.key}
  onClick={() => setActiveTab(tab.key as any)}
- className={`py-4 px-1 border-b-2 font-medium text-sm ${
+ className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
  activeTab === tab.key
- ? 'border-blue-500 text-blue-600'
- : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+ ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+ : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
  }`}
  >
  {tab.label}
@@ -713,7 +729,7 @@ const SaasAdminDashboard = () => {
  </div>
 
  {/* Content */}
- <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+ <div className="mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
  {activeTab === 'overview' && (
  <div className="space-y-6">
  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -726,8 +742,8 @@ const SaasAdminDashboard = () => {
  </div>
  <div className="ml-5 w-0 flex-1">
  <dl>
- <dt className="text-sm font-medium text-gray-500 truncate">Total Planners</dt>
- <dd className="text-lg font-medium text-gray-900">{planners.length}</dd>
+ <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Planners</dt>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{planners.length}</dd>
  </dl>
  </div>
  </div>
@@ -742,8 +758,8 @@ const SaasAdminDashboard = () => {
  </div>
  <div className="ml-5 w-0 flex-1">
  <dl>
- <dt className="text-sm font-medium text-gray-500 truncate">Active Plans</dt>
- <dd className="text-lg font-medium text-gray-900">{plans.filter(p => p.is_active).length}</dd>
+ <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active Plans</dt>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{plans.filter(p => p.is_active).length}</dd>
  </dl>
  </div>
  </div>
@@ -758,8 +774,8 @@ const SaasAdminDashboard = () => {
  </div>
  <div className="ml-5 w-0 flex-1">
  <dl>
- <dt className="text-sm font-medium text-gray-500 truncate">Total Weddings</dt>
- <dd className="text-lg font-medium text-gray-900">12</dd>
+ <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Weddings</dt>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">12</dd>
  </dl>
  </div>
  </div>
@@ -774,8 +790,8 @@ const SaasAdminDashboard = () => {
  </div>
  <div className="ml-5 w-0 flex-1">
  <dl>
- <dt className="text-sm font-medium text-gray-500 truncate">Monthly Revenue</dt>
- <dd className="text-lg font-medium text-gray-900">$247</dd>
+ <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Monthly Revenue</dt>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">$247</dd>
  </dl>
  </div>
  </div>
@@ -784,13 +800,13 @@ const SaasAdminDashboard = () => {
 
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
  <Card className="p-6">
- <h3 className="text-lg font-medium text-gray-900 mb-4">Recent Signups</h3>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Recent Signups</h3>
  <div className="space-y-3">
  {planners.slice(0, 3).map((planner) => (
  <div key={planner.id} className="flex items-center justify-between">
  <div>
- <p className="text-sm font-medium text-gray-900">{planner.companyName}</p>
- <p className="text-sm text-gray-500">{planner.email}</p>
+ <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{planner.companyName}</p>
+ <p className="text-sm text-gray-500 dark:text-gray-400">{planner.email}</p>
  </div>
  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
  Active
@@ -801,12 +817,12 @@ const SaasAdminDashboard = () => {
  </Card>
 
  <Card className="p-6">
- <h3 className="text-lg font-medium text-gray-900 mb-4">Plan Distribution</h3>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Plan Distribution</h3>
  <div className="space-y-3">
  {plans.map((plan) => (
  <div key={plan._id} className="flex items-center justify-between">
- <span className="text-sm text-gray-900">{plan.name}</span>
- <span className="text-sm text-gray-500">
+ <span className="text-sm text-gray-900 dark:text-gray-100">{plan.name}</span>
+ <span className="text-sm text-gray-500 dark:text-gray-400">
  {plan.name === 'Professional' ? '1 user' : '0 users'}
  </span>
  </div>
@@ -820,10 +836,10 @@ const SaasAdminDashboard = () => {
  {activeTab === 'plans' && (
  <div className="space-y-6">
  <div className="flex justify-between items-center">
- <h2 className="text-2xl font-bold text-gray-900">Subscription Plans</h2>
+ <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Subscription Plans</h2>
  <button
  onClick={handleCreatePlan}
- className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+ className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
  Create New Plan
  </button>
@@ -849,7 +865,7 @@ const SaasAdminDashboard = () => {
  </div>
  
  {plan.description && (
- <p className="text-sm text-gray-600 mb-3">{plan.description}</p>
+ <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">{plan.description}</p>
  )}
  
  <div className="text-3xl font-bold text-blue-600 mb-4">
@@ -858,19 +874,19 @@ const SaasAdminDashboard = () => {
  
  <ul className="space-y-2 mb-6">
  {featuresArray.slice(0, 4).map((feature, idx) => (
- <li key={idx} className="text-sm text-gray-600 flex items-center">
+ <li key={idx} className="text-sm text-gray-600 dark:text-gray-300 flex items-center">
  <span className="text-green-500 mr-2"></span>
  {feature}
  </li>
  ))}
  {featuresArray.length > 4 && (
- <li className="text-sm text-gray-500">
+ <li className="text-sm text-gray-500 dark:text-gray-400">
  +{featuresArray.length - 4} more features
  </li>
  )}
  </ul>
  
- <div className="text-xs text-gray-500 space-y-1 mb-4">
+ <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1 mb-4">
  <p>Max Weddings: {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings}</p>
  <p>AI Credits: {plan.ai_credits_monthly}/month</p>
  <p>Storage: {plan.storage_gb}GB</p>
@@ -879,13 +895,13 @@ const SaasAdminDashboard = () => {
  <div className="space-y-2">
  <button 
  onClick={() => handleEditPlan(plan)}
- className="w-full bg-blue-100 text-blue-800 py-2 px-4 rounded hover:bg-blue-200 transition-colors"
+ className="w-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 py-2 px-4 rounded hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
  >
  Edit Plan
  </button>
  <button 
  onClick={() => handleDeletePlan(plan._id)}
- className="w-full bg-red-100 text-red-800 py-2 px-4 rounded hover:bg-red-200 transition-colors"
+ className="w-full bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 py-2 px-4 rounded hover:bg-red-200 dark:hover:bg-red-800 transition-colors"
  >
  Delete Plan
  </button>
@@ -900,10 +916,10 @@ const SaasAdminDashboard = () => {
  {activeTab === 'content' && saasConfig && (
  <div className="space-y-6">
  <div className="flex justify-between items-center">
- <h2 className="text-2xl font-bold text-gray-900">SAAS Landing Page Content</h2>
+ <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">SAAS Landing Page Content</h2>
  <button 
  onClick={handleSaveSaasConfig}
- className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+ className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
  Save All Changes
  </button>
@@ -913,58 +929,58 @@ const SaasAdminDashboard = () => {
  {/* Hero Section Editor */}
  <Card className="p-6">
  <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Hero Section</h3>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Hero Section</h3>
  <button
  onClick={() => handleEditContent('hero')}
- className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+ className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
  >
  Edit in Modal
  </button>
  </div>
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
  <input
  type="text"
  value={saasConfig.hero_title}
  onChange={(e) => setSaasConfig({...saasConfig, hero_title: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Subtitle</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subtitle</label>
  <input
  type="text"
  value={saasConfig.hero_subtitle}
  onChange={(e) => setSaasConfig({...saasConfig, hero_subtitle: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
  <textarea
  value={saasConfig.hero_description}
  onChange={(e) => setSaasConfig({...saasConfig, hero_description: e.target.value})}
  rows={3}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Primary CTA</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Primary CTA</label>
  <input
  type="text"
  value={saasConfig.hero_cta_primary}
  onChange={(e) => setSaasConfig({...saasConfig, hero_cta_primary: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Secondary CTA</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Secondary CTA</label>
  <input
  type="text"
  value={saasConfig.hero_cta_secondary}
  onChange={(e) => setSaasConfig({...saasConfig, hero_cta_secondary: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  </div>
@@ -973,11 +989,11 @@ const SaasAdminDashboard = () => {
  {/* Statistics Section */}
  <Card className="p-6">
  <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Statistics</h3>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Statistics</h3>
  <div className="flex items-center space-x-4">
  <button
  onClick={() => handleEditContent('statistics')}
- className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+ className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
  >
  Edit in Modal
  </button>
@@ -988,7 +1004,7 @@ const SaasAdminDashboard = () => {
  onChange={(e) => setSaasConfig({...saasConfig, statistics_enabled: e.target.checked})}
  className="mr-2"
  />
- Enable Section
+ <span className="text-gray-900 dark:text-gray-100">Enable Section</span>
  </label>
  </div>
  </div>
@@ -1004,7 +1020,7 @@ const SaasAdminDashboard = () => {
  setSaasConfig({...saasConfig, statistics: newStats});
  }}
  placeholder="500+"
- className="w-24 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  <input
  type="text"
@@ -1015,14 +1031,14 @@ const SaasAdminDashboard = () => {
  setSaasConfig({...saasConfig, statistics: newStats});
  }}
  placeholder="Label"
- className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  <button
  onClick={() => {
  const newStats = saasConfig.statistics.filter((_, i) => i !== index);
  setSaasConfig({...saasConfig, statistics: newStats});
  }}
- className="text-red-600 hover:text-red-800"
+ className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
  >
  Remove
  </button>
@@ -1033,7 +1049,7 @@ const SaasAdminDashboard = () => {
  ...saasConfig,
  statistics: [...saasConfig.statistics, {label: '', value: ''}]
  })}
- className="text-blue-600 hover:text-blue-800 text-sm"
+ className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
  >
  + Add Statistic
  </button>
@@ -1043,10 +1059,10 @@ const SaasAdminDashboard = () => {
  {/* Trust Indicators */}
  <Card className="p-6">
  <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Trust Indicators</h3>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Trust Indicators</h3>
  <button
  onClick={() => handleEditContent('trust_indicators')}
- className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+ className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
  >
  Edit in Modal
  </button>
@@ -1062,7 +1078,7 @@ const SaasAdminDashboard = () => {
  newIndicators[index] = e.target.value;
  setSaasConfig({...saasConfig, trust_indicators: newIndicators});
  }}
- className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  placeholder="Free 30-day trial"
  />
  <button
@@ -1070,7 +1086,7 @@ const SaasAdminDashboard = () => {
  const newIndicators = saasConfig.trust_indicators.filter((_, i) => i !== index);
  setSaasConfig({...saasConfig, trust_indicators: newIndicators});
  }}
- className="text-red-600 hover:text-red-800"
+ className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
  >
  Remove
  </button>
@@ -1081,7 +1097,7 @@ const SaasAdminDashboard = () => {
  ...saasConfig,
  trust_indicators: [...saasConfig.trust_indicators, '']
  })}
- className="text-blue-600 hover:text-blue-800 text-sm"
+ className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
  >
  + Add Trust Indicator
  </button>
@@ -1091,13 +1107,13 @@ const SaasAdminDashboard = () => {
  {/* Subscription Settings */}
  <Card className="p-6">
  <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Subscription & Contact Settings</h3>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Subscription & Contact Settings</h3>
  </div>
  <div className="space-y-4">
- <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
  <div>
- <h4 className="font-medium text-gray-900">Subscription Section</h4>
- <p className="text-sm text-gray-600">Show pricing plans and subscription options</p>
+ <h4 className="font-medium text-gray-900 dark:text-gray-100">Subscription Section</h4>
+ <p className="text-sm text-gray-600 dark:text-gray-300">Show pricing plans and subscription options</p>
  </div>
  <label className="flex items-center">
  <input
@@ -1106,13 +1122,13 @@ const SaasAdminDashboard = () => {
  onChange={(e) => setSaasConfig({...saasConfig, subscription_enabled: e.target.checked, contact_form_enabled: !e.target.checked})}
  className="mr-2"
  />
- Enable Subscription
+ <span className="text-gray-900 dark:text-gray-100">Enable Subscription</span>
  </label>
  </div>
- <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
  <div>
- <h4 className="font-medium text-gray-900">Contact Form</h4>
- <p className="text-sm text-gray-600">Replace subscription section with contact form for inquiries</p>
+ <h4 className="font-medium text-gray-900 dark:text-gray-100">Contact Form</h4>
+ <p className="text-sm text-gray-600 dark:text-gray-300">Replace subscription section with contact form for inquiries</p>
  </div>
  <label className="flex items-center">
  <input
@@ -1121,11 +1137,11 @@ const SaasAdminDashboard = () => {
  onChange={(e) => setSaasConfig({...saasConfig, contact_form_enabled: e.target.checked, subscription_enabled: !e.target.checked})}
  className="mr-2"
  />
- Enable Contact Form
+ <span className="text-gray-900 dark:text-gray-100">Enable Contact Form</span>
  </label>
  </div>
- <div className="mt-4 p-3 bg-blue-50 rounded-lg">
- <p className="text-sm text-blue-800">
+ <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+ <p className="text-sm text-blue-800 dark:text-blue-200">
  <strong>Note:</strong> Only one option can be enabled at a time. The contact form will replace the subscription section when enabled.
  </p>
  </div>
@@ -1138,10 +1154,10 @@ const SaasAdminDashboard = () => {
  {activeTab === 'theme' && saasConfig && (
  <div className="space-y-6">
  <div className="flex justify-between items-center">
- <h2 className="text-2xl font-bold text-gray-900">Theme & Design</h2>
+ <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Theme & Design</h2>
  <button 
  onClick={handleSaveSaasConfig}
- className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+ className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
  Save Changes
  </button>
@@ -1150,10 +1166,10 @@ const SaasAdminDashboard = () => {
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
  {/* Theme Colors */}
  <Card className="p-6">
- <h3 className="text-lg font-semibold mb-4">Brand Colors</h3>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Brand Colors</h3>
  <div className="space-y-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Primary Color
  </label>
  <div className="flex items-center space-x-3">
@@ -1164,7 +1180,7 @@ const SaasAdminDashboard = () => {
  ...saasConfig,
  theme: { ...saasConfig.theme, primary_color: e.target.value }
  })}
- className="w-12 h-12 rounded border-2 border-gray-300 cursor-pointer"
+ className="w-12 h-12 rounded border-2 border-gray-300 dark:border-gray-600 cursor-pointer"
  />
  <input
  type="text"
@@ -1173,14 +1189,14 @@ const SaasAdminDashboard = () => {
  ...saasConfig,
  theme: { ...saasConfig.theme, primary_color: e.target.value }
  })}
- className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  placeholder="#1e3a5f"
  />
  </div>
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Secondary Color
  </label>
  <div className="flex items-center space-x-3">
@@ -1191,7 +1207,7 @@ const SaasAdminDashboard = () => {
  ...saasConfig,
  theme: { ...saasConfig.theme, secondary_color: e.target.value }
  })}
- className="w-12 h-12 rounded border-2 border-gray-300 cursor-pointer"
+ className="w-12 h-12 rounded border-2 border-gray-300 dark:border-gray-600 cursor-pointer"
  />
  <input
  type="text"
@@ -1200,15 +1216,15 @@ const SaasAdminDashboard = () => {
  ...saasConfig,
  theme: { ...saasConfig.theme, secondary_color: e.target.value }
  })}
- className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  placeholder="#d4af37"
  />
  </div>
  </div>
 
  {/* Color Preview */}
- <div className="mt-6 p-4 rounded-lg border-2 border-gray-200">
- <h4 className="text-sm font-medium text-gray-700 mb-3">Preview</h4>
+ <div className="mt-6 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-600">
+ <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Preview</h4>
  <div className="flex space-x-4">
  <div 
  className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
@@ -1237,10 +1253,10 @@ const SaasAdminDashboard = () => {
 
  {/* Background Settings */}
  <Card className="p-6">
- <h3 className="text-lg font-semibold mb-4">Background Settings</h3>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Background Settings</h3>
  <div className="space-y-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Custom Background Image URL
  </label>
  <input
@@ -1250,13 +1266,13 @@ const SaasAdminDashboard = () => {
  ...saasConfig,
  theme: { ...saasConfig.theme, background_image: e.target.value }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  placeholder="https://example.com/image.jpg"
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Fallback Images
  </label>
  <div className="space-y-2">
@@ -1273,7 +1289,7 @@ const SaasAdminDashboard = () => {
  theme: { ...saasConfig.theme, fallback_images: newImages }
  });
  }}
- className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  placeholder="/path/to/image.jpg"
  />
  <button
@@ -1284,7 +1300,7 @@ const SaasAdminDashboard = () => {
  theme: { ...saasConfig.theme, fallback_images: newImages }
  });
  }}
- className="text-red-600 hover:text-red-800"
+ className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
  >
  Remove
  </button>
@@ -1298,7 +1314,7 @@ const SaasAdminDashboard = () => {
  fallback_images: [...saasConfig.theme.fallback_images, ''] 
  }
  })}
- className="text-blue-600 hover:text-blue-800 text-sm"
+ className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
  >
  + Add Fallback Image
  </button>
@@ -1312,12 +1328,12 @@ const SaasAdminDashboard = () => {
  <Card className="p-6">
  <div className="flex justify-between items-center">
  <div>
- <h3 className="text-lg font-semibold">Live Preview</h3>
- <p className="text-gray-600 text-sm">See how your changes look on the landing page</p>
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Live Preview</h3>
+ <p className="text-gray-600 dark:text-gray-300 text-sm">See how your changes look on the landing page</p>
  </div>
  <button
  onClick={() => window.open('/', '_blank')}
- className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+ className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
  Open Landing Page
  </button>
@@ -1329,10 +1345,10 @@ const SaasAdminDashboard = () => {
  {activeTab === 'planners' && (
  <div className="space-y-6">
  <div className="flex justify-between items-center">
- <h2 className="text-2xl font-bold text-gray-900">Wedding Planners</h2>
+ <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Wedding Planners</h2>
  <button
  onClick={handleCreatePlanner}
- className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+ className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
  Create New Planner
  </button>
@@ -1341,32 +1357,32 @@ const SaasAdminDashboard = () => {
  <Card className="overflow-hidden">
  <div className="overflow-x-auto">
  <table className="min-w-full divide-y divide-gray-200">
- <thead className="bg-gray-50">
+ <thead className="bg-gray-50 dark:bg-gray-700">
  <tr>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Company & Email
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Plan
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Status
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Last Login
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Actions
  </th>
  </tr>
  </thead>
- <tbody className="bg-white divide-y divide-gray-200">
+ <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
  {planners.map((planner) => (
  <tr key={planner.id}>
  <td className="px-6 py-4 whitespace-nowrap">
  <div>
- <div className="text-sm font-medium text-gray-900">{planner.companyName}</div>
- <div className="text-sm text-gray-500">{planner.email}</div>
+ <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{planner.companyName}</div>
+ <div className="text-sm text-gray-500 dark:text-gray-400">{planner.email}</div>
  </div>
  </td>
  <td className="px-6 py-4 whitespace-nowrap">
@@ -1374,7 +1390,7 @@ const SaasAdminDashboard = () => {
  <select
  value={planner.subscriptionPlanId || ''}
  onChange={(e) => handleAssignPlan(planner.id, e.target.value)}
- className="text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+ className="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
  >
  <option value="">Select Plan</option>
  {plans.filter(p => p.is_active).map(plan => (
@@ -1397,7 +1413,7 @@ const SaasAdminDashboard = () => {
  {planner.is_active && planner.subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
  </span>
  </td>
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
  {planner.lastLogin 
  ? new Date(planner.lastLogin).toLocaleDateString()
  : 'Never'
@@ -1407,15 +1423,15 @@ const SaasAdminDashboard = () => {
  <button
  onClick={() => handleTogglePlannerStatus(planner.id)}
  className={`${
- planner.is_active ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'
+ planner.is_active ? 'text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300' : 'text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300'
  }`}
  >
  {planner.is_active ? 'Deactivate' : 'Activate'}
  </button>
- <button className="text-blue-600 hover:text-blue-900">
+ <button className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300">
  Edit
  </button>
- <button className="text-gray-600 hover:text-gray-900">
+ <button className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300">
  View Weddings
  </button>
  </td>
@@ -1529,85 +1545,85 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
 
  return (
  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
- <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
- <h2 className="text-2xl font-bold mb-4">
+ <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+ <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
  {isEditing ? 'Edit Plan' : 'Create New Plan'}
  </h2>
  
  <form onSubmit={handleSubmit} className="space-y-4">
  <div className="grid grid-cols-2 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">Plan Name</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Plan Name</label>
  <input
  type="text"
  required
  value={formData.name}
  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Price ($)</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monthly Price ($)</label>
  <input
  type="number"
  step="0.01"
  min="0"
  value={formData.price_monthly}
  onChange={(e) => setFormData(prev => ({ ...prev, price_monthly: parseFloat(e.target.value) || 0 }))}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
  <textarea
  value={formData.description}
  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  rows={2}
  />
  </div>
 
  <div className="grid grid-cols-3 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">Max Weddings</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max Weddings</label>
  <input
  type="number"
  min="-1"
  value={formData.max_weddings}
  onChange={(e) => setFormData(prev => ({ ...prev, max_weddings: parseInt(e.target.value) || 0 }))}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  placeholder="-1 for unlimited"
  />
  </div>
  
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">AI Credits/Month</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">AI Credits/Month</label>
  <input
  type="number"
  min="0"
  value={formData.ai_credits_monthly}
  onChange={(e) => setFormData(prev => ({ ...prev, ai_credits_monthly: parseInt(e.target.value) || 0 }))}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">Storage (GB)</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Storage (GB)</label>
  <input
  type="number"
  min="0"
  value={formData.storage_gb}
  onChange={(e) => setFormData(prev => ({ ...prev, storage_gb: parseInt(e.target.value) || 0 }))}
- className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Features</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Features</label>
  <div className="grid grid-cols-2 gap-2">
  {Object.entries(formData.features).map(([key, value]) => (
  <label key={key} className="flex items-center space-x-2">
@@ -1620,7 +1636,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  }))}
  className="rounded"
  />
- <span className="text-sm">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+ <span className="text-sm text-gray-900 dark:text-gray-100">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
  </label>
  ))}
  </div>
@@ -1634,7 +1650,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
  className="rounded"
  />
- <span className="text-sm">Active</span>
+ <span className="text-sm text-gray-900 dark:text-gray-100">Active</span>
  </label>
  
  <label className="flex items-center space-x-2">
@@ -1644,7 +1660,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  onChange={(e) => setFormData(prev => ({ ...prev, is_featured: e.target.checked }))}
  className="rounded"
  />
- <span className="text-sm">Featured</span>
+ <span className="text-sm text-gray-900 dark:text-gray-100">Featured</span>
  </label>
  </div>
 
@@ -1652,13 +1668,13 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  <button
  type="button"
  onClick={onClose}
- className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+ className="px-4 py-2 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-600"
  >
  Cancel
  </button>
  <button
  type="submit"
- className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+ className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white rounded"
  >
  {isEditing ? 'Update Plan' : 'Create Plan'}
  </button>

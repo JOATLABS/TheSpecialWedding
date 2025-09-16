@@ -5,6 +5,7 @@ module.exports = {
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
@@ -19,6 +20,8 @@ module.exports = {
       fontFamily: {
         'wedding': ['Playfair Display', 'serif'],
         'elegant': ['Cormorant Garamond', 'serif'],
+        'heading': ['Playfair Display', 'serif'],
+        'body': ['Cormorant Garamond', 'serif'],
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',

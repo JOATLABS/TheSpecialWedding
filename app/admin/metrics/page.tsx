@@ -142,7 +142,7 @@ export default function PlatformMetricsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
-        <div className="text-lg">Loading metrics...</div>
+        <div className="text-lg text-gray-900 dark:text-gray-100">Loading metrics...</div>
       </div>
     );
   }
@@ -150,7 +150,7 @@ export default function PlatformMetricsPage() {
   if (!metrics) {
     return (
       <div className="text-center py-8">
-        <div className="text-red-600 mb-4">Failed to load metrics</div>
+        <div className="text-red-600 dark:text-red-400 mb-4">Failed to load metrics</div>
         <button 
           onClick={fetchMetrics}
           className="bg-wedding-rose text-white px-4 py-2 rounded-lg hover:bg-wedding-rose/80"
@@ -167,13 +167,13 @@ export default function PlatformMetricsPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-heading text-wedding-rose">Platform Metrics</h1>
-          <p className="text-gray-600">Monitor platform performance and growth</p>
+          <p className="text-gray-600 dark:text-gray-300">Monitor platform performance and growth</p>
         </div>
         
         <select
           value={timeframe}
           onChange={(e) => setTimeframe(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+          className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
         >
           <option value="7days">Last 7 Days</option>
           <option value="30days">Last 30 Days</option>
@@ -183,17 +183,17 @@ export default function PlatformMetricsPage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-700">{error}</p>
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+          <p className="text-red-700 dark:text-red-300">{error}</p>
         </div>
       )}
 
       {/* User Metrics */}
       <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">User Growth</h2>
+        <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">User Growth</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Total Users</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Users</h3>
             <p className="text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.total)}</p>
             <div className="flex items-center mt-2">
               <span className="text-sm text-green-600">+{metrics.users.new_this_month} this month</span>
@@ -201,17 +201,17 @@ export default function PlatformMetricsPage() {
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Active Users</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Users</h3>
             <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.users.active)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 {formatPercentage((metrics.users.active / metrics.users.total) * 100)} active rate
               </span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">New Users</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">New Users</h3>
             <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.users.new_this_month)}</p>
             <div className="flex items-center mt-2">
               <span className="text-sm text-green-600">
@@ -221,10 +221,10 @@ export default function PlatformMetricsPage() {
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Growth Rate</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Growth Rate</h3>
             <p className="text-3xl font-bold text-purple-600">{formatPercentage(metrics.users.growth_rate)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Month over month</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Month over month</span>
             </div>
           </Card>
         </div>
@@ -232,10 +232,10 @@ export default function PlatformMetricsPage() {
 
       {/* Revenue Metrics */}
       <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Revenue</h2>
+        <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">Revenue</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Monthly Recurring Revenue</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Monthly Recurring Revenue</h3>
             <p className="text-3xl font-bold text-wedding-rose">{formatCurrency(metrics.subscriptions.mrr)}</p>
             <div className="flex items-center mt-2">
               <span className="text-sm text-green-600">
@@ -245,26 +245,26 @@ export default function PlatformMetricsPage() {
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Annual Recurring Revenue</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Annual Recurring Revenue</h3>
             <p className="text-3xl font-bold text-green-600">{formatCurrency(metrics.subscriptions.arr)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Projected yearly</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Projected yearly</span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">ARPU</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">ARPU</h3>
             <p className="text-3xl font-bold text-blue-600">{formatCurrency(metrics.revenue.average_revenue_per_user)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Avg revenue per user</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Avg revenue per user</span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Customer LTV</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Customer LTV</h3>
             <p className="text-3xl font-bold text-purple-600">{formatCurrency(metrics.revenue.lifetime_value)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Lifetime value</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Lifetime value</span>
             </div>
           </Card>
         </div>
@@ -272,41 +272,41 @@ export default function PlatformMetricsPage() {
 
       {/* Subscription Metrics */}
       <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Subscriptions</h2>
+        <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">Subscriptions</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Active Subscriptions</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Subscriptions</h3>
             <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.subscriptions.active)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 {formatPercentage((metrics.subscriptions.active / metrics.subscriptions.total) * 100)} of total
               </span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Trial Users</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Trial Users</h3>
             <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.subscriptions.trial)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Currently on trial</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Currently on trial</span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Churn This Month</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Churn This Month</h3>
             <p className="text-3xl font-bold text-red-600">{formatNumber(metrics.subscriptions.churned_this_month)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 {formatPercentage((metrics.subscriptions.churned_this_month / metrics.subscriptions.total) * 100)} churn rate
               </span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Total Subscriptions</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Subscriptions</h3>
             <p className="text-3xl font-bold text-wedding-navy">{formatNumber(metrics.subscriptions.total)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">All time</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">All time</span>
             </div>
           </Card>
         </div>
@@ -314,29 +314,29 @@ export default function PlatformMetricsPage() {
 
       {/* Usage Metrics */}
       <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Platform Usage</h2>
+        <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">Platform Usage</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Weddings Created</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Weddings Created</h3>
             <p className="text-3xl font-bold text-wedding-rose">{formatNumber(metrics.usage.weddings_created)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">This period</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">This period</span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Guests Managed</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Guests Managed</h3>
             <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.usage.guests_managed)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Total guests</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Total guests</span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Forms Created</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Forms Created</h3>
             <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.usage.forms_created)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Custom forms</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Custom forms</span>
             </div>
           </Card>
         </div>
@@ -344,21 +344,21 @@ export default function PlatformMetricsPage() {
 
       {/* Communication Metrics */}
       <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Communications</h2>
+        <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">Communications</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Emails Sent</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Emails Sent</h3>
             <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.usage.emails_sent)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">This period</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">This period</span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">SMS Sent</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">SMS Sent</h3>
             <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.usage.sms_sent)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">This period</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">This period</span>
             </div>
           </Card>
         </div>
@@ -366,10 +366,10 @@ export default function PlatformMetricsPage() {
 
       {/* System Performance */}
       <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">System Performance</h2>
+        <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">System Performance</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Uptime</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Uptime</h3>
             <p className="text-3xl font-bold text-green-600">{formatPercentage(metrics.performance.uptime)}</p>
             <div className="flex items-center mt-2">
               <span className="text-sm text-green-600">Excellent</span>
@@ -377,15 +377,15 @@ export default function PlatformMetricsPage() {
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Response Time</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Response Time</h3>
             <p className="text-3xl font-bold text-blue-600">{metrics.performance.avg_response_time}ms</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Average</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Average</span>
             </div>
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Error Rate</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Error Rate</h3>
             <p className="text-3xl font-bold text-yellow-600">{formatPercentage(metrics.performance.error_rate)}</p>
             <div className="flex items-center mt-2">
               <span className="text-sm text-green-600">Within limits</span>
@@ -393,10 +393,10 @@ export default function PlatformMetricsPage() {
           </Card>
           
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">API Calls Today</h3>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">API Calls Today</h3>
             <p className="text-3xl font-bold text-purple-600">{formatNumber(metrics.performance.api_calls_today)}</p>
             <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">24 hours</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">24 hours</span>
             </div>
           </Card>
         </div>
