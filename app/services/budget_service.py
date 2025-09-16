@@ -177,8 +177,19 @@ class BudgetService:
             query = {"wedding_id": wedding_id}
             if service_category:
                 query["service_category"] = service_category
-            
-            quotes = list(self.vendor_quotes.find(query).sort("created_at", -1))
+
+            raw_quotes = list(self.vendor_quotes.find(query).sort("created_at", -1))
+
+            # Convert MongoDB documents to Pydantic models for proper serialization
+            quotes = []
+            for quote_doc in raw_quotes:
+                try:
+                    quote = VendorQuote(**quote_doc)
+                    quotes.append(quote.dict())
+                except Exception as e:
+                    logger.warning(f"Failed to parse vendor quote {quote_doc.get('_id')}: {str(e)}")
+                    continue
+
             return quotes
             
         except Exception as e:
