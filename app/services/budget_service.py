@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
+from bson import ObjectId
 from app.utils.pydantic_objectid import PyObjectId
 from app.core.database import mongo
 from app.models.budget import (
@@ -32,7 +33,13 @@ class BudgetService:
         """Create a new budget category for a wedding"""
         try:
             # Validate wedding exists and user has access
-            wedding = self.weddings.find_one({"_id": wedding_id})
+            try:
+                wedding_object_id = ObjectId(wedding_id)
+                wedding = self.weddings.find_one({"_id": wedding_object_id})
+            except Exception:
+                # If ObjectId conversion fails, try as string (for backwards compatibility)
+                wedding = self.weddings.find_one({"_id": wedding_id})
+
             if not wedding:
                 raise ValueError("Wedding not found")
             
