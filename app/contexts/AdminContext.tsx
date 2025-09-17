@@ -33,38 +33,56 @@ export const AdminProvider = ({
     initialAuth?: boolean;
 }) => {
     const router = useRouter();
-    // Start with false, let useEffect handle cookie check
-    // This prevents hydration mismatches
+
+    // HYDRATION FIX: Use isClient pattern from Next.js docs
+    // This ensures we only check auth state on the client
+    const [isClient, setIsClient] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [token, setToken] = useState<string | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
+    // First effect: Detect client-side rendering
     useEffect(() => {
+        setIsClient(true);
+    }, []);
+
+    // Second effect: Check authentication only on client
+    useEffect(() => {
+        // Only run auth checks after confirming we're on the client
+        if (!isClient) return;
+
         // TWO-COOKIE PATTERN:
         // 1. admin_token: httpOnly cookie with actual JWT (not accessible here)
         // 2. admin_authenticated: readable cookie for client auth state
+
+        // First check for stored token (more reliable across refreshes)
+        const storedToken = localStorage.getItem('admin_token') ||
+                          sessionStorage.getItem('admin_token');
 
         // Check the client-readable auth cookie
         const match = document.cookie.match(/admin_authenticated=([^;]+)/);
         const cookieAuth = match ? match[1] === 'true' : false;
 
-        if (cookieAuth) {
+        // User is authenticated if EITHER:
+        // 1. They have a valid token in storage (survived refresh)
+        // 2. They have the auth cookie set
+        if (storedToken || cookieAuth) {
             setIsAuthenticated(true);
-            // Try to get the token from localStorage/sessionStorage (from login response)
-            const storedToken = localStorage.getItem('admin_token') ||
-                              sessionStorage.getItem('admin_token');
             if (storedToken) {
                 setToken(storedToken);
             }
-        } else if (!initialAuth) {
-            // No auth cookie and no server-side auth = user is logged out
+        } else {
+            // Only clear storage if we have NO token AND NO cookie
+            // This prevents accidental logout on refresh
             setIsAuthenticated(false);
             setToken(null);
-            // Clean up any stale storage
-            localStorage.removeItem('admin_token');
-            sessionStorage.removeItem('admin_token');
+            // Only clear storage if truly logged out
+            if (!storedToken && !cookieAuth) {
+                localStorage.removeItem('admin_token');
+                sessionStorage.removeItem('admin_token');
+            }
         }
-    }, [initialAuth]);
+    }, [isClient]); // Only depend on isClient
 
     // Automatically fetch user profile when token is set
     useEffect(() => {
