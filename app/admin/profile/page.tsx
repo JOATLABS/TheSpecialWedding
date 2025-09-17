@@ -29,11 +29,18 @@ interface ProfileUpdateData {
   company_name: string;
 }
 
+interface NotificationPreferences {
+  email_enabled: boolean;
+  instant_notifications: boolean;
+  digest_frequency: 'none' | 'daily' | 'weekly';
+  forms: string[];
+}
+
 export default function ProfilePage() {
   const { token } = useAdmin();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'email'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'email' | 'notifications'>('profile');
 
   // Form states
   const [passwordData, setPasswordData] = useState<ChangePasswordData>({
@@ -50,6 +57,13 @@ export default function ProfilePage() {
     last_name: '',
     company_name: ''
   });
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>({
+    email_enabled: true,
+    instant_notifications: true,
+    digest_frequency: 'daily',
+    forms: []
+  });
+  const [availableForms, setAvailableForms] = useState<{id: string, name: string}[]>([]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -189,6 +203,77 @@ export default function ProfilePage() {
     }
   };
 
+  const fetchNotificationPreferences = async () => {
+    if (!token) return;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+      // Fetch preferences and available forms in parallel
+      const [preferencesResponse, formsResponse] = await Promise.all([
+        fetch(`${baseUrl}/admin/notifications/preferences`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+        fetch(`${baseUrl}/admin/forms`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+      ]);
+
+      if (preferencesResponse.ok) {
+        const preferences = await preferencesResponse.json();
+        setNotificationPreferences(preferences);
+      }
+
+      if (formsResponse.ok) {
+        const formsData = await formsResponse.json();
+        setAvailableForms(formsData.map((form: any) => ({
+          id: form.id,
+          name: form.name
+        })));
+      }
+    } catch (error) {
+      console.error('Failed to fetch notification preferences:', error);
+    }
+  };
+
+  const updateNotificationPreferences = async () => {
+    if (!token) return;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/notifications/preferences`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(notificationPreferences),
+      });
+
+      if (response.ok) {
+        toast.success('Notification preferences updated successfully');
+      } else {
+        const error = await response.json();
+        toast.error(error.detail || 'Failed to update notification preferences');
+      }
+    } catch (error) {
+      console.error('Notification preferences update failed:', error);
+      toast.error('Failed to update notification preferences');
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'notifications') {
+      fetchNotificationPreferences();
+    }
+  }, [activeTab, token]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -219,12 +304,13 @@ export default function ProfilePage() {
           <div className="sm:hidden py-4">
             <select
               value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value as 'profile' | 'password' | 'email')}
-              className="block w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-md shadow-sm text-sm"
+              onChange={(e) => setActiveTab(e.target.value as 'profile' | 'password' | 'email' | 'notifications')}
+              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md shadow-sm text-sm"
             >
               <option value="profile">Profile Info</option>
               <option value="password">Change Password</option>
               <option value="email">Change Email</option>
+              <option value="notifications">Notifications</option>
             </select>
           </div>
 
@@ -259,6 +345,16 @@ export default function ProfilePage() {
               }`}
             >
               Change Email
+            </button>
+            <button
+              onClick={() => setActiveTab('notifications')}
+              className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
+                activeTab === 'notifications'
+                  ? 'bg-wedding-rose text-white'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-wedding-rose'
+              }`}
+            >
+              Notifications
             </button>
           </div>
 
@@ -448,6 +544,143 @@ export default function ProfilePage() {
                 </button>
               </div>
             </form>
+          )}
+
+          {/* Notifications Tab */}
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Notification Preferences</h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Customize how you receive notifications for form responses and platform updates.
+              </p>
+
+              <div className="space-y-6">
+                {/* Email Notifications */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">Email Notifications</h3>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Enable Email Notifications
+                        </label>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Receive email notifications for new form responses
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setNotificationPreferences(prev => ({ ...prev, email_enabled: !prev.email_enabled }))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          notificationPreferences.email_enabled ? 'bg-wedding-rose' : 'bg-gray-200 dark:bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            notificationPreferences.email_enabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {notificationPreferences.email_enabled && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                              Instant Notifications
+                            </label>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              Receive emails immediately when responses are submitted
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setNotificationPreferences(prev => ({ ...prev, instant_notifications: !prev.instant_notifications }))}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              notificationPreferences.instant_notifications ? 'bg-wedding-rose' : 'bg-gray-200 dark:bg-gray-600'
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                notificationPreferences.instant_notifications ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {!notificationPreferences.instant_notifications && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              Digest Frequency
+                            </label>
+                            <select
+                              value={notificationPreferences.digest_frequency}
+                              onChange={(e) => setNotificationPreferences(prev => ({
+                                ...prev,
+                                digest_frequency: e.target.value as 'none' | 'daily' | 'weekly'
+                              }))}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                            >
+                              <option value="daily">Daily digest</option>
+                              <option value="weekly">Weekly digest</option>
+                              <option value="none">No digest emails</option>
+                            </select>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Form Selection */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">Form Notifications</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                    Choose which forms you want to receive notifications for. Leave empty to receive notifications for all forms.
+                  </p>
+
+                  {availableForms.length > 0 ? (
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {availableForms.map((form) => (
+                        <label key={form.id} className="flex items-center space-x-3">
+                          <input
+                            type="checkbox"
+                            checked={notificationPreferences.forms.includes(form.id)}
+                            onChange={(e) => {
+                              setNotificationPreferences(prev => ({
+                                ...prev,
+                                forms: e.target.checked
+                                  ? [...prev.forms, form.id]
+                                  : prev.forms.filter(id => id !== form.id)
+                              }));
+                            }}
+                            className="h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{form.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                      No forms available. Create a form to set specific notification preferences.
+                    </p>
+                  )}
+                </div>
+
+                {/* Save Button */}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={updateNotificationPreferences}
+                    className="bg-wedding-rose text-white px-6 py-2 rounded-md hover:bg-wedding-gold transition"
+                  >
+                    Save Preferences
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

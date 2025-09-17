@@ -243,6 +243,13 @@ class FormResponse(BaseModel):
     submitted_at: datetime = Field(default_factory=datetime.utcnow, description="Submission timestamp")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
+    # Review status fields for notification system
+    is_reviewed: bool = Field(default=False, description="Whether response has been reviewed by planner")
+    reviewed_at: Optional[datetime] = Field(None, description="When response was marked as reviewed")
+    reviewed_by: Optional[str] = Field(None, description="Email of user who reviewed response")
+    notification_sent: bool = Field(default=False, description="Whether notification email was sent")
+    notification_sent_at: Optional[datetime] = Field(None, description="When notification email was sent")
+
     class Config:
         populate_by_name = True
         schema_extra = {
@@ -254,7 +261,9 @@ class FormResponse(BaseModel):
                 },
                 "submitted_by_email": "bride@example.com",
                 "submitted_by_name": "Jane Doe",
-                "wedding_id": "wedding_456"
+                "wedding_id": "wedding_456",
+                "is_reviewed": False,
+                "notification_sent": True
             }
         }
 
@@ -394,11 +403,21 @@ class SubmitFormRequest(BaseModel):
         """Validate submitter name"""
         if v is None:
             return v
-        
+
         if not isinstance(v, str):
             return None
-        
+
         if len(v) > 100:
             raise ValueError('Name too long (max 100 characters)')
-        
+
         return v.strip()
+
+class UpdateResponseReviewRequest(BaseModel):
+    is_reviewed: bool = Field(..., description="Whether to mark response as reviewed")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "is_reviewed": True
+            }
+        }

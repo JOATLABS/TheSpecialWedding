@@ -660,3 +660,369 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error queuing admin email: {str(e)}")
             # Don't raise exception - notification should still be created even if email fails
+
+    async def notify_form_response(self, form_id: str, response_id: str, response_data: dict, form_data: dict) -> dict:
+        """Create notification for new form response"""
+        try:
+            from app.core.database import get_database
+
+            db = get_database()
+            forms_collection = db["forms"]
+            form_responses_collection = db["form_responses"]
+            users_collection = db["users"]
+
+            # Get form details
+            form = forms_collection.find_one({"_id": form_id})
+            if not form:
+                logger.error(f"Form {form_id} not found for notification")
+                return {"success": False, "error": "Form not found"}
+
+            # Get form owner (wedding planner)
+            form_owner_email = form.get("created_by")
+            if not form_owner_email:
+                logger.error(f"Form {form_id} has no owner for notification")
+                return {"success": False, "error": "Form owner not found"}
+
+            # Check notification preferences for this user
+            preferences = await self.get_notification_preferences(form_owner_email)
+            if not preferences.get("email_enabled", True):
+                logger.info(f"Email notifications disabled for {form_owner_email}")
+                return {"success": True, "message": "Notifications disabled"}
+
+            # Check if instant notifications or if this form is in their list
+            if preferences.get("digest_frequency") != "instant":
+                if form_id not in preferences.get("forms", []):
+                    logger.info(f"Form {form_id} not in notification list for {form_owner_email}")
+                    return {"success": True, "message": "Form not in notification list"}
+
+            # Get response details
+            submitted_by_name = response_data.get("submitted_by_name", "Anonymous")
+            submitted_by_email = response_data.get("submitted_by_email", "Not provided")
+
+            # Get total response count for this form
+            total_responses = form_responses_collection.count_documents({"form_id": form_id})
+
+            # Create in-app notification
+            notification_data = {
+                "title": f"New Response: {form['settings']['title']}",
+                "message": f"{submitted_by_name} has submitted a response to your form '{form['settings']['title']}'",
+                "type": "form_response",
+                "target_audience": "specific_user",
+                "user_id": form_owner_email,
+                "is_dismissible": True,
+                "priority": "medium",
+                "form_id": form_id,
+                "response_id": response_id,
+                "metadata": {
+                    "form_name": form["settings"]["title"],
+                    "submitted_by_name": submitted_by_name,
+                    "submitted_by_email": submitted_by_email,
+                    "total_responses": total_responses,
+                    "response_url": f"/admin/forms/{form_id}/responses"
+                }
+            }
+
+            # Create the in-app notification
+            await self.create_notification(notification_data, "system")
+
+            # Send email notification
+            await self._send_form_response_email(
+                form_owner_email=form_owner_email,
+                form_data=form,
+                response_data=response_data,
+                total_responses=total_responses,
+                response_id=response_id
+            )
+
+            # Mark response as notification sent
+            form_responses_collection.update_one(
+                {"_id": response_id},
+                {
+                    "$set": {
+                        "notification_sent": True,
+                        "notification_sent_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            logger.info(f"Form response notification sent for form {form_id} to {form_owner_email}")
+
+            return {
+                "success": True,
+                "message": "Notification sent successfully",
+                "email_sent": True
+            }
+
+        except Exception as e:
+            logger.error(f"Error sending form response notification: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    async def _send_form_response_email(self, form_owner_email: str, form_data: dict, response_data: dict, total_responses: int, response_id: str):
+        """Send email notification for form response"""
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            email_service = ResendEmailService()
+
+            # Generate email content
+            form_title = form_data["settings"]["title"]
+            submitted_by_name = response_data.get("submitted_by_name", "Anonymous")
+            submitted_by_email = response_data.get("submitted_by_email", "Not provided")
+            submitted_at = datetime.utcnow().strftime("%B %d, %Y at %I:%M %p")
+
+            # Get first few response fields for preview
+            response_preview = self._generate_response_preview(form_data.get("fields", []), response_data.get("responses", {}))
+
+            subject = f"📝 New Response: {form_title}"
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>New Form Response</title>
+                <style>
+                    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f8fafc; }}
+                    .container {{ max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }}
+                    .header h1 {{ margin: 0; font-size: 24px; font-weight: 600; }}
+                    .header p {{ margin: 10px 0 0 0; opacity: 0.9; }}
+                    .content {{ padding: 30px; }}
+                    .form-info {{ background: #f1f5f9; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }}
+                    .response-meta {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }}
+                    .meta-item {{ text-align: center; padding: 15px; background: #f8fafc; border-radius: 8px; }}
+                    .meta-item strong {{ display: block; font-size: 18px; color: #667eea; margin-bottom: 5px; }}
+                    .response-preview {{ background: #fafbfc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+                    .response-preview h3 {{ margin-top: 0; color: #334155; }}
+                    .field-preview {{ margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; }}
+                    .field-preview:last-child {{ border-bottom: none; margin-bottom: 0; }}
+                    .field-label {{ font-weight: 600; color: #475569; margin-bottom: 5px; }}
+                    .field-value {{ color: #64748b; }}
+                    .action-button {{ display: inline-block; background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }}
+                    .action-button:hover {{ background: #5a67d8; }}
+                    .footer {{ text-align: center; padding: 20px; color: #64748b; font-size: 14px; background: #f8fafc; }}
+                    .footer a {{ color: #667eea; text-decoration: none; }}
+
+                    @media (max-width: 600px) {{
+                        .container {{ margin: 10px; border-radius: 8px; }}
+                        .header {{ padding: 20px; }}
+                        .content {{ padding: 20px; }}
+                        .response-meta {{ grid-template-columns: 1fr; gap: 10px; }}
+                        .action-button {{ display: block; text-align: center; }}
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>📝 New Form Response</h1>
+                        <p>You've received a new response!</p>
+                    </div>
+
+                    <div class="content">
+                        <div class="form-info">
+                            <h3 style="margin-top: 0; color: #334155;">Form: {form_title}</h3>
+                            <p style="margin-bottom: 0; color: #64748b;">A new response has been submitted and is ready for your review.</p>
+                        </div>
+
+                        <div class="response-meta">
+                            <div class="meta-item">
+                                <strong>{submitted_by_name}</strong>
+                                <span>{submitted_by_email}</span>
+                            </div>
+                            <div class="meta-item">
+                                <strong>{total_responses}</strong>
+                                <span>Total Responses</span>
+                            </div>
+                        </div>
+
+                        <div class="response-preview">
+                            <h3>Response Preview</h3>
+                            {response_preview}
+                        </div>
+
+                        <div style="text-align: center;">
+                            <a href="https://app.thespecialwedding.com/admin/forms/{form_data['_id']}/responses"
+                               class="action-button">View Full Response</a>
+                        </div>
+
+                        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #64748b;">
+                            <p><strong>Submitted:</strong> {submitted_at}</p>
+                            <p><strong>Response ID:</strong> {response_id}</p>
+                        </div>
+                    </div>
+
+                    <div class="footer">
+                        <p>© TheSpecialWedding Platform - Wedding Planning Made Simple</p>
+                        <p>
+                            <a href="https://app.thespecialwedding.com/admin/settings/notifications">
+                                Manage notification preferences
+                            </a>
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            # Send the email
+            result = email_service.send_email(
+                to_email=form_owner_email,
+                subject=subject,
+                html_content=html_content
+            )
+
+            if result.get("success"):
+                logger.info(f"Form response email sent to {form_owner_email}")
+            else:
+                logger.error(f"Failed to send form response email: {result.get('error')}")
+
+        except Exception as e:
+            logger.error(f"Error sending form response email: {str(e)}")
+
+    def _generate_response_preview(self, fields: list, responses: dict) -> str:
+        """Generate HTML preview of form responses"""
+        try:
+            preview_html = ""
+
+            # Show first 3 fields only for preview
+            preview_fields = fields[:3] if len(fields) > 3 else fields
+
+            for field in preview_fields:
+                field_id = field.get("id", "")
+                field_label = field.get("label", "Unknown Field")
+                field_value = responses.get(field_id, "No response")
+
+                # Format different field types
+                if field.get("type") == "rating" and isinstance(field_value, (int, float)):
+                    stars = "★" * int(field_value) + "☆" * (5 - int(field_value))
+                    field_value = f"{stars} ({field_value}/5)"
+                elif field.get("type") == "scale" and isinstance(field_value, (int, float)):
+                    field_value = f"{field_value}/10"
+                elif isinstance(field_value, list):
+                    field_value = ", ".join(str(v) for v in field_value)
+                elif len(str(field_value)) > 100:
+                    field_value = str(field_value)[:100] + "..."
+
+                preview_html += f"""
+                <div class="field-preview">
+                    <div class="field-label">{field_label}</div>
+                    <div class="field-value">{field_value}</div>
+                </div>
+                """
+
+            if len(fields) > 3:
+                preview_html += f"""
+                <div style="text-align: center; color: #64748b; font-style: italic; margin-top: 15px;">
+                    ... and {len(fields) - 3} more fields
+                </div>
+                """
+
+            return preview_html if preview_html else "<p>No response data available</p>"
+
+        except Exception as e:
+            logger.error(f"Error generating response preview: {str(e)}")
+            return "<p>Error loading response preview</p>"
+
+    async def get_notification_preferences(self, user_email: str) -> dict:
+        """Get user's notification preferences"""
+        try:
+            from app.core.database import get_database
+
+            db = get_database()
+            preferences_collection = db["notification_preferences"]
+
+            preferences = preferences_collection.find_one({"user_email": user_email})
+
+            if not preferences:
+                # Return default preferences
+                return {
+                    "email_enabled": True,
+                    "instant_notifications": True,
+                    "digest_frequency": "instant",
+                    "forms": []
+                }
+
+            return {
+                "email_enabled": preferences.get("email_enabled", True),
+                "instant_notifications": preferences.get("instant_notifications", True),
+                "digest_frequency": preferences.get("digest_frequency", "instant"),
+                "forms": preferences.get("forms", [])
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting notification preferences: {str(e)}")
+            return {
+                "email_enabled": True,
+                "instant_notifications": True,
+                "digest_frequency": "instant",
+                "forms": []
+            }
+
+    async def update_notification_preferences(self, user_email: str, preferences: dict) -> dict:
+        """Update user's notification preferences"""
+        try:
+            from app.core.database import get_database
+
+            db = get_database()
+            preferences_collection = db["notification_preferences"]
+
+            # Prepare preferences document
+            preference_doc = {
+                "user_email": user_email,
+                "email_enabled": preferences.get("email_enabled", True),
+                "instant_notifications": preferences.get("instant_notifications", True),
+                "digest_frequency": preferences.get("digest_frequency", "instant"),
+                "forms": preferences.get("forms", []),
+                "updated_at": datetime.utcnow()
+            }
+
+            # Upsert preferences
+            result = preferences_collection.update_one(
+                {"user_email": user_email},
+                {
+                    "$set": preference_doc,
+                    "$setOnInsert": {"created_at": datetime.utcnow()}
+                },
+                upsert=True
+            )
+
+            logger.info(f"Notification preferences updated for {user_email}")
+
+            return {
+                "success": True,
+                "message": "Preferences updated successfully"
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating notification preferences: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error updating preferences: {str(e)}")
+
+    async def get_unread_form_response_count(self, user_email: str) -> int:
+        """Get count of unread form responses for user"""
+        try:
+            from app.core.database import get_database
+
+            db = get_database()
+            form_responses_collection = db["form_responses"]
+            forms_collection = db["forms"]
+
+            # Get forms owned by this user
+            user_forms = forms_collection.find({"created_by": user_email}, {"_id": 1})
+            form_ids = [form["_id"] for form in user_forms]
+
+            if not form_ids:
+                return 0
+
+            # Count unreviewed responses for user's forms
+            unread_count = form_responses_collection.count_documents({
+                "form_id": {"$in": form_ids},
+                "is_reviewed": {"$ne": True}
+            })
+
+            return unread_count
+
+        except Exception as e:
+            logger.error(f"Error getting unread form response count: {str(e)}")
+            return 0

@@ -37,16 +37,27 @@ interface RSVPStats {
 }
 
 export default function WeddingPlannerDashboard() {
- const { token, userProfile, fetchUserProfile } = useAdmin();
+ const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
  const router = useRouter();
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, confirmed: 0, declined: 0, pending: 0 });
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');
  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+ const [authLoading, setAuthLoading] = useState(true);
+
+ // Wait for authentication to be checked before redirecting
+ useEffect(() => {
+ const timer = setTimeout(() => {
+ setAuthLoading(false);
+ }, 1000); // Give AdminContext time to check cookies
+ return () => clearTimeout(timer);
+ }, []);
 
  useEffect(() => {
- if (!token) {
+ if (authLoading) return; // Don't check auth until loading is done
+
+ if (!isAuthenticated) {
  router.push('/admin/login');
  return;
  }
@@ -62,7 +73,7 @@ export default function WeddingPlannerDashboard() {
  }
 
  fetchMyWeddings();
- }, [token, userProfile, router]);
+ }, [authLoading, isAuthenticated, userProfile, router]);
 
  const fetchMyWeddings = async () => {
  try {

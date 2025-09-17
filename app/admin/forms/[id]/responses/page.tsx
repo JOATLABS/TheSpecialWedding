@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { Badge } from '@/app/components/ui/badge';
 
 interface FormResponse {
  id: string;
@@ -11,6 +12,11 @@ interface FormResponse {
  submitted_by_name?: string;
  submitted_at: string;
  ip_address?: string;
+ is_reviewed?: boolean;
+ reviewed_at?: string;
+ reviewed_by?: string;
+ notification_sent?: boolean;
+ notification_sent_at?: string;
 }
 
 interface FormField {
@@ -41,8 +47,10 @@ export default function FormResponsesPage() {
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');
  const [selectedResponse, setSelectedResponse] = useState<FormResponse | null>(null);
- const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
+ const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'reviewed'>('newest');
  const [filterEmail, setFilterEmail] = useState('');
+ const [filterReviewed, setFilterReviewed] = useState<'all' | 'reviewed' | 'unreviewed'>('all');
+ const [updatingReview, setUpdatingReview] = useState<Set<string>>(new Set());
 
  useEffect(() => {
  if (!token || !formId) return;
@@ -82,6 +90,62 @@ export default function FormResponsesPage() {
  setError('Failed to load data');
  } finally {
  setLoading(false);
+ }
+ };
+
+ const updateReviewStatus = async (responseId: string, isReviewed: boolean) => {
+ if (!token) return;
+
+ // Add to updating set to show loading state
+ setUpdatingReview(prev => new Set([...prev, responseId]));
+
+ try {
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+ const response = await fetch(`${baseUrl}/admin/forms/${formId}/responses/${responseId}/review`, {
+ method: 'PATCH',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ body: JSON.stringify({ is_reviewed: isReviewed })
+ });
+
+ if (response.ok) {
+ // Update local state
+ setResponses(prev => prev.map(r =>
+ r.id === responseId
+ ? {
+ ...r,
+ is_reviewed: isReviewed,
+ reviewed_at: isReviewed ? new Date().toISOString() : undefined,
+ reviewed_by: isReviewed ? 'current_user' : undefined // This would come from backend
+ }
+ : r
+ ));
+
+ // Update selected response if it's the one being updated
+ if (selectedResponse?.id === responseId) {
+ setSelectedResponse(prev => prev ? {
+ ...prev,
+ is_reviewed: isReviewed,
+ reviewed_at: isReviewed ? new Date().toISOString() : undefined,
+ reviewed_by: isReviewed ? 'current_user' : undefined
+ } : null);
+ }
+ } else {
+ console.error('Failed to update review status');
+ // Could add a toast notification here
+ }
+ } catch (error) {
+ console.error('Error updating review status:', error);
+ } finally {
+ // Remove from updating set
+ setUpdatingReview(prev => {
+ const newSet = new Set(prev);
+ newSet.delete(responseId);
+ return newSet;
+ });
  }
  };
 
@@ -194,11 +258,20 @@ export default function FormResponsesPage() {
  };
 
  const filteredAndSortedResponses = responses
- .filter(response => 
- !filterEmail || 
+ .filter(response => {
+ // Email/name filter
+ const matchesSearch = !filterEmail ||
  (response.submitted_by_email && response.submitted_by_email.toLowerCase().includes(filterEmail.toLowerCase())) ||
- (response.submitted_by_name && response.submitted_by_name.toLowerCase().includes(filterEmail.toLowerCase()))
- )
+ (response.submitted_by_name && response.submitted_by_name.toLowerCase().includes(filterEmail.toLowerCase()));
+
+ // Review status filter
+ const matchesReviewFilter =
+ filterReviewed === 'all' ||
+ (filterReviewed === 'reviewed' && response.is_reviewed) ||
+ (filterReviewed === 'unreviewed' && !response.is_reviewed);
+
+ return matchesSearch && matchesReviewFilter;
+ })
  .sort((a, b) => {
  switch (sortBy) {
  case 'newest':
@@ -207,6 +280,12 @@ export default function FormResponsesPage() {
  return new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime();
  case 'name':
  return (a.submitted_by_name || '').localeCompare(b.submitted_by_name || '');
+ case 'reviewed':
+ // Sort by review status: unreviewed first, then reviewed
+ if (a.is_reviewed === b.is_reviewed) {
+ return new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime();
+ }
+ return a.is_reviewed ? 1 : -1;
  default:
  return 0;
  }
@@ -270,12 +349,22 @@ export default function FormResponsesPage() {
  
  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
  <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Form Responses</h1>
- <div className="flex items-center text-gray-600 dark:text-gray-300">
+ <div className="flex items-center text-gray-600 dark:text-gray-300 flex-wrap gap-2">
  <span className="text-lg font-medium">{form.name}</span>
  <span className="mx-2">•</span>
  <span>{form.settings.title}</span>
  <span className="mx-2">•</span>
  <span className="font-medium">{responses.length} responses</span>
+ {responses.filter(r => !r.is_reviewed).length > 0 && (
+ <>
+ <span className="mx-2">•</span>
+ <div className="flex items-center gap-2">
+ <Badge variant="notification">
+ {responses.filter(r => !r.is_reviewed).length} unread
+ </Badge>
+ </div>
+ </>
+ )}
  </div>
  </div>
  </div>
@@ -305,7 +394,7 @@ export default function FormResponsesPage() {
  value={filterEmail}
  onChange={(e) => setFilterEmail(e.target.value)}
  placeholder="Search by name or email..."
- className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  
@@ -314,11 +403,25 @@ export default function FormResponsesPage() {
  <select
  value={sortBy}
  onChange={(e) => setSortBy(e.target.value as any)}
- className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  >
  <option value="newest">Newest first</option>
  <option value="oldest">Oldest first</option>
  <option value="name">Name A-Z</option>
+ <option value="reviewed">Unread first</option>
+ </select>
+ </div>
+
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+ <select
+ value={filterReviewed}
+ onChange={(e) => setFilterReviewed(e.target.value as any)}
+ className="px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ >
+ <option value="all">All responses</option>
+ <option value="unreviewed">Unread only</option>
+ <option value="reviewed">Read only</option>
  </select>
  </div>
  </div>
@@ -344,14 +447,17 @@ export default function FormResponsesPage() {
  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Email
  </th>
- {form.fields.slice(0, 3).map(field => (
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+ Status
+ </th>
+ {form.fields.slice(0, 2).map(field => (
  <th key={field.id} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  {field.label}
  </th>
  ))}
- {form.fields.length > 3 && (
+ {form.fields.length > 2 && (
  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
- +{form.fields.length - 3} more
+ +{form.fields.length - 2} more
  </th>
  )}
  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -361,7 +467,7 @@ export default function FormResponsesPage() {
  </thead>
  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
  {filteredAndSortedResponses.map((response) => (
- <tr key={response.id} className="hover:bg-gray-50">
+ <tr key={response.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${!response.is_reviewed ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
  <div>
  {new Date(response.submitted_at).toLocaleDateString()}
@@ -382,12 +488,34 @@ export default function FormResponsesPage() {
  <span className="text-gray-400 italic">No email</span>
  )}
  </td>
- {form.fields.slice(0, 3).map(field => (
+ <td className="px-6 py-4 whitespace-nowrap">
+ <div className="flex items-center gap-2">
+ {response.is_reviewed ? (
+ <Badge variant="secondary">Read</Badge>
+ ) : (
+ <Badge variant="notification">Unread</Badge>
+ )}
+ <button
+ onClick={() => updateReviewStatus(response.id, !response.is_reviewed)}
+ disabled={updatingReview.has(response.id)}
+ className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+ >
+ {updatingReview.has(response.id) ? (
+ <span className="animate-spin">⏳</span>
+ ) : response.is_reviewed ? (
+ 'Mark Unread'
+ ) : (
+ 'Mark Read'
+ )}
+ </button>
+ </div>
+ </td>
+ {form.fields.slice(0, 2).map(field => (
  <td key={field.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
  {formatFieldValue(field, response.responses[field.id])}
  </td>
  ))}
- {form.fields.length > 3 && (
+ {form.fields.length > 2 && (
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
  <button
  onClick={() => setSelectedResponse(response)}
@@ -458,6 +586,34 @@ export default function FormResponsesPage() {
  <div>
  <span className="font-medium text-gray-700 dark:text-gray-300">IP Address:</span>
  <div>{selectedResponse.ip_address || 'Not recorded'}</div>
+ </div>
+ <div>
+ <span className="font-medium text-gray-700 dark:text-gray-300">Status:</span>
+ <div className="flex items-center gap-2 mt-1">
+ {selectedResponse.is_reviewed ? (
+ <Badge variant="secondary">Read</Badge>
+ ) : (
+ <Badge variant="notification">Unread</Badge>
+ )}
+ <button
+ onClick={() => updateReviewStatus(selectedResponse.id, !selectedResponse.is_reviewed)}
+ disabled={updatingReview.has(selectedResponse.id)}
+ className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+ >
+ {updatingReview.has(selectedResponse.id) ? (
+ <span className="animate-spin">⏳</span>
+ ) : selectedResponse.is_reviewed ? (
+ 'Mark as Unread'
+ ) : (
+ 'Mark as Read'
+ )}
+ </button>
+ </div>
+ {selectedResponse.is_reviewed && selectedResponse.reviewed_at && (
+ <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+ Reviewed on {new Date(selectedResponse.reviewed_at).toLocaleString()}
+ </div>
+ )}
  </div>
  </div>
  </div>

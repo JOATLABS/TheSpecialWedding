@@ -1,25 +1,11 @@
 'use client';
 
+import { AdminProvider } from '@/contexts/AdminContext';
 import { DarkModeProvider } from '@/contexts/DarkModeContext';
 import AdminHeader from './components/AdminHeader';
 import AdminSidebar from './components/AdminSidebar';
 import { Toaster } from 'sonner';
 import { useState } from 'react';
-import dynamic from 'next/dynamic';
-
-// Dynamic import for AdminProvider to prevent hydration mismatch
-// Following Next.js best practices for authentication-dependent components
-const AdminProvider = dynamic(
-  () => import('@/contexts/AdminContext').then(mod => ({ default: mod.AdminProvider })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
-      </div>
-    )
-  }
-);
 
 export default function AdminLayout({
   children,
