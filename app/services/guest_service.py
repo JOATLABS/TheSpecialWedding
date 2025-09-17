@@ -100,6 +100,11 @@ class GuestService:
             for guest in guests:
                 guest["id"] = str(guest["_id"])
                 guest.pop("_id", None)
+                # Convert datetime objects to ISO strings for JSON serialization
+                if "created_at" in guest and hasattr(guest["created_at"], "isoformat"):
+                    guest["created_at"] = guest["created_at"].isoformat()
+                if "updated_at" in guest and hasattr(guest["updated_at"], "isoformat"):
+                    guest["updated_at"] = guest["updated_at"].isoformat()
             return guests
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")

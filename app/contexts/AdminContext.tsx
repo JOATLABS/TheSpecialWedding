@@ -25,30 +25,46 @@ type AdminContextType = {
 
 const AdminContext = createContext<AdminContextType | null>(null);
 
-export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
+export const AdminProvider = ({
+    children,
+    initialAuth = false
+}: {
+    children: React.ReactNode;
+    initialAuth?: boolean;
+}) => {
     const router = useRouter();
+    // Start with false, let useEffect handle cookie check
+    // This prevents hydration mismatches
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [token, setToken] = useState<string | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
     useEffect(() => {
-        // Check localStorage first
-        let stored = localStorage.getItem('admin_token');
-        
-        // If not in localStorage, check sessionStorage
-        if (!stored) {
-            stored = sessionStorage.getItem('admin_token');
+        // TWO-COOKIE PATTERN:
+        // 1. admin_token: httpOnly cookie with actual JWT (not accessible here)
+        // 2. admin_authenticated: readable cookie for client auth state
+
+        // Check the client-readable auth cookie
+        const match = document.cookie.match(/admin_authenticated=([^;]+)/);
+        const cookieAuth = match ? match[1] === 'true' : false;
+
+        if (cookieAuth) {
+            setIsAuthenticated(true);
+            // Try to get the token from localStorage/sessionStorage (from login response)
+            const storedToken = localStorage.getItem('admin_token') ||
+                              sessionStorage.getItem('admin_token');
+            if (storedToken) {
+                setToken(storedToken);
+            }
+        } else if (!initialAuth) {
+            // No auth cookie and no server-side auth = user is logged out
+            setIsAuthenticated(false);
+            setToken(null);
+            // Clean up any stale storage
+            localStorage.removeItem('admin_token');
+            sessionStorage.removeItem('admin_token');
         }
-        
-        // If not in storage, check cookies as fallback
-        if (!stored) {
-            const match = document.cookie.match(/admin_token=([^;]+)/);
-            stored = match ? match[1] : null;
-        }
-        
-        if (stored) {
-            setToken(stored);
-        }
-    }, []);
+    }, [initialAuth]);
 
     // Automatically fetch user profile when token is set
     useEffect(() => {
@@ -94,12 +110,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         if (!token) return;
 
         try {
-            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-            if (!baseUrl) {
-                console.error('API base URL not configured');
-                return;
-            }
-            const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
+            // Use the Next.js API proxy route for profile
+            // This ensures we're on the same origin and cookies work properly
+            const response = await fetch(`/api/admin/profile?t=${Date.now()}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -129,12 +142,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             localStorage.removeItem('admin_token');
             sessionStorage.removeItem('admin_token');
             document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
-            
-            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-            if (!baseUrl) {
-                throw new Error('API base URL not configured');
-            }
-            const loginUrl = `${baseUrl}/admin/token`;
+
+            // Use the Next.js API proxy route instead of calling backend directly
+            // This ensures cookies are set on the same origin (localhost:3000)
+            const loginUrl = '/api/admin/token';
             const res = await fetch(loginUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -148,18 +159,24 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
             const { access_token } = await res.json();
 
-            // Store token in localStorage or sessionStorage
+            // Store token in localStorage or sessionStorage for API calls
+            // Note: The actual secure token is in httpOnly cookie (not accessible)
+            // This stored token is used for Authorization headers in API requests
             const storage = rememberMe ? localStorage : sessionStorage;
             storage.setItem('admin_token', access_token);
-            
-            // Set cookie for middleware to check (with secure attributes)
-            const cookieString = `admin_token=${access_token}; path=/; SameSite=Strict; ${rememberMe ? 'max-age=604800;' : 'max-age=3600;'} ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
-            document.cookie = cookieString;
-            
+
+            // The server sets two cookies via Set-Cookie headers:
+            // 1. admin_token: httpOnly cookie with JWT (secure, not readable)
+            // 2. admin_authenticated: readable cookie for client state
+
             setToken(access_token);
+            setIsAuthenticated(true);
 
             toast.success('Login successful');
-            router.push('/admin');
+
+            // Use window.location for reliable navigation
+            // router.push() doesn't always work in context
+            window.location.href = '/admin';
         } catch (err: any) {
             toast.error(err.message);
             throw err;
@@ -167,34 +184,50 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
 
-    const logout = () => {
+    const logout = async () => {
+        try {
+            // Use the Next.js API proxy route for logout
+            // This ensures cookies are cleared on the same origin
+            await fetch('/api/admin/logout', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+        } catch (err) {
+            // Continue with logout even if API call fails
+            console.error('Logout API call failed:', err);
+        }
+
         // Clear all possible storage locations
         localStorage.clear(); // Clear ALL localStorage, not just admin_token
         sessionStorage.clear(); // Clear ALL sessionStorage
-        
+
         // Clear ALL cookies, not just admin_token
         document.cookie.split(";").forEach(cookie => {
             const eqPos = cookie.indexOf("=");
-            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+            const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
             // Clear for current path and domain
             document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;`;
             document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
             document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
         });
-        
+
         // Clear React state
         setToken(null);
         setUserProfile(null);
-        
+        setIsAuthenticated(false);
+
         // Clear any cached API responses by making a dummy request
         try {
             fetch('/api/clear-cache', { method: 'POST' }).catch(() => {});
         } catch (error) {
             // Ignore cache clear errors
         }
-        
+
         toast.success('Logged out successfully');
-        
+
         // Force complete page refresh to clear ALL cached data and state
         window.location.href = '/admin/login';
     };
@@ -202,7 +235,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     return (
         <AdminContext.Provider
             value={{
-                isAuthenticated: !!token,
+                isAuthenticated: isAuthenticated,  // Use the state, not token presence
                 token,
                 userProfile,
                 login,

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from fastapi.responses import JSONResponse
 from app.models.admin_user import AdminLoginModel
 from app.services.auth_service import AuthService
 from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser
 from app.utils.serializers import serialize_mongo_doc
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
@@ -15,8 +16,45 @@ def login_options():
     return {"message": "OK"}
 
 @router.post("/token", tags=["Auth"])
-def login_for_access_token(credentials: AdminLoginModel):
-    return auth_service.login_and_get_token(credentials.email, credentials.password)
+def login_for_access_token(credentials: AdminLoginModel, response: Response):
+    # Get the token data from the auth service
+    token_data = auth_service.login_and_get_token(credentials.email, credentials.password)
+
+    # TWO-COOKIE PATTERN for secure authentication:
+
+    # 1. Set httpOnly cookie for the actual token (secure, not readable by JS)
+    response.set_cookie(
+        key="admin_token",
+        value=token_data["access_token"],
+        max_age=604800,  # 7 days in seconds
+        httponly=True,  # Security: prevents XSS attacks
+        samesite="lax",  # CSRF protection
+        secure=False,  # Set to True in production with HTTPS
+        path="/"
+    )
+
+    # 2. Set client-readable cookie for auth state (no sensitive data)
+    # This allows the client to know if user is authenticated without exposing token
+    response.set_cookie(
+        key="admin_authenticated",
+        value="true",  # Simple boolean flag
+        max_age=604800,  # Same expiry as token
+        httponly=False,  # Client needs to read this
+        samesite="lax",
+        secure=False,  # Set to True in production with HTTPS
+        path="/"
+    )
+
+    return token_data
+
+@router.post("/logout", tags=["Auth"])
+def logout(response: Response):
+    """Clear both authentication cookies (two-cookie pattern)"""
+    # Clear the httpOnly token cookie
+    response.delete_cookie(key="admin_token", path="/")
+    # Clear the client-readable auth state cookie
+    response.delete_cookie(key="admin_authenticated", path="/")
+    return {"message": "Logged out successfully"}
 
 @router.get("/profile", tags=["Auth"])
 def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):

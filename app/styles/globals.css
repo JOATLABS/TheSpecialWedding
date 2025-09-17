@@ -2,8 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Import elegant fonts for wedding theme */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Cormorant+Garamond:wght@300;400;500;600&family=Lora:wght@400;500&family=Inter:wght@300;400;500;600;700&family=Pacifico&family=Open+Sans:wght@400;500;600&display=swap');
+/* Optimized font loading with preconnect and only essential fonts */
+/* Removed Lora, Pacifico, and Open Sans to reduce load time */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500;600&display=swap&subset=latin');
 
 /* Theme CSS Custom Properties */
 :root {

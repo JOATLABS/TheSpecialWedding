@@ -215,30 +215,21 @@ def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     
     if user.is_wedding_planner:
         # Check if this wedding is assigned to this planner
-        from bson import ObjectId
-        import re
-        
+        # All wedding IDs are now strings (format: wedding_TIMESTAMP)
+
         # Validate and sanitize wedding_id
         if not wedding_id or not isinstance(wedding_id, str):
             return False
-        
+
         # Prevent NoSQL injection by validating input
         if len(wedding_id) > 100:  # Reasonable limit
             return False
-        
+
         try:
-            # Handle both string and ObjectId formats
-            if isinstance(wedding_id, str):
-                # Check if it looks like a valid ObjectId (24 hex characters)
-                if re.match(r'^[0-9a-fA-F]{24}$', wedding_id):
-                    query_id = ObjectId(wedding_id)
-                else:
-                    # Use as string for slug-based lookups, but sanitize
-                    query_id = wedding_id.strip()
-            else:
-                query_id = wedding_id
-                
+            # All wedding IDs are strings now
+            query_id = wedding_id.strip()
             wedding = mongo.get_weddings_collection().find_one({"_id": query_id})
+
             if wedding:
                 return wedding.get("assigned_planner_email") == user.email
         except Exception:

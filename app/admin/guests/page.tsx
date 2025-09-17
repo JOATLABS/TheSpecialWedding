@@ -274,7 +274,10 @@ export default function AdminGuestsPage() {
       });
 
       if (response.ok) {
-        fetchGuestData(); // Refresh all data
+        // Force a complete refresh by clearing state first
+        setGuests([]);
+        setPlusOnes([]);
+        await fetchGuestData(); // Refresh all data
       } else {
         setError('Failed to delete guest');
       }
@@ -313,7 +316,10 @@ export default function AdminGuestsPage() {
           plus_one_allowed: false,
           number_of_plus_ones_allowed: 0
         });
-        fetchGuestData(); // Refresh all data
+        // Force a complete refresh by clearing state first
+        setGuests([]);
+        setPlusOnes([]);
+        await fetchGuestData(); // Refresh all data
       } else {
         const errorData = await response.json();
         setError(errorData.detail || 'Failed to create guest');

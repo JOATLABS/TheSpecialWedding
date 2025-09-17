@@ -15,7 +15,17 @@ class WeddingService:
                 wedding_dict = wedding_data.dict(by_alias=True)
             else:
                 wedding_dict = wedding_data
-            
+
+            # Ensure _id is a string in the format wedding_TIMESTAMP
+            wedding_id = wedding_dict.get("_id")
+            if not wedding_id or not isinstance(wedding_id, str):
+                # Generate string ID if missing
+                import time
+                wedding_dict["_id"] = f"wedding_{int(time.time() * 1000)}"
+            elif not wedding_id.startswith("wedding_"):
+                # Ensure consistent format
+                raise HTTPException(status_code=400, detail="Wedding ID must be in format 'wedding_TIMESTAMP'")
+
             # Check if wedding ID already exists
             existing = self.collection.find_one({"_id": wedding_dict["_id"]})
             if existing:

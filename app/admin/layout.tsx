@@ -2,7 +2,6 @@
 
 import { AdminProvider } from '@/contexts/AdminContext';
 import { DarkModeProvider } from '@/contexts/DarkModeContext';
-import AdminRouteGuard from '@/components/AdminRouteGuard';
 import AdminHeader from './components/AdminHeader';
 import AdminSidebar from './components/AdminSidebar';
 import { Toaster } from 'sonner';
@@ -27,26 +26,24 @@ export default function AdminLayout({
   return (
     <DarkModeProvider>
       <AdminProvider>
-        <AdminRouteGuard>
-          <div className="min-h-screen flex bg-wedding-ivory dark:bg-gray-900 font-body text-wedding-navy dark:text-gray-100 transition-colors duration-200">
-            {/* Toast Notifications */}
-            <Toaster position="top-right" richColors />
+        <div className="min-h-screen flex bg-wedding-ivory dark:bg-gray-900 font-body text-wedding-navy dark:text-gray-100 transition-colors duration-200">
+          {/* Toast Notifications */}
+          <Toaster position="top-right" richColors />
 
-            {/* SIDEBAR */}
-            <AdminSidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} />
+          {/* SIDEBAR */}
+          <AdminSidebar isOpen={sidebarOpen} onClose={handleCloseSidebar} />
 
-            {/* MAIN CONTENT AREA */}
-            <div className="flex-1 flex flex-col min-h-screen">
-              {/* MOBILE HEADER */}
-              <AdminHeader onToggleSidebar={handleToggleSidebar} />
+          {/* MAIN CONTENT AREA */}
+          <div className="flex-1 flex flex-col min-h-screen">
+            {/* MOBILE HEADER */}
+            <AdminHeader onToggleSidebar={handleToggleSidebar} />
 
-              {/* MAIN CONTENT */}
-              <main className="flex-1 p-4 lg:p-8 space-y-8 animate-fade-in">
-                {children}
-              </main>
-            </div>
+            {/* MAIN CONTENT */}
+            <main className="flex-1 p-4 lg:p-8 space-y-8 animate-fade-in">
+              {children}
+            </main>
           </div>
-        </AdminRouteGuard>
+        </div>
       </AdminProvider>
     </DarkModeProvider>
   );
