@@ -155,7 +155,7 @@ export default function AdminGuestsPage() {
       // Fetch plus ones for all guests
       try {
         const plusOnesResponse = await Promise.all(
-          guests.map(async (guest: any) => {
+          guestsData.map(async (guest: any) => {
             try {
               const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
                 headers: {
@@ -266,7 +266,7 @@ export default function AdminGuestsPage() {
 
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
+      const response = await fetch(`${baseUrl}/admin/guests/${guestId}?wedding_id=${selectedWedding}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

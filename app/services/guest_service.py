@@ -1,6 +1,8 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from datetime import datetime
+from bson import ObjectId
+from typing import Optional, Any, Dict
 
 class GuestService:
     def __init__(self):
@@ -104,8 +106,6 @@ class GuestService:
     
     def update_guest(self, guest_id: str, update_data: dict):
         try:
-            from bson import ObjectId
-            
             # Remove fields that shouldn't be updated
             update_data.pop("_id", None)
             update_data.pop("id", None)
@@ -134,21 +134,25 @@ class GuestService:
     
     def delete_guest(self, guest_id: str):
         try:
-            from bson import ObjectId
-            
             # Convert guest_id to ObjectId
             guest_obj_id = ObjectId(guest_id)
             guest_id_str = str(guest_obj_id)
-            
+
             # Check if guest exists
             guest = self.collection.find_one({"_id": guest_obj_id})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
-            
-            # Get collections for RSVPs and plus-ones
+
+            # Get all collections that might contain guest data
             rsvp_collection = mongo.db["rsvps"]
             plus_one_collection = mongo.db["plus_ones"]
-            
+            checkin_collection = mongo.db["checkins"]
+            otp_codes_collection = mongo.db["otp_codes"]
+            otp_audit_collection = mongo.db["otp_audit_log"]
+            access_logs_collection = mongo.db["access_logs"]
+            form_responses_collection = mongo.db["form_responses"]
+            reminders_sent_collection = mongo.db["reminders_sent"]
+
             # Delete associated RSVPs (handle both ObjectId and string formats)
             rsvp_result = rsvp_collection.delete_many({
                 "$or": [
@@ -156,7 +160,7 @@ class GuestService:
                     {"guest_id": guest_id_str}
                 ]
             })
-            
+
             # Delete associated plus-ones (typically stored with string guest_id)
             plus_one_result = plus_one_collection.delete_many({
                 "$or": [
@@ -164,31 +168,117 @@ class GuestService:
                     {"guest_id": guest_id_str}
                 ]
             })
-            
+
+            # Delete check-in records
+            checkin_result = checkin_collection.delete_many({
+                "$or": [
+                    {"guest_id": guest_obj_id},
+                    {"guest_id": guest_id_str}
+                ]
+            })
+
+            # Delete OTP codes
+            otp_codes_result = otp_codes_collection.delete_many({
+                "$or": [
+                    {"guest_id": guest_obj_id},
+                    {"guest_id": guest_id_str}
+                ]
+            })
+
+            # Anonymize OTP audit logs (preserve for security compliance)
+            otp_audit_result = otp_audit_collection.update_many(
+                {
+                    "$or": [
+                        {"guest_id": guest_obj_id},
+                        {"guest_id": guest_id_str}
+                    ]
+                },
+                {
+                    "$set": {
+                        "guest_id": "DELETED_GUEST",
+                        "guest_deleted": True,
+                        "deleted_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            # Anonymize access logs (preserve for security compliance)
+            access_logs_result = access_logs_collection.update_many(
+                {
+                    "$or": [
+                        {"guest_id": guest_obj_id},
+                        {"guest_id": guest_id_str}
+                    ]
+                },
+                {
+                    "$set": {
+                        "guest_id": "DELETED_GUEST",
+                        "guest_deleted": True,
+                        "deleted_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            # Delete form responses (operational data)
+            form_responses_result = form_responses_collection.delete_many({
+                "$or": [
+                    {"guest_id": guest_obj_id},
+                    {"guest_id": guest_id_str}
+                ]
+            })
+
+            # Anonymize reminder logs (preserve for analytics/billing)
+            reminders_result = reminders_sent_collection.update_many(
+                {
+                    "$or": [
+                        {"guest_id": guest_obj_id},
+                        {"guest_id": guest_id_str}
+                    ]
+                },
+                {
+                    "$set": {
+                        "guest_id": "DELETED_GUEST",
+                        "guest_deleted": True,
+                        "deleted_at": datetime.utcnow()
+                    }
+                }
+            )
+
             # Delete the guest
             guest_result = self.collection.delete_one({"_id": guest_obj_id})
-            
+
             return {
-                "message": "Guest and associated data deleted successfully",
+                "message": "Guest and associated data processed successfully",
                 "deleted": {
                     "guest": guest_result.deleted_count,
                     "rsvps": rsvp_result.deleted_count,
-                    "plus_ones": plus_one_result.deleted_count
+                    "plus_ones": plus_one_result.deleted_count,
+                    "checkins": checkin_result.deleted_count,
+                    "otp_codes": otp_codes_result.deleted_count,
+                    "form_responses": form_responses_result.deleted_count
+                },
+                "anonymized": {
+                    "otp_audit_logs": otp_audit_result.modified_count,
+                    "access_logs": access_logs_result.modified_count,
+                    "reminder_logs": reminders_result.modified_count
                 }
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error deleting guest: {str(e)}")
 
-    from typing import Optional
-
-    def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None):
+    def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None, wedding_id: Optional[str] = None):
+        """Get guest by phone or name, with required wedding_id for security isolation"""
         try:
-            query = {}
+            # Security: wedding_id should be required for multi-tenant isolation
+            if not wedding_id:
+                raise HTTPException(status_code=400, detail="Wedding ID is required for security isolation")
+
+            query = {"wedding_id": wedding_id}
             if phone:
                 query["phone"] = phone
             if name:
                 query["name"] = name
-            if not query:
+            if not (phone or name):
                 raise HTTPException(status_code=400, detail="Must provide phone or name to search")
 
             guest = self.collection.find_one(query)
@@ -197,19 +287,28 @@ class GuestService:
             guest["id"] = str(guest["_id"])
             guest.pop("_id", None)
             return guest
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
 
-    def get_guest(self, guest_id: str):
+    def get_guest(self, guest_id: str, wedding_id: Optional[str] = None):
+        """Get guest by ID. If wedding_id provided, ensures guest belongs to that wedding."""
         try:
-            from bson import ObjectId
+            query: Dict[str, Any] = {"_id": ObjectId(guest_id)}
 
-            guest = self.collection.find_one({"_id": ObjectId(guest_id)})
+            # If wedding_id provided, add it for isolation
+            if wedding_id:
+                query["wedding_id"] = wedding_id
+
+            guest = self.collection.find_one(query)
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
             guest["id"] = str(guest["_id"])
             guest.pop("_id", None)
             return guest
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
 

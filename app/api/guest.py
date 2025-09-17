@@ -66,11 +66,16 @@ def update_guest(guest_id: str, update_data: dict, current_user: ExtendedAuthUse
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 @router.delete("/guests/{guest_id}", tags=["Admin"])
-def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
-    # Get guest to check wedding access
-    guest = guest_service.get_guest(guest_id)
-    if not check_wedding_access(current_user, guest.get("wedding_id")):
+def delete_guest(guest_id: str, wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    # Verify the planner owns this wedding
+    if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    # Verify guest exists in THIS wedding (proper isolation)
+    try:
+        guest = guest_service.get_guest(guest_id, wedding_id)
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="Guest not found in this wedding")
     try:
         return guest_service.delete_guest(guest_id)
     except HTTPException as e:
