@@ -89,7 +89,7 @@ export default function BudgetDashboard() {
   const fetchWeddings = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/weddings`, {
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'

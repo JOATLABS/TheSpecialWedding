@@ -195,7 +195,7 @@ export default function WeddingDetailsPage() {
  return (
  <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-6">
  <div className="max-w-4xl mx-auto text-center">
- <h1 className="text-3xl font-bold text-wedding-navy mb-4">Wedding Not Found</h1>
+ <h1 className="text-3xl font-bold text-wedding-navy dark:text-gray-100 mb-4">Wedding Not Found</h1>
  <Link href="/admin/weddings" className="text-wedding-rose hover:underline">
  Back to Weddings
  </Link>
@@ -272,7 +272,7 @@ export default function WeddingDetailsPage() {
  onClick={() => setActiveTab(tab)}
  className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium capitalize whitespace-nowrap ${
  activeTab === tab
- ? 'text-wedding-navy border-b-2 border-wedding-rose'
+ ? 'text-wedding-navy dark:text-gray-100 border-b-2 border-wedding-rose'
  : 'text-gray-600 dark:text-gray-400 hover:text-wedding-navy dark:hover:text-wedding-rose'
  }`}
  >
@@ -287,7 +287,7 @@ export default function WeddingDetailsPage() {
  {activeTab === 'events' && (
  <div className="space-y-6">
  <div className="flex justify-between items-center mb-4">
- <h2 className="text-2xl font-bold text-wedding-navy">Event Details</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100">Event Details</h2>
  <button
  onClick={addEvent}
  className="bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90"
@@ -412,7 +412,7 @@ export default function WeddingDetailsPage() {
  {/* RSVP Tab */}
  {activeTab === 'rsvp' && wedding.rsvp_config && (
  <div className="space-y-6">
- <h2 className="text-2xl font-bold text-wedding-navy mb-4">RSVP Configuration</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-4">RSVP Configuration</h2>
 
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -501,7 +501,7 @@ export default function WeddingDetailsPage() {
  {activeTab === 'registry' && (
  <div className="space-y-6">
  <div className="flex justify-between items-center mb-4">
- <h2 className="text-2xl font-bold text-wedding-navy">Wedding Registry</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100">Wedding Registry</h2>
  <button
  onClick={addRegistry}
  className="bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90"
@@ -573,7 +573,7 @@ export default function WeddingDetailsPage() {
  {activeTab === 'faq' && (
  <div className="space-y-6">
  <div className="flex justify-between items-center mb-4">
- <h2 className="text-2xl font-bold text-wedding-navy">Frequently Asked Questions</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100">Frequently Asked Questions</h2>
  <button
  onClick={addFAQ}
  className="bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90"
@@ -624,7 +624,7 @@ export default function WeddingDetailsPage() {
  {/* Theme Tab */}
  {activeTab === 'theme' && wedding.theme_config && (
  <div className="space-y-6">
- <h2 className="text-2xl font-bold text-wedding-navy mb-4">Theme Configuration</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-4">Theme Configuration</h2>
 
  {/* Color Presets */}
  <div>
@@ -839,7 +839,7 @@ export default function WeddingDetailsPage() {
  {/* Story & Party Tab */}
  {activeTab === 'story' && (
  <div className="space-y-6">
- <h2 className="text-2xl font-bold text-wedding-navy mb-4">Story & Wedding Party</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-4">Story & Wedding Party</h2>
  
  {/* Info Box */}
  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
@@ -1049,7 +1049,7 @@ export default function WeddingDetailsPage() {
  {/* Countdown Tab */}
  {activeTab === 'countdown' && wedding.countdown_config && (
  <div className="space-y-6">
- <h2 className="text-2xl font-bold text-wedding-navy mb-4">Countdown Timer Configuration</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-4">Countdown Timer Configuration</h2>
 
  {/* Enable/Disable Toggle */}
  <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">

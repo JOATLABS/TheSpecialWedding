@@ -1,6 +1,6 @@
 'use client';
 
-import { AdminProvider } from '@/contexts/AdminContext';
+import ClientOnlyAdminProvider from './components/ClientOnlyAdminProvider';
 import { DarkModeProvider } from '@/contexts/DarkModeContext';
 import AdminHeader from './components/AdminHeader';
 import AdminSidebar from './components/AdminSidebar';
@@ -25,7 +25,7 @@ export default function AdminLayout({
 
   return (
     <DarkModeProvider>
-      <AdminProvider>
+      <ClientOnlyAdminProvider>
         <div className="min-h-screen flex bg-wedding-ivory dark:bg-gray-900 font-body text-wedding-navy dark:text-gray-100 transition-colors duration-200">
           {/* Toast Notifications */}
           <Toaster position="top-right" richColors />
@@ -44,7 +44,7 @@ export default function AdminLayout({
             </main>
           </div>
         </div>
-      </AdminProvider>
+      </ClientOnlyAdminProvider>
     </DarkModeProvider>
   );
 }

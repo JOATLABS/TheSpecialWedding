@@ -37,15 +37,22 @@ export default function AdminGalleryUploadPage() {
     if (!token) router.push('/admin/login');
   }, [token, router]);
 
-  // fetch weddings
+  // fetch weddings (only when token is available)
   useEffect(() => {
-    fetchWeddings();
-  }, []);
+    if (token) {
+      fetchWeddings();
+    }
+  }, [token]);
 
   const fetchWeddings = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/weddings`);
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -241,19 +248,19 @@ export default function AdminGalleryUploadPage() {
                 <div className="space-y-4 p-6">
                   {/* Folder Selection */}
                   <div>
-                    <label className="block text-sm font-medium text-wedding-navy mb-2">
+                    <label className="block text-sm font-medium text-wedding-navy dark:text-gray-100 mb-2">
                       Upload to Folder
                     </label>
                     <select
                       value={selectedFolder}
                       onChange={(e) => setSelectedFolder(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
                     >
                       <option value="gallery">Public Gallery</option>
                       <option value="our-story">Our Story</option>
                       <option value="wedding-party">Wedding Party</option>
                     </select>
-                    <p className="mt-2 text-sm text-gray-600">
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                       • <strong>Public Gallery</strong>: Photos visible to all guests
                       <br />
                       • <strong>Our Story</strong>: Couple photos for the story section
@@ -267,11 +274,12 @@ export default function AdminGalleryUploadPage() {
                     accept="image/*"
                     multiple
                     onChange={handleFileChange}
-                    className="w-full text-sm file:py-2 file:px-4
+                    className="w-full text-sm text-gray-900 dark:text-gray-100 file:py-2 file:px-4
                                file:rounded-full file:border-0
                                file:text-sm file:font-medium
                                file:bg-wedding-sage file:text-wedding-navy
-                               hover:file:bg-wedding-rose"
+                               hover:file:bg-wedding-rose dark:file:bg-gray-600 dark:file:text-gray-100
+                               dark:hover:file:bg-gray-500"
                   />
 
                   {previews.length > 0 && (
@@ -330,13 +338,13 @@ export default function AdminGalleryUploadPage() {
                   </Button>
 
                   {!selectedWedding && (
-                    <p className="text-sm text-gray-600 text-center">
+                    <p className="text-sm text-gray-600 dark:text-gray-300 text-center">
                       Please select a wedding before uploading images
                     </p>
                   )}
 
                   {status && (
-                    <pre className="mt-2 text-sm whitespace-pre-wrap text-wedding-navy">
+                    <pre className="mt-2 text-sm whitespace-pre-wrap text-wedding-navy dark:text-gray-100">
                       {status}
                     </pre>
                   )}
@@ -348,17 +356,17 @@ export default function AdminGalleryUploadPage() {
             {activeTab === 'manage' && (
               <Card className="backdrop-blur-sm bg-white/60 dark:bg-gray-800/60">
                 <div className="p-6">
-                  <h2 className="text-xl font-semibold text-wedding-navy mb-4">
+                  <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">
                     Uploaded Images for {weddings.find(w => (w.id || w._id) === selectedWedding)?.couple_names}
                   </h2>
                   
                   {loadingImages ? (
                     <div className="flex items-center justify-center py-12">
                       <div className="animate-spin h-8 w-8 border-4 border-wedding-sage border-t-transparent rounded-full"></div>
-                      <span className="ml-3 text-wedding-navy">Loading images...</span>
+                      <span className="ml-3 text-wedding-navy dark:text-gray-100">Loading images...</span>
                     </div>
                   ) : uploadedImages.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
+                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                       <p className="text-lg">No images uploaded yet</p>
                       <p className="text-sm mt-2">Switch to Upload tab to add some images</p>
                     </div>
@@ -391,16 +399,16 @@ export default function AdminGalleryUploadPage() {
                           
                           {/* Image Info */}
                           <div className="mt-2">
-                            <p className="text-xs text-gray-600 truncate">
+                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate">
                               {image.key || image.filename || `image-${index + 1}`}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
                               {/* Folder Badge */}
                               <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                image.key?.startsWith('gallery/') ? 'bg-blue-100 text-blue-700' :
-                                image.key?.startsWith('our-story/') ? 'bg-pink-100 text-pink-700' :
-                                image.key?.startsWith('wedding-party/') ? 'bg-purple-100 text-purple-700' :
-                                'bg-gray-100 text-gray-700'
+                                image.key?.startsWith('gallery/') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200' :
+                                image.key?.startsWith('our-story/') ? 'bg-pink-100 dark:bg-pink-900 text-pink-700 dark:text-pink-200' :
+                                image.key?.startsWith('wedding-party/') ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200' :
+                                'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
                               }`}>
                                 {image.key?.startsWith('gallery/') ? 'Gallery' :
                                  image.key?.startsWith('our-story/') ? 'Our Story' :
@@ -408,7 +416,7 @@ export default function AdminGalleryUploadPage() {
                                  'Unknown'}
                               </span>
                               {image.size && (
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
                                   {(image.size / 1024).toFixed(1)} KB
                                 </span>
                               )}
@@ -483,7 +491,7 @@ export default function AdminGalleryUploadPage() {
                   {/* Gallery Stats */}
                   {uploadedImages.length > 0 && (
                     <div className="mt-6 p-4 bg-wedding-ivory rounded-lg">
-                      <div className="flex justify-between items-center text-sm text-wedding-navy">
+                      <div className="flex justify-between items-center text-sm text-wedding-navy dark:text-gray-100">
                         <span>Total Images: {uploadedImages.length}</span>
                         <span>Wedding: {selectedWeddingSlug}</span>
                       </div>
