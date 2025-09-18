@@ -51,3 +51,6 @@ wedding-backend.service
 test-results
 tests/
 update_emmanuel_wedding.py
+tests/
+tests/wedding-planner-dashboard.spec.ts
+tests/form-builder.spec.ts
