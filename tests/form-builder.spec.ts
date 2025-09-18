@@ -1,13 +1,13 @@
 import { test, expect, Page } from '@playwright/test';
 
 // Test configuration - use environment variables for flexibility
-const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3004';
-const API_URL = process.env.TEST_API_URL || 'http://localhost:8000';
+const BASE_URL = process.env.FRONTEND_URL!;
+const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 // Admin credentials - use environment variables for security
 const ADMIN_CREDENTIALS = {
- email: process.env.TEST_ADMIN_EMAIL || 'admin@test.com',
- password: process.env.TEST_ADMIN_PASSWORD || 'test123'
+ email: process.env.PRIMARY_ADMIN_EMAIL!,
+ password: process.env.PRIMARY_ADMIN_PASSWORD!
 };
 
 // Test data

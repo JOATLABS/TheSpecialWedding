@@ -33,13 +33,16 @@ export const AdminProvider = ({
     initialAuth?: boolean;
 }) => {
     const router = useRouter();
-    // Start with false, let useEffect handle cookie check
-    // This prevents hydration mismatches
+    // Add hydration state to prevent mismatches
+    const [isHydrated, setIsHydrated] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [token, setToken] = useState<string | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
     useEffect(() => {
+        // Mark as hydrated first to prevent hydration mismatches
+        setIsHydrated(true);
+
         // TWO-COOKIE PATTERN:
         // 1. admin_token: httpOnly cookie with actual JWT (not accessible here)
         // 2. admin_authenticated: readable cookie for client auth state
@@ -231,6 +234,27 @@ export const AdminProvider = ({
         // Force complete page refresh to clear ALL cached data and state
         window.location.href = '/admin/login';
     };
+
+    // Show loading state during hydration to prevent hydration mismatch
+    if (!isHydrated) {
+        return (
+            <AdminContext.Provider
+                value={{
+                    isAuthenticated: false,
+                    token: null,
+                    userProfile: null,
+                    login,
+                    logout,
+                    fetchUserProfile,
+                    apiRequest,
+                }}
+            >
+                <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
+                </div>
+            </AdminContext.Provider>
+        );
+    }
 
     return (
         <AdminContext.Provider

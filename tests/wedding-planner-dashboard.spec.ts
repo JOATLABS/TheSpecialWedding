@@ -239,7 +239,7 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
 
     if (token) {
       // Test the API endpoint directly
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       
       try {
         const response = await request.get(`${baseUrl}/admin/planner/metrics`, {
