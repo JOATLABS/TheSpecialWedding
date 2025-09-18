@@ -94,8 +94,8 @@ export default function AdminRemindersPage() {
  return;
  }
 
- fetchWeddings();
  if (token) {
+ fetchWeddings();
  fetchMessageHistory();
  }
  }, [authLoading, isAuthenticated, userProfile, router, token]);
@@ -107,12 +107,24 @@ export default function AdminRemindersPage() {
  }, [selectedWedding, token]);
 
  const fetchWeddings = async () => {
+ if (!token) return;
+
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
- const response = await fetch(`${baseUrl}/weddings`);
+ const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+ headers: { 'Authorization': `Bearer ${token}` },
+ });
+
+ if (!response.ok) {
+ console.error('Failed to fetch weddings:', response.status);
+ setError('Failed to load weddings');
+ return;
+ }
+
  const data = await response.json();
  setWeddings(Array.isArray(data) ? data : []);
  } catch (err) {
+ console.error('Error fetching weddings:', err);
  setError('Failed to load weddings');
  }
  };
@@ -438,7 +450,7 @@ export default function AdminRemindersPage() {
  id="wedding"
  value={selectedWedding}
  onChange={(e) => setSelectedWedding(e.target.value)}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent text-sm"
  >
  <option value="">Choose a wedding...</option>
  {weddings.map((wedding) => (
@@ -502,10 +514,10 @@ export default function AdminRemindersPage() {
  )}
 
  {/* Tabs */}
- <div className="flex gap-4 mb-8">
+ <div className="grid grid-cols-2 sm:flex gap-2 sm:gap-4 mb-8">
  <button
  onClick={() => setActiveTab('invites')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+ className={`px-3 sm:px-6 py-2 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-colors ${
  activeTab === 'invites'
  ? 'bg-wedding-navy text-white'
  : 'bg-white dark:bg-gray-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-gray-600'
@@ -515,7 +527,7 @@ export default function AdminRemindersPage() {
  </button>
  <button
  onClick={() => setActiveTab('reminders')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+ className={`px-3 sm:px-6 py-2 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-colors ${
  activeTab === 'reminders'
  ? 'bg-wedding-navy text-white'
  : 'bg-white dark:bg-gray-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-gray-600'
@@ -525,7 +537,7 @@ export default function AdminRemindersPage() {
  </button>
  <button
  onClick={() => setActiveTab('individual')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+ className={`px-3 sm:px-6 py-2 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-colors ${
  activeTab === 'individual'
  ? 'bg-wedding-navy text-white'
  : 'bg-white dark:bg-gray-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-gray-600'
@@ -535,7 +547,7 @@ export default function AdminRemindersPage() {
  </button>
  <button
  onClick={() => setActiveTab('history')}
- className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+ className={`px-3 sm:px-6 py-2 sm:py-3 rounded-lg font-medium text-sm sm:text-base transition-colors ${
  activeTab === 'history'
  ? 'bg-wedding-navy text-white'
  : 'bg-white dark:bg-gray-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-gray-600'
@@ -548,13 +560,13 @@ export default function AdminRemindersPage() {
  {/* Send Invite Links Tab */}
  {activeTab === 'invites' && (
  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Wedding Invitations</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Wedding Invitations</h2>
  
  {selectedWedding ? (
  <div className="space-y-6">
- <div className="p-6 bg-wedding-ivory rounded-lg">
- <h3 className="font-semibold text-wedding-navy mb-2">Wedding Details:</h3>
- <p className="text-wedding-navy">{selectedWeddingData?.couple_names}</p>
+ <div className="p-6 bg-wedding-ivory dark:bg-gray-700 rounded-lg">
+ <h3 className="font-semibold text-wedding-navy dark:text-gray-100 mb-2">Wedding Details:</h3>
+ <p className="text-wedding-navy dark:text-gray-100">{selectedWeddingData?.couple_names}</p>
  <p className="text-sm text-gray-600 dark:text-gray-300">Date: {selectedWeddingData?.date}</p>
  <p className="text-sm text-gray-600 dark:text-gray-300">Slug: {selectedWeddingData?.slug}</p>
  <div className="mt-2 space-y-1">
@@ -581,7 +593,7 @@ export default function AdminRemindersPage() {
  onChange={(e) => setInviteMessage(e.target.value)}
  placeholder="Enter custom SMS message..."
  rows={3}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  Use {"{url}"} for the RSVP link and {"{name}"} for the guest's name. Leave empty to use default message.
@@ -601,7 +613,7 @@ export default function AdminRemindersPage() {
  value={emailSubject}
  onChange={(e) => setEmailSubject(e.target.value)}
  placeholder={`You're Invited - ${selectedWeddingData?.couple_names}`}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  </div>
 
@@ -614,7 +626,7 @@ export default function AdminRemindersPage() {
  onChange={(e) => setEmailHtml(e.target.value)}
  placeholder="Enter custom HTML for email body. Leave empty to use beautiful default template..."
  rows={6}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent font-mono text-sm"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent font-mono text-sm"
  />
  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  Available placeholders: {"{name}"}, {"{guest_name}"}, {"{url}"}, {"{rsvp_url}"}, {"{couple_names}"}, {"{wedding_date}"}
@@ -742,7 +754,7 @@ export default function AdminRemindersPage() {
  {/* Event Reminders Tab */}
  {activeTab === 'reminders' && (
  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Event Reminders</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Event Reminders</h2>
  
  <div className="space-y-6">
  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -751,7 +763,7 @@ export default function AdminRemindersPage() {
  <select
  value={eventType}
  onChange={(e) => setEventType(e.target.value)}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  >
  <option value="traditional">Traditional</option>
  <option value="white_wedding">White Wedding</option>
@@ -764,7 +776,7 @@ export default function AdminRemindersPage() {
  <select
  value={targetGroup}
  onChange={(e) => setTargetGroup(e.target.value)}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  >
  <option value="guests">Guests Only</option>
  <option value="plus-ones">Plus-Ones Only</option>
@@ -780,7 +792,7 @@ export default function AdminRemindersPage() {
  onChange={(e) => setCustomMessage(e.target.value)}
  placeholder="Enter your reminder message..."
  rows={4}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  This will be sent to guests who have RSVP'd for the {eventType.replace('_', ' ')} event.
@@ -804,7 +816,7 @@ export default function AdminRemindersPage() {
  {/* Individual Messages Tab */}
  {activeTab === 'individual' && (
  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Individual Messages</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Individual Messages</h2>
  
  {selectedWedding ? (
  <div className="space-y-6">
@@ -842,7 +854,7 @@ export default function AdminRemindersPage() {
  onChange={(e) => setCustomMessage(e.target.value)}
  placeholder="Enter your custom message..."
  rows={4}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  </div>
 
@@ -863,7 +875,7 @@ export default function AdminRemindersPage() {
  {/* Message History Tab */}
  {activeTab === 'history' && (
  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Message History</h2>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Message History</h2>
  
  {messageHistory.length === 0 ? (
  <p className="text-gray-500 dark:text-gray-400">No messages sent yet.</p>

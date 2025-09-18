@@ -16,7 +16,26 @@ def send_reminder(event_type: str, message: str, target_group: str, current_user
 
 @router.get("/reminders/logs", tags=["Admin"])
 def get_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    return reminder_service.get_logs()
+    # ROOT_ADMIN can see all logs
+    if current_user.is_root_admin:
+        return reminder_service.get_logs()
+
+    # Wedding planners can only see logs for their assigned weddings
+    # Get weddings assigned to this planner
+    try:
+        weddings_collection = mongo.get_weddings_collection()
+        assigned_weddings = list(weddings_collection.find(
+            {"assigned_planner_email": current_user.email},
+            {"_id": 1}
+        ))
+        wedding_ids = [w["_id"] for w in assigned_weddings]
+
+        # Get logs filtered by user's weddings
+        return reminder_service.get_logs_for_weddings(wedding_ids)
+    except Exception as e:
+        logger.error(f"Error filtering logs for user {current_user.email}: {e}")
+        # Fallback to empty logs if filtering fails
+        return {"sms_logs": [], "email_logs": []}
 
 @router.get("/reminders/sms-callback", tags=["Webhooks"])
 async def verify_sms_callback():

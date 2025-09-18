@@ -4,12 +4,15 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, 
 from app.services.email_service_resend import ResendEmailService
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner
 from app.services.wedding_service import WeddingService
+from app.core.database import mongo
 from pydantic import BaseModel
 from typing import Optional, List
 import base64
+import logging
 
 router = APIRouter()
 wedding_service = WeddingService()
+logger = logging.getLogger(__name__)
 
 # Initialize email service
 try:
@@ -136,9 +139,39 @@ def get_email_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_pla
     """Get email send logs"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
-    
-    logs = email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
-    return {"logs": logs, "count": len(logs)}
+
+    # ROOT_ADMIN can see all logs
+    if current_user.is_root_admin:
+        logs = email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
+        return {"logs": logs, "count": len(logs)}
+
+    # Wedding planners can only see logs for their assigned weddings
+    try:
+        weddings_collection = mongo.get_weddings_collection()
+        assigned_weddings = list(weddings_collection.find(
+            {"assigned_planner_email": current_user.email},
+            {"_id": 1}
+        ))
+        assigned_wedding_ids = [w["_id"] for w in assigned_weddings]
+
+        # If wedding_id is specified, check if user has access to it
+        if wedding_id:
+            if wedding_id not in assigned_wedding_ids:
+                raise HTTPException(status_code=403, detail="Access to this wedding denied")
+            logs = email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
+        else:
+            # Get logs for all assigned weddings
+            logs = []
+            for w_id in assigned_wedding_ids:
+                wedding_logs = email_service.get_email_logs(wedding_id=w_id, limit=limit)
+                logs.extend(wedding_logs)
+
+        return {"logs": logs, "count": len(logs)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error filtering email logs for user {current_user.email}: {e}")
+        return {"logs": [], "count": 0}
 
 @router.get("/email/preview-invitation", tags=["Admin"])
 def preview_invitation_email(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),

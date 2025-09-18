@@ -120,3 +120,32 @@ class ReminderService:
 
     def get_logs(self):
         return list(self.log_collection.find({}, {"_id": 0}))
+
+    def get_logs_for_weddings(self, wedding_ids: list):
+        """Get logs filtered by wedding IDs. Since logs only store guest_id,
+        we need to join with guests collection to filter by wedding."""
+        if not wedding_ids:
+            return {"sms_logs": [], "email_logs": []}
+
+        try:
+            # Get guest IDs for the specified weddings
+            guests = list(self.guest_collection.find(
+                {"wedding_id": {"$in": wedding_ids}},
+                {"_id": 1}
+            ))
+            guest_ids = [str(guest["_id"]) for guest in guests]
+
+            if not guest_ids:
+                return {"sms_logs": [], "email_logs": []}
+
+            # Filter logs by guest IDs
+            logs = list(self.log_collection.find(
+                {"guest_id": {"$in": guest_ids}},
+                {"_id": 0}
+            ))
+
+            # For now, return all as sms_logs since the current structure doesn't differentiate
+            return {"sms_logs": logs, "email_logs": []}
+        except Exception as e:
+            # Return empty logs if anything fails
+            return {"sms_logs": [], "email_logs": []}

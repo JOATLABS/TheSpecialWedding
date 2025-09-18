@@ -24,8 +24,8 @@ export default function AdminLayout({
   };
 
   return (
-    <DarkModeProvider>
-      <ClientOnlyAdminProvider>
+    <ClientOnlyAdminProvider>
+      <DarkModeProvider>
         <div className="min-h-screen flex bg-wedding-ivory dark:bg-gray-900 font-body text-wedding-navy dark:text-gray-100 transition-colors duration-200">
           {/* Toast Notifications */}
           <Toaster position="top-right" richColors />
@@ -44,7 +44,7 @@ export default function AdminLayout({
             </main>
           </div>
         </div>
-      </ClientOnlyAdminProvider>
-    </DarkModeProvider>
+      </DarkModeProvider>
+    </ClientOnlyAdminProvider>
   );
 }
