@@ -30,7 +30,7 @@ export default function AdminDashboardPage() {
 
   const fetchUserProfile = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
         method: 'GET',
         headers: {

@@ -18,16 +18,19 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:3002',
+    baseURL: process.env.FRONTEND_URL,
+
+    /* Run tests in headed mode (visible browser) - better for development and debugging */
+    headless: false,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
-    
+
     /* Take screenshot on failure */
-    screenshot: 'only-on-failure',
-    
+    screenshot: 'on',
+
     /* Record video on failure */
-    video: 'retain-on-failure',
+    video: 'off',
   },
 
   /* Configure projects for major browsers */
@@ -54,7 +57,7 @@ export default defineConfig({
     },
     {
       name: 'Mobile Safari',
-      use: { ...devices['iPhone 12'] },
+      use: { ...devices['iPhone 16'] },
     },
 
     /* Test against branded browsers. */
@@ -72,12 +75,12 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev',
-      url: 'http://localhost:3002',
+      url: process.env.FRONTEND_URL!,
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8002',
-      url: 'http://localhost:8002/health',
+      command: 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8000',
+      url: `${process.env.NEXT_PUBLIC_API_BASE_URL}/health`,
       reuseExistingServer: !process.env.CI,
     }
   ],

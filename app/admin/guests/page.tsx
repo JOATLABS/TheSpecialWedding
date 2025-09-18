@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
+import { useRouter } from 'next/navigation';
 
 interface Wedding {
   id?: string;
@@ -49,9 +50,11 @@ interface PlusOne {
 }
 
 export default function AdminGuestsPage() {
-  const { token } = useAdmin();
+  const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
+  const router = useRouter();
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWedding, setSelectedWedding] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState(true);
   const [guests, setGuests] = useState<Guest[]>([]);
   const [rsvps, setRsvps] = useState<RSVP[]>([]);
   const [plusOnes, setPlusOnes] = useState<PlusOne[]>([]);
@@ -80,9 +83,34 @@ export default function AdminGuestsPage() {
   });
   const [creating, setCreating] = useState(false);
 
+  // Wait for authentication to be checked
   useEffect(() => {
-    fetchWeddings();
+    const timer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 1000);
+    return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated) {
+      router.push('/admin/login');
+      return;
+    }
+
+    if (!userProfile) {
+      fetchUserProfile();
+      return;
+    }
+
+    if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
+      router.push('/admin');
+      return;
+    }
+
+    fetchWeddings();
+  }, [authLoading, isAuthenticated, userProfile, router]);
 
   useEffect(() => {
     if (selectedWedding) {
@@ -92,7 +120,7 @@ export default function AdminGuestsPage() {
 
   const fetchWeddings = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/weddings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -109,7 +137,7 @@ export default function AdminGuestsPage() {
     setLoading(true);
     try {
       // Fetch guests
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const guestsResponse = await fetch(
         `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
         {
@@ -201,7 +229,7 @@ export default function AdminGuestsPage() {
     try {
       const guest = guests.find(g => (g.id || g._id) === guestId);
       if (!guest) return;
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/reminders/send`, {
         method: 'POST',
         headers: {
@@ -240,7 +268,7 @@ export default function AdminGuestsPage() {
     if (!editingGuest) return;
     
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/guests/${editingGuest.id || editingGuest._id}`, {
         method: 'PUT',
         headers: {
@@ -265,7 +293,7 @@ export default function AdminGuestsPage() {
     if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/guests/${guestId}?wedding_id=${selectedWedding}`, {
         method: 'DELETE',
         headers: {
@@ -291,7 +319,7 @@ export default function AdminGuestsPage() {
 
     setCreating(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const guestData = {
         ...addForm,
         wedding_id: selectedWedding
@@ -371,6 +399,17 @@ export default function AdminGuestsPage() {
   };
 
   const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading guests...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-gray-900 dark:to-gray-800 p-4 sm:p-6">

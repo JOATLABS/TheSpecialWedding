@@ -44,9 +44,10 @@ start-wedding-backend.sh
 task-orchestration/
 TEST_ORGANIZATION_SUMMARY.md
 test-results/
-TEST_RESULTS_ORGANIZATION_SUMMARY.md
-tests/
+playwright-report
 venv/
 .vscode/
 wedding-backend.service
 test-results
+tests/
+update_emmanuel_wedding.py

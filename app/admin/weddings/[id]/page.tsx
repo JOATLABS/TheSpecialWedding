@@ -25,7 +25,7 @@ export default function WeddingDetailsPage() {
 
  const fetchWedding = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/weddings`, {
    headers: {
      'Authorization': `Bearer ${token}`,
@@ -88,7 +88,7 @@ export default function WeddingDetailsPage() {
  setError('');
  
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
  method: 'PUT',
  headers: {

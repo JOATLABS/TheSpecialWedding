@@ -127,27 +127,80 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
         # Sort weddings by date
         metrics["weddings"].sort(key=lambda x: x["date"])
         
-        # Generate recent activity (placeholder - would integrate with actual activity log)
-        metrics["recent_activity"] = [
-            {
-                "type": "rsvp_received",
-                "message": "New RSVP received",
-                "timestamp": (datetime.now() - timedelta(hours=2)).isoformat(),
-                "wedding_id": metrics["weddings"][0]["id"] if metrics["weddings"] else None
-            },
-            {
-                "type": "guest_updated",
-                "message": "Guest list updated",
-                "timestamp": (datetime.now() - timedelta(hours=5)).isoformat(),
-                "wedding_id": metrics["weddings"][0]["id"] if metrics["weddings"] else None
-            },
-            {
-                "type": "email_sent",
-                "message": "Reminder emails sent",
-                "timestamp": (datetime.now() - timedelta(days=1)).isoformat(),
-                "wedding_id": metrics["weddings"][1]["id"] if len(metrics["weddings"]) > 1 else None
-            }
-        ]
+        # Get real recent activity from audit logs and database changes
+        recent_activities = []
+
+        try:
+            # Get wedding IDs for this planner
+            wedding_ids = [ObjectId(w["id"]) for w in metrics["weddings"]]
+
+            if wedding_ids:
+                # Get recent RSVP activities
+                recent_rsvps = list(rsvps_collection.find({
+                    "wedding_id": {"$in": wedding_ids},
+                    "created_at": {"$gte": datetime.now() - timedelta(days=7)}
+                }).sort("created_at", -1).limit(5))
+
+                for rsvp in recent_rsvps:
+                    wedding = next((w for w in weddings if ObjectId(w["_id"]) == rsvp["wedding_id"]), None)
+                    if wedding:
+                        recent_activities.append({
+                            "type": "rsvp_received",
+                            "message": f"New RSVP received from {rsvp.get('guest_name', 'Guest')}",
+                            "timestamp": rsvp.get("created_at", datetime.now()).isoformat(),
+                            "wedding_id": str(rsvp["wedding_id"])
+                        })
+
+                # Get recent guest additions
+                recent_guests = list(guests_collection.find({
+                    "wedding_id": {"$in": wedding_ids},
+                    "created_at": {"$gte": datetime.now() - timedelta(days=7)}
+                }).sort("created_at", -1).limit(3))
+
+                for guest in recent_guests:
+                    wedding = next((w for w in weddings if ObjectId(w["_id"]) == guest["wedding_id"]), None)
+                    if wedding:
+                        recent_activities.append({
+                            "type": "guest_added",
+                            "message": f"New guest added: {guest.get('name', 'Unknown')}",
+                            "timestamp": guest.get("created_at", datetime.now()).isoformat(),
+                            "wedding_id": str(guest["wedding_id"])
+                        })
+
+                # Get audit log activities if available
+                try:
+                    audit_collection = mongo.db["security_audit_logs"]
+                    recent_audits = list(audit_collection.find({
+                        "wedding_id": {"$in": [str(wid) for wid in wedding_ids]},
+                        "timestamp": {"$gte": datetime.now() - timedelta(days=7)},
+                        "event_type": {"$in": ["FORM_SUBMISSION", "DATA_EXPORT", "BULK_OPERATION"]}
+                    }).sort("timestamp", -1).limit(3))
+
+                    for audit in recent_audits:
+                        wedding = next((w for w in weddings if str(w["_id"]) == audit.get("wedding_id")), None)
+                        if wedding:
+                            recent_activities.append({
+                                "type": "system_activity",
+                                "message": f"System activity: {audit.get('action', 'Unknown action')}",
+                                "timestamp": audit.get("timestamp", datetime.now()).isoformat(),
+                                "wedding_id": audit.get("wedding_id")
+                            })
+                except Exception:
+                    # Audit collection may not exist yet
+                    pass
+
+                # Sort all activities by timestamp (most recent first)
+                recent_activities.sort(key=lambda x: x["timestamp"], reverse=True)
+
+                # Limit to 3 most recent for dashboard
+                metrics["recent_activity"] = recent_activities[:3]
+            else:
+                metrics["recent_activity"] = []
+
+        except Exception as e:
+            logging.warning(f"Failed to fetch real activity data: {str(e)}")
+            # Fallback to empty list if there's an error
+            metrics["recent_activity"] = []
         
         # Calculate revenue metrics (placeholder - would integrate with subscription data)
         if metrics["weddings"]:
@@ -170,45 +223,109 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
 @router.get("/planner/activity-log", tags=["Wedding Planner"])
 def get_activity_log(current_user: ExtendedAuthUser = Depends(get_current_user_extended), limit: int = 50):
     """Get detailed activity log for wedding planner"""
-    
+
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
-    
+
     try:
-        # This would typically fetch from an activity log collection
-        # For now, return placeholder data
-        activities = [
-            {
-                "id": "activity_1",
-                "type": "rsvp_received",
-                "message": "New RSVP received from John Smith",
-                "wedding_id": "wedding_123",
-                "wedding_name": "Emmanuel & Peace",
-                "timestamp": (datetime.now() - timedelta(hours=1)).isoformat(),
-                "metadata": {"guest_name": "John Smith", "response": "attending"}
-            },
-            {
-                "id": "activity_2", 
-                "type": "guest_added",
-                "message": "5 new guests added to guest list",
-                "wedding_id": "wedding_123",
-                "wedding_name": "Emmanuel & Peace",
-                "timestamp": (datetime.now() - timedelta(hours=3)).isoformat(),
-                "metadata": {"count": 5}
-            },
-            {
-                "id": "activity_3",
-                "type": "email_sent",
-                "message": "Invitation emails sent to 25 guests",
-                "wedding_id": "wedding_123", 
-                "wedding_name": "Emmanuel & Peace",
-                "timestamp": (datetime.now() - timedelta(days=1)).isoformat(),
-                "metadata": {"email_count": 25, "email_type": "invitation"}
-            }
-        ]
-        
-        return {"activities": activities[:limit], "total": len(activities)}
-        
+        # Get planner's assigned weddings first
+        weddings_collection = mongo.get_weddings_collection()
+        weddings = list(weddings_collection.find({
+            "assigned_planner_email": current_user.email,
+            "status": {"$ne": "cancelled"}
+        }))
+
+        activities = []
+
+        if weddings:
+            wedding_ids = [w["_id"] for w in weddings]
+            wedding_lookup = {str(w["_id"]): w for w in weddings}
+
+            # Collections to query
+            guests_collection = mongo.get_guest_collection()
+            rsvps_collection = mongo.get_rsvps_collection()
+
+            # Get recent RSVP activities (last 30 days)
+            recent_rsvps = list(rsvps_collection.find({
+                "wedding_id": {"$in": wedding_ids},
+                "created_at": {"$gte": datetime.now() - timedelta(days=30)}
+            }).sort("created_at", -1).limit(limit // 2))
+
+            for rsvp in recent_rsvps:
+                wedding = wedding_lookup.get(str(rsvp["wedding_id"]))
+                if wedding:
+                    activities.append({
+                        "id": f"rsvp_{str(rsvp['_id'])}",
+                        "type": "rsvp_received",
+                        "message": f"New RSVP received from {rsvp.get('guest_name', 'Guest')}",
+                        "wedding_id": str(rsvp["wedding_id"]),
+                        "wedding_name": wedding.get("couple_names", "Unknown Wedding"),
+                        "timestamp": rsvp.get("created_at", datetime.now()).isoformat(),
+                        "metadata": {
+                            "guest_name": rsvp.get("guest_name", "Guest"),
+                            "response": "attending" if rsvp.get("attending") else "declined"
+                        }
+                    })
+
+            # Get recent guest additions (last 30 days)
+            recent_guests = list(guests_collection.find({
+                "wedding_id": {"$in": wedding_ids},
+                "created_at": {"$gte": datetime.now() - timedelta(days=30)}
+            }).sort("created_at", -1).limit(limit // 2))
+
+            for guest in recent_guests:
+                wedding = wedding_lookup.get(str(guest["wedding_id"]))
+                if wedding:
+                    activities.append({
+                        "id": f"guest_{str(guest['_id'])}",
+                        "type": "guest_added",
+                        "message": f"New guest added: {guest.get('name', 'Unknown')}",
+                        "wedding_id": str(guest["wedding_id"]),
+                        "wedding_name": wedding.get("couple_names", "Unknown Wedding"),
+                        "timestamp": guest.get("created_at", datetime.now()).isoformat(),
+                        "metadata": {
+                            "guest_name": guest.get("name", "Unknown"),
+                            "email": guest.get("email", ""),
+                            "phone": guest.get("phone", "")
+                        }
+                    })
+
+            # Get audit log activities if available
+            try:
+                audit_collection = mongo.db["security_audit_logs"]
+                recent_audits = list(audit_collection.find({
+                    "wedding_id": {"$in": [str(wid) for wid in wedding_ids]},
+                    "timestamp": {"$gte": datetime.now() - timedelta(days=30)},
+                    "event_type": {"$in": ["FORM_SUBMISSION", "DATA_EXPORT", "BULK_OPERATION", "FORM_ACCESS"]}
+                }).sort("timestamp", -1).limit(limit // 3))
+
+                for audit in recent_audits:
+                    wedding = wedding_lookup.get(audit.get("wedding_id"))
+                    if wedding:
+                        activities.append({
+                            "id": f"audit_{str(audit['_id'])}",
+                            "type": "system_activity",
+                            "message": f"System activity: {audit.get('action', 'Unknown action')}",
+                            "wedding_id": audit.get("wedding_id"),
+                            "wedding_name": wedding.get("couple_names", "Unknown Wedding"),
+                            "timestamp": audit.get("timestamp", datetime.now()).isoformat(),
+                            "metadata": {
+                                "event_type": audit.get("event_type"),
+                                "details": audit.get("details", {})
+                            }
+                        })
+            except Exception:
+                # Audit collection may not exist yet
+                pass
+
+            # Sort all activities by timestamp (most recent first)
+            activities.sort(key=lambda x: x["timestamp"], reverse=True)
+
+            # Apply limit
+            activities = activities[:limit]
+
+        return {"activities": activities, "total": len(activities)}
+
     except Exception as e:
         logging.error(f"Error fetching activity log: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch activity log: {str(e)}")

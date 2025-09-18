@@ -44,7 +44,7 @@ export default function AdminGalleryUploadPage() {
 
   const fetchWeddings = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/weddings`);
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
@@ -66,7 +66,7 @@ export default function AdminGalleryUploadPage() {
   const fetchUploadedImages = async (weddingSlug: string) => {
     setLoadingImages(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       
       // Fetch from all folders
       const folders = ['gallery', 'our-story', 'wedding-party'];
@@ -99,7 +99,7 @@ export default function AdminGalleryUploadPage() {
     if (!confirm('Are you sure you want to delete this image?')) return;
     
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       console.log('Deleting image with key:', imageKey);
       
       const response = await fetch(
@@ -152,7 +152,7 @@ export default function AdminGalleryUploadPage() {
         fd.append('wedding_slug', selectedWeddingSlug);
         fd.append('folder', selectedFolder);
         
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
         const res = await fetch(
           `${baseUrl}/admin/gallery/upload`,
           {
@@ -444,7 +444,7 @@ export default function AdminGalleryUploadPage() {
                               console.log('Set as Background clicked for:', image.key || image.filename);
                               console.log('Selected wedding ID:', selectedWedding);
                               try {
-                                const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+                                const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
                                 const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
                                   method: 'PUT',
                                   headers: {

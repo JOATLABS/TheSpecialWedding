@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 interface UserProfile {
@@ -37,9 +38,11 @@ interface NotificationPreferences {
 }
 
 export default function ProfilePage() {
-  const { token } = useAdmin();
+  const { token, userProfile: adminUserProfile, fetchUserProfile: fetchAdminProfile, isAuthenticated } = useAdmin();
+  const router = useRouter();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'email' | 'notifications'>('profile');
 
   // Form states
@@ -65,15 +68,40 @@ export default function ProfilePage() {
   });
   const [availableForms, setAvailableForms] = useState<{id: string, name: string}[]>([]);
 
+  // Wait for authentication to be checked
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated) {
+      router.push('/admin/login');
+      return;
+    }
+
+    if (!adminUserProfile) {
+      fetchAdminProfile();
+      return;
+    }
+
+    if (adminUserProfile && !adminUserProfile.is_wedding_planner && !adminUserProfile.is_root_admin) {
+      router.push('/admin');
+      return;
+    }
+
     fetchUserProfile();
-  }, [token]);
+  }, [authLoading, isAuthenticated, adminUserProfile, router]);
 
   const fetchUserProfile = async () => {
     if (!token) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -111,7 +139,7 @@ export default function ProfilePage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/profile/password`, {
         method: 'PUT',
         headers: {
@@ -141,7 +169,7 @@ export default function ProfilePage() {
     e.preventDefault();
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/profile/email`, {
         method: 'PUT',
         headers: {
@@ -176,7 +204,7 @@ export default function ProfilePage() {
         company_name: profileData.company_name
       };
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/profile/info`, {
         method: 'PUT',
         headers: {
@@ -207,7 +235,7 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
       // Fetch preferences and available forms in parallel
       const [preferencesResponse, formsResponse] = await Promise.all([
@@ -246,7 +274,7 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/notifications/preferences`, {
         method: 'PUT',
         headers: {
@@ -289,6 +317,17 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-red-600">Failed to load profile</p>
+      </div>
+    );
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading profile...</p>
+        </div>
       </div>
     );
   }

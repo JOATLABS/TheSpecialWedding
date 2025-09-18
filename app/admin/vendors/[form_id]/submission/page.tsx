@@ -44,7 +44,7 @@ export default function VendorSubmissionPage() {
 
  const fetchSubmission = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/vendor-forms/${formId}`, {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -96,7 +96,7 @@ export default function VendorSubmissionPage() {
 
  const updateSubmissionStatus = async (newStatus: string) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/vendor-forms/${formId}/status`, {
  method: 'PUT',
  headers: {

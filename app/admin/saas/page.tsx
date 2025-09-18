@@ -111,7 +111,7 @@ const SaasAdminDashboard = () => {
  useEffect(() => {
  const fetchData = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
  if (!token) {
@@ -293,7 +293,7 @@ const SaasAdminDashboard = () => {
  }
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
  const response = await fetch(`${baseUrl}/admin/subscription-plans/${planId}`, {
@@ -318,7 +318,7 @@ const SaasAdminDashboard = () => {
 
  const handleSavePlan = async (planData: any) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
  const isEditing = !!editingPlan;
@@ -373,7 +373,7 @@ const SaasAdminDashboard = () => {
  }
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
  if (!token) {
@@ -484,7 +484,7 @@ const SaasAdminDashboard = () => {
  if (!email || !companyName) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
  const response = await fetch(`${baseUrl}/saas/wedding-planners`, {
@@ -515,7 +515,7 @@ const SaasAdminDashboard = () => {
 
  const handleTogglePlannerStatus = async (plannerId: string) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
  // Find the planner to get current status
@@ -610,7 +610,7 @@ const SaasAdminDashboard = () => {
 
  const handleAssignPlan = async (plannerId: string, planId: string) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  
  // First, cancel existing subscription if any

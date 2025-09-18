@@ -27,7 +27,7 @@ interface FormTemplate {
 }
 
 export default function FormsManagementPage() {
- const { token, userProfile } = useAdmin();
+ const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
  const router = useRouter();
  const [forms, setForms] = useState<Form[]>([]);
  const [templates, setTemplates] = useState<FormTemplate[]>([]);
@@ -37,25 +37,41 @@ export default function FormsManagementPage() {
  const [selectedTemplate, setSelectedTemplate] = useState('');
  const [formName, setFormName] = useState('');
  const [creating, setCreating] = useState(false);
+ const [authLoading, setAuthLoading] = useState(true);
+
+ // Wait for authentication to be checked before redirecting
+ useEffect(() => {
+ const timer = setTimeout(() => {
+ setAuthLoading(false);
+ }, 1000); // Give AdminContext time to check cookies
+ return () => clearTimeout(timer);
+ }, []);
 
  useEffect(() => {
- if (!token) {
+ if (authLoading) return; // Don't check auth until loading is done
+
+ if (!isAuthenticated) {
  router.push('/admin/login');
  return;
  }
 
- if (!userProfile || (!userProfile.is_wedding_planner && !userProfile.is_root_admin)) {
+ if (!userProfile) {
+ fetchUserProfile();
+ return;
+ }
+
+ if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
  router.push('/admin');
  return;
  }
 
  fetchForms();
  fetchTemplates();
- }, [token, userProfile, router]);
+ }, [authLoading, isAuthenticated, userProfile, router]);
 
  const fetchForms = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/forms`, {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -78,7 +94,7 @@ export default function FormsManagementPage() {
 
  const fetchTemplates = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/form-templates`, {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -100,7 +116,7 @@ export default function FormsManagementPage() {
 
  setCreating(true);
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(
  `${baseUrl}/admin/forms/from-template/${selectedTemplate}?form_name=${encodeURIComponent(formName)}`,
  {
@@ -129,10 +145,13 @@ export default function FormsManagementPage() {
  };
 
  const deleteForm = async (formId: string) => {
- if (!confirm('Are you sure you want to delete this form?')) return;
+ if (!window.confirm('Are you sure you want to delete this form?')) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ setError(''); // Clear any previous errors
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
+ console.log('Deleting form with ID:', formId); // Debug log
+
  const response = await fetch(`${baseUrl}/admin/forms/${formId}`, {
  method: 'DELETE',
  headers: {
@@ -141,13 +160,19 @@ export default function FormsManagementPage() {
  },
  });
 
+ console.log('Delete response status:', response.status); // Debug log
+
  if (response.ok) {
+ console.log('Form deleted successfully, refreshing list...'); // Debug log
  await fetchForms();
  } else {
- setError('Failed to delete form');
+ const errorData = await response.json().catch(() => ({}));
+ console.error('Delete failed:', errorData); // Debug log
+ setError(errorData.detail || `Failed to delete form (${response.status})`);
  }
- } catch (error) {
- setError('Failed to delete form');
+ } catch (error: any) {
+ console.error('Delete form error:', error);
+ setError('Failed to delete form: ' + (error.message || 'Network error'));
  }
  };
 

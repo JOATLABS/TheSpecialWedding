@@ -59,7 +59,7 @@ export default function FormResponsesPage() {
 
  const fetchFormAndResponses = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  
  // Fetch form details and responses in parallel
  const [formResponse, responsesResponse] = await Promise.all([
@@ -100,7 +100,7 @@ export default function FormResponsesPage() {
  setUpdatingReview(prev => new Set([...prev, responseId]));
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
  const response = await fetch(`${baseUrl}/admin/forms/${formId}/responses/${responseId}/review`, {
  method: 'PATCH',

@@ -36,7 +36,7 @@ interface Wedding {
 }
 
 export default function VendorManagementPage() {
-  const { token, userProfile, fetchUserProfile } = useAdmin();
+  const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
   const router = useRouter();
   const [vendors, setVendors] = useState<VendorForm[]>([]);
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -44,6 +44,7 @@ export default function VendorManagementPage() {
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const [formData, setFormData] = useState<VendorForm>({
     wedding_id: '',
@@ -85,15 +86,34 @@ export default function VendorManagementPage() {
     ]
   };
 
+  // Wait for authentication to be checked
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated) {
+      router.push('/admin/login');
+      return;
+    }
+
     if (!userProfile) {
       fetchUserProfile();
-    } else if (!userProfile.is_wedding_planner && !userProfile.is_root_admin) {
-      router.push('/admin');
-    } else {
-      fetchData();
+      return;
     }
-  }, [userProfile]);
+
+    if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
+      router.push('/admin');
+      return;
+    }
+
+    fetchData();
+  }, [authLoading, isAuthenticated, userProfile, router]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -108,7 +128,7 @@ export default function VendorManagementPage() {
 
   const fetchVendors = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/vendor-forms`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -127,7 +147,7 @@ export default function VendorManagementPage() {
 
   const fetchWeddings = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const endpoint = userProfile?.is_root_admin 
         ? `${baseUrl}/admin/weddings` 
         : `${baseUrl}/admin/planner/weddings`;
@@ -154,7 +174,7 @@ export default function VendorManagementPage() {
     setLoading(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const url = editingId 
         ? `${baseUrl}/admin/vendor-forms/${editingId}`
         : `${baseUrl}/admin/vendor-forms`;
@@ -210,7 +230,7 @@ export default function VendorManagementPage() {
   const sendVendorForm = async (vendorId: string) => {
     try {
       setLoading(true);
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       
       const response = await fetch(`${baseUrl}/admin/vendor-forms/${vendorId}/send`, {
         method: 'POST',
@@ -249,11 +269,11 @@ export default function VendorManagementPage() {
     );
   };
 
-  if (loading && vendors.length === 0) {
+  if (loading || authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-300">Loading vendor management...</p>
         </div>
       </div>

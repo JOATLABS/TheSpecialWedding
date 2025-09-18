@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -24,13 +25,15 @@ interface Wedding {
 }
 
 export default function BudgetDashboard() {
-  const { token } = useAdmin();
+  const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
+  const router = useRouter();
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWedding, setSelectedWedding] = useState<string>('');
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(null);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState(true);
   
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -48,9 +51,34 @@ export default function BudgetDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'budget' | 'spent' | 'priority'>('priority');
 
+  // Wait for authentication to be checked
   useEffect(() => {
-    fetchWeddings();
+    const timer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 1000);
+    return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated) {
+      router.push('/admin/login');
+      return;
+    }
+
+    if (!userProfile) {
+      fetchUserProfile();
+      return;
+    }
+
+    if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
+      router.push('/admin');
+      return;
+    }
+
+    fetchWeddings();
+  }, [authLoading, isAuthenticated, userProfile, router]);
 
   useEffect(() => {
     if (selectedWedding && token) {
@@ -60,7 +88,7 @@ export default function BudgetDashboard() {
 
   const fetchWeddings = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/weddings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -233,6 +261,17 @@ export default function BudgetDashboard() {
           default: return 0;
         }
       }), [categories, searchTerm, statusFilter, sortBy]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading budget dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!token) {
     return (

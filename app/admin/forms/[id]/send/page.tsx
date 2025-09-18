@@ -56,7 +56,7 @@ export default function SendFormPage() {
 
  const fetchForm = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/forms/${formId}`, {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -146,7 +146,7 @@ export default function SendFormPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  
  const validEmails = recipients.filter(email => 
  email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())

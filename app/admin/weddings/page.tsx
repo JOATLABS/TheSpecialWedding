@@ -170,7 +170,7 @@ export default function AdminWeddingsPage() {
   const fetchWeddings = async () => {
     setLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       
       // Use the same endpoint for both roles - backend handles filtering
       const endpoint = `${baseUrl}/admin/weddings`;
@@ -200,7 +200,7 @@ export default function AdminWeddingsPage() {
 
   const fetchPlanners = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/users?role=wedding_planner`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -287,7 +287,7 @@ export default function AdminWeddingsPage() {
     setError('');
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const url = editingId 
         ? `${baseUrl}/admin/weddings/${editingId}`
         : `${baseUrl}/admin/weddings`;
@@ -352,7 +352,7 @@ export default function AdminWeddingsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
         method: 'DELETE',
         headers: {

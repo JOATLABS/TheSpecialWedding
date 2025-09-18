@@ -54,7 +54,7 @@ export default function FormEditPage() {
 
   const fetchForm = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/forms/${formId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -82,7 +82,7 @@ export default function FormEditPage() {
     setError('');
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
       const response = await fetch(`${baseUrl}/admin/forms/${formId}`, {
         method: 'PUT',
         headers: {

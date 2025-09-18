@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
+import { useRouter } from 'next/navigation';
 
 interface Wedding {
  id?: string;
@@ -42,7 +43,8 @@ interface MessageLog {
 }
 
 export default function AdminRemindersPage() {
- const { token } = useAdmin();
+ const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
+ const router = useRouter();
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [selectedWedding, setSelectedWedding] = useState<string>('');
  const [guests, setGuests] = useState<Guest[]>([]);
@@ -64,13 +66,39 @@ export default function AdminRemindersPage() {
  const [customMessage, setCustomMessage] = useState<string>('');
  const [inviteMessage, setInviteMessage] = useState<string>('');
  const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
+ const [authLoading, setAuthLoading] = useState(true);
+
+ // Wait for authentication to be checked
+ useEffect(() => {
+ const timer = setTimeout(() => {
+ setAuthLoading(false);
+ }, 1000);
+ return () => clearTimeout(timer);
+ }, []);
 
  useEffect(() => {
+ if (authLoading) return;
+
+ if (!isAuthenticated) {
+ router.push('/admin/login');
+ return;
+ }
+
+ if (!userProfile) {
+ fetchUserProfile();
+ return;
+ }
+
+ if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
+ router.push('/admin');
+ return;
+ }
+
  fetchWeddings();
  if (token) {
  fetchMessageHistory();
  }
- }, [token]);
+ }, [authLoading, isAuthenticated, userProfile, router, token]);
 
  useEffect(() => {
  if (selectedWedding && token) {
@@ -80,7 +108,7 @@ export default function AdminRemindersPage() {
 
  const fetchWeddings = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/weddings`);
  const data = await response.json();
  setWeddings(Array.isArray(data) ? data : []);
@@ -93,7 +121,7 @@ export default function AdminRemindersPage() {
  if (!selectedWedding || !token) return;
  
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(
  `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
  {
@@ -118,7 +146,7 @@ export default function AdminRemindersPage() {
  if (!token) return;
  
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  
  // Fetch both SMS and Email logs
  const [smsResponse, emailResponse] = await Promise.all([
@@ -162,7 +190,7 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  let totalSent = 0;
  let totalFailed = 0;
 
@@ -260,7 +288,7 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  let totalSent = 0;
  let totalFailed = 0;
 
@@ -337,7 +365,7 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/reminders/send`, {
  method: 'POST',
  headers: {
@@ -376,6 +404,17 @@ export default function AdminRemindersPage() {
  console.log('Guests with phone:', guestsWithPhone);
  console.log('Selected wedding:', selectedWedding);
  console.log('Token exists:', !!token);
+
+ if (authLoading) {
+ return (
+ <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
+ <div className="text-center">
+ <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4"></div>
+ <p className="text-gray-600 dark:text-gray-300">Loading reminders...</p>
+ </div>
+ </div>
+ );
+ }
 
  return (
  <div className="min-h-screen bg-wedding-ivory dark:bg-gray-900 p-4 sm:p-6">
@@ -584,7 +623,7 @@ export default function AdminRemindersPage() {
  <button
  type="button"
  onClick={async () => {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/email/preview-invitation?guest_name=John Doe&couple_names=${selectedWeddingData?.couple_names}&wedding_date=${selectedWeddingData?.date}`, {
  headers: { 'Authorization': `Bearer ${token}` },
  });
@@ -833,7 +872,7 @@ export default function AdminRemindersPage() {
  {/* Mobile Card View */}
  <div className="md:hidden space-y-4">
  {messageHistory.map((log, index) => (
- <div key={index} className="bg-gray-50 rounded-lg p-4 space-y-2">
+ <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-2">
  <div className="flex justify-between items-start">
  <div className="text-xs text-gray-500 dark:text-gray-400">
  {new Date(log.sent_at).toLocaleString()}

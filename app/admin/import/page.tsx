@@ -52,7 +52,7 @@ export default function AdminImportPage() {
 
  const fetchWeddings = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/weddings`);
  const data = await response.json();
  setWeddings(data);
@@ -66,7 +66,7 @@ export default function AdminImportPage() {
  
  setLoadingGuests(true);
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(
  `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
  {
@@ -96,7 +96,7 @@ export default function AdminImportPage() {
  if (!confirm('Are you sure you want to delete this guest?')) return;
  
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
  method: 'DELETE',
  headers: {
@@ -141,7 +141,7 @@ export default function AdminImportPage() {
  const formData = new FormData();
  formData.append('file', file);
 
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
  const response = await fetch(
  `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
  {
