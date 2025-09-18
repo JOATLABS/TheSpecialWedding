@@ -139,6 +139,7 @@ export default function PublicVendorFormPage() {
       case 'textarea':
         return (
           <textarea
+            id={`vendor-field-${field.id}`}
             value={formData[field.id] || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
             className={`${baseClasses} min-h-[100px]`}
@@ -151,6 +152,7 @@ export default function PublicVendorFormPage() {
       case 'select':
         return (
           <select
+            id={`vendor-field-${field.id}`}
             value={formData[field.id] || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
             className={baseClasses}
@@ -171,6 +173,7 @@ export default function PublicVendorFormPage() {
             {field.options?.map((option) => (
               <label key={option} className="flex items-center">
                 <input
+                  id={`vendor-field-${field.id}-${option.replace(/\s+/g, '-').toLowerCase()}`}
                   type="checkbox"
                   checked={(formData[field.id] || []).includes(option)}
                   onChange={(e) => handleFieldChange(field.id, option, field.type)}
@@ -185,6 +188,7 @@ export default function PublicVendorFormPage() {
       case 'number':
         return (
           <input
+            id={`vendor-field-${field.id}`}
             type="number"
             value={formData[field.id] || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
@@ -197,6 +201,7 @@ export default function PublicVendorFormPage() {
       case 'date':
         return (
           <input
+            id={`vendor-field-${field.id}`}
             type="date"
             value={formData[field.id] || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
@@ -208,6 +213,7 @@ export default function PublicVendorFormPage() {
       case 'email':
         return (
           <input
+            id={`vendor-field-${field.id}`}
             type="email"
             value={formData[field.id] || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
@@ -220,6 +226,7 @@ export default function PublicVendorFormPage() {
       case 'phone':
         return (
           <input
+            id={`vendor-field-${field.id}`}
             type="tel"
             value={formData[field.id] || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
@@ -232,6 +239,7 @@ export default function PublicVendorFormPage() {
       default:
         return (
           <input
+            id={`vendor-field-${field.id}`}
             type="text"
             value={formData[field.id] || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value, field.type)}
@@ -358,6 +366,7 @@ export default function PublicVendorFormPage() {
 
             <div className="pt-6 border-t border-gray-200">
               <button
+                id="vendor-form-submit-button"
                 type="submit"
                 disabled={submitting}
                 className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 px-6 rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"

@@ -205,6 +205,7 @@ export default function PublicFormPage() {
  {field.options.map((option, index) => (
  <label key={index} className="flex items-center">
  <input
+ id={`${field.id}-radio-${index}`}
  type="radio"
  name={field.id}
  value={option}
@@ -223,6 +224,7 @@ export default function PublicFormPage() {
  {field.options.map((option, index) => (
  <label key={index} className="flex items-center">
  <input
+ id={`${field.id}-checkbox-${index}`}
  type="checkbox"
  value={option}
  onChange={(e) => {
@@ -246,6 +248,7 @@ export default function PublicFormPage() {
  <div className="flex space-x-2">
  {[1, 2, 3, 4, 5].map((rating) => (
  <button
+ id={`${field.id}-rating-${rating}`}
  key={rating}
  type="button"
  onClick={() => handleInputChange(field.id, rating)}
@@ -272,6 +275,7 @@ export default function PublicFormPage() {
  <div className="grid grid-cols-10 gap-2">
  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rating) => (
  <button
+ id={`${field.id}-scale-${rating}`}
  key={rating}
  type="button"
  onClick={() => handleInputChange(field.id, rating)}
@@ -324,6 +328,7 @@ export default function PublicFormPage() {
  <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Form</h2>
  <p className="text-gray-600 mb-4">{error}</p>
  <button
+ id="form-error-retry-button"
  onClick={() => window.location.reload()}
  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
  >
@@ -393,6 +398,7 @@ export default function PublicFormPage() {
  {/* Submit Button */}
  <div className="mt-8 pt-6 border-t border-gray-200">
  <button
+ id="form-submit-button"
  onClick={submitForm}
  disabled={submitting}
  className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"

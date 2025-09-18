@@ -35,6 +35,7 @@ export default function AdminLoginPage() {
 
         <CardContent className="space-y-4">
           <input
+            id="email-input"
             type="email"
             placeholder="Email"
             autoFocus
@@ -45,6 +46,7 @@ export default function AdminLoginPage() {
 
           <div className="relative">
             <input
+              id="password-input"
               type={showPassword ? 'text' : 'password'}
               placeholder="Password"
               value={password}
@@ -52,6 +54,7 @@ export default function AdminLoginPage() {
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg pr-10 focus:outline-none focus:ring-2 focus:ring-wedding-rose transition"
             />
             <button
+              id="toggle-password-visibility"
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               className="absolute inset-y-0 right-3 flex items-center text-sm text-wedding-navy dark:text-gray-300 hover:text-wedding-rose dark:hover:text-wedding-rose"
@@ -62,6 +65,7 @@ export default function AdminLoginPage() {
 
           <label className="flex items-center text-sm text-wedding-navy dark:text-gray-300">
             <input
+              id="remember-me-checkbox"
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
@@ -71,6 +75,8 @@ export default function AdminLoginPage() {
           </label>
 
           <Button
+            id="login-button"
+            type="submit"
             onClick={handleLogin}
             disabled={!email || !password || loading}
             className="w-full py-2 font-medium"

@@ -121,15 +121,15 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         <label className="block font-semibold text-gray-700 mb-3">Events Attending</label>
         <div className="space-y-2 sm:space-y-0 sm:space-x-4 sm:flex">
           <label className="flex items-center space-x-2">
-            <input type="checkbox" value="traditional" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <input id="attending-traditional" type="checkbox" value="traditional" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
             <span>Traditional</span>
           </label>
           <label className="flex items-center space-x-2">
-            <input type="checkbox" value="white_wedding" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <input id="attending-white-wedding" type="checkbox" value="white_wedding" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
             <span>White Wedding</span>
           </label>
           <label className="flex items-center space-x-2">
-            <input type="checkbox" value="reception" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <input id="attending-reception" type="checkbox" value="reception" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
             <span>Reception</span>
           </label>
         </div>
@@ -137,24 +137,26 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
       <div>
         <label className="block font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
-        <input 
-          type="text" 
-          className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-          {...register('dietary')} 
+        <input
+          id="dietary-restrictions"
+          type="text"
+          className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+          {...register('dietary')}
           placeholder="None" 
         />
       </div>
 
       <div>
         <label className="block font-semibold text-gray-700 mb-2">Phone Number</label>
-        <input 
-          type="tel" 
-          className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-          defaultValue={guest.phone} 
+        <input
+          id="phone-number"
+          type="tel"
+          className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+          defaultValue={guest.phone}
           {...register('phone', {
             required: true,
             pattern: /^\+?\d{10,15}$/
-          })} 
+          })}
           placeholder="+1 (555) 123-4567"
         />
         {errors.phone && <p className="text-red-500 text-sm mt-1">Enter a valid phone number</p>}
@@ -165,8 +167,9 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         <h3 className="font-semibold text-gray-700 mb-3">SMS Notifications</h3>
         
         <label className="flex items-start space-x-3 mb-4">
-          <input 
-            type="checkbox" 
+          <input
+            id="sms-opt-in"
+            type="checkbox"
             {...register('sms_opt_in')}
             defaultChecked={false}
             className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose" 
@@ -271,8 +274,9 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       {error && <p className="text-red-600 text-center p-3 bg-red-50 rounded-lg">{error}</p>}
 
       <div className="flex justify-center pt-6">
-        <button 
-          disabled={isSubmitting} 
+        <button
+          id="rsvp-submit-button"
+          disabled={isSubmitting}
           type="submit" 
           className="w-full sm:w-auto bg-wedding-rose text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-opacity-90 focus:ring-4 focus:ring-wedding-rose focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
