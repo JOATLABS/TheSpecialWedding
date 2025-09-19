@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+import { createAutomationAttrs, formAutomationAttrs } from '../../utils/automation-attrs';
 
 // Types
 interface FormField {
@@ -135,6 +136,13 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  <div className="border-b border-gray-200 p-4">
  <div className="flex rounded-lg bg-gray-100 p-1">
  <button
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'switchPanel',
+ context: 'sidebar',
+ state: activePanel === 'fields' ? 'active' : 'inactive',
+ custom: { panel: 'fields' }
+ })}
  onClick={() => setActivePanel('fields')}
  className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
  activePanel === 'fields'
@@ -145,6 +153,13 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  Fields
  </button>
  <button
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'switchPanel',
+ context: 'sidebar',
+ state: activePanel === 'settings' ? 'active' : 'inactive',
+ custom: { panel: 'settings' }
+ })}
  onClick={() => setActivePanel('settings')}
  className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
  activePanel === 'settings'
@@ -264,6 +279,12 @@ const FieldsPanel: React.FC<{ onAddField: (type: string) => void }> = ({ onAddFi
  <div className="grid grid-cols-1 gap-2">
  {FIELD_TYPES.map(({ type, label, icon }) => (
  <button
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'addField',
+ context: 'fieldsPanel',
+ custom: { fieldType: type, fieldLabel: label }
+ })}
  key={type}
  onClick={() => onAddField(type)}
  className="flex items-center p-3 text-left border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
@@ -295,6 +316,12 @@ const SettingsPanel: React.FC<{
  Form Title
  </label>
  <input
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'updateSetting',
+ context: 'settingsPanel',
+ custom: { settingType: 'title', hasValue: !!settings.title }
+ })}
  type="text"
  value={settings.title}
  onChange={(e) => updateSetting('title', e.target.value)}
@@ -307,6 +334,12 @@ const SettingsPanel: React.FC<{
  Description
  </label>
  <textarea
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'updateSetting',
+ context: 'settingsPanel',
+ custom: { settingType: 'description', hasValue: !!settings.description }
+ })}
  value={settings.description || ''}
  onChange={(e) => updateSetting('description', e.target.value)}
  rows={3}
@@ -320,6 +353,12 @@ const SettingsPanel: React.FC<{
  Submit Button Text
  </label>
  <input
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'updateSetting',
+ context: 'settingsPanel',
+ custom: { settingType: 'submit_button_text', hasValue: !!settings.submit_button_text }
+ })}
  type="text"
  value={settings.submit_button_text}
  onChange={(e) => updateSetting('submit_button_text', e.target.value)}
@@ -332,6 +371,12 @@ const SettingsPanel: React.FC<{
  Success Message
  </label>
  <textarea
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'updateSetting',
+ context: 'settingsPanel',
+ custom: { settingType: 'success_message', hasValue: !!settings.success_message }
+ })}
  value={settings.success_message}
  onChange={(e) => updateSetting('success_message', e.target.value)}
  rows={3}
@@ -342,6 +387,13 @@ const SettingsPanel: React.FC<{
  <div>
  <label className="flex items-center">
  <input
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'updateSetting',
+ context: 'settingsPanel',
+ state: settings.is_public ? 'checked' : 'unchecked',
+ custom: { settingType: 'is_public' }
+ })}
  type="checkbox"
  checked={settings.is_public}
  onChange={(e) => updateSetting('is_public', e.target.checked)}
@@ -363,10 +415,18 @@ const FieldRenderer: React.FC<{
  dragHandleProps: any;
 }> = ({ field, isSelected, onSelect, onDelete, dragHandleProps }) => (
  <div
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'select',
+ context: 'formBuilder',
+ entityId: field.id,
+ state: isSelected ? 'selected' : 'unselected',
+ custom: { fieldType: field.type, fieldLabel: field.label }
+ })}
  onClick={onSelect}
  className={`relative p-4 border-2 border-dashed cursor-pointer transition-all ${
- isSelected 
- ? 'border-indigo-300 bg-indigo-50' 
+ isSelected
+ ? 'border-indigo-300 bg-indigo-50'
  : 'border-gray-200 hover:border-gray-300'
  }`}
  >
@@ -382,6 +442,13 @@ const FieldRenderer: React.FC<{
 
  {/* Delete Button */}
  <button
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'delete',
+ context: 'formBuilder',
+ entityId: field.id,
+ custom: { fieldType: field.type, fieldLabel: field.label }
+ })}
  onClick={(e) => {
  e.stopPropagation();
  onDelete();
@@ -491,6 +558,13 @@ const FieldPropertiesPanel: React.FC<{
  <div className="flex items-center justify-between">
  <h3 className="text-sm font-medium text-gray-900">Field Properties</h3>
  <button
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'closeProperties',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ custom: { fieldType: field.type }
+ })}
  onClick={onClose}
  className="text-gray-400 hover:text-gray-600"
  >
@@ -508,6 +582,13 @@ const FieldPropertiesPanel: React.FC<{
  Field Label
  </label>
  <input
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'updateProperty',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ custom: { propertyType: 'label', fieldType: field.type, hasValue: !!field.label }
+ })}
  type="text"
  value={field.label}
  onChange={(e) => onUpdate({ label: e.target.value })}
@@ -520,6 +601,13 @@ const FieldPropertiesPanel: React.FC<{
  Description
  </label>
  <textarea
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'updateProperty',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ custom: { propertyType: 'description', fieldType: field.type, hasValue: !!field.description }
+ })}
  value={field.description || ''}
  onChange={(e) => onUpdate({ description: e.target.value })}
  rows={2}
@@ -534,6 +622,13 @@ const FieldPropertiesPanel: React.FC<{
  Placeholder
  </label>
  <input
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'updateProperty',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ custom: { propertyType: 'placeholder', fieldType: field.type, hasValue: !!field.placeholder }
+ })}
  type="text"
  value={field.placeholder || ''}
  onChange={(e) => onUpdate({ placeholder: e.target.value })}
@@ -545,6 +640,14 @@ const FieldPropertiesPanel: React.FC<{
  <div>
  <label className="flex items-center">
  <input
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'updateProperty',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ state: field.required ? 'checked' : 'unchecked',
+ custom: { propertyType: 'required', fieldType: field.type }
+ })}
  type="checkbox"
  checked={field.required}
  onChange={(e) => onUpdate({ required: e.target.checked })}
@@ -563,12 +666,38 @@ const FieldPropertiesPanel: React.FC<{
  {(field.options || []).map((option, index) => (
  <div key={index} className="flex space-x-2">
  <input
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'updateOption',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ custom: {
+ propertyType: 'option',
+ fieldType: field.type,
+ optionIndex: index,
+ optionValue: option,
+ hasValue: !!option
+ }
+ })}
  type="text"
  value={option}
  onChange={(e) => updateOption(index, e.target.value)}
  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
  />
  <button
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'removeOption',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ state: (field.options || []).length <= 1 ? 'disabled' : 'enabled',
+ custom: {
+ propertyType: 'option',
+ fieldType: field.type,
+ optionIndex: index,
+ optionValue: option
+ }
+ })}
  onClick={() => removeOption(index)}
  className="text-red-500 hover:text-red-700 px-2"
  disabled={(field.options || []).length <= 1}
@@ -578,6 +707,17 @@ const FieldPropertiesPanel: React.FC<{
  </div>
  ))}
  <button
+ {...createAutomationAttrs({
+ entity: 'formField',
+ action: 'addOption',
+ context: 'propertiesPanel',
+ entityId: field.id,
+ custom: {
+ propertyType: 'option',
+ fieldType: field.type,
+ currentOptionCount: (field.options || []).length
+ }
+ })}
  onClick={addOption}
  className="w-full px-3 py-2 border border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-700 transition-colors"
  >

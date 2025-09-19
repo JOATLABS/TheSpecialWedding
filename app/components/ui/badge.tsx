@@ -1,12 +1,47 @@
 import React from 'react';
 import { cn } from '@/app/utils/cn';
+import { createAutomationAttrs } from '../../utils/automation-attrs';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: 'default' | 'secondary' | 'destructive' | 'outline' | 'notification';
+  // Automation attributes
+  automationEntity?: string;
+  automationAction?: string;
+  automationContext?: string;
+  automationState?: string;
+  automationEntityId?: string | number;
+  automationCustom?: Record<string, string | number | boolean>;
 }
 
 const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
-  ({ className, variant = 'default', ...props }, ref) => {
+  ({
+    className,
+    variant = 'default',
+    automationEntity,
+    automationAction,
+    automationContext,
+    automationState,
+    automationEntityId,
+    automationCustom,
+    children,
+    ...props
+  }, ref) => {
+    const automationProps = automationEntity || automationAction || automationContext || automationState || automationEntityId || automationCustom ?
+      createAutomationAttrs({
+        entity: automationEntity,
+        action: automationAction,
+        context: automationContext,
+        state: automationState,
+        entityId: automationEntityId,
+        custom: {
+          variant,
+          hasChildren: !!children,
+          badgeText: typeof children === 'string' ? children : 'complex',
+          isNotification: variant === 'notification',
+          ...automationCustom
+        }
+      }) : {};
+
     return (
       <div
         ref={ref}
@@ -26,8 +61,11 @@ const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
           },
           className
         )}
+        {...automationProps}
         {...props}
-      />
+      >
+        {children}
+      </div>
     );
   }
 );

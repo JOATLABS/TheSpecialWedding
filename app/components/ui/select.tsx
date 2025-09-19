@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { cn } from '@/app/utils/cn';
 import { ChevronDown } from 'lucide-react';
+import { createAutomationAttrs } from '../../utils/automation-attrs';
 
 interface SelectContextType {
   value: string;
@@ -15,6 +16,13 @@ interface SelectProps {
   value: string;
   onValueChange: (value: string) => void;
   children: React.ReactNode;
+  // Automation attributes
+  automationEntity?: string;
+  automationAction?: string;
+  automationContext?: string;
+  automationState?: string;
+  automationEntityId?: string | number;
+  automationCustom?: Record<string, string | number | boolean>;
 }
 
 export const Select: React.FC<SelectProps> = ({ value, onValueChange, children }) => {
@@ -32,13 +40,44 @@ export const Select: React.FC<SelectProps> = ({ value, onValueChange, children }
 interface SelectTriggerProps {
   children: React.ReactNode;
   className?: string;
+  // Automation attributes
+  automationEntity?: string;
+  automationAction?: string;
+  automationContext?: string;
+  automationState?: string;
+  automationEntityId?: string | number;
+  automationCustom?: Record<string, string | number | boolean>;
 }
 
-export const SelectTrigger: React.FC<SelectTriggerProps> = ({ children, className }) => {
+export const SelectTrigger: React.FC<SelectTriggerProps> = ({
+  children,
+  className,
+  automationEntity,
+  automationAction,
+  automationContext,
+  automationState,
+  automationEntityId,
+  automationCustom
+}) => {
   const context = React.useContext(SelectContext);
   if (!context) {
     throw new Error('SelectTrigger must be used within Select');
   }
+
+  const automationProps = automationEntity || automationAction || automationContext || automationState || automationEntityId || automationCustom ?
+    createAutomationAttrs({
+      entity: automationEntity,
+      action: automationAction || 'toggle',
+      context: automationContext,
+      state: automationState || (context.open ? 'open' : 'closed'),
+      entityId: automationEntityId,
+      custom: {
+        hasValue: !!context.value,
+        isOpen: context.open,
+        selectedValue: context.value,
+        ...automationCustom
+      }
+    }) : {};
 
   return (
     <button
@@ -47,6 +86,7 @@ export const SelectTrigger: React.FC<SelectTriggerProps> = ({ children, classNam
         className
       )}
       onClick={() => context.onOpenChange(!context.open)}
+      {...automationProps}
     >
       {children}
       <ChevronDown className="h-4 w-4 opacity-50" />
@@ -92,25 +132,59 @@ interface SelectItemProps {
   value: string;
   children: React.ReactNode;
   className?: string;
+  // Automation attributes
+  automationEntity?: string;
+  automationAction?: string;
+  automationContext?: string;
+  automationState?: string;
+  automationEntityId?: string | number;
+  automationCustom?: Record<string, string | number | boolean>;
 }
 
-export const SelectItem: React.FC<SelectItemProps> = ({ value, children, className }) => {
+export const SelectItem: React.FC<SelectItemProps> = ({
+  value,
+  children,
+  className,
+  automationEntity,
+  automationAction,
+  automationContext,
+  automationState,
+  automationEntityId,
+  automationCustom
+}) => {
   const context = React.useContext(SelectContext);
   if (!context) {
     throw new Error('SelectItem must be used within Select');
   }
 
+  const isSelected = context.value === value;
+  const automationProps = automationEntity || automationAction || automationContext || automationState || automationEntityId || automationCustom ?
+    createAutomationAttrs({
+      entity: automationEntity,
+      action: automationAction || 'selectOption',
+      context: automationContext,
+      state: automationState || (isSelected ? 'selected' : 'unselected'),
+      entityId: automationEntityId,
+      custom: {
+        optionValue: value,
+        optionText: typeof children === 'string' ? children : 'complex',
+        isSelected,
+        ...automationCustom
+      }
+    }) : {};
+
   return (
     <div
       className={cn(
         'px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 focus:bg-gray-100',
-        context.value === value && 'bg-gray-100',
+        isSelected && 'bg-gray-100',
         className
       )}
       onClick={() => {
         context.onValueChange(value);
         context.onOpenChange(false);
       }}
+      {...automationProps}
     >
       {children}
     </div>

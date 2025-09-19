@@ -5,6 +5,7 @@ import { useDarkMode } from '@/contexts/DarkModeContext';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
+import { navigationAttrs, authAutomationAttrs, createAutomationAttrs } from '../../utils/automation-attrs';
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -117,6 +118,11 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
             </div>
             {/* Close button for mobile */}
             <button
+              {...createAutomationAttrs({
+                entity: 'sidebar',
+                action: 'close',
+                context: 'admin'
+              })}
               onClick={onClose}
               className="lg:hidden p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
               aria-label="Close sidebar"
@@ -134,6 +140,7 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
             const isActive = pathname === link.href;
             return (
               <Link
+                {...navigationAttrs(link.href, 'sidebar')}
                 key={link.href}
                 href={link.href}
                 onClick={handleNavClick}
@@ -144,6 +151,8 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }
                 `}
+                data-active={isActive.toString()}
+                data-role={userProfile?.role}
               >
                 <span className="text-lg">{link.icon}</span>
                 <span>{link.label}</span>
@@ -156,6 +165,12 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
         <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
           {/* Dark Mode Toggle */}
           <button
+            {...createAutomationAttrs({
+              entity: 'theme',
+              action: 'toggle',
+              context: 'sidebar',
+              state: isDarkMode ? 'dark' : 'light'
+            })}
             onClick={toggleDarkMode}
             className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition font-medium"
           >
@@ -165,6 +180,7 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
 
           {/* Logout Button */}
           <button
+            {...authAutomationAttrs('logout', 'ready', userProfile?.role)}
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition font-medium"
           >

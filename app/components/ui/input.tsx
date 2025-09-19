@@ -1,10 +1,49 @@
 import React from 'react';
 import { cn } from '@/app/utils/cn';
+import { createAutomationAttrs } from '../../utils/automation-attrs';
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  // Automation attributes
+  automationEntity?: string;
+  automationAction?: string;
+  automationContext?: string;
+  automationState?: string;
+  automationEntityId?: string | number;
+  automationCustom?: Record<string, string | number | boolean>;
+}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type = 'text', ...props }, ref) => {
+  ({
+    className,
+    type = 'text',
+    automationEntity,
+    automationAction,
+    automationContext,
+    automationState,
+    automationEntityId,
+    automationCustom,
+    disabled,
+    value,
+    placeholder,
+    required,
+    ...props
+  }, ref) => {
+    const automationProps = automationEntity || automationAction || automationContext || automationState || automationEntityId || automationCustom ?
+      createAutomationAttrs({
+        entity: automationEntity,
+        action: automationAction,
+        context: automationContext,
+        state: automationState || (disabled ? 'disabled' : 'enabled'),
+        entityId: automationEntityId,
+        custom: {
+          inputType: type,
+          hasValue: !!value,
+          hasPlaceholder: !!placeholder,
+          isRequired: !!required,
+          ...automationCustom
+        }
+      }) : {};
+
     return (
       <input
         type={type}
@@ -13,6 +52,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
+        disabled={disabled}
+        value={value}
+        placeholder={placeholder}
+        required={required}
+        {...automationProps}
         {...props}
       />
     );

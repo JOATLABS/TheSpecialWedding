@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { createAutomationAttrs } from '../utils/automation-attrs';
 
 interface UserProfile {
     email: string;
@@ -174,6 +175,12 @@ export const AdminProvider = ({
 
             toast.success('Login successful');
 
+            // Add automation attribute to document for state tracking
+            document.body.setAttribute('data-auth-state', 'authenticated');
+            if (userProfile?.role) {
+                document.body.setAttribute('data-auth-role', userProfile.role);
+            }
+
             // Use window.location for reliable navigation
             // router.push() doesn't always work in context
             window.location.href = '/admin';
@@ -218,6 +225,10 @@ export const AdminProvider = ({
         setToken(null);
         setUserProfile(null);
         setIsAuthenticated(false);
+
+        // Clear authentication attributes from document
+        document.body.removeAttribute('data-auth-state');
+        document.body.removeAttribute('data-auth-role');
 
         // Clear any cached API responses by making a dummy request
         try {

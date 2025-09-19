@@ -5,6 +5,7 @@
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
 import { useWedding } from '@/hooks/useWedding';
+import { formAutomationAttrs, guestAutomationAttrs, createAutomationAttrs } from '../utils/automation-attrs';
 
 interface RSVPFormProps {
   guest: any;
@@ -108,7 +109,19 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
   if (submitted) {
     return (
-      <div className="text-center">
+      <div
+        {...createAutomationAttrs({
+          entity: 'rsvp',
+          action: 'success',
+          context: 'guest',
+          state: 'submitted',
+          custom: {
+            'guest-id': guest.id,
+            'guest-name': guest.name?.replace(/\s+/g, '-').toLowerCase() || 'unknown'
+          }
+        })}
+        className="text-center"
+      >
         <h2 className="text-xl font-bold text-green-600">Thank you for RSVPing!</h2>
         <p className="text-sm text-gray-500">Your calendar invite was downloaded.</p>
       </div>
@@ -116,20 +129,46 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form
+      {...formAutomationAttrs('rsvp', undefined, 'submit', {
+        valid: Object.keys(errors).length === 0,
+        required: true,
+        touched: true
+      })}
+      onSubmit={handleSubmit(onSubmit)}
+      className="space-y-6"
+    >
       <div>
         <label className="block font-semibold text-gray-700 mb-3">Events Attending</label>
         <div className="space-y-2 sm:space-y-0 sm:space-x-4 sm:flex">
           <label className="flex items-center space-x-2">
-            <input id="attending-traditional" type="checkbox" value="traditional" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <input
+              {...guestAutomationAttrs(guest, 'checkbox-attending-traditional')}
+              type="checkbox"
+              value="traditional"
+              {...register('attending')}
+              className="rounded text-wedding-rose focus:ring-wedding-rose"
+            />
             <span>Traditional</span>
           </label>
           <label className="flex items-center space-x-2">
-            <input id="attending-white-wedding" type="checkbox" value="white_wedding" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <input
+              {...guestAutomationAttrs(guest, 'checkbox-attending-white-wedding')}
+              type="checkbox"
+              value="white_wedding"
+              {...register('attending')}
+              className="rounded text-wedding-rose focus:ring-wedding-rose"
+            />
             <span>White Wedding</span>
           </label>
           <label className="flex items-center space-x-2">
-            <input id="attending-reception" type="checkbox" value="reception" {...register('attending')} className="rounded text-wedding-rose focus:ring-wedding-rose" />
+            <input
+              {...guestAutomationAttrs(guest, 'checkbox-attending-reception')}
+              type="checkbox"
+              value="reception"
+              {...register('attending')}
+              className="rounded text-wedding-rose focus:ring-wedding-rose"
+            />
             <span>Reception</span>
           </label>
         </div>
@@ -138,18 +177,18 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       <div>
         <label className="block font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
         <input
-          id="dietary-restrictions"
+          {...guestAutomationAttrs(guest, 'input-dietary-restrictions')}
           type="text"
           className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           {...register('dietary')}
-          placeholder="None" 
+          placeholder="None"
         />
       </div>
 
       <div>
         <label className="block font-semibold text-gray-700 mb-2">Phone Number</label>
         <input
-          id="phone-number"
+          {...guestAutomationAttrs(guest, 'input-phone-number')}
           type="tel"
           className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           defaultValue={guest.phone}
@@ -158,6 +197,8 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
             pattern: /^\+?\d{10,15}$/
           })}
           placeholder="+1 (555) 123-4567"
+          data-field-valid={!errors.phone ? 'true' : 'false'}
+          data-field-required="true"
         />
         {errors.phone && <p className="text-red-500 text-sm mt-1">Enter a valid phone number</p>}
       </div>
@@ -168,11 +209,11 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         
         <label className="flex items-start space-x-3 mb-4">
           <input
-            id="sms-opt-in"
+            {...guestAutomationAttrs(guest, 'checkbox-sms-opt-in')}
             type="checkbox"
             {...register('sms_opt_in')}
             defaultChecked={false}
-            className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose" 
+            className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose"
           />
           <div className="flex-1">
             <span className="block font-medium text-gray-700">
@@ -236,29 +277,59 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                 <div className="space-y-4">
                   <div>
                     <label className="block font-medium text-gray-700 mb-2">Full Name</label>
-                    <input 
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-                      type="text" 
-                      placeholder="Enter guest's full name" 
-                      {...register(`plus_one_${index}_name`)} 
+                    <input
+                      {...createAutomationAttrs({
+                        entity: 'plus-one',
+                        action: 'input-name',
+                        context: 'rsvp',
+                        entityId: `${guest.id}-${index}`,
+                        custom: {
+                          'plus-one-index': index.toString(),
+                          'guest-id': guest.id
+                        }
+                      })}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      type="text"
+                      placeholder="Enter guest's full name"
+                      {...register(`plus_one_${index}_name`)}
                     />
                   </div>
                   <div>
                     <label className="block font-medium text-gray-700 mb-2">Phone Number (Optional)</label>
-                    <input 
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-                      type="tel" 
-                      placeholder="+1 (555) 123-4567" 
-                      {...register(`plus_one_${index}_phone`)} 
+                    <input
+                      {...createAutomationAttrs({
+                        entity: 'plus-one',
+                        action: 'input-phone',
+                        context: 'rsvp',
+                        entityId: `${guest.id}-${index}`,
+                        custom: {
+                          'plus-one-index': index.toString(),
+                          'guest-id': guest.id
+                        }
+                      })}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      type="tel"
+                      placeholder="+1 (555) 123-4567"
+                      {...register(`plus_one_${index}_phone`)}
                     />
                   </div>
                   <div>
                     <label className="block font-medium text-gray-700 mb-2">Dietary Restrictions (Optional)</label>
-                    <input 
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-                      type="text" 
-                      placeholder="e.g., Vegetarian, Gluten-free, etc." 
-                      {...register(`plus_one_${index}_dietary`)} 
+                    <input
+                      {...createAutomationAttrs({
+                        entity: 'plus-one',
+                        action: 'input-dietary',
+                        context: 'rsvp',
+                        entityId: `${guest.id}-${index}`,
+                        custom: {
+                          'plus-one-index': index.toString(),
+                          'guest-id': guest.id
+                        }
+                      })}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      type="text"
+                      placeholder="e.g., Vegetarian, Gluten-free, etc."
+                      {...register(`plus_one_${index}_dietary`)}
                     />
                   </div>
                 </div>
@@ -275,10 +346,12 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
       <div className="flex justify-center pt-6">
         <button
-          id="rsvp-submit-button"
+          {...guestAutomationAttrs(guest, 'submit-rsvp', 'public')}
           disabled={isSubmitting}
-          type="submit" 
+          type="submit"
           className="w-full sm:w-auto bg-wedding-rose text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-opacity-90 focus:ring-4 focus:ring-wedding-rose focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          data-state={isSubmitting ? 'loading' : 'ready'}
+          data-form-valid={Object.keys(errors).length === 0 ? 'true' : 'false'}
         >
           {isSubmitting ? 'Submitting...' : 'Submit RSVP'}
         </button>

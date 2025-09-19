@@ -54,3 +54,5 @@ update_emmanuel_wedding.py
 tests/
 tests/wedding-planner-dashboard.spec.ts
 tests/form-builder.spec.ts
+scripts/inventory-interactive-elements.sh
+scripts/missing-ids-detector.sh

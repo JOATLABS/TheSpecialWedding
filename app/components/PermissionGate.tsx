@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { createAutomationAttrs } from '../utils/automation-attrs';
 
 interface PermissionGateProps {
   children: React.ReactNode;
@@ -25,20 +26,84 @@ export const PermissionGate: React.FC<PermissionGateProps> = ({
   const { userProfile } = useAdmin();
 
   if (!userProfile) {
-    return hideWhenDenied ? null : (fallback || <div>Authentication required</div>);
+    return hideWhenDenied ? null : (
+      fallback || (
+        <div
+          {...createAutomationAttrs({
+            entity: 'permission',
+            action: 'denied',
+            context: 'auth',
+            state: 'unauthenticated'
+          })}
+        >
+          Authentication required
+        </div>
+      )
+    );
   }
 
   // Check specific role requirements
   if (requireRootAdmin && !userProfile.is_root_admin) {
-    return hideWhenDenied ? null : (fallback || <div>Admin access required</div>);
+    return hideWhenDenied ? null : (
+      fallback || (
+        <div
+          {...createAutomationAttrs({
+            entity: 'permission',
+            action: 'denied',
+            context: 'role',
+            state: 'insufficient',
+            custom: {
+              'required-role': 'ROOT_ADMIN',
+              'user-role': userProfile.role
+            }
+          })}
+        >
+          Admin access required
+        </div>
+      )
+    );
   }
 
   if (requireWeddingPlanner && !userProfile.is_wedding_planner) {
-    return hideWhenDenied ? null : (fallback || <div>Wedding planner access required</div>);
+    return hideWhenDenied ? null : (
+      fallback || (
+        <div
+          {...createAutomationAttrs({
+            entity: 'permission',
+            action: 'denied',
+            context: 'role',
+            state: 'insufficient',
+            custom: {
+              'required-role': 'wedding_planner',
+              'user-role': userProfile.role
+            }
+          })}
+        >
+          Wedding planner access required
+        </div>
+      )
+    );
   }
 
   if (requireVendor && !userProfile.is_vendor) {
-    return hideWhenDenied ? null : (fallback || <div>Vendor access required</div>);
+    return hideWhenDenied ? null : (
+      fallback || (
+        <div
+          {...createAutomationAttrs({
+            entity: 'permission',
+            action: 'denied',
+            context: 'role',
+            state: 'insufficient',
+            custom: {
+              'required-role': 'vendor',
+              'user-role': userProfile.role
+            }
+          })}
+        >
+          Vendor access required
+        </div>
+      )
+    );
   }
 
   // Check if user's role is in the allowed roles array
@@ -58,11 +123,45 @@ export const PermissionGate: React.FC<PermissionGateProps> = ({
     });
 
     if (!hasAllowedRole) {
-      return hideWhenDenied ? null : (fallback || <div>Insufficient permissions</div>);
+      return hideWhenDenied ? null : (
+        fallback || (
+          <div
+            {...createAutomationAttrs({
+              entity: 'permission',
+              action: 'denied',
+              context: 'role',
+              state: 'insufficient',
+              custom: {
+                'required-roles': roles.join(','),
+                'user-role': userProfile.role
+              }
+            })}
+          >
+            Insufficient permissions
+          </div>
+        )
+      );
     }
   }
 
-  return <>{children}</>;
+  return (
+    <div
+      {...createAutomationAttrs({
+        entity: 'permission',
+        action: 'granted',
+        context: 'role',
+        state: 'authorized',
+        custom: {
+          'user-role': userProfile.role,
+          'is-root-admin': userProfile.is_root_admin.toString(),
+          'is-wedding-planner': userProfile.is_wedding_planner.toString(),
+          'is-vendor': userProfile.is_vendor.toString()
+        }
+      })}
+    >
+      {children}
+    </div>
+  );
 };
 
 // Convenience components for common use cases

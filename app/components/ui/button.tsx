@@ -1,13 +1,50 @@
 import React from 'react';
 import { cn } from '@/app/utils/cn';
+import { createAutomationAttrs } from '../../utils/automation-attrs';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   size?: 'default' | 'sm' | 'lg' | 'icon';
+  // Automation attributes
+  automationEntity?: string;
+  automationAction?: string;
+  automationContext?: string;
+  automationState?: string;
+  automationEntityId?: string | number;
+  automationCustom?: Record<string, string | number | boolean>;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'default', size = 'default', ...props }, ref) => {
+  ({
+    className,
+    variant = 'default',
+    size = 'default',
+    automationEntity,
+    automationAction,
+    automationContext,
+    automationState,
+    automationEntityId,
+    automationCustom,
+    disabled,
+    children,
+    ...props
+  }, ref) => {
+    // Extract automation props for createAutomationAttrs
+    const automationProps = automationEntity || automationAction || automationContext || automationState || automationEntityId || automationCustom ?
+      createAutomationAttrs({
+        entity: automationEntity,
+        action: automationAction,
+        context: automationContext,
+        state: automationState || (disabled ? 'disabled' : 'enabled'),
+        entityId: automationEntityId,
+        custom: {
+          variant,
+          size,
+          hasChildren: !!children,
+          ...automationCustom
+        }
+      }) : {};
+
     return (
       <button
         className={cn(
@@ -29,8 +66,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           className
         )}
         ref={ref}
+        disabled={disabled}
+        {...automationProps}
         {...props}
-      />
+      >
+        {children}
+      </button>
     );
   }
 );

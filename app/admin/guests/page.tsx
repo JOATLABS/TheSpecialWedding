@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import { guestAutomationAttrs, createAutomationAttrs, formAutomationAttrs } from '../../utils/automation-attrs';
 
 interface Wedding {
   id?: string;
@@ -429,6 +430,12 @@ export default function AdminGuestsPage() {
           </label>
           <select
             id="wedding"
+            {...createAutomationAttrs({
+              entity: 'wedding',
+              action: 'select',
+              context: 'admin',
+              state: selectedWedding ? 'selected' : 'empty'
+            })}
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
             className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
@@ -470,6 +477,16 @@ export default function AdminGuestsPage() {
                 {/* Tabs */}
                 <div className="flex gap-2">
                   <button
+                    {...createAutomationAttrs({
+                      entity: 'guest-tab',
+                      action: 'filter',
+                      context: 'admin',
+                      state: activeTab === 'all' ? 'active' : 'inactive',
+                      custom: {
+                        'tab-type': 'all',
+                        'guest-count': guests.length.toString()
+                      }
+                    })}
                     onClick={() => setActiveTab('all')}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       activeTab === 'all'
@@ -480,6 +497,16 @@ export default function AdminGuestsPage() {
                     All Guests ({guests.length})
                   </button>
                   <button
+                    {...createAutomationAttrs({
+                      entity: 'guest-tab',
+                      action: 'filter',
+                      context: 'admin',
+                      state: activeTab === 'rsvp' ? 'active' : 'inactive',
+                      custom: {
+                        'tab-type': 'rsvp',
+                        'rsvp-count': rsvps.length.toString()
+                      }
+                    })}
                     onClick={() => setActiveTab('rsvp')}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       activeTab === 'rsvp'
@@ -490,6 +517,16 @@ export default function AdminGuestsPage() {
                     RSVP'd ({rsvps.length})
                   </button>
                   <button
+                    {...createAutomationAttrs({
+                      entity: 'guest-tab',
+                      action: 'filter',
+                      context: 'admin',
+                      state: activeTab === 'pending' ? 'active' : 'inactive',
+                      custom: {
+                        'tab-type': 'pending',
+                        'pending-count': (guests.length - rsvps.length).toString()
+                      }
+                    })}
                     onClick={() => setActiveTab('pending')}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       activeTab === 'pending'
@@ -504,6 +541,15 @@ export default function AdminGuestsPage() {
                 {/* Search and Add Guest */}
                 <div className="flex gap-3">
                   <input
+                    {...createAutomationAttrs({
+                      entity: 'search',
+                      action: 'input',
+                      context: 'guest-list',
+                      state: searchTerm ? 'active' : 'empty',
+                      custom: {
+                        'search-type': 'guest-name'
+                      }
+                    })}
                     type="text"
                     placeholder="Search guests..."
                     value={searchTerm}
@@ -511,6 +557,7 @@ export default function AdminGuestsPage() {
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                   <button
+                    {...guestAutomationAttrs({ id: 'new', name: 'new-guest' }, 'create', 'admin')}
                     onClick={() => setShowAddModal(true)}
                     className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/90 transition-colors font-medium"
                   >
@@ -594,12 +641,15 @@ export default function AdminGuestsPage() {
                             {/* Actions */}
                             <div className="flex items-center gap-2">
                               <button
+                                {...guestAutomationAttrs({ id: guestId, name: guest.name }, 'toggle-details', 'admin')}
                                 onClick={() => setExpandedGuest(isExpanded ? null : guestId)}
                                 className="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+                                data-expanded={isExpanded.toString()}
                               >
                                 {isExpanded ? 'Hide' : 'Details'}
                               </button>
                               <button
+                                {...guestAutomationAttrs({ id: guestId, name: guest.name }, 'edit', 'admin')}
                                 onClick={() => handleEditGuest(guest)}
                                 className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                               >
@@ -607,15 +657,20 @@ export default function AdminGuestsPage() {
                               </button>
                               {!rsvp && (
                                 <button
+                                  {...guestAutomationAttrs({ id: guestId, name: guest.name }, 'send-reminder', 'admin')}
                                   onClick={() => handleSendReminder(guestId)}
                                   className="px-3 py-1 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 transition-colors"
+                                  data-rsvp-status="pending"
                                 >
                                   Send Reminder
                                 </button>
                               )}
                               <button
+                                {...guestAutomationAttrs({ id: guestId, name: guest.name }, 'delete', 'admin')}
                                 onClick={() => handleDeleteGuest(guestId)}
                                 className="px-3 py-1 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                                data-has-rsvp={!!rsvp ? 'true' : 'false'}
+                                data-has-plus-ones={guestPlusOnes.length > 0 ? 'true' : 'false'}
                               >
                                 Delete
                               </button>
@@ -712,6 +767,11 @@ export default function AdminGuestsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
                   <input
+                    {...formAutomationAttrs('edit-guest', 'name', 'input', {
+                      valid: !!editForm.name,
+                      required: true,
+                      touched: true
+                    })}
                     type="text"
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
@@ -722,6 +782,11 @@ export default function AdminGuestsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                   <input
+                    {...formAutomationAttrs('edit-guest', 'email', 'input', {
+                      valid: !editForm.email || editForm.email.includes('@'),
+                      required: false,
+                      touched: true
+                    })}
                     type="email"
                     value={editForm.email}
                     onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
@@ -732,6 +797,11 @@ export default function AdminGuestsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
                   <input
+                    {...formAutomationAttrs('edit-guest', 'phone', 'input', {
+                      valid: !editForm.phone || editForm.phone.length >= 10,
+                      required: false,
+                      touched: true
+                    })}
                     type="tel"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
@@ -742,6 +812,11 @@ export default function AdminGuestsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
                   <select
+                    {...formAutomationAttrs('edit-guest', 'role', 'select', {
+                      valid: !!editForm.role,
+                      required: true,
+                      touched: true
+                    })}
                     value={editForm.role}
                     onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
@@ -756,10 +831,16 @@ export default function AdminGuestsPage() {
                 <div>
                   <label className="flex items-center space-x-2">
                     <input
+                      {...formAutomationAttrs('edit-guest', 'plus-one-allowed', 'checkbox', {
+                        valid: true,
+                        required: false,
+                        touched: true
+                      })}
                       type="checkbox"
                       checked={editForm.plus_one_allowed}
                       onChange={(e) => setEditForm({ ...editForm, plus_one_allowed: e.target.checked })}
                       className="rounded text-wedding-rose focus:ring-wedding-rose"
+                      data-checked={editForm.plus_one_allowed.toString()}
                     />
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Allow Plus Ones</span>
                   </label>
@@ -769,6 +850,11 @@ export default function AdminGuestsPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Number of Plus Ones Allowed</label>
                     <input
+                      {...formAutomationAttrs('edit-guest', 'plus-one-count', 'input', {
+                        valid: editForm.number_of_plus_ones_allowed >= 0 && editForm.number_of_plus_ones_allowed <= 10,
+                        required: editForm.plus_one_allowed,
+                        touched: true
+                      })}
                       type="number"
                       min="0"
                       max="10"
@@ -782,12 +868,22 @@ export default function AdminGuestsPage() {
               
               <div className="flex gap-3 mt-6">
                 <button
+                  {...guestAutomationAttrs({
+                    id: editingGuest?.id || editingGuest?._id || 'unknown',
+                    name: editingGuest?.name || 'unknown'
+                  }, 'save', 'admin')}
                   onClick={handleSaveGuest}
                   className="flex-1 bg-wedding-navy text-white px-4 py-2 rounded-lg hover:bg-opacity-90 transition-colors"
+                  data-form-valid={!!editForm.name ? 'true' : 'false'}
                 >
                   Save Changes
                 </button>
                 <button
+                  {...createAutomationAttrs({
+                    entity: 'modal',
+                    action: 'cancel',
+                    context: 'edit-guest'
+                  })}
                   onClick={() => setEditingGuest(null)}
                   className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
                 >
@@ -815,12 +911,25 @@ export default function AdminGuestsPage() {
                   </button>
                 </div>
 
-                <form onSubmit={(e) => { e.preventDefault(); handleCreateGuest(); }} className="space-y-4">
+                <form
+                  {...formAutomationAttrs('add-guest', undefined, 'submit', {
+                    valid: !!addForm.name && (!!addForm.email || !!addForm.phone),
+                    required: true,
+                    touched: true
+                  })}
+                  onSubmit={(e) => { e.preventDefault(); handleCreateGuest(); }}
+                  className="space-y-4"
+                >
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Name <span className="text-red-500">*</span>
                     </label>
                     <input
+                      {...formAutomationAttrs('add-guest', 'name', 'input', {
+                        valid: !!addForm.name,
+                        required: true,
+                        touched: true
+                      })}
                       type="text"
                       value={addForm.name}
                       onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
@@ -835,6 +944,11 @@ export default function AdminGuestsPage() {
                       Email
                     </label>
                     <input
+                      {...formAutomationAttrs('add-guest', 'email', 'input', {
+                        valid: !addForm.email || addForm.email.includes('@'),
+                        required: !addForm.phone,
+                        touched: true
+                      })}
                       type="email"
                       value={addForm.email}
                       onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
@@ -848,6 +962,11 @@ export default function AdminGuestsPage() {
                       Phone Number
                     </label>
                     <input
+                      {...formAutomationAttrs('add-guest', 'phone', 'input', {
+                        valid: !addForm.phone || addForm.phone.length >= 10,
+                        required: !addForm.email,
+                        touched: true
+                      })}
                       type="tel"
                       value={addForm.phone}
                       onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
@@ -861,6 +980,11 @@ export default function AdminGuestsPage() {
                       Role
                     </label>
                     <select
+                      {...formAutomationAttrs('add-guest', 'role', 'select', {
+                        valid: !!addForm.role,
+                        required: true,
+                        touched: true
+                      })}
                       value={addForm.role}
                       onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
@@ -874,6 +998,11 @@ export default function AdminGuestsPage() {
 
                   <div className="flex items-center space-x-2">
                     <input
+                      {...formAutomationAttrs('add-guest', 'plus-one-allowed', 'checkbox', {
+                        valid: true,
+                        required: false,
+                        touched: true
+                      })}
                       type="checkbox"
                       id="plus_one_allowed"
                       checked={addForm.plus_one_allowed}
@@ -883,6 +1012,7 @@ export default function AdminGuestsPage() {
                         number_of_plus_ones_allowed: e.target.checked ? addForm.number_of_plus_ones_allowed : 0
                       })}
                       className="rounded border-gray-300 dark:border-gray-600 text-wedding-rose focus:ring-wedding-rose"
+                      data-checked={addForm.plus_one_allowed.toString()}
                     />
                     <label htmlFor="plus_one_allowed" className="text-sm text-gray-700 dark:text-gray-300">
                       Allow plus ones
@@ -895,6 +1025,11 @@ export default function AdminGuestsPage() {
                         Number of Plus Ones Allowed
                       </label>
                       <input
+                        {...formAutomationAttrs('add-guest', 'plus-one-count', 'input', {
+                          valid: addForm.number_of_plus_ones_allowed >= 0 && addForm.number_of_plus_ones_allowed <= 5,
+                          required: addForm.plus_one_allowed,
+                          touched: true
+                        })}
                         type="number"
                         min="0"
                         max="5"
@@ -917,6 +1052,11 @@ export default function AdminGuestsPage() {
 
                   <div className="flex space-x-3 pt-4">
                     <button
+                      {...createAutomationAttrs({
+                        entity: 'modal',
+                        action: 'cancel',
+                        context: 'add-guest'
+                      })}
                       type="button"
                       onClick={() => setShowAddModal(false)}
                       className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -924,9 +1064,12 @@ export default function AdminGuestsPage() {
                       Cancel
                     </button>
                     <button
+                      {...guestAutomationAttrs({ id: 'new', name: 'new-guest' }, 'submit-create', 'admin')}
                       type="submit"
                       disabled={creating || !addForm.name || (!addForm.email && !addForm.phone)}
                       className="flex-1 px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/90 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                      data-state={creating ? 'loading' : 'ready'}
+                      data-form-valid={!!addForm.name && (!!addForm.email || !!addForm.phone) ? 'true' : 'false'}
                     >
                       {creating ? 'Creating...' : 'Create Guest'}
                     </button>
