@@ -139,5 +139,5 @@ export default function WeddingLandingPage() {
  );
  }
 
- return <LandingLayout wedding={wedding} images={images} guest={guest} />;
+ return <LandingLayout wedding={wedding} images={images} />;
 }

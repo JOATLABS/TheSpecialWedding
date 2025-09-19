@@ -58,7 +58,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
         {/* Hero Countdown */}
         {wedding.countdown_config?.enabled && wedding.countdown_config?.position === 'hero' && (
-          <SectionWrapper>
+          <SectionWrapper id="hero-countdown">
             <div className="py-8 px-4">
               <WeddingCountdown
                 weddingDate={wedding.date}

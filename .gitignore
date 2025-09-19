@@ -57,3 +57,8 @@ tests/form-builder.spec.ts
 scripts/inventory-interactive-elements.sh
 scripts/missing-ids-detector.sh
 scripts/reset-dev-server.sh
+scripts/migrate_wedding_privacy.py
+scripts/migrate_wedding_configs.py
+scripts/migrate_emmanuel_wedding.py
+scripts/validate_playwright_migration.py
+scripts/add_last_login_field.py
