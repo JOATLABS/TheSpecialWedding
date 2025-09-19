@@ -1,5 +1,5 @@
 import React from 'react';
-import { cn } from '@/app/utils/cn';
+import { cn } from '@/utils/cn';
 import { createAutomationAttrs } from '../../utils/automation-attrs';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {

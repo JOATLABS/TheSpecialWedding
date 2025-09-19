@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { cn } from '@/app/utils/cn';
+import { cn } from '@/utils/cn';
 import { ChevronDown } from 'lucide-react';
 import { createAutomationAttrs } from '../../utils/automation-attrs';
 

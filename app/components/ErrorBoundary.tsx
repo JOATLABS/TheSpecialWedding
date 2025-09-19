@@ -2,7 +2,7 @@
 
 import React, { Component, ReactNode } from 'react';
 import { Card } from './ui/Card';
-import { Button } from './ui/Button';
+import { Button } from './ui/button';
 
 interface Props {
   children: ReactNode;

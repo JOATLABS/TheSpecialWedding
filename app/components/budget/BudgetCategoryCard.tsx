@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Card } from '../ui/Card';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import BudgetProgressBar from './BudgetProgressBar';
 import type { BudgetCategory } from '../../types/budget';
 
@@ -205,7 +205,7 @@ export default function BudgetCategoryCard({
         </Button>
         
         <Button 
-          variant="danger"
+          variant="destructive"
           onClick={() => onDelete(category.id)}
           className="text-sm px-3"
         >

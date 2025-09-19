@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Button } from '../../components/ui/Button';
+import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/Card';
 import BudgetSummaryCard from '../../components/budget/BudgetSummaryCard';
 import BudgetCategoryCard from '../../components/budget/BudgetCategoryCard';
@@ -389,12 +389,12 @@ export default function BudgetDashboard() {
               <p className="mt-2 text-gray-600 dark:text-gray-300">Loading budget data...</p>
             </div>
           ) : error ? (
-            <Card className="p-8 text-center bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+            <Card className="p-8 text-center bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
               <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
               <Button onClick={fetchBudgetData}>Retry</Button>
             </Card>
           ) : filteredCategories.length === 0 ? (
-            <Card className="p-8 text-center bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+            <Card className="p-8 text-center bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
               <p className="text-gray-600 dark:text-gray-300 mb-4">
                 {categories.length === 0 
                   ? "No budget categories found. Create your first category to get started."
@@ -512,7 +512,7 @@ export default function BudgetDashboard() {
                 </Button>
                 <Button 
                   type="button" 
-                  variant="danger" 
+                  variant="destructive" 
                   onClick={() => {
                     setShowCategoryModal(false);
                     resetCategoryForm();

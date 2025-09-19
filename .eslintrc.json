@@ -1,0 +1,23 @@
+{
+  "extends": [
+    "next/core-web-vitals"
+  ],
+  "rules": {
+    // Critical JSX/React rules that catch syntax errors
+    "react/jsx-closing-bracket-location": "error",
+    "react/jsx-closing-tag-location": "error",
+    "react/jsx-no-duplicate-props": "error",
+
+    // General syntax rules that catch critical errors
+    "no-debugger": "error",
+    "no-alert": "warn",
+    "no-undef": "error",
+    "no-unused-vars": "warn",
+    "prefer-const": "error",
+    "no-var": "error",
+
+    // React Hooks rules (catch hook violations)
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn"
+  }
+}

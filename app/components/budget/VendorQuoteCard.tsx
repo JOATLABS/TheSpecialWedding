@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Card } from '../ui/Card';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import type { VendorQuote } from '../../types/budget';
 
 interface VendorQuoteCardProps {
@@ -213,7 +213,7 @@ export default function VendorQuoteCard({
             </Button>
             
             <Button 
-              variant="danger"
+              variant="destructive"
               onClick={() => onReject(quote.id)}
               className="text-sm px-4"
             >
@@ -268,7 +268,7 @@ export default function VendorQuoteCard({
                 Submit Rating
               </Button>
               <Button 
-                variant="danger" 
+                variant="destructive" 
                 onClick={() => setShowRatingModal(false)}
               >
                 Cancel

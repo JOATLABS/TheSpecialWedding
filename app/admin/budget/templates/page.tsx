@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAdmin } from '../../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
-import { Button } from '../../../components/ui/Button';
+import { Button } from '../../../components/ui/button';
 import { Card } from '../../../components/ui/Card';
 import { budgetApi } from '../../../services/budgetApi';
 import type { BudgetTemplate } from '../../../types/budget';
