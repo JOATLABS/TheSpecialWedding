@@ -25,7 +25,8 @@
     "security:update": "npm update && npm audit fix",
     "deps:check": "npm outdated",
     "deps:update": "npm update --save",
-    "pre-deploy": "npm run security && npm run build"
+    "pre-deploy": "npm run security && npm run build",
+    "reset-dev": "./scripts/reset-dev-server.sh"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.7",

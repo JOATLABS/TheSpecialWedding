@@ -56,3 +56,4 @@ tests/wedding-planner-dashboard.spec.ts
 tests/form-builder.spec.ts
 scripts/inventory-interactive-elements.sh
 scripts/missing-ids-detector.sh
+scripts/reset-dev-server.sh
