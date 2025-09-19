@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { ReactNode } from 'react';
-import { createAutomationAttrs } from '../../utils/automation-attrs';
+import { createAutomationAttrs } from '@/utils/automation-attrs';
 
 // Create a client-only version of AdminProvider
 const AdminProvider = dynamic(

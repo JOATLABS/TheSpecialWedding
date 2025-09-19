@@ -1176,7 +1176,7 @@ export default function WeddingDetailsPage() {
  value={wedding.countdown_config.custom_message || ''}
  onChange={(e) => setWedding({
  ...wedding,
- countdown_config: { ...wedding.countdown_config!, custom_message: e.target.value || null }
+ countdown_config: { ...wedding.countdown_config!, custom_message: e.target.value || undefined }
  })}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
  rows={2}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
-import { authAutomationAttrs } from '../../utils/automation-attrs';
+import { authAutomationAttrs } from '@/utils/automation-attrs';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';

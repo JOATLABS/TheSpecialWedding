@@ -5,7 +5,7 @@ import { useDarkMode } from '@/contexts/DarkModeContext';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
-import { navigationAttrs, authAutomationAttrs, createAutomationAttrs } from '../../utils/automation-attrs';
+import { navigationAttrs, authAutomationAttrs, createAutomationAttrs } from '@/utils/automation-attrs';
 
 interface AdminSidebarProps {
   isOpen: boolean;

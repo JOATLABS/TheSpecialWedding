@@ -1,19 +1,23 @@
 // app/layout.tsx
 import './styles/globals.css'
-import { Analytics } from "@vercel/analytics/next"
 import type { Metadata } from 'next'
+import React from 'react'
+import ClientAnalytics from './components/ClientAnalytics'
 
 export const metadata: Metadata = {
   title: 'TheSpecialWedding - Professional Wedding Planning Platform',
   description: 'Transform your wedding planning business with TheSpecialWedding - a comprehensive platform for wedding planners',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=5',
-  themeColor: '#D4A5A5',
   manifest: '/manifest.json',
-  appleWebAppCapable: 'yes',
-  appleWebAppStatusBarStyle: 'default',
   formatDetection: {
     telephone: false,
   },
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#D4A5A5',
 }
 
 export default function RootLayout({
@@ -26,6 +30,8 @@ export default function RootLayout({
       <head>
         {/* Additional mobile-friendly meta tags */}
         <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="TheSpecialWedding" />
         <meta name="application-name" content="TheSpecialWedding" />
         <meta name="msapplication-TileColor" content="#D4A5A5" />
@@ -36,27 +42,7 @@ export default function RootLayout({
       </head>
       <body>
         {children}
-        <Analytics />
-
-        {/* Service Worker Registration */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/service-worker.js').then(
-                    function(registration) {
-                      console.log('ServiceWorker registration successful');
-                    },
-                    function(err) {
-                      console.log('ServiceWorker registration failed: ', err);
-                    }
-                  );
-                });
-              }
-            `,
-          }}
-        />
+        <ClientAnalytics />
       </body>
     </html>
   )

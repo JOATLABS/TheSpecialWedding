@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAdmin } from '@/contexts/AdminContext';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/badge';
@@ -85,6 +87,7 @@ const typeColors = {
 };
 
 export default function EmailTemplatesPage() {
+  const { token } = useAdmin();
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [analytics, setAnalytics] = useState<TemplateAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +116,7 @@ export default function EmailTemplatesPage() {
     company: 'Example Corp',
     phone: '+1 (555) 123-4567',
     message: 'This is a sample message for testing the email template.',
-    admin_link: 'https://www.thespecialwedding.com/admin'
+    admin_link: 'https://www.thespecialwedding.com/'
   });
 
   useEffect(() => {
@@ -123,7 +126,6 @@ export default function EmailTemplatesPage() {
 
   const fetchTemplates = async () => {
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch('/admin/email-templates', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -146,7 +148,6 @@ export default function EmailTemplatesPage() {
 
   const fetchAnalytics = async () => {
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch('/admin/email-templates/analytics/overview', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -165,7 +166,6 @@ export default function EmailTemplatesPage() {
 
   const handleCreateTemplate = async () => {
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch('/admin/email-templates', {
         method: 'POST',
         headers: {
@@ -179,14 +179,14 @@ export default function EmailTemplatesPage() {
         setIsCreateDialogOpen(false);
         resetForm();
         fetchTemplates();
-        alert('Template created successfully!');
+        toast.success('Template created successfully!');
       } else {
         const error = await response.json();
-        alert(`Error creating template: ${error.detail}`);
+        toast.error(`Error creating template: ${error.detail}`);
       }
     } catch (error) {
       console.error('Error creating template:', error);
-      alert('Error creating template');
+      toast.error('Error creating template');
     }
   };
 
@@ -194,7 +194,6 @@ export default function EmailTemplatesPage() {
     if (!selectedTemplate) return;
 
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/admin/email-templates/${selectedTemplate.id}`, {
         method: 'PUT',
         headers: {
@@ -208,20 +207,19 @@ export default function EmailTemplatesPage() {
         setIsEditDialogOpen(false);
         resetForm();
         fetchTemplates();
-        alert('Template updated successfully!');
+        toast.success('Template updated successfully!');
       } else {
         const error = await response.json();
         alert(`Error updating template: ${error.detail}`);
       }
     } catch (error) {
       console.error('Error updating template:', error);
-      alert('Error updating template');
+      toast.error('Error updating template');
     }
   };
 
   const handleActivateTemplate = async (templateId: string) => {
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/admin/email-templates/${templateId}/activate`, {
         method: 'POST',
         headers: {
@@ -232,14 +230,14 @@ export default function EmailTemplatesPage() {
 
       if (response.ok) {
         fetchTemplates();
-        alert('Template activated successfully!');
+        toast.success('Template activated successfully!');
       } else {
         const error = await response.json();
         alert(`Error activating template: ${error.detail}`);
       }
     } catch (error) {
       console.error('Error activating template:', error);
-      alert('Error activating template');
+      toast.error('Error activating template');
     }
   };
 
@@ -247,7 +245,6 @@ export default function EmailTemplatesPage() {
     if (!confirm('Are you sure you want to archive this template?')) return;
 
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/admin/email-templates/${templateId}`, {
         method: 'DELETE',
         headers: {
@@ -258,20 +255,19 @@ export default function EmailTemplatesPage() {
 
       if (response.ok) {
         fetchTemplates();
-        alert('Template archived successfully!');
+        toast.success('Template archived successfully!');
       } else {
         const error = await response.json();
         alert(`Error archiving template: ${error.detail}`);
       }
     } catch (error) {
       console.error('Error archiving template:', error);
-      alert('Error archiving template');
+      toast.error('Error archiving template');
     }
   };
 
   const handlePreviewTemplate = async (template: EmailTemplate) => {
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/admin/email-templates/${template.id}/preview`, {
         method: 'POST',
         headers: {
@@ -294,7 +290,7 @@ export default function EmailTemplatesPage() {
       }
     } catch (error) {
       console.error('Error previewing template:', error);
-      alert('Error previewing template');
+      toast.error('Error previewing template');
     }
   };
 
@@ -302,7 +298,6 @@ export default function EmailTemplatesPage() {
     if (!confirm('This will create default templates for each type. Continue?')) return;
 
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch('/admin/email-templates/seed-defaults', {
         method: 'POST',
         headers: {
@@ -313,14 +308,14 @@ export default function EmailTemplatesPage() {
 
       if (response.ok) {
         fetchTemplates();
-        alert('Default templates created successfully!');
+        toast.success('Default templates created successfully!');
       } else {
         const error = await response.json();
         alert(`Error creating defaults: ${error.detail}`);
       }
     } catch (error) {
       console.error('Error creating defaults:', error);
-      alert('Error creating defaults');
+      toast.error('Error creating defaults');
     }
   };
 
@@ -548,7 +543,7 @@ export default function EmailTemplatesPage() {
               </div>
               <div>
                 <Label htmlFor="type">Template Type</Label>
-                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value as any })}>
+                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value as EmailTemplate['type'] })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -624,7 +619,7 @@ export default function EmailTemplatesPage() {
               </div>
               <div>
                 <Label htmlFor="edit-type">Template Type</Label>
-                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value as any })}>
+                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value as EmailTemplate['type'] })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

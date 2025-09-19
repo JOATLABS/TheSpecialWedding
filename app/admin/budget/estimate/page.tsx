@@ -3,9 +3,9 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
-import { Button } from '../../../components/ui/button';
-import { Card } from '../../../components/ui/Card';
-import { budgetApi } from '../../../services/budgetApi';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/Card';
+import { budgetApi } from '@/services/budgetApi';
 
 interface CostEstimation {
   total_estimated_cost: number;

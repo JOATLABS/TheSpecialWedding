@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
-import { createAutomationAttrs, formAutomationAttrs } from '../../utils/automation-attrs';
+import { createAutomationAttrs, formAutomationAttrs } from '@/utils/automation-attrs';
 
 interface Form {
  id: string;
@@ -151,7 +151,6 @@ export default function FormsManagementPage() {
  try {
  setError(''); // Clear any previous errors
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
- console.log('Deleting form with ID:', formId); // Debug log
 
  const response = await fetch(`${baseUrl}/admin/forms/${formId}`, {
  method: 'DELETE',
@@ -161,18 +160,13 @@ export default function FormsManagementPage() {
  },
  });
 
- console.log('Delete response status:', response.status); // Debug log
-
  if (response.ok) {
- console.log('Form deleted successfully, refreshing list...'); // Debug log
  await fetchForms();
  } else {
  const errorData = await response.json().catch(() => ({}));
- console.error('Delete failed:', errorData); // Debug log
  setError(errorData.detail || `Failed to delete form (${response.status})`);
  }
  } catch (error: any) {
- console.error('Delete form error:', error);
  setError('Failed to delete form: ' + (error.message || 'Network error'));
  }
  };

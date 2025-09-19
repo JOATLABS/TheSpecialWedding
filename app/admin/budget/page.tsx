@@ -1,20 +1,20 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Button } from '../../components/ui/button';
-import { Card } from '../../components/ui/Card';
-import BudgetSummaryCard from '../../components/budget/BudgetSummaryCard';
-import BudgetCategoryCard from '../../components/budget/BudgetCategoryCard';
-import { budgetApi } from '../../services/budgetApi';
-import type { 
-  BudgetCategory, 
-  BudgetSummary, 
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/Card';
+import BudgetSummaryCard from '@/components/budget/BudgetSummaryCard';
+import BudgetCategoryCard from '@/components/budget/BudgetCategoryCard';
+import { budgetApi } from '@/services/budgetApi';
+import type {
+  BudgetCategory,
+  BudgetSummary,
   CreateBudgetCategoryRequest,
   UpdateBudgetCategoryRequest
-} from '../../types/budget';
+} from '@/types/budget';
 
 interface Wedding {
   id?: string;

@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
-import { Button } from '../../../components/ui/button';
-import { Card } from '../../../components/ui/Card';
-import { budgetApi } from '../../../services/budgetApi';
-import type { BudgetTemplate } from '../../../types/budget';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/Card';
+import { budgetApi } from '@/services/budgetApi';
+import type { BudgetTemplate } from '@/types/budget';
 
 interface Wedding {
   id?: string;
@@ -336,7 +336,7 @@ export default function BudgetTemplatesPage() {
                 Apply Template
               </Button>
               <Button 
-                variant="danger" 
+                variant="destructive" 
                 onClick={() => {
                   setShowApplyModal(false);
                   resetApplyForm();

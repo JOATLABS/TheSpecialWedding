@@ -3,11 +3,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
-import { Button } from '../../../components/ui/button';
-import { Card } from '../../../components/ui/Card';
-import VendorQuoteCard from '../../../components/budget/VendorQuoteCard';
-import { budgetApi } from '../../../services/budgetApi';
-import type { VendorQuote, CreateVendorQuoteRequest } from '../../../types/budget';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/Card';
+import VendorQuoteCard from '@/components/budget/VendorQuoteCard';
+import { budgetApi } from '@/services/budgetApi';
+import type { VendorQuote, CreateVendorQuoteRequest } from '@/types/budget';
 
 interface Wedding {
   id?: string;
@@ -559,7 +559,7 @@ export default function VendorQuotesPage() {
                       />
                       <Button
                         type="button"
-                        variant="danger"
+                        variant="destructive"
                         onClick={() => removeIncludeItem(index)}
                         className="px-3"
                       >
@@ -592,7 +592,7 @@ export default function VendorQuotesPage() {
                       />
                       <Button
                         type="button"
-                        variant="danger"
+                        variant="destructive"
                         onClick={() => removeExcludeItem(index)}
                         className="px-3"
                       >
@@ -641,9 +641,9 @@ export default function VendorQuotesPage() {
                 <Button type="submit" className="flex-1">
                   Create Quote
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="danger" 
+                <Button
+                  type="button"
+                  variant="destructive"
                   onClick={() => {
                     setShowQuoteModal(false);
                     resetQuoteForm();

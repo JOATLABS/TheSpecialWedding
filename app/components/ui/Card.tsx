@@ -1,4 +1,4 @@
-// components/ui/card.tsx
+// components/ui/Card.tsx
 import React from 'react';
 import { createAutomationAttrs } from '../../utils/automation-attrs';
 

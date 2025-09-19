@@ -97,7 +97,7 @@ export default function FormResponsesPage() {
  if (!token) return;
 
  // Add to updating set to show loading state
- setUpdatingReview(prev => new Set([...prev, responseId]));
+ setUpdatingReview(prev => new Set(Array.from(prev).concat(responseId)));
 
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;

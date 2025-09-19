@@ -62,7 +62,7 @@ export default function VendorManagementPage() {
     'transport', 'baker', 'jewelry', 'other'
   ];
 
-  const defaultFields = {
+  const defaultFields: Record<string, FormField[]> = {
     photographer: [
       { id: 'portfolio', label: 'Portfolio Link', type: 'text', required: true, placeholder: 'https://...' },
       { id: 'packages', label: 'Available Packages', type: 'textarea', required: true },
@@ -520,8 +520,7 @@ export default function VendorManagementPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => router.push(`/vendor-form/${vendor._id}`)}
-                            target="_blank"
+                            onClick={() => window.open(`/vendor-form/${vendor._id}`, '_blank')}
                             className="text-indigo-600 hover:text-indigo-900"
                           >
                             Preview
