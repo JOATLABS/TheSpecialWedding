@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
-import { createAutomationAttrs } from '../utils/automation-attrs';
+import { createAutomationAttrs } from '@/utils/automation-attrs';
 
 interface PermissionGateProps {
   children: React.ReactNode;

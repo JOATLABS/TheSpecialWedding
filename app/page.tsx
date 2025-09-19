@@ -1,5 +1,5 @@
 import React from 'react';
-import { SaasLandingPage } from './components/saas/SaasLandingPage';
+import { SaasLandingPage } from '@/components/saas/SaasLandingPage';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {

@@ -1,5 +1,5 @@
-import { getSession } from '@/app/lib/auth';
-import { AdminProvider } from '@/app/contexts/AdminContext';
+import { getSession } from '@/lib/auth';
+import { AdminProvider } from '@/contexts/AdminContext';
 
 export async function AdminAuthWrapper({ children }: { children: React.ReactNode }) {
   // Check authentication on the server

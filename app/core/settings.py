@@ -1,3 +1,4 @@
+
 """
 Centralized configuration management using Pydantic Settings
 """
@@ -231,6 +232,7 @@ class Settings(BaseSettings):
         }
 
 
+
 @lru_cache()
 def get_settings() -> Settings:
     """
@@ -239,8 +241,13 @@ def get_settings() -> Settings:
     Returns:
         Settings: Application settings
     """
-    return Settings()
-
+    secret_key = os.environ.get("SECRET_KEY")
+    mongo_uri = os.environ.get("MONGO_URI")
+    if not secret_key:
+        raise RuntimeError("SECRET_KEY environment variable is required but not set.")
+    if not mongo_uri:
+        raise RuntimeError("MONGO_URI environment variable is required but not set.")
+    return Settings(SECRET_KEY=secret_key, MONGO_URI=mongo_uri)
 
 # Create a global settings instance
 settings = get_settings()

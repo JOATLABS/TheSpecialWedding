@@ -2,7 +2,7 @@
 import './styles/globals.css'
 import type { Metadata } from 'next'
 import React from 'react'
-import ClientAnalytics from './components/ClientAnalytics'
+import ClientAnalytics from '@/components/ClientAnalytics'
 
 export const metadata: Metadata = {
   title: 'TheSpecialWedding - Professional Wedding Planning Platform',
