@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../../components/ui/Card';
 import { ContentEditModal } from '../components/ContentEditModal';
+import { createAutomationAttrs, formAutomationAttrs } from '../../utils/automation-attrs';
 
 interface SubscriptionPlan {
  _id: string;
@@ -691,6 +692,13 @@ const SaasAdminDashboard = () => {
  {/* Mobile: Dropdown Select */}
  <div className="sm:hidden py-4">
  <select
+ {...createAutomationAttrs({
+ entity: 'saasAdmin',
+ action: 'switchTab',
+ context: 'navigation',
+ state: 'mobile',
+ custom: { currentTab: activeTab, availableTabs: 'overview,plans,content,theme,planners' }
+ })}
  value={activeTab}
  onChange={(e) => setActiveTab(e.target.value as any)}
  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
@@ -713,6 +721,13 @@ const SaasAdminDashboard = () => {
  { key: 'planners', label: 'Wedding Planners' }
  ].map((tab) => (
  <button
+ {...createAutomationAttrs({
+ entity: 'saasAdmin',
+ action: 'switchTab',
+ context: 'navigation',
+ state: activeTab === tab.key ? 'active' : 'inactive',
+ custom: { tabKey: tab.key, tabLabel: tab.label }
+ })}
  key={tab.key}
  onClick={() => setActiveTab(tab.key as any)}
  className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
@@ -838,6 +853,13 @@ const SaasAdminDashboard = () => {
  <div className="flex justify-between items-center">
  <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Subscription Plans</h2>
  <button
+ {...createAutomationAttrs({
+ entity: 'subscriptionPlan',
+ action: 'create',
+ context: 'plansManagement',
+ state: 'ready',
+ custom: { totalPlans: plans.length, activePlans: plans.filter(p => p.is_active).length }
+ })}
  onClick={handleCreatePlan}
  className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
@@ -893,13 +915,27 @@ const SaasAdminDashboard = () => {
  </div>
  
  <div className="space-y-2">
- <button 
+ <button
+ {...createAutomationAttrs({
+   entity: 'subscriptionPlan',
+   action: 'edit',
+   context: 'plansManagement',
+   state: plan.is_active ? 'active' : 'inactive',
+   custom: { planId: plan._id, planName: plan.name, planPrice: plan.price_monthly }
+ })}
  onClick={() => handleEditPlan(plan)}
  className="w-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 py-2 px-4 rounded hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
  >
  Edit Plan
  </button>
- <button 
+ <button
+ {...createAutomationAttrs({
+   entity: 'subscriptionPlan',
+   action: 'delete',
+   context: 'plansManagement',
+   state: plan.is_active ? 'active' : 'inactive',
+   custom: { planId: plan._id, planName: plan.name, hasSubscribers: false }
+ })}
  onClick={() => handleDeletePlan(plan._id)}
  className="w-full bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 py-2 px-4 rounded hover:bg-red-200 dark:hover:bg-red-800 transition-colors"
  >
@@ -917,7 +953,14 @@ const SaasAdminDashboard = () => {
  <div className="space-y-6">
  <div className="flex justify-between items-center">
  <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">SAAS Landing Page Content</h2>
- <button 
+ <button
+ {...createAutomationAttrs({
+   entity: 'saasConfig',
+   action: 'save',
+   context: 'contentManagement',
+   state: 'ready',
+   custom: { hasChanges: true, sectionCount: 6 }
+ })}
  onClick={handleSaveSaasConfig}
  className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
@@ -931,6 +974,13 @@ const SaasAdminDashboard = () => {
  <div className="flex justify-between items-center mb-4">
  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Hero Section</h3>
  <button
+ {...createAutomationAttrs({
+   entity: 'contentEditor',
+   action: 'openModal',
+   context: 'heroSection',
+   state: 'ready',
+   custom: { sectionType: 'hero', modalType: 'editor' }
+ })}
  onClick={() => handleEditContent('hero')}
  className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium"
  >
@@ -941,6 +991,13 @@ const SaasAdminDashboard = () => {
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
  <input
+ {...createAutomationAttrs({
+   entity: 'heroContent',
+   action: 'editTitle',
+   context: 'contentEditor',
+   state: 'editable',
+   custom: { fieldType: 'text', contentLength: saasConfig.hero_title?.length || 0 }
+ })}
  type="text"
  value={saasConfig.hero_title}
  onChange={(e) => setSaasConfig({...saasConfig, hero_title: e.target.value})}
@@ -950,6 +1007,13 @@ const SaasAdminDashboard = () => {
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subtitle</label>
  <input
+ {...createAutomationAttrs({
+   entity: 'heroContent',
+   action: 'editSubtitle',
+   context: 'contentEditor',
+   state: 'editable',
+   custom: { fieldType: 'text', contentLength: saasConfig.hero_subtitle?.length || 0 }
+ })}
  type="text"
  value={saasConfig.hero_subtitle}
  onChange={(e) => setSaasConfig({...saasConfig, hero_subtitle: e.target.value})}
@@ -959,6 +1023,13 @@ const SaasAdminDashboard = () => {
  <div className="lg:col-span-2">
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
  <textarea
+ {...createAutomationAttrs({
+   entity: 'heroContent',
+   action: 'editDescription',
+   context: 'contentEditor',
+   state: 'editable',
+   custom: { fieldType: 'textarea', rows: 3, contentLength: saasConfig.hero_description?.length || 0 }
+ })}
  value={saasConfig.hero_description}
  onChange={(e) => setSaasConfig({...saasConfig, hero_description: e.target.value})}
  rows={3}
@@ -968,6 +1039,13 @@ const SaasAdminDashboard = () => {
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Primary CTA</label>
  <input
+ {...createAutomationAttrs({
+   entity: 'heroContent',
+   action: 'editCtaPrimary',
+   context: 'contentEditor',
+   state: 'editable',
+   custom: { fieldType: 'text', buttonType: 'primary', contentLength: saasConfig.hero_cta_primary?.length || 0 }
+ })}
  type="text"
  value={saasConfig.hero_cta_primary}
  onChange={(e) => setSaasConfig({...saasConfig, hero_cta_primary: e.target.value})}
@@ -977,6 +1055,13 @@ const SaasAdminDashboard = () => {
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Secondary CTA</label>
  <input
+ {...createAutomationAttrs({
+   entity: 'heroContent',
+   action: 'editCtaSecondary',
+   context: 'contentEditor',
+   state: 'editable',
+   custom: { fieldType: 'text', buttonType: 'secondary', contentLength: saasConfig.hero_cta_secondary?.length || 0 }
+ })}
  type="text"
  value={saasConfig.hero_cta_secondary}
  onChange={(e) => setSaasConfig({...saasConfig, hero_cta_secondary: e.target.value})}
@@ -1155,7 +1240,14 @@ const SaasAdminDashboard = () => {
  <div className="space-y-6">
  <div className="flex justify-between items-center">
  <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Theme & Design</h2>
- <button 
+ <button
+ {...createAutomationAttrs({
+   entity: 'themeConfig',
+   action: 'save',
+   context: 'themeDesign',
+   state: 'ready',
+   custom: { hasChanges: true, colorCount: 2 }
+ })}
  onClick={handleSaveSaasConfig}
  className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
  >
@@ -1174,6 +1266,13 @@ const SaasAdminDashboard = () => {
  </label>
  <div className="flex items-center space-x-3">
  <input
+ {...createAutomationAttrs({
+   entity: 'themeColor',
+   action: 'editPrimary',
+   context: 'colorPicker',
+   state: 'ready',
+   custom: { colorType: 'primary', inputType: 'colorPicker', currentValue: saasConfig.theme.primary_color }
+ })}
  type="color"
  value={saasConfig.theme.primary_color}
  onChange={(e) => setSaasConfig({
@@ -1183,6 +1282,13 @@ const SaasAdminDashboard = () => {
  className="w-12 h-12 rounded border-2 border-gray-300 dark:border-gray-600 cursor-pointer"
  />
  <input
+ {...createAutomationAttrs({
+   entity: 'themeColor',
+   action: 'editPrimary',
+   context: 'textInput',
+   state: 'editable',
+   custom: { colorType: 'primary', inputType: 'text', currentValue: saasConfig.theme.primary_color }
+ })}
  type="text"
  value={saasConfig.theme.primary_color}
  onChange={(e) => setSaasConfig({
