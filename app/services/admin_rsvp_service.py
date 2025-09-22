@@ -15,28 +15,58 @@ class AdminRSVPService:
             # Filter by wedding_id if provided
             query = {"wedding_id": wedding_id} if wedding_id else {}
             guests = list(self.guest_collection.find(query))
-            result = []
 
+            if not guests:
+                return []
+
+            # Get all guest IDs for bulk queries
+            guest_ids = [guest["_id"] for guest in guests]
+            guest_id_strs = [str(gid) for gid in guest_ids]
+
+            # Bulk fetch all RSVPs in ONE query instead of N queries
+            rsvps_query = {
+                "$or": [
+                    {"guest_id": {"$in": guest_ids}},      # Old format: ObjectId
+                    {"guest_id": {"$in": guest_id_strs}}   # New format: string
+                ]
+            }
+            all_rsvps = list(self.rsvp_collection.find(rsvps_query))
+
+            # Bulk fetch all plus-ones in ONE query instead of N queries
+            all_plus_ones = list(self.plus_one_collection.find({"guest_id": {"$in": guest_id_strs}}))
+
+            # Create lookup dictionaries for O(1) access
+            rsvps_by_guest = {}
+            for rsvp in all_rsvps:
+                guest_id = rsvp.get("guest_id")
+                # Handle both ObjectId and string formats
+                key = str(guest_id) if guest_id else None
+                if key:
+                    rsvps_by_guest[key] = rsvp
+
+            plus_ones_by_guest = {}
+            for plus_one in all_plus_ones:
+                guest_id = plus_one.get("guest_id")
+                if guest_id:
+                    plus_ones_by_guest[str(guest_id)] = plus_one
+
+            # Build result with O(n) complexity instead of O(n²)
+            result = []
             for guest in guests:
-                guest_id = guest["_id"]
-                guest_id_str = str(guest_id)
-                
-                # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
-                rsvp = self.rsvp_collection.find_one({
-                    "$or": [
-                        {"guest_id": guest_id},      # Old format: ObjectId
-                        {"guest_id": guest_id_str}   # New format: string
-                    ]
-                })
-                
+                guest_id_str = str(guest["_id"])
+
+                # Look up RSVP in dictionary (O(1))
+                rsvp = rsvps_by_guest.get(guest_id_str)
+
                 # Only include guests who have actually RSVP'd
                 if rsvp:
-                    plus_one = self.plus_one_collection.find_one({"guest_id": guest_id_str})
-                    
+                    # Look up plus-one in dictionary (O(1))
+                    plus_one = plus_ones_by_guest.get(guest_id_str)
+
                     # Convert plus_one _id to string if it exists
                     if plus_one and "_id" in plus_one:
                         plus_one["_id"] = str(plus_one["_id"])
-                    
+
                     result.append({
                         "guest_id": guest_id_str,
                         "name": guest.get("name"),

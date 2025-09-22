@@ -405,8 +405,72 @@ def get_form_analytics(
     """Get analytics for a form"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
-    
+
     return form_service.get_form_analytics(form_id, current_user.email)
+
+@router.get("/forms/bulk/responses/{wedding_id}", tags=["Forms"])
+def get_bulk_form_responses_by_wedding(
+    wedding_id: str,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """
+    Bulk endpoint to fetch all form responses for a wedding.
+    This eliminates N+1 queries when loading multiple forms.
+    Returns responses grouped by form_id.
+    """
+    if not check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    try:
+        # Get all forms for this wedding in one query
+        forms = list(form_service.forms_collection.find({
+            "wedding_id": wedding_id,
+            "is_active": True
+        }))
+
+        if not forms:
+            return {"wedding_id": wedding_id, "responses_by_form": {}, "total_responses": 0}
+
+        # Get all form IDs
+        form_ids = [str(form["_id"]) for form in forms]
+
+        # Fetch ALL responses for these forms in ONE query
+        all_responses = list(form_service.responses_collection.find({
+            "form_id": {"$in": form_ids}
+        }).sort("submitted_at", -1))
+
+        # Group responses by form_id for easy lookup
+        responses_by_form = {}
+        for form_id in form_ids:
+            responses_by_form[form_id] = []
+
+        for response in all_responses:
+            response["id"] = str(response["_id"])
+            response.pop("_id", None)
+            form_id = response.get("form_id")
+            if form_id in responses_by_form:
+                responses_by_form[form_id].append(response)
+
+        # Add form metadata for frontend convenience
+        forms_metadata = {}
+        for form in forms:
+            form_id = str(form["_id"])
+            forms_metadata[form_id] = {
+                "name": form.get("name", "Untitled Form"),
+                "response_count": len(responses_by_form.get(form_id, []))
+            }
+
+        return {
+            "wedding_id": wedding_id,
+            "responses_by_form": responses_by_form,
+            "forms_metadata": forms_metadata,
+            "total_responses": len(all_responses),
+            "form_count": len(forms)
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching bulk form responses: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch bulk responses: {str(e)}")
 
 @router.get("/forms/{form_id}/export/csv", tags=["Forms"])
 def export_form_responses_csv(
