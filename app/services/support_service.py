@@ -1,6 +1,6 @@
 from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from bson import ObjectId
 import secrets
@@ -72,7 +72,7 @@ class SupportService:
             logger.error(f"Error creating ticket: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error creating ticket: {str(e)}")
 
-    async def get_tickets(self, page: int = 1, limit: int = 20, filters: dict = None) -> dict:
+    async def get_tickets(self, page: int = 1, limit: int = 20, filters: Optional[Dict[str, Any]] = None) -> dict:
         """Get tickets with filtering and pagination"""
         try:
             # Build query
@@ -480,7 +480,7 @@ class SupportService:
             week_ago = today - timedelta(days=7)
 
             # Get various metrics
-            metrics = {
+            metrics: Dict[str, Any] = {
                 "open_tickets": self.tickets_collection.count_documents({"status": "open"}),
                 "in_progress_tickets": self.tickets_collection.count_documents({"status": "in_progress"}),
                 "resolved_today": self.tickets_collection.count_documents({
@@ -494,7 +494,8 @@ class SupportService:
                     "priority": "urgent",
                     "status": {"$in": ["open", "in_progress"]}
                 }),
-                "overdue_tickets": 0  # Would need SLA definitions
+                "overdue_tickets": 0,  # Would need SLA definitions
+                "weekly_trend": []  # Initialized for type safety
             }
 
             # Get weekly trend
@@ -526,8 +527,15 @@ class SupportService:
             # Validate ticket and permissions
             ticket = await self.get_ticket(ticket_id, current_user)
 
-            # Validate file
-            if file.size > 10 * 1024 * 1024:  # 10MB limit
+            # Validate file (determine size safely since UploadFile.size may be None)
+            try:
+                current_pos = file.file.tell()
+            except Exception:
+                current_pos = 0
+            file.file.seek(0, os.SEEK_END)
+            file_size = file.file.tell()
+            file.file.seek(current_pos)
+            if file_size > 10 * 1024 * 1024:  # 10MB limit
                 raise HTTPException(status_code=400, detail="File too large (max 10MB)")
 
             allowed_types = [
@@ -558,7 +566,7 @@ class SupportService:
                             "url": file_url,
                             "uploaded_by": current_user.email,
                             "uploaded_at": datetime.utcnow(),
-                            "file_size": file.size,
+                            "file_size": file_size,
                             "content_type": file.content_type
                         }
                     },

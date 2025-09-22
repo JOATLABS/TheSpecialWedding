@@ -3,7 +3,7 @@ import string
 import hashlib
 import hmac
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.services.email_service_resend import ResendEmailService
@@ -28,8 +28,8 @@ class OTPService:
         """Generate a 6-digit numeric OTP"""
         return ''.join(secrets.choice(string.digits) for _ in range(self.otp_length))
     
-    def _hash_otp(self, otp_code: str, salt: str = None) -> tuple:
-        """Hash OTP with salt for secure storage"""
+    def _hash_otp(self, otp_code: str, salt: Optional[str] = None) -> Tuple[str, str]:
+        """Hash OTP with salt for secure storage; returns (hashed_otp, salt)."""
         if not salt:
             salt = secrets.token_hex(16)
         
@@ -302,7 +302,7 @@ class OTPService:
         
         return recent_requests >= 3
     
-    def _send_otp_sms(self, phone: str, otp_code: str, guest_name: str = None) -> bool:
+    def _send_otp_sms(self, phone: str, otp_code: str, guest_name: Optional[str] = None) -> bool:
         """Send OTP via SMS"""
         try:
             name_part = f"Hi {guest_name}! " if guest_name else ""
@@ -315,7 +315,7 @@ class OTPService:
             logger.error(f"Failed to send OTP SMS: {str(e)}")
             return False
     
-    def _send_otp_email(self, email: str, otp_code: str, guest_name: str = None, wedding_id: str = None) -> bool:
+    def _send_otp_email(self, email: str, otp_code: str, guest_name: Optional[str] = None, wedding_id: Optional[str] = None) -> bool:
         """Send OTP via email"""
         try:
             subject = "Your Wedding Access Code"
