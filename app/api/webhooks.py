@@ -103,11 +103,11 @@ async def _process_resend_event(event_type: str, event_data: Dict[str, Any], cre
             logger.warning(f"No email_id in event data for {event_type}")
             return
 
-        # Parse timestamp
+        # Parse timestamp (defensive: fall back to current UTC on any parse issue)
         try:
             timestamp = datetime.fromisoformat(created_at.replace('Z', '+00:00')) if created_at else datetime.utcnow()
         except Exception:
-                timestamp = datetime.utcnow()
+            timestamp = datetime.utcnow()
 
         # Create delivery event record
         delivery_event = {
