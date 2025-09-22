@@ -2,13 +2,35 @@
 
 import React, { useState, useEffect } from 'react';
 
+type EditableSectionType = 'hero' | 'statistics' | 'trust_indicators' | string; // string fallback for unimplemented
+
+interface HeroSectionContent {
+	hero_title: string;
+	hero_subtitle: string;
+	hero_description: string;
+	hero_cta_primary?: string;
+	hero_cta_secondary?: string;
+}
+
+interface StatisticsSectionContent {
+	statistics: StatisticItem[];
+}
+
+interface TrustIndicatorsSectionContent {
+	trust_indicators: string[];
+}
+
+type KnownSectionContent = Partial<HeroSectionContent & StatisticsSectionContent & TrustIndicatorsSectionContent>;
+// Persist flexibility for future sections while avoiding pervasive any
+export type SectionContent = KnownSectionContent & Record<string, unknown>;
+
 interface ContentEditModalProps {
- isOpen: boolean;
- onClose: () => void;
- sectionType: string;
- sectionData: any;
- onSave: (updatedData: any) => Promise<void>;
- title?: string;
+	isOpen: boolean;
+	onClose: () => void;
+	sectionType: EditableSectionType;
+	sectionData: SectionContent;
+	onSave: (updatedData: SectionContent) => Promise<void>;
+	title?: string;
 }
 
 interface StatisticItem {
@@ -37,7 +59,7 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  onSave,
  title
 }) => {
- const [formData, setFormData] = useState<any>({});
+ const [formData, setFormData] = useState<SectionContent>({});
  const [loading, setSaving] = useState(false);
  const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -61,28 +83,28 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
 
  switch (sectionType) {
  case 'hero':
- if (!formData.hero_title?.trim()) newErrors.hero_title = 'Title is required';
- if (!formData.hero_subtitle?.trim()) newErrors.hero_subtitle = 'Subtitle is required';
- if (!formData.hero_description?.trim()) newErrors.hero_description = 'Description is required';
+ if (typeof formData.hero_title !== 'string' || !formData.hero_title.trim()) newErrors.hero_title = 'Title is required';
+ if (typeof formData.hero_subtitle !== 'string' || !formData.hero_subtitle.trim()) newErrors.hero_subtitle = 'Subtitle is required';
+ if (typeof formData.hero_description !== 'string' || !formData.hero_description.trim()) newErrors.hero_description = 'Description is required';
  break;
  case 'statistics':
- if (!formData.statistics || formData.statistics.length === 0) {
+ if (!Array.isArray(formData.statistics) || formData.statistics.length === 0) {
  newErrors.statistics = 'At least one statistic is required';
  } else {
- formData.statistics.forEach((stat: StatisticItem, index: number) => {
- if (!stat.value?.trim()) newErrors[`stat_value_${index}`] = 'Value is required';
- if (!stat.label?.trim()) newErrors[`stat_label_${index}`] = 'Label is required';
- });
+	 (formData.statistics as StatisticItem[]).forEach((stat, index) => {
+		 if (!stat.value?.trim()) newErrors[`stat_value_${index}`] = 'Value is required';
+		 if (!stat.label?.trim()) newErrors[`stat_label_${index}`] = 'Label is required';
+	 });
  }
  break;
  case 'features':
- if (!formData.features || formData.features.length === 0) {
+ if (!Array.isArray((formData as any).features) || (formData as any).features.length === 0) {
  newErrors.features = 'At least one feature is required';
  } else {
- formData.features.forEach((feature: FeatureItem, index: number) => {
- if (!feature.title?.trim()) newErrors[`feature_title_${index}`] = 'Title is required';
- if (!feature.description?.trim()) newErrors[`feature_desc_${index}`] = 'Description is required';
- });
+	 (formData as any).features.forEach((feature: FeatureItem, index: number) => {
+		 if (!feature.title?.trim()) newErrors[`feature_title_${index}`] = 'Title is required';
+		 if (!feature.description?.trim()) newErrors[`feature_desc_${index}`] = 'Description is required';
+	 });
  }
  break;
  }
@@ -185,7 +207,7 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  );
 
  const renderStatisticsEditor = () => {
- const statistics = formData.statistics || [];
+ const statistics: StatisticItem[] = Array.isArray(formData.statistics) ? formData.statistics as StatisticItem[] : [];
 
  const addStatistic = () => {
  setFormData({
@@ -195,8 +217,8 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  };
 
  const removeStatistic = (index: number) => {
- const newStats = statistics.filter((_: any, i: number) => i !== index);
- setFormData({ ...formData, statistics: newStats });
+	 const newStats = statistics.filter((_, i) => i !== index);
+	 setFormData({ ...formData, statistics: newStats });
  };
 
  const updateStatistic = (index: number, field: keyof StatisticItem, value: string) => {
@@ -221,7 +243,7 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  {errors.statistics && <p className="text-red-500 text-sm">{errors.statistics}</p>}
 
  <div className="space-y-3">
- {statistics.map((stat: StatisticItem, index: number) => (
+ {statistics.map((stat, index) => (
  <div key={index} className="flex items-center space-x-3 p-4 border border-gray-200 rounded-lg">
  <div className="flex-1">
  <input
@@ -265,7 +287,7 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  };
 
  const renderTrustIndicatorsEditor = () => {
- const indicators = formData.trust_indicators || [];
+ const indicators: string[] = Array.isArray(formData.trust_indicators) ? formData.trust_indicators as string[] : [];
 
  const addIndicator = () => {
  setFormData({
@@ -275,8 +297,8 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  };
 
  const removeIndicator = (index: number) => {
- const newIndicators = indicators.filter((_: any, i: number) => i !== index);
- setFormData({ ...formData, trust_indicators: newIndicators });
+	 const newIndicators = indicators.filter((_, i) => i !== index);
+	 setFormData({ ...formData, trust_indicators: newIndicators });
  };
 
  const updateIndicator = (index: number, value: string) => {

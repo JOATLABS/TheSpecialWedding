@@ -1583,11 +1583,15 @@ const SaasAdminDashboard = () => {
  Object.assign(updatedConfig, updatedData);
  break;
  case 'statistics':
- updatedConfig.statistics = updatedData.statistics;
- break;
+   if (Array.isArray(updatedData.statistics)) {
+     updatedConfig.statistics = updatedData.statistics;
+   }
+   break;
  case 'trust_indicators':
- updatedConfig.trust_indicators = updatedData.trust_indicators;
- break;
+   if (Array.isArray(updatedData.trust_indicators)) {
+     updatedConfig.trust_indicators = updatedData.trust_indicators as string[];
+   }
+   break;
  }
  
  // Save to backend with the updated config
