@@ -29,16 +29,16 @@ class UserManagementService:
             response = requests.get(f"{base_url}/saas/trial-settings", timeout=5)
             if response.status_code == 200:
                 return response.json()
-        except:
-            pass
+        except Exception:
+                pass
         
         # Fallback to direct database query
         try:
             config = mongo.db["saas_config"].find_one({"type": "main_config"})
             if config and "trial_settings" in config:
                 return config["trial_settings"]
-        except:
-            pass
+        except Exception:
+                pass
         
         # Return defaults if all else fails
         return {
@@ -74,8 +74,8 @@ class UserManagementService:
                     return True
             
             return existing_trial is not None
-        except:
-            return False
+        except Exception:
+                return False
 
     def invite_user(self, invite_data: dict, inviter_email: str) -> dict:
         """Invite a new user to the platform"""
@@ -113,7 +113,7 @@ class UserManagementService:
             self.invitations_collection.insert_one(invitation)
             
             # Send invitation email
-            self.send_invitation_email(email, invitation_token, role, invite_data.get("company_name"))
+            self.send_invitation_email(email, invitation_token, role, invite_data.get("company_name"), inviter_email)
             
             return {
                 "message": f"Invitation sent to {email}",
@@ -126,11 +126,14 @@ class UserManagementService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error sending invitation: {str(e)}")
 
-    def send_invitation_email(self, email: str, token: str, role: str, company_name: str = None):
+    def send_invitation_email(self, email: str, token: str, role: str, company_name: Optional[str] = None, invited_by: Optional[str] = None):
         """Send invitation email to user"""
         try:
             subject = "Invitation to Join Special Wedding Platform"
-            setup_url = f"http://localhost:3003/setup-account?token={token}"
+
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            setup_url = f"{frontend_url}/setup-account?token={token}"
+            invited_by = invited_by or "Special Wedding Team"
             
             # Create email content based on role
             if role == "wedding_planner":
@@ -491,7 +494,7 @@ class UserManagementService:
             # Send email verification email
             if self.email_service.configured:
                 # Create verification URL
-                base_url = os.getenv("FRONTEND_URL", "http://localhost:3005")
+                base_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
                 verification_url = f"{base_url}/verify-email/{verification_token}"
                 
                 html_content = self._generate_verification_email_html(
@@ -584,11 +587,10 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error verifying email: {str(e)}")
-
-    def _generate_invitation_email_html(self, email: str, role: str, company_name: str, setup_url: str, invited_by: str) -> str:
+    def _generate_invitation_email_html(self, email: str, role: str, company_name: Optional[str], setup_url: str, invited_by: str) -> str:
         """Generate professional invitation email HTML"""
         role_display = role.replace("_", " ").title()
-        
+
         return f"""
         <!DOCTYPE html>
         <html>
@@ -788,82 +790,6 @@ class UserManagementService:
                 </div>
                 <div class="footer">
                     <p>Need help? Visit our <a href="#" style="color: #c8847e;">support center</a> or reply to this email.</p>
-                    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-                    <p>&copy; Special Wedding - Professional Wedding Planning Platform</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-    
-    def _generate_verification_email_html(self, email: str, first_name: str, verification_url: str) -> str:
-        """Generate email verification email HTML"""
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Verify Your Email - Special Wedding</title>
-            <style>
-                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; margin: 0; padding: 0; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); }}
-                .container {{ max-width: 600px; margin: 40px auto; background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.1); }}
-                .header {{ background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); color: white; padding: 40px 30px; text-align: center; }}
-                .header h1 {{ margin: 0; font-size: 28px; font-weight: 300; letter-spacing: 2px; }}
-                .header p {{ margin: 10px 0 0 0; opacity: 0.9; font-size: 16px; }}
-                .content {{ padding: 40px 30px; }}
-                .verification-card {{ background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 15px; padding: 30px; margin: 25px 0; border-left: 5px solid #c8847e; }}
-                .button-container {{ text-align: center; margin: 35px 0; }}
-                .button {{ display: inline-block; padding: 16px 40px; background-color: #c8847e; color: white; text-decoration: none; border-radius: 30px; font-weight: 500; letter-spacing: 1px; transition: background-color 0.3s; }}
-                .button:hover {{ background-color: #b6736d; }}
-                .footer {{ text-align: center; padding: 30px; color: #666; font-size: 14px; background: #f8f9fa; border-top: 1px solid #eee; }}
-                .security-note {{ background: #e8f5e8; border: 1px solid #4caf50; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 14px; }}
-                .expiry-warning {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 14px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Verify Your Email</h1>
-                    <p>Complete Your Special Wedding Registration</p>
-                </div>
-                <div class="content">
-                    <p>Hello{f' {first_name}' if first_name else ''}!</p>
-                    <p>Thank you for registering with <strong>Special Wedding</strong>! To complete your account setup and start planning amazing weddings, please verify your email address.</p>
-                    
-                    <div class="verification-card">
-                        <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Account Details:</h3>
-                        <p style="margin: 8px 0;"><strong>Email:</strong> {email}</p>
-                        <p style="margin: 8px 0;"><strong>Status:</strong> Pending Verification</p>
-                    </div>
-                    
-                    <p>Click the button below to verify your email address and activate your account:</p>
-                    
-                    <div class="button-container">
-                        <a href="{verification_url}" class="button">Verify Email Address</a>
-                    </div>
-                    
-                    <div class="expiry-warning">
-                        <strong>Important:</strong> This verification link will expire in 48 hours. If you don't verify your email within this time, you'll need to register again.
-                    </div>
-                    
-                    <div class="security-note">
-                        <strong>Security Note:</strong> If you didn't create an account with Special Wedding, please ignore this email. Your email address will not be used for any further communications.
-                    </div>
-                    
-                    <p>Once verified, you'll be able to:</p>
-                    <ul>
-                        <li>Create and manage wedding projects</li>
-                        <li>Collaborate with vendors and team members</li>
-                        <li>Send beautiful RSVP invitations</li>
-                        <li>Track guest responses and analytics</li>
-                    </ul>
-                    
-                    <p>Best regards,<br>The Special Wedding Team</p>
-                </div>
-                <div class="footer">
-                    <p>If the button doesn't work, copy and paste this link:</p>
-                    <p style="word-break: break-all; color: #c8847e; font-size: 12px;">{verification_url}</p>
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
                     <p>&copy; Special Wedding - Professional Wedding Planning Platform</p>
                 </div>
@@ -1100,12 +1026,15 @@ class UserManagementService:
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Profile update failed")
 
-            # Emit profile updated event
-            await event_bus.emit(EventFactory.create_user_profile_updated_event(
-                user_id=str(user["_id"]),
-                email=user_email,
-                updated_fields=list(update_data.keys())
-            ))
+            # Publish profile updated event (only if factory method exists)
+            event_factory_method = getattr(EventFactory, "user_profile_updated", None)
+            if event_factory_method:
+                event = event_factory_method(
+                    user_id=str(user["_id"]),
+                    email=user_email,
+                    updated_fields=list(update_data.keys())
+                )
+                await event_bus.publish(event)
 
             return {
                 "message": "Profile updated successfully",

@@ -17,8 +17,8 @@ class TrialExpirationService:
             config = mongo.db["saas_config"].find_one({"type": "main_config"})
             if config and "trial_settings" in config:
                 return config["trial_settings"]
-        except:
-            pass
+        except Exception:
+                pass
         
         # Return defaults if config not found
         return {

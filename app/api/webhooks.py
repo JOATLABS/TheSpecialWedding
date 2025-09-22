@@ -39,8 +39,9 @@ async def handle_resend_webhook(
         body = await request.body()
 
         # Verify webhook signature if configured
-        if settings.RESEND_WEBHOOK_SECRET and resend_signature:
-            if not _verify_resend_signature(body, resend_signature, settings.RESEND_WEBHOOK_SECRET):
+        secret = getattr(settings, "RESEND_WEBHOOK_SECRET", None)
+        if secret and resend_signature:
+            if not _verify_resend_signature(body, resend_signature, secret):
                 logger.warning("Invalid Resend webhook signature")
                 raise HTTPException(status_code=401, detail="Invalid signature")
 
@@ -94,7 +95,7 @@ async def _process_resend_event(event_type: str, event_data: Dict[str, Any], cre
     try:
         # Extract common fields
         email_id = event_data.get("email_id")
-        to_email = event_data.get("to")
+        to_email: Optional[str] = event_data.get("to")
         from_email = event_data.get("from")
         subject = event_data.get("subject")
 
@@ -105,8 +106,8 @@ async def _process_resend_event(event_type: str, event_data: Dict[str, Any], cre
         # Parse timestamp
         try:
             timestamp = datetime.fromisoformat(created_at.replace('Z', '+00:00')) if created_at else datetime.utcnow()
-        except:
-            timestamp = datetime.utcnow()
+        except Exception:
+                timestamp = datetime.utcnow()
 
         # Create delivery event record
         delivery_event = {
@@ -131,7 +132,7 @@ async def _process_resend_event(event_type: str, event_data: Dict[str, Any], cre
         await _update_email_log(email_id, event_type, event_data, timestamp)
 
         # Handle specific event types
-        if event_type in ["email.bounced", "email.complained"]:
+        if event_type in ["email.bounced", "email.complained"] and to_email:
             await _handle_negative_event(email_id, event_type, event_data, to_email)
 
         logger.debug(f"Stored delivery event: {event_type} for email {email_id}")
@@ -221,7 +222,8 @@ async def _handle_negative_event(email_id: str, event_type: str, event_data: Dic
         if event_type == "email.bounced":
             bounce_type = event_data.get("bounce_type", "").lower()
             if bounce_type == "hard":
-                await _add_to_suppression_list(to_email, "hard_bounce", event_data.get("bounce_reason"))
+                bounce_reason = event_data.get("bounce_reason") or ""
+                await _add_to_suppression_list(to_email, "hard_bounce", str(bounce_reason))
         elif event_type == "email.complained":
             await _add_to_suppression_list(to_email, "complaint", "User marked email as spam")
 

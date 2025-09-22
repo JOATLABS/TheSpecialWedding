@@ -49,7 +49,7 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
                 wedding_date = datetime.fromisoformat(wedding["date"])
                 if wedding_date > current_date:
                     metrics["summary"]["upcoming_weddings"] += 1
-            except:
+            except Exception:
                 pass
         
         # Get detailed metrics for each wedding
@@ -101,7 +101,7 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
             try:
                 wedding_date = datetime.fromisoformat(wedding["date"])
                 days_until_wedding = (wedding_date - current_date).days
-            except:
+            except Exception:
                 pass
             
             wedding_metrics = {

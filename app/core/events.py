@@ -20,6 +20,7 @@ class EventType(str, Enum):
     USER_REGISTERED = "user.registered"
     USER_EMAIL_VERIFIED = "user.email_verified"
     USER_SUBSCRIPTION_CHANGED = "user.subscription_changed"
+    USER_PROFILE_UPDATED = "user.profile_updated"
     
     # Wedding events
     WEDDING_CREATED = "wedding.created"
@@ -321,7 +322,7 @@ class EventFactory:
         )
     
     @staticmethod
-    def password_changed(user_id: str, email: str, ip_address: str = None) -> DomainEvent:
+    def password_changed(user_id: str, email: str, ip_address: Optional[str] = None) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.PASSWORD_CHANGED,
             aggregate_id=user_id,
@@ -339,7 +340,7 @@ class EventFactory:
         )
     
     @staticmethod
-    def email_change_requested(user_id: str, old_email: str, new_email: str, ip_address: str = None) -> DomainEvent:
+    def email_change_requested(user_id: str, old_email: str, new_email: str, ip_address: Optional[str] = None) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.EMAIL_CHANGE_REQUESTED,
             aggregate_id=user_id,
@@ -371,6 +372,20 @@ class EventFactory:
             metadata={
                 "security_event": True,
                 "severity": "medium"
+            },
+            user_id=user_id
+        )
+
+    @staticmethod
+    def user_profile_updated(user_id: str, email: str, updated_fields: list[str]) -> DomainEvent:
+        return DomainEvent(
+            event_type=EventType.USER_PROFILE_UPDATED,
+            aggregate_id=user_id,
+            aggregate_type="user",
+            event_data={
+                "email": email,
+                "updated_fields": updated_fields,
+                "timestamp": datetime.now(timezone.utc).isoformat()
             },
             user_id=user_id
         )

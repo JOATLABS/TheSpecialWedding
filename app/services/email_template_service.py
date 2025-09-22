@@ -117,7 +117,7 @@ class EmailTemplateService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             template = self.templates_collection.find_one({"_id": obj_id})
@@ -147,7 +147,7 @@ class EmailTemplateService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             # Check if template exists
@@ -219,7 +219,7 @@ class EmailTemplateService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             # Check if template exists and is not the only default for its type
@@ -265,7 +265,7 @@ class EmailTemplateService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             # Get template
@@ -347,22 +347,25 @@ class EmailTemplateService:
             # Date range
             from_date = datetime.utcnow() - timedelta(days=days)
 
+            # Build initial match query with flexible typing to allow additional filters
+            match_query: Dict[str, Any] = {"sent_at": {"$gte": from_date}}
+            if template_id:
+                match_query["template_id"] = template_id
+
             pipeline = [
-                {"$match": {"sent_at": {"$gte": from_date}}},
+                {"$match": match_query},
             ]
 
-            if template_id:
-                pipeline[0]["$match"]["template_id"] = template_id
-
             # Group by template and calculate metrics
-            pipeline.extend([
-                {
-                    "$group": {
-                        "_id": "$template_id",
-                        "sent_count": {"$sum": 1},
-                        "success_count": {"$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}},
-                        "failed_count": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
-                        "last_sent": {"$max": "$sent_at"}
+            pipeline.extend(
+                [
+                    {
+                        "$group": {
+                            "_id": "$template_id",
+                            "sent_count": {"$sum": 1},
+                            "success_count": {"$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}},
+                            "failed_count": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
+                            "last_sent": {"$max": "$sent_at"}
                     }
                 }
             ])

@@ -66,7 +66,7 @@ class GuestVerificationService:
                                 "guest": guest,
                                 "auth_method": "token"
                             }
-                    except:
+                    except Exception:
                         pass  # Continue to other methods
 
                 # Method 2: OTP verification (replaces name/phone verification)
@@ -89,7 +89,7 @@ class GuestVerificationService:
                                 "guest": otp_result.get("guest"),
                                 "auth_method": otp_result.get("auth_method", "otp")
                             }
-                    except:
+                    except Exception:
                         pass  # OTP verification failed
                 
                 # Method 3: Request OTP (when phone/email provided without code)
