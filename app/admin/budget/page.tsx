@@ -8,21 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import BudgetSummaryCard from '@/components/budget/BudgetSummaryCard';
 import BudgetCategoryCard from '@/components/budget/BudgetCategoryCard';
+import PaymentModal from '@/components/budget/PaymentModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { budgetApi } from '@/services/budgetApi';
+import { buildApiUrl } from '@/utils/api-base';
 import type {
   BudgetCategory,
   BudgetSummary,
   CreateBudgetCategoryRequest,
-  UpdateBudgetCategoryRequest
+  UpdateBudgetCategoryRequest,
+  RecordPaymentRequest
 } from '@/types/budget';
-
-interface Wedding {
-  id?: string;
-  _id?: string;
-  couple_names: string;
-  date: string;
-  slug: string;
-}
+import type { Wedding } from '@/types/wedding';
 
 export default function BudgetDashboard() {
   const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
@@ -38,6 +35,12 @@ export default function BudgetDashboard() {
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<BudgetCategory | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentCategory, setPaymentCategory] = useState<BudgetCategory | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; categoryId: string | null }>({
+    show: false,
+    categoryId: null
+  });
   const [categoryForm, setCategoryForm] = useState({
     name: '',
     description: '',
@@ -88,8 +91,7 @@ export default function BudgetDashboard() {
 
   const fetchWeddings = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+      const response = await fetch(buildApiUrl('/admin/planner/weddings'), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -184,19 +186,25 @@ export default function BudgetDashboard() {
     }
   };
 
-  const handleDeleteCategory = async (categoryId: string) => {
-    if (!token || !confirm('Are you sure you want to delete this category?')) return;
+  const handleDeleteCategory = (categoryId: string) => {
+    setDeleteConfirm({ show: true, categoryId });
+  };
+
+  const confirmDelete = async () => {
+    if (!token || !deleteConfirm.categoryId) return;
 
     try {
-      await budgetApi.deleteBudgetCategory(token, categoryId);
-      setCategories(categories.filter(cat => cat.id !== categoryId));
+      await budgetApi.deleteBudgetCategory(token, deleteConfirm.categoryId);
+      setCategories(categories.filter(cat => cat.id !== deleteConfirm.categoryId));
       toast.success('Budget category deleted successfully');
-      
+
       // Refresh summary
       fetchBudgetData();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete budget category';
       toast.error(msg);
+    } finally {
+      setDeleteConfirm({ show: false, categoryId: null });
     }
   };
 
@@ -223,9 +231,29 @@ export default function BudgetDashboard() {
     setEditingCategory(null);
   };
 
-  const handleAddPayment = () => {
-    // Placeholder for payment modal (category id not yet needed)
-    toast.info('Payment tracking feature coming soon');
+  const handleAddPayment = (category: BudgetCategory) => {
+    setPaymentCategory(category);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSubmit = async (payment: RecordPaymentRequest) => {
+    if (!token || !paymentCategory) return;
+
+    try {
+      await budgetApi.recordPayment(token, paymentCategory._id, payment);
+      toast.success('Payment recorded successfully');
+
+      // Refresh budget data to show updated amounts
+      if (selectedWedding) {
+        await fetchBudgetData();
+      }
+
+      setShowPaymentModal(false);
+      setPaymentCategory(null);
+    } catch (error) {
+      toast.error('Failed to record payment');
+      throw error; // Re-throw to let PaymentModal handle the error
+    }
   };
 
   const exportBudgetReport = async (format: 'pdf' | 'excel') => {
@@ -530,6 +558,33 @@ export default function BudgetDashboard() {
           </div>
         </div>
       )}
+
+      {/* Payment Modal */}
+      {showPaymentModal && paymentCategory && (
+        <PaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => {
+            setShowPaymentModal(false);
+            setPaymentCategory(null);
+          }}
+          onSubmit={handlePaymentSubmit}
+          categoryName={paymentCategory.name}
+          categoryId={paymentCategory._id}
+          remainingAmount={paymentCategory.budgeted_amount - (paymentCategory.actual_spent || 0)}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.show}
+        onClose={() => setDeleteConfirm({ show: false, categoryId: null })}
+        onConfirm={confirmDelete}
+        title="Delete Budget Category"
+        message="Are you sure you want to delete this budget category? This action cannot be undone and all associated payments will be removed."
+        confirmText="Delete Category"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }

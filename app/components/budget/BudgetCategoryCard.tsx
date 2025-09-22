@@ -10,7 +10,7 @@ interface BudgetCategoryCardProps {
   category: BudgetCategory;
   onEdit: (category: BudgetCategory) => void;
   onDelete: (categoryId: string) => void;
-  onAddPayment: (categoryId: string) => void;
+  onAddPayment: (category: BudgetCategory) => void;
   className?: string;
 }
 
@@ -195,8 +195,8 @@ export default function BudgetCategoryCard({
           Edit
         </Button>
         
-        <Button 
-          onClick={() => onAddPayment(category.id)}
+        <Button
+          onClick={() => onAddPayment(category)}
           className="flex-1 text-sm"
         >
           Add Payment

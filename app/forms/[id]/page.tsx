@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { PublicForm as Form, FormField, FormResponseValue } from '@/types/forms';
+import { buildApiUrl } from '@/utils/api-base';
 
 export default function PublicFormPage() {
  const params = useParams();
@@ -25,8 +26,7 @@ export default function PublicFormPage() {
 
  const fetchForm = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- const response = await fetch(`${baseUrl}/public/forms/${formId}`);
+ const response = await fetch(buildApiUrl(`/public/forms/${formId}`));
 
  if (response.ok) {
  const data = await response.json();
@@ -72,8 +72,6 @@ export default function PublicFormPage() {
  setError('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- 
  // Prepare submission data
  const submissionData = {
  responses,
@@ -81,7 +79,7 @@ export default function PublicFormPage() {
  submitted_by_name: responses.name || responses.guest_name || responses.contact_name
  };
 
- const response = await fetch(`${baseUrl}/public/forms/${formId}/submit`, {
+ const response = await fetch(buildApiUrl(`/public/forms/${formId}/submit`), {
  method: 'POST',
  headers: {
  'Content-Type': 'application/json',

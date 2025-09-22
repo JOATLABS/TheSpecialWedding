@@ -155,3 +155,13 @@ export interface CreateVendorQuoteRequest {
   valid_until?: string;
   notes?: string;
 }
+
+export interface RecordPaymentRequest {
+  vendor_name?: string;
+  amount: number;
+  payment_method: 'cash' | 'check' | 'card' | 'transfer';
+  payment_date: string;
+  description?: string;
+  receipt_url?: string;
+  notes?: string;
+}

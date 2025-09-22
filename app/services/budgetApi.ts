@@ -7,7 +7,9 @@ import type {
   CreateBudgetCategoryRequest,
   UpdateBudgetCategoryRequest,
   CreateVendorQuoteRequest,
-  BudgetAlert
+  BudgetAlert,
+  PaymentRecord,
+  RecordPaymentRequest
 } from '../types/budget';
 
 // Specialized response models
@@ -50,7 +52,7 @@ export interface VendorQuoteComparison {
   generated_at?: string;
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+import { buildApiUrl } from '@/utils/api-base';
 
 class BudgetApiService {
   private getHeaders(token: string) {
@@ -63,7 +65,7 @@ class BudgetApiService {
   // Budget Categories
   async getBudgetCategories(token: string, weddingId: string): Promise<BudgetCategory[]> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget`,
+      buildApiUrl(`/admin/weddings/${weddingId}/budget`),
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget categories');
@@ -73,7 +75,7 @@ class BudgetApiService {
 
   async createBudgetCategory(token: string, data: CreateBudgetCategoryRequest): Promise<BudgetCategory> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${data.wedding_id}/budget/category`,
+      buildApiUrl(`/admin/weddings/${data.wedding_id}/budget/category`),
       {
         method: 'POST',
         headers: this.getHeaders(token),
@@ -86,7 +88,7 @@ class BudgetApiService {
 
   async updateBudgetCategory(token: string, categoryId: string, data: UpdateBudgetCategoryRequest): Promise<BudgetCategory> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/category/${categoryId}`,
+      buildApiUrl(`/admin/budget/category/${categoryId}`),
       {
         method: 'PUT',
         headers: this.getHeaders(token),
@@ -99,7 +101,7 @@ class BudgetApiService {
 
   async deleteBudgetCategory(token: string, categoryId: string): Promise<void> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/categories/${categoryId}`,
+      buildApiUrl(`/admin/budget/categories/${categoryId}`),
       {
         method: 'DELETE',
         headers: this.getHeaders(token)
@@ -111,7 +113,7 @@ class BudgetApiService {
   // Budget Summary
   async getBudgetSummary(token: string, weddingId: string): Promise<BudgetSummary> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/summary`,
+      buildApiUrl(`/admin/weddings/${weddingId}/budget/summary`),
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget summary');
@@ -121,8 +123,8 @@ class BudgetApiService {
   // Vendor Quotes
   async getVendorQuotes(token: string, weddingId: string, category?: string): Promise<VendorQuote[]> {
     const url = category 
-      ? `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes?category=${category}`
-      : `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes`;
+      ? buildApiUrl(`/admin/weddings/${weddingId}/vendor-quotes?category=${category}`)
+      : buildApiUrl(`/admin/weddings/${weddingId}/vendor-quotes`);
     
     const response = await fetch(url, { headers: this.getHeaders(token) });
     if (!response.ok) throw new Error('Failed to fetch vendor quotes');
@@ -131,7 +133,7 @@ class BudgetApiService {
 
   async createVendorQuote(token: string, data: CreateVendorQuoteRequest): Promise<VendorQuote> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${data.wedding_id}/vendor-quotes`,
+      buildApiUrl(`/admin/weddings/${data.wedding_id}/vendor-quotes`),
       {
         method: 'POST',
         headers: this.getHeaders(token),
@@ -144,7 +146,7 @@ class BudgetApiService {
 
   async updateVendorQuoteStatus(token: string, quoteId: string, status: string): Promise<VendorQuote> {
     const response = await fetch(
-      `${BASE_URL}/admin/vendor-quotes/${quoteId}/status`,
+      buildApiUrl(`/admin/vendor-quotes/${quoteId}/status`),
       {
         method: 'PUT',
         headers: this.getHeaders(token),
@@ -157,7 +159,7 @@ class BudgetApiService {
 
   async rateVendorQuote(token: string, quoteId: string, rating: number, notes?: string): Promise<VendorQuote> {
     const response = await fetch(
-      `${BASE_URL}/admin/vendor-quotes/${quoteId}/rating`,
+      buildApiUrl(`/admin/vendor-quotes/${quoteId}/rating`),
       {
         method: 'PUT',
         headers: this.getHeaders(token),
@@ -171,7 +173,7 @@ class BudgetApiService {
   // Budget Templates
   async getBudgetTemplates(token: string): Promise<BudgetTemplate[]> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/templates`,
+      buildApiUrl(`/admin/budget/templates`),
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget templates');
@@ -180,7 +182,7 @@ class BudgetApiService {
 
   async applyBudgetTemplate(token: string, weddingId: string, templateId: string, totalBudget: number): Promise<BudgetCategory[]> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/apply-template`,
+      buildApiUrl(`/admin/weddings/${weddingId}/budget/apply-template`),
       {
         method: 'POST',
         headers: this.getHeaders(token),
@@ -194,7 +196,7 @@ class BudgetApiService {
   // Cost Estimation
   async getCostEstimate(token: string, weddingType: string, guestCount: number, location: string): Promise<CostEstimateResult> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/estimate`,
+      buildApiUrl(`/admin/budget/estimate`),
       {
         method: 'POST',
         headers: this.getHeaders(token),
@@ -212,7 +214,7 @@ class BudgetApiService {
   // Budget Alerts
   async getBudgetAlerts(token: string, weddingId: string): Promise<BudgetAlert[]> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/alerts`,
+      buildApiUrl(`/admin/weddings/${weddingId}/budget/alerts`),
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget alerts');
@@ -221,7 +223,7 @@ class BudgetApiService {
 
   async markAlertAsRead(token: string, alertId: string): Promise<void> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/alerts/${alertId}/read`,
+      buildApiUrl(`/admin/budget/alerts/${alertId}/read`),
       {
         method: 'PUT',
         headers: this.getHeaders(token)
@@ -232,7 +234,7 @@ class BudgetApiService {
 
   async resolveAlert(token: string, alertId: string): Promise<void> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/alerts/${alertId}/resolve`,
+      buildApiUrl(`/admin/budget/alerts/${alertId}/resolve`),
       {
         method: 'PUT',
         headers: this.getHeaders(token)
@@ -244,7 +246,7 @@ class BudgetApiService {
   // Financial Reports
   async getFinancialReport(token: string, weddingId: string, format: 'pdf' | 'excel'): Promise<Blob> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/report?format=${format}`,
+      buildApiUrl(`/admin/weddings/${weddingId}/budget/report?format=${format}`),
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to generate financial report');
@@ -254,10 +256,33 @@ class BudgetApiService {
   // Vendor Quote Comparison
   async compareVendorQuotes(token: string, weddingId: string, category: string): Promise<VendorQuoteComparison> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/compare-quotes?category=${category}`,
+      buildApiUrl(`/admin/weddings/${weddingId}/budget/compare-quotes?category=${category}`),
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to compare vendor quotes');
+    return response.json();
+  }
+
+  // Payment Tracking
+  async recordPayment(token: string, categoryId: string, data: RecordPaymentRequest): Promise<{ message: string; payment: PaymentRecord }> {
+    const response = await fetch(
+      buildApiUrl(`/admin/budget/category/${categoryId}/payment`),
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data)
+      }
+    );
+    if (!response.ok) throw new Error('Failed to record payment');
+    return response.json();
+  }
+
+  async getPaymentHistory(token: string, weddingId: string): Promise<PaymentRecord[]> {
+    const response = await fetch(
+      buildApiUrl(`/admin/weddings/${weddingId}/payments`),
+      { headers: this.getHeaders(token) }
+    );
+    if (!response.ok) throw new Error('Failed to fetch payment history');
     return response.json();
   }
 }

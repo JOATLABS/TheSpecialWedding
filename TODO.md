@@ -31,3 +31,4 @@ Consolidated from in-code TODO comments. Categories: feature, refactor, analytic
 
 - All unused variables causing noise have been removed or underscored. Remaining TODOs are intentional placeholders.
 - Revisit quarterly or before major release to either implement or delete stale items.
+- 2025-09-22: Introduced centralized API base helpers (`app/utils/api-base.ts`) and refactored `app/forms/[id]/page.tsx` & `app/admin/profile/page.tsx` to reduce duplication. Consider migrating remaining direct `process.env.NEXT_PUBLIC_API_BASE_URL` usages gradually.

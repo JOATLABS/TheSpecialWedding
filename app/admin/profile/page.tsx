@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { buildApiUrl } from '@/utils/api-base';
 
 interface UserProfile {
   email: string;
@@ -101,8 +102,7 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
+  const response = await fetch(buildApiUrl(`/admin/profile?t=${Date.now()}`), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -139,8 +139,7 @@ export default function ProfilePage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/profile/password`, {
+  const response = await fetch(buildApiUrl('/admin/profile/password'), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -169,8 +168,7 @@ export default function ProfilePage() {
     e.preventDefault();
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/profile/email`, {
+  const response = await fetch(buildApiUrl('/admin/profile/email'), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -204,8 +202,7 @@ export default function ProfilePage() {
         company_name: profileData.company_name
       };
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/profile/info`, {
+  const response = await fetch(buildApiUrl('/admin/profile/info'), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -235,17 +232,15 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-
       // Fetch preferences and available forms in parallel
       const [preferencesResponse, formsResponse] = await Promise.all([
-        fetch(`${baseUrl}/admin/notifications/preferences`, {
+        fetch(buildApiUrl('/admin/notifications/preferences'), {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
         }),
-        fetch(`${baseUrl}/admin/forms`, {
+        fetch(buildApiUrl('/admin/forms'), {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -274,8 +269,7 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/notifications/preferences`, {
+  const response = await fetch(buildApiUrl('/admin/notifications/preferences'), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
