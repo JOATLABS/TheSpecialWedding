@@ -4,6 +4,7 @@ Dependency Injection Container for better testability and loose coupling
 from typing import Dict, Any, Type, TypeVar, Optional, Callable
 from abc import ABC, abstractmethod
 import asyncio
+from typing import Optional
 import logging
 from enum import Enum
 
@@ -25,8 +26,8 @@ class ServiceDescriptor:
     def __init__(
         self,
         service_type: Type,
-        implementation: Type = None,
-        factory: Callable = None,
+        implementation: Optional[Type] = None,
+        factory: Optional[Callable] = None,
         instance: Any = None,
         lifetime: Lifetime = Lifetime.TRANSIENT
     ):
@@ -46,7 +47,7 @@ class DependencyContainer:
         self._scoped_services: Dict[str, Dict[Type, Any]] = {}
         self._current_scope: Optional[str] = None
     
-    def register_singleton(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
+    def register_singleton(self, service_type: Type[T], implementation: Optional[Type[T]] = None) -> 'DependencyContainer':
         """Register a singleton service"""
         self._services[service_type] = ServiceDescriptor(
             service_type=service_type,
@@ -54,8 +55,8 @@ class DependencyContainer:
             lifetime=Lifetime.SINGLETON
         )
         return self
-    
-    def register_scoped(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
+
+    def register_scoped(self, service_type: Type[T], implementation: Optional[Type[T]] = None) -> 'DependencyContainer':
         """Register a scoped service"""
         self._services[service_type] = ServiceDescriptor(
             service_type=service_type,
@@ -63,8 +64,8 @@ class DependencyContainer:
             lifetime=Lifetime.SCOPED
         )
         return self
-    
-    def register_transient(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
+
+    def register_transient(self, service_type: Type[T], implementation: Optional[Type[T]] = None) -> 'DependencyContainer':
         """Register a transient service"""
         self._services[service_type] = ServiceDescriptor(
             service_type=service_type,
@@ -171,7 +172,7 @@ class DependencyContainer:
             # Fallback to parameterless constructor
             return implementation_type()
     
-    def create_scope(self, scope_id: str = None) -> 'ServiceScope':
+    def create_scope(self, scope_id: Optional[str] = None) -> 'ServiceScope':
         """Create a new service scope"""
         if scope_id is None:
             scope_id = f"scope_{id(object())}"
@@ -263,16 +264,16 @@ container = DependencyContainer()
 
 def setup_services():
     """Setup service registrations"""
-    from app.services.email_service_resend import EmailService
+    from app.services.email_service_resend import ResendEmailService as EmailService
     from app.services.subscription_service import SubscriptionService
     from app.core.settings import settings
     from app.core.cache import cache
     from app.core.events import event_bus
     
-    # Register singleton services
-    container.register_singleton(settings.__class__, lambda: settings)
-    container.register_singleton(cache.__class__, lambda: cache)
-    container.register_singleton(event_bus.__class__, lambda: event_bus)
+    # Register singleton service instances
+    container.register_instance(settings.__class__, settings)
+    container.register_instance(cache.__class__, cache)
+    container.register_instance(event_bus.__class__, event_bus)
     
     # Register scoped services (per request)
     container.register_scoped(IEmailService, EmailService)
@@ -281,8 +282,7 @@ def setup_services():
     # Register factories for complex services
     def create_notification_service():
         from app.services.notification_service import NotificationService
-        email_service = container.resolve(IEmailService)
-        return NotificationService(email_service)
+        return NotificationService()
     
     container.register_factory(INotificationService, create_notification_service, Lifetime.SCOPED)
     

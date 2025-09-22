@@ -231,6 +231,7 @@ class ResendEmailService:
         # Get guests based on target group
         if target_group in ["guests", "all"]:
             guests = self.guest_collection.find({"wedding_id": wedding["_id"]})
+            plus_ones_collection = mongo.db["plus_ones"]
             
             for guest in guests:
                 # Check if guest has RSVP'd for this event
@@ -241,6 +242,9 @@ class ResendEmailService:
                 email = guest.get("email")
                 if not email:
                     continue
+
+                # Fetch plus-ones for this guest (if stored separately)
+                plus_ones = list(plus_ones_collection.find({"guest_id": str(guest["_id"])}))
                 
                 # Use custom HTML or generate default
                 if custom_html:
@@ -261,7 +265,7 @@ class ResendEmailService:
                         event_date=event.get("date", ""),
                         event_details=event.get("details", {}),
                         couple_names=from_name,
-                        plus_ones=guest.get("plus_ones", [])
+                        plus_ones=plus_ones
                     )
                 
                 # Send email
@@ -282,20 +286,6 @@ class ResendEmailService:
                 
                 # Add delay to respect Resend rate limit (2 requests per second)
                 time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
-        
-        # Add plus-ones support
-        plus_ones_collection = mongo.db["plus_ones"]
-        
-        for recipient in recipients:
-            guest_id = recipient.get("guest_id")
-            if guest_id:
-                # Get plus-ones for this guest
-                plus_ones = list(plus_ones_collection.find({"guest_id": str(guest_id)}))
-                recipient["plus_ones"] = plus_ones
-                recipient["plus_ones_count"] = len(plus_ones)
-            else:
-                recipient["plus_ones"] = []
-                recipient["plus_ones_count"] = 0
         
         return {"sent": sent, "failed": failed}
     
@@ -321,10 +311,12 @@ class ResendEmailService:
     ) -> Dict[str, Any]:
         """Send notification email to root admin using task queue"""
         try:
-            from app.tasks.email_tasks import send_admin_notification
+            # Import the Celery task (aliased to avoid name clash with this method)
+            from app.tasks.email_tasks import send_admin_notification as send_admin_notification_task
+            from typing import Any, cast
 
-            # Queue the admin notification task
-            result = send_admin_notification.apply_async(
+            task = cast(Any, send_admin_notification_task)  # Cast so linters/mypy see apply_async
+            result = task.apply_async(
                 args=[subject, content, notification_type],
                 kwargs={"metadata": metadata or {}}
             )
@@ -336,7 +328,7 @@ class ResendEmailService:
             logger.error(f"Error queuing admin notification: {str(e)}")
             return {"success": False, "error": str(e)}
     
-    def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str, plus_ones: list = None) -> str:
+    def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str, plus_ones: Optional[List[Dict[str, Any]]] = None) -> str:
         """Generate default RSVP invitation HTML"""
         return f"""
         <!DOCTYPE html>
@@ -401,7 +393,7 @@ class ResendEmailService:
         </html>
         """
     
-    def _generate_plus_ones_section(self, plus_ones: list = None) -> str:
+    def _generate_plus_ones_section(self, plus_ones: Optional[List[Dict[str, Any]]] = None) -> str:
         """Generate HTML section for plus-ones information"""
         if not plus_ones:
             return ""
@@ -418,7 +410,7 @@ class ResendEmailService:
         
         return plus_ones_html
     
-    def _generate_default_reminder_html(self, guest_name: str, event_type: str, event_date: str, event_details: dict, couple_names: str, plus_ones: list = None) -> str:
+    def _generate_default_reminder_html(self, guest_name: str, event_type: str, event_date: str, event_details: dict, couple_names: str, plus_ones: Optional[List[Dict[str, Any]]] = None) -> str:
         """Generate default reminder HTML"""
         event_title = event_type.replace('_', ' ').title()
         venue_name = event_details.get('venue_name', 'Venue details coming soon')

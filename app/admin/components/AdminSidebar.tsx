@@ -1,11 +1,11 @@
 'use client';
 
-import { useAdmin } from '@/contexts/AdminContext';
-import { useDarkMode } from '@/contexts/DarkModeContext';
-import { usePathname } from 'next/navigation';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
-import { navigationAttrs, authAutomationAttrs, createAutomationAttrs } from '@/utils/automation-attrs';
+import { usePathname } from 'next/navigation';
+import { useAdmin } from '@/contexts/AdminContext';
+import { SECURE_ROUTES } from '@/admin/config/routePolicy';
+import { normalizeRole } from '@/admin/utils/role';
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -14,181 +14,124 @@ interface AdminSidebarProps {
 
 export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
   const { logout, userProfile, fetchUserProfile, isAuthenticated, token } = useAdmin();
-  const { isDarkMode, toggleDarkMode } = useDarkMode();
   const pathname = usePathname();
-  const isLoginPage = pathname === '/admin/login';
+  const [isDarkMode, setIsDarkMode] = React.useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('theme');
+      if (stored === 'dark') return true;
+      if (stored === 'light') return false;
+      return document.documentElement.classList.contains('dark') ||
+        window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
+  });
 
-  // Security: Fetch user profile if authenticated but profile missing
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        document.documentElement.classList.toggle('dark', next);
+        try { localStorage.setItem('theme', next ? 'dark' : 'light'); } catch {}
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem('theme');
+    if (stored === 'dark') {
+      document.documentElement.classList.add('dark');
+      setIsDarkMode(true);
+    } else if (stored === 'light') {
+      document.documentElement.classList.remove('dark');
+      setIsDarkMode(false);
+    }
+  }, []);
+
+  const isLoginPage = pathname === '/admin/login';
   useEffect(() => {
     if (!userProfile && isAuthenticated && token) {
-      fetchUserProfile();
+      fetchUserProfile().catch(() => {
+        // Silent failure: consider forcing logout if critical
+        logout();
+      });
     }
-  }, [userProfile, fetchUserProfile, isAuthenticated, token]);
+  }, [userProfile, fetchUserProfile, isAuthenticated, token, logout]);
 
-  // Security: Don't render sidebar on login page
-  if (isLoginPage) return null;
+  if (isLoginPage || !isAuthenticated) return null;
 
-  // Security: Role-based navigation links (PRESERVED from AdminHeader)
-  const getNavLinks = () => {
-    if (!userProfile) return [];
+  const role = normalizeRole(userProfile);
+  const navLinks = SECURE_ROUTES.filter(r => r.roles.includes(role as any));
 
-    const baseLinks = [
-      { href: '/admin', label: 'Dashboard', roles: ['ROOT_ADMIN', 'admin', 'wedding_planner', 'vendor'], icon: '🏠' }
-    ];
-
-    if (userProfile.is_root_admin) {
-      return [
-        ...baseLinks,
-        { href: '/admin/saas', label: 'Platform Management', roles: ['ROOT_ADMIN'], icon: '⚙️' },
-        { href: '/admin/metrics', label: 'Platform Metrics', roles: ['ROOT_ADMIN'], icon: '📊' },
-        { href: '/admin/notifications', label: 'Notifications', roles: ['ROOT_ADMIN'], icon: '🔔' },
-        { href: '/admin/support', label: 'Support', roles: ['ROOT_ADMIN'], icon: '🎧' },
-      ];
-    } else if (userProfile.is_wedding_planner) {
-      return [
-        ...baseLinks,
-        { href: '/admin/weddings', label: 'My Weddings', roles: ['wedding_planner'], icon: '💍' },
-        { href: '/admin/budget', label: 'Budget', roles: ['wedding_planner'], icon: '💰' },
-        { href: '/admin/forms', label: 'Forms', roles: ['wedding_planner'], icon: '📝' },
-        { href: '/admin/gallery/upload', label: 'Gallery', roles: ['wedding_planner'], icon: '📸' },
-        { href: '/admin/guests', label: 'Guests', roles: ['wedding_planner'], icon: '👥' },
-        { href: '/admin/reminders', label: 'Reminders', roles: ['wedding_planner'], icon: '⏰' },
-        { href: '/admin/profile', label: 'Profile', roles: ['wedding_planner'], icon: '👤' },
-      ];
-    } else if (userProfile.is_vendor) {
-      return [
-        ...baseLinks,
-        { href: '/admin/vendor', label: 'My Tasks', roles: ['vendor'], icon: '📋' },
-      ];
-    }
-
-    return baseLinks;
-  };
-
-  const navLinks = getNavLinks();
-
-  // Security: Secure logout function (PRESERVED)
   const handleLogout = () => {
     logout();
-    onClose(); // Auto-close sidebar
-  };
-
-  // Auto-close sidebar when navigation item is clicked
-  const handleNavClick = () => {
     onClose();
   };
 
-  // Get role-based title
-  const getRoleTitle = () => {
-    if (!userProfile) return 'Admin Panel';
-    if (userProfile.is_root_admin) return 'Admin Panel';
-    if (userProfile.is_wedding_planner) return 'Wedding Planner';
-    if (userProfile.is_vendor) return 'Vendor Portal';
-    return 'Admin Panel';
-  };
+  const roleLabel = (() => {
+    switch (role) {
+      case 'ROOT_ADMIN': return 'Root Admin';
+      case 'WEDDING_PLANNER': return 'Planner';
+      case 'VENDOR': return 'Vendor';
+      default: return 'User';
+    }
+  })();
 
   return (
-    <>
-      {/* Backdrop */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+    <aside
+      className={`fixed top-0 left-0 h-full w-64 z-40 transform transition-transform
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        bg-neutral-900/90 backdrop-blur-md border-r border-neutral-700 text-neutral-100`}
+    >
+      <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-700">
+        <div>
+          <h1 className="text-lg font-semibold">Admin Console</h1>
+          <p className="text-xs text-neutral-400">{roleLabel}</p>
+        </div>
+        <button
           onClick={onClose}
-        />
-      )}
+          className="text-neutral-400 hover:text-neutral-200"
+          aria-label="Close sidebar"
+        >
+          ✕
+        </button>
+      </div>
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed top-0 left-0 h-full w-64 bg-white dark:bg-gray-800 shadow-xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col
-        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        lg:static lg:h-screen lg:shadow-lg lg:overflow-y-auto
-      `}>
-        {/* Header */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-heading text-xl text-wedding-rose dark:text-wedding-rose">
-                {getRoleTitle()}
-              </h1>
-              {userProfile && (
-                <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                  {userProfile.user_data?.company_name || userProfile.email}
-                </p>
-              )}
-            </div>
-            {/* Close button for mobile */}
-            <button
-              {...createAutomationAttrs({
-                entity: 'sidebar',
-                action: 'close',
-                context: 'admin'
-              })}
+      <nav className="mt-4 px-2 space-y-1">
+        {navLinks.map(link => {
+          const active = pathname === link.path || pathname.startsWith(link.path + '/');
+          return (
+            <Link
+              key={link.path}
+              href={link.path}
               onClick={onClose}
-              className="lg:hidden p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-              aria-label="Close sidebar"
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm
+              ${active
+                ? 'bg-neutral-700 text-white'
+                : 'text-neutral-300 hover:bg-neutral-800 hover:text-white'}`}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
+              <span>{link.icon}</span>
+              <span>{link.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-2">
-          {navLinks.map((link) => {
-            const isActive = pathname === link.href;
-            return (
-              <Link
-                {...navigationAttrs(link.href, 'sidebar')}
-                key={link.href}
-                href={link.href}
-                onClick={handleNavClick}
-                className={`
-                  flex items-center gap-3 px-4 py-3 rounded-lg transition font-medium
-                  ${isActive
-                    ? 'bg-wedding-rose text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }
-                `}
-                data-active={isActive.toString()}
-                data-role={userProfile?.role}
-              >
-                <span className="text-lg">{link.icon}</span>
-                <span>{link.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Footer with Settings & Logout */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
-          {/* Dark Mode Toggle */}
-          <button
-            {...createAutomationAttrs({
-              entity: 'theme',
-              action: 'toggle',
-              context: 'sidebar',
-              state: isDarkMode ? 'dark' : 'light'
-            })}
-            onClick={toggleDarkMode}
-            className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition font-medium"
-          >
-            <span className="text-lg">{isDarkMode ? '☀️' : '🌙'}</span>
-            <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
-          </button>
-
-          {/* Logout Button */}
-          <button
-            {...authAutomationAttrs('logout', 'ready', userProfile?.role)}
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition font-medium"
-          >
-            <span className="text-lg">🚪</span>
-            <span>Logout</span>
-          </button>
-        </div>
-      </aside>
-    </>
+      <div className="mt-auto absolute bottom-0 w-full border-t border-neutral-700 p-4 space-y-3">
+        <button
+          onClick={toggleDarkMode}
+          className="w-full text-left text-sm px-3 py-2 rounded bg-neutral-800 hover:bg-neutral-700"
+        >
+          {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+        </button>
+        <button
+          onClick={handleLogout}
+            className="w-full text-left text-sm px-3 py-2 rounded bg-red-600/80 hover:bg-red-600 text-white"
+        >
+          Logout
+        </button>
+      </div>
+    </aside>
   );
 }

@@ -5,6 +5,7 @@ import json
 import pickle
 from typing import Any, Optional, Union
 import logging
+import inspect
 from datetime import timedelta
 import redis.asyncio as redis
 from app.core.settings import settings
@@ -263,26 +264,26 @@ class CacheManager:
         """
         # Try to get from cache first
         value = await self.get(key)
-        
         if value is not None:
             return value
-        
+
         # Cache miss - compute value
         try:
             if callable(func):
-                if hasattr(func, '__call__') and hasattr(func, '__await__'):
-                    # Async function
+                if inspect.iscoroutinefunction(func):
                     value = await func(*args, **kwargs)
                 else:
-                    # Sync function
-                    value = func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    if inspect.isawaitable(result):
+                        value = await result
+                    else:
+                        value = result
             else:
                 value = func
-            
+
             # Cache the computed value
             await self.set(key, value, expire)
             return value
-            
         except Exception as e:
             logger.error(f"Function call failed in get_or_set for key {key}: {str(e)}")
             return None

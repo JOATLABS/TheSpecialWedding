@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { AdminGuard } from '@/admin/components/AdminGuard';
 
 interface UserProfile {
   email: string;
@@ -113,6 +114,12 @@ export default function AdminDashboardPage() {
     );
   }
 
-  // This should not render as we redirect immediately
-  return null;
+  return (
+    <AdminGuard requiredRoles={['ROOT_ADMIN','WEDDING_PLANNER','VENDOR']}>
+      <div className="p-6">
+        <h2 className="text-xl font-semibold">Dashboard</h2>
+        {/* content */}
+      </div>
+    </AdminGuard>
+  );
 }

@@ -2,7 +2,7 @@
 
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, cast
 from celery import Task
 from celery.exceptions import MaxRetriesExceededError
 from app.core.celery_app import celery_app
@@ -116,6 +116,8 @@ def send_email_notification(
 
         raise self.retry(exc=e, countdown=countdown)
 
+# Explicit cast so static type checkers recognize this as a Celery Task
+send_email_notification = cast(Task, send_email_notification)
 
 @celery_app.task(
     base=EmailTask,
@@ -214,7 +216,8 @@ def send_admin_notification(
                 html_content = _generate_general_admin_email(subject, content, metadata or {}, base_url, include_link)
 
         # Send email with template tracking
-        result = send_email_notification.apply_async(
+        # Cast to Celery Task so static type checkers (e.g., pyright/mypy) recognize apply_async
+        result = cast(Task, send_email_notification).apply_async(
             args=[
                 root_admin_email,
                 final_subject,
