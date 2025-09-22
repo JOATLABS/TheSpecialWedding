@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import VendorQuoteCard from '@/components/budget/VendorQuoteCard';
 import { budgetApi } from '@/services/budgetApi';
-import type { VendorQuote, CreateVendorQuoteRequest } from '@/types/budget';
+import type { VendorQuote, CreateVendorQuoteRequest, QuoteDetails, QuoteDetailItem } from '@/types/budget';
 
 interface Wedding {
   id?: string;
@@ -48,13 +48,7 @@ export default function VendorQuotesPage() {
 
   // Modal state
   const [showQuoteModal, setShowQuoteModal] = useState(false);
-  interface QuoteDetailItem {
-    label?: string;
-    value?: string | number;
-    unit?: string;
-    notes?: string;
-  }
-  type QuoteDetails = Record<string, QuoteDetailItem>;
+  // Using shared QuoteDetailItem[] via QuoteDetails type
 
   const [quoteForm, setQuoteForm] = useState({
     vendor_name: '',
@@ -62,7 +56,7 @@ export default function VendorQuotesPage() {
     vendor_phone: '',
     service_category: 'photography',
     quote_amount: 0,
-    quote_details: {} as QuoteDetails,
+  quote_details: [] as QuoteDetails,
     includes: [] as string[],
     excludes: [] as string[],
     terms_conditions: '',
@@ -187,7 +181,7 @@ export default function VendorQuotesPage() {
       vendor_phone: '',
       service_category: 'photography',
       quote_amount: 0,
-      quote_details: {},
+  quote_details: [],
       includes: [],
       excludes: [],
       terms_conditions: '',

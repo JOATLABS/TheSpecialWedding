@@ -2,47 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-
-type FormFieldType =
-	| 'text'
-	| 'email'
-	| 'phone'
-	| 'number'
-	| 'date'
-	| 'textarea'
-	| 'select'
-	| 'radio'
-	| 'checkbox'
-	| 'rating'
-	| 'scale';
-
-export type FormResponseValue = string | number | string[] | null;
-
-interface FormField {
- id: string;
- label: string;
- type: FormFieldType;
- placeholder?: string;
- required: boolean;
- description?: string;
- options: string[];
- order: number;
-}
-
-interface FormSettings {
- title: string;
- description?: string;
- submit_button_text: string;
- success_message: string;
- collect_email: boolean;
-}
-
-interface Form {
- id: string;
- settings: FormSettings;
- fields: FormField[];
- is_active: boolean;
-}
+import { PublicForm as Form, FormField, FormResponseValue } from '@/types/forms';
 
 export default function PublicFormPage() {
  const params = useParams();
@@ -208,7 +168,7 @@ export default function PublicFormPage() {
  {...commonProps}
  >
  <option value="">Select an option...</option>
- {field.options.map((option, index) => (
+ {(field.options || []).map((option, index) => (
  <option key={index} value={option}>{option}</option>
  ))}
  </select>
@@ -217,7 +177,7 @@ export default function PublicFormPage() {
  case 'radio':
  return (
  <div className="space-y-3">
- {field.options.map((option, index) => (
+ {(field.options || []).map((option, index) => (
  <label key={index} className="flex items-center">
  <input
  id={`${field.id}-radio-${index}`}
@@ -236,7 +196,7 @@ export default function PublicFormPage() {
  case 'checkbox':
  return (
  <div className="space-y-3">
- {field.options.map((option, index) => (
+ {(field.options || []).map((option, index) => (
  <label key={index} className="flex items-center">
  <input
  id={`${field.id}-checkbox-${index}`}

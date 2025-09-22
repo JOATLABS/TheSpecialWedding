@@ -1,4 +1,13 @@
 // Budget system type definitions
+export interface QuoteDetailItem {
+  key: string;              // identifier for the detail (e.g., 'photography_hours')
+  label: string;            // human-readable label
+  value: string | number;   // primary value
+  unit?: string;            // optional unit (e.g., 'hours', 'NGN')
+  notes?: string;           // additional notes
+}
+
+export type QuoteDetails = QuoteDetailItem[];
 export interface BudgetSubcategory {
   id: string;
   name: string;
@@ -35,7 +44,7 @@ export interface VendorQuote {
   vendor_phone?: string;
   service_category: string;
   quote_amount: number;
-  quote_details: Record<string, any>;
+  quote_details: QuoteDetails;
   includes: string[];
   excludes: string[];
   terms_conditions?: string;
@@ -139,7 +148,7 @@ export interface CreateVendorQuoteRequest {
   vendor_phone?: string;
   service_category: string;
   quote_amount: number;
-  quote_details?: Record<string, any>;
+  quote_details?: QuoteDetails;
   includes?: string[];
   excludes?: string[];
   terms_conditions?: string;

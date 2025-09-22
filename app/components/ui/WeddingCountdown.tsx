@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { cn } from '@/utils/cn';
+import type { ThemeConfig as WeddingThemeConfig } from '@/types/wedding';
 
 interface CountdownConfig {
   enabled: boolean;
@@ -13,12 +14,11 @@ interface CountdownConfig {
   position: 'hero' | 'header' | 'floating';
 }
 
-interface ThemeConfig {
+type ThemeConfig = WeddingThemeConfig & {
   primaryColor?: string;
   secondaryColor?: string;
   fontFamily?: string;
-  // Extend with other theme tokens actually supported by the landing pages.
-}
+};
 
 interface WeddingCountdownProps {
   weddingDate: string;

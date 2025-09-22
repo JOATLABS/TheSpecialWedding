@@ -251,7 +251,7 @@ export default function WeddingDetailsPage() {
  </label>
  <select
  value={activeTab}
- onChange={(e) => setActiveTab(e.target.value as any)}
+ onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-wedding-gold"
  >
  <option value="events">Event Details</option>
@@ -317,7 +317,7 @@ export default function WeddingDetailsPage() {
  </label>
  <select
  value={event.type}
- onChange={(e) => updateEvent(index, { ...event, type: e.target.value as any })}
+ onChange={(e) => updateEvent(index, { ...event, type: e.target.value as typeof event.type })}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg"
  >
  <option value="traditional">Traditional</option>

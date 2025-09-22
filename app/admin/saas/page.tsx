@@ -697,7 +697,7 @@ const SaasAdminDashboard = () => {
  custom: { currentTab: activeTab, availableTabs: 'overview,plans,content,theme,planners' }
  })}
  value={activeTab}
- onChange={(e) => setActiveTab(e.target.value as any)}
+ onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
  >
  <option value="overview">Overview</option>
@@ -726,7 +726,7 @@ const SaasAdminDashboard = () => {
  custom: { tabKey: tab.key, tabLabel: tab.label }
  })}
  key={tab.key}
- onClick={() => setActiveTab(tab.key as any)}
+ onClick={() => setActiveTab(tab.key as typeof activeTab)}
  className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
  activeTab === tab.key
  ? 'border-blue-500 text-blue-600 dark:text-blue-400'

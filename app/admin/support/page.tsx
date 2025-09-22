@@ -197,7 +197,7 @@ export default function SupportPage() {
         <div className="sm:hidden py-4">
           <select
             value={activeTab}
-            onChange={(e) => setActiveTab(e.target.value as any)}
+            onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
             className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-wedding-rose focus:border-wedding-rose text-sm font-medium"
           >
             <option value="tickets">Support Tickets</option>
@@ -215,7 +215,7 @@ export default function SupportPage() {
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
+              onClick={() => setActiveTab(tab.key as typeof activeTab)}
               className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                 activeTab === tab.key
                   ? 'border-wedding-rose text-wedding-rose'

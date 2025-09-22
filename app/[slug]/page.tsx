@@ -58,13 +58,16 @@ export default function WeddingLandingPage() {
  }
  }, [contextWedding]);
 
- const handleGuestVerified = (weddingData: Wedding, guestData?: VerifiedGuest) => {
- setWedding(weddingData);
- setGuest(guestData ?? null);
- setAccessGranted(true);
- 
- // Fetch gallery for verified users
- fetchGallery(weddingData, guestData);
+ const handleGuestVerified = (weddingData: Wedding | { couple_names?: string }, guestData?: VerifiedGuest) => {
+	 if ('id' in weddingData) {
+		 setWedding(weddingData);
+		 setGuest(guestData ?? null);
+		 setAccessGranted(true);
+		 fetchGallery(weddingData, guestData);
+	 } else {
+		 // Minimal object (public privacy fallback) – just grant access
+		 setAccessGranted(true);
+	 }
  };
 
  const fetchGallery = async (weddingData?: Wedding | null, guestData?: VerifiedGuest | null) => {

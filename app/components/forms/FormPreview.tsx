@@ -1,57 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
+import { FormField, FormResponseValue, PreviewForm as Form } from '@/types/forms';
 
-type FormFieldType =
-	| 'text'
-	| 'email'
-	| 'phone'
-	| 'number'
-	| 'date'
-	| 'textarea'
-	| 'select'
-	| 'radio'
-	| 'checkbox'
-	| 'rating'
-	| 'scale';
+// Allow backward compatibility: accept any field.type string at runtime, cast to union when rendering
 
-// Value types supported by the form inputs above
-// - text-like fields -> string
-// - number/scale/rating -> number
-// - checkbox -> string[] (multi-select)
-// - radio/select/date -> string
-// Nullable to represent untouched/unset state distinctly from empty string/array
-export type FormResponseValue = string | number | string[] | null;
-
-interface FormField {
- id: string;
- label: string;
- type: FormFieldType;
- placeholder?: string;
- required: boolean;
- description?: string;
- options?: string[];
- order: number;
-}
-
-interface FormSettings {
- title: string;
- description?: string;
- submit_button_text: string;
- success_message: string;
- is_public: boolean;
-}
-
-interface Form {
- id: string;
- name: string;
- settings: FormSettings;
- fields: FormField[];
- is_active: boolean;
-}
+// (Settings & form shape now imported via PreviewForm)
 
 interface FormPreviewProps {
- form: Form;
+ form: Form | { id: string; name: string; fields: Array<Omit<FormField, 'type'> & { type: string }>; settings: Form['settings']; is_active: boolean };
 }
 
 export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
@@ -323,7 +280,7 @@ export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
  {field.description && (
  <p className="text-sm text-gray-500">{field.description}</p>
  )}
- {renderField(field)}
+ {renderField(field as FormField)}
  </div>
  ))}
 
