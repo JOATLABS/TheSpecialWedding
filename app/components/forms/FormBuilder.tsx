@@ -193,7 +193,7 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
  {/* Form Header */}
  <div className="text-center mb-8">
- <h1 className="text-3xl font-bold text-gray-900 mb-4">
+ <h1 className="text-3xl text-gray-900 mb-4">
  {form.settings.title}
  </h1>
  {form.settings.description && (

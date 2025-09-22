@@ -142,7 +142,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                   {/* Left side - all existing information stays exactly the same */}
                   <div className="space-y-2 flex-1">
                     <h3 
-                      className="text-xl sm:text-2xl font-bold break-words"
+                      className="text-xl sm:text-2xl break-words"
                       style={{ color: theme?.primary_color || '#1e3a5f' }}
                     >
                       {selectedEvent.details?.venue_name || formatEventType(selectedEvent.type)}
@@ -178,7 +178,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                   {selectedEvent.details?.attire && (
                     <div className="flex-shrink-0 sm:ml-6 flex items-center">
                       <div className="sm:text-right">
-                        <p className="text-xs sm:text-sm font-semibold text-gray-600 mb-1">Dress Code</p>
+                        <p className="text-xs sm:text-sm text-gray-600 mb-1">Dress Code</p>
                         <p className="text-base sm:text-lg font-medium" style={{ color: theme?.primary_color || '#1e3a5f' }}>
                           {selectedEvent.details.attire}
                         </p>

@@ -32,7 +32,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ coupleName, date }) =>
   return (
     <section className="flex flex-col items-center justify-center text-white text-center py-16 sm:py-24 md:py-32 px-4">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold drop-shadow-lg leading-tight">
+  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl drop-shadow-lg leading-tight">
           {coupleName}
         </h1>
         <div className="w-16 sm:w-24 h-1 bg-white mx-auto mt-4 mb-6 drop-shadow-sm"></div>

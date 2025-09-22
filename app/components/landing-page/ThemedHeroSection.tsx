@@ -65,7 +65,7 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding })
         theme={theme}
       >
         <h1 
-          className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight"
+          className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl leading-tight"
           style={{ color: theme?.primary_color || '#1e3a5f' }}
         >
           {wedding.couple_names}

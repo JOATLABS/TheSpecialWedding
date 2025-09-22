@@ -48,7 +48,7 @@ export function SmsOptInForm({
   if (showConfirmation) {
     return (
       <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-green-800 mb-2">
+  <h3 className="text-lg text-green-800 mb-2">
           Successfully Subscribed!
         </h3>
         <p className="text-green-700">
@@ -65,7 +65,7 @@ export function SmsOptInForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold mb-4">SMS Notifications</h3>
+  <h3 className="text-lg mb-4">SMS Notifications</h3>
         
         <div className="mb-4">
           <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
@@ -91,7 +91,7 @@ export function SmsOptInForm({
               className="mt-1 mr-3 h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
             />
             <div>
-              <span className="font-medium">Wedding Reminders & Updates</span>
+              <span>Wedding Reminders & Updates</span>
               <p className="text-sm text-gray-600">
                 Receive important reminders and updates from JOAT Labs for {weddingName}&apos;s wedding events
               </p>
@@ -106,7 +106,7 @@ export function SmsOptInForm({
               className="mt-1 mr-3 h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
             />
             <div>
-              <span className="font-medium">Special Offers (Optional)</span>
+              <span>Special Offers (Optional)</span>
               <p className="text-sm text-gray-600">
                 Receive special offers and promotional messages from wedding planner for {weddingName}
               </p>
@@ -116,7 +116,7 @@ export function SmsOptInForm({
 
         <div className="mt-6 p-4 bg-gray-50 rounded-md">
           <p className="text-xs text-gray-600 leading-relaxed">
-            <span className="font-semibold">IMPORTANT:</span> You are subscribing to wedding reminders from JOAT Labs. 
+            <span>IMPORTANT:</span> You are subscribing to wedding reminders from JOAT Labs. 
             Reply STOP to opt out. Reply HELP for help. Standard message and data rates may apply. 
             Message frequency may vary.
           </p>

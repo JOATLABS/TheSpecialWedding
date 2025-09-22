@@ -227,7 +227,7 @@ export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
  <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 max-w-md w-full text-center">
  <div className="text-4xl mb-4"></div>
- <h2 className="text-xl font-semibold text-gray-900 mb-2">Thank You!</h2>
+ <h2 className="text-xl text-gray-900 mb-2">Thank You!</h2>
  <p className="text-gray-600 mb-6">{form.settings.success_message}</p>
  <button
  onClick={() => {
@@ -259,7 +259,7 @@ export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
 
  {/* Form Header */}
  <div className="text-center mb-8">
- <h1 className="text-3xl font-bold text-gray-900 mb-4">
+ <h1 className="text-3xl text-gray-900 mb-4">
  {form.settings.title}
  </h1>
  {form.settings.description && (

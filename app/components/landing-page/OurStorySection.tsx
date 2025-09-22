@@ -73,7 +73,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
         {/* Our Story */}
         {wedding.our_story && wedding.our_story.text && (
           <GlassCard className="p-6 sm:p-8 mb-6" depth="near" theme={theme}>
-            <h2 className="text-3xl font-bold text-center mb-6" style={{ color: theme?.primary_color || '#1e3a5f' }}>
+            <h2 className="text-3xl text-center mb-6" style={{ color: theme?.primary_color || '#1e3a5f' }}>
               Our Story
             </h2>
             
@@ -100,7 +100,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
         {/* Wedding Party */}
         {wedding.wedding_party && wedding.wedding_party.length > 0 && (
           <GlassCard className="p-6 sm:p-8" depth="near" theme={theme}>
-            <h2 className="text-3xl font-bold text-center mb-8" style={{ color: theme?.primary_color || '#1e3a5f' }}>
+            <h2 className="text-3xl text-center mb-8" style={{ color: theme?.primary_color || '#1e3a5f' }}>
               Wedding Party
             </h2>
             
@@ -108,7 +108,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
               {/* Bride's Side */}
               {bridesSide.length > 0 && (
                 <div>
-                  <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
+                  <h3 className="text-xl text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
                     Bride's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
@@ -123,13 +123,13 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
-                              <span className="text-3xl font-bold" style={{ color: theme?.accent_color || '#c8847e' }}>
+                              <span className="text-3xl" style={{ color: theme?.accent_color || '#c8847e' }}>
                                 {member.name.charAt(0)}
                               </span>
                             </div>
                           )}
                         </div>
-                        <h4 className="font-semibold text-gray-800">{member.name}</h4>
+                        <h4 className="text-gray-800">{member.name}</h4>
                         <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
                       </div>
                     ))}
@@ -140,7 +140,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
               {/* Groom's Side */}
               {groomsSide.length > 0 && (
                 <div>
-                  <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
+                  <h3 className="text-xl text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
                     Groom's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
@@ -155,13 +155,13 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
-                              <span className="text-3xl font-bold" style={{ color: theme?.primary_color || '#1e3a5f' }}>
+                              <span className="text-3xl" style={{ color: theme?.primary_color || '#1e3a5f' }}>
                                 {member.name.charAt(0)}
                               </span>
                             </div>
                           )}
                         </div>
-                        <h4 className="font-semibold text-gray-800">{member.name}</h4>
+                        <h4 className="text-gray-800">{member.name}</h4>
                         <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
                       </div>
                     ))}

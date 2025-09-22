@@ -99,7 +99,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
       <div className="max-w-6xl mx-auto">
         {/* Section Header */}
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl md:text-4xl text-white mb-4">
             Simple, Transparent Pricing
           </h2>
           <p className="text-xl text-gray-100 mb-8 max-w-3xl mx-auto">
@@ -108,7 +108,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
           
           {/* Pricing Toggle */}
           <div className="flex items-center justify-center mb-8">
-            <span className={`mr-3 transition-colors ${!isYearly ? 'text-white font-semibold' : 'text-gray-300'}`}>
+            <span className={`mr-3 transition-colors ${!isYearly ? 'text-white' : 'text-gray-300'}`}>
               Monthly
             </span>
             <button
