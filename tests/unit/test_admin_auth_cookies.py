@@ -27,10 +27,9 @@ def test_login_cookie_security(mock_get_settings, client, env, expected_secure):
     mock_get_settings.return_value = DummySettings()
 
     # Mock auth service login
-    with patch("app.api.admin_auth.auth_service") as mock_auth_service:
-        mock_auth_service.login_and_get_token.return_value = {"access_token": "abc", "token_type": "bearer"}
+    with patch("app.api.admin_auth.AuthService.login_and_get_token", return_value={"access_token": "abc", "token_type": "bearer"}):
         payload = {"email": "admin@example.com", "password": "pass"}
-        response = client.post("/token", json=payload)
+        response = client.post("/admin/token", json=payload)
 
     assert response.status_code == 200
     # Extract set-cookie headers
@@ -47,19 +46,19 @@ def test_login_cookie_security(mock_get_settings, client, env, expected_secure):
         assert "secure" not in token_cookie.lower()
     # HttpOnly must always be present on admin_token
     assert "HttpOnly" in token_cookie
-    # SameSite=Strict on token cookie
-    assert "SameSite=Strict" in token_cookie
+    # SameSite strict (case-insensitive match)
+    assert "samesite=strict" in token_cookie.lower()
 
 @patch("app.api.admin_auth.get_settings")
-@patch("app.api.admin_auth.auth_service")
-def test_logout_clears_cookies(mock_auth_service, mock_get_settings, client):
+@patch("app.api.admin_auth.AuthService.login_and_get_token", return_value={"access_token": "abc", "token_type": "bearer"})
+def test_logout_clears_cookies(mock_login, mock_get_settings, client):
     class DummySettings:
         def is_production(self):
             return False
     mock_get_settings.return_value = DummySettings()
-    mock_auth_service.login_and_get_token.return_value = {"access_token": "abc", "token_type": "bearer"}
-    client.post("/token", json={"email": "admin@example.com", "password": "pass"})
-    resp = client.post("/logout")
+    # login method already patched above
+    client.post("/admin/token", json={"email": "admin@example.com", "password": "pass"})
+    resp = client.post("/admin/logout")
     assert resp.status_code == 200
     # Deleted cookies should have Max-Age=0 or empty value
     set_cookie_headers = resp.headers.getlist("set-cookie") if hasattr(resp.headers, "getlist") else [resp.headers.get("set-cookie", "")]

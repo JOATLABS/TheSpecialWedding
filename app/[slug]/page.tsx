@@ -2,6 +2,7 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { WeddingContext } from '@/contexts/WeddingContext';
+import { Wedding } from '@/types/wedding';
 import { LandingLayout } from '@/components/landing-page/LandingLayout';
 import { GalleryImage } from '@/types/landing';
 import GuestVerificationModal from '@/components/GuestVerificationModal';
@@ -9,13 +10,24 @@ import GuestVerificationModal from '@/components/GuestVerificationModal';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
 const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
+// Guest subset of fields used in this page
+interface VerifiedGuest {
+	id?: string;
+	name?: string;
+	email?: string;
+	phone?: string;
+	token?: string; // verification token for gallery access
+}
+
+interface GalleryResponseItem { key: string; url: string }
+
 export default function WeddingLandingPage() {
  const contextWedding = useContext(WeddingContext);
  const params = useParams();
  const slug = params.slug as string;
  
- const [wedding, setWedding] = useState<any>(null);
- const [guest, setGuest] = useState<any>(null);
+ const [wedding, setWedding] = useState<Wedding | null>(null);
+ const [guest, setGuest] = useState<VerifiedGuest | null>(null);
  const [images, setImages] = useState<GalleryImage[]>([]);
  const [error, setError] = useState<string | null>(null);
  const [accessGranted, setAccessGranted] = useState(false);
@@ -34,16 +46,16 @@ export default function WeddingLandingPage() {
  }
  }, [contextWedding]);
 
- const handleGuestVerified = (weddingData: any, guestData?: any) => {
+ const handleGuestVerified = (weddingData: Wedding, guestData?: VerifiedGuest) => {
  setWedding(weddingData);
- setGuest(guestData);
+ setGuest(guestData ?? null);
  setAccessGranted(true);
  
  // Fetch gallery for verified users
  fetchGallery(weddingData, guestData);
  };
 
- const fetchGallery = async (weddingData?: any, guestData?: any) => {
+ const fetchGallery = async (weddingData?: Wedding | null, guestData?: VerifiedGuest | null) => {
  if (!slug) return;
  
  const targetWedding = weddingData || wedding;
@@ -74,14 +86,20 @@ export default function WeddingLandingPage() {
  });
 
  if (res.ok) {
- const data = await res.json();
- setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
+ const data: unknown = await res.json();
+ if (Array.isArray(data)) {
+	 const mapped = data.filter((img: any): img is GalleryResponseItem => img && typeof img.key === 'string' && typeof img.url === 'string')
+										 .map(img => ({ key: img.key, url: img.url }));
+	 setImages(mapped);
+ } else {
+	 setImages([]);
+ }
  } else {
  // If gallery fails, don't show error - just continue without images
  console.warn('Gallery access failed, continuing without images');
  setImages([]);
  }
- } catch (err: any) {
+ } catch (err) {
  console.warn('Gallery could not be loaded:', err);
  setImages([]); // Continue without gallery instead of showing error
  }

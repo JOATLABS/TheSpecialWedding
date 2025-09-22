@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 router = APIRouter()
 
 auth_service = AuthService()
-settings = get_settings()
 
 @router.options("/token", tags=["Auth"])
 def login_options():
@@ -25,6 +24,8 @@ def login_for_access_token(credentials: AdminLoginModel, response: Response):
     # TWO-COOKIE PATTERN for secure authentication:
 
     # 1. Set httpOnly cookie for the actual token (secure, not readable by JS)
+    # Fetch settings at runtime to respect patched values in tests and dynamic env changes
+    settings = get_settings()
     secure_flag = settings.is_production()
     # Use Strict for auth token cookie to reduce CSRF risk (frontend flows should handle redirects/forms appropriately)
     response.set_cookie(
