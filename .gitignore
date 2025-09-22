@@ -19,8 +19,6 @@ CLAUDE.md
 *.cpython-*.pyc
 *.csv
 # CSV files
-docs/
-# Documentation
 .env
 # Environment variables
 .env.local
@@ -77,3 +75,4 @@ scripts/validate_playwright_migration.py
 scripts/add_last_login_field.py
 tests/debug/debug_auth_flow.py
 tests/debug/debug_form_delete.py
+docs/architecture/Application_Architecture_Review.txt

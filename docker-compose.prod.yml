@@ -1,0 +1,75 @@
+# Production-specific Docker Compose configuration
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  mongo:
+    restart: always
+    # IMPORTANT: Never expose MongoDB port in production!
+    ports: []
+    networks:
+      - backend-network
+
+  redis:
+    restart: always
+    # Don't expose Redis to the internet
+    ports: []
+    networks:
+      - backend-network
+
+  api:
+    restart: always
+    ports:
+      - "127.0.0.1:8000:8000"  # Only listen on localhost (use nginx reverse proxy)
+    environment:
+      API_ENV: production
+      DEBUG: "false"
+      PYTHONPATH: /app
+      MONGO_URI: mongodb://mongo:27017
+      REDIS_HOST: redis
+    # Remove volume mounts in production (use built image)
+    volumes: []
+    # Production command without --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  celery-worker:
+    restart: always
+    environment:
+      API_ENV: production
+      DEBUG: "false"
+      PYTHONPATH: /app
+      MONGO_URI: mongodb://mongo:27017
+      REDIS_HOST: redis
+    # Remove volume mounts in production
+    volumes: []
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.email_tasks inspect ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Remove admin-setup in production (run manually if needed)
+  admin-setup:
+    deploy:
+      replicas: 0  # Don't run automatically in production
+
+networks:
+  backend-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local

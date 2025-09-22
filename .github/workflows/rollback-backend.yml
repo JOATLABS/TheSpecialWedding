@@ -1,0 +1,59 @@
+name: Rollback Backend Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to rollback to'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Rollback notification
+        run: |
+          echo "🔄 Rolling back to commit: ${{ github.event.inputs.commit_sha }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+
+      - name: Execute rollback on droplet
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          port: ${{ secrets.DROPLET_PORT }}
+          script: |
+            # Navigate to project directory
+            cd /var/www/wedding-app || exit 1
+
+            # Log the rollback
+            echo "[$(date)] Rollback initiated to ${{ github.event.inputs.commit_sha }}" >> /var/log/wedding-app-rollback.log
+            echo "Reason: ${{ github.event.inputs.reason }}" >> /var/log/wedding-app-rollback.log
+
+            # Stop current containers
+            docker-compose down
+
+            # Checkout the specific commit
+            git fetch origin
+            git checkout ${{ github.event.inputs.commit_sha }}
+
+            # Rebuild with the older version
+            docker-compose build --no-cache api celery-worker admin-setup
+            docker-compose up -d
+
+            # Wait for services
+            sleep 10
+
+            # Verify rollback
+            echo "Rollback completed. Current commit:"
+            git rev-parse HEAD
+
+            # Show container status
+            docker-compose ps
