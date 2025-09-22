@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import BudgetSummaryCard from '@/components/budget/BudgetSummaryCard';
 import BudgetCategoryCard from '@/components/budget/BudgetCategoryCard';
 import PaymentModal from '@/components/budget/PaymentModal';
+import PaymentHistory from '@/components/budget/PaymentHistory';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { budgetApi } from '@/services/budgetApi';
 import { buildApiUrl } from '@/utils/api-base';
@@ -31,7 +32,8 @@ export default function BudgetDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [authLoading, setAuthLoading] = useState(true);
-  
+  const [activeTab, setActiveTab] = useState<'categories' | 'payments'>('categories');
+
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<BudgetCategory | null>(null);
@@ -366,57 +368,84 @@ export default function BudgetDashboard() {
         <BudgetSummaryCard summary={budgetSummary} />
       )}
 
-      {/* Categories Section */}
+      {/* Budget Content with Tabs */}
       {selectedWedding && (
         <>
-          {/* Controls */}
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <div className="flex flex-col sm:flex-row gap-4 items-center flex-1">
-              {/* Search */}
-              <input
-                type="text"
-                placeholder="Search categories..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-              />
-              
-              {/* Status Filter */}
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-              >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="partial">Partial</option>
-                <option value="paid">Paid</option>
-                <option value="overdue">Overdue</option>
-              </select>
-              
-              {/* Sort */}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-              >
-                <option value="priority">Sort by Priority</option>
-                <option value="name">Sort by Name</option>
-                <option value="budget">Sort by Budget</option>
-                <option value="spent">Sort by Spent</option>
-              </select>
-            </div>
-            
-            <Button 
-              onClick={() => setShowCategoryModal(true)}
-              className="whitespace-nowrap"
+          {/* Tab Navigation */}
+          <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab('categories')}
+              className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
+                activeTab === 'categories'
+                  ? 'bg-white dark:bg-gray-700 text-wedding-rose shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
             >
-              Add Category
-            </Button>
+              Budget Categories
+            </button>
+            <button
+              onClick={() => setActiveTab('payments')}
+              className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
+                activeTab === 'payments'
+                  ? 'bg-white dark:bg-gray-700 text-wedding-rose shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              Payment History
+            </button>
           </div>
 
-          {/* Categories Grid */}
-          {loading ? (
+          {/* Tab Content */}
+          {activeTab === 'categories' && (
+            <>
+              {/* Controls */}
+              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="flex flex-col sm:flex-row gap-4 items-center flex-1">
+                  {/* Search */}
+                  <input
+                    type="text"
+                    placeholder="Search categories..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  />
+
+                  {/* Status Filter */}
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="partial">Partial</option>
+                    <option value="paid">Paid</option>
+                    <option value="overdue">Overdue</option>
+                  </select>
+
+                  {/* Sort */}
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                    className="p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  >
+                    <option value="priority">Sort by Priority</option>
+                    <option value="name">Sort by Name</option>
+                    <option value="budget">Sort by Budget</option>
+                    <option value="spent">Sort by Spent</option>
+                  </select>
+                </div>
+
+                <Button
+                  onClick={() => setShowCategoryModal(true)}
+                  className="whitespace-nowrap"
+                >
+                  Add Category
+                </Button>
+              </div>
+
+              {/* Categories Grid */}
+              {loading ? (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
               <p className="mt-2 text-gray-600 dark:text-gray-300">Loading budget data...</p>
@@ -452,6 +481,17 @@ export default function BudgetDashboard() {
                 />
               ))}
             </div>
+              )}
+            </>
+          )}
+
+          {/* Payment History Tab */}
+          {activeTab === 'payments' && (
+            <PaymentHistory
+              weddingId={selectedWedding}
+              token={token || ''}
+              categories={categories.map(cat => ({ id: cat._id, name: cat.name }))}
+            />
           )}
         </>
       )}
