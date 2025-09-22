@@ -244,7 +244,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
         <div className="bg-gray-50 p-3 rounded text-xs text-gray-600 leading-relaxed">
           <p className="mb-2">
-            <strong>By checking the box above, you consent to receive automated text messages from {wedding.couple_names || 'this wedding'}.</strong>
+            <span className="font-semibold">By checking the box above, you consent to receive automated text messages from {wedding.couple_names || 'this wedding'}.</span>
           </p>
           <p className="mb-2">
             Reply STOP to opt out. Reply HELP for help. Standard message and data rates may apply. 
@@ -352,7 +352,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                 </div>
               </div>
             ))}
-            <p className="text-sm text-gray-600 italic flex items-start gap-1" aria-live="polite">
+            <p className="text-sm text-gray-600 flex items-start gap-1" aria-live="polite">
               <span aria-hidden="true" className="text-wedding-rose font-semibold select-none">Note:</span>
               <span>Leave blank if you&apos;re not bringing additional guests</span>
             </p>

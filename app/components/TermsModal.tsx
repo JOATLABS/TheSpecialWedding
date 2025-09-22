@@ -71,19 +71,19 @@ export default function TermsModal({ isOpen, onClose, weddingName = "JOAT Labs' 
                     <li>Important wedding-related announcements</li>
                   </ul>
                   <p>
-                    <strong>Message frequency:</strong> Message frequency may vary. You may receive up to 5 messages per month leading up to the wedding.
+                    <span className="font-semibold">Message frequency:</span> Message frequency may vary. You may receive up to 5 messages per month leading up to the wedding.
                   </p>
                   <p>
-                    <strong>Message and data rates:</strong> Standard message and data rates may apply based on your mobile carrier plan.
+                    <span className="font-semibold">Message and data rates:</span> Standard message and data rates may apply based on your mobile carrier plan.
                   </p>
                   <p>
-                    <strong>Opt-out:</strong> You can opt out at any time by replying STOP to any message. You will receive a confirmation of your opt-out.
+                    <span className="font-semibold">Opt-out:</span> You can opt out at any time by replying STOP to any message. You will receive a confirmation of your opt-out.
                   </p>
                   <p>
-                    <strong>Help:</strong> For help, reply HELP to any message or contact us at (319) 529-6088.
+                    <span className="font-semibold">Help:</span> For help, reply HELP to any message or contact us at (319) 529-6088.
                   </p>
                   <p>
-                    <strong>Carriers:</strong> Messages are supported by major carriers including AT&T, Verizon, T-Mobile, Sprint, and others.
+                    <span className="font-semibold">Carriers:</span> Messages are supported by major carriers including AT&T, Verizon, T-Mobile, Sprint, and others.
                   </p>
 
                   <h4 className="text-lg font-semibold mt-4">4. Privacy and Data Use</h4>

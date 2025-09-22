@@ -116,7 +116,7 @@ export function SmsOptInForm({
 
         <div className="mt-6 p-4 bg-gray-50 rounded-md">
           <p className="text-xs text-gray-600 leading-relaxed">
-            <strong>IMPORTANT:</strong> You are subscribing to wedding reminders from JOAT Labs. 
+            <span className="font-semibold">IMPORTANT:</span> You are subscribing to wedding reminders from JOAT Labs. 
             Reply STOP to opt out. Reply HELP for help. Standard message and data rates may apply. 
             Message frequency may vary.
           </p>

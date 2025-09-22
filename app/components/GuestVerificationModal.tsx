@@ -367,7 +367,7 @@ export default function GuestVerificationModal({
               <>
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <p className="text-sm text-blue-800">
-                    <strong>Have your invitation?</strong> You can use your invitation token for quick access.
+                    <span className="font-semibold">Have your invitation?</span> You can use your invitation token for quick access.
                   </p>
                 </div>
 
@@ -398,7 +398,7 @@ export default function GuestVerificationModal({
 
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                       <p className="text-sm text-green-800">
-                        <strong>Don't have your token?</strong> Enter your phone number or email below to receive a verification code.
+                        <span className="font-semibold">Don't have your token?</span> Enter your phone number or email below to receive a verification code.
                       </p>
                     </div>
 
@@ -440,7 +440,7 @@ export default function GuestVerificationModal({
 
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                       <p className="text-sm text-gray-600">
-                        <strong>Note:</strong> Use the same contact information from your original invitation.
+                        <span className="font-semibold">Note:</span> Use the same contact information from your original invitation.
                       </p>
                     </div>
                   </>
