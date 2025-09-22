@@ -10,6 +10,46 @@ import type {
   BudgetAlert
 } from '../types/budget';
 
+// Specialized response models
+export interface CostEstimateItem {
+  category: string;
+  estimated_min: number;
+  estimated_max: number;
+  average?: number;
+  notes?: string;
+}
+
+export interface CostEstimateResult {
+  wedding_type: string;
+  guest_count: number;
+  location: string;
+  currency?: string;
+  total_min: number;
+  total_max: number;
+  items: CostEstimateItem[];
+  generated_at?: string;
+}
+
+export interface VendorQuoteComparisonEntry {
+  quote_id: string;
+  vendor_name: string;
+  quote_amount: number;
+  rating?: number;
+  status: string;
+  includes_count?: number;
+  excludes_count?: number;
+}
+
+export interface VendorQuoteComparison {
+  category: string;
+  wedding_id: string;
+  quotes: VendorQuoteComparisonEntry[];
+  average_quote?: number;
+  min_quote?: number;
+  max_quote?: number;
+  generated_at?: string;
+}
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
 class BudgetApiService {
@@ -152,7 +192,7 @@ class BudgetApiService {
   }
 
   // Cost Estimation
-  async getCostEstimate(token: string, weddingType: string, guestCount: number, location: string): Promise<any> {
+  async getCostEstimate(token: string, weddingType: string, guestCount: number, location: string): Promise<CostEstimateResult> {
     const response = await fetch(
       `${BASE_URL}/admin/budget/estimate`,
       {
@@ -212,7 +252,7 @@ class BudgetApiService {
   }
 
   // Vendor Quote Comparison
-  async compareVendorQuotes(token: string, weddingId: string, category: string): Promise<any> {
+  async compareVendorQuotes(token: string, weddingId: string, category: string): Promise<VendorQuoteComparison> {
     const response = await fetch(
       `${BASE_URL}/admin/weddings/${weddingId}/budget/compare-quotes?category=${category}`,
       { headers: this.getHeaders(token) }

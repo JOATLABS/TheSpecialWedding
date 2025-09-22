@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { budgetApi } from '../services/budgetApi';
-import type { BudgetCategory, BudgetSummary } from '../types/budget';
+import type { BudgetCategory, BudgetSummary, CreateBudgetCategoryRequest, UpdateBudgetCategoryRequest } from '../types/budget';
 
 interface UseBudgetOptions {
   token: string | null;
@@ -14,8 +14,8 @@ interface UseBudgetReturn {
   loading: boolean;
   error: string;
   refreshData: () => Promise<void>;
-  createCategory: (data: any) => Promise<void>;
-  updateCategory: (categoryId: string, data: any) => Promise<void>;
+  createCategory: (data: Omit<CreateBudgetCategoryRequest, 'wedding_id'>) => Promise<void>;
+  updateCategory: (categoryId: string, data: UpdateBudgetCategoryRequest) => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
 }
 
@@ -38,8 +38,8 @@ export function useBudget({ token, weddingId }: UseBudgetOptions): UseBudgetRetu
       setSummary(summaryData);
       setCategories(categoriesData);
       setError('');
-    } catch (err: any) {
-      const errorMessage = err.message || 'Failed to load budget data';
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load budget data';
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -47,7 +47,7 @@ export function useBudget({ token, weddingId }: UseBudgetOptions): UseBudgetRetu
     }
   }, [token, weddingId]);
 
-  const createCategory = useCallback(async (data: any) => {
+  const createCategory = useCallback(async (data: Omit<CreateBudgetCategoryRequest, 'wedding_id'>) => {
     if (!token) return;
 
     try {
@@ -56,13 +56,14 @@ export function useBudget({ token, weddingId }: UseBudgetOptions): UseBudgetRetu
       setCategories(prev => [...prev, newCategory]);
       toast.success('Budget category created successfully');
       await refreshData(); // Refresh to update summary
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create budget category');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create budget category';
+      toast.error(message);
       throw err;
     }
   }, [token, weddingId, refreshData]);
 
-  const updateCategory = useCallback(async (categoryId: string, data: any) => {
+  const updateCategory = useCallback(async (categoryId: string, data: UpdateBudgetCategoryRequest) => {
     if (!token) return;
 
     try {
@@ -72,8 +73,9 @@ export function useBudget({ token, weddingId }: UseBudgetOptions): UseBudgetRetu
       ));
       toast.success('Budget category updated successfully');
       await refreshData(); // Refresh to update summary
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update budget category');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update budget category';
+      toast.error(message);
       throw err;
     }
   }, [token, refreshData]);
@@ -86,8 +88,9 @@ export function useBudget({ token, weddingId }: UseBudgetOptions): UseBudgetRetu
       setCategories(prev => prev.filter(cat => cat.id !== categoryId));
       toast.success('Budget category deleted successfully');
       await refreshData(); // Refresh to update summary
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete budget category');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete budget category';
+      toast.error(message);
       throw err;
     }
   }, [token, refreshData]);

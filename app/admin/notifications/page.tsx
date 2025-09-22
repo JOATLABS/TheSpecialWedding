@@ -2,27 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
-
-interface NotificationTemplate {
-  _id: string;
-  name: string;
-  subject: string;
-  content: string;
-  type: 'system_update' | 'maintenance' | 'security' | 'marketing' | 'feature_announcement';
-  created_at: string;
-  updated_at: string;
-}
-
-interface SentNotification {
-  _id: string;
-  template_name: string;
-  subject: string;
-  recipients_count: number;
-  sent_at: string;
-  delivery_status: 'sent' | 'delivered' | 'failed';
-  open_rate?: number;
-  click_rate?: number;
-}
+import type { NotificationTemplate, SentNotification, RawHistoryNotification, AdminUserProfile, RecipientFilter } from '@/types/notification';
 
 export default function NotificationsPage() {
   const { apiRequest } = useAdmin();
@@ -34,7 +14,7 @@ export default function NotificationsPage() {
   // Send notification form
   const [customSubject, setCustomSubject] = useState('');
   const [customContent, setCustomContent] = useState('');
-  const [recipientFilter, setRecipientFilter] = useState('all_users');
+  const [recipientFilter, setRecipientFilter] = useState<RecipientFilter>('all_users');
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -58,19 +38,22 @@ export default function NotificationsPage() {
       try {
         // Backend endpoint is /admin/notifications with GET method
         const historyResponse = await apiRequest('/admin/notifications', 'GET');
-
-        // Transform notifications to match expected format
-        const transformedNotifications = (historyResponse.notifications || []).map((n: any) => {
+        const rawList: RawHistoryNotification[] = historyResponse.notifications || [];
+        const transformed: SentNotification[] = rawList.map((n) => {
+          const rawStatus = (n.status as string) || 'sent';
+          const normalized: 'sent' | 'delivered' | 'failed' =
+            rawStatus === 'delivered' ? 'delivered'
+            : rawStatus === 'failed' ? 'failed'
+            : 'sent';
           return {
-            ...n,
-            subject: n.title || 'Notification',
-            recipients_count: n.total_recipients || 0,
-            sent_at: n.created_at || new Date().toISOString(),
-            delivery_status: n.status === 'active' ? 'sent' : (n.status || 'sent')
+            _id: (n._id || n.id || crypto.randomUUID()) as string,
+            subject: (n.title as string) || 'Notification',
+            recipients_count: typeof n.total_recipients === 'number' ? n.total_recipients : 0,
+            sent_at: (n.created_at as string) || new Date().toISOString(),
+            delivery_status: n.status === 'active' ? 'sent' : normalized,
           };
         });
-
-        setSentNotifications(transformedNotifications);
+        setSentNotifications(transformed);
       } catch (error) {
         console.warn('Notification history endpoint not available, using empty array');
         setSentNotifications([]);
@@ -96,33 +79,31 @@ export default function NotificationsPage() {
     try {
       // First get the users to send to based on filter
       const usersResponse = await apiRequest('/api/admin/users', 'GET');
-      const allUsers = usersResponse || [];
-      
-      let targetUsers = [];
-      switch (recipientFilter) {
-        case 'all_users':
-          targetUsers = allUsers;
-          break;
-        case 'active_users':
-          targetUsers = allUsers.filter((u: any) => u.is_active);
-          break;
-        case 'wedding_planners':
-          targetUsers = allUsers.filter((u: any) => u.is_wedding_planner && u.is_active);
-          break;
-        case 'trial_users':
-          targetUsers = allUsers.filter((u: any) => u.subscription_status === 'trialing');
-          break;
-        case 'premium_users':
-          targetUsers = allUsers.filter((u: any) => u.subscription_status === 'active');
-          break;
-      }
+      const allUsers: AdminUserProfile[] = Array.isArray(usersResponse) ? usersResponse : [];
+
+      const targetUsers: AdminUserProfile[] = (() => {
+        switch (recipientFilter) {
+          case 'all_users':
+            return allUsers;
+          case 'active_users':
+            return allUsers.filter((u) => u.is_active);
+          case 'wedding_planners':
+            return allUsers.filter((u) => u.is_wedding_planner && u.is_active);
+          case 'trial_users':
+            return allUsers.filter((u) => u.subscription_status === 'trialing');
+          case 'premium_users':
+            return allUsers.filter((u) => u.subscription_status === 'active');
+          default:
+            return allUsers;
+        }
+      })();
 
       // Send notification - backend endpoint is /admin/notifications/send
       const response = await apiRequest('/admin/notifications/send', 'POST', {
         subject: customSubject,
         content: customContent,
         recipient_filter: recipientFilter,
-        target_emails: targetUsers.map((u: any) => u.email)
+  target_emails: targetUsers.map((u) => u.email)
       });
 
       alert(`Notification queued for ${targetUsers.length} users!`);
@@ -163,7 +144,7 @@ export default function NotificationsPage() {
         <div className="sm:hidden py-4">
           <select
             value={activeTab}
-            onChange={(e) => setActiveTab(e.target.value as any)}
+            onChange={(e) => setActiveTab(e.target.value as 'send' | 'templates' | 'history')}
             className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-wedding-rose focus:border-wedding-rose text-sm font-medium"
           >
             <option value="send">Send Notification</option>
@@ -181,7 +162,7 @@ export default function NotificationsPage() {
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
+              onClick={() => setActiveTab(tab.key as 'send' | 'templates' | 'history')}
               className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                 activeTab === tab.key
                   ? 'border-wedding-rose text-wedding-rose'
@@ -205,7 +186,7 @@ export default function NotificationsPage() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Recipients</label>
               <select
                 value={recipientFilter}
-                onChange={(e) => setRecipientFilter(e.target.value)}
+                onChange={(e) => setRecipientFilter(e.target.value as RecipientFilter)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="all_users">All Users</option>

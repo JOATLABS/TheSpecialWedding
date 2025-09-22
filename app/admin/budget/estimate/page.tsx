@@ -5,8 +5,9 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
-import { budgetApi } from '@/services/budgetApi';
+import { budgetApi, CostEstimateResult } from '@/services/budgetApi';
 
+// Legacy UI shape; we adapt API result into this unified structure
 interface CostEstimation {
   total_estimated_cost: number;
   category_estimates: Record<string, {
@@ -15,7 +16,7 @@ interface CostEstimation {
     notes: string;
   }>;
   factors_considered: string[];
-  confidence_level: string;
+  confidence_level: 'high' | 'moderate' | 'low' | string;
   recommendations: string[];
 }
 
@@ -75,13 +76,43 @@ export default function CostEstimationPage() {
 
     setLoading(true);
     try {
-      const estimationData = await budgetApi.getCostEstimate(
+      const apiResult: CostEstimateResult = await budgetApi.getCostEstimate(
         token,
         formData.wedding_type,
         formData.guest_count,
         formData.location
       );
-      setEstimation(estimationData);
+      // Transform API result (range-based) to legacy single-value display using averages
+      const averageTotal = Math.round((apiResult.total_min + apiResult.total_max) / 2);
+      const category_estimates: Record<string, { amount: number; percentage: number; notes: string; }> = {};
+      // If API supplies detailed items, distribute percentage heuristically by amount proportion
+      if (Array.isArray(apiResult.items) && apiResult.items.length) {
+        const totalAvg = apiResult.items.reduce((sum, i) => sum + ((i.estimated_min + i.estimated_max) / 2), 0) || 1;
+        apiResult.items.forEach(item => {
+          const avg = Math.round((item.estimated_min + item.estimated_max) / 2);
+          const percentage = Math.round((avg / totalAvg) * 100);
+          category_estimates[item.category] = {
+            amount: avg,
+            percentage,
+            notes: item.notes || 'Estimated range midpoint'
+          };
+        });
+      }
+      setEstimation({
+        total_estimated_cost: averageTotal,
+        category_estimates,
+        factors_considered: [
+          `Wedding type: ${apiResult.wedding_type}`,
+          `Guest count: ${apiResult.guest_count}`,
+          `Location: ${apiResult.location}`
+        ],
+        confidence_level: 'moderate',
+        recommendations: [
+          'Request multiple vendor quotes for accuracy',
+          'Adjust guest count to optimize per-guest cost',
+          'Lock in venue and catering early to reduce volatility'
+        ]
+      });
       toast.success('Cost estimation generated successfully');
     } catch (err: any) {
       toast.error(err.message || 'Failed to generate cost estimation');
