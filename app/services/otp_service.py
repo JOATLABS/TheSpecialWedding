@@ -210,7 +210,8 @@ class OTPService:
             if isinstance(guest_id, str):
                 try:
                     guest_id = ObjectId(guest_id)
-                except:
+                except Exception:
+                    # Leave as string; not critical if not a valid ObjectId
                     pass  # Keep as string if ObjectId conversion fails
             
             guest = self.guest_collection.find_one({"_id": guest_id})

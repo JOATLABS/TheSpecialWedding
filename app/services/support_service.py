@@ -134,7 +134,7 @@ class SupportService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(ticket_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             ticket = self.tickets_collection.find_one({"_id": obj_id})
@@ -188,7 +188,7 @@ class SupportService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(ticket_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             # Check if ticket exists
@@ -335,19 +335,24 @@ class SupportService:
             if not agent:
                 raise HTTPException(status_code=404, detail="Agent not found")
 
+            # Fetch current ticket to determine status transition
+            current_ticket = self.tickets_collection.find_one({"_id": obj_id}, {"status": 1})
+            current_status = current_ticket.get("status") if current_ticket else None
+
             # Update ticket
-            result = self.tickets_collection.update_one(
+            update_result = self.tickets_collection.update_one(
                 {"_id": obj_id},
                 {
                     "$set": {
                         "assigned_to": agent_email,
                         "updated_at": datetime.utcnow(),
-                        "status": "in_progress" if result.get("status") == "open" else result.get("status", "in_progress")
+                        # Transition open -> in_progress, otherwise keep existing or default to in_progress
+                        "status": "in_progress" if current_status == "open" else (current_status or "in_progress")
                     }
                 }
             )
 
-            if result.modified_count == 0:
+            if update_result.modified_count == 0:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
             return {

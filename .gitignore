@@ -24,6 +24,23 @@ docs/
 .env
 # Environment variables
 .env.local
+# Additional environment & secret patterns
+.env.*
+*.env
+secrets*/
+*.pem
+*.key
+*.crt
+*.p12
+*.der
+*.keystore
+*.jks
+/.env.production
+/.env.development
+/.env.test
+
+# Do NOT commit example env templates (keep .env.example allowed)
+!.env.example
 # IDE specific files
 llm_information/
 *.log

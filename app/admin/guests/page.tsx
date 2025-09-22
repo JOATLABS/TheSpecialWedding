@@ -153,9 +153,7 @@ export default function AdminGuestsPage() {
         throw new Error('Failed to fetch guests');
       }
       
-      const guestsData = await guestsResponse.json();
-      console.log('Guests data:', guestsData); // Debug log
-      console.log('Selected wedding ID:', selectedWedding); // Debug log
+  const guestsData = await guestsResponse.json();
       setGuests(Array.isArray(guestsData) ? guestsData : []);
 
       // Fetch RSVPs
@@ -170,7 +168,6 @@ export default function AdminGuestsPage() {
         );
         if (rsvpsResponse.ok) {
           const rsvpsData = await rsvpsResponse.json();
-          console.log('RSVPs data:', rsvpsData); // Debug log
           setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
         } else {
           setRsvps([]);

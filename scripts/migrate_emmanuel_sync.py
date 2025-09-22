@@ -26,14 +26,22 @@ def migrate_emmanuel_to_planner():
     print("Starting Emmanuel Wedding Planner Migration (Sync Version)")
     print("=" * 70)
 
-    # Get credentials from environment variables for security
-    email = os.environ.get("MIGRATION_EMAIL", "emmanuel.t.akinwale@gmail.com")
+    # Get credentials from environment variables (required - no hardcoded defaults)
+    email = os.environ.get("MIGRATION_EMAIL")
     password = os.environ.get("MIGRATION_PASSWORD")
+
+    if not email:
+        print("❌ ERROR: MIGRATION_EMAIL environment variable not set!")
+        print("   This script no longer embeds a personal/default email to avoid credential leakage.")
+        print("   Example:")
+        print("     export MIGRATION_EMAIL='planner@example.com'")
+        sys.exit(1)
 
     if not password:
         print("❌ ERROR: MIGRATION_PASSWORD environment variable not set!")
-        print("   Please set it before running this script:")
-        print("   export MIGRATION_PASSWORD='your-secure-password'")
+        print("   Provide the secure password for the migrated account via environment variable only.")
+        print("   Example:")
+        print("     export MIGRATION_PASSWORD='your-secure-password'")
         sys.exit(1)
     
     try:
@@ -244,11 +252,11 @@ def migrate_emmanuel_to_planner():
         print(f"   PLANNER: http://localhost:3000/admin/planner") 
         print(f"   Login: {email}")
         print(f"   Password: [Same as ROOT_ADMIN password]")
-        
+
         print(f"\nEmmanuel now has dual access:")
-        print(f"   - ROOT_ADMIN capabilities (thedeveloper@thespecialwedding.com)")
-        print(f"   - Wedding Planner for own wedding(s) (emmanuel.t.akinwale@gmail.com)")
-        
+        print(f"   - ROOT_ADMIN capabilities (redacted)")
+        print(f"   - Wedding Planner for own wedding(s) ({email})")
+
     except Exception as e:
         print(f"\nMigration failed: {str(e)}")
         import traceback
