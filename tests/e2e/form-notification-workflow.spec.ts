@@ -192,7 +192,7 @@ test.describe('Form Notification Workflow', () => {
       await expect(modal.locator('[data-testid="submitted-by-name"]')).toHaveText('Sarah Johnson');
       await expect(modal.locator('[data-testid="submitted-by-email"]')).toHaveText('sarah.johnson@example.com');
       await expect(modal.locator('[data-testid="overall-rating-value"]')).toHaveText('5');
-      await expect(modal.locator('[data-testid="feedback-text-value"]')).toContain('Absolutely amazing experience!');
+  await expect(modal.locator('[data-testid="feedback-text-value"]')).toContainText('Absolutely amazing experience!');
 
       // Should show unread status in modal
       const modalStatusBadge = modal.locator('[data-testid="modal-status-badge"]');

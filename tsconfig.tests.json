@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Keep strictness but allow incremental relaxation toggles for staging
+    "types": ["node", "@playwright/test"],
+    // Tests often import transpiled JS or have dynamic requires; allowJs already true upstream
+    "allowUnusedLabels": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    // Preserve rootDir isolation so relative module resolution stays identical
+    "rootDir": ".",
+    // Speed: skip lib check already true in base
+    "incremental": true,
+    "tsBuildInfoFile": ".turbo/ts-tests.tsbuildinfo"
+  },
+  "include": [
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "tests/**/*.spec.ts",
+    "tests/**/*.spec.tsx",
+    "tests/**/*.test.ts",
+    "tests/**/*.test.tsx",
+    "tests/test-config.ts",
+    "playwright.config.ts"
+  ],
+  "exclude": [
+  "node_modules",
+  "tests/frontend/**"
+  ]
+}

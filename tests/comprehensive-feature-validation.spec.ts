@@ -331,13 +331,15 @@ test.describe('Multi-Tenant Platform Features Validation', () => {
  });
 
  test('CORS configuration', async ({ page }) => {
- // Test CORS headers
- const response = await page.request.options(`${testConfig.baseUrls.backend}/health/`);
- 
- // Should not fail with CORS error
- expect([200, 204]).toContain(response.status());
- 
- console.log(' CORS configuration verified');
+	 // Test CORS preflight using fetch with method OPTIONS (Playwright has no direct .options helper)
+	 const response = await page.request.fetch(`${testConfig.baseUrls.backend}/health/`, {
+		 method: 'OPTIONS'
+	 });
+
+	 // Should not fail with CORS error
+	 expect([200, 204]).toContain(response.status());
+
+	 console.log(' CORS configuration verified');
  });
  });
 

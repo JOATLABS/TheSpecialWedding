@@ -1,5 +1,17 @@
 import { test, expect, Page } from '@playwright/test';
 
+// Normalized result type for selector tests
+type SelectorTestOutcome = {
+  automation: number; // normalized count (boolean true -> 1, false/null -> 0)
+  fallback: number; // normalized count
+  used: 'automation' | 'fallback';
+};
+
+interface SelectorResult extends SelectorTestOutcome {
+  name: string;
+  selector: string;
+}
+
 // Test configuration
 const BASE_URL = process.env.FRONTEND_URL!;
 
@@ -67,9 +79,14 @@ const FALLBACK_SELECTORS = {
 };
 
 // Helper function to try automation selector first, then fallback
-async function testSelector(page: Page, automationSelector: string, fallbackSelector: string, action: 'click' | 'count' | 'visible' = 'count') {
-  let automationResult = null;
-  let fallbackResult = null;
+async function testSelector(
+  page: Page,
+  automationSelector: string,
+  fallbackSelector: string,
+  action: 'click' | 'count' | 'visible' = 'count'
+): Promise<SelectorTestOutcome> {
+  let automationResult: number | boolean | null = null;
+  let fallbackResult: number | boolean | null = null;
 
   try {
     if (action === 'count') {
@@ -83,7 +100,8 @@ async function testSelector(page: Page, automationSelector: string, fallbackSele
       }
     }
   } catch (error) {
-    console.log(`⚠️ Automation selector failed: ${automationSelector}`, error.message);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.log(`⚠️ Automation selector failed: ${automationSelector}`, msg);
   }
 
   try {
@@ -98,13 +116,15 @@ async function testSelector(page: Page, automationSelector: string, fallbackSele
       }
     }
   } catch (error) {
-    console.log(`⚠️ Fallback selector failed: ${fallbackSelector}`, error.message);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.log(`⚠️ Fallback selector failed: ${fallbackSelector}`, msg);
   }
-
+  const automationCount = automationResult === true ? 1 : automationResult ? Number(automationResult) : 0;
+  const fallbackCount = fallbackResult === true ? 1 : fallbackResult ? Number(fallbackResult) : 0;
   return {
-    automation: automationResult,
-    fallback: fallbackResult,
-    used: automationResult > 0 || automationResult === true ? 'automation' : 'fallback'
+    automation: automationCount,
+    fallback: fallbackCount,
+    used: automationCount > 0 ? 'automation' : 'fallback'
   };
 }
 
@@ -141,7 +161,7 @@ test.describe('SaaS Admin Automation Attributes', () => {
       { name: 'Theme Tab', automation: SAAS_SELECTORS.navigation.themeTab, fallback: FALLBACK_SELECTORS.navigation.themeTab }
     ];
 
-    const results = [];
+  const results: SelectorResult[] = [];
 
     for (const tabTest of tabTests) {
       const result = await testSelector(page, tabTest.automation, tabTest.fallback, 'count');
@@ -151,11 +171,11 @@ test.describe('SaaS Admin Automation Attributes', () => {
         selector: tabTest.automation
       });
 
-      console.log(`${result.automation > 0 ? '✅' : '❌'} ${tabTest.name}: Found ${result.automation} automation elements`);
+  console.log(`${result.automation > 0 ? '✅' : '❌'} ${tabTest.name}: Found ${result.automation} automation elements`);
     }
 
     // Test switching to Plans tab
-    if (results[0].automation > 0) {
+  if (results[0] && results[0].automation > 0) {
       await page.click(SAAS_SELECTORS.navigation.plansTab);
       console.log('✅ Successfully switched to Plans tab using automation attributes');
     } else {
@@ -163,7 +183,7 @@ test.describe('SaaS Admin Automation Attributes', () => {
       console.log('🔄 Switched to Plans tab using fallback selector');
     }
 
-    expect(results.some(r => r.automation > 0)).toBe(true);
+  expect(results.some(r => r.automation > 0)).toBe(true);
   });
 
   test('should test subscription plans management automation', async ({ page }) => {
@@ -182,7 +202,7 @@ test.describe('SaaS Admin Automation Attributes', () => {
       { name: 'Delete Plan', automation: SAAS_SELECTORS.plans.deleteButton, fallback: FALLBACK_SELECTORS.plans.deleteButton }
     ];
 
-    const results = [];
+  const results: SelectorResult[] = [];
 
     for (const planTest of planTests) {
       const result = await testSelector(page, planTest.automation, planTest.fallback, 'count');
@@ -192,11 +212,11 @@ test.describe('SaaS Admin Automation Attributes', () => {
         selector: planTest.automation
       });
 
-      console.log(`${result.automation > 0 ? '✅' : '❌'} ${planTest.name}: Found ${result.automation} automation elements`);
+  console.log(`${result.automation > 0 ? '✅' : '❌'} ${planTest.name}: Found ${result.automation} automation elements`);
     }
 
     // Test clicking Create New Plan if automation attributes exist
-    if (results[0].automation > 0) {
+  if (results[0] && results[0].automation > 0) {
       try {
         await page.click(SAAS_SELECTORS.plans.createButton);
         console.log('✅ Successfully clicked Create New Plan using automation attributes');
@@ -207,7 +227,8 @@ test.describe('SaaS Admin Automation Attributes', () => {
           await page.click('button:has-text("Cancel"), button:has-text("Close")');
         }
       } catch (error) {
-        console.log('⚠️ Create New Plan interaction failed:', error.message);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.log('⚠️ Create New Plan interaction failed:', msg);
       }
     }
 
@@ -234,7 +255,7 @@ test.describe('SaaS Admin Automation Attributes', () => {
       { name: 'Secondary CTA', automation: SAAS_SELECTORS.content.heroSecondaryCta, fallback: 'input[value*="secondary"]' }
     ];
 
-    const results = [];
+  const results: SelectorResult[] = [];
 
     for (const contentTest of contentTests) {
       const result = await testSelector(page, contentTest.automation, contentTest.fallback, 'count');
@@ -244,16 +265,17 @@ test.describe('SaaS Admin Automation Attributes', () => {
         selector: contentTest.automation
       });
 
-      console.log(`${result.automation > 0 ? '✅' : '❌'} ${contentTest.name}: Found ${result.automation} automation elements`);
+  console.log(`${result.automation > 0 ? '✅' : '❌'} ${contentTest.name}: Found ${result.automation} automation elements`);
     }
 
     // Test editing hero content
-    if (results.find(r => r.name === 'Hero Title Input')?.automation > 0) {
+    if (results.find(r => r.name === 'Hero Title Input')?.automation && results.find(r => r.name === 'Hero Title Input')!.automation > 0) {
       try {
         await page.fill(SAAS_SELECTORS.content.heroTitle, 'Test Hero Title');
         console.log('✅ Successfully edited hero title using automation attributes');
       } catch (error) {
-        console.log('⚠️ Hero title editing failed:', error.message);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.log('⚠️ Hero title editing failed:', msg);
       }
     }
 
@@ -276,7 +298,7 @@ test.describe('SaaS Admin Automation Attributes', () => {
       { name: 'Primary Color Text', automation: SAAS_SELECTORS.theme.primaryColorText, fallback: FALLBACK_SELECTORS.theme.primaryColorText }
     ];
 
-    const results = [];
+  const results: SelectorResult[] = [];
 
     for (const themeTest of themeTests) {
       const result = await testSelector(page, themeTest.automation, themeTest.fallback, 'count');
@@ -286,16 +308,17 @@ test.describe('SaaS Admin Automation Attributes', () => {
         selector: themeTest.automation
       });
 
-      console.log(`${result.automation > 0 ? '✅' : '❌'} ${themeTest.name}: Found ${result.automation} automation elements`);
+  console.log(`${result.automation > 0 ? '✅' : '❌'} ${themeTest.name}: Found ${result.automation} automation elements`);
     }
 
     // Test color editing
-    if (results.find(r => r.name === 'Primary Color Text')?.automation > 0) {
+    if (results.find(r => r.name === 'Primary Color Text')?.automation && results.find(r => r.name === 'Primary Color Text')!.automation > 0) {
       try {
         await page.fill(SAAS_SELECTORS.theme.primaryColorText, '#FF5722');
         console.log('✅ Successfully edited primary color using automation attributes');
       } catch (error) {
-        console.log('⚠️ Color editing failed:', error.message);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.log('⚠️ Color editing failed:', msg);
       }
     }
 
@@ -333,8 +356,8 @@ test.describe('SaaS Admin Automation Attributes', () => {
       { category: 'Theme', name: 'Primary Color Text', selector: SAAS_SELECTORS.theme.primaryColorText, requiresTab: 'Theme' }
     ];
 
-    const results = [];
-    let currentTab = null;
+  const results: { category: string; name: string; selector: string; found: boolean; count: number }[] = [];
+  let currentTab: string | null = null;
 
     for (const test of allSelectors) {
       // Switch tabs if needed
@@ -431,7 +454,7 @@ test.describe('SaaS Admin Automation Attributes', () => {
     // Test data attribute completeness and format
     const dataQuality = await page.evaluate(() => {
       const elements = document.querySelectorAll('[data-entity]');
-      const issues = [];
+      const issues: string[] = [];
       const stats = {
         total: elements.length,
         hasAction: 0,
