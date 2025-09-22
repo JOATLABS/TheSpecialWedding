@@ -130,6 +130,10 @@ export default function FormEditPage() {
     updateForm({ fields });
   };
 
+  const updateFormName = (name: string) => {
+    updateForm({ name });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -259,6 +263,7 @@ export default function FormEditPage() {
             form={form}
             onUpdateSettings={updateFormSettings}
             onUpdateFields={updateFormFields}
+            onUpdateFormName={updateFormName}
           />
         ) : (
           <FormPreview

@@ -51,12 +51,14 @@ interface FormBuilderProps {
  form: Form;
  onUpdateSettings: (settings: FormSettings) => void;
  onUpdateFields: (fields: FormField[]) => void;
+ onUpdateFormName?: (name: string) => void;
 }
 
 export const FormBuilder: React.FC<FormBuilderProps> = ({
  form,
  onUpdateSettings,
  onUpdateFields,
+ onUpdateFormName,
 }) => {
  const [activePanel, setActivePanel] = useState<'settings' | 'fields'>('fields');
  const [selectedField, setSelectedField] = useState<string | null>(null);
@@ -177,10 +179,11 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  {activePanel === 'fields' ? (
  <FieldsPanel onAddField={addField} />
  ) : (
- <SettingsPanel 
- settings={form.settings} 
+ <SettingsPanel
+ settings={form.settings}
  formName={form.name}
  onUpdateSettings={onUpdateSettings}
+ onUpdateFormName={onUpdateFormName}
  />
  )}
  </div>
@@ -302,7 +305,8 @@ const SettingsPanel: React.FC<{
  settings: FormSettings;
  formName: string;
  onUpdateSettings: (settings: FormSettings) => void;
-}> = ({ settings, formName, onUpdateSettings }) => {
+ onUpdateFormName?: (name: string) => void;
+}> = ({ settings, formName, onUpdateSettings, onUpdateFormName }) => {
  const updateSetting = (key: keyof FormSettings, value: any) => {
  onUpdateSettings({ ...settings, [key]: value });
  };
@@ -310,7 +314,28 @@ const SettingsPanel: React.FC<{
  return (
  <div className="space-y-6">
  <h3 className="text-sm font-medium text-gray-900">Form Settings</h3>
- 
+
+ {/* Form Name Field */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-1">
+ Form Name (Internal)
+ </label>
+ <input
+ {...createAutomationAttrs({
+ entity: 'formBuilder',
+ action: 'updateFormName',
+ context: 'settingsPanel',
+ custom: { formName, hasValue: !!formName }
+ })}
+ type="text"
+ value={formName}
+ onChange={(e) => onUpdateFormName?.(e.target.value)}
+ className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+ placeholder="Enter internal form name..."
+ />
+ <p className="text-xs text-gray-500 mt-1">This name is for your reference only</p>
+ </div>
+
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Form Title

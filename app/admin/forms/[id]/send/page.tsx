@@ -46,7 +46,7 @@ export default function SendFormPage() {
  reminder_days: 7
  });
 
- // Recipient categories
+ // Recipient category state (used for selecting predefined recipient groups)
  const [recipientCategory, setRecipientCategory] = useState<'couples' | 'wedding_party' | 'vendors' | 'guests' | 'custom'>('custom');
  const [weddingId, setWeddingId] = useState<string>('');
  const [loadingRecipients, setLoadingRecipients] = useState(false);

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+// Removed unused useRouter import
 import { toast } from 'sonner';
 // Removed unused createAutomationAttrs import
 
@@ -33,7 +33,7 @@ export const AdminProvider = ({
     children: React.ReactNode;
     initialAuth?: boolean;
 }) => {
-    const router = useRouter();
+    // Removed unused router constant (navigation handled via window.location)
     // Start with false, let useEffect handle cookie check
     // This prevents hydration mismatches
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);

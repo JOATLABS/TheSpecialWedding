@@ -142,10 +142,7 @@ class Settings(BaseSettings):
     root_admin_password: Optional[str] = Field(default=None, alias="ROOT_ADMIN_PASSWORD")
 
     # Platform Metrics Configuration
-    default_subscription_price: float = Field(default=29.0, alias="DEFAULT_SUBSCRIPTION_PRICE")
     default_uptime_percentage: float = Field(default=99.9, alias="DEFAULT_UPTIME_PERCENTAGE")
-    default_customer_ltv: float = Field(default=1200.0, alias="DEFAULT_CUSTOMER_LTV")
-    default_monthly_growth_rate: float = Field(default=15.3, alias="DEFAULT_MONTHLY_GROWTH_RATE")
     slow_request_threshold_seconds: float = Field(default=1.0, alias="SLOW_REQUEST_THRESHOLD_SECONDS")
     error_rate_down_threshold: float = Field(default=50.0, alias="ERROR_RATE_DOWN_THRESHOLD")
     

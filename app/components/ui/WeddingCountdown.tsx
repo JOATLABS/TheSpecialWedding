@@ -86,23 +86,42 @@ export const WeddingCountdown: React.FC<WeddingCountdownProps> = ({
     );
   }
 
+  const getFontFamily = (fontStyle?: string) => {
+    switch (fontStyle) {
+      case 'elegant':
+        return '"Playfair Display", "Georgia", serif';
+      case 'modern':
+        return '"Inter", "Helvetica Neue", sans-serif';
+      case 'classic':
+        return '"Times New Roman", "Georgia", serif';
+      case 'playful':
+        return '"Comic Neue", "Comic Sans MS", cursive';
+      default:
+        return 'system-ui, -apple-system, sans-serif';
+    }
+  };
+
   const getStyleClasses = () => {
     switch (countdownConfig.display_style) {
       case 'elegant':
         return {
-          container: 'bg-white/90 backdrop-blur-sm shadow-xl border border-gray-200/50 rounded-2xl p-6',
+          container: 'bg-white/90 backdrop-blur-sm shadow-xl border rounded-2xl p-6',
           timeContainer: 'flex gap-6 justify-center',
-          timeBlock: 'text-center bg-gradient-to-b from-gray-50 to-white border border-gray-200 rounded-xl p-4 shadow-sm',
-          number: 'text-3xl md:text-4xl font-bold text-gray-800 block',
-          label: 'text-sm font-medium text-gray-600 uppercase tracking-wide mt-1'
+          timeBlock: 'text-center bg-gradient-to-b from-gray-50 to-white border rounded-xl p-4 shadow-sm',
+          number: 'text-3xl md:text-4xl font-bold block',
+          label: 'text-sm font-medium uppercase tracking-wide mt-1',
+          // Will use accent color for borders and text
+          useAccentColor: true
         };
       case 'modern':
         return {
-          container: 'bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-6 text-white shadow-2xl',
+          container: 'rounded-2xl p-6 text-white shadow-2xl',
           timeContainer: 'flex gap-4 justify-center',
           timeBlock: 'text-center bg-white/20 backdrop-blur-sm rounded-lg p-4',
           number: 'text-3xl md:text-4xl font-bold block',
-          label: 'text-sm font-medium uppercase tracking-wide mt-1 opacity-90'
+          label: 'text-sm font-medium uppercase tracking-wide mt-1 opacity-90',
+          // Dynamic gradient will be applied via inline styles
+          useThemeGradient: true
         };
       case 'minimal':
         return {
@@ -114,11 +133,13 @@ export const WeddingCountdown: React.FC<WeddingCountdownProps> = ({
         };
       case 'bold':
         return {
-          container: 'bg-gradient-to-r from-red-600 to-pink-600 rounded-3xl p-8 text-white shadow-2xl transform hover:scale-105 transition-transform',
+          container: 'rounded-3xl p-8 text-white shadow-2xl transform hover:scale-105 transition-transform',
           timeContainer: 'flex gap-6 justify-center',
           timeBlock: 'text-center',
           number: 'text-4xl md:text-6xl font-black block drop-shadow-lg',
-          label: 'text-lg font-bold uppercase tracking-wide mt-2'
+          label: 'text-lg font-bold uppercase tracking-wide mt-2',
+          // Dynamic gradient will be applied via inline styles
+          useThemeGradient: true
         };
       default:
         return {
@@ -132,6 +153,22 @@ export const WeddingCountdown: React.FC<WeddingCountdownProps> = ({
   };
 
   const styles = getStyleClasses();
+
+  // Build dynamic styles with theme colors
+  const dynamicStyles: React.CSSProperties = {
+    fontFamily: getFontFamily(themeConfig?.font_style)
+  };
+
+  // Apply theme gradient for modern and bold styles
+  if ((styles as any).useThemeGradient && themeConfig) {
+    dynamicStyles.background = `linear-gradient(135deg, ${themeConfig.primary_color || '#3B82F6'}, ${themeConfig.secondary_color || '#8B5CF6'})`;
+  }
+
+  // Apply accent color for elegant style
+  if ((styles as any).useAccentColor && themeConfig) {
+    dynamicStyles.borderColor = themeConfig.accent_color || '#D4AF37';
+    dynamicStyles.color = themeConfig.primary_color || '#1e3a5f';
+  }
   const timeUnits = [
     { value: timeLeft.days, label: 'Days' },
     { value: timeLeft.hours, label: 'Hours' },
@@ -147,9 +184,9 @@ export const WeddingCountdown: React.FC<WeddingCountdownProps> = ({
         </p>
       )}
 
-      <div className={styles.container}>
+      <div className={styles.container} style={dynamicStyles}>
         <div className={styles.timeContainer}>
-          {timeUnits.map((unit, index) => (
+          {timeUnits.map((unit) => (
             <div key={unit.label} className={styles.timeBlock}>
               <span className={styles.number}>
                 {unit.value.toString().padStart(2, '0')}

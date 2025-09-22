@@ -35,6 +35,30 @@ class PlatformAnalyticsService:
         """Generate cache key for metrics"""
         return f"analytics:{metric_type}:{timeframe}:{datetime.now(timezone.utc).strftime('%Y-%m-%d-%H')}"
 
+    def _get_default_plan_price(self, plans: List[Dict]) -> float:
+        """
+        Determine default subscription price from available plans.
+        Strategy:
+        1. Use featured plan price if available
+        2. Use cheapest non-free active plan
+        3. Fallback to 29.0 if no plans exist
+        """
+        default_price = 29.0  # Last resort fallback
+
+        active_plans = [p for p in plans if p.get("is_active", True)]
+        if active_plans:
+            # Try featured plans first
+            featured_plans = [p for p in active_plans if p.get("is_featured", False)]
+            if featured_plans:
+                default_price = featured_plans[0].get("price_monthly", 29.0)
+            else:
+                # Find cheapest non-free plan
+                paid_plans = [p for p in active_plans if p.get("price_monthly", 0) > 0]
+                if paid_plans:
+                    default_price = min(p.get("price_monthly", 29.0) for p in paid_plans)
+
+        return default_price
+
     def _get_cached_data(self, cache_key: str) -> Optional[Dict]:
         """Get cached data if available"""
         if not self.redis_client:
@@ -154,9 +178,9 @@ class PlatformAnalyticsService:
 
         # Get all subscription plans
         all_plans = list(plans_collection.find({}))
-        # Get default plan price - use the first active plan's price or fallback
-        default_plan = plans_collection.find_one({"is_default": True}) or plans_collection.find_one({"is_active": True})
-        default_price = default_plan.get("price_monthly", 29) if default_plan else 29
+
+        # Use helper method to determine default price
+        default_price = self._get_default_plan_price(all_plans)
         plan_prices = {str(plan["_id"]): plan.get("price_monthly", default_price) for plan in all_plans}
 
         # Get users with subscriptions
@@ -572,7 +596,10 @@ class PlatformAnalyticsService:
 
         # Get subscription plans with pricing
         plans = list(plans_collection.find({}))
-        plan_prices = {str(plan["_id"]): plan.get("price_monthly", 29) for plan in plans}
+
+        # Use same default price logic as subscription metrics
+        default_price = self._get_default_plan_price(plans)
+        plan_prices = {str(plan["_id"]): plan.get("price_monthly", default_price) for plan in plans}
 
         # Active subscriptions
         active_users = list(users_collection.find({
@@ -581,7 +608,7 @@ class PlatformAnalyticsService:
 
         # Calculate total revenue
         total_monthly_revenue = sum([
-            plan_prices.get(str(u.get("subscription_plan_id")), settings.default_subscription_price)
+            plan_prices.get(str(u.get("subscription_plan_id")), default_price)
             for u in active_users
         ])
 
@@ -591,7 +618,7 @@ class PlatformAnalyticsService:
             "subscription_status": "active",
             "subscription_start_date": {"$lte": prev_month_end}
         })
-        prev_month_revenue = prev_month_active * settings.default_subscription_price  # Simplified calculation
+        prev_month_revenue = prev_month_active * default_price  # Simplified calculation
 
         # Calculate growth
         monthly_growth = 0
@@ -720,6 +747,11 @@ class PlatformAnalyticsService:
         """Get detailed subscription analytics"""
 
         users_collection = self.db["users"]
+        plans_collection = self.db["subscription_plans"]
+
+        # Get plans to determine pricing
+        all_plans = list(plans_collection.find({}))
+        default_price = self._get_default_plan_price(all_plans)
 
         # Daily MRR trend
         current = start_date
@@ -733,7 +765,7 @@ class PlatformAnalyticsService:
 
             mrr_trend.append({
                 "date": current.strftime("%Y-%m-%d"),
-                "mrr": active_on_date * settings.default_subscription_price  # Simplified
+                "mrr": active_on_date * default_price  # Using dynamic default price
             })
 
             current += timedelta(days=1)
@@ -865,8 +897,14 @@ class PlatformAnalyticsService:
     def _calculate_subscription_revenue(self) -> float:
         """Calculate total subscription revenue"""
         users = self.db["users"]
+        plans_collection = self.db["subscription_plans"]
+
+        # Get plans to determine pricing
+        all_plans = list(plans_collection.find({}))
+        default_price = self._get_default_plan_price(all_plans)
+
         active = users.count_documents({"subscription_status": "active"})
-        return active * settings.default_subscription_price
+        return active * default_price
 
     def _calculate_growth_projection(self) -> Dict:
         """Project future growth based on current trends"""
