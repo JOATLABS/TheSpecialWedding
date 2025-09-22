@@ -44,6 +44,17 @@ class PlusOneService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to add plus-one: {str(e)}")
 
+    def get_plus_one(self, plus_one_id: str):
+        """Get a single plus-one by ID"""
+        try:
+            plus_one = self.collection.find_one({"_id": ObjectId(plus_one_id)})
+            if plus_one:
+                plus_one["id"] = str(plus_one["_id"])
+                plus_one.pop("_id", None)
+            return plus_one
+        except Exception as e:
+            return None
+
     def get_plus_ones_by_guest(self, guest_id: str):
         try:
             results = list(self.collection.find({"guest_id": guest_id}))
@@ -53,6 +64,52 @@ class PlusOneService:
             return results
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve plus-ones: {str(e)}")
+
+    def get_bulk_plus_ones_by_wedding(self, wedding_id: str):
+        """
+        Efficiently fetch all plus-ones for a wedding in a single query.
+        Uses MongoDB aggregation pipeline to join guests and plus-ones.
+        Returns a dictionary mapping guest_id to their plus-ones array.
+        """
+        try:
+            # Get all guests for this wedding
+            guest_collection = mongo.get_guest_collection()
+            guests = list(guest_collection.find(
+                {"wedding_id": wedding_id},
+                {"_id": 1, "name": 1}
+            ))
+
+            # Get all guest IDs
+            guest_ids = [str(guest["_id"]) for guest in guests]
+
+            # Fetch all plus-ones for these guests in one query
+            plus_ones = list(self.collection.find({"guest_id": {"$in": guest_ids}}))
+
+            # Create a mapping of guest_id to plus-ones
+            plus_ones_by_guest = {}
+            for guest_id in guest_ids:
+                plus_ones_by_guest[guest_id] = []
+
+            # Populate the mapping
+            for plus_one in plus_ones:
+                plus_one["id"] = str(plus_one["_id"])
+                plus_one.pop("_id", None)
+                guest_id = plus_one["guest_id"]
+                if guest_id in plus_ones_by_guest:
+                    # Add guest name for frontend convenience
+                    guest = next((g for g in guests if str(g["_id"]) == guest_id), None)
+                    if guest:
+                        plus_one["guest_name"] = guest.get("name", "Unknown Guest")
+                    plus_ones_by_guest[guest_id].append(plus_one)
+
+            return {
+                "wedding_id": wedding_id,
+                "plus_ones_by_guest": plus_ones_by_guest,
+                "total_plus_ones": len(plus_ones),
+                "guests_with_plus_ones": len([g for g in plus_ones_by_guest.values() if g])
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve bulk plus-ones: {str(e)}")
 
     def update_plus_one(self, plus_one_id: str, data: dict):
         try:

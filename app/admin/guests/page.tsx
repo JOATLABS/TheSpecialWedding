@@ -179,36 +179,38 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // Fetch plus ones for all guests
+      // Fetch all plus-ones in a single bulk request (fixes N+1 query problem)
       try {
-        const plusOnesResponse = await Promise.all(
-          guestsData.map(async (guest: any) => {
-            try {
-              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-              });
-              
-              if (response.ok) {
-                const guestPlusOnes = await response.json();
-                return guestPlusOnes.map((po: any) => ({
+        const bulkResponse = await fetch(`${baseUrl}/plus_one/plus-ones/bulk/${selectedWedding}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (bulkResponse.ok) {
+          const bulkData = await bulkResponse.json();
+          const plusOnesByGuest = bulkData.plus_ones_by_guest || {};
+
+          // Transform the bulk data into the flat array format expected by the UI
+          const allPlusOnes: any[] = [];
+          Object.entries(plusOnesByGuest).forEach(([guestId, guestPlusOnes]: [string, any]) => {
+            const guest = guestsData.find((g: any) => (g.id || g._id) === guestId);
+            if (guest && Array.isArray(guestPlusOnes)) {
+              guestPlusOnes.forEach((po: any) => {
+                allPlusOnes.push({
                   ...po,
-                  guest_id: guest.id,
+                  guest_id: guestId,
                   guest_name: guest.name
-                }));
-              }
-              return [];
-            } catch (error) {
-              return [];
+                });
+              });
             }
-          })
-        );
-        
-        // Flatten the array of arrays
-        const allPlusOnes = plusOnesResponse.flat();
-        setPlusOnes(allPlusOnes);
+          });
+
+          setPlusOnes(allPlusOnes);
+        } else {
+          setPlusOnes([]);
+        }
       } catch (error) {
         setPlusOnes([]);
       }

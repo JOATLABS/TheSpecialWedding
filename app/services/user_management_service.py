@@ -909,7 +909,8 @@ class UserManagementService:
                 await event_bus.publish(event)
             except Exception as e:
                 # Log but don't fail the password change if event publishing fails
-            
+                pass
+
             return {
                 "message": "Password changed successfully",
                 "changed_at": datetime.utcnow().isoformat()
@@ -967,7 +968,8 @@ class UserManagementService:
                 await event_bus.publish(event)
             except Exception as e:
                 # Log but don't fail the email change if event publishing fails
-            
+                pass
+
             return {
                 "message": "Email change requested. Please check your new email address to verify the change.",
                 "pending_email": new_email,
@@ -1025,7 +1027,8 @@ class UserManagementService:
                 await event_bus.publish(event)
             except Exception as e:
                 # Log but don't fail the email change if event publishing fails
-            
+                pass
+
             return {
                 "message": "Email address changed successfully",
                 "old_email": old_email,
