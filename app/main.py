@@ -51,6 +51,7 @@ from app.api.support_management import router as support_router
 from app.api.public_endpoints import router as public_endpoints_router
 from app.api.email_templates import router as email_templates_router
 from app.api.webhooks import router as webhooks_router
+from app.api.platform_analytics import router as platform_analytics_router
 
 # Setup logging
 logging.basicConfig(
@@ -236,7 +237,8 @@ admin_routers = [
     (vendor_forms_router, "Vendor Management"),
     (notification_router, "Notifications"),
     (support_router, "Support"),
-    (email_templates_router, "Email Templates")
+    (email_templates_router, "Email Templates"),
+    (platform_analytics_router, "Platform Analytics")
 ]
 
 for router, tag in admin_routers:

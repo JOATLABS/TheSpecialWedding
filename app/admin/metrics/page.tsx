@@ -55,66 +55,17 @@ export default function PlatformMetricsPage() {
     try {
       setLoading(true);
       setError(null);
-      
-      // Fetch real data from multiple endpoints
-      const [usersResponse, subscriptionsResponse, analyticsResponse] = await Promise.all([
-        apiRequest('/api/admin/users', 'GET'),
-        apiRequest('/api/admin/subscription-plans', 'GET'),
-        apiRequest('/api/saas/analytics/overview', 'GET').catch(() => null) // This endpoint may not exist yet
-      ]);
 
-      // Process users data
-      const users = usersResponse || [];
-      const activeUsers = users.filter((u: any) => u.is_active);
-      const newUsersThisMonth = users.filter((u: any) => {
-        if (!u.created_at) return false;
-        const createdDate = new Date(u.created_at);
-        const now = new Date();
-        return createdDate.getMonth() === now.getMonth() && createdDate.getFullYear() === now.getFullYear();
-      });
+      // Fetch real analytics data from the platform analytics endpoint
+      const response = await apiRequest(`/api/saas/analytics/overview?timeframe=${timeframe}`, 'GET');
 
-      // Process subscription plans data
-      const plans = subscriptionsResponse || [];
-      const activePlans = plans.filter((p: any) => p.is_active);
-
-      // Build metrics from real data
-      const realMetrics: PlatformMetrics = {
-        users: {
-          total: users.length,
-          active: activeUsers.length,
-          new_this_month: newUsersThisMonth.length,
-          growth_rate: users.length > 0 ? (newUsersThisMonth.length / users.length) * 100 : 0
-        },
-        subscriptions: {
-          total: users.filter((u: any) => u.subscription_plan_id).length,
-          active: users.filter((u: any) => u.subscription_status === 'active').length,
-          trial: users.filter((u: any) => u.subscription_status === 'trialing').length,
-          churned_this_month: 0, // Would need activity log data
-          mrr: users.filter((u: any) => u.subscription_status === 'active').length * 29, // Estimated
-          arr: users.filter((u: any) => u.subscription_status === 'active').length * 348 // Estimated
-        },
-        usage: {
-          weddings_created: 0, // Would need wedding data
-          forms_created: 0, // Would need forms data
-          guests_managed: 0, // Would need guests data
-          emails_sent: 0, // Would need email log data
-          sms_sent: 0 // Would need SMS log data
-        },
-        performance: {
-          uptime: 99.9, // Would come from monitoring system
-          avg_response_time: 245, // Would come from monitoring system
-          error_rate: 0.1, // Would come from monitoring system
-          api_calls_today: 0 // Would need API analytics
-        },
-        revenue: {
-          total_revenue: users.filter((u: any) => u.subscription_status === 'active').length * 348, // Estimated yearly
-          monthly_growth: newUsersThisMonth.length > 0 ? 15.3 : 0,
-          average_revenue_per_user: users.filter((u: any) => u.subscription_status === 'active').length > 0 ? 348 : 0,
-          lifetime_value: 1200 // Estimated
-        }
-      };
-
-      setMetrics(realMetrics);
+      if (response && response.data) {
+        // The backend returns the data in the exact format we need
+        const realMetrics: PlatformMetrics = response.data;
+        setMetrics(realMetrics);
+      } else {
+        throw new Error('Invalid response from analytics API');
+      }
     } catch (error) {
       console.error('Error fetching metrics:', error);
       setError('Failed to load metrics');
@@ -141,7 +92,7 @@ export default function PlatformMetricsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-64">
+      <div className="flex items-center justify-center min-h-64" data-testid="metrics-loading">
         <div className="text-lg text-gray-900 dark:text-gray-100">Loading metrics...</div>
       </div>
     );
@@ -149,11 +100,12 @@ export default function PlatformMetricsPage() {
 
   if (!metrics) {
     return (
-      <div className="text-center py-8">
-        <div className="text-red-600 dark:text-red-400 mb-4">Failed to load metrics</div>
-        <button 
+      <div className="text-center py-8" data-testid="metrics-error-state">
+        <div className="text-red-600 dark:text-red-400 mb-4" data-testid="error-message">Failed to load metrics</div>
+        <button
           onClick={fetchMetrics}
           className="bg-wedding-rose text-white px-4 py-2 rounded-lg hover:bg-wedding-rose/80"
+          data-testid="retry-button"
         >
           Retry
         </button>
@@ -171,6 +123,8 @@ export default function PlatformMetricsPage() {
         </div>
         
         <select
+          id="timeframe-selector"
+          data-testid="timeframe-selector"
           value={timeframe}
           onChange={(e) => setTimeframe(e.target.value)}
           className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
@@ -192,9 +146,9 @@ export default function PlatformMetricsPage() {
       <div>
         <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">User Growth</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <Card className="p-6">
+          <Card className="p-6" data-testid="metric-total-users">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Users</h3>
-            <p className="text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.total)}</p>
+            <p className="text-3xl font-bold text-wedding-navy" data-testid="value-total-users">{formatNumber(metrics.users.total)}</p>
             <div className="flex items-center mt-2">
               <span className="text-sm text-green-600">+{metrics.users.new_this_month} this month</span>
             </div>
