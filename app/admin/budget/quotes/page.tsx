@@ -48,13 +48,21 @@ export default function VendorQuotesPage() {
 
   // Modal state
   const [showQuoteModal, setShowQuoteModal] = useState(false);
+  interface QuoteDetailItem {
+    label?: string;
+    value?: string | number;
+    unit?: string;
+    notes?: string;
+  }
+  type QuoteDetails = Record<string, QuoteDetailItem>;
+
   const [quoteForm, setQuoteForm] = useState({
     vendor_name: '',
     vendor_email: '',
     vendor_phone: '',
     service_category: 'photography',
     quote_amount: 0,
-    quote_details: {} as Record<string, any>,
+    quote_details: {} as QuoteDetails,
     includes: [] as string[],
     excludes: [] as string[],
     terms_conditions: '',
@@ -100,9 +108,10 @@ export default function VendorQuotesPage() {
       );
       setQuotes(quotesData);
       setError('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to load vendor quotes');
-      toast.error(err.message || 'Failed to load vendor quotes');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load vendor quotes';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -126,8 +135,9 @@ export default function VendorQuotesPage() {
       setShowQuoteModal(false);
       resetQuoteForm();
       toast.success('Vendor quote created successfully');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create vendor quote');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create vendor quote';
+      toast.error(msg);
     }
   };
 
@@ -138,8 +148,9 @@ export default function VendorQuotesPage() {
       const updatedQuote = await budgetApi.updateVendorQuoteStatus(token, quoteId, 'accepted');
       setQuotes(quotes.map(q => q.id === quoteId ? updatedQuote : q));
       toast.success('Quote accepted successfully');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to accept quote');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to accept quote';
+      toast.error(msg);
     }
   }, [token, quotes]);
 
@@ -150,8 +161,9 @@ export default function VendorQuotesPage() {
       const updatedQuote = await budgetApi.updateVendorQuoteStatus(token, quoteId, 'rejected');
       setQuotes(quotes.map(q => q.id === quoteId ? updatedQuote : q));
       toast.success('Quote rejected');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to reject quote');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to reject quote';
+      toast.error(msg);
     }
   }, [token, quotes]);
 
@@ -162,8 +174,9 @@ export default function VendorQuotesPage() {
       const updatedQuote = await budgetApi.rateVendorQuote(token, quoteId, rating, notes);
       setQuotes(quotes.map(q => q.id === quoteId ? updatedQuote : q));
       toast.success('Quote rated successfully');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to rate quote');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to rate quote';
+      toast.error(msg);
     }
   }, [token, quotes]);
 
@@ -241,8 +254,9 @@ export default function VendorQuotesPage() {
       const comparison = await budgetApi.compareVendorQuotes(token, selectedWedding, categoryFilter);
       // Handle comparison results (could open a modal or navigate to comparison view)
       toast.success('Quote comparison generated');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to compare quotes');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to compare quotes';
+      toast.error(msg);
     }
   };
 

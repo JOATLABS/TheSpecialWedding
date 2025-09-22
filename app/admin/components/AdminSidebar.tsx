@@ -62,7 +62,8 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
   if (isLoginPage || !isAuthenticated) return null;
 
   const role = normalizeRole(userProfile);
-  const navLinks = SECURE_ROUTES.filter(r => r.roles.includes(role as any));
+  // Type guard to ensure role matches AllowedRole union before filtering
+  const navLinks = SECURE_ROUTES.filter(r => r.roles.includes(role as typeof r.roles[number]));
 
   const handleLogout = () => {
     logout();

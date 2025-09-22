@@ -116,9 +116,10 @@ export default function BudgetDashboard() {
       setBudgetSummary(summaryData);
       setCategories(categoriesData);
       setError('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to load budget data');
-      toast.error(err.message || 'Failed to load budget data');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load budget data';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -142,8 +143,9 @@ export default function BudgetDashboard() {
       
       // Refresh summary
       fetchBudgetData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create budget category');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create budget category';
+      toast.error(msg);
     }
   };
 
@@ -176,8 +178,9 @@ export default function BudgetDashboard() {
       
       // Refresh summary
       fetchBudgetData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update budget category');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update budget category';
+      toast.error(msg);
     }
   };
 
@@ -191,8 +194,9 @@ export default function BudgetDashboard() {
       
       // Refresh summary
       fetchBudgetData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete budget category');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete budget category';
+      toast.error(msg);
     }
   };
 
@@ -238,8 +242,9 @@ export default function BudgetDashboard() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success(`Budget report exported as ${format.toUpperCase()}`);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to export budget report');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to export budget report';
+      toast.error(msg);
     }
   };
 

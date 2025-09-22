@@ -3,30 +3,18 @@
 import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import { Wedding } from '@/types/wedding';
 
-interface Wedding {
- id: string;
- couple_names: string;
- date: string;
- slug: string;
- venue?: string;
- guest_count?: number;
- assigned_planner_email?: string;
- status?: string;
- events?: Array<{
- type: string;
- date: string;
- details?: any;
- }>;
- created_at?: string;
- rsvp_stats?: {
- confirmed: number;
- declined: number;
- pending: number;
- response_rate: number;
- };
- progress_percentage?: number;
- days_until_wedding?: number;
+// Extend base Wedding type with planner dashboard computed fields
+interface PlannerWedding extends Wedding {
+	rsvp_stats?: {
+		confirmed: number;
+		declined: number;
+		pending: number;
+		response_rate: number;
+	};
+	progress_percentage?: number;
+	days_until_wedding?: number;
 }
 
 interface RSVPStats {
@@ -39,11 +27,16 @@ interface RSVPStats {
 export default function WeddingPlannerDashboard() {
  const { token, userProfile, fetchUserProfile, isAuthenticated } = useAdmin();
  const router = useRouter();
- const [weddings, setWeddings] = useState<Wedding[]>([]);
+ const [weddings, setWeddings] = useState<PlannerWedding[]>([]);
  const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, confirmed: 0, declined: 0, pending: 0 });
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');
- const [recentActivity, setRecentActivity] = useState<any[]>([]);
+ interface RecentActivityItem {
+	 type: 'rsvp_received' | 'guest_updated' | 'email_sent' | string;
+	 message: string;
+	 timestamp: string | number | Date;
+ }
+ const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
  const [authLoading, setAuthLoading] = useState(true);
 
  // Wait for authentication to be checked before redirecting
@@ -89,14 +82,20 @@ export default function WeddingPlannerDashboard() {
 
  if (response.ok) {
  const data = await response.json();
- setWeddings(data.weddings);
+ const weddingsData: PlannerWedding[] = Array.isArray(data.weddings) ? data.weddings : [];
+ setWeddings(weddingsData);
  setStats({
  total_guests: data.summary.total_guests,
  confirmed: data.summary.confirmed_rsvps,
  declined: data.summary.declined_rsvps,
  pending: data.summary.pending_rsvps
  });
- setRecentActivity(data.recent_activity);
+ const activity: RecentActivityItem[] = Array.isArray(data.recent_activity) ? data.recent_activity.map((a: any) => ({
+	 type: a.type,
+	 message: String(a.message || ''),
+	 timestamp: a.timestamp
+ })) : [];
+ setRecentActivity(activity);
  } else {
  setError('Failed to fetch dashboard data');
  }
