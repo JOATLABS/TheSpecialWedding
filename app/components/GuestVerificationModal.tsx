@@ -220,7 +220,7 @@ export default function GuestVerificationModal({
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
           <div className="text-center">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Wedding</h2>
+            <h2 className="text-xl text-gray-900 mb-2">Unable to Load Wedding</h2>
             <p className="text-gray-600 mb-4">{error}</p>
             {onCancel && (
               <Button onClick={onCancel} variant="secondary">
@@ -248,14 +248,14 @@ export default function GuestVerificationModal({
         <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
           <div className="p-6">
             <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl text-gray-900 mb-2">
                 Enter Verification Code
               </h2>
               <div className="w-16 h-1 bg-rose-400 mx-auto mb-4"></div>
               <p className="text-gray-600">
                 We sent a 6-digit code to your {otpContactType}:
               </p>
-              <p className="font-semibold text-gray-800 mt-1">
+              <p className="text-gray-800 mt-1">
                 {otpContact}
               </p>
             </div>
@@ -336,7 +336,7 @@ export default function GuestVerificationModal({
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            <h2 className="text-2xl text-gray-900 mb-2">
               {privacyInfo.couple_names}
             </h2>
             <div className="w-16 h-1 bg-rose-400 mx-auto mb-4"></div>
@@ -367,7 +367,7 @@ export default function GuestVerificationModal({
               <>
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <p className="text-sm text-blue-800">
-                    <span className="font-semibold">Have your invitation?</span> You can use your invitation token for quick access.
+                    <span>Have your invitation?</span> You can use your invitation token for quick access.
                   </p>
                 </div>
 
@@ -398,7 +398,7 @@ export default function GuestVerificationModal({
 
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                       <p className="text-sm text-green-800">
-                        <span className="font-semibold">Don't have your token?</span> Enter your phone number or email below to receive a verification code.
+                        <span>Don't have your token?</span> Enter your phone number or email below to receive a verification code.
                       </p>
                     </div>
 
@@ -440,7 +440,7 @@ export default function GuestVerificationModal({
 
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                       <p className="text-sm text-gray-600">
-                        <span className="font-semibold">Note:</span> Use the same contact information from your original invitation.
+                        <span>Note:</span> Use the same contact information from your original invitation.
                       </p>
                     </div>
                   </>

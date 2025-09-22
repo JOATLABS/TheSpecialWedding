@@ -29,7 +29,7 @@ export const BenefitsSection: React.FC<BenefitsSectionProps> = ({ benefits, them
     <GlassCard depth="mid" className="p-8">
       {/* Section Header */}
       <div className="text-center mb-12">
-        <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+  <h2 className="text-3xl md:text-4xl text-gray-900 mb-4">
           Why Wedding Planners Choose Us
         </h2>
         <p className="text-lg text-gray-600 max-w-3xl mx-auto">
@@ -61,7 +61,7 @@ export const BenefitsSection: React.FC<BenefitsSectionProps> = ({ benefits, them
 
             {/* Benefit Content */}
             <h3 
-              className="text-xl font-bold mb-3 group-hover:scale-105 transition-transform duration-300"
+              className="text-xl mb-3 group-hover:scale-105 transition-transform duration-300"
               style={{ color: theme.primary_color }}
             >
               {benefit.title}
