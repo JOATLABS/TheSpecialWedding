@@ -7,9 +7,11 @@ export interface EventDetails {
   attire?: string;
 }
 
+export type CoreEventType = 'traditional' | 'white_wedding' | 'reception' | 'engagement' | 'rehearsal';
 export interface WeddingEvent {
-  type: 'traditional' | 'white_wedding' | 'reception' | 'engagement' | 'rehearsal';
-  date: string;
+  // Kept open for forward compatibility with backend-defined event types
+  type: CoreEventType | string;
+  date: string; // ISO date string
   details?: EventDetails;
 }
 
@@ -65,12 +67,23 @@ export interface CountdownConfig {
   position: 'hero' | 'header' | 'floating';
 }
 
+export type WeddingStatus = 'active' | 'planning' | 'completed' | 'cancelled' | string;
+
 export interface Wedding {
-  id: string;
+  id: string; // legacy id (landing site usage)
+  _id?: string; // admin API sometimes provides _id
   slug: string;
   couple_names: string;
   date: string;
   events: WeddingEvent[];
+  // Admin / operational fields
+  assigned_planner_email?: string;
+  assigned_planner_id?: string;
+  venue?: string;
+  guest_count?: number;
+  total_budget?: number;
+  status?: WeddingStatus;
+  // Public site configuration
   rsvp_config?: RSVPConfig;
   registries?: RegistryItem[];
   faqs?: FAQItem[];
@@ -80,5 +93,28 @@ export interface Wedding {
   wedding_party?: WeddingPartyMember[];
   countdown_config?: CountdownConfig;
   created_at?: string;
-  [key: string]: any; // for flexibility (additional fields)
+  [key: string]: any; // retained flexible index signature (consider narrowing in future)
 }
+
+export interface WeddingForm {
+  couple_names: string;
+  date: string;
+  slug: string;
+  assigned_planner_email?: string;
+  venue?: string;
+  status?: WeddingStatus;
+  guest_count?: number;
+  total_budget?: number;
+  events: WeddingEvent[];
+}
+
+export interface WeddingTemplate {
+  id: string;
+  name: string;
+  description: string;
+  events: WeddingEvent[];
+  status: WeddingStatus;
+}
+
+export type AssignmentFilter = 'all' | 'assigned' | 'unassigned';
+export type DateFilter = 'all' | 'upcoming' | 'past' | 'this_month' | 'this_year';

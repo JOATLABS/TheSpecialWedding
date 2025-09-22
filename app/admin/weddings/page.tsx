@@ -3,50 +3,14 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '../../contexts/AdminContext';
-
-// Domain Types (consider extracting to app/types/wedding.ts if reused elsewhere)
-export type EventType = 'traditional' | 'white_wedding' | 'reception' | 'engagement' | 'rehearsal' | string; // allow backend extensibility
-export interface WeddingEventDetails {
-  venue_name?: string;
-  location?: string;
-  time?: string;
-  attire?: string;
-  // Future fields can be added without breaking existing usages
-}
-export interface WeddingEvent {
-  type: EventType;
-  date: string; // ISO date (yyyy-mm-dd)
-  details?: WeddingEventDetails;
-}
-export type WeddingStatus = 'active' | 'planning' | 'completed' | 'cancelled' | string;
-
-export interface Wedding {
-  id: string; // legacy id field (some APIs may provide both)
-  _id: string; // primary identifier
-  couple_names: string;
-  date: string; // ISO date string
-  slug: string;
-  assigned_planner_email?: string;
-  assigned_planner_id?: string;
-  status?: WeddingStatus;
-  venue?: string;
-  guest_count?: number;
-  total_budget?: number;
-  created_at?: string;
-  events?: WeddingEvent[];
-}
-
-export interface WeddingForm {
-  couple_names: string;
-  date: string;
-  slug: string;
-  assigned_planner_email?: string;
-  venue?: string;
-  status?: WeddingStatus;
-  guest_count?: number;
-  total_budget?: number;
-  events: WeddingEvent[];
-}
+import {
+  Wedding,
+  WeddingForm,
+  WeddingTemplate,
+  AssignmentFilter,
+  DateFilter,
+  WeddingEvent
+} from '@/types/wedding';
 
 interface UserDataProfile {
   first_name?: string;
@@ -60,29 +24,16 @@ interface UserProfile {
   is_wedding_planner: boolean;
   user_data?: UserDataProfile;
 }
-
 interface PlannerOption {
   email: string;
   name: string;
   id: string;
 }
-
 interface PlannerApiUser {
   _id: string;
   email: string;
   user_data?: UserDataProfile;
 }
-
-interface WeddingTemplate {
-  id: string;
-  name: string;
-  description: string;
-  events: WeddingEvent[];
-  status: WeddingStatus;
-}
-
-type AssignmentFilter = 'all' | 'assigned' | 'unassigned';
-type DateFilter = 'all' | 'upcoming' | 'past' | 'this_month' | 'this_year';
 
 export default function AdminWeddingsPage() {
   const { token, userProfile, fetchUserProfile } = useAdmin();
@@ -408,7 +359,12 @@ export default function AdminWeddingsPage() {
       total_budget: wedding.total_budget || 0,
       events: wedding.events || []
     });
-    setEditingId(wedding._id);
+    if (wedding._id) {
+      setEditingId(wedding._id);
+    } else {
+      // Fallback to legacy id if _id missing
+      setEditingId(wedding.id);
+    }
     setShowForm(true);
   };
 
@@ -943,7 +899,7 @@ export default function AdminWeddingsPage() {
                         Edit
                       </button>
                       <button 
-                        onClick={() => handleDelete(wedding._id)}
+                        onClick={() => handleDelete(wedding._id || wedding.id)}
                         className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
                       >
                         Delete
