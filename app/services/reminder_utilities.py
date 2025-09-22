@@ -41,7 +41,6 @@ class RSVPReminderHelper:
                 self.twilio_client.messages.create(to=phone, from_=self.from_phone, body=message)
                 sent += 1
             except Exception as e:
-                print(f"Failed to send to {phone}: {e}")
         return {"sent": sent}
 
     def simulate_rsvp_for_guest(self, token: str, attending=None, dietary=None, phone=None, plus_one=None):

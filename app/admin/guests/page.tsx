@@ -173,11 +173,9 @@ export default function AdminGuestsPage() {
           console.log('RSVPs data:', rsvpsData); // Debug log
           setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
         } else {
-          console.log('RSVPs endpoint failed:', rsvpsResponse.status);
           setRsvps([]);
         }
       } catch (rsvpError) {
-        console.log('RSVPs fetch error:', rsvpError);
         setRsvps([]);
       }
 
@@ -203,7 +201,6 @@ export default function AdminGuestsPage() {
               }
               return [];
             } catch (error) {
-              console.log(`Plus-ones fetch error for guest ${guest.id}:`, error);
               return [];
             }
           })
@@ -212,9 +209,7 @@ export default function AdminGuestsPage() {
         // Flatten the array of arrays
         const allPlusOnes = plusOnesResponse.flat();
         setPlusOnes(allPlusOnes);
-        console.log('Plus-ones loaded:', allPlusOnes.length);
       } catch (error) {
-        console.log('Plus-ones fetch error:', error);
         setPlusOnes([]);
       }
       

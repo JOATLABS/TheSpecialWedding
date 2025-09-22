@@ -147,7 +147,6 @@ export default function AdminRemindersPage() {
  }
  
  const data = await response.json();
- console.log('Fetched guests:', data.length, 'guests');
  setGuests(Array.isArray(data) ? data : []);
  } catch (err) {
  console.error('Failed to load guests:', err);
@@ -412,10 +411,6 @@ export default function AdminRemindersPage() {
  const guestsWithPhoneOrEmail = guests.filter(g => 
  (g.phone && g.phone.trim() !== '') || (g.email && g.email.trim() !== '')
  );
- console.log('All guests:', guests);
- console.log('Guests with phone:', guestsWithPhone);
- console.log('Selected wedding:', selectedWedding);
- console.log('Token exists:', !!token);
 
  if (authLoading) {
  return (

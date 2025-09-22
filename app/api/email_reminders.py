@@ -19,7 +19,6 @@ try:
     email_service = ResendEmailService()
     email_available = email_service.configured
 except Exception as e:
-    print(f"Email service not available: {str(e)}")
     email_available = False
     email_service = None
 

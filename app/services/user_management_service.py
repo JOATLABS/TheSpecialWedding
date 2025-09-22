@@ -909,7 +909,6 @@ class UserManagementService:
                 await event_bus.publish(event)
             except Exception as e:
                 # Log but don't fail the password change if event publishing fails
-                print(f"Failed to publish password change event: {e}")
             
             return {
                 "message": "Password changed successfully",
@@ -968,7 +967,6 @@ class UserManagementService:
                 await event_bus.publish(event)
             except Exception as e:
                 # Log but don't fail the email change if event publishing fails
-                print(f"Failed to publish email change requested event: {e}")
             
             return {
                 "message": "Email change requested. Please check your new email address to verify the change.",
@@ -1027,7 +1025,6 @@ class UserManagementService:
                 await event_bus.publish(event)
             except Exception as e:
                 # Log but don't fail the email change if event publishing fails
-                print(f"Failed to publish email changed event: {e}")
             
             return {
                 "message": "Email address changed successfully",

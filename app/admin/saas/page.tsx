@@ -408,7 +408,6 @@ const SaasAdminDashboard = () => {
  }
  };
 
- console.log('Saving SAAS config:', cleanConfig);
  
  const response = await fetch(`${baseUrl}/admin/saas-config`, {
  method: 'PUT',
@@ -420,8 +419,6 @@ const SaasAdminDashboard = () => {
  });
 
  const responseData = await response.text();
- console.log('Response status:', response.status);
- console.log('Response data:', responseData);
 
  if (response.ok) {
  alert('SAAS configuration saved successfully');

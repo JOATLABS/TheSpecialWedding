@@ -18,4 +18,3 @@ key = f"gallery/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{filename}"
 with open(local_path, "rb") as f:
  s3.upload_fileobj(f, bucket_name, key)
 
-print(f" Uploaded to s3://{bucket_name}/{key}")

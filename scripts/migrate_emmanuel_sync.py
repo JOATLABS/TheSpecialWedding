@@ -25,9 +25,16 @@ def migrate_emmanuel_to_planner():
     """Main migration function"""
     print("Starting Emmanuel Wedding Planner Migration (Sync Version)")
     print("=" * 70)
-    
-    email = "emmanuel.t.akinwale@gmail.com"
-    password = "j89x8G&8SM8^m"
+
+    # Get credentials from environment variables for security
+    email = os.environ.get("MIGRATION_EMAIL", "emmanuel.t.akinwale@gmail.com")
+    password = os.environ.get("MIGRATION_PASSWORD")
+
+    if not password:
+        print("❌ ERROR: MIGRATION_PASSWORD environment variable not set!")
+        print("   Please set it before running this script:")
+        print("   export MIGRATION_PASSWORD='your-secure-password'")
+        sys.exit(1)
     
     try:
         # Initialize database collections

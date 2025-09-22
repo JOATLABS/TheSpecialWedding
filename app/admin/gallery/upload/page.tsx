@@ -92,7 +92,6 @@ export default function AdminGalleryUploadPage() {
         }
       }
       
-      console.log('Fetched all images:', allImages);
       setUploadedImages(allImages);
     } catch (err) {
       console.error('Failed to fetch images:', err);
@@ -107,7 +106,6 @@ export default function AdminGalleryUploadPage() {
     
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      console.log('Deleting image with key:', imageKey);
       
       const response = await fetch(
         `${baseUrl}/admin/gallery?key=${encodeURIComponent(imageKey)}`,
@@ -426,7 +424,6 @@ export default function AdminGalleryUploadPage() {
                           {/* Delete Button */}
                           <button
                             onClick={() => {
-                              console.log('Delete button clicked for:', image.key || image.filename);
                               handleDeleteImage(image.key || image.filename);
                             }}
                             className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2 py-1 rounded hover:bg-red-700 opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -437,7 +434,6 @@ export default function AdminGalleryUploadPage() {
                           {/* Copy URL Button */}
                           <button
                             onClick={() => {
-                              console.log('Copy URL button clicked for:', image.key);
                               navigator.clipboard.writeText(image.url || image.file_url || '');
                               setStatus((s) => `${s}Copied URL for ${image.key}\n`);
                             }}
@@ -449,8 +445,6 @@ export default function AdminGalleryUploadPage() {
                           {/* Set as Featured Button */}
                           <button
                             onClick={async () => {
-                              console.log('Set as Background clicked for:', image.key || image.filename);
-                              console.log('Selected wedding ID:', selectedWedding);
                               try {
                                 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
                                 const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
@@ -464,7 +458,6 @@ export default function AdminGalleryUploadPage() {
                                   }),
                                 });
 
-                                console.log('Response status:', response.status);
                                 if (!response.ok) {
                                   const errorText = await response.text();
                                   console.error('Failed to set featured image:', errorText);

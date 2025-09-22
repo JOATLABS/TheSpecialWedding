@@ -17,7 +17,6 @@ try:
     telnyx_helper = TelnyxRSVPReminderHelper()
     telnyx_available = True
 except Exception as e:
-    print(f"Telnyx services not available: {str(e)}")
     telnyx_available = False
     telnyx_reminder_service = None
     telnyx_helper = None
