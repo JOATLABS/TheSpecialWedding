@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 
 test.describe('Admin Login Test - localhost:3000', () => {
   const adminCredentials = {

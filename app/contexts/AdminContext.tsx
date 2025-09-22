@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { createAutomationAttrs } from '@/utils/automation-attrs';
+// Removed unused createAutomationAttrs import
 
 interface UserProfile {
     email: string;

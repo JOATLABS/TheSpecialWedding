@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 
 // Test configuration - use environment variables for flexibility
 const BASE_URL = process.env.FRONTEND_URL!;
-const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
+// Removed unused API_URL constant
 
 // Admin credentials - use environment variables for security
 const ADMIN_CREDENTIALS = {

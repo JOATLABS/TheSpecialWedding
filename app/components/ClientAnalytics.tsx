@@ -7,12 +7,7 @@ export default function ClientAnalytics() {
   useEffect(() => {
     // Register service worker on client side only
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js').then(
-        function(registration) {
-        },
-        function(err) {
-        }
-      );
+  navigator.serviceWorker.register('/service-worker.js').catch(() => {});
     }
   }, []);
 

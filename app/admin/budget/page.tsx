@@ -223,8 +223,8 @@ export default function BudgetDashboard() {
     setEditingCategory(null);
   };
 
-  const handleAddPayment = (categoryId: string) => {
-    // Placeholder for payment modal
+  const handleAddPayment = () => {
+    // Placeholder for payment modal (category id not yet needed)
     toast.info('Payment tracking feature coming soon');
   };
 
