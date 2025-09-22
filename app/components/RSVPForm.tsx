@@ -352,8 +352,9 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                 </div>
               </div>
             ))}
-            <p className="text-sm text-gray-600 italic">
-              * Leave blank if you're not bringing additional guests
+            <p className="text-sm text-gray-600 italic flex items-start gap-1" aria-live="polite">
+              <span aria-hidden="true" className="text-wedding-rose font-semibold select-none">Note:</span>
+              <span>Leave blank if you&apos;re not bringing additional guests</span>
             </p>
           </div>
         </div>

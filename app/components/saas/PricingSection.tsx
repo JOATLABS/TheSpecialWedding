@@ -207,7 +207,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
                       <li className="text-sm text-gray-600">No features listed</li>
                     )}
                     {Array.isArray(plan.features) && plan.features.length > 5 && (
-                      <li className="text-sm text-gray-500 italic">
+                      <li className="text-sm text-gray-500">
                         +{plan.features.length - 5} more features
                       </li>
                     )}
