@@ -2,13 +2,30 @@
 
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, FieldValues } from 'react-hook-form';
 import { useState } from 'react';
 import { useWedding } from '@/hooks/useWedding';
 import { formAutomationAttrs, guestAutomationAttrs, createAutomationAttrs } from '../utils/automation-attrs';
 
+interface RSVPGuest {
+  id: string;
+  name?: string;
+  phone?: string;
+  slug?: string;
+  plus_one_allowed: boolean;
+  number_of_plus_ones_allowed: number;
+}
+
+interface RSVPFormValues extends FieldValues {
+  attending?: string[];
+  dietary?: string;
+  phone: string;
+  sms_opt_in?: boolean;
+  [key: string]: any; // fallback for dynamic plus_one_* keys (kept localized)
+}
+
 interface RSVPFormProps {
-  guest: any;
+  guest: RSVPGuest;
   token: string;
 }
 
@@ -21,7 +38,7 @@ interface PlusOneData {
 
 export default function RSVPForm({ guest, token }: RSVPFormProps) {
   const wedding = useWedding();
-  const { register, handleSubmit, formState: { errors, isSubmitting }, watch, setValue } = useForm();
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<RSVPFormValues>();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
@@ -58,13 +75,13 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
     document.body.removeChild(link);
   };
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: RSVPFormValues) => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const apiUrl = baseUrl.replace('/admin', '');
       
       // Get filled plus-ones from form data
-      const filledPlusOnes = [];
+  const filledPlusOnes: { name: string; phone: string; attending: string[]; dietary: string }[] = [];
       for (let i = 0; i < guest.number_of_plus_ones_allowed; i++) {
         const plusOneName = data[`plus_one_${i}_name`];
         if (plusOneName && plusOneName.trim()) {
@@ -78,17 +95,17 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       }
       
       // Submit main RSVP with first plus-one (if any)
-      const mainRsvpData = {
+      const mainRsvpData: Record<string, unknown> = {
         ...data,
         wedding_id: wedding.id,
-        plus_ones: filledPlusOnes // Send all plus-ones in array format
+        plus_ones: filledPlusOnes
       };
       
       // Remove individual plus-one fields from main data
       for (let i = 0; i < guest.number_of_plus_ones_allowed; i++) {
-        delete mainRsvpData[`plus_one_${i}_name`];
-        delete mainRsvpData[`plus_one_${i}_phone`];
-        delete mainRsvpData[`plus_one_${i}_dietary`];
+  delete (mainRsvpData as Record<string, unknown>)[`plus_one_${i}_name`];
+  delete (mainRsvpData as Record<string, unknown>)[`plus_one_${i}_phone`];
+  delete (mainRsvpData as Record<string, unknown>)[`plus_one_${i}_dietary`];
       }
       
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
@@ -102,8 +119,8 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       localStorage.setItem(`rsvp-${token}`, 'true');
       setSubmitted(true);
       generateICS();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'RSVP failed');
     }
   };
 
@@ -143,7 +160,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         <div className="space-y-2 sm:space-y-0 sm:space-x-4 sm:flex">
           <label className="flex items-center space-x-2">
             <input
-              {...guestAutomationAttrs(guest, 'checkbox-attending-traditional')}
+              {...guestAutomationAttrs({ id: guest.id, name: guest.name || '' }, 'checkbox-attending-traditional')}
               type="checkbox"
               value="traditional"
               {...register('attending')}
@@ -153,7 +170,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
           </label>
           <label className="flex items-center space-x-2">
             <input
-              {...guestAutomationAttrs(guest, 'checkbox-attending-white-wedding')}
+              {...guestAutomationAttrs({ id: guest.id, name: guest.name || '' }, 'checkbox-attending-white-wedding')}
               type="checkbox"
               value="white_wedding"
               {...register('attending')}
@@ -163,7 +180,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
           </label>
           <label className="flex items-center space-x-2">
             <input
-              {...guestAutomationAttrs(guest, 'checkbox-attending-reception')}
+              {...guestAutomationAttrs({ id: guest.id, name: guest.name || '' }, 'checkbox-attending-reception')}
               type="checkbox"
               value="reception"
               {...register('attending')}
@@ -177,7 +194,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       <div>
         <label className="block font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
         <input
-          {...guestAutomationAttrs(guest, 'input-dietary-restrictions')}
+          {...guestAutomationAttrs({ id: guest.id, name: guest.name || '' }, 'input-dietary-restrictions')}
           type="text"
           className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           {...register('dietary')}
@@ -188,7 +205,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       <div>
         <label className="block font-semibold text-gray-700 mb-2">Phone Number</label>
         <input
-          {...guestAutomationAttrs(guest, 'input-phone-number')}
+          {...guestAutomationAttrs({ id: guest.id, name: guest.name || '' }, 'input-phone-number')}
           type="tel"
           className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           defaultValue={guest.phone}
@@ -209,7 +226,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         
         <label className="flex items-start space-x-3 mb-4">
           <input
-            {...guestAutomationAttrs(guest, 'checkbox-sms-opt-in')}
+            {...guestAutomationAttrs({ id: guest.id, name: guest.name || '' }, 'checkbox-sms-opt-in')}
             type="checkbox"
             {...register('sms_opt_in')}
             defaultChecked={false}
@@ -346,7 +363,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
       <div className="flex justify-center pt-6">
         <button
-          {...guestAutomationAttrs(guest, 'submit-rsvp', 'public')}
+          {...guestAutomationAttrs({ id: guest.id, name: guest.name || '' }, 'submit-rsvp', 'public')}
           disabled={isSubmitting}
           type="submit"
           className="w-full sm:w-auto bg-wedding-rose text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-opacity-90 focus:ring-4 focus:ring-wedding-rose focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"

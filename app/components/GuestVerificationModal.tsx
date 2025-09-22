@@ -3,9 +3,22 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 
+interface VerifiedGuestData {
+  id?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  token?: string;
+}
+
+interface VerifiedWeddingData {
+  couple_names?: string;
+  [key: string]: unknown; // allow passthrough of extra backend fields without any
+}
+
 interface GuestVerificationModalProps {
   slug: string;
-  onVerified: (weddingData: any, guestData?: any) => void;
+  onVerified: (weddingData: VerifiedWeddingData, guestData?: VerifiedGuestData) => void;
   onCancel?: () => void;
 }
 
@@ -58,8 +71,8 @@ export default function GuestVerificationModal({
       }
       const data = await response.json();
       setPrivacyInfo(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load wedding information');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load wedding information');
     } finally {
       setLoading(false);
     }
@@ -71,7 +84,7 @@ export default function GuestVerificationModal({
     setError('');
 
     try {
-      const verificationData: any = {};
+      const verificationData: Record<string, string> = {};
       
       if (privacyInfo?.privacy_mode === 'password' && password) {
         verificationData.password = password;
@@ -115,8 +128,8 @@ export default function GuestVerificationModal({
       
       onVerified(result.wedding, result.guest);
 
-    } catch (err: any) {
-      setError(err.message || 'Verification failed. Please check your information and try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed. Please check your information and try again.');
     } finally {
       setVerifying(false);
     }
@@ -126,7 +139,7 @@ export default function GuestVerificationModal({
     setSendingOtp(true);
     setError('');
     
-    try {
+  try {
       const response = await fetch(`${API_URL}/api/otp/send`, {
         method: 'POST',
         headers: {
@@ -161,8 +174,8 @@ export default function GuestVerificationModal({
         });
       }, 1000);
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to send verification code');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send verification code');
     } finally {
       setSendingOtp(false);
     }

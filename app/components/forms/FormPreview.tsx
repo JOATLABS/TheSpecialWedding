@@ -2,10 +2,31 @@
 
 import React, { useState } from 'react';
 
+type FormFieldType =
+	| 'text'
+	| 'email'
+	| 'phone'
+	| 'number'
+	| 'date'
+	| 'textarea'
+	| 'select'
+	| 'radio'
+	| 'checkbox'
+	| 'rating'
+	| 'scale';
+
+// Value types supported by the form inputs above
+// - text-like fields -> string
+// - number/scale/rating -> number
+// - checkbox -> string[] (multi-select)
+// - radio/select/date -> string
+// Nullable to represent untouched/unset state distinctly from empty string/array
+export type FormResponseValue = string | number | string[] | null;
+
 interface FormField {
  id: string;
  label: string;
- type: string;
+ type: FormFieldType;
  placeholder?: string;
  required: boolean;
  description?: string;
@@ -34,14 +55,14 @@ interface FormPreviewProps {
 }
 
 export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
- const [responses, setResponses] = useState<{ [key: string]: any }>({});
+ const [responses, setResponses] = useState<Record<string, FormResponseValue>>({});
  const [isSubmitting, setIsSubmitting] = useState(false);
  const [isSubmitted, setIsSubmitted] = useState(false);
 
- const handleInputChange = (fieldId: string, value: any) => {
+ const handleInputChange = (fieldId: string, value: FormResponseValue) => {
  setResponses(prev => ({
  ...prev,
- [fieldId]: value
+ [fieldId]: value,
  }));
  };
 
@@ -154,13 +175,16 @@ export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
  <input
  type="checkbox"
  value={option}
- checked={(responses[field.id] || []).includes(option)}
+ checked={Array.isArray(responses[field.id]) && (responses[field.id] as string[]).includes(option)}
  onChange={(e) => {
- const currentValues = responses[field.id] || [];
+ const currentValues = Array.isArray(responses[field.id]) ? (responses[field.id] as string[]) : [];
  if (e.target.checked) {
  handleInputChange(field.id, [...currentValues, option]);
  } else {
- handleInputChange(field.id, currentValues.filter((v: string) => v !== option));
+ handleInputChange(
+ field.id,
+ currentValues.filter((v: string) => v !== option)
+ );
  }
  }}
  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
@@ -180,14 +204,18 @@ export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
  type="button"
  onClick={() => handleInputChange(field.id, rating)}
  className={`text-2xl ${
- (responses[field.id] || 0) >= rating ? 'text-yellow-400' : 'text-gray-300'
+ (typeof responses[field.id] === 'number' ? (responses[field.id] as number) : 0) >= rating
+ ? 'text-yellow-400'
+ : 'text-gray-300'
  } hover:text-yellow-400 transition-colors`}
  >
  
  </button>
  ))}
  <span className="ml-2 text-sm text-gray-600">
- {responses[field.id] ? `${responses[field.id]} star${responses[field.id] !== 1 ? 's' : ''}` : 'Click to rate'}
+ {typeof responses[field.id] === 'number'
+ ? `${responses[field.id]} star${responses[field.id] !== 1 ? 's' : ''}`
+ : 'Click to rate'}
  </span>
  </div>
  );

@@ -21,6 +21,18 @@ interface VerifiedGuest {
 
 interface GalleryResponseItem { key: string; url: string }
 
+// Runtime type guard for gallery API items
+function isGalleryResponseItem(value: unknown): value is GalleryResponseItem {
+ return (
+	 typeof value === 'object' &&
+	 value !== null &&
+	 'key' in value &&
+	 'url' in value &&
+	 typeof (value as any).key === 'string' &&
+	 typeof (value as any).url === 'string'
+ );
+}
+
 export default function WeddingLandingPage() {
  const contextWedding = useContext(WeddingContext);
  const params = useParams();
@@ -88,8 +100,8 @@ export default function WeddingLandingPage() {
  if (res.ok) {
  const data: unknown = await res.json();
  if (Array.isArray(data)) {
-	 const mapped = data.filter((img: any): img is GalleryResponseItem => img && typeof img.key === 'string' && typeof img.url === 'string')
-										 .map(img => ({ key: img.key, url: img.url }));
+	 const mapped = data.filter(isGalleryResponseItem)
+									 .map(img => ({ key: img.key, url: img.url }));
 	 setImages(mapped);
  } else {
 	 setImages([]);

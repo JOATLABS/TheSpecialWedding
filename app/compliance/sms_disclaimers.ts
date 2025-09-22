@@ -160,8 +160,16 @@ export const WEBHOOK_RESPONSES = {
   }
 };
 
+// Form data expected from SMS opt-in UI
+export interface OptInFormData {
+  phone?: string;
+  smsTransactional?: boolean;
+  smsMarketing?: boolean;
+  defaultChecked?: boolean; // guardrail to ensure checkboxes not pre-checked
+}
+
 // Validation functions
-export function validateOptInForm(formData: any): string[] {
+export function validateOptInForm(formData: OptInFormData): string[] {
   const errors: string[] = [];
   
   if (!formData.phone) {

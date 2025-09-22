@@ -13,10 +13,17 @@ interface CountdownConfig {
   position: 'hero' | 'header' | 'floating';
 }
 
+interface ThemeConfig {
+  primaryColor?: string;
+  secondaryColor?: string;
+  fontFamily?: string;
+  // Extend with other theme tokens actually supported by the landing pages.
+}
+
 interface WeddingCountdownProps {
   weddingDate: string;
   countdownConfig?: CountdownConfig;
-  themeConfig?: any;
+  themeConfig?: ThemeConfig;
   className?: string;
 }
 

@@ -3,10 +3,25 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 
+type FormFieldType =
+	| 'text'
+	| 'email'
+	| 'phone'
+	| 'number'
+	| 'date'
+	| 'textarea'
+	| 'select'
+	| 'radio'
+	| 'checkbox'
+	| 'rating'
+	| 'scale';
+
+export type FormResponseValue = string | number | string[] | null;
+
 interface FormField {
  id: string;
  label: string;
- type: string;
+ type: FormFieldType;
  placeholder?: string;
  required: boolean;
  description?: string;
@@ -35,7 +50,7 @@ export default function PublicFormPage() {
  const formId = params.id as string;
  
  const [form, setForm] = useState<Form | null>(null);
- const [responses, setResponses] = useState<{ [key: string]: any }>({});
+ const [responses, setResponses] = useState<Record<string, FormResponseValue>>({});
  const [loading, setLoading] = useState(true);
  const [submitting, setSubmitting] = useState(false);
  const [submitted, setSubmitted] = useState(false);
@@ -70,7 +85,7 @@ export default function PublicFormPage() {
  }
  };
 
- const handleInputChange = (fieldId: string, value: any) => {
+ const handleInputChange = (fieldId: string, value: FormResponseValue) => {
  setResponses(prev => ({
  ...prev,
  [fieldId]: value
@@ -228,11 +243,14 @@ export default function PublicFormPage() {
  type="checkbox"
  value={option}
  onChange={(e) => {
- const currentValues = responses[field.id] || [];
+ const currentValues = Array.isArray(responses[field.id]) ? (responses[field.id] as string[]) : [];
  if (e.target.checked) {
- handleInputChange(field.id, [...currentValues, option]);
+	 handleInputChange(field.id, [...currentValues, option]);
  } else {
- handleInputChange(field.id, currentValues.filter((v: string) => v !== option));
+	 handleInputChange(
+		 field.id,
+		 currentValues.filter((v: string) => v !== option)
+	 );
  }
  }}
  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
@@ -253,14 +271,18 @@ export default function PublicFormPage() {
  type="button"
  onClick={() => handleInputChange(field.id, rating)}
  className={`text-2xl ${
- responses[field.id] >= rating ? 'text-yellow-400' : 'text-gray-300'
+ (typeof responses[field.id] === 'number' ? (responses[field.id] as number) : 0) >= rating
+	 ? 'text-yellow-400'
+	 : 'text-gray-300'
  } hover:text-yellow-400 transition-colors`}
  >
  
  </button>
  ))}
  <span className="ml-2 text-sm text-gray-600">
- {responses[field.id] ? `${responses[field.id]} star${responses[field.id] !== 1 ? 's' : ''}` : 'Click to rate'}
+ {typeof responses[field.id] === 'number'
+	 ? `${responses[field.id]} star${responses[field.id] !== 1 ? 's' : ''}`
+	 : 'Click to rate'}
  </span>
  </div>
  );
@@ -289,10 +311,10 @@ export default function PublicFormPage() {
  </button>
  ))}
  </div>
- {responses[field.id] && (
- <p className="text-sm text-gray-600 text-center">
- Selected: {responses[field.id]}/10
- </p>
+ {typeof responses[field.id] === 'number' && (
+	 <p className="text-sm text-gray-600 text-center">
+		 Selected: {responses[field.id]}/10
+	 </p>
  )}
  </div>
  );

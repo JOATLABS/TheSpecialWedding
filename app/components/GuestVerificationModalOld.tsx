@@ -3,9 +3,21 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 
+interface VerifiedGuestData {
+	id?: string;
+	name?: string;
+	phone?: string;
+	token?: string;
+}
+
+interface VerifiedWeddingData {
+	couple_names?: string;
+	[key: string]: unknown; // legacy modal passes through dynamic fields; keep loose but not any
+}
+
 interface GuestVerificationModalProps {
  slug: string;
- onVerified: (weddingData: any, guestData?: any) => void;
+ onVerified: (weddingData: VerifiedWeddingData, guestData?: VerifiedGuestData) => void;
  onCancel?: () => void;
 }
 
@@ -51,8 +63,9 @@ export default function GuestVerificationModal({
  }
  const data = await response.json();
  setPrivacyInfo(data);
- } catch (err: any) {
- setError(err.message || 'Failed to load wedding information');
+ } catch (err) {
+ const message = err instanceof Error ? err.message : 'Failed to load wedding information';
+ setError(message);
  } finally {
  setLoading(false);
  }
@@ -64,7 +77,7 @@ export default function GuestVerificationModal({
  setError('');
 
  try {
- const verificationData: any = {};
+ const verificationData: Record<string, string> = {};
  
  if (privacyInfo?.privacy_mode === 'password' && password) {
  verificationData.password = password;
@@ -93,8 +106,9 @@ export default function GuestVerificationModal({
  const result = await response.json();
  onVerified(result.wedding, result.guest);
 
- } catch (err: any) {
- setError(err.message || 'Verification failed. Please check your information and try again.');
+ } catch (err) {
+ const message = err instanceof Error ? err.message : 'Verification failed. Please check your information and try again.';
+ setError(message);
  } finally {
  setVerifying(false);
  }
