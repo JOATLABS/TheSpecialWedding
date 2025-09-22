@@ -418,7 +418,7 @@ export default function VendorManagementPage() {
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Form Fields Preview</h3>
                     <div className="bg-gray-50 p-4 rounded-lg space-y-4">
-                      {formData.fields.map((field, index) => (
+                      {formData.fields.map((field) => (
                         <div key={field.id} className="flex items-center justify-between p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded">
                           <div>
                             <span className="font-medium">{field.label}</span>

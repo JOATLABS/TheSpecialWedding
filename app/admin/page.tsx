@@ -17,7 +17,7 @@ interface UserProfile {
 export default function AdminDashboardPage() {
   const { token } = useAdmin();
   const router = useRouter();
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [_userProfile, setUserProfile] = useState<UserProfile | null>(null); // TODO(refactor): Consider lifting to AdminContext if dashboard widgets need it
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

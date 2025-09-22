@@ -16,7 +16,7 @@ interface Wedding {
 }
 
 export default function AdminGalleryUploadPage() {
-  const { token, logout } = useAdmin();
+  const { token } = useAdmin(); // TODO(feature): Add logout control in header actions when gallery management UI expanded
   const router = useRouter();
 
   const [files, setFiles] = useState<File[]>([]);

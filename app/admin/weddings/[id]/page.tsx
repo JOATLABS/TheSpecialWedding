@@ -1,16 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
-import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember } from '@/types/wedding';
+import { Wedding, WeddingEvent, RegistryItem, FAQItem, WeddingPartyMember } from '@/types/wedding'; // Removed unused OurStory type
 import { Switch } from '@/components/ui/switch';
 
 export default function WeddingDetailsPage() {
  const { token } = useAdmin();
  const params = useParams();
- const router = useRouter();
+ // Removed unused router (navigation handled elsewhere in nested components)
  const weddingId = params.id as string;
  
  const [wedding, setWedding] = useState<Wedding | null>(null);

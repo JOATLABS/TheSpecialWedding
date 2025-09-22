@@ -17,7 +17,7 @@ import PrivacyModal from '@/components/PrivacyModal';
 import WeddingCountdown from '@/components/ui/WeddingCountdown';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
-  const theme = useTheme(wedding);
+  useTheme(wedding); // TODO(theming): hook side-effects only; future dynamic palette adjustments may use returned theme
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   

@@ -218,7 +218,7 @@ export default function ProfilePage() {
       });
 
       if (response.ok) {
-        const result = await response.json();
+  await response.json(); // TODO(future): use response payload to optimistically update UI instead of refetch
         toast.success('Profile updated successfully');
         fetchUserProfile(); // Refresh profile data
       } else {

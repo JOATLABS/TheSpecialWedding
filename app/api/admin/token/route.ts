@@ -61,6 +61,6 @@ export async function POST(request: NextRequest) {
     }
 }
 
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS(_request: NextRequest) { // CORS preflight placeholder - request unused
     return new NextResponse(null, { status: 200 });
 }

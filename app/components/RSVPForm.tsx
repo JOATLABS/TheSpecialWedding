@@ -29,32 +29,17 @@ interface RSVPFormProps {
   token: string;
 }
 
-interface PlusOneData {
-  name: string;
-  phone?: string;
-  attending?: string[];
-  dietary?: string;
-}
+// Removed PlusOneData interface (plus-one details currently inlined via dynamic form field pattern)
 
 export default function RSVPForm({ guest, token }: RSVPFormProps) {
   const wedding = useWedding();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<RSVPFormValues>();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
+  // TODO(feature): plus-once customization state reserved for future enhancement (dynamic fields handle current needs)
   
   // Initialize plus-ones array based on allowed number
-  useState(() => {
-    if (guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0) {
-      const initialPlusOnes = Array(guest.number_of_plus_ones_allowed).fill(null).map(() => ({
-        name: '',
-        phone: '',
-        attending: [],
-        dietary: ''
-      }));
-      setPlusOnes(initialPlusOnes);
-    }
-  });
+  // Plus-one initial population handled during submission mapping (kept lean to avoid unused state warnings)
 
   const generateICS = () => {
     const eventDate = wedding.events?.find(e => e.type === 'white_wedding')?.date || wedding.date;

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Wedding, WeddingEvent } from '@/types/wedding';
+import { Wedding } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
 
 interface EventLocationSectionProps {

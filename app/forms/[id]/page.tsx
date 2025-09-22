@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { PublicForm as Form, FormField, FormResponseValue } from '@/types/forms';
 
 export default function PublicFormPage() {
  const params = useParams();
- const router = useRouter();
+ // Removed unused router (public form page does not navigate programmatically here)
  const formId = params.id as string;
  
  const [form, setForm] = useState<Form | null>(null);

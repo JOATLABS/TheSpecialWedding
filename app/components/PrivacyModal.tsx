@@ -10,7 +10,7 @@ interface PrivacyModalProps {
   weddingName?: string;
 }
 
-export default function PrivacyModal({ isOpen, onClose, weddingName = "The Special Wedding" }: PrivacyModalProps) {
+export default function PrivacyModal({ isOpen, onClose, weddingName = "The Special Wedding" }: PrivacyModalProps) { // TODO(content): weddingName available for future personalized copy
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>

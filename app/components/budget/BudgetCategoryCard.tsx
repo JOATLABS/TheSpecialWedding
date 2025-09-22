@@ -52,9 +52,7 @@ export default function BudgetCategoryCard({
     return colors[priority as keyof typeof colors] || 'text-gray-500';
   };
 
-  const subcategoriesTotal = category.subcategories.reduce(
-    (sum, sub) => sum + sub.actual_spent, 0
-  );
+  // TODO(analytics): subcategoriesTotal computed but not displayed; integrate into category progress summary or remove if out of scope
 
   return (
     <Card className={`p-4 ${className}`}>

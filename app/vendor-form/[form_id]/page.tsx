@@ -176,7 +176,7 @@ export default function PublicVendorFormPage() {
                   id={`vendor-field-${field.id}-${option.replace(/\s+/g, '-').toLowerCase()}`}
                   type="checkbox"
                   checked={(formData[field.id] || []).includes(option)}
-                  onChange={(e) => handleFieldChange(field.id, option, field.type)}
+                  onChange={() => handleFieldChange(field.id, option, field.type)}
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <span className="ml-2 text-sm text-gray-700">{option}</span>

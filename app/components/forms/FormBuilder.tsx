@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { createAutomationAttrs, formAutomationAttrs } from '@/utils/automation-attrs';
+import { createAutomationAttrs } from '@/utils/automation-attrs'; // Removed unused formAutomationAttrs
 
 // Types
 interface FormField {

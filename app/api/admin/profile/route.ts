@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) { // underscore request (not needed; using cookies API)
     try {
         // Get the token from cookies using Next.js cookies()
         const cookieStore = await cookies();
