@@ -2,7 +2,11 @@
   "compilerOptions": {
     "baseUrl": "./",
     "target": "ES2020",
-    "lib": ["DOM", "DOM.Iterable", "ES2020"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2020"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowJs": true,
@@ -18,22 +22,39 @@
     "noEmit": true,
     "jsx": "preserve",
     "incremental": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "paths": {
-      "@/*": ["./app/*"],
-      "@components/*": ["./app/components/*"],
-      "@lib/*": ["./app/lib/*"],
-      "@utils/*": ["./app/utils/*"],
-      "@contexts/*": ["./app/contexts/*"],
-      "@services/*": ["./app/services/*"]
+      "@/*": [
+        "./app/*"
+      ],
+      "@components/*": [
+        "./app/components/*"
+      ],
+      "@lib/*": [
+        "./app/lib/*"
+      ],
+      "@utils/*": [
+        "./app/utils/*"
+      ],
+      "@contexts/*": [
+        "./app/contexts/*"
+      ],
+      "@services/*": [
+        "./app/services/*"
+      ]
     }
   },
   "include": [
-    "next-env.d.ts",
     "app/**/*",
+    "next-env.d.ts",
     "scripts/**/*.ts",
     "tests/**/*.ts",
-    "tests/**/*.tsx"
+    "tests/**/*.tsx",
+    ".next/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -827,6 +827,30 @@ def get_form_templates(
     
     templates = [
         {
+            "id": "blank_form",
+            "name": "Blank Form",
+            "description": "Start with a blank canvas and build your own form",
+            "category": "custom",
+            "fields": [
+                {
+                    "id": "name",
+                    "label": "Name",
+                    "type": "text",
+                    "placeholder": "Enter your name",
+                    "required": True,
+                    "order": 1
+                },
+                {
+                    "id": "email",
+                    "label": "Email",
+                    "type": "email",
+                    "placeholder": "your@email.com",
+                    "required": True,
+                    "order": 2
+                }
+            ]
+        },
+        {
             "id": "wedding_feedback",
             "name": "Wedding Feedback Form",
             "description": "Collect feedback from couples about their wedding experience",
@@ -1091,16 +1115,16 @@ def create_form_from_template(
     """Create a form from a template"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
-    
+
     # Get templates
     templates_response = get_form_templates(current_user)
     templates = templates_response["templates"]
-    
+
     # Find the template
     template = next((t for t in templates if t["id"] == template_id), None)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-    
+
     # Create form from template
     form_data = CreateFormRequest(
         name=form_name,
@@ -1118,5 +1142,52 @@ def create_form_from_template(
         wedding_id=wedding_id,
         template_type=template_id
     )
-    
+
     return form_service.create_form(form_data, current_user.email)
+
+@router.post("/forms/duplicate/{form_id}", tags=["Forms"])
+def duplicate_form(
+    form_id: str,
+    new_name: str = Query(..., description="Name for the duplicated form"),
+    request: Request = None,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """Duplicate an existing form"""
+    if not (current_user.is_wedding_planner or current_user.is_root_admin):
+        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+
+    try:
+        # Get the original form
+        original_form = form_service.get_form(form_id, current_user.email)
+
+        # Check wedding access if applicable
+        if original_form.get('wedding_id') and not check_wedding_access(current_user, original_form['wedding_id']):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied. You don't have access to this wedding."
+            )
+
+        # Create a copy with new name
+        form_data = CreateFormRequest(
+            name=new_name,
+            settings=original_form.get('settings', {}),
+            fields=original_form.get('fields', []),
+            wedding_id=original_form.get('wedding_id'),
+            template_type=f"duplicate_of_{original_form.get('template_type', 'custom')}"
+        )
+
+        result = form_service.create_form(form_data, current_user.email)
+
+        # Log duplication
+        logger.info(
+            f"Form duplicated: original={form_id}, new={result.get('id')}, "
+            f"user={current_user.email}"
+        )
+
+        return {"message": "Form duplicated successfully", "id": result.get('id')}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Form duplication failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to duplicate form")

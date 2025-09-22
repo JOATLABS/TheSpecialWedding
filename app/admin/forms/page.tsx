@@ -20,6 +20,8 @@ interface Form {
  is_active: boolean;
 }
 
+type FormCreationType = 'template' | 'blank' | 'duplicate';
+
 interface FormTemplate {
  id: string;
  name: string;
@@ -39,6 +41,8 @@ export default function FormsManagementPage() {
  const [formName, setFormName] = useState('');
  const [creating, setCreating] = useState(false);
  const [authLoading, setAuthLoading] = useState(true);
+ const [creationType, setCreationType] = useState<FormCreationType>('template');
+ const [selectedFormToDuplicate, setSelectedFormToDuplicate] = useState<string>('');
 
  // Wait for authentication to be checked before redirecting
  useEffect(() => {
@@ -68,6 +72,7 @@ export default function FormsManagementPage() {
 
  fetchForms();
  fetchTemplates();
+ // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [authLoading, isAuthenticated, userProfile, router]);
 
  const fetchForms = async () => {
@@ -114,13 +119,53 @@ export default function FormsManagementPage() {
  }
  };
 
- const createFormFromTemplate = async () => {
- if (!selectedTemplate || !formName) return;
+ const createForm = async () => {
+ if (!formName) return;
 
  setCreating(true);
+ setError('');
+
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
- const response = await fetch(
+ let response: Response;
+
+ if (creationType === 'blank') {
+ // Create from blank template
+ response = await fetch(
+ `${baseUrl}/admin/forms/from-template/blank_form?form_name=${encodeURIComponent(formName)}`,
+ {
+ method: 'POST',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ }
+ );
+ } else if (creationType === 'duplicate') {
+ // Duplicate existing form
+ if (!selectedFormToDuplicate) {
+ setError('Please select a form to duplicate');
+ setCreating(false);
+ return;
+ }
+ response = await fetch(
+ `${baseUrl}/admin/forms/duplicate/${selectedFormToDuplicate}?new_name=${encodeURIComponent(formName)}`,
+ {
+ method: 'POST',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ }
+ );
+ } else {
+ // Create from template
+ if (!selectedTemplate) {
+ setError('Please select a template');
+ setCreating(false);
+ return;
+ }
+ response = await fetch(
  `${baseUrl}/admin/forms/from-template/${selectedTemplate}?form_name=${encodeURIComponent(formName)}`,
  {
  method: 'POST',
@@ -130,14 +175,18 @@ export default function FormsManagementPage() {
  },
  }
  );
+ }
 
  if (response.ok) {
  setShowCreateModal(false);
  setFormName('');
  setSelectedTemplate('');
+ setSelectedFormToDuplicate('');
+ setCreationType('template');
  await fetchForms();
  } else {
- setError('Failed to create form');
+ const errorData = await response.json().catch(() => ({}));
+ setError(errorData.detail || 'Failed to create form');
  }
  } catch (error) {
  setError('Failed to create form');
@@ -207,7 +256,14 @@ export default function FormsManagementPage() {
  context: 'formsManagement',
  state: 'ready'
  })}
- onClick={() => setShowCreateModal(true)}
+ id="create-form-button"
+ onClick={() => {
+ setShowCreateModal(true);
+ setCreationType('template');
+ setFormName('');
+ setSelectedTemplate('');
+ setSelectedFormToDuplicate('');
+ }}
  className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white px-4 py-2 rounded-lg transition-colors w-full sm:w-auto text-sm sm:text-base"
  >
  Create New Form
@@ -269,10 +325,33 @@ export default function FormsManagementPage() {
  entityId: form.id,
  custom: { formName: form.name, formType: form.template_type || 'custom' || 'custom' }
  })}
+ id={`edit-form-${form.id}`}
  onClick={() => router.push(`/admin/forms/${form.id}/edit`)}
  className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 px-3 py-1 rounded-lg text-sm hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors"
  >
  Edit
+ </button>
+ <button
+ {...createAutomationAttrs({
+ entity: 'form',
+ action: 'duplicate',
+ context: 'formsManagement',
+ entityId: form.id,
+ custom: {
+ formName: form.name,
+ formType: form.template_type || 'custom'
+ }
+ })}
+ id={`duplicate-form-${form.id}`}
+ onClick={() => {
+ setSelectedFormToDuplicate(form.id);
+ setFormName(`${form.name} (Copy)`);
+ setCreationType('duplicate');
+ setShowCreateModal(true);
+ }}
+ className="bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200 px-3 py-1 rounded-lg text-sm hover:bg-indigo-200 dark:hover:bg-indigo-800 transition-colors"
+ >
+ Duplicate
  </button>
  <button
  {...createAutomationAttrs({
@@ -375,8 +454,59 @@ export default function FormsManagementPage() {
  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-200 dark:border-gray-700">
  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Create New Form</h3>
- 
+
  <div className="space-y-4">
+ {/* Creation Type Selection */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">How would you like to start?</label>
+ <div className="grid grid-cols-3 gap-2">
+ <button
+ id="creation-type-blank"
+ onClick={() => {
+ setCreationType('blank');
+ setSelectedTemplate('');
+ setSelectedFormToDuplicate('');
+ }}
+ className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+ creationType === 'blank'
+ ? 'bg-indigo-600 text-white'
+ : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+ }`}
+ >
+ 📝 Blank Form
+ </button>
+ <button
+ id="creation-type-template"
+ onClick={() => {
+ setCreationType('template');
+ setSelectedTemplate('');
+ setSelectedFormToDuplicate('');
+ }}
+ className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+ creationType === 'template'
+ ? 'bg-indigo-600 text-white'
+ : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+ }`}
+ >
+ 📋 Use Template
+ </button>
+ <button
+ id="creation-type-duplicate"
+ onClick={() => {
+ setCreationType('duplicate');
+ setSelectedTemplate('');
+ }}
+ className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+ creationType === 'duplicate'
+ ? 'bg-indigo-600 text-white'
+ : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+ }`}
+ >
+ 📑 Duplicate
+ </button>
+ </div>
+ </div>
+
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Form Name</label>
  <input
@@ -387,6 +517,7 @@ export default function FormsManagementPage() {
  state: formName ? 'filled' : 'empty',
  custom: { hasValue: !!formName }
  })}
+ id="form-name-input"
  type="text"
  value={formName}
  onChange={(e) => setFormName(e.target.value)}
@@ -395,6 +526,8 @@ export default function FormsManagementPage() {
  />
  </div>
 
+ {/* Template Selection (only for template type) */}
+ {creationType === 'template' && (
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template</label>
  <select
@@ -408,6 +541,7 @@ export default function FormsManagementPage() {
  availableTemplateCount: templates.length
  }
  })}
+ id="template-select"
  value={selectedTemplate}
  onChange={(e) => setSelectedTemplate(e.target.value)}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -420,6 +554,40 @@ export default function FormsManagementPage() {
  ))}
  </select>
  </div>
+ )}
+
+ {/* Form Selection (only for duplicate type) */}
+ {creationType === 'duplicate' && (
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Form to Duplicate</label>
+ <select
+ id="duplicate-form-select"
+ value={selectedFormToDuplicate}
+ onChange={(e) => setSelectedFormToDuplicate(e.target.value)}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+ >
+ <option value="">Select a form...</option>
+ {forms.map((form) => (
+ <option key={form.id} value={form.id}>
+ {form.name}
+ </option>
+ ))}
+ </select>
+ </div>
+ )}
+
+ {/* Description of what will happen */}
+ <div className="text-sm text-gray-600 dark:text-gray-400">
+ {creationType === 'blank' && (
+ <p>✨ Create a new form with basic name and email fields. You can add more fields after creation.</p>
+ )}
+ {creationType === 'template' && selectedTemplate && (
+ <p>📋 Your form will be created with pre-configured fields from the selected template.</p>
+ )}
+ {creationType === 'duplicate' && selectedFormToDuplicate && (
+ <p>📑 Create an exact copy of the selected form with all its fields and settings.</p>
+ )}
+ </div>
  </div>
 
  <div className="flex space-x-4 mt-6">
@@ -430,7 +598,14 @@ export default function FormsManagementPage() {
  context: 'createFormModal',
  state: 'ready'
  })}
- onClick={() => setShowCreateModal(false)}
+ id="cancel-create-button"
+ onClick={() => {
+ setShowCreateModal(false);
+ setFormName('');
+ setSelectedTemplate('');
+ setSelectedFormToDuplicate('');
+ setCreationType('template');
+ }}
  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
  >
  Cancel
@@ -440,15 +615,28 @@ export default function FormsManagementPage() {
  entity: 'form',
  action: 'confirmCreate',
  context: 'createFormModal',
- state: creating ? 'loading' : (!selectedTemplate || !formName ? 'disabled' : 'ready'),
+ state: creating ? 'loading' : (
+ !formName ||
+ (creationType === 'template' && !selectedTemplate) ||
+ (creationType === 'duplicate' && !selectedFormToDuplicate)
+ ? 'disabled' : 'ready'
+ ),
  custom: {
  hasFormName: !!formName,
+ creationType: creationType,
  hasSelectedTemplate: !!selectedTemplate,
+ hasSelectedForm: !!selectedFormToDuplicate,
  isCreating: creating
  }
  })}
- onClick={createFormFromTemplate}
- disabled={!selectedTemplate || !formName || creating}
+ id="confirm-create-button"
+ onClick={createForm}
+ disabled={
+ !formName ||
+ creating ||
+ (creationType === 'template' && !selectedTemplate) ||
+ (creationType === 'duplicate' && !selectedFormToDuplicate)
+ }
  className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white rounded-lg disabled:bg-gray-300 dark:disabled:bg-gray-600 transition-colors"
  >
  {creating ? 'Creating...' : 'Create Form'}

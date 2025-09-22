@@ -47,12 +47,44 @@ export default function SendFormPage() {
  });
 
  // Recipient categories
- const [recipientCategory, setRecipientCategory] = useState<'couples' | 'wedding_party' | 'vendors' | 'custom'>('custom');
+ const [recipientCategory, setRecipientCategory] = useState<'couples' | 'wedding_party' | 'vendors' | 'guests' | 'custom'>('custom');
+ const [weddingId, setWeddingId] = useState<string>('');
+ const [loadingRecipients, setLoadingRecipients] = useState(false);
 
  useEffect(() => {
  if (!token || !formId) return;
- fetchForm();
+
+ const fetchData = async () => {
+ await fetchForm();
+ await fetchWeddingId();
+ };
+
+ fetchData();
+ // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [token, formId]);
+
+ const fetchWeddingId = async () => {
+ try {
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
+ // Get the current user's weddings to determine the wedding context
+ const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ });
+
+ if (response.ok) {
+ const weddings = await response.json();
+ if (weddings.length > 0) {
+ // Use the first wedding for now (could be enhanced with a selector)
+ setWeddingId(weddings[0].id);
+ }
+ }
+ } catch (err) {
+ console.error('Failed to fetch wedding ID:', err);
+ }
+ };
 
  const fetchForm = async () => {
  try {
@@ -78,8 +110,9 @@ export default function SendFormPage() {
  } else {
  setError('Failed to load form');
  }
- } catch (error) {
+ } catch (err) {
  setError('Failed to load form');
+ console.error('Error loading form:', err);
  } finally {
  setLoading(false);
  }
@@ -99,15 +132,127 @@ export default function SendFormPage() {
  setRecipients(updated);
  };
 
- const loadPredefinedRecipients = (category: 'couples' | 'wedding_party' | 'vendors') => {
- // This would typically fetch from your wedding data
- const predefined = {
- couples: ['bride@example.com', 'groom@example.com'],
- wedding_party: ['bridesmaid1@example.com', 'bridesmaid2@example.com', 'groomsman1@example.com'],
- vendors: ['photographer@example.com', 'caterer@example.com', 'florist@example.com']
- };
- 
- setRecipients(predefined[category]);
+ const loadPredefinedRecipients = async (category: 'couples' | 'wedding_party' | 'vendors' | 'guests') => {
+ if (!weddingId || !token) {
+ setError('Please wait for wedding data to load');
+ return;
+ }
+
+ setLoadingRecipients(true);
+ setRecipientCategory(category);
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
+
+ try {
+ let emails: string[] = [];
+
+ switch (category) {
+ case 'couples':
+ // Fetch wedding details to get couple information
+ const weddingResponse = await fetch(`${baseUrl}/admin/wedding/${weddingId}`, {
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ });
+
+ if (weddingResponse.ok) {
+ const wedding = await weddingResponse.json();
+ // Extract couple emails from wedding party if they exist
+ const brideEmails = wedding.wedding_party
+ ?.filter((member: any) => member.side === 'bride' && member.role === 'bride' && member.linked_guest_email)
+ .map((member: any) => member.linked_guest_email) || [];
+
+ const groomEmails = wedding.wedding_party
+ ?.filter((member: any) => member.side === 'groom' && member.role === 'groom' && member.linked_guest_email)
+ .map((member: any) => member.linked_guest_email) || [];
+
+ emails = [...brideEmails, ...groomEmails];
+
+ if (emails.length === 0) {
+ setError('No couple emails found. Please add couple information in wedding settings.');
+ }
+ }
+ break;
+
+ case 'wedding_party':
+ // Fetch wedding party members
+ const partyResponse = await fetch(`${baseUrl}/admin/wedding/${weddingId}`, {
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ });
+
+ if (partyResponse.ok) {
+ const wedding = await partyResponse.json();
+ emails = wedding.wedding_party
+ ?.filter((member: any) => member.linked_guest_email)
+ .map((member: any) => member.linked_guest_email) || [];
+
+ if (emails.length === 0) {
+ setError('No wedding party emails found. Please link wedding party members to guests.');
+ }
+ }
+ break;
+
+ case 'vendors':
+ // Fetch vendor quotes from budget
+ const vendorResponse = await fetch(`${baseUrl}/weddings/${weddingId}/quotes`, {
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ });
+
+ if (vendorResponse.ok) {
+ const data = await vendorResponse.json();
+ emails = data.quotes
+ ?.filter((quote: any) => quote.vendor_email)
+ .map((quote: any) => quote.vendor_email) || [];
+
+ if (emails.length === 0) {
+ setError('No vendor emails found. Please add vendor quotes with email addresses.');
+ }
+ }
+ break;
+
+ case 'guests':
+ // Fetch all guests
+ const guestResponse = await fetch(`${baseUrl}/guests?wedding_id=${weddingId}`, {
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ });
+
+ if (guestResponse.ok) {
+ const guests = await guestResponse.json();
+ emails = guests
+ ?.filter((guest: any) => guest.email)
+ .map((guest: any) => guest.email) || [];
+
+ if (emails.length === 0) {
+ setError('No guest emails found. Please add guest email addresses.');
+ }
+ }
+ break;
+ }
+
+ if (emails.length > 0) {
+ // Remove duplicates
+ const uniqueEmails = [...new Set(emails)];
+ setRecipients(uniqueEmails);
+ setError('');
+ } else if (!error) {
+ setRecipients(['']);
+ }
+ } catch (err) {
+ console.error('Failed to load recipients:', err);
+ setError('Failed to load recipients. Please try again.');
+ setRecipients(['']);
+ } finally {
+ setLoadingRecipients(false);
+ }
  };
 
  const validateForm = () => {
@@ -176,8 +321,9 @@ export default function SendFormPage() {
  const errorData = await response.json();
  setError(errorData.detail || 'Failed to send form');
  }
- } catch (error) {
+ } catch (err) {
  setError('Failed to send form. Please check your connection and try again.');
+ console.error('Error sending form:', err);
  } finally {
  setSending(false);
  }
@@ -246,34 +392,90 @@ export default function SendFormPage() {
  {/* Recipients */}
  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6">
  <h2 className="text-xl font-semibold mb-4">Recipients</h2>
- 
- {/* Quick Categories */}
+
+ {/* Category Selection */}
  <div className="mb-6">
- <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">Quick add recipients:</p>
- <div className="flex flex-wrap gap-2">
+ <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">Select recipient category:</p>
+ <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+ <button
+ onClick={() => {
+ setRecipientCategory('custom');
+ setRecipients(['']);
+ }}
+ className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+ recipientCategory === 'custom'
+ ? 'bg-gray-800 text-white'
+ : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+ }`}
+ >
+ ✏️ Custom
+ </button>
  <button
  onClick={() => loadPredefinedRecipients('couples')}
- className="px-3 py-1 text-sm bg-pink-100 text-pink-800 rounded-full hover:bg-pink-200 transition-colors"
+ disabled={loadingRecipients || !weddingId}
+ className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+ recipientCategory === 'couples'
+ ? 'bg-pink-600 text-white'
+ : 'bg-pink-100 text-pink-800 hover:bg-pink-200'
+ } ${(loadingRecipients || !weddingId) ? 'opacity-50 cursor-not-allowed' : ''}`}
  >
- Couples
+ 💑 Couples
  </button>
  <button
  onClick={() => loadPredefinedRecipients('wedding_party')}
- className="px-3 py-1 text-sm bg-purple-100 text-purple-800 rounded-full hover:bg-purple-200 transition-colors"
+ disabled={loadingRecipients || !weddingId}
+ className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+ recipientCategory === 'wedding_party'
+ ? 'bg-purple-600 text-white'
+ : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
+ } ${(loadingRecipients || !weddingId) ? 'opacity-50 cursor-not-allowed' : ''}`}
  >
- Wedding Party
+ 👰 Wedding Party
  </button>
  <button
  onClick={() => loadPredefinedRecipients('vendors')}
- className="px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 transition-colors"
+ disabled={loadingRecipients || !weddingId}
+ className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+ recipientCategory === 'vendors'
+ ? 'bg-blue-600 text-white'
+ : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+ } ${(loadingRecipients || !weddingId) ? 'opacity-50 cursor-not-allowed' : ''}`}
  >
- Vendors
+ 📸 Vendors
+ </button>
+ <button
+ onClick={() => loadPredefinedRecipients('guests')}
+ disabled={loadingRecipients || !weddingId}
+ className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+ recipientCategory === 'guests'
+ ? 'bg-green-600 text-white'
+ : 'bg-green-100 text-green-800 hover:bg-green-200'
+ } ${(loadingRecipients || !weddingId) ? 'opacity-50 cursor-not-allowed' : ''}`}
+ >
+ 👥 All Guests
  </button>
  </div>
+ {!weddingId && (
+ <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">Loading wedding data...</p>
+ )}
+ {loadingRecipients && (
+ <div className="mt-3 flex items-center text-sm text-gray-600">
+ <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+ Loading {recipientCategory} emails...
+ </div>
+ )}
  </div>
 
  {/* Email List */}
  <div className="space-y-3">
+ <div className="flex items-center justify-between mb-2">
+ <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+ Email Addresses {recipientCategory !== 'custom' && `(${recipientCategory.replace('_', ' ')})`}
+ </label>
+ {recipients.length > 1 && (
+ <span className="text-xs text-gray-500">{recipients.filter(e => e.trim()).length} recipients</span>
+ )}
+ </div>
  {recipients.map((email, index) => (
  <div key={index} className="flex gap-2">
  <input
@@ -281,26 +483,29 @@ export default function SendFormPage() {
  value={email}
  onChange={(e) => updateRecipient(index, e.target.value)}
  placeholder="recipient@example.com"
- className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ disabled={recipientCategory !== 'custom' && loadingRecipients}
  />
- {recipients.length > 1 && (
+ {(recipients.length > 1 || recipientCategory === 'custom') && (
  <button
  onClick={() => removeRecipient(index)}
- className="px-3 py-2 text-red-600 hover:text-red-800"
+ className="px-3 py-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
  >
- 
+ ×
  </button>
  )}
  </div>
  ))}
  </div>
 
+ {recipientCategory === 'custom' && (
  <button
  onClick={addRecipient}
- className="mt-4 text-blue-600 hover:text-blue-800 text-sm font-medium"
+ className="mt-4 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium"
  >
  + Add another recipient
  </button>
+ )}
  </div>
 
  {/* Email Settings */}
