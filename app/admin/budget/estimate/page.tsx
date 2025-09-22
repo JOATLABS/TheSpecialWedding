@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';

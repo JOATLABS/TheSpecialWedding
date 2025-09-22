@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { GlassCard } from '../ui/GlassCard';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { ThemeConfig } from '@/types/wedding';
 
 interface ContactFormSectionProps {

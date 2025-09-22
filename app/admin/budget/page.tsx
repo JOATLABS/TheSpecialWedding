@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';

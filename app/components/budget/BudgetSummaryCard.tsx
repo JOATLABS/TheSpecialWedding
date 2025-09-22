@@ -1,8 +1,8 @@
 'use client';
 
-import { Card } from '../ui/Card';
+import { Card } from '@/components/ui/Card';
 import BudgetProgressBar from './BudgetProgressBar';
-import type { BudgetSummary } from '../../types/budget';
+import type { BudgetSummary } from '@/types/budget';
 
 interface BudgetSummaryCardProps {
   summary: BudgetSummary;

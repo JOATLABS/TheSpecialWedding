@@ -85,7 +85,7 @@ export const AdminProvider = ({
         }
 
         const url = `${baseUrl}${path}`;
-        const options: RequestInit = {
+        const options: any = {
             method,
             headers: {
                 'Authorization': `Bearer ${token}`,

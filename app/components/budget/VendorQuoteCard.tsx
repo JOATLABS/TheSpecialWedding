@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Card } from '../ui/Card';
-import { Button } from '../ui/button';
-import type { VendorQuote } from '../../types/budget';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/button';
+import type { VendorQuote } from '@/types/budget';
 
 interface VendorQuoteCardProps {
   quote: VendorQuote;

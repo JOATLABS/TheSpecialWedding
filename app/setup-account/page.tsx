@@ -20,7 +20,8 @@ export default function SetupAccountPage() {
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
-    }>
+    }
+    >
       <SetupAccountContent />
     </Suspense>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { GlassCard } from '../ui/GlassCard';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { ThemeConfig } from '@/types/wedding';
 
 interface SignupModalProps {
@@ -106,7 +106,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Check Your Email!</h2>
           <p className="text-gray-600 mb-6">
-            Your account has been created successfully. We've sent a verification email to your address. Please check your email and click the verification link to activate your account before logging in.
+            Your account has been created successfully. We&apos;ve sent a verification email to your address. Please check your email and click the verification link to activate your account before logging in.
           </p>
           <div className="space-y-3">
             <button

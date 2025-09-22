@@ -32,10 +32,12 @@ interface TabsListProps {
 
 export const TabsList: React.FC<TabsListProps> = ({ children, className }) => {
   return (
-    <div className={cn(
-      'inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground',
-      className
-    )}>
+    <div
+      className={cn(
+        'inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground',
+        className
+      )}
+    >
       {children}
     </div>
   );
@@ -88,10 +90,12 @@ export const TabsContent: React.FC<TabsContentProps> = ({ value, children, class
   }
 
   return (
-    <div className={cn(
-      'mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-      className
-    )}>
+    <div
+      className={cn(
+        'mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        className
+      )}
+    >
       {children}
     </div>
   );

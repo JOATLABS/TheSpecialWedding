@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GlassCard } from '../ui/GlassCard';
+import { GlassCard } from '@/components/ui/GlassCard';
 
 interface Feature {
   id?: string;

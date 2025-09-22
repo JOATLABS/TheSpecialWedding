@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Card } from '../ui/Card';
-import { Button } from '../ui/button';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/button';
 import BudgetProgressBar from './BudgetProgressBar';
-import type { BudgetCategory } from '../../types/budget';
+import type { BudgetCategory } from '@/types/budget';
 
 interface BudgetCategoryCardProps {
   category: BudgetCategory;

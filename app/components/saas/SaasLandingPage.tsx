@@ -1,17 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Modern3DBackground } from '../landing-page/Modern3DBackground';
-import { SectionWrapper } from '../landing-page/SectionWrapper';
-import { GlassCard } from '../ui/GlassCard';
-import { SaasHeroSection } from './SaasHeroSection';
-import { FeatureCarousel } from './FeatureCarousel';
-import { BenefitsSection } from './BenefitsSection';
-import { TestimonialsSection } from './TestimonialsSection';
-import { CallToActionSection } from './CallToActionSection';
-import { PricingSection } from './PricingSection';
-import { ContactModal } from './ContactModal';
-import { SignupModal } from './SignupModal';
+import { Modern3DBackground } from '@/components/landing-page/Modern3DBackground';
+import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { SaasHeroSection } from '@/components/saas/SaasHeroSection';
+import { FeatureCarousel } from '@/components/saas/FeatureCarousel';
+import { BenefitsSection } from '@/components/saas/BenefitsSection';
+import { TestimonialsSection } from '@/components/saas/TestimonialsSection';
+import { CallToActionSection } from '@/components/saas/CallToActionSection';
+import { PricingSection } from '@/components/saas/PricingSection';
+import { ContactModal } from '@/components/saas/ContactModal';
+import { SignupModal } from '@/components/saas/SignupModal';
 
 interface Feature {
   title: string;
@@ -65,6 +65,35 @@ interface SaasConfig {
 }
 
 export const SaasLandingPage: React.FC = () => {
+  // Runtime instrumentation to help diagnose undefined component imports / hanging loading state
+  if (process.env.NODE_ENV === 'development') {
+    // eslint-disable-next-line no-console
+    console.groupCollapsed('[SaasLandingPage] import check');
+    // eslint-disable-next-line no-console
+    console.log('Modern3DBackground:', typeof Modern3DBackground);
+    // eslint-disable-next-line no-console
+    console.log('SectionWrapper:', typeof SectionWrapper);
+    // eslint-disable-next-line no-console
+    console.log('GlassCard:', typeof GlassCard);
+    // eslint-disable-next-line no-console
+    console.log('SaasHeroSection:', typeof SaasHeroSection);
+    // eslint-disable-next-line no-console
+    console.log('FeatureCarousel:', typeof FeatureCarousel);
+    // eslint-disable-next-line no-console
+    console.log('BenefitsSection:', typeof BenefitsSection);
+    // eslint-disable-next-line no-console
+    console.log('TestimonialsSection:', typeof TestimonialsSection);
+    // eslint-disable-next-line no-console
+    console.log('CallToActionSection:', typeof CallToActionSection);
+    // eslint-disable-next-line no-console
+    console.log('PricingSection:', typeof PricingSection);
+    // eslint-disable-next-line no-console
+    console.log('ContactModal:', typeof ContactModal);
+    // eslint-disable-next-line no-console
+    console.log('SignupModal:', typeof SignupModal);
+    // eslint-disable-next-line no-console
+    console.groupEnd();
+  }
   const [showSignupModal, setShowSignupModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
@@ -193,20 +222,45 @@ export const SaasLandingPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[SaasLandingPage] mount');
     fetchSaasConfig();
+    // Safety timeout: ensure we don't stay stuck in loading forever due to an unhandled promise
+    const safety = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) {
+          // eslint-disable-next-line no-console
+          console.warn('[SaasLandingPage] safety timeout releasing loading state');
+        }
+        return false;
+      });
+    }, 8000);
+    return () => clearTimeout(safety);
   }, []);
 
   const fetchSaasConfig = async () => {
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    // eslint-disable-next-line no-console
+    console.time('[SaasLandingPage] fetch config');
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      // eslint-disable-next-line no-console
+      console.log('[SaasLandingPage] fetching config from', `${baseUrl}/saas/config`);
       const response = await fetch(`${baseUrl}/saas/config`);
       if (response.ok) {
         const data = await response.json();
+        // eslint-disable-next-line no-console
+        console.log('[SaasLandingPage] config loaded');
         setConfig(prev => ({ ...prev, ...data }));
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[SaasLandingPage] non-OK response', response.status);
       }
     } catch (error) {
-      // Failed to load SAAS config - will use defaults
+      // eslint-disable-next-line no-console
+      console.error('[SaasLandingPage] fetch error', error);
     } finally {
+      // eslint-disable-next-line no-console
+      console.timeEnd('[SaasLandingPage] fetch config');
       setLoading(false);
     }
   };

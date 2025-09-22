@@ -53,42 +53,78 @@ class ReminderService:
         logs = []
         now = datetime.utcnow()
 
-        # Guests
+        # Optimized with aggregation pipeline to eliminate N+1 queries
+        # Guests - Use aggregation to join guests with RSVPs in a single query
         if target_group in {"guests", "all"}:
-            for guest in self.guest_collection.find({}):
-                rsvp = self.rsvp_collection.find_one({"guest_id": guest["_id"]})
-                if rsvp and event_type in rsvp.get("attending", []):
-                    phone = guest.get("phone")
-                    # Check if guest has opted in for SMS reminders
-                    sms_opt_in = guest.get("sms_opt_in", False)
-                    if phone and sms_opt_in:
-                        status = self._send_sms(phone, message)
-                        logs.append(self._log(
-                            phone,
-                            guest["_id"],
-                            message,
-                            "guest",
-                            event_type,
-                            status,
-                            now,
-                        ))
+            guest_pipeline = [
+                # Join with RSVPs collection
+                {"$lookup": {
+                    "from": "rsvps",
+                    "localField": "_id",
+                    "foreignField": "guest_id",
+                    "as": "rsvp"
+                }},
+                # Filter guests with phone, SMS opt-in, and attending the event
+                {"$match": {
+                    "phone": {"$exists": True, "$ne": None, "$ne": ""},
+                    "sms_opt_in": True,
+                    "rsvp": {"$ne": []}  # Has RSVP
+                }},
+                # Unwind RSVP array (since lookup returns array)
+                {"$unwind": "$rsvp"},
+                # Filter by event type in attending array
+                {"$match": {
+                    f"rsvp.attending": event_type
+                }},
+                # Project only needed fields
+                {"$project": {
+                    "_id": 1,
+                    "phone": 1
+                }}
+            ]
 
-        # Plus-ones
+            # Execute aggregation pipeline - single database round trip
+            guests_to_notify = list(self.guest_collection.aggregate(guest_pipeline))
+
+            # Send SMS to all eligible guests
+            for guest in guests_to_notify:
+                status = self._send_sms(guest["phone"], message)
+                logs.append(self._log(
+                    guest["phone"],
+                    guest["_id"],
+                    message,
+                    "guest",
+                    event_type,
+                    status,
+                    now,
+                ))
+
+        # Plus-ones - Optimized query with proper filtering
         if target_group in {"plus-ones", "all"}:
-            for po in self.plus_one_collection.find({}):
-                if event_type in po.get("attending", []):
-                    phone = po.get("phone")
-                    if phone:
-                        status = self._send_sms(phone, message)
-                        logs.append(self._log(
-                            phone,
-                            po["guest_id"],
-                            message,
-                            "plus-one",
-                            event_type,
-                            status,
-                            now,
-                        ))
+            # Query plus-ones with phones who are attending the event
+            plus_ones_query = {
+                "phone": {"$exists": True, "$ne": None, "$ne": ""},
+                "attending": event_type
+            }
+
+            # Single query to get all eligible plus-ones
+            plus_ones_to_notify = list(self.plus_one_collection.find(
+                plus_ones_query,
+                {"guest_id": 1, "phone": 1}
+            ))
+
+            # Send SMS to all eligible plus-ones
+            for po in plus_ones_to_notify:
+                status = self._send_sms(po["phone"], message)
+                logs.append(self._log(
+                    po["phone"],
+                    po["guest_id"],
+                    message,
+                    "plus-one",
+                    event_type,
+                    status,
+                    now,
+                ))
 
         if logs:
             self.log_collection.insert_many(logs)

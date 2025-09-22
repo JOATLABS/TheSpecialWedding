@@ -119,10 +119,12 @@ export const SelectContent: React.FC<SelectContentProps> = ({ children, classNam
   }
 
   return (
-    <div className={cn(
-      'absolute top-full left-0 z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto',
-      className
-    )}>
+    <div
+      className={cn(
+        'absolute top-full left-0 z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto',
+        className
+      )}
+    >
       {children}
     </div>
   );

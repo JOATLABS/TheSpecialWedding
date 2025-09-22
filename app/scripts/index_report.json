@@ -1,0 +1,769 @@
+{
+  "guests": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "wedding_id_1",
+      "keys": {
+        "wedding_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "email_1",
+      "keys": {
+        "email": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "invitation_code_1",
+      "keys": {
+        "invitation_code": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_guests_wedding_phone",
+      "keys": {
+        "wedding_id": 1,
+        "phone": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_guests_wedding_token",
+      "keys": {
+        "wedding_id": 1,
+        "token": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_guests_wedding_created",
+      "keys": {
+        "wedding_id": 1,
+        "created_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_guests_wedding_name",
+      "keys": {
+        "wedding_id": 1,
+        "name": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "rsvps": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "wedding_id_1",
+      "keys": {
+        "wedding_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "guest_id_1",
+      "keys": {
+        "guest_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "wedding_id_1_guest_id_1",
+      "keys": {
+        "wedding_id": 1,
+        "guest_id": 1
+      },
+      "properties": {
+        "unique": true,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_rsvps_wedding_submitted",
+      "keys": {
+        "wedding_id": 1,
+        "submitted_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "plus_ones": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_plus_ones_guest_wedding",
+      "keys": {
+        "guest_id": 1,
+        "wedding_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_plus_ones_wedding",
+      "keys": {
+        "wedding_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "form_responses": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "form_id_1",
+      "keys": {
+        "form_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "wedding_id_1",
+      "keys": {
+        "wedding_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "guest_id_1",
+      "keys": {
+        "guest_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "submitted_at_1",
+      "keys": {
+        "submitted_at": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_form_responses_wedding_form",
+      "keys": {
+        "wedding_id": 1,
+        "form_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_form_responses_guest_submitted",
+      "keys": {
+        "guest_id": 1,
+        "submitted_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_form_responses_wedding_submitted",
+      "keys": {
+        "wedding_id": 1,
+        "submitted_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "weddings": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "assigned_planner_email_1",
+      "keys": {
+        "assigned_planner_email": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "created_by_1",
+      "keys": {
+        "created_by": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "status_1",
+      "keys": {
+        "status": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "slug_1",
+      "keys": {
+        "slug": 1
+      },
+      "properties": {
+        "unique": true,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "planner_id_1",
+      "keys": {
+        "planner_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "date_1",
+      "keys": {
+        "date": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "planner_id_1_date_-1",
+      "keys": {
+        "planner_id": 1,
+        "date": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_weddings_user_created",
+      "keys": {
+        "user_id": 1,
+        "created_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_weddings_active",
+      "keys": {
+        "is_active": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "checkins": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_checkins_wedding_guest",
+      "keys": {
+        "wedding_id": 1,
+        "guest_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_checkins_wedding_time",
+      "keys": {
+        "wedding_id": 1,
+        "checked_in_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "otp_codes": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "expires_at_1",
+      "keys": {
+        "expires_at": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": 0,
+        "background": true
+      }
+    },
+    {
+      "name": "otp_lookup_idx",
+      "keys": {
+        "wedding_id": 1,
+        "contact": 1,
+        "verified": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": true
+      }
+    },
+    {
+      "name": "rate_limit_idx",
+      "keys": {
+        "guest_id": 1,
+        "contact_type": 1,
+        "created_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": true
+      }
+    },
+    {
+      "name": "guest_otp_idx",
+      "keys": {
+        "guest_id": 1,
+        "verified": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": true
+      }
+    },
+    {
+      "name": "cleanup_idx",
+      "keys": {
+        "verified": 1,
+        "created_at": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": true
+      }
+    },
+    {
+      "name": "idx_otp_codes_guest_code",
+      "keys": {
+        "guest_id": 1,
+        "code": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "reminders_sent": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_reminders_guest_sent",
+      "keys": {
+        "guest_id": 1,
+        "sent_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_reminders_wedding_sent",
+      "keys": {
+        "wedding_id": 1,
+        "sent_at": -1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "security_audit_logs": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "forms": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "wedding_id_1",
+      "keys": {
+        "wedding_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "is_active_1",
+      "keys": {
+        "is_active": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "wedding_id_1_is_active_1",
+      "keys": {
+        "wedding_id": 1,
+        "is_active": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ],
+  "users": [
+    {
+      "name": "_id_",
+      "keys": {
+        "_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "email_1",
+      "keys": {
+        "email": 1
+      },
+      "properties": {
+        "unique": true,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "role_1",
+      "keys": {
+        "role": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "subscription_plan_id_1",
+      "keys": {
+        "subscription_plan_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "created_by_1",
+      "keys": {
+        "created_by": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "is_active_1",
+      "keys": {
+        "is_active": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "subscription.plan_id_1",
+      "keys": {
+        "subscription.plan_id": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    },
+    {
+      "name": "idx_users_active_subscription",
+      "keys": {
+        "is_active": 1,
+        "subscription_status": 1
+      },
+      "properties": {
+        "unique": false,
+        "sparse": false,
+        "ttl": null,
+        "background": false
+      }
+    }
+  ]
+}

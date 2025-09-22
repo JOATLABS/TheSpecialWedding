@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -554,7 +554,7 @@ export default function VendorQuotesPage() {
                 {/* What's Included */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    What's Included
+                    What&apos;s Included
                   </label>
                   {quoteForm.includes.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">
@@ -587,7 +587,7 @@ export default function VendorQuotesPage() {
                 {/* What's Excluded */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    What's Excluded
+                    What&apos;s Excluded
                   </label>
                   {quoteForm.excludes.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">

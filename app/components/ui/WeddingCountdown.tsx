@@ -43,11 +43,6 @@ export const WeddingCountdown: React.FC<WeddingCountdownProps> = ({
   const [timeLeft, setTimeLeft] = useState<TimeLeft>({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isClient, setIsClient] = useState(false);
 
-  // Don't render if countdown is not enabled
-  if (!countdownConfig?.enabled) {
-    return null;
-  }
-
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -56,7 +51,7 @@ export const WeddingCountdown: React.FC<WeddingCountdownProps> = ({
     if (!isClient) return;
 
     const calculateTimeLeft = () => {
-      const targetDate = countdownConfig.target_date || weddingDate;
+      const targetDate = (countdownConfig?.target_date) || weddingDate;
       const difference = +new Date(targetDate) - +new Date();
 
       if (difference > 0) {
@@ -75,7 +70,12 @@ export const WeddingCountdown: React.FC<WeddingCountdownProps> = ({
     const timer = setInterval(calculateTimeLeft, 1000);
 
     return () => clearInterval(timer);
-  }, [weddingDate, countdownConfig.target_date, isClient]);
+  }, [weddingDate, countdownConfig?.target_date, isClient]);
+
+  // Don't render if countdown is not enabled
+  if (!countdownConfig || !countdownConfig.enabled) {
+    return null;
+  }
 
   if (!isClient) {
     // Return placeholder during SSR

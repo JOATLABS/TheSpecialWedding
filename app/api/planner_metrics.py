@@ -55,30 +55,55 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
         # Get detailed metrics for each wedding
         guests_collection = mongo.get_guest_collection()
         rsvps_collection = mongo.get_rsvps_collection()
-        
+
+        # Optimized: Get all wedding IDs for batch operations
+        wedding_ids = [wedding["_id"] for wedding in weddings]
+
+        # Single aggregation pipeline to get guest counts for all weddings
+        guest_count_pipeline = [
+            {"$match": {"wedding_id": {"$in": wedding_ids}}},
+            {"$group": {
+                "_id": "$wedding_id",
+                "count": {"$sum": 1}
+            }}
+        ]
+        guest_counts = {doc["_id"]: doc["count"]
+                       for doc in guests_collection.aggregate(guest_count_pipeline)}
+
+        # Single aggregation pipeline to get RSVP statistics for all weddings
+        rsvp_pipeline = [
+            {"$match": {"wedding_id": {"$in": wedding_ids}}},
+            {"$group": {
+                "_id": "$wedding_id",
+                "rsvps": {"$push": "$attending"}
+            }}
+        ]
+        wedding_rsvps = {doc["_id"]: doc["rsvps"]
+                        for doc in rsvps_collection.aggregate(rsvp_pipeline)}
+
+        # Process metrics for each wedding using pre-fetched data
         for wedding in weddings:
             wedding_id = wedding["_id"]
-            
-            # Get guest count
-            guest_count = guests_collection.count_documents({"wedding_id": wedding_id})
+
+            # Get guest count from pre-fetched data
+            guest_count = guest_counts.get(wedding_id, 0)
             metrics["summary"]["total_guests"] += guest_count
-            
-            # Get RSVP statistics
-            rsvps = list(rsvps_collection.find({"wedding_id": wedding_id}))
-            
+
+            # Get RSVP statistics from pre-fetched data
+            rsvps = wedding_rsvps.get(wedding_id, [])
+
             confirmed = 0
             declined = 0
             pending = guest_count - len(rsvps)  # Guests who haven't RSVPed yet
-            
-            for rsvp in rsvps:
-                attending = rsvp.get("attending", {})
+
+            for attending in rsvps:
                 if attending and any(attending.values()):
                     confirmed += 1
                 elif attending and all(not val for val in attending.values()):
                     declined += 1
                 else:
                     pending += 1
-            
+
             metrics["summary"]["confirmed_rsvps"] += confirmed
             metrics["summary"]["declined_rsvps"] += declined
             metrics["summary"]["pending_rsvps"] += pending

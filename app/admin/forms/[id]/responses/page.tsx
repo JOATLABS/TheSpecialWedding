@@ -217,9 +217,10 @@ export default function FormResponsesPage() {
  <div className="flex items-center">
  <div className="w-20 bg-gray-200 rounded-full h-2 mr-2">
  <div 
- className="bg-blue-600 h-2 rounded-full" 
+ className="bg-blue-600 h-2 rounded-full"
  style={{ width: `${(value / 10) * 100}%` }}
- ></div>
+ >
+ </div>
  </div>
  <span className="text-sm">{value}/10</span>
  </div>

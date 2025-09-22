@@ -3,7 +3,6 @@
 import React from 'react';
 import { Wedding } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
-import Image from 'next/image';
 
 interface OurStorySectionProps {
   wedding: Wedding;

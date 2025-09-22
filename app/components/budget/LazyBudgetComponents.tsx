@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import LoadingSpinner from '../LoadingSpinner';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
 // Lazy load budget components for better performance
 export const LazyBudgetSummaryCard = dynamic(

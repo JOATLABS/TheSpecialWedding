@@ -1,3 +1,4 @@
+import React from 'react';
 import { getSession } from '@/lib/auth';
 import { AdminProvider } from '@/contexts/AdminContext';
 

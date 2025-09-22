@@ -68,10 +68,12 @@ export const DialogContent: React.FC<DialogContentProps> = ({ children, classNam
   }
 
   return (
-    <div className={cn(
-      'relative bg-white rounded-lg shadow-lg p-6 w-full max-w-lg mx-4',
-      className
-    )}>
+    <div
+      className={cn(
+        'relative bg-white rounded-lg shadow-lg p-6 w-full max-w-lg mx-4',
+        className
+      )}
+    >
       <button
         className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
         onClick={() => context.onOpenChange(false)}

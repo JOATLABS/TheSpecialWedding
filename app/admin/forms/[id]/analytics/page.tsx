@@ -130,10 +130,11 @@ export default function FormAnalyticsPage() {
 
     return (
       <div className="w-full bg-gray-200 rounded-full h-2">
-        <div 
+        <div
           className={`h-2 rounded-full transition-all duration-300 ${colorClasses[color as keyof typeof colorClasses]}`}
           style={{ width: `${Math.min(percentage, 100)}%` }}
-        ></div>
+        >
+        </div>
       </div>
     );
   };

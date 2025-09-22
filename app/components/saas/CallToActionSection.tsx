@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { GlassCard } from '../ui/GlassCard';
+import { GlassCard } from '@/components/ui/GlassCard';
 
 interface SaasConfig {
   hero_title: string;
@@ -57,8 +57,8 @@ export const CallToActionSection: React.FC<CallToActionSectionProps> = ({ config
         ></div>
 
         <p className="text-lg text-gray-600 mb-8 max-w-2xl mx-auto">
-          Whether you're a professional wedding planner or planning your own special day,
-          let's discuss how Special Wedding can help you create the perfect celebration.
+          Whether you&apos;re a professional wedding planner or planning your own special day,
+          let&apos;s discuss how Special Wedding can help you create the perfect celebration.
         </p>
 
         {/* Contact CTA Button */}
