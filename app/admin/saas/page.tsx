@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createAutomationAttrs } from '../../utils/automation-attrs';
 import { Card } from '../../components/ui/Card';
 import { ContentEditModal } from '../components/ContentEditModal';
-import { createAutomationAttrs, formAutomationAttrs } from '../../utils/automation-attrs';
+// Removed unused automation attrs imports (currently not applied in SaaS admin page)
+// import { createAutomationAttrs, formAutomationAttrs } from '../../utils/automation-attrs';
 
 interface SubscriptionPlan {
  _id: string;
@@ -27,15 +29,6 @@ interface SubscriptionPlan {
  updated_at: string;
 }
 
-interface SaasContentSection {
- id: string;
- section: string;
- content: any;
- isActive: boolean;
- displayOrder: number;
- updatedBy: string;
- updatedAt: string;
-}
 
 interface WeddingPlanner {
  id: string;
@@ -97,13 +90,15 @@ interface SaasFullConfig {
 const SaasAdminDashboard = () => {
  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'content' | 'theme' | 'planners'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
- const [contentSections, setContentSections] = useState<SaasContentSection[]>([]);
+ // Removed unused contentSections state
+ // const [contentSections, setContentSections] = useState<SaasContentSection[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
  const [saasConfig, setSaasConfig] = useState<SaasFullConfig | null>(null);
  const [loading, setLoading] = useState(true);
  const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
- const [error, setError] = useState<string | null>(null);
+ // Removed unused error state
+ // const [error, setError] = useState<string | null>(null);
  const [editModalOpen, setEditModalOpen] = useState(false);
  const [editingSectionType, setEditingSectionType] = useState<string>('');
  const [editingSectionData, setEditingSectionData] = useState<any>(null);
@@ -220,20 +215,7 @@ const SaasAdminDashboard = () => {
  });
  }
 
- // Fetch content sections
- const sectionsResponse = await fetch(`${baseUrl}/admin/content-sections`, { headers });
- if (sectionsResponse.ok) {
- const sectionsData = await sectionsResponse.json();
- setContentSections(sectionsData.map((section: any) => ({
- id: section._id || section.id,
- section: section.section,
- content: section.content,
- isActive: section.is_active,
- displayOrder: section.display_order,
- updatedBy: section.updated_by,
- updatedAt: section.updated_at
- })));
- }
+ // Skipping content sections fetch (state removed)
 
  } catch (error) {
  console.error('Error fetching SAAS data:', error);
@@ -867,9 +849,10 @@ const SaasAdminDashboard = () => {
  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
  {plans.map((plan) => {
  // Convert features object to array for display
- const featuresArray = plan.features ? Object.entries(plan.features)
- .filter(([key, value]) => value === true)
- .map(([key]) => key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))
+ const featuresArray = plan.features
+ ? Object.keys(plan.features)
+   .filter(k => plan.features[k])
+   .map(k => k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))
  : [];
 
  return (

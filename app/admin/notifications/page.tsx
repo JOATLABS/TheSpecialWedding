@@ -99,7 +99,7 @@ export default function NotificationsPage() {
       })();
 
       // Send notification - backend endpoint is /admin/notifications/send
-      const response = await apiRequest('/admin/notifications/send', 'POST', {
+  await apiRequest('/admin/notifications/send', 'POST', {
         subject: customSubject,
         content: customContent,
         recipient_filter: recipientFilter,

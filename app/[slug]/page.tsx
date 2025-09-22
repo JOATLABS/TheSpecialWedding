@@ -41,7 +41,7 @@ export default function WeddingLandingPage() {
  const [wedding, setWedding] = useState<Wedding | null>(null);
  const [guest, setGuest] = useState<VerifiedGuest | null>(null);
  const [images, setImages] = useState<GalleryImage[]>([]);
- const [error, setError] = useState<string | null>(null);
+ // Removed unused error state (noUnusedLocals)
  const [accessGranted, setAccessGranted] = useState(false);
  const [loading, setLoading] = useState(true);
 
@@ -70,11 +70,10 @@ export default function WeddingLandingPage() {
 	 }
  };
 
- const fetchGallery = async (weddingData?: Wedding | null, guestData?: VerifiedGuest | null) => {
+ const fetchGallery = async (_weddingData?: Wedding | null, guestData?: VerifiedGuest | null) => {
  if (!slug) return;
  
- const targetWedding = weddingData || wedding;
- const targetGuest = guestData || guest;
+ const targetGuest = guestData || guest; // weddingData unused for gallery fetch logic currently
  
  try {
  // Use the verified gallery endpoint
@@ -138,38 +137,24 @@ export default function WeddingLandingPage() {
  );
  }
 
- if (error) {
- return (
- <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
- <div className="text-center bg-white p-8 rounded-lg shadow-sm max-w-md">
- <div className="text-4xl mb-4 text-red-500"></div>
- <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Wedding</h2>
- <p className="text-gray-600 mb-4">{error}</p>
- </div>
- </div>
- );
- }
-
  // Show verification modal if access not granted
  if (!accessGranted) {
- return (
- <div className="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
- <GuestVerificationModal
- slug={slug}
- onVerified={handleGuestVerified}
- />
- </div>
- );
+	 return (
+		 <div className="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
+			 <GuestVerificationModal slug={slug} onVerified={handleGuestVerified} />
+		 </div>
+	 );
  }
 
+ // If access granted but wedding failed to load
  if (!wedding) {
- return (
- <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
- <div className="text-center">
- <p className="text-gray-600">Wedding not found</p>
- </div>
- </div>
- );
+	 return (
+		 <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
+			 <div className="text-center">
+				 <p className="text-gray-600">Wedding not found</p>
+			 </div>
+		 </div>
+	 );
  }
 
  return <LandingLayout wedding={wedding} images={images} />;

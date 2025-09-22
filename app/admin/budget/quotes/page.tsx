@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import VendorQuoteCard from '@/components/budget/VendorQuoteCard';
 import { budgetApi } from '@/services/budgetApi';
-import type { VendorQuote, CreateVendorQuoteRequest, QuoteDetails, QuoteDetailItem } from '@/types/budget';
+import type { VendorQuote, CreateVendorQuoteRequest, QuoteDetails } from '@/types/budget';
 
 interface Wedding {
   id?: string;
@@ -245,8 +245,8 @@ export default function VendorQuotesPage() {
     }
 
     try {
-      const comparison = await budgetApi.compareVendorQuotes(token, selectedWedding, categoryFilter);
-      // Handle comparison results (could open a modal or navigate to comparison view)
+      await budgetApi.compareVendorQuotes(token, selectedWedding, categoryFilter);
+      // Future: handle returned comparison results (modal or analytics)
       toast.success('Quote comparison generated');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to compare quotes';

@@ -27,7 +27,10 @@
     "deps:check": "npm outdated",
     "deps:update": "npm update --save",
     "pre-deploy": "npm run security && npm run build",
-    "reset-dev": "./scripts/reset-dev-server.sh"
+  "reset-dev": "./scripts/reset-dev-server.sh",
+  "clean": "bash ./scripts/clean-all.sh",
+  "dev:fresh": "npm run clean && npm run dev",
+  "rebuild:fresh": "npm run clean && npm ci && npm run build"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.7",

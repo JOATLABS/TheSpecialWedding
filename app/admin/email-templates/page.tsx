@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,13 +19,10 @@ import {
   Trash2,
   Eye,
   Send,
-  Download,
-  Upload,
   Settings,
   TrendingUp,
   Mail,
   CheckCircle,
-  XCircle,
   Clock,
   AlertTriangle
 } from 'lucide-react';
@@ -110,14 +107,15 @@ export default function EmailTemplatesPage() {
     variables: [] as string[]
   });
 
-  const [previewData, setPreviewData] = useState({
+  // Removed unused previewData state (no references in current component)
+  const previewData = {
     name: 'John Doe',
     email: 'john@example.com',
     company: 'Example Corp',
     phone: '+1 (555) 123-4567',
     message: 'This is a sample message for testing the email template.',
     admin_link: 'https://www.thespecialwedding.com/'
-  });
+  };
 
   useEffect(() => {
     fetchTemplates();

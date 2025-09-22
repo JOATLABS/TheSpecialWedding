@@ -20,7 +20,7 @@ interface ActivityLogResponse {
 }
 
 export default function ActivityLogPage() {
-  const { token, userProfile, isAuthenticated, apiRequest, fetchUserProfile } = useAdmin();
+  const { userProfile, isAuthenticated, apiRequest, fetchUserProfile } = useAdmin();
   const router = useRouter();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);

@@ -8,21 +8,13 @@ import {
   WeddingForm,
   WeddingTemplate,
   AssignmentFilter,
-  DateFilter,
-  WeddingEvent
+  DateFilter
 } from '@/types/wedding';
 
 interface UserDataProfile {
   first_name?: string;
   last_name?: string;
   company_name?: string;
-}
-interface UserProfile {
-  email: string;
-  role: string;
-  is_root_admin: boolean;
-  is_wedding_planner: boolean;
-  user_data?: UserDataProfile;
 }
 interface PlannerOption {
   email: string;
@@ -48,8 +40,7 @@ export default function AdminWeddingsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
-  const [selectedWeddings, setSelectedWeddings] = useState<string[]>([]);
-  const [showBulkActions, setShowBulkActions] = useState(false);
+  // Removed unused bulk selection state
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEventDetails, setShowEventDetails] = useState(false);
 

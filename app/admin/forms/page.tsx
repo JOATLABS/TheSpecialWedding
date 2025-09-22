@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
-import { createAutomationAttrs, formAutomationAttrs } from '@/utils/automation-attrs';
+import { createAutomationAttrs } from '@/utils/automation-attrs';
 
 interface Form {
  id: string;
@@ -81,8 +81,8 @@ export default function FormsManagementPage() {
  });
 
  if (response.ok) {
- const data = await response.json();
- setForms(data);
+ const _data = await response.json();
+ setForms(_data);
  } else {
  setError('Failed to fetch forms');
  }
@@ -104,8 +104,10 @@ export default function FormsManagementPage() {
  });
 
  if (response.ok) {
- const data = await response.json();
- setTemplates(data.templates);
+ const templatesResponse = await response.json();
+ if (templatesResponse?.templates) {
+	 setTemplates(templatesResponse.templates);
+ }
  }
  } catch (error) {
  // Template fetch failed - this is optional functionality
@@ -130,7 +132,6 @@ export default function FormsManagementPage() {
  );
 
  if (response.ok) {
- const data = await response.json();
  setShowCreateModal(false);
  setFormName('');
  setSelectedTemplate('');

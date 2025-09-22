@@ -44,12 +44,12 @@ interface FeatureItem {
  icon?: string;
 }
 
-interface TestimonialItem {
- author: string;
- role: string;
- content: string;
- avatar?: string;
-}
+// interface TestimonialItem {
+//     author: string;
+//     role: string;
+//     content: string;
+//     avatar?: string;
+// }
 
 export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  isOpen,
