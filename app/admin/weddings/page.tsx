@@ -4,58 +4,61 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '../../contexts/AdminContext';
 
-interface Wedding {
-  id: string;
-  _id: string;
+// Domain Types (consider extracting to app/types/wedding.ts if reused elsewhere)
+export type EventType = 'traditional' | 'white_wedding' | 'reception' | 'engagement' | 'rehearsal' | string; // allow backend extensibility
+export interface WeddingEventDetails {
+  venue_name?: string;
+  location?: string;
+  time?: string;
+  attire?: string;
+  // Future fields can be added without breaking existing usages
+}
+export interface WeddingEvent {
+  type: EventType;
+  date: string; // ISO date (yyyy-mm-dd)
+  details?: WeddingEventDetails;
+}
+export type WeddingStatus = 'active' | 'planning' | 'completed' | 'cancelled' | string;
+
+export interface Wedding {
+  id: string; // legacy id field (some APIs may provide both)
+  _id: string; // primary identifier
   couple_names: string;
-  date: string;
+  date: string; // ISO date string
   slug: string;
   assigned_planner_email?: string;
   assigned_planner_id?: string;
-  status?: string;
+  status?: WeddingStatus;
   venue?: string;
   guest_count?: number;
   total_budget?: number;
   created_at?: string;
-  events?: Array<{
-    type: string;
-    date: string;
-    details?: {
-      venue_name?: string;
-      location?: string;
-      time?: string;
-      attire?: string;
-    };
-  }>;
+  events?: WeddingEvent[];
 }
 
-interface WeddingForm {
+export interface WeddingForm {
   couple_names: string;
   date: string;
   slug: string;
   assigned_planner_email?: string;
   venue?: string;
-  status?: string;
+  status?: WeddingStatus;
   guest_count?: number;
   total_budget?: number;
-  events: Array<{
-    type: string;
-    date: string;
-    details?: {
-      venue_name?: string;
-      location?: string;
-      time?: string;
-      attire?: string;
-    };
-  }>;
+  events: WeddingEvent[];
 }
 
+interface UserDataProfile {
+  first_name?: string;
+  last_name?: string;
+  company_name?: string;
+}
 interface UserProfile {
   email: string;
   role: string;
   is_root_admin: boolean;
   is_wedding_planner: boolean;
-  user_data?: any;
+  user_data?: UserDataProfile;
 }
 
 interface PlannerOption {
@@ -63,6 +66,23 @@ interface PlannerOption {
   name: string;
   id: string;
 }
+
+interface PlannerApiUser {
+  _id: string;
+  email: string;
+  user_data?: UserDataProfile;
+}
+
+interface WeddingTemplate {
+  id: string;
+  name: string;
+  description: string;
+  events: WeddingEvent[];
+  status: WeddingStatus;
+}
+
+type AssignmentFilter = 'all' | 'assigned' | 'unassigned';
+type DateFilter = 'all' | 'upcoming' | 'past' | 'this_month' | 'this_year';
 
 export default function AdminWeddingsPage() {
   const { token, userProfile, fetchUserProfile } = useAdmin();
@@ -73,17 +93,17 @@ export default function AdminWeddingsPage() {
   const [error, setError] = useState<string>('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  const [filter, setFilter] = useState<AssignmentFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<'all' | 'upcoming' | 'past' | 'this_month' | 'this_year'>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [selectedWeddings, setSelectedWeddings] = useState<string[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEventDetails, setShowEventDetails] = useState(false);
 
   // Wedding templates
-  const weddingTemplates = [
+  const weddingTemplates: WeddingTemplate[] = [
     {
       id: 'traditional-nigerian',
       name: 'Traditional Nigerian Wedding',
@@ -210,11 +230,17 @@ export default function AdminWeddingsPage() {
       
       if (response.ok) {
         const data = await response.json();
-        const plannerOptions = data.map((user: any) => ({
-          email: user.email,
-          name: user.user_data?.company_name || `${user.user_data?.first_name || ''} ${user.user_data?.last_name || ''}`.trim() || user.email,
-          id: user._id
-        }));
+        const users: PlannerApiUser[] = Array.isArray(data) ? data : [];
+        const plannerOptions: PlannerOption[] = users.map((user) => {
+          const first = user.user_data?.first_name || '';
+            const last = user.user_data?.last_name || '';
+            const fallbackName = `${first} ${last}`.trim();
+            return {
+              email: user.email,
+              name: user.user_data?.company_name || fallbackName || user.email,
+              id: user._id
+            };
+        });
         setPlanners(plannerOptions);
       }
     } catch (err) {
@@ -400,7 +426,7 @@ export default function AdminWeddingsPage() {
     });
   };
 
-  const applyTemplate = (template: any) => {
+  const applyTemplate = (template: WeddingTemplate) => {
     setFormData({
       ...formData,
       events: template.events,
@@ -813,7 +839,14 @@ export default function AdminWeddingsPage() {
             </select>
             <select
               value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value as any)}
+              onChange={(e) => {
+                const value = e.target.value;
+                // Runtime guard to avoid accidental invalid value assignment
+                const allowed: DateFilter[] = ['all', 'upcoming', 'past', 'this_month', 'this_year'];
+                if (allowed.includes(value as DateFilter)) {
+                  setDateFilter(value as DateFilter);
+                }
+              }}
               className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             >
               <option value="all">All Dates</option>
@@ -826,7 +859,13 @@ export default function AdminWeddingsPage() {
             {userProfile?.is_root_admin && (
               <select
                 value={filter}
-                onChange={(e) => setFilter(e.target.value as any)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const allowed: AssignmentFilter[] = ['all', 'assigned', 'unassigned'];
+                  if (allowed.includes(value as AssignmentFilter)) {
+                    setFilter(value as AssignmentFilter);
+                  }
+                }}
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="all">All Weddings</option>
