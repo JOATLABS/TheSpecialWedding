@@ -132,9 +132,8 @@ def get_wedding_by_slug(slug: str):
     This endpoint now returns minimal public information only.
     Use guest verification endpoints for full wedding details.
     """
-    from app.services.guest_verification_service import GuestVerificationService
-    
-    verification_service = GuestVerificationService()
+    from app.services.guest_verification_service import secure_guest_verification_service
+    verification_service = secure_guest_verification_service
     privacy_info = verification_service.get_wedding_privacy_info(slug)
     
     # Only return basic info to show what authentication is required

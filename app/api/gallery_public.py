@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from app.services.gallery_upload_service import GalleryUploadService
 
 router = APIRouter()
@@ -12,9 +12,8 @@ def public_gallery(wedding_slug: str = Query(...)):
     This endpoint now requires guest verification.
     """
     from fastapi import HTTPException
-    from app.services.guest_verification_service import GuestVerificationService
-    
-    verification_service = GuestVerificationService()
+    from app.services.guest_verification_service import secure_guest_verification_service
+    verification_service = secure_guest_verification_service
     privacy_info = verification_service.get_wedding_privacy_info(wedding_slug)
     
     # Only allow public access if wedding is explicitly public
@@ -37,9 +36,8 @@ def verified_gallery(
     password: str = Query(None, description="Wedding password if password-protected")
 ):
     """Get gallery images for verified guests only"""
-    from app.services.guest_verification_service import GuestVerificationService
-    
-    verification_service = GuestVerificationService()
+    from app.services.guest_verification_service import secure_guest_verification_service
+    verification_service = secure_guest_verification_service
     
     # Verify guest access
     verification_data = {
