@@ -17,7 +17,7 @@ import PrivacyModal from '@/components/PrivacyModal';
 import WeddingCountdown from '@/components/ui/WeddingCountdown';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
-  useTheme(wedding); // TODO(theming): hook side-effects only; future dynamic palette adjustments may use returned theme
+  const theme = useTheme(wedding);
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   
@@ -80,7 +80,10 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               <p className="text-gray-600">
                 {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact us directly."}
               </p>
-              <div className="inline-flex text-white px-6 py-3 rounded-lg theme-bg-accent">
+              <div
+                className="inline-flex text-white px-6 py-3 rounded-lg"
+                style={{ backgroundColor: theme.getAccentColor() }}
+              >
                 <div>
                   <p className="font-semibold">Need help?</p>
                   <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "(319) 529-6088 or (405) 708-1076"}</p>
@@ -118,7 +121,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <div className="text-center">
               <Link
                 href={`/${wedding.slug}/gallery`}
-                className="text-white px-8 py-3 rounded-lg font-semibold hover:opacity-90 transition-colors theme-bg-primary"
+                className="text-white px-8 py-3 rounded-lg font-semibold hover:opacity-90 transition-colors"
+                style={{ backgroundColor: theme.getPrimaryColor() }}
               >
                 View Full Gallery
               </Link>

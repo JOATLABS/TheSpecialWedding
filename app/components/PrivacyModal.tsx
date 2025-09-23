@@ -10,7 +10,7 @@ interface PrivacyModalProps {
   weddingName?: string;
 }
 
-export default function PrivacyModal({ isOpen, onClose, weddingName: _weddingName = "The Special Wedding" }: PrivacyModalProps) { // TODO(content): weddingName reserved for future personalized copy
+export default function PrivacyModal({ isOpen, onClose, weddingName = "The Special Wedding" }: PrivacyModalProps) {
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -39,7 +39,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName: _weddingNam
             >
               <Dialog.Panel className="w-full max-w-3xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
                 <Dialog.Title as="div" className="flex justify-between items-center mb-4">
-                  <h3 className="text-2xl font-bold text-gray-900">Privacy Policy</h3>
+                  <h3 className="text-2xl font-bold text-gray-900">Privacy Policy - {weddingName}</h3>
                   <button
                     onClick={onClose}
                     className="rounded-md p-2 hover:bg-gray-100 transition-colors"
@@ -53,7 +53,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName: _weddingNam
                   
                   <h4 className="text-lg font-semibold mt-4">1. Information We Collect</h4>
                   <p>
-                    When you RSVP or interact with our wedding website, we may collect:
+                    When you RSVP or interact with {weddingName}'s wedding website, we may collect:
                   </p>
                   <ul>
                     <li>Your name and contact information</li>
@@ -72,7 +72,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName: _weddingNam
                     <li>Manage wedding guest lists and RSVPs</li>
                     <li>Send event reminders and updates (if opted-in)</li>
                     <li>Plan catering and seating arrangements</li>
-                    <li>Share important wedding-related information</li>
+                    <li>Share important information about {weddingName}</li>
                     <li>Contact you in case of event changes</li>
                   </ul>
 
@@ -84,7 +84,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName: _weddingNam
                     If you opt-in to receive SMS notifications:
                   </p>
                   <ul>
-                    <li>Your phone number will only be used for wedding-related communications</li>
+                    <li>Your phone number will only be used for {weddingName}-related communications</li>
                     <li>You can opt-out at any time by replying STOP</li>
                     <li>Message frequency may vary but typically won't exceed 5 messages per month</li>
                     <li>Standard message and data rates may apply</li>
@@ -107,7 +107,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName: _weddingNam
 
                   <h4 className="text-lg font-semibold mt-4">6. Data Retention</h4>
                   <p>
-                    We will retain your information for the duration needed to fulfill the wedding event purposes, typically up to 6 months after the wedding date. After this period, personal information will be deleted or anonymized.
+                    We will retain your information for the duration needed to fulfill {weddingName}'s event purposes, typically up to 6 months after the wedding date. After this period, personal information will be deleted or anonymized.
                   </p>
 
                   <h4 className="text-lg font-semibold mt-4">7. Your Rights</h4>

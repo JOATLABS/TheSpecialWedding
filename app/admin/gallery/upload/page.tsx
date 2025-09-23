@@ -16,7 +16,7 @@ interface Wedding {
 }
 
 export default function AdminGalleryUploadPage() {
-  const { token } = useAdmin(); // TODO(feature): Add logout control in header actions when gallery management UI expanded
+  const { token, logout } = useAdmin();
   const router = useRouter();
 
   const [files, setFiles] = useState<File[]>([]);
@@ -190,6 +190,13 @@ export default function AdminGalleryUploadPage() {
       <div className="w-full max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-elegant text-wedding-navy dark:text-gray-100">Gallery Management</h1>
+          <Button
+            onClick={logout}
+            variant="outline"
+            className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            Logout
+          </Button>
         </div>
 
         {/* Wedding Selection - Global */}

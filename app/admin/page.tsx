@@ -5,120 +5,81 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { AdminGuard } from '@/admin/components/AdminGuard';
 
-interface UserProfile {
-  email: string;
-  role: string;
-  company_name?: string;
-  subscription_plan_id?: string;
-  subscription_status?: string;
-  is_active: boolean;
-}
-
 export default function AdminDashboardPage() {
-  const { token } = useAdmin();
+  const { token, userProfile, fetchUserProfile } = useAdmin();
   const router = useRouter();
-  const [_userProfile, setUserProfile] = useState<UserProfile | null>(null); // TODO(refactor): Consider lifting to AdminContext if dashboard widgets need it
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) {
-      router.push('/admin/login');
-      return;
-    }
-
-    fetchUserProfile();
-  }, [token, router]);
-
-  const fetchUserProfile = async () => {
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
-      const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        },
-        cache: 'no-store',
-      });
-
-      if (response.ok) {
-        const profile = await response.json();
-        setUserProfile(profile);
-        
-        // Redirect based on role
-        redirectToRoleDashboard(profile.role);
-      } else {
-        // If profile fetch fails, try to determine role from JWT payload
-        if (token) {
-          const payload = parseJwtPayload(token);
-          if (payload?.role) {
-            redirectToRoleDashboard(payload.role);
-          } else {
-            // SECURITY: Unknown role from JWT - redirect to login
-            console.warn('No role found in JWT token');
-            router.push('/admin/login');
-          }
-        } else {
-          router.push('/admin/login');
-        }
+    const initializeDashboard = async () => {
+      if (!token) {
+        router.push('/admin/login');
+        return;
       }
-    } catch (error) {
-      console.error('Failed to fetch user profile:', error);
-      // SECURITY: Never default to admin interface on errors - redirect to login
-      router.push('/admin/login');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const parseJwtPayload = (token: string) => {
-    try {
-      const payload = token.split('.')[1];
-      const decoded = atob(payload);
-      return JSON.parse(decoded);
-    } catch (error) {
-      console.error('Failed to parse JWT:', error);
-      return null;
+      try {
+        // Fetch user profile if not already loaded
+        if (!userProfile) {
+          await fetchUserProfile();
+        }
+      } catch (error) {
+        console.error('Failed to fetch user profile:', error);
+        router.push('/admin/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeDashboard();
+  }, [token, fetchUserProfile, router]);
+
+  useEffect(() => {
+    // Redirect based on role when profile is available
+    if (userProfile && !loading) {
+      redirectToRoleDashboard(userProfile.role);
     }
-  };
+  }, [userProfile, loading, router]);
 
   const redirectToRoleDashboard = (role: string) => {
     switch (role) {
       case 'ROOT_ADMIN':
+        router.push('/admin/weddings');
+        break;
       case 'admin':
-        router.push('/admin/saas');
+        router.push('/admin/forms');
         break;
-      case 'wedding_planner':
-        router.push('/admin/planner');
-        break;
-      case 'vendor':
-        router.push('/admin/vendor');
+      case 'planner':
+        router.push('/admin/weddings');
         break;
       default:
-        // SECURITY: Unknown role - redirect to login, never grant admin access
-        console.warn(`Unknown user role: ${role}`);
+        // SECURITY: Unknown role - redirect to login
+        console.warn(`Unknown role: ${role}`);
         router.push('/admin/login');
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-wedding-ivory dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300">Loading dashboard...</p>
+      <AdminGuard>
+        <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
+          </div>
         </div>
-      </div>
+      </AdminGuard>
     );
   }
 
+  // This component primarily handles redirects
+  // The actual dashboard content is rendered in role-specific pages
   return (
-    <AdminGuard requiredRoles={['ROOT_ADMIN','WEDDING_PLANNER','VENDOR']}>
-      <div className="p-6">
-        <h2 className="text-xl font-semibold">Dashboard</h2>
-        {/* content */}
+    <AdminGuard>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Redirecting to your dashboard...</p>
+        </div>
       </div>
     </AdminGuard>
   );

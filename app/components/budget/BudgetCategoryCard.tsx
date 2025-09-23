@@ -52,7 +52,13 @@ export default function BudgetCategoryCard({
     return colors[priority as keyof typeof colors] || 'text-gray-500';
   };
 
-  // TODO(analytics): subcategoriesTotal computed but not displayed; integrate into category progress summary or remove if out of scope
+  // Calculate subcategories totals
+  const subcategoriesTotal = category.subcategories.reduce((total, subcategory) => {
+    return {
+      budgeted: total.budgeted + subcategory.budgeted_amount,
+      spent: total.spent + subcategory.actual_spent,
+    };
+  }, { budgeted: 0, spent: 0 });
 
   return (
     <Card className={`p-4 ${className}`}>
@@ -125,16 +131,19 @@ export default function BudgetCategoryCard({
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center text-sm text-wedding-rose hover:text-wedding-gold transition-colors"
           >
-            <svg 
+            <svg
               className={`w-4 h-4 mr-1 transform transition-transform ${
                 isExpanded ? 'rotate-90' : ''
-              }`} 
-              fill="currentColor" 
+              }`}
+              fill="currentColor"
               viewBox="0 0 20 20"
             >
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
             </svg>
             {category.subcategories.length} subcategories
+            <span className="ml-2 text-xs text-gray-600">
+              ({formatCurrency(subcategoriesTotal.spent)} / {formatCurrency(subcategoriesTotal.budgeted)})
+            </span>
           </button>
         </div>
       )}
@@ -161,6 +170,23 @@ export default function BudgetCategoryCard({
                 </div>
               </div>
             ))}
+
+            {/* Subcategories total summary */}
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex justify-between items-center text-sm font-medium">
+                <span className="text-gray-700">Subcategories Total:</span>
+                <div className="text-right">
+                  <div className="text-wedding-navy">
+                    {formatCurrency(subcategoriesTotal.spent)} / {formatCurrency(subcategoriesTotal.budgeted)}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {subcategoriesTotal.budgeted > 0
+                      ? ((subcategoriesTotal.spent / subcategoriesTotal.budgeted) * 100).toFixed(0)
+                      : 0}% used
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -215,9 +215,15 @@ export default function ProfilePage() {
       });
 
       if (response.ok) {
-  await response.json(); // TODO(future): use response payload to optimistically update UI instead of refetch
+        const updatedProfile = await response.json();
+        // Use response payload to optimistically update UI instead of refetch
+        setUserProfile(updatedProfile);
+        setProfileData({
+          first_name: updatedProfile.first_name || '',
+          last_name: updatedProfile.last_name || '',
+          company_name: updatedProfile.company_name || ''
+        });
         toast.success('Profile updated successfully');
-        fetchUserProfile(); // Refresh profile data
       } else {
         const error = await response.json();
         toast.error(error.detail || 'Failed to update profile');
