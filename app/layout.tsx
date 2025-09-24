@@ -13,6 +13,7 @@ export const metadata: Metadata = {
   },
 }
 
+// 'device-width' ensures the viewport matches the device's screen width for responsive design
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
@@ -26,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* Additional mobile-friendly meta tags */}
         <meta name="mobile-web-app-capable" content="yes" />
@@ -40,9 +41,11 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body>
-        {children}
-        <ClientAnalytics />
+      <body suppressHydrationWarning>
+        <div id="main-content">
+          {children}
+          {/* <ClientAnalytics /> */}
+        </div>
       </body>
     </html>
   )
