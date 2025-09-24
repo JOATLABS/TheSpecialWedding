@@ -2,7 +2,6 @@
 import './styles/globals.css'
 import type { Metadata } from 'next'
 import React from 'react'
-import ClientAnalytics from '@/components/ClientAnalytics'
 
 export const metadata: Metadata = {
   title: 'TheSpecialWedding - Professional Wedding Planning Platform',
@@ -42,10 +41,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body suppressHydrationWarning>
-        <div id="main-content">
-          {children}
-          {/* <ClientAnalytics /> */}
-        </div>
+        {children}
       </body>
     </html>
   )
