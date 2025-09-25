@@ -50,8 +50,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip API requests - always fetch fresh
+  // Skip API requests and admin routes - always fetch fresh
   if (event.request.url.includes('/api/') || event.request.url.includes('/admin/')) {
+    event.respondWith(fetch(event.request));
     return;
   }
 
