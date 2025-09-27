@@ -16,6 +16,7 @@ interface UserProfile {
 
 type AdminContextType = {
     isAuthenticated: boolean;
+    isSessionInitialized: boolean;
     token: string | null;
     userProfile: UserProfile | null;
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
@@ -38,22 +39,29 @@ export const AdminProvider = ({
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(initialAuth);
     const [token, setToken] = useState<string | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+    const [isSessionInitialized, setIsSessionInitialized] = useState(false);
 
     useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
         // If we're on an admin page (and middleware let us through), we're authenticated
-        const isAdminPage = typeof window !== 'undefined' &&
-                           window.location.pathname.startsWith('/admin') &&
-                           !window.location.pathname.startsWith('/admin/login');
+        const isAdminPage = window.location.pathname.startsWith('/admin') &&
+                            !window.location.pathname.startsWith('/admin/login');
 
         if (isAdminPage) {
             setIsAuthenticated(true);
-            // Get token from localStorage for API calls
-            const storedToken = localStorage.getItem('admin_token') ||
-                              sessionStorage.getItem('admin_token');
-            if (storedToken) {
-                setToken(storedToken);
-            }
         }
+
+        // Get token from storage for API calls
+        const storedToken = localStorage.getItem('admin_token') ||
+                            sessionStorage.getItem('admin_token');
+        if (storedToken) {
+            setToken(storedToken);
+        }
+
+        setIsSessionInitialized(true);
     }, []);
 
     const apiRequest = async (path: string, method: string = 'GET', body?: any) => {
@@ -223,6 +231,7 @@ export const AdminProvider = ({
         <AdminContext.Provider
             value={{
                 isAuthenticated: isAuthenticated,  // Use the state, not token presence
+                isSessionInitialized,
                 token,
                 userProfile,
                 login,

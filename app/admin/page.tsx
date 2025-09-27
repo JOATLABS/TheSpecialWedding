@@ -3,57 +3,75 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { normalizeRole, type NormalizedRole } from '@/admin/utils/role';
 
 export default function AdminDashboardPage() {
-  const { token, userProfile, fetchUserProfile } = useAdmin();
+  const { token, userProfile, fetchUserProfile, isSessionInitialized } = useAdmin();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const initializeDashboard = async () => {
-      if (!token) {
-        router.push('/admin/login');
-        return;
-      }
+    if (!isSessionInitialized) {
+      return;
+    }
 
+    if (!token) {
+      setLoading(false);
+      router.replace('/admin/login');
+      return;
+    }
+
+    if (userProfile) {
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const initializeDashboard = async () => {
       try {
-        // Fetch user profile if not already loaded
-        if (!userProfile) {
-          await fetchUserProfile();
-        }
+        await fetchUserProfile();
       } catch (error) {
         console.error('Failed to fetch user profile:', error);
-        router.push('/admin/login');
+        router.replace('/admin/login');
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     initializeDashboard();
-  }, [token, fetchUserProfile, router]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isSessionInitialized, token, userProfile, fetchUserProfile, router]);
 
   useEffect(() => {
     // Redirect based on role when profile is available
-    if (userProfile && !loading) {
-      redirectToRoleDashboard(userProfile.role);
+    if (loading || !userProfile) {
+      return;
     }
+    const role = normalizeRole(userProfile);
+    redirectToRoleDashboard(role);
   }, [userProfile, loading, router]);
 
-  const redirectToRoleDashboard = (role: string) => {
+  const redirectToRoleDashboard = (role: NormalizedRole) => {
     switch (role) {
       case 'ROOT_ADMIN':
-        router.push('/admin/weddings');
+        router.replace('/admin/saas');
         break;
-      case 'admin':
-        router.push('/admin/forms');
+      case 'WEDDING_PLANNER':
+        router.replace('/admin/weddings');
         break;
-      case 'planner':
-        router.push('/admin/weddings');
+      case 'VENDOR':
+        router.replace('/admin/vendor');
         break;
       default:
         // SECURITY: Unknown role - redirect to login
         console.warn(`Unknown role: ${role}`);
-        router.push('/admin/login');
+        router.replace('/admin/login');
     }
   };
 
