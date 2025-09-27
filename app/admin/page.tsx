@@ -1,81 +1,69 @@
-'use client';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { normalizeRole } from '@/admin/utils/role';
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAdmin } from '@/contexts/AdminContext';
+type AdminProfile = {
+  email: string;
+  role?: string;
+  is_root_admin?: boolean;
+  is_wedding_planner?: boolean;
+  is_vendor?: boolean;
+};
 
-export default function AdminDashboardPage() {
-  const { token, userProfile, fetchUserProfile } = useAdmin();
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
+const ROLE_REDIRECTS: Record<string, string> = {
+  ROOT_ADMIN: '/admin/saas',
+  WEDDING_PLANNER: '/admin/planner',
+  VENDOR: '/admin/vendor',
+};
 
-  useEffect(() => {
-    const initializeDashboard = async () => {
-      if (!token) {
-        router.push('/admin/login');
-        return;
-      }
+async function fetchProfile(token: string): Promise<AdminProfile | null> {
+  const backendUrl = process.env.API_BASE_URL || process.env.BACKEND_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL;
 
-      try {
-        // Fetch user profile if not already loaded
-        if (!userProfile) {
-          await fetchUserProfile();
-        }
-      } catch (error) {
-        console.error('Failed to fetch user profile:', error);
-        router.push('/admin/login');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initializeDashboard();
-  }, [token, fetchUserProfile, router]);
-
-  useEffect(() => {
-    // Redirect based on role when profile is available
-    if (userProfile && !loading) {
-      redirectToRoleDashboard(userProfile.role);
-    }
-  }, [userProfile, loading, router]);
-
-  const redirectToRoleDashboard = (role: string) => {
-    switch (role) {
-      case 'ROOT_ADMIN':
-        router.push('/admin/weddings');
-        break;
-      case 'admin':
-        router.push('/admin/forms');
-        break;
-      case 'planner':
-        router.push('/admin/weddings');
-        break;
-      default:
-        // SECURITY: Unknown role - redirect to login
-        console.warn(`Unknown role: ${role}`);
-        router.push('/admin/login');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
-        </div>
-      </div>
-    );
+  if (!backendUrl) {
+    console.error('Missing backend API base URL environment variable');
+    return null;
   }
 
-  // This component primarily handles redirects
-  // The actual dashboard content is rendered in role-specific pages
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto"></div>
-        <p className="mt-4 text-gray-600 dark:text-gray-400">Redirecting to your dashboard...</p>
-      </div>
-    </div>
-  );
+  try {
+    const response = await fetch(`${backendUrl}/admin/profile`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      console.error('Failed to fetch admin profile', response.status, await response.text());
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Unexpected error while fetching admin profile', error);
+    return null;
+  }
 }
+
+export default async function AdminDashboardPage() {
+  const cookieStore = await cookies();
+  const isAuthenticated = cookieStore.get('admin_authenticated')?.value === 'true';
+  const token = cookieStore.get('admin_token')?.value;
+
+  if (!isAuthenticated || !token) {
+    redirect('/admin/login');
+  }
+
+  const profile = await fetchProfile(token);
+
+  if (!profile) {
+    redirect('/admin/login');
+  }
+
+  const normalizedRole = normalizeRole(profile);
+  const destination = ROLE_REDIRECTS[normalizedRole] ?? '/admin/login';
+
+  redirect(destination);
+}
+

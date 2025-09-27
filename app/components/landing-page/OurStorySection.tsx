@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { Wedding } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
 
@@ -10,6 +11,13 @@ interface OurStorySectionProps {
 
 export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => {
   const theme = wedding.theme_config;
+
+  const buildMediaUrl = (path?: string) => {
+    if (!path) return undefined;
+    return path.startsWith('http')
+      ? path
+      : `https://media.thespecialwedding.com/${path}`;
+  };
   
   if (!wedding.our_story && (!wedding.wedding_party || wedding.wedding_party.length === 0)) {
     return null;
@@ -43,6 +51,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
   };
 
   const { bridesSide, groomsSide } = sortWeddingParty();
+  const storyImageSrc = buildMediaUrl(wedding.our_story?.image_url);
 
   // Get image shape styles
   const getImageShapeClass = (shape?: string) => {
@@ -77,14 +86,14 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             </h2>
             
             <div className="flex flex-col items-center">
-              {wedding.our_story.image_url && (
+              {storyImageSrc && (
                 <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
-                  <img
-                    src={wedding.our_story.image_url.startsWith('http') 
-                      ? wedding.our_story.image_url 
-                      : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`}
+                  <Image
+                    src={storyImageSrc}
                     alt="Couple"
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="192px"
                   />
                 </div>
               )}
@@ -111,27 +120,32 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                     Bride's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
-                    {bridesSide.map((member) => (
-                      <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
-                          {member.image_url ? (
-                            <img
-                              src={`https://media.thespecialwedding.com/${member.image_url}`}
-                              alt={member.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
-                              <span className="text-3xl" style={{ color: theme?.accent_color || '#c8847e' }}>
-                                {member.name.charAt(0)}
-                              </span>
-                            </div>
-                          )}
+                    {bridesSide.map((member) => {
+                      const memberImageSrc = buildMediaUrl(member.image_url);
+                      return (
+                        <div key={member.id} className="text-center">
+                          <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
+                            {memberImageSrc ? (
+                              <Image
+                                src={memberImageSrc}
+                                alt={member.name}
+                                fill
+                                className="object-cover"
+                                sizes="128px"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
+                                <span className="text-3xl" style={{ color: theme?.accent_color || '#c8847e' }}>
+                                  {member.name.charAt(0)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <h4 className="text-gray-800">{member.name}</h4>
+                          <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
                         </div>
-                        <h4 className="text-gray-800">{member.name}</h4>
-                        <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -143,27 +157,32 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                     Groom's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
-                    {groomsSide.map((member) => (
-                      <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
-                          {member.image_url ? (
-                            <img
-                              src={`https://media.thespecialwedding.com/${member.image_url}`}
-                              alt={member.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
-                              <span className="text-3xl" style={{ color: theme?.primary_color || '#1e3a5f' }}>
-                                {member.name.charAt(0)}
-                              </span>
-                            </div>
-                          )}
+                    {groomsSide.map((member) => {
+                      const memberImageSrc = buildMediaUrl(member.image_url);
+                      return (
+                        <div key={member.id} className="text-center">
+                          <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
+                            {memberImageSrc ? (
+                              <Image
+                                src={memberImageSrc}
+                                alt={member.name}
+                                fill
+                                className="object-cover"
+                                sizes="128px"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
+                                <span className="text-3xl" style={{ color: theme?.primary_color || '#1e3a5f' }}>
+                                  {member.name.charAt(0)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <h4 className="text-gray-800">{member.name}</h4>
+                          <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
                         </div>
-                        <h4 className="text-gray-800">{member.name}</h4>
-                        <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
