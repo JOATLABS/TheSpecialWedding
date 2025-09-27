@@ -46,22 +46,78 @@ export const AdminProvider = ({
             return;
         }
 
-        // If we're on an admin page (and middleware let us through), we're authenticated
-        const isAdminPage = window.location.pathname.startsWith('/admin') &&
-                            !window.location.pathname.startsWith('/admin/login');
+        const readAuthCookie = () => {
+            if (typeof document === 'undefined') {
+                return false;
+            }
+            const match = document.cookie.match(/(?:^|;\s*)admin_authenticated=([^;]+)/);
+            return match ? match[1] === 'true' : false;
+        };
 
-        if (isAdminPage) {
-            setIsAuthenticated(true);
-        }
+        const readStoredToken = () => {
+            try {
+                return localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+            } catch (error) {
+                console.warn('Failed to read stored admin token', error);
+                return null;
+            }
+        };
 
-        // Get token from storage for API calls
-        const storedToken = localStorage.getItem('admin_token') ||
-                            sessionStorage.getItem('admin_token');
-        if (storedToken) {
-            setToken(storedToken);
-        }
+        const clearStoredToken = () => {
+            try {
+                localStorage.removeItem('admin_token');
+                sessionStorage.removeItem('admin_token');
+            } catch (error) {
+                console.warn('Failed to clear stored admin token', error);
+            }
+        };
 
-        setIsSessionInitialized(true);
+        const syncAuthState = () => {
+            const hasAuthCookie = readAuthCookie();
+            const storedToken = hasAuthCookie ? readStoredToken() : null;
+
+            if (!hasAuthCookie) {
+                clearStoredToken();
+            }
+
+            const nextToken = storedToken ?? null;
+            setToken(nextToken);
+
+            const isAuthenticatedState = Boolean(hasAuthCookie && nextToken);
+            setIsAuthenticated(isAuthenticatedState);
+
+            if (!isAuthenticatedState) {
+                setUserProfile(null);
+                if (typeof document !== 'undefined') {
+                    document.body.removeAttribute('data-auth-state');
+                    document.body.removeAttribute('data-auth-role');
+                }
+            } else if (typeof document !== 'undefined') {
+                document.body.setAttribute('data-auth-state', 'authenticated');
+            }
+
+            setIsSessionInitialized(true);
+        };
+
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key === 'admin_token' || event.key === null) {
+                syncAuthState();
+            }
+        };
+
+        const handleFocus = () => {
+            syncAuthState();
+        };
+
+        syncAuthState();
+
+        window.addEventListener('storage', handleStorage);
+        window.addEventListener('focus', handleFocus);
+
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            window.removeEventListener('focus', handleFocus);
+        };
     }, []);
 
     const apiRequest = useCallback(async (path: string, method: string = 'GET', body?: any) => {
