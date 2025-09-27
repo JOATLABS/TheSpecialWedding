@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { normalizeRole } from '@/admin/utils/role';
 import { AllowedRole } from '@/admin/config/routePolicy';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -12,31 +11,25 @@ interface AdminGuardProps {
 }
 
 export function AdminGuard({ requiredRoles, children }: AdminGuardProps) {
-  const { isAuthenticated, userProfile, fetchUserProfile, token, logout } = useAdmin();
-  const router = useRouter();
-  const pathname = usePathname();
+  const { userProfile, fetchUserProfile } = useAdmin();
   const attemptedRef = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated || !token) {
-      if (!pathname.startsWith('/admin/login')) {
-        router.replace('/admin/login');
-      }
-      return;
-    }
+    // Middleware handles authentication - just fetch profile if missing
     if (!userProfile && !attemptedRef.current) {
       attemptedRef.current = true;
       fetchUserProfile().catch(() => {
-        logout();
-        router.replace('/admin/login');
+        console.error('Failed to fetch user profile');
+        // Don't logout - middleware handles auth
       });
     }
-  }, [isAuthenticated, token, userProfile, fetchUserProfile, router, pathname, logout]);
+  }, [userProfile, fetchUserProfile]);
 
-  if (!isAuthenticated || !token || !userProfile) {
+  // Show loading state while fetching profile
+  if (!userProfile) {
     return (
       <div className="p-8 text-sm text-gray-500 animate-pulse">
-        Securing admin area…
+        Loading user profile…
       </div>
     );
   }

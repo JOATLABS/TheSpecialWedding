@@ -76,3 +76,5 @@ scripts/add_last_login_field.py
 tests/debug/debug_auth_flow.py
 tests/debug/debug_form_delete.py
 docs/architecture/Application_Architecture_Review.txt
+__pycache__/
+*.pyc

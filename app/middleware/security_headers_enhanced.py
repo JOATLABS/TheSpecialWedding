@@ -37,7 +37,7 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
         hsts_max_age: int = 31536000,  # 1 year
         csp_report_uri: Optional[str] = None,
         enable_csp_reporting: bool = True,
-        allowed_origins: List[str] = None,
+        allowed_origins: Optional[List[str]] = None,
         debug_mode: bool = False
     ):
         super().__init__(app)
@@ -131,7 +131,8 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         
         # Server information hiding
-        response.headers.pop("Server", None)
+        if "Server" in response.headers:
+            del response.headers["Server"]
         response.headers["Server"] = "WeddingApp-Secure"
         
         # Request ID for tracking

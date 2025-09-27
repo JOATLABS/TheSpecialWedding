@@ -10,7 +10,7 @@ from app.utils.exceptions import WeddingAppException
 from app.utils.secure_error_handler import secure_error_handler
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Configure secure logging
 logger = logging.getLogger("wedding_secure_error_handler")
@@ -19,7 +19,7 @@ logger.setLevel(logging.INFO)
 # Determine if we're in debug mode
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 
-class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
+class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     """
     Secure middleware to handle all exceptions without information disclosure.
     
@@ -191,7 +191,7 @@ class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
     def _cleanup_old_tracking(self):
         """Clean up old error tracking data"""
         current_time = datetime.utcnow()
-        cutoff_time = current_time - datetime.timedelta(hours=1)
+        cutoff_time = current_time - timedelta(hours=1)
         
         # Remove old tracking data
         expired_ips = []
@@ -219,4 +219,4 @@ class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
 
 
 # Backward compatibility alias
-ErrorHandlerMiddleware = SecureErrorHandlerMiddleware
+#ErrorHandlerMiddleware = SecureErrorHandlerMiddleware

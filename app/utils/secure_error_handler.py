@@ -66,12 +66,14 @@ class SecureErrorHandler:
         }
         
         # Only add field information for validation errors (safe to expose)
-        if hasattr(exc, 'field') and exc.field and exc.error_code in ["VALIDATION_ERROR", "INVALID_INPUT"]:
-            error_response["error"]["field"] = self._sanitize_field_name(exc.field)
+        field = getattr(exc, 'field', None)
+        if field and exc.error_code in ["VALIDATION_ERROR", "INVALID_INPUT"]:
+            error_response["error"]["field"] = self._sanitize_field_name(field)
         
         # Add retry_after for rate limit errors
-        if hasattr(exc, 'retry_after'):
-            error_response["error"]["retry_after"] = exc.retry_after
+        retry_after = getattr(exc, 'retry_after', None)
+        if retry_after is not None:
+            error_response["error"]["retry_after"] = retry_after
         
         return JSONResponse(
             status_code=exc.status_code,

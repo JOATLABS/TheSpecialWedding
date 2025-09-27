@@ -125,11 +125,7 @@ app.add_middleware(ErrorHandlerMiddleware)
 
 # 2. Security headers
 if settings.security_headers_enabled:
-    app.add_middleware(
-        SecurityHeadersMiddleware,
-        enable_hsts=settings.hsts_enabled,
-        enable_csp=settings.csp_enabled
-    )
+    app.add_middleware(SecurityHeadersMiddleware)
 
 # 3. CSRF protection
 if settings.csrf_enabled:

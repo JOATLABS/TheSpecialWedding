@@ -33,39 +33,28 @@ export const AdminProvider = ({
     children: React.ReactNode;
     initialAuth?: boolean;
 }) => {
-    // Removed unused router constant (navigation handled via window.location)
-    // Start with false, let useEffect handle cookie check
-    // This prevents hydration mismatches
-    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+    // Server-first authentication: middleware handles auth checks
+    // Context only manages user profile state and login/logout actions
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(initialAuth);
     const [token, setToken] = useState<string | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
     useEffect(() => {
-        // TWO-COOKIE PATTERN:
-        // 1. admin_token: httpOnly cookie with actual JWT (not accessible here)
-        // 2. admin_authenticated: readable cookie for client auth state
+        // If we're on an admin page (and middleware let us through), we're authenticated
+        const isAdminPage = typeof window !== 'undefined' &&
+                           window.location.pathname.startsWith('/admin') &&
+                           !window.location.pathname.startsWith('/admin/login');
 
-        // Check the client-readable auth cookie
-        const match = document.cookie.match(/admin_authenticated=([^;]+)/);
-        const cookieAuth = match ? match[1] === 'true' : false;
-
-        if (cookieAuth) {
+        if (isAdminPage) {
             setIsAuthenticated(true);
-            // Try to get the token from localStorage/sessionStorage (from login response)
+            // Get token from localStorage for API calls
             const storedToken = localStorage.getItem('admin_token') ||
                               sessionStorage.getItem('admin_token');
             if (storedToken) {
                 setToken(storedToken);
             }
-        } else if (!initialAuth) {
-            // No auth cookie and no server-side auth = user is logged out
-            setIsAuthenticated(false);
-            setToken(null);
-            // Clean up any stale storage
-            localStorage.removeItem('admin_token');
-            sessionStorage.removeItem('admin_token');
         }
-    }, [initialAuth]);
+    }, []);
 
     // Automatically fetch user profile when token is set
     useEffect(() => {
@@ -160,15 +149,13 @@ export const AdminProvider = ({
 
             const { access_token } = await res.json();
 
-            // Store token in localStorage or sessionStorage for API calls
-            // Note: The actual secure token is in httpOnly cookie (not accessible)
-            // This stored token is used for Authorization headers in API requests
-            const storage = rememberMe ? localStorage : sessionStorage;
-            storage.setItem('admin_token', access_token);
-
             // The server sets two cookies via Set-Cookie headers:
             // 1. admin_token: httpOnly cookie with JWT (secure, not readable)
             // 2. admin_authenticated: readable cookie for client state
+
+            // Store token for API calls (used for Authorization headers)
+            const storage = rememberMe ? localStorage : sessionStorage;
+            storage.setItem('admin_token', access_token);
 
             setToken(access_token);
             setIsAuthenticated(true);
@@ -177,12 +164,8 @@ export const AdminProvider = ({
 
             // Add automation attribute to document for state tracking
             document.body.setAttribute('data-auth-state', 'authenticated');
-            if (userProfile?.role) {
-                document.body.setAttribute('data-auth-role', userProfile.role);
-            }
 
-            // Use window.location for reliable navigation
-            // router.push() doesn't always work in context
+            // Simple redirect - middleware will handle the rest
             window.location.href = '/admin';
         } catch (err: any) {
             toast.error(err.message);
