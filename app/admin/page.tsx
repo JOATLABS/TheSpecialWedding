@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { normalizeRole, type NormalizedRole } from '@/admin/utils/role';
@@ -9,6 +9,8 @@ export default function AdminDashboardPage() {
   const { token, userProfile, fetchUserProfile, isSessionInitialized } = useAdmin();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const hasRequestedProfile = useRef(false);
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
     if (!isSessionInitialized) {
@@ -17,45 +19,71 @@ export default function AdminDashboardPage() {
 
     if (!token) {
       setLoading(false);
-      router.replace('/admin/login');
+      if (!hasRedirected.current) {
+        hasRedirected.current = true;
+        router.replace('/admin/login');
+      }
       return;
     }
 
     if (userProfile) {
       setLoading(false);
+      if (!hasRedirected.current) {
+        hasRedirected.current = true;
+        const role = normalizeRole(userProfile);
+        redirectToRoleDashboard(role);
+      }
       return;
     }
 
-    let isMounted = true;
+    if (hasRequestedProfile.current) {
+      return;
+    }
 
-    const initializeDashboard = async () => {
-      try {
-        await fetchUserProfile();
-      } catch (error) {
+    hasRequestedProfile.current = true;
+    let isActive = true;
+
+    fetchUserProfile()
+      .then(profile => {
+        if (!isActive) return;
+        if (!profile) {
+          if (!hasRedirected.current) {
+            hasRedirected.current = true;
+            router.replace('/admin/login');
+          }
+          return;
+        }
+
+        if (!hasRedirected.current) {
+          hasRedirected.current = true;
+          const role = normalizeRole(profile);
+          redirectToRoleDashboard(role);
+        }
+      })
+      .catch((error) => {
+        if (!isActive) return;
         console.error('Failed to fetch user profile:', error);
-        router.replace('/admin/login');
-      } finally {
-        if (isMounted) {
+        if (!hasRedirected.current) {
+          hasRedirected.current = true;
+          router.replace('/admin/login');
+        }
+      })
+      .finally(() => {
+        if (isActive) {
           setLoading(false);
         }
-      }
-    };
-
-    initializeDashboard();
+      });
 
     return () => {
-      isMounted = false;
+      isActive = false;
     };
   }, [isSessionInitialized, token, userProfile, fetchUserProfile, router]);
 
   useEffect(() => {
-    // Redirect based on role when profile is available
-    if (loading || !userProfile) {
-      return;
-    }
-    const role = normalizeRole(userProfile);
-    redirectToRoleDashboard(role);
-  }, [userProfile, loading, router]);
+    hasRequestedProfile.current = false;
+    hasRedirected.current = false;
+    setLoading(true);
+  }, [token]);
 
   const redirectToRoleDashboard = (role: NormalizedRole) => {
     switch (role) {
@@ -69,7 +97,6 @@ export default function AdminDashboardPage() {
         router.replace('/admin/vendor');
         break;
       default:
-        // SECURITY: Unknown role - redirect to login
         console.warn(`Unknown role: ${role}`);
         router.replace('/admin/login');
     }
