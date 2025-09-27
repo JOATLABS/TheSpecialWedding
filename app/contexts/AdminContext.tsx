@@ -1,11 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 // Removed unused useRouter import
 import { toast } from 'sonner';
 // Removed unused createAutomationAttrs import
 
-interface UserProfile {
+export interface UserProfile {
     email: string;
     role: string;
     is_root_admin: boolean;
@@ -16,11 +16,12 @@ interface UserProfile {
 
 type AdminContextType = {
     isAuthenticated: boolean;
+    isSessionInitialized: boolean;
     token: string | null;
     userProfile: UserProfile | null;
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
     logout: () => void;
-    fetchUserProfile: () => Promise<void>;
+    fetchUserProfile: () => Promise<UserProfile | null>;
     apiRequest: (path: string, method?: string, body?: any) => Promise<any>;
 };
 
@@ -38,32 +39,88 @@ export const AdminProvider = ({
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(initialAuth);
     const [token, setToken] = useState<string | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+    const [isSessionInitialized, setIsSessionInitialized] = useState(false);
 
     useEffect(() => {
-        // If we're on an admin page (and middleware let us through), we're authenticated
-        const isAdminPage = typeof window !== 'undefined' &&
-                           window.location.pathname.startsWith('/admin') &&
-                           !window.location.pathname.startsWith('/admin/login');
-
-        if (isAdminPage) {
-            setIsAuthenticated(true);
-            // Get token from localStorage for API calls
-            const storedToken = localStorage.getItem('admin_token') ||
-                              sessionStorage.getItem('admin_token');
-            if (storedToken) {
-                setToken(storedToken);
-            }
+        if (typeof window === 'undefined') {
+            return;
         }
+
+        const readAuthCookie = () => {
+            if (typeof document === 'undefined') {
+                return false;
+            }
+            const match = document.cookie.match(/(?:^|;\s*)admin_authenticated=([^;]+)/);
+            return match ? match[1] === 'true' : false;
+        };
+
+        const readStoredToken = () => {
+            try {
+                return localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+            } catch (error) {
+                console.warn('Failed to read stored admin token', error);
+                return null;
+            }
+        };
+
+        const clearStoredToken = () => {
+            try {
+                localStorage.removeItem('admin_token');
+                sessionStorage.removeItem('admin_token');
+            } catch (error) {
+                console.warn('Failed to clear stored admin token', error);
+            }
+        };
+
+        const syncAuthState = () => {
+            const hasAuthCookie = readAuthCookie();
+            const storedToken = hasAuthCookie ? readStoredToken() : null;
+
+            if (!hasAuthCookie) {
+                clearStoredToken();
+            }
+
+            const nextToken = storedToken ?? null;
+            setToken(nextToken);
+
+            const isAuthenticatedState = Boolean(hasAuthCookie && nextToken);
+            setIsAuthenticated(isAuthenticatedState);
+
+            if (!isAuthenticatedState) {
+                setUserProfile(null);
+                if (typeof document !== 'undefined') {
+                    document.body.removeAttribute('data-auth-state');
+                    document.body.removeAttribute('data-auth-role');
+                }
+            } else if (typeof document !== 'undefined') {
+                document.body.setAttribute('data-auth-state', 'authenticated');
+            }
+
+            setIsSessionInitialized(true);
+        };
+
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key === 'admin_token' || event.key === null) {
+                syncAuthState();
+            }
+        };
+
+        const handleFocus = () => {
+            syncAuthState();
+        };
+
+        syncAuthState();
+
+        window.addEventListener('storage', handleStorage);
+        window.addEventListener('focus', handleFocus);
+
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            window.removeEventListener('focus', handleFocus);
+        };
     }, []);
 
-    // Automatically fetch user profile when token is set
-    useEffect(() => {
-        if (token && !userProfile) {
-            fetchUserProfile();
-        }
-    }, [token, userProfile]);
-
-    const apiRequest = async (path: string, method: string = 'GET', body?: any) => {
+    const apiRequest = useCallback(async (path: string, method: string = 'GET', body?: any) => {
         if (!token) {
             throw new Error('No authentication token available');
         }
@@ -94,14 +151,14 @@ export const AdminProvider = ({
         }
 
         return await response.json();
-    };
+    }, [token]);
 
-    const fetchUserProfile = async () => {
-        if (!token) return;
+    const fetchUserProfile = useCallback(async () => {
+        if (!token) {
+            return null;
+        }
 
         try {
-            // Use the Next.js API proxy route for profile
-            // This ensures we're on the same origin and cookies work properly
             const response = await fetch(`/api/admin/profile?t=${Date.now()}`, {
                 method: 'GET',
                 headers: {
@@ -110,23 +167,52 @@ export const AdminProvider = ({
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
                     'Pragma': 'no-cache'
                 },
-                cache: 'no-store' // Force fresh request, no caching
+                cache: 'no-store',
+                credentials: 'include'
             });
 
-            if (response.ok) {
-                const profile = await response.json();
-                setUserProfile(profile);
+            if (response.status === 401) {
+                if (typeof window !== 'undefined') {
+                    try {
+                        localStorage.removeItem('admin_token');
+                        sessionStorage.removeItem('admin_token');
+                    } catch (storageError) {
+                        console.warn('Failed to clear auth tokens after unauthorized response', storageError);
+                    }
+                }
+                setIsAuthenticated(false);
+                setToken(null);
+                setUserProfile(null);
+                if (typeof document !== 'undefined') {
+                    document.body.removeAttribute('data-auth-state');
+                    document.body.removeAttribute('data-auth-role');
+                }
+                return null;
             }
-        } catch (error) {
-            // Log error without exposing sensitive information
-            // Only log if we have a token, to avoid noisy logs during login flow
-            if (token) {
-                console.error('Failed to fetch user profile');
-            }
-        }
-    };
 
-    const login = async (email: string, password: string, rememberMe = true) => {
+            if (!response.ok) {
+                const errorPayload = await response.json().catch(() => null);
+                const message = errorPayload?.detail || `Request failed with status ${response.status}`;
+                throw new Error(message);
+            }
+
+            const profile: UserProfile = await response.json();
+            setUserProfile(profile);
+            setIsAuthenticated(true);
+            if (typeof document !== 'undefined') {
+                document.body.setAttribute('data-auth-state', 'authenticated');
+                if (profile.role) {
+                    document.body.setAttribute('data-auth-role', profile.role);
+                }
+            }
+            return profile;
+        } catch (error) {
+            console.error('Failed to fetch user profile', error);
+            throw error;
+        }
+    }, [token]);
+
+    const login = useCallback(async (email: string, password: string, rememberMe = true) => {
         try {
             // SECURITY: Clear any existing sessions first to prevent session mixing
             localStorage.removeItem('admin_token');
@@ -171,10 +257,10 @@ export const AdminProvider = ({
             toast.error(err.message);
             throw err;
         }
-    };
+    }, []);
 
 
-    const logout = async () => {
+    const logout = useCallback(async () => {
         try {
             // Use the Next.js API proxy route for logout
             // This ensures cookies are cleared on the same origin
@@ -224,20 +310,30 @@ export const AdminProvider = ({
 
         // Force complete page refresh to clear ALL cached data and state
         window.location.href = '/admin/login';
-    };
+    }, [token]);
+
+    const contextValue = useMemo(() => ({
+        isAuthenticated,
+        isSessionInitialized,
+        token,
+        userProfile,
+        login,
+        logout,
+        fetchUserProfile,
+        apiRequest,
+    }), [
+        apiRequest,
+        fetchUserProfile,
+        isAuthenticated,
+        isSessionInitialized,
+        login,
+        logout,
+        token,
+        userProfile,
+    ]);
 
     return (
-        <AdminContext.Provider
-            value={{
-                isAuthenticated: isAuthenticated,  // Use the state, not token presence
-                token,
-                userProfile,
-                login,
-                logout,
-                fetchUserProfile,
-                apiRequest,
-            }}
-        >
+        <AdminContext.Provider value={contextValue}>
             {children}
         </AdminContext.Provider>
     );
