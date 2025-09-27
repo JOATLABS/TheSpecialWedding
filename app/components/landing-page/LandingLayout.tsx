@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from 'next/image';
 
 import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
 import { Modern3DBackground } from "@/components/landing-page/Modern3DBackground";
@@ -20,6 +21,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
   const theme = useTheme(wedding);
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [hiddenGalleryImages, setHiddenGalleryImages] = useState<Record<string, boolean>>({});
   
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image 
@@ -104,16 +106,26 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <h2 className="text-4xl font-bold text-center mb-6 theme-primary">Gallery</h2>
             {images.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                {images.slice(0, 8).map((img, i) => (
-                  <div key={img.key} className="relative w-full h-48 rounded-lg overflow-hidden shadow-lg">
-                    <img
-                      src={img.url}
-                      alt={`Memory ${i + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    />
-                  </div>
-                ))}
+                {images.slice(0, 8).map((img, i) => {
+                  if (hiddenGalleryImages[img.key]) {
+                    return null;
+                  }
+
+                  return (
+                    <div key={img.key} className="relative w-full h-48 rounded-lg overflow-hidden shadow-lg">
+                      <Image
+                        src={img.url}
+                        alt={`Memory ${i + 1}`}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 768px) 50vw, 25vw"
+                        onError={() => {
+                          setHiddenGalleryImages((prev) => ({ ...prev, [img.key]: true }));
+                        }}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-center text-gray-600 mb-6">Photos will be added soon!</p>
