@@ -1,81 +1,80 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+
+import { SECURE_ROUTES } from '@/admin/config/routePolicy';
+import { normalizeRole, type NormalizedRole } from '@/admin/utils/role';
 import { useAdmin } from '@/contexts/AdminContext';
 
-export default function AdminDashboardPage() {
-  const { token, userProfile, fetchUserProfile } = useAdmin();
+const ROLE_HOME_ROUTE: Partial<Record<NormalizedRole, string>> = {
+  ROOT_ADMIN: '/admin/saas',
+  WEDDING_PLANNER: '/admin/planner',
+  VENDOR: '/admin/vendor',
+};
+
+function resolveRoleDestination(role: NormalizedRole): string {
+  if (role in ROLE_HOME_ROUTE) {
+    return ROLE_HOME_ROUTE[role as keyof typeof ROLE_HOME_ROUTE] ?? '/admin/login';
+  }
+
+  const defaultSecureRoute = SECURE_ROUTES.find((route) => route.path !== '/admin');
+  return defaultSecureRoute?.path ?? '/admin/login';
+}
+
+export default function AdminLandingPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const {
+    isAuthenticated,
+    isSessionInitialized,
+    token,
+    userProfile,
+    fetchUserProfile,
+  } = useAdmin();
+  const hasRequestedProfile = useRef(false);
 
   useEffect(() => {
-    const initializeDashboard = async () => {
-      if (!token) {
-        router.push('/admin/login');
+    if (!isSessionInitialized) {
+      return;
+    }
+
+    if (!isAuthenticated || !token) {
+      hasRequestedProfile.current = false;
+      router.replace('/admin/login');
+      return;
+    }
+
+    if (!userProfile) {
+      if (hasRequestedProfile.current) {
         return;
       }
 
-      try {
-        // Fetch user profile if not already loaded
-        if (!userProfile) {
-          await fetchUserProfile();
-        }
-      } catch (error) {
-        console.error('Failed to fetch user profile:', error);
-        router.push('/admin/login');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initializeDashboard();
-  }, [token, fetchUserProfile, router]);
-
-  useEffect(() => {
-    // Redirect based on role when profile is available
-    if (userProfile && !loading) {
-      redirectToRoleDashboard(userProfile.role);
+      hasRequestedProfile.current = true;
+      fetchUserProfile().catch((error) => {
+        console.error('Admin landing failed to hydrate profile', error);
+        hasRequestedProfile.current = false;
+        router.replace('/admin/login');
+      });
+      return;
     }
-  }, [userProfile, loading, router]);
 
-  const redirectToRoleDashboard = (role: string) => {
-    switch (role) {
-      case 'ROOT_ADMIN':
-        router.push('/admin/weddings');
-        break;
-      case 'admin':
-        router.push('/admin/forms');
-        break;
-      case 'planner':
-        router.push('/admin/weddings');
-        break;
-      default:
-        // SECURITY: Unknown role - redirect to login
-        console.warn(`Unknown role: ${role}`);
-        router.push('/admin/login');
-    }
-  };
+    const role = normalizeRole(userProfile);
+    const destination = resolveRoleDestination(role);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+    router.replace(destination);
+  }, [
+    fetchUserProfile,
+    isAuthenticated,
+    isSessionInitialized,
+    router,
+    token,
+    userProfile,
+  ]);
 
-  // This component primarily handles redirects
-  // The actual dashboard content is rendered in role-specific pages
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto"></div>
-        <p className="mt-4 text-gray-600 dark:text-gray-400">Redirecting to your dashboard...</p>
-      </div>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-wedding-ivory text-sm text-gray-500">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500" />
+      <p className="mt-4">Preparing your dashboard…</p>
     </div>
   );
 }
