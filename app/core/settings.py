@@ -138,8 +138,8 @@ class Settings(BaseSettings):
     free_trial_days: int = Field(default=14, alias="FREE_TRIAL_DAYS")
     
     # Admin Settings
-    root_admin_email: Optional[str] = Field(default=None, alias="ROOT_ADMIN_EMAIL")
-    root_admin_password: Optional[str] = Field(default=None, alias="ROOT_ADMIN_PASSWORD")
+    root_admin_email: Optional[str] = Field(default=None, alias="PRIMARY_ADMIN_EMAIL")
+    root_admin_password: Optional[str] = Field(default=None, alias="PRIMARY_ADMIN_PASSWORD")
 
     # Platform Metrics Configuration
     default_uptime_percentage: float = Field(default=99.9, alias="DEFAULT_UPTIME_PERCENTAGE")

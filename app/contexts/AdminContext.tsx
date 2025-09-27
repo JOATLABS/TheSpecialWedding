@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+
 // Removed unused useRouter import
 import { toast } from 'sonner';
 // Removed unused createAutomationAttrs import
@@ -121,6 +122,7 @@ export const AdminProvider = ({
     }, []);
 
     const apiRequest = useCallback(async (path: string, method: string = 'GET', body?: any) => {
+
         if (!token) {
             throw new Error('No authentication token available');
         }
