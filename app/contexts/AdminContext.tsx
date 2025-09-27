@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 // Removed unused useRouter import
 import { toast } from 'sonner';
 // Removed unused createAutomationAttrs import
@@ -56,13 +56,6 @@ export const AdminProvider = ({
         }
     }, []);
 
-    // Automatically fetch user profile when token is set
-    useEffect(() => {
-        if (token && !userProfile) {
-            fetchUserProfile();
-        }
-    }, [token, userProfile]);
-
     const apiRequest = async (path: string, method: string = 'GET', body?: any) => {
         if (!token) {
             throw new Error('No authentication token available');
@@ -96,7 +89,7 @@ export const AdminProvider = ({
         return await response.json();
     };
 
-    const fetchUserProfile = async () => {
+    const fetchUserProfile = useCallback(async () => {
         if (!token) return;
 
         try {
@@ -124,7 +117,7 @@ export const AdminProvider = ({
                 console.error('Failed to fetch user profile');
             }
         }
-    };
+    }, [token]);
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {
