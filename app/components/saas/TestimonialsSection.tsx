@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { GlassCard } from '@/components/ui/GlassCard';
 
 interface Testimonial {
@@ -55,17 +56,19 @@ export const TestimonialsSection: React.FC<TestimonialsSectionProps> = ({ testim
 
             {/* Author */}
             <div className="flex items-center">
-              <div 
-                className="w-12 h-12 rounded-full flex items-center justify-center mr-4"
+              <div
+                className="relative w-12 h-12 rounded-full flex items-center justify-center mr-4 overflow-hidden"
                 style={{
                   background: `linear-gradient(135deg, ${theme.primary_color}, ${theme.secondary_color})`
                 }}
               >
                 {testimonial.avatar_url ? (
-                  <img
+                  <Image
                     src={testimonial.avatar_url}
                     alt={testimonial.name}
-                    className="w-full h-full rounded-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="48px"
                   />
                 ) : (
                   <span className="text-white font-bold text-lg">
