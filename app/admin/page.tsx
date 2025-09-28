@@ -1,80 +1,170 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+
+import { SECURE_ROUTES } from '@/admin/config/routePolicy';
+import { normalizeRole, type NormalizedRole } from '@/admin/utils/role';
 import { useAdmin } from '@/contexts/AdminContext';
 
-export default function AdminDashboardPage() {
-  const { token, userProfile, fetchUserProfile } = useAdmin();
+const ROLE_HOME_ROUTE: Partial<Record<NormalizedRole, string>> = {
+  ROOT_ADMIN: '/admin/saas',
+  WEDDING_PLANNER: '/admin/planner',
+  VENDOR: '/admin/vendor',
+};
+
+function sanitizeNextPath(rawValue: string | null): string | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  if (!rawValue.startsWith('/admin')) {
+    return null;
+  }
+
+  if (rawValue.includes('..')) {
+    return null;
+  }
+
+  return rawValue;
+}
+
+function resolveRoleDestination(role: NormalizedRole, fallback: string | null): string | null {
+  if (fallback) {
+    return fallback;
+  }
+
+  if (role in ROLE_HOME_ROUTE) {
+    return ROLE_HOME_ROUTE[role as keyof typeof ROLE_HOME_ROUTE] ?? null;
+  }
+
+  const defaultSecureRoute = SECURE_ROUTES.find((route) => route.path !== '/admin');
+  return defaultSecureRoute?.path ?? null;
+}
+
+export default function AdminLandingPage() {
+  const { isSessionInitialized, isAuthenticated, token, userProfile, fetchUserProfile } = useAdmin();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const searchParams = useSearchParams();
+
+  const [pendingDestination, setPendingDestination] = useState<string | null>(null);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
+  const [isFetchingProfile, setIsFetchingProfile] = useState(false);
+
+  const hasRequestedProfile = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    const initializeDashboard = async () => {
-      if (!token) {
-        router.push('/admin/login');
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const requestedNext = useMemo(() => sanitizeNextPath(searchParams?.get('next') ?? null), [searchParams]);
+
+  useEffect(() => {
+    if (!isSessionInitialized) {
+      return;
+    }
+
+    if (!isAuthenticated || !token) {
+      if (mountedRef.current) {
+        setRedirectError('UNAUTHENTICATED');
+      }
+      return;
+    }
+
+    const applyDestination = (profile: unknown) => {
+      const normalizedRole = normalizeRole(profile as Record<string, unknown> | null | undefined);
+      const target = resolveRoleDestination(normalizedRole, requestedNext);
+
+      if (!target) {
+        console.error('Admin landing: unable to resolve dashboard destination for role', {
+          normalizedRole,
+          requestedNext,
+        });
+        if (mountedRef.current) {
+          setRedirectError('UNKNOWN_ROLE');
+        }
         return;
       }
 
-      try {
-        // Fetch user profile if not already loaded
-        if (!userProfile) {
-          await fetchUserProfile();
-        }
-      } catch (error) {
-        console.error('Failed to fetch user profile:', error);
-        router.push('/admin/login');
-      } finally {
-        setLoading(false);
+      if (mountedRef.current) {
+        setPendingDestination(target);
       }
     };
 
-    initializeDashboard();
-  }, [token, fetchUserProfile, router]);
+    if (userProfile) {
+      applyDestination(userProfile);
+      return;
+    }
+
+    if (hasRequestedProfile.current) {
+      return;
+    }
+
+    hasRequestedProfile.current = true;
+    if (mountedRef.current) {
+      setIsFetchingProfile(true);
+    }
+
+    fetchUserProfile()
+      .then((profile) => {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        if (!profile) {
+          setRedirectError('PROFILE_UNAVAILABLE');
+          return;
+        }
+
+        applyDestination(profile);
+      })
+      .catch((error) => {
+        console.error('Admin landing profile fetch failed', error);
+        if (mountedRef.current) {
+          setRedirectError('PROFILE_ERROR');
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current) {
+          setIsFetchingProfile(false);
+        }
+      });
+  }, [
+    fetchUserProfile,
+    isAuthenticated,
+    isSessionInitialized,
+    requestedNext,
+    token,
+    userProfile,
+  ]);
 
   useEffect(() => {
-    // Redirect based on role when profile is available
-    if (userProfile && !loading) {
-      redirectToRoleDashboard(userProfile.role);
+    if (!pendingDestination) {
+      return;
     }
-  }, [userProfile, loading, router]);
 
-  const redirectToRoleDashboard = (role: string) => {
-    switch (role) {
-      case 'ROOT_ADMIN':
-        router.push('/admin/weddings');
-        break;
-      case 'admin':
-        router.push('/admin/forms');
-        break;
-      case 'planner':
-        router.push('/admin/weddings');
-        break;
-      default:
-        // SECURITY: Unknown role - redirect to login
-        console.warn(`Unknown role: ${role}`);
-        router.push('/admin/login');
+    router.replace(pendingDestination);
+  }, [pendingDestination, router]);
+
+  useEffect(() => {
+    if (!redirectError) {
+      return;
     }
-  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+    router.replace('/admin/login');
+  }, [redirectError, router]);
 
-  // This component primarily handles redirects
-  // The actual dashboard content is rendered in role-specific pages
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto"></div>
-        <p className="mt-4 text-gray-600 dark:text-gray-400">Redirecting to your dashboard...</p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white px-4 text-gray-600">
+      <div className="flex flex-col items-center space-y-3 text-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
+        <p className="text-sm font-medium tracking-wide">
+          {isFetchingProfile ? 'Loading your dashboard…' : 'Preparing your admin workspace…'}
+        </p>
+        <p className="text-xs text-gray-400">Please keep this tab open while we verify your session.</p>
       </div>
     </div>
   );
