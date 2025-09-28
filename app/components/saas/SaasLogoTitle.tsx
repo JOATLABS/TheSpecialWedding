@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 
 interface SaasLogoTitleProps {
   theme?: {
@@ -14,7 +15,7 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
     <div className="flex flex-col items-center justify-center w-full max-w-5xl mx-auto">
       {/* Logo on Top with Glass Glow */}
       <div className="mb-6 md:mb-8">
-        <div 
+        <div
           className="relative w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48"
           style={{
             filter: `
@@ -24,10 +25,13 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
             `,
           }}
         >
-          <img
+          <Image
             src="/Logo.svg"
             alt="Special Wedding Logo"
-            className="w-full h-full object-contain"
+            fill
+            priority
+            className="object-contain"
+            sizes="(max-width: 640px) 8rem, (max-width: 768px) 10rem, 12rem"
             style={{
               filter: 'brightness(1.1) contrast(1.1)',
             }}

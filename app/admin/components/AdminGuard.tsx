@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { normalizeRole } from '@/admin/utils/role';
 import { AllowedRole } from '@/admin/config/routePolicy';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -11,11 +12,20 @@ interface AdminGuardProps {
 }
 
 export function AdminGuard({ requiredRoles, children }: AdminGuardProps) {
-  const { userProfile, fetchUserProfile } = useAdmin();
+  const { userProfile, fetchUserProfile, isAuthenticated, token, isSessionInitialized } = useAdmin();
   const attemptedRef = useRef(false);
+  const router = useRouter();
 
   useEffect(() => {
-    // Middleware handles authentication - just fetch profile if missing
+    if (!isSessionInitialized) {
+      return;
+    }
+
+    if (!isAuthenticated || !token) {
+      router.replace('/admin/login');
+      return;
+    }
+
     if (!userProfile && !attemptedRef.current) {
       attemptedRef.current = true;
       fetchUserProfile().catch(() => {
@@ -23,10 +33,10 @@ export function AdminGuard({ requiredRoles, children }: AdminGuardProps) {
         // Don't logout - middleware handles auth
       });
     }
-  }, [userProfile, fetchUserProfile]);
+  }, [userProfile, fetchUserProfile, isAuthenticated, token, isSessionInitialized, router]);
 
-  // Show loading state while fetching profile
-  if (!userProfile) {
+  // Show loading state while session is hydrating or profile is still loading
+  if (!isSessionInitialized || !isAuthenticated || !token || !userProfile) {
     return (
       <div className="p-8 text-sm text-gray-500 animate-pulse">
         Loading user profile…
