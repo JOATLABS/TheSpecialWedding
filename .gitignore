@@ -24,8 +24,6 @@ archive/
 # Logs
 *.log
 
-# Documentation
-docs/
 
 # IDE specific files
 .claude/
