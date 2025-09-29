@@ -1,71 +1,64 @@
-# Platform Metrics Implementation Guide
+# Platform Metrics Implementation Guide (Current State)
 
 ## Overview
-The Platform Metrics system provides comprehensive analytics and insights for ROOT_ADMIN users to monitor platform health, user engagement, revenue metrics, and system performance.
+The Platform Metrics page in the admin area currently synthesises high-level counts using existing admin endpoints. A dedicated analytics service has **not** been built yet, so most of the metrics shown are estimates or hard-coded placeholders.
 
 ## Architecture
 
-### Components
-1. **Backend Service**: `app/services/platform_analytics_service.py`
-   - Aggregates data from multiple collections (users, weddings, forms, subscriptions, etc.)
-   - Calculates real-time metrics with caching support
-   - Integrates with performance monitoring middleware for actual response times
+### Components in the codebase today
+1. **Frontend Dashboard**: `app/admin/metrics/page.tsx`
+   - Calls `/api/admin/users` and `/api/admin/subscription-plans`
+   - Derives metrics client-side with lightweight calculations
+   - Fills in missing values (usage, performance, revenue) with constants until real data is available
 
-2. **API Endpoints**: `app/api/platform_analytics.py`
-   - `/api/saas/analytics/overview` - Main metrics endpoint
-   - `/api/saas/analytics/{metric_type}` - Detailed metrics by category
-   - `/api/saas/analytics/export` - Export metrics in JSON/CSV
-   - `/api/saas/analytics/refresh-cache` - Force cache refresh
-
-3. **Frontend Dashboard**: `app/admin/metrics/page.tsx`
-   - Interactive dashboard with timeframe selection
-   - Real-time data fetching from backend API
-   - Responsive grid layout with metric cards
+2. **API Endpoints / Services**
+   - There is no `platform_analytics_service.py` module
+   - `/api/saas/analytics/overview` is referenced in the UI but is not implemented; the call is wrapped in a `catch(() => null)` guard
+   - No Redis caching or background aggregation exists
 
 ## Metrics Categories
 
-### 1. User Metrics
-- **Total Users**: All registered users in the system
-- **Active Users**: Users who have logged in recently
-- **New Users This Month**: Registrations in current month
-- **Growth Rate**: Month-over-month growth percentage
+### 1. User Metrics (derived client-side)
+- **Total Users**: Count of `/api/admin/users`
+- **Active Users**: Filtered by `is_active` flag
+- **New Users This Month**: Calculated by comparing `created_at` timestamps
+- **Growth Rate**: Derived from current month sign-ups vs total
 
-### 2. Subscription Metrics
-- **Total Subscriptions**: All subscription records
-- **Active Subscriptions**: Currently active paid subscriptions
-- **Trial Users**: Users on free trial
-- **Churned This Month**: Cancelled subscriptions
-- **MRR**: Monthly Recurring Revenue
-- **ARR**: Annual Recurring Revenue (MRR × 12)
+### 2. Subscription Metrics (approximations)
+- **Total Subscriptions**: Users with a `subscription_plan_id`
+- **Active Subscriptions**: Users with `subscription_status === 'active'`
+- **Trial Users**: Users with `subscription_status === 'trialing'`
+- **Churned This Month**: Hard-coded to `0` pending activity logs
+- **MRR / ARR**: Estimated by multiplying plan counts by assumed prices
 
-### 3. Usage Metrics
-- **Weddings Created**: Total weddings in the system
-- **Forms Created**: Custom forms built by users
-- **Guests Managed**: Total guests across all weddings
-- **Emails Sent**: Transactional emails delivered
-- **SMS Sent**: SMS notifications sent
+### 3. Usage Metrics (placeholders)
+- **Weddings Created**: Currently `0`
+- **Forms Created**: Currently `0`
+- **Guests Managed**: Currently `0`
+- **Emails Sent**: Currently `0`
+- **SMS Sent**: Currently `0`
 
-### 4. Performance Metrics
-- **Uptime**: System availability percentage
-- **Average Response Time**: Real-time API response times from monitoring
-- **Error Rate**: Percentage of failed requests
-- **API Calls Today**: Total API requests processed
-- **P50/P95/P99**: Response time percentiles
-- **Cache Hit Rate**: Redis cache effectiveness
+### 4. Performance Metrics (static placeholders)
+- **Uptime**: Hard-coded to `99.9`
+- **Average Response Time**: Hard-coded to `245`
+- **Error Rate**: Hard-coded to `0.1`
+- **API Calls Today**: Hard-coded to `0`
+- **P50/P95/P99**: Not calculated
+- **Cache Hit Rate**: Not calculated
 
-### 5. Revenue Metrics
-- **Total Revenue**: Cumulative revenue generated
-- **Monthly Growth**: Revenue growth percentage
-- **ARPU**: Average Revenue Per User
-- **Customer LTV**: Lifetime Value estimation
+### 5. Revenue Metrics (estimates)
+- **Total Revenue**: Active subscriber count × assumed yearly plan price
+- **Monthly Growth**: Uses a constant `15.3` when new sign-ups exist
+- **ARPU**: Fixed estimate
+- **Customer LTV**: Fixed estimate
 
 ## Data Sources
 
 ### Real-Time Data Collection
-The system collects metrics from multiple sources:
+Not yet implemented. Future work should aggregate from:
 - MongoDB collections: users, weddings, forms, guests, subscriptions
-- Redis cache: Performance metrics from PerformanceMonitoringMiddleware
-- Audit logs: API usage, errors, and security events
+- Monitoring tooling (once built) for performance data
+- Audit logs for API usage, errors, and security events
 
 ### Performance Monitoring Integration
 ```python
@@ -85,42 +78,36 @@ The system collects metrics from multiple sources:
 
 ## Caching Strategy
 
-### Redis Caching
-- Metrics are cached with hourly granularity
-- Cache key format: `analytics:{metric_type}:{timeframe}:{date-hour}`
-- TTL: 1 hour for recent data, longer for historical
-- Automatic cache invalidation on data changes
+### Redis Caching (planned)
+- Metrics caching has not been implemented
+- Once the analytics service exists, define cache keys such as `analytics:{metric_type}:{timeframe}:{date-hour}`
+- Establish TTL and invalidation strategy alongside the service work
 
-### Cache Warming
-- Background tasks pre-calculate common metrics
-- Cache refresh endpoint for manual updates
-- Graceful fallback to database queries if cache misses
+### Cache Warming (planned)
+- Background aggregation tasks have not been created
+- `/api/saas/analytics/refresh-cache` does not exist yet
+- Metrics currently fall back to client-side calculations only
 
 ## Security & Access Control
 
 ### ROOT_ADMIN Only Access
-```python
-if not current_user.is_root_admin:
-    raise HTTPException(
-        status_code=403,
-        detail="Access denied. ROOT_ADMIN role required."
-    )
-```
+Access control is handled by existing admin context/auth flows. Dedicated analytics endpoints should enforce ROOT_ADMIN scoping when they are built.
 
-### Audit Logging
-- All metrics access is logged
-- Failed access attempts recorded
-- Export operations tracked for compliance
+### Audit Logging (not yet available)
+- No audit trail is captured for the placeholder metrics page
+- Logging requirements should be captured in the backlog when the backend is implemented
 
 ## API Usage
 
 ### Fetching Overview Metrics
 ```typescript
-// Frontend implementation
-const response = await apiRequest(
-    `/api/saas/analytics/overview?timeframe=${timeframe}`,
-    'GET'
-);
+// Frontend implementation (with fallback until endpoint exists)
+const analyticsResponse = await apiRequest('/api/saas/analytics/overview', 'GET')
+  .catch(() => null);
+
+if (!analyticsResponse) {
+  // Use derived data instead of backend metrics
+}
 ```
 
 ### Available Timeframes
