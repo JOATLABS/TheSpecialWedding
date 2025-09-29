@@ -1,35 +1,34 @@
 # Payment Tracking System Documentation
 
-## Implementation Status: ✅ COMPLETE (Updated: January 2025)
+## Implementation Status: ❌ Not yet implemented (January 2025)
 
-The payment tracking system is **fully implemented and production-ready**. All core features have been built, tested, and integrated into the budget management system.
+The payment tracking system described in earlier plans has not shipped. The admin budget page still displays a "Payment tracking feature coming soon" toast, and no backend endpoints exist for persisting payments.
 
 ## Quick Start Guide
 
-### For Wedding Planners
+### For Wedding Planners (current behaviour)
 
 1. **Access the Budget Module**
    - Login to your admin dashboard
    - Navigate to **Budget** from the sidebar menu
    - Select the wedding you want to manage
 
-2. **Record Your First Payment**
-   - Find the relevant budget category (e.g., "Flowers", "Photography")
-   - Click the **"Record Payment"** button on the category card
-   - Enter the payment details and save
+2. **Attempt to record a payment**
+   - Click the **"Record Payment"** button on a category card
+   - A toast appears stating "Payment tracking feature coming soon"
+   - No modal opens and no payment is saved
 
-3. **View Payment History**
-   - Click the **"Payment History"** tab at the top of the budget page
-   - See all payments in a comprehensive table
-   - Use search and filters to find specific transactions
+3. **Payment history tab**
+   - The UI reserves a tab for future payment history functionality
+   - No table or export options are rendered yet
 
 ### For Developers
 
 1. **Key Files**
-   - Frontend: `/app/admin/budget/page.tsx` - Main budget page with tabs
-   - Components: `/app/components/budget/PaymentModal.tsx` & `PaymentHistory.tsx`
-   - Backend: `/app/api/budget.py` - API endpoints
-   - Service: `/app/services/budget_service.py` - Business logic
+   - Frontend: `/app/admin/budget/page.tsx` - Contains the placeholder toast for the future payment modal
+   - Components: `PaymentModal.tsx` & `PaymentHistory.tsx` **do not exist yet**
+   - Backend: `/app/api/budget.py` has no payment endpoints
+   - Service: `/app/services/budget_service.py` does not persist payments
 
 2. **Running Locally**
    ```bash
@@ -42,23 +41,21 @@ The payment tracking system is **fully implemented and production-ready**. All c
    # Access at http://localhost:3000/admin/budget
    ```
 
-## Features Overview
+## Features Overview (planned vs current)
 
-### ✅ Completed Features
-
-#### Core Functionality
+### Planned Core Functionality
 - **Payment Recording**: Add payments with vendor, amount, method, and date
-- **Real-time Updates**: Budget categories update immediately after payment
-- **Payment History**: View all payments with advanced filtering
+- **Real-time Updates**: Update category totals after payment
+- **Payment History**: View all payments with filtering
 - **CSV Export**: Download payment data for accounting
-- **Multi-tenant Security**: Payments are isolated per wedding
-- **Dark Mode Support**: Full UI theming support
+- **Multi-tenant Security**: Isolate payments per wedding
+- **Dark Mode Support**: Match rest of dashboard styling
 
-#### User Interface
-- **Tabbed Navigation**: Switch between categories and payment history
-- **Responsive Design**: Works on desktop, tablet, and mobile
-- **Search & Filter**: Find payments by vendor, method, or category
-- **Sort Options**: Order by date, amount, or vendor name
+### Current State
+- None of the payment-specific UI or APIs are present
+- Budget totals only change when categories are edited manually
+- CSV export still references overall budget reports, not payments
+- Payment-specific tests and automation are absent
 
 ## System Architecture
 
@@ -72,63 +69,50 @@ User Action → Frontend Component → API Service → Backend Endpoint → Mong
                                               Real-time UI Update
 ```
 
-### Backend Implementation (✅ Complete)
+### Backend Implementation (to be built)
 
-#### API Endpoints
+Target endpoints:
 
-**1. Record Payment**
-- **Endpoint**: `POST /api/budget/category/{category_id}/payment`
-- **Purpose**: Records a new payment for a budget category
-- **Request Body**:
-  ```json
-  {
-    "vendor_name": "Flowers by Jane",
-    "amount": 2500.00,
-    "payment_method": "card",
-    "payment_date": "2025-01-15",
-    "description": "50% deposit for wedding flowers",
-    "notes": "Includes delivery and setup"
-  }
-  ```
-- **Response**: Created payment record with ID
+1. **Record Payment**
+   - `POST /api/budget/category/{category_id}/payment`
+   - Persists a payment linked to a budget category
 
-**2. Get Payment History**
-- **Endpoint**: `GET /api/weddings/{wedding_id}/payments`
-- **Purpose**: Retrieves all payments for a wedding
-- **Response**: Array of payment records with category names
+2. **Get Payment History**
+   - `GET /api/weddings/{wedding_id}/payments`
+   - Returns paginated payment records with category context
 
-#### Data Models
+Suggested data model:
 
 ```python
 class PaymentRecord(BaseModel):
-    id: PyObjectId                    # Unique identifier
-    category_id: str                   # Links to budget category
-    vendor_name: Optional[str]         # Vendor receiving payment
-    amount: float                      # Payment amount (>0)
-    payment_method: str                # cash, check, card, transfer
-    payment_date: datetime             # When payment was made
-    description: Optional[str]         # Payment description
-    receipt_url: Optional[str]         # Digital receipt storage
-    status: str                        # pending, completed, failed
-    notes: Optional[str]               # Additional notes
-    created_at: datetime               # Record creation timestamp
+    id: PyObjectId
+    category_id: str
+    vendor_name: Optional[str]
+    amount: float
+    payment_method: str  # cash, check, card, transfer
+    payment_date: datetime
+    description: Optional[str]
+    receipt_url: Optional[str]
+    status: str  # pending, completed, failed
+    notes: Optional[str]
+    created_at: datetime
 ```
 
-### Frontend Implementation (✅ Complete)
+### Frontend Implementation (to be built)
 
-#### Components Structure
+Planned component structure:
 
 ```
 /app/admin/budget/
 ├── page.tsx                 # Main budget page with tab navigation
 └── /components/budget/
-    ├── PaymentModal.tsx     # Payment recording form
-    ├── PaymentHistory.tsx   # Payment history table
+    ├── PaymentModal.tsx     # Payment recording form (missing)
+    ├── PaymentHistory.tsx   # Payment history table (missing)
     ├── BudgetCategoryCard.tsx # Category cards with payment button
     └── BudgetSummaryCard.tsx  # Overall budget summary
 ```
 
-#### TypeScript Interfaces
+Proposed TypeScript interface:
 
 ```typescript
 interface PaymentRecord {
@@ -143,16 +127,16 @@ interface PaymentRecord {
   status: 'pending' | 'completed' | 'failed';
   notes?: string;
   created_at: string;
-  category_name?: string; // Added by API for display
+  category_name?: string;
 }
 ```
 
-## User Workflows
+## User Workflows (proposed)
 
 ### Recording a Payment
 
 1. **Navigate to Budget Page**
-   - User logs in and selects Budget from menu
+   - Planner logs in and selects Budget from the menu
    - Chooses the wedding to manage
 
 2. **Select Category**
@@ -160,35 +144,27 @@ interface PaymentRecord {
    - Identifies the category for payment
 
 3. **Open Payment Form**
-   - Clicks "Record Payment" on category card
-   - Modal opens with pre-filled category
+   - Planned: click "Record Payment" on the category card to open a modal
 
 4. **Enter Payment Details**
-   - **Required**: Amount, Payment Method, Date
-   - **Optional**: Vendor Name, Description, Notes
+   - Planned required fields: Amount, Payment Method, Date
+   - Planned optional fields: Vendor Name, Description, Notes
 
 5. **Save and Update**
-   - Clicks "Save Payment"
-   - Category card updates with new totals
-   - Budget summary refreshes
+   - Planned: saving should update the category card and overall budget summary
 
 ### Viewing Payment History
 
 1. **Access History Tab**
-   - Clicks "Payment History" tab
-   - Table loads with all payments
+   - Planned: click the "Payment History" tab to load the table
 
 2. **Search and Filter**
-   - **Search**: Type vendor name or description
-   - **Filter by Method**: Cash, Check, Card, Transfer
-   - **Filter by Category**: Select specific category
-   - **Sort**: Click column headers
+   - Planned controls for search, method/category filters, and sortable columns
 
 3. **Export Data**
-   - Click "Export to CSV" button
-   - Downloads formatted spreadsheet
+   - Planned: "Export to CSV" button to download a formatted spreadsheet
 
-## Database Schema
+## Database Schema (proposed)
 
 ### Collections
 
@@ -214,9 +190,9 @@ interface PaymentRecord {
   "_id": ObjectId("..."),
   "name": "Flowers",
   "budgeted_amount": 5000.00,
-  "actual_spent": 2500.00,      // Sum of all payments
-  "remaining_amount": 2500.00,   // budgeted - actual_spent
-  "payments": [...]              // Array of payment records
+  "actual_spent": 2500.00,
+  "remaining_amount": 2500.00,
+  "payments": [...]
 }
 ```
 
