@@ -4,30 +4,29 @@
 
 The Budget Management Module is a comprehensive financial tracking system for wedding planning. It provides wedding planners with tools to manage budgets, track payments, generate quotes, and monitor spending across multiple weddings.
 
-## Module Components
+## Module Components (January 2025 status)
 
-### 1. Budget Categories
+### 1. Budget Categories – **Implemented**
 - Create and manage spending categories (Flowers, Photography, Venue, etc.)
 - Set budgeted amounts and priorities
 - Track actual spending vs. budget
 - Visual progress indicators
 
-### 2. Payment Tracking
-- Record payments to vendors
-- Track payment methods (cash, check, card, transfer)
-- View comprehensive payment history
-- Export payment data to CSV
+### 2. Payment Tracking – **Not yet delivered**
+- The UI currently surfaces a "Payment tracking feature coming soon" toast when planners click the button.
+- `PaymentModal` and `PaymentHistory` components referenced in earlier designs are not present in the codebase.
+- No API endpoints exist for recording or listing payments, so CSV export is limited to overall budget reports.
 
-### 3. Vendor Quotes
+### 3. Vendor Quotes – **Implemented**
 - Create professional quotes for clients
 - Manage vendor information
 - Track quote status (draft, sent, accepted, rejected)
-- Generate PDF quotes
+- Generate downloadable quotes (PDF tooling still pending)
 
-### 4. Budget Templates
-- Pre-built budget templates for different wedding types
-- Customizable category lists
-- Quick budget setup for new weddings
+### 4. Budget Templates – **Partially implemented**
+- Pre-built budget templates for different wedding types can be listed and applied.
+- The "Create Custom Template" button has no handler and there is no template authoring API yet.
+- Customisable category lists remain a roadmap item until template creation is wired up.
 
 ## File Structure
 
@@ -41,8 +40,8 @@ The Budget Management Module is a comprehensive financial tracking system for we
 └── /components/budget/
     ├── BudgetSummaryCard.tsx  # Overall budget summary
     ├── BudgetCategoryCard.tsx # Individual category cards
-    ├── PaymentModal.tsx       # Payment recording form
-    ├── PaymentHistory.tsx     # Payment history table
+    ├── PaymentModal.tsx       # (Planned) Payment recording form – not yet created
+    ├── PaymentHistory.tsx     # (Planned) Payment history table – not yet created
     ├── QuoteModal.tsx         # Quote creation/editing
     └── TemplateModal.tsx      # Template creation/editing
 ```
@@ -58,20 +57,22 @@ The Budget Management Module is a comprehensive financial tracking system for we
 - Budget summary card showing total budget, spent, and remaining
 - Tabbed interface:
   - **Budget Categories**: Manage spending categories
-  - **Payment History**: View and export all payments
+  - **Payment History**: (Planned) Tab reserved for future payment tracking UI
 - Category management with add, edit, delete
 - Payment recording for each category
 
-### Payment System
+### Payment System (roadmap)
 
-**Features**:
+The payment tracking flow described in earlier drafts has not been implemented. Clicking "Record Payment" triggers an informational toast, and there is no modal or backend persistence for payments. The section below is retained to capture the intended scope once development resumes.
+
+**Planned Features**:
 - Quick payment recording from category cards
 - Comprehensive payment history view
 - Advanced search and filtering
 - CSV export for accounting
 - Real-time budget updates
 
-**Payment Fields**:
+**Planned Payment Fields**:
 - Amount (required)
 - Payment Method (required): Cash, Check, Card, Transfer
 - Payment Date (required)
@@ -94,11 +95,14 @@ The Budget Management Module is a comprehensive financial tracking system for we
 
 **URL**: `/admin/budget/templates`
 
-**Features**:
-- Pre-configured budget templates
+**Current Features**:
+- Pre-configured budget templates that can be applied to a wedding
 - Quick setup for new weddings
-- Customizable category lists
-- Percentage-based or fixed-amount allocations
+
+**Outstanding Work**:
+- Custom template creation UI and API
+- Editing the category lists inside a template
+- Percentage-based or fixed-amount allocation tools
 
 ## User Guide
 
@@ -117,19 +121,14 @@ The Budget Management Module is a comprehensive financial tracking system for we
    - Apply to wedding
    - Adjust amounts as needed
 
-### Recording Payments
+### Recording Payments (future flow)
 
 1. **From Category Card**
-   - Find the category
-   - Click "Record Payment"
-   - Enter payment details
-   - Save to update budget
+   - Planned: click "Record Payment" to open the payment modal
+   - Planned: enter payment details and save
 
 2. **View History**
-   - Click "Payment History" tab
-   - Search or filter payments
-   - Sort by date, amount, or vendor
-   - Export to CSV
+   - Planned: a dedicated "Payment History" tab with filtering and CSV export
 
 ### Creating Quotes
 
@@ -154,7 +153,7 @@ The Budget Management Module is a comprehensive financial tracking system for we
 | PUT | `/api/budget/category/{id}` | Update category |
 | DELETE | `/api/budget/category/{id}` | Delete category |
 
-### Payments
+### Payments (planned)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -200,7 +199,7 @@ interface BudgetCategory {
 }
 ```
 
-### PaymentRecord
+### PaymentRecord (planned)
 
 ```typescript
 interface PaymentRecord {
@@ -210,12 +209,12 @@ interface PaymentRecord {
   amount: number;
   payment_method: 'cash' | 'check' | 'card' | 'transfer';
   payment_date: string;
-  description?: string;
-  receipt_url?: string;
-  status: 'pending' | 'completed' | 'failed';
-  notes?: string;
-  created_at: string;
-}
+    description?: string;
+    receipt_url?: string;
+    status: 'pending' | 'completed' | 'failed';
+    notes?: string;
+    created_at: string;
+  }
 ```
 
 ### Quote

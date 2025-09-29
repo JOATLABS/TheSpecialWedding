@@ -2,11 +2,16 @@
 
 ## Overview
 
-This document describes the implementation of the missing CSV export functionality for the Wedding WebApp Form Builder system. The implementation provides secure, robust, and feature-rich CSV export capabilities for form responses.
+This document describes the current state of the CSV export functionality for the Wedding WebApp Form Builder system. The hardened FastAPI endpoint and service layer are in place, but the admin UI still streams CSV directly from the browser, so the feature is only **partially delivered**.
 
-## Implementation Status: COMPLETED
+## Implementation Status: ⚠️ Backend ready, frontend integration pending
 
-The CSV export functionality has been successfully implemented with all required features and security measures.
+The secure export pipeline exists server-side. To finish the feature we still need to:
+
+- Replace the client-side CSV generation logic on `/admin/forms/[id]/responses` with a call to `GET /admin/forms/{form_id}/export/csv`.
+- Pass authentication headers and filtering parameters through the admin API client.
+- Add user feedback/loading states for long-running exports.
+- Cover the integration with end-to-end tests to ensure regression safety.
 
 ## Features Implemented
 
@@ -31,7 +36,7 @@ The CSV export functionality has been successfully implemented with all required
  - Empty responses handled gracefully
  - Special characters properly escaped
 
-### Export Options
+### Export Options (available once wired to the UI)
 - **Configurable Metadata**: Choose whether to include submission metadata
 - **Date Filtering**: Filter responses by submission date range
 - **Large Dataset Handling**: Automatic truncation for datasets over 10,000 responses
