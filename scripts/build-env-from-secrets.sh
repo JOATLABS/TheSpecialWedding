@@ -67,7 +67,6 @@ echo "# Admin Configuration" >> .env
 add_env_var PRIMARY_ADMIN_EMAIL
 add_env_var PRIMARY_ADMIN_PASSWORD
 add_env_var PRIMARY_ADMIN_ROLE
-add_env_var ROOT_ADMIN_EMAIL
 echo "" >> .env
 
 # ================================

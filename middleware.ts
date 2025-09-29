@@ -19,8 +19,3 @@ export async function middleware(req: NextRequest) {
 
   return NextResponse.next();
 }
-
-// (Optional) limit matcher if you only want admin guarding
-export const config = {
-  matcher: ['/admin/:path*'],
-};

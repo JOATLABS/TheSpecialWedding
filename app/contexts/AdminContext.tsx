@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+
 // Removed unused useRouter import
 import { toast } from 'sonner';
 // Removed unused createAutomationAttrs import
@@ -22,6 +23,7 @@ type AdminContextType = {
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
     logout: () => void;
     fetchUserProfile: (options?: { force?: boolean }) => Promise<UserProfile | null>;
+
     apiRequest: (path: string, method?: string, body?: any) => Promise<any>;
 };
 
@@ -160,7 +162,6 @@ export const AdminProvider = ({
         if (!force && userProfile) {
             return userProfile;
         }
-
         if (!token) {
             return null;
         }
@@ -218,6 +219,7 @@ export const AdminProvider = ({
             throw error;
         }
     }, [token, userProfile]);
+
 
     const login = useCallback(async (email: string, password: string, rememberMe = true) => {
         try {

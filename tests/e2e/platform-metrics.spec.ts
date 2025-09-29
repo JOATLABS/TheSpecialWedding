@@ -6,8 +6,8 @@ test.describe('Platform Metrics Dashboard', () => {
     await page.goto('/admin/login');
     // These should be set as environment variables when running tests
     // DO NOT HARDCODE CREDENTIALS IN TEST FILES
-    await page.fill('#email-input', process.env.ROOT_ADMIN_EMAIL || '');
-    await page.fill('#password-input', process.env.ROOT_ADMIN_PASSWORD || '');
+    await page.fill('#email-input', process.env.PRIMARY_ADMIN_EMAIL || '');
+    await page.fill('#password-input', process.env.PRIMARY_ADMIN_PASSWORD || '');
     await page.click('#login-button');
 
     // Wait for navigation to complete
@@ -189,8 +189,8 @@ test.describe('Metrics Data Accuracy', () => {
     await page.goto('/admin/login');
     // These should be set as environment variables when running tests
     // DO NOT HARDCODE CREDENTIALS IN TEST FILES
-    await page.fill('#email-input', process.env.ROOT_ADMIN_EMAIL || '');
-    await page.fill('#password-input', process.env.ROOT_ADMIN_PASSWORD || '');
+    await page.fill('#email-input', process.env.PRIMARY_ADMIN_EMAIL || '');
+    await page.fill('#password-input', process.env.PRIMARY_ADMIN_PASSWORD || '');
     await page.click('#login-button');
     await page.waitForURL('**/admin/**');
 

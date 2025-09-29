@@ -16,14 +16,16 @@ ALGORITHM = "HS256"
 
 class ExtendedAuthUser:
     """Extended auth user supporting multiple roles"""
-    def __init__(self, email: str, role: str, user_data: dict = None):
+    def __init__(self, email: str, role: str, user_data: Optional[dict] = None):
         self.email = email
         self.role = role
         self.user_data = user_data or {}
         
         # Role-specific properties
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
-        self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
+        primary_admin_email = os.getenv("PRIMARY_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        # Treat ROOT_ADMIN or PRIMARY_ADMIN as primary admin when email matches
+        self.is_primary_admin = (role in ("ROOT_ADMIN", "PRIMARY_ADMIN") and email == primary_admin_email)
+        self.is_root_admin = (role == "ROOT_ADMIN")
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
         
@@ -47,10 +49,10 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
             )
         
         user_data = {}
-        
-        # Check if this is the ROOT_ADMIN
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
-        if email == root_admin_email:
+
+        # Check if this is the PRIMARY_ADMIN
+        primary_admin_email = os.getenv("PRIMARY_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        if email == primary_admin_email:
             # Check both legacy admin_users and new users collections
             legacy_user = mongo.get_admin_users_collection().find_one({"email": email})
             new_user = mongo.get_users_collection().find_one({"email": email})
@@ -150,18 +152,18 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
         )
 
 # Role-based dependency factories
-async def require_root_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require ROOT_ADMIN access (only thedeveloper@thespecialwedding.com)"""
-    if not current_user.is_root_admin:
+async def require_primary_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+    """Require PRIMARY_ADMIN access (only thedeveloper@thespecialwedding.com)"""
+    if not current_user.is_primary_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Root admin access required"
+            detail="Primary admin access required"
         )
     return current_user
 
 async def require_wedding_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require wedding planner access"""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
+    if not (current_user.is_wedding_planner or current_user.is_primary_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Wedding planner access required"
@@ -179,7 +181,7 @@ async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_us
 
 async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require admin or wedding planner access (covers legacy admin too)"""
-    if not (current_user.is_root_admin or current_user.is_wedding_planner or current_user.is_legacy_admin):
+    if not (current_user.is_primary_admin or current_user.is_wedding_planner or current_user.is_legacy_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin or wedding planner access required"
@@ -188,7 +190,7 @@ async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_
 
 async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require any admin access (backward compatible with existing admin endpoints)"""
-    if not (current_user.is_root_admin or current_user.is_legacy_admin):
+    if not (current_user.is_primary_admin or current_user.is_legacy_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"

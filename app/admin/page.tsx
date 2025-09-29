@@ -77,6 +77,8 @@ async function fetchAdminProfile(token: string): Promise<ProfileRecord | null> {
         payload,
       });
       return null;
+=======
+
     }
 
     return (await response.json()) as ProfileRecord;
