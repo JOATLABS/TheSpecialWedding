@@ -1,4 +1,4 @@
-# Form Response Notification System - Implementation Plan
+# Form Response Notification System - Implementation Plan (Status: Not started)
 
 ## Overview
 This document outlines the implementation of a comprehensive notification system for form responses in the Wedding Platform. Currently, planners must manually check for new form submissions. This enhancement will provide real-time notifications via email and dashboard badges.
@@ -9,39 +9,37 @@ This document outlines the implementation of a comprehensive notification system
 - ✅ Form creation and management (`app/admin/forms/`)
 - ✅ Form email distribution (`app/admin/forms/[id]/send/`)
 - ✅ Response collection and viewing (`app/admin/forms/[id]/responses/`)
-- ✅ Email service integration (`app/services/email_service.py`)
+- ⚠️ Email service integration (`app/services/email_service.py`) – limited to ad-hoc sends
 - ✅ Public form submission (`app/api/public_endpoints.py`)
 
 ### Implementation Status
-- ✅ **COMPLETED**: Extended notification service for form responses (`app/services/notification_service.py`)
-- ✅ **COMPLETED**: Updated form response model with review status (`app/models/form.py`)
-- ✅ **COMPLETED**: Created notification badge component with dark mode (`app/components/ui/NotificationBadge.tsx`)
-- ✅ **COMPLETED**: Enhanced response review functionality in existing UI (`app/admin/forms/[id]/responses/page.tsx`)
-- ✅ **COMPLETED**: Created notification preferences in existing settings (`app/admin/profile/page.tsx`)
-- 🔄 **IN PROGRESS**: Test complete notification workflow
+- ❌ **NOT STARTED**: Extend notification service for form responses (`app/services/notification_service.py` contains no response-specific logic)
+- ❌ **NOT STARTED**: Update form response model with review status (`app/models/form.py` lacks review fields)
+- ❌ **NOT STARTED**: Notification badge component (`app/components/ui/NotificationBadge.tsx` does not exist)
+- ❌ **NOT STARTED**: Response review UI in admin (`app/admin/forms/[id]/responses/page.tsx` has no review toggles)
+- ❌ **NOT STARTED**: Notification preferences in profile (`app/admin/profile/page.tsx` has no settings for notifications)
 
-### Key Features Implemented
+### Key Features To Deliver
 1. **Form Response Notification System**
    - Automatic email notifications when forms are submitted
    - In-app notification badges showing unread response counts
    - Mobile-responsive email templates with response previews
 
 2. **Response Review Management**
-   - Visual indicators for read/unread responses (blue highlighting)
+   - Visual indicators for read/unread responses
    - Toggle buttons for marking responses as reviewed
-   - Status filtering and "Unread first" sorting option
+   - Status filtering and "Unread first" sorting options
    - Review timestamp tracking
 
 3. **Notification Preferences Interface**
    - Toggle switches for email notification settings
    - Instant vs digest notification options (daily/weekly)
    - Per-form notification preferences
-   - Integrated into existing profile settings with tab navigation
+   - Integration into profile settings
 
 4. **Dark Mode & Mobile Support**
-   - Comprehensive dark mode implementation using `dark:` prefixes
-   - Mobile-responsive design with responsive breakpoints
-   - Touch-friendly toggle switches and form controls
+   - Responsive layouts for notification components
+   - Accessible toggle styles for both themes
 
 ## Implementation Plan
 
