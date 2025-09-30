@@ -40,6 +40,8 @@ wedding-backend.service
 .secrets.baseline
 test-results/
 tests/
+!tests/**/*.spec.ts
+!tests/**/*.test.ts
 
 ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
 app/middleware/security_headers.py
