@@ -2,16 +2,16 @@
 
 ## Overview
 
-This document describes the current state of the CSV export functionality for the Wedding WebApp Form Builder system. The hardened FastAPI endpoint and service layer are in place, but the admin UI still streams CSV directly from the browser, so the feature is only **partially delivered**.
+This document describes the CSV export functionality for the Wedding WebApp Form Builder system. The hardened FastAPI endpoint and service layer are now wired into the admin UI, delivering a consistent and secure export experience end-to-end.
 
-## Implementation Status: ⚠️ Backend ready, frontend integration pending
+## Implementation Status: ✅ Backend and admin UI integrated
 
-The secure export pipeline exists server-side. To finish the feature we still need to:
+The admin responses page now calls the secure export endpoint directly and exposes the most important operator controls:
 
-- Replace the client-side CSV generation logic on `/admin/forms/[id]/responses` with a call to `GET /admin/forms/{form_id}/export/csv`.
-- Pass authentication headers and filtering parameters through the admin API client.
-- Add user feedback/loading states for long-running exports.
-- Cover the integration with end-to-end tests to ensure regression safety.
+- Calls `GET /admin/forms/{form_id}/export/csv` with the authenticated planner token so exports always traverse the hardened backend pipeline.
+- Optional filters for `date_from`, `date_to`, and metadata inclusion map to the endpoint query parameters.
+- Built-in loading states, disabled buttons, and error surfaces prevent duplicate requests and communicate failures to planners.
+- Automated unit tests cover filename parsing, filter propagation, and failure handling for the export helper.
 
 ## Features Implemented
 
@@ -62,8 +62,17 @@ The secure export pipeline exists server-side. To finish the feature we still ne
 - Date filtering and validation
 - Comprehensive error handling
 
-#### 2. `CSV_EXPORT_IMPLEMENTATION.md` (this file)
-**Purpose**: Documentation and implementation guide
+#### 2. `app/services/formExport.ts`
+**Purpose**: Frontend helper that calls the secure export endpoint and normalises filenames/content types.
+
+**Key Features**:
+- Builds query parameters for date filtering and metadata inclusion.
+- Injects the authenticated admin token into every request.
+- Parses `Content-Disposition` headers and provides a safe filename fallback.
+- Returns a `Blob` and metadata so UI components can manage downloads safely.
+
+#### 3. `tests/unit/formExport.test.ts`
+**Purpose**: Unit coverage for the frontend helper to guarantee query propagation, filename handling, and error paths.
 
 ### Files Modified
 
