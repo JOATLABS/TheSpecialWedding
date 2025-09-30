@@ -15,6 +15,7 @@ This audit validates the feature documentation in `app/docs/features/` against t
 
 ## 🟡 Implemented Partially / Still In Progress
 - **Budget template customisation** (`BUDGET_MODULE.md`) – Planners can list and apply templates, but the documented “Create Custom Template” and editable category lists are not wired up (the button has no handler and there is no template creation API), so template authoring remains outstanding.【F:app/docs/features/BUDGET_MODULE.md†L93-L118】【F:app/admin/budget/templates/page.tsx†L134-L160】【F:app/services/budgetApi.ts†L131-L152】
+
 - **Form builder creation options** (`FORM_BUILDER_GUIDE.md`) – Documentation promises blank-form and duplicate creation paths; the current admin screen only creates forms from templates, with no duplicate or blank-flow UI present.【F:app/docs/features/FORM_BUILDER_GUIDE.md†L11-L69】【F:app/admin/forms/page.tsx†L24-L119】【c45a7c†L1-L1】
 - **Platform analytics dashboard** (`PLATFORM_METRICS_GUIDE.md`) – The guide references dedicated analytics services and endpoints, but the metrics page synthesises estimates from generic user data and the documented backend modules do not exist yet.【F:app/docs/features/PLATFORM_METRICS_GUIDE.md†L1-L36】【F:app/admin/metrics/page.tsx†L54-L118】【cc35a1†L1-L1】
 - **Vendor dashboard parity** (`MULTI_TENANT_ROADMAP.md`) – The roadmap labels the vendor dashboard “production ready”, yet the page still renders hard-coded placeholder tasks and TODO comments instead of real tenant data.【F:app/docs/features/MULTI_TENANT_ROADMAP.md†L44-L123】【F:app/admin/vendor/page.tsx†L24-L100】
@@ -30,3 +31,4 @@ This audit validates the feature documentation in `app/docs/features/` against t
 3. Make the SaaS marketing funnel accessible by surfacing a clearly marked login link on the landing hero so existing planners can sign in without guesswork.
 4. Deliver unified Google and Apple single sign-on flows across the SaaS sign-up modal and admin login screen, ensuring consistent redirect handling and audit logging before launch.
 5. Backfill automated tests (API and Playwright) once each feature is delivered to prevent documentation drift during future releases.
+
