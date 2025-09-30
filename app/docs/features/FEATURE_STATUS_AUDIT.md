@@ -27,4 +27,6 @@ This audit validates the feature documentation in `app/docs/features/` against t
 ## Recommended Next Steps
 1. Update the feature guides above to reflect the real implementation status so planners and engineers share a single source of truth.
 2. Prioritise the incomplete items (budget payments UI, CSV export wiring, notification system, vendor tooling, analytics backend) with accompanying backend and frontend work.
-3. Backfill automated tests (API and Playwright) once each feature is delivered to prevent documentation drift during future releases.
+3. Make the SaaS marketing funnel accessible by surfacing a clearly marked login link on the landing hero so existing planners can sign in without guesswork.
+4. Deliver unified Google and Apple single sign-on flows across the SaaS sign-up modal and admin login screen, ensuring consistent redirect handling and audit logging before launch.
+5. Backfill automated tests (API and Playwright) once each feature is delivered to prevent documentation drift during future releases.
