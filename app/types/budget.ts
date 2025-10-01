@@ -94,6 +94,18 @@ export interface PaymentRecord {
   status: 'pending' | 'completed' | 'failed';
   notes?: string;
   created_at: string;
+  category_name?: string;
+}
+
+export interface RecordPaymentRequest {
+  vendor_name?: string;
+  amount: number;
+  payment_method: 'cash' | 'check' | 'card' | 'transfer';
+  payment_date: string;
+  description?: string;
+  receipt_url?: string;
+  status?: 'pending' | 'completed' | 'failed';
+  notes?: string;
 }
 
 export interface BudgetAlert {

@@ -2,38 +2,38 @@
 
 ## Overview
 
-The Budget Management Module is a comprehensive financial tracking system for wedding planning. It provides wedding planners with tools to manage budgets, track payments, generate quotes, and monitor spending across multiple weddings.
+The Budget Management Module is a comprehensive financial tracking system for wedding planning. It gives planners an at-a-glance view of category performance, real-time payment activity, and vendor quote management with tooling designed around a translucent “glass” aesthetic to match the broader SaaS design language.
 
-## Module Components
+## Module Components (February 2025 status)
 
-### 1. Budget Categories
+### 1. Budget Categories – **Implemented**
 - Create and manage spending categories (Flowers, Photography, Venue, etc.)
 - Set budgeted amounts and priorities
-- Track actual spending vs. budget
-- Visual progress indicators
+- Track actual spending vs. budget with animated progress bars
+- Filter by payment status, search by keyword, and sort by priority, spend, or allocation
 
-### 2. Payment Tracking
-- Record payments to vendors
-- Track payment methods (cash, check, card, transfer)
-- View comprehensive payment history
-- Export payment data to CSV
+### 2. Payment Tracking – **Implemented**
+- Record payments directly from each category card via the glassmorphic modal
+- Capture vendor, amount, payment method, date, receipts, and internal notes
+- Automatically update category actual spend, payment status, and dashboard analytics
+- Review all payments in the right-rail history panel with live filters and refresh controls
 
-### 3. Vendor Quotes
+### 3. Vendor Quotes – **Implemented**
 - Create professional quotes for clients
 - Manage vendor information
 - Track quote status (draft, sent, accepted, rejected)
-- Generate PDF quotes
+- Generate downloadable quotes (PDF tooling still pending)
 
-### 4. Budget Templates
-- Pre-built budget templates for different wedding types
-- Customizable category lists
-- Quick budget setup for new weddings
+### 4. Budget Templates – **Partially implemented**
+- Pre-built budget templates for different wedding types can be listed and applied
+- The "Create Custom Template" button has no handler and there is no template authoring API yet
+- Customisable category lists remain a roadmap item until template creation is wired up
 
 ## File Structure
 
 ```
 /app/admin/budget/
-├── page.tsx                    # Main budget dashboard with tabs
+├── page.tsx                    # Main budget dashboard with categories + payment timeline
 ├── quotes/
 │   └── page.tsx               # Quote management page
 ├── templates/
@@ -41,8 +41,8 @@ The Budget Management Module is a comprehensive financial tracking system for we
 └── /components/budget/
     ├── BudgetSummaryCard.tsx  # Overall budget summary
     ├── BudgetCategoryCard.tsx # Individual category cards
-    ├── PaymentModal.tsx       # Payment recording form
-    ├── PaymentHistory.tsx     # Payment history table
+    ├── PaymentHistoryPanel.tsx # Payment history and analytics rail
+    ├── RecordPaymentModal.tsx  # Payment recording modal
     ├── QuoteModal.tsx         # Quote creation/editing
     └── TemplateModal.tsx      # Template creation/editing
 ```
@@ -53,31 +53,30 @@ The Budget Management Module is a comprehensive financial tracking system for we
 
 **URL**: `/admin/budget`
 
-**Features**:
-- Wedding selection dropdown
-- Budget summary card showing total budget, spent, and remaining
-- Tabbed interface:
-  - **Budget Categories**: Manage spending categories
-  - **Payment History**: View and export all payments
-- Category management with add, edit, delete
-- Payment recording for each category
+**Highlights**:
+- Wedding selection dropdown with planner-access guard rails
+- Budget summary card showing total budget, spent, remaining, and variance
+- Category grid with search, status filtering, and priority/budget sorting
+- Category actions: edit, delete, and **Record Payment** (opens the modal)
+- Export buttons for PDF and Excel financial reports
+- Right-rail payment history panel featuring quick stats, filtering, and receipt links
 
 ### Payment System
 
-**Features**:
-- Quick payment recording from category cards
-- Comprehensive payment history view
-- Advanced search and filtering
-- CSV export for accounting
-- Real-time budget updates
+**Payment Recording Modal**
+- Triggered from any category card’s **Record Payment** button
+- Previews the category’s budgeted, spent, and remaining amounts in a frosted glass info bar
+- Required fields: Amount, Payment Method, Date
+- Optional fields: Vendor name, status (completed/pending/failed), receipt URL, description, internal notes
+- Prevents zero/negative amounts and surfaces inline validation errors
+- Persists payments through `POST /admin/budget/category/{category_id}/payment` and refreshes the dashboard on success
 
-**Payment Fields**:
-- Amount (required)
-- Payment Method (required): Cash, Check, Card, Transfer
-- Payment Date (required)
-- Vendor Name (optional)
-- Description (optional)
-- Notes (optional)
+**Payment History Panel**
+- Resides on the right of the dashboard to provide continuous visibility into transactions
+- Displays aggregate totals (recorded, cleared, pending) and the most recent payment metadata
+- Supports search plus category, method, and status filters
+- Refresh button re-fetches data from `GET /admin/weddings/{wedding_id}/payments`
+- Each list item surfaces vendor context, notes, and a receipt link when available
 
 ### Quote Management
 
@@ -94,22 +93,25 @@ The Budget Management Module is a comprehensive financial tracking system for we
 
 **URL**: `/admin/budget/templates`
 
-**Features**:
-- Pre-configured budget templates
+**Current Features**:
+- Pre-configured budget templates that can be applied to a wedding
 - Quick setup for new weddings
-- Customizable category lists
-- Percentage-based or fixed-amount allocations
+
+**Outstanding Work**:
+- Custom template creation UI and API
+- Editing the category lists inside a template
+- Percentage-based or fixed-amount allocation tools
 
 ## User Guide
 
 ### Setting Up a Budget
 
 1. **Create Budget Categories**
-   - Navigate to Budget page
-   - Select wedding
-   - Click "Add Category"
+   - Navigate to the Budget page
+   - Select a wedding
+   - Click **Add Category**
    - Enter name, description, and budgeted amount
-   - Set priority level (1-5)
+   - Set priority level (1–5)
 
 2. **Use a Template** (Optional)
    - Go to Budget Templates
@@ -119,25 +121,26 @@ The Budget Management Module is a comprehensive financial tracking system for we
 
 ### Recording Payments
 
-1. **From Category Card**
-   - Find the category
-   - Click "Record Payment"
-   - Enter payment details
-   - Save to update budget
+1. Click **Record Payment** on the relevant category card
+2. Review the pre-filled budget metrics at the top of the modal
+3. Enter the payment amount, method, and date (required) plus any vendor details, receipts, or notes
+4. Submit to persist the payment; the modal closes on success and the dashboard refreshes automatically
+5. Re-open the modal if you need to log additional instalments for the same category
 
-2. **View History**
-   - Click "Payment History" tab
-   - Search or filter payments
-   - Sort by date, amount, or vendor
-   - Export to CSV
+### Viewing Payment History
+
+1. Select a wedding to load the dashboard and payment rail
+2. Use the search box or dropdown filters (category, method, status) to focus the list
+3. Review totals in the metrics panel and scroll the history for detailed context
+4. Click **Refresh** after back-office adjustments to fetch the latest payments
 
 ### Creating Quotes
 
-1. **Navigate to Quotes**
+1. Navigate to Quotes
    - Go to Budget → Quotes
-   - Click "Create Quote"
+   - Click **Create Quote**
 
-2. **Fill Quote Details**
+2. Fill Quote Details
    - Select or add vendor
    - Add line items
    - Set terms and conditions
@@ -149,35 +152,35 @@ The Budget Management Module is a comprehensive financial tracking system for we
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/budget/wedding/{wedding_id}` | Get budget summary and categories |
-| POST | `/api/budget/category` | Create new category |
-| PUT | `/api/budget/category/{id}` | Update category |
-| DELETE | `/api/budget/category/{id}` | Delete category |
+| GET | `/admin/weddings/{wedding_id}/budget` | Get budget summary and categories |
+| POST | `/admin/weddings/{wedding_id}/budget/category` | Create new category |
+| PUT | `/admin/budget/category/{id}` | Update category |
+| DELETE | `/admin/budget/categories/{id}` | Delete category |
 
 ### Payments
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/budget/category/{id}/payment` | Record payment |
-| GET | `/api/weddings/{wedding_id}/payments` | Get payment history |
+| POST | `/admin/budget/category/{id}/payment` | Record payment |
+| GET | `/admin/weddings/{wedding_id}/payments` | Get payment history |
 
 ### Quotes
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/budget/quotes/wedding/{wedding_id}` | Get quotes |
-| POST | `/api/budget/quotes` | Create quote |
-| PUT | `/api/budget/quotes/{id}` | Update quote |
-| DELETE | `/api/budget/quotes/{id}` | Delete quote |
+| GET | `/admin/weddings/{wedding_id}/vendor-quotes` | Get quotes |
+| POST | `/admin/weddings/{wedding_id}/vendor-quotes` | Create quote |
+| PUT | `/admin/vendor-quotes/{id}/status` | Update quote status |
+| DELETE | `/admin/vendor-quotes/{id}` | Delete quote |
 
 ### Templates
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/budget/templates` | Get all templates |
-| POST | `/api/budget/templates` | Create template |
-| PUT | `/api/budget/templates/{id}` | Update template |
-| DELETE | `/api/budget/templates/{id}` | Delete template |
+| GET | `/admin/budget/templates` | Get all templates |
+| POST | `/admin/weddings/{wedding_id}/budget/apply-template` | Apply template |
+| PUT | `/admin/budget/templates/{id}` | Update template |
+| DELETE | `/admin/budget/templates/{id}` | Delete template |
 
 ## Data Models
 
@@ -215,119 +218,6 @@ interface PaymentRecord {
   status: 'pending' | 'completed' | 'failed';
   notes?: string;
   created_at: string;
+  category_name?: string;
 }
 ```
-
-### Quote
-
-```typescript
-interface Quote {
-  _id: string;
-  wedding_id: string;
-  vendor: VendorInfo;
-  items: QuoteItem[];
-  subtotal: number;
-  tax_rate: number;
-  tax_amount: number;
-  discount_amount: number;
-  total_amount: number;
-  terms?: string;
-  notes?: string;
-  status: 'draft' | 'sent' | 'accepted' | 'rejected';
-  valid_until?: string;
-  created_at: string;
-  updated_at: string;
-}
-```
-
-## Security
-
-### Access Control
-- Authentication required for all endpoints
-- Wedding-scoped data isolation
-- Role-based permissions (Admin, Planner)
-
-### Data Validation
-- Input sanitization on all forms
-- Amount validation (positive numbers only)
-- Date validation (no future dates for payments)
-- Wedding ownership verification
-
-### Multi-Tenancy
-- Complete data isolation between weddings
-- Query filtering by wedding_id
-- Cross-wedding access prevention
-
-## Best Practices
-
-### Budget Management
-1. Set realistic budget amounts
-2. Use priority levels to focus on important categories
-3. Record payments immediately after making them
-4. Review budget summary regularly
-5. Export payment data monthly for accounting
-
-### Payment Recording
-1. Always include vendor name for tracking
-2. Add descriptions for clarity
-3. Keep receipts and attach when possible
-4. Use consistent payment method labels
-5. Verify amounts before saving
-
-### Quote Creation
-1. Include all costs upfront
-2. Set reasonable validity periods
-3. Clearly state terms and conditions
-4. Follow up on sent quotes
-5. Update status promptly
-
-## Troubleshooting
-
-### Common Issues
-
-**Categories Not Saving**
-- Check all required fields are filled
-- Verify budget amount is positive
-- Ensure wedding is selected
-
-**Payments Not Appearing**
-- Refresh the page
-- Check payment date is correct
-- Verify payment was saved successfully
-
-**Export Not Working**
-- Check browser download settings
-- Ensure payments exist to export
-- Try a different browser
-
-### Support
-
-For technical issues:
-1. Check browser console for errors
-2. Review network tab for API failures
-3. Verify backend services are running
-4. Contact technical support
-
-## Future Enhancements
-
-### Planned Features
-- Receipt upload and storage
-- Payment edit/delete functionality
-- Bulk payment import via CSV
-- Advanced budget analytics
-- Client portal for budget viewing
-- Integration with accounting software
-- Automated payment reminders
-- Budget forecasting tools
-
-### Integration Opportunities
-- QuickBooks sync
-- Stripe payment processing
-- Email notifications for budget alerts
-- Mobile app for on-the-go tracking
-
----
-
-**Module Version**: 1.0.0
-**Last Updated**: January 2025
-**Status**: Production Ready
