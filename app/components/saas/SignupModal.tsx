@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { ThemeConfig } from '@/types/wedding';
+import { SocialAuthButtons } from '../auth/SocialAuthButtons';
 
 interface SignupModalProps {
   isOpen: boolean;
@@ -146,6 +147,18 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
         <p className="text-gray-600 mb-6">
           Join thousands of wedding planners who trust Special Wedding for their business.
         </p>
+
+        <div className="space-y-3 mb-6" aria-label="Social registration options">
+          <SocialAuthButtons flow="signup" redirectPath="/setup-account" />
+          <p className="text-xs text-gray-500 text-center">
+            We will redirect you to verify your Google or Apple account before returning to finish onboarding.
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gray-200" aria-hidden="true"></div>
+            <span className="text-xs uppercase tracking-wide text-gray-400">or continue with email</span>
+            <div className="h-px flex-1 bg-gray-200" aria-hidden="true"></div>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
