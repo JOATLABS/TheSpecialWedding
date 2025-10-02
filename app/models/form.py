@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Literal
 from datetime import datetime
 from enum import Enum
 import re
@@ -329,8 +329,44 @@ class CreateFormRequest(BaseModel):
         
         if v not in allowed_templates:
             logger.warning(f'Unknown template type: {v}')
-        
+
         return v.strip() if len(v) <= 50 else v[:50]
+
+
+class DuplicateFormRequest(BaseModel):
+    new_name: str = Field(..., description="Name for the duplicated form")
+
+    @field_validator('new_name')
+    @classmethod
+    def validate_new_name(cls, value: str) -> str:
+        if not value or not isinstance(value, str):
+            raise ValueError('Form name is required')
+
+        trimmed = value.strip()
+        if len(trimmed) == 0:
+            raise ValueError('Form name is required')
+        if len(trimmed) > 100:
+            raise ValueError('Form name too long (max 100 characters)')
+
+        return trimmed
+
+
+class FormViewUpdateRequest(BaseModel):
+    scope: Literal['responses', 'analytics'] = Field(..., description="Area of the product that was viewed")
+    submission_count: Optional[int] = Field(None, description="Latest known submission count for the form")
+
+    @field_validator('submission_count')
+    @classmethod
+    def validate_submission_count(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return value
+
+        if not isinstance(value, int):
+            raise ValueError('submission_count must be an integer')
+        if value < 0:
+            raise ValueError('submission_count cannot be negative')
+
+        return value
 
 class UpdateFormRequest(BaseModel):
     name: Optional[str] = Field(None, description="Form name")
