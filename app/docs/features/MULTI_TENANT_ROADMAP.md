@@ -55,29 +55,26 @@ Transform the current single-admin system into a comprehensive multi-tenant SAAS
 
 ---
 
-## **PHASE 1 STATUS: 95% COMPLETE** ✅ **PRODUCTION READY**
+## **PHASE 1 STATUS: In Progress (January 2025 reality check)**
 
-**Backend Authentication System: 95% COMPLETED**
+**Backend Authentication System**
 
-- ✅ All 13 API modules updated with role-based auth
-- ✅ Complete permission matrix implementation
-- ✅ User management system with invitation workflow
-- ✅ Multi-tenant data isolation and security
-- ⚠️ Email verification system (partially implemented - email service integration needed)
+- ✅ Role-based auth guards cover the major admin endpoints that exist today.
+- ✅ Invitation workflow is present, but automated email delivery still needs work.
+- ⚠️ Email verification is not wired up end to end (no email worker or resend integration).
+- ⚠️ Subscription-aware permission gating remains on the backlog.
 
-**Frontend Authentication System: 95% COMPLETED**
+**Frontend Authentication System**
 
-- ✅ Role-based login and routing system
-- ✅ Password setup flow for invited users
-- ✅ Separate dashboards for ROOT_ADMIN, wedding_planner, and vendor roles
-- ✅ Role-based navigation menus and UI permissions
-- ✅ Permission-gated components with PermissionGate wrapper
+- ✅ Planner and root admin dashboards are functional.
+- ⚠️ Vendor dashboard displays hard-coded placeholder data (`app/admin/vendor/page.tsx`) and is not production ready.
+- ⚠️ Permission-gated navigation is partially implemented; several feature flags render UI for modules that do not exist yet.
 
-**Remaining Items:**
-- [ ] Complete email verification integration with Resend service
-- [ ] Enhanced session management with refresh token rotation
-
-**Phase 1: READY FOR PRODUCTION USE**
+**Outstanding Work Before Production**
+- [ ] Build the real vendor dashboard backed by tenant APIs instead of placeholders.
+- [ ] Finish email verification and trial enforcement flows with real notification delivery.
+- [ ] Add refresh token rotation/session hardening.
+- [ ] Align documentation with the implemented features after each milestone.
 
 ---
 
@@ -102,15 +99,15 @@ Transform the current single-admin system into a comprehensive multi-tenant SAAS
 - `app/[slug]/layout.tsx` & `app/[slug]/page.tsx` - Updated with access control
 - `app/api/wedding.py` & `app/api/gallery_public.py` - Secured existing endpoints
 
-### **Form Builder System (Phase 4.1) - COMPLETED** 
+### **Form Builder System (Phase 4.1) - PARTIAL**
 
-**COMPLETE CUSTOM FORM BUILDER IMPLEMENTATION**
+**CURRENT DELIVERY SNAPSHOT**
 
-- **Full Form Builder**: Drag-and-drop interface with 10+ field types
-- **Email Distribution**: Send forms to couples, wedding party, vendors
-- **Response Management**: View, filter, and export responses as CSV
-- **Analytics Dashboard**: Form performance metrics and completion rates
-- **Template System**: Pre-built forms for common use cases
+- **Form Builder**: Admin UI supports creating forms from templates only; drag-and-drop creation and duplication are not yet available.
+- **Email Distribution**: Basic email send flow exists, but reminder scheduling and delivery analytics remain outstanding.
+- **Response Management**: Planners can view submissions; CSV export still runs client-side instead of using the new secure endpoint.
+- **Analytics Dashboard**: Not implemented—metrics cards display placeholder values.
+- **Template System**: Pre-built templates exist; custom template authoring is pending.
 
 **Files Created/Modified:**
 
@@ -343,22 +340,11 @@ Transform the current single-admin system into a comprehensive multi-tenant SAAS
  - [ ] Communication log and history
  - [ ] Mass communication tools
 
-### 3.3 Vendor Management System *(COMPLETED)* 
+### 3.3 Vendor Management System *(IN PROGRESS)*
 
-- [X] **Streamlined Vendor Form System** *(COMPLETED)*
-
- - [X] Email-based vendor forms (no vendor accounts required)
- - [X] Vendor form builder with type-specific templates
- - [X] Service type categorization (photographer, caterer, florist, etc.)
- - [X] Professional email outreach with wedding context
- - [X] Secure token-based form access
-- [X] **Vendor Collaboration Tools** *(COMPLETED)*
-
- - [X] Dynamic form system with smart field generation
- - [X] Vendor submission management with approval workflow
- - [X] Instant email notifications to planners on submissions
- - [X] Professional submission viewing with print/PDF export
- - [X] Direct vendor contact integration from submissions
+- [ ] **Streamlined Vendor Form System** *(APIs pending – vendor submissions still rely on manual workflows)*
+- [ ] **Vendor Collaboration Tools** *(Requires backend endpoints and real-time updates)*
+- [ ] **Vendor Dashboard Enhancements** *(`/admin/vendor` renders placeholder data only)*
 
 ### 3.4 Staff Management
 
@@ -400,7 +386,7 @@ Transform the current single-admin system into a comprehensive multi-tenant SAAS
 - ❌ **Communication Hub** - Missing email templates, SMS system, automated sequences
 - ❌ **Guest RSVP tracking** - Basic implementation only
 
-**Phase 3.3: Vendor Management System: 95% COMPLETED** ✅ **EXCELLENT**
+**Phase 3.3: Vendor Management System: 30% COMPLETE** ⚠️ **PLACEHOLDER UI ONLY**
 - ✅ Email-based vendor forms (NO vendor accounts required)
 - ✅ Vendor form builder with type-specific templates (photographer, caterer, florist, etc.)
 - ✅ Professional email outreach with branded templates and wedding context
