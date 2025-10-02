@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { fetchFormResponsesCsv } from '@/services/formExport';
+import { formsApi } from '@/services/formsApi';
+
 
 interface FormResponse {
  id: string;
@@ -25,10 +27,11 @@ interface Form {
  id: string;
  name: string;
  settings: {
- title: string;
- description?: string;
+  title: string;
+  description?: string;
  };
  fields: FormField[];
+ submission_count?: number;
 }
 
 export default function FormResponsesPage() {
@@ -76,9 +79,15 @@ export default function FormResponsesPage() {
  if (formResponse.ok && responsesResponse.ok) {
  const formData = await formResponse.json();
  const responsesData = await responsesResponse.json();
- 
+
  setForm(formData);
  setResponses(responsesData);
+
+ try {
+ await formsApi.markScopeViewed(token, formId, 'responses', formData.submission_count);
+ } catch (viewError) {
+ console.warn('Failed to record response view', viewError);
+ }
  } else {
  setError('Failed to load form or responses');
  }

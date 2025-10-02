@@ -8,22 +8,24 @@ The Wedding WebApp Form Builder is a comprehensive system for creating, managing
 
 ### 1. Form Creation Methods
 
-Only template-based creation is currently live in the admin UI. Earlier drafts that promised blank-form and duplicate flows have not been implemented yet.
+The planner workspace now delivers all three promised creation paths with glassmorphic styling, accessible focus states, and secur
+e defaults applied automatically.
 
 #### 1.1 Template-Based Creation (implemented)
-- Choose from pre-built templates in the create modal
-- Templates include pre-configured fields and settings
-- Accessible through the "Create Form" button on `/admin/forms`
+- Choose from curated templates within the "Create New Form" modal
+- Templates ship with Apple glass-inspired copy, required fields, and consistent success messaging
+- Accessible through the primary CTA on `/admin/forms`
 
-#### 1.2 Blank Form Creation (planned)
-- The UI does not expose a "Blank Form" option today
-- No backend endpoint exists for `POST /admin/forms` with an empty payload
-- Remains on the roadmap for custom form creation
+#### 1.2 Blank Form Creation (implemented)
+- Select "Start from scratch" to generate an empty, sanitised form using `POST /admin/forms`
+- Configurable toggles control whether the form is public and whether email addresses are collected by default
+- Titles, descriptions, and button labels are sanitised to avoid script injection while matching Apple glass tone
 
-#### 1.3 Form Duplication (planned)
-- There is no "Duplicate" action on the form cards
-- Supporting API routes have not been developed
-- Listed here to document the intended future behaviour
+#### 1.3 Form Duplication (implemented)
+- Choose "Duplicate an existing form" when launching the modal
+- Calls the dedicated duplication endpoint to copy fields/settings while resetting submissions and unread counters
+- Keeps analytics clean so the clone begins with zero responses and its own planner view state
+
 
 ### 2. Supported Field Types
 
@@ -50,16 +52,21 @@ Template metadata references the field types below, but only a subset is exercis
 // Create from template
 POST /admin/forms/from-template/{template_id}?form_name={name}
 
-// (Planned) Duplicate existing form
-// POST /admin/forms/duplicate/{form_id}?new_name={name}
+// Duplicate existing form
+POST /admin/forms/{form_id}/duplicate
+Body: { new_name: "Vendor Intake Copy" }
 
-// (Planned) Direct form creation
-// POST /admin/forms
-// Body: {
-//   name: "Form Name",
-//   settings: { ... },
-//   fields: [ ... ]
-// }
+// Direct form creation
+POST /admin/forms
+Body: {
+  name: "Form Name",
+  settings: { ... },
+  fields: [ ... ]
+}
+
+// Persist planner view state for unread badge accuracy
+POST /admin/forms/{form_id}/views
+Body: { scope: "responses" | "analytics", submission_count?: number }
 ```
 
 #### Managing Forms (current capabilities)
@@ -69,8 +76,8 @@ POST /admin/forms/from-template/{template_id}?form_name={name}
 - **Send**: Distribute forms via email
 
 #### Still to build
-- Analytics visualisations beyond submission counts
-- Per-form unread/notification badges
+- Field-level analytics (current dashboard focuses on distribution funnel metrics)
+- Embed widgets for wedding microsites
 
 ### 4. Form Distribution
 
@@ -93,12 +100,10 @@ Email distribution roadmap:
 - Secure storage with audit trails
 - Real-time response tracking
 
-#### Analytics Dashboard (planned)
-- Submission count and trends
-- Completion rates
-- Field-level analytics
-- Response time metrics
-- Distribution performance
+#### Analytics Dashboard (implemented)
+- Submission count and trends sourced from `/admin/saas/analytics/platform`
+- Completion, open, and click-through rates with automated performance tips
+- Field-level analytics and response time metrics remain on the roadmap
 
 ### 6. Security Features
 
