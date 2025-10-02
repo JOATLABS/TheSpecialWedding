@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { fetchFormResponsesCsv } from '@/services/formExport';
+import { formsApi } from '@/services/formsApi';
 
 interface FormResponse {
  id: string;
@@ -24,10 +26,11 @@ interface Form {
  id: string;
  name: string;
  settings: {
- title: string;
- description?: string;
+  title: string;
+  description?: string;
  };
  fields: FormField[];
+ submission_count?: number;
 }
 
 export default function FormResponsesPage() {
@@ -43,16 +46,19 @@ export default function FormResponsesPage() {
  const [selectedResponse, setSelectedResponse] = useState<FormResponse | null>(null);
  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
  const [filterEmail, setFilterEmail] = useState('');
+ const [dateFrom, setDateFrom] = useState('');
+ const [dateTo, setDateTo] = useState('');
+ const [includeMetadata, setIncludeMetadata] = useState(true);
+ const [exporting, setExporting] = useState(false);
+ const [exportError, setExportError] = useState('');
+
+ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
  useEffect(() => {
  if (!token || !formId) return;
- fetchFormAndResponses();
- }, [token, formId]);
 
  const fetchFormAndResponses = async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- 
  // Fetch form details and responses in parallel
  const [formResponse, responsesResponse] = await Promise.all([
  fetch(`${baseUrl}/admin/forms/${formId}`, {
@@ -72,9 +78,15 @@ export default function FormResponsesPage() {
  if (formResponse.ok && responsesResponse.ok) {
  const formData = await formResponse.json();
  const responsesData = await responsesResponse.json();
- 
+
  setForm(formData);
  setResponses(responsesData);
+
+ try {
+ await formsApi.markScopeViewed(token, formId, 'responses', formData.submission_count);
+ } catch (viewError) {
+ console.warn('Failed to record response view', viewError);
+ }
  } else {
  setError('Failed to load form or responses');
  }
@@ -85,49 +97,41 @@ export default function FormResponsesPage() {
  }
  };
 
- const downloadCSV = () => {
- if (!form || responses.length === 0) return;
+ fetchFormAndResponses();
+ }, [token, formId, baseUrl]);
 
- // Prepare CSV headers
- const headers = [
- 'Submission Date',
- 'Name',
- 'Email',
- 'IP Address',
- ...form.fields.map(field => field.label)
- ];
+ const downloadCSV = async () => {
+ if (!form || !token) return;
 
- // Prepare CSV data
- const csvData = responses.map(response => [
- new Date(response.submitted_at).toLocaleString(),
- response.submitted_by_name || '',
- response.submitted_by_email || '',
- response.ip_address || '',
- ...form.fields.map(field => {
- const value = response.responses[field.id];
- if (Array.isArray(value)) {
- return value.join(', ');
- }
- return value || '';
- })
- ]);
+ setExportError('');
+ setExporting(true);
 
- // Create CSV content
- const csvContent = [
- headers.join(','),
- ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
- ].join('\n');
+ try {
+ const { blob, filename } = await fetchFormResponsesCsv({
+ baseUrl,
+ formId,
+ token,
+ options: {
+ dateFrom: dateFrom || undefined,
+ dateTo: dateTo || undefined,
+ includeMetadata,
+ },
+ });
 
- // Download file
- const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
- const link = document.createElement('a');
  const url = URL.createObjectURL(blob);
- link.setAttribute('href', url);
- link.setAttribute('download', `${form.name}_responses_${new Date().toISOString().split('T')[0]}.csv`);
- link.style.visibility = 'hidden';
+ const link = document.createElement('a');
+ link.href = url;
+ link.download = filename;
  document.body.appendChild(link);
  link.click();
  document.body.removeChild(link);
+ URL.revokeObjectURL(url);
+ } catch (err) {
+ const message = err instanceof Error ? err.message : 'Unknown error exporting responses.';
+ setExportError(message || 'Failed to export responses.');
+ } finally {
+ setExporting(false);
+ }
  };
 
  const formatFieldValue = (field: FormField, value: any) => {
@@ -255,17 +259,21 @@ export default function FormResponsesPage() {
  Back to Forms
  </button>
  
- {responses.length > 0 && (
  <button
  onClick={downloadCSV}
- className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+ disabled={exporting || responses.length === 0}
+ className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+ exporting || responses.length === 0
+ ? 'bg-green-300 text-white cursor-not-allowed'
+ : 'bg-green-600 text-white hover:bg-green-700'
+ }`}
+ aria-busy={exporting}
  >
- <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+ <svg className={`w-5 h-5 mr-2 ${exporting ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
  </svg>
- Export CSV
+ {exporting ? 'Exporting…' : 'Export CSV'}
  </button>
- )}
  </div>
  
  <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -296,8 +304,9 @@ export default function FormResponsesPage() {
  <>
  {/* Filters and Controls */}
  <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
- <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
- <div className="flex gap-4 items-center">
+ <div className="flex flex-col gap-4">
+ <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+ <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
  <input
@@ -322,10 +331,50 @@ export default function FormResponsesPage() {
  </select>
  </div>
  </div>
- 
+
  <div className="text-sm text-gray-500">
  Showing {filteredAndSortedResponses.length} of {responses.length} responses
  </div>
+ </div>
+
+ <div className="flex flex-col lg:flex-row gap-4">
+ <div className="flex gap-4 flex-1">
+ <div className="flex-1">
+ <label className="block text-sm font-medium text-gray-700 mb-1">Date from</label>
+ <input
+ type="date"
+ value={dateFrom}
+ onChange={(e) => setDateFrom(e.target.value)}
+ className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ </div>
+ <div className="flex-1">
+ <label className="block text-sm font-medium text-gray-700 mb-1">Date to</label>
+ <input
+ type="date"
+ value={dateTo}
+ onChange={(e) => setDateTo(e.target.value)}
+ className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ </div>
+ </div>
+
+ <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+ <input
+ type="checkbox"
+ checked={includeMetadata}
+ onChange={(e) => setIncludeMetadata(e.target.checked)}
+ className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+ />
+ Include submission metadata
+ </label>
+ </div>
+
+ {exportError && (
+ <div className="rounded-md bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm">
+ {exportError}
+ </div>
+ )}
  </div>
  </div>
 

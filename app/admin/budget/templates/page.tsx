@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { budgetApi } from '../../../services/budgetApi';
-import type { BudgetTemplate } from '../../../types/budget';
+import type { BudgetTemplate, CreateBudgetTemplatePayload } from '../../../types/budget';
+import { CreateTemplateModal } from '../../../components/budget/CreateTemplateModal';
 
 interface Wedding {
   id?: string;
@@ -22,6 +23,9 @@ export default function BudgetTemplatesPage() {
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [creating, setCreating] = useState(false);
+  const [creationError, setCreationError] = useState<string>('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
   
   // Apply template modal
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -36,19 +40,78 @@ export default function BudgetTemplatesPage() {
     }
   }, [token]);
 
+  const normaliseTemplate = (template: any): BudgetTemplate => {
+    if (!template) {
+      throw new Error('Invalid template payload');
+    }
+
+    const identifier = template.id || template._id || template?._id?.$oid || template?._id?.oid || '';
+    return {
+      id: identifier,
+      _id: identifier,
+      name: template.name || '',
+      description: template.description || undefined,
+      wedding_type: template.wedding_type || '',
+      target_budget_min: Number(template.target_budget_min ?? 0),
+      target_budget_max: Number(template.target_budget_max ?? 0),
+      guest_count_range: {
+        min: Number(template?.guest_count_range?.min ?? 0),
+        max: Number(template?.guest_count_range?.max ?? 0),
+      },
+      categories: Array.isArray(template.categories)
+        ? template.categories.map((category: any) => ({
+            name: category.name || '',
+            percentage: Number(category.percentage ?? 0),
+            priority: Number(category.priority ?? 3),
+          }))
+        : [],
+      created_by: template.created_by || undefined,
+      is_public: Boolean(template.is_public),
+      created_at: template.created_at || '',
+      updated_at: template.updated_at || template.created_at || '',
+    };
+  };
+
   const fetchTemplates = async () => {
     if (!token) return;
-    
+
     setLoading(true);
     try {
       const templatesData = await budgetApi.getBudgetTemplates(token);
-      setTemplates(templatesData);
+      setTemplates(Array.isArray(templatesData) ? templatesData.map(normaliseTemplate) : []);
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to load budget templates');
       toast.error(err.message || 'Failed to load budget templates');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateTemplate = async (payload: CreateBudgetTemplatePayload) => {
+    if (!token) {
+      toast.error('You must be logged in to create templates.');
+      return;
+    }
+
+    setCreating(true);
+    setCreationError('');
+
+    try {
+      const template = await budgetApi.createBudgetTemplate(token, payload);
+      toast.success(`Template “${template.name}” created successfully.`);
+      setShowCreateModal(false);
+      setTemplates((prev) => {
+        const next = Array.isArray(prev) ? [...prev] : [];
+        next.unshift(normaliseTemplate(template));
+        return next;
+      });
+    } catch (err: any) {
+      const message = err?.message || 'Failed to create template';
+      setCreationError(message);
+      toast.error(message);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -132,7 +195,13 @@ export default function BudgetTemplatesPage() {
         </div>
         
         <div className="flex gap-3">
-          <Button className="bg-purple-600 hover:bg-purple-700">
+          <Button
+            className="bg-purple-600 hover:bg-purple-700"
+            onClick={() => {
+              setCreationError('');
+              setShowCreateModal(true);
+            }}
+          >
             Create Custom Template
           </Button>
         </div>
@@ -348,6 +417,17 @@ export default function BudgetTemplatesPage() {
           </div>
         </div>
       )}
+
+      <CreateTemplateModal
+        isOpen={showCreateModal}
+        onClose={() => {
+          if (creating) return;
+          setShowCreateModal(false);
+        }}
+        onCreate={handleCreateTemplate}
+        isSubmitting={creating}
+        errorMessage={creationError}
+      />
     </div>
   );
 }
