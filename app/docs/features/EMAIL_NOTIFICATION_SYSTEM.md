@@ -1,54 +1,34 @@
-# Email Notification System
+# Email Notification System (Current Capabilities)
 
 ## Overview
 
-The Wedding Web Application now includes a comprehensive email notification system that automatically sends emails to the root administrator (`thedeveloper@thespecialwedding.com`) when important platform events occur. The system uses Celery task queues with Redis as a broker to ensure reliable email delivery with retry logic.
+The Wedding Web Application includes a basic notification service for storing announcements in MongoDB. Automatic email delivery to administrators is still a future enhancement—the Celery/Redis architecture described in earlier drafts has not been implemented.
 
 ## Architecture
 
-### Components
+### Components in the repository
 
-1. **Celery Task Queue** (`app/core/celery_app.py`)
-   - Redis broker configuration
-   - Queue routing for emails and notifications
-   - Retry policies and rate limiting
+1. **NotificationService** (`app/services/notification_service.py`)
+   - Creates, updates, and deletes in-app notifications stored in MongoDB
+   - `send_notification` currently marks records as "sent" without dispatching emails
 
-2. **Email Tasks** (`app/tasks/email_tasks.py`)
-   - Asynchronous email sending with retry logic
-   - Admin notification task for different event types
-   - Failure tracking and logging
-
-3. **Enhanced Services**
-   - `ResendEmailService` - Added admin notification queuing
-   - `NotificationService` - Auto-triggers emails for root_admin notifications
-
-4. **Worker Process** (`celery_worker.py`)
-   - Entry point for running Celery workers
+2. **Email utilities**
+   - `ResendEmailService` provides synchronous sending helpers for other flows
+   - No queueing layer or worker process exists
 
 ## Features
 
 ### Automatic Email Triggers
 
-The system automatically sends emails for:
-- **Contact Form Submissions** - New inquiries from the SAAS landing page
-- **New User Registrations** - Wedding planner account creation
-- **Payment Events** - Subscription and billing notifications
-- **System Alerts** - Error conditions and critical events
+Automatic triggers are **not** enabled. Notifications created with `target_audience: "root_admin"` remain in the database until polled by the UI.
 
 ### Email Templates
 
-All emails feature:
-- **Professional HTML design** with JOAT Labs branding
-- **Responsive layout** optimized for mobile and desktop
-- **Rich metadata** including form data and admin panel links
-- **Consistent styling** across all notification types
+Email templates for admin alerts have not been developed. The system currently relies on the existing Resend transactional templates used elsewhere in the app.
 
 ### Retry Logic
 
-- **3 retry attempts** with exponential backoff
-- **Maximum 10-minute delay** between retries
-- **Failure logging** to MongoDB for manual review
-- **Rate limiting** to respect email provider limits
+There is no background worker or retry queue yet. Any resilience requirements should be addressed when the queueing layer is introduced.
 
 ## Configuration
 
@@ -74,11 +54,7 @@ FRONTEND_URL=https://www.thespecialwedding.com
 
 ### Dependencies
 
-Added to `requirements.txt`:
-```
-celery[redis]>=5.3.0
-redis>=5.0.0
-```
+`celery` and `redis` are **not** present in `requirements.txt`. Add them when the queue-backed implementation begins.
 
 ## Setup and Deployment
 
@@ -105,10 +81,7 @@ docker run -d -p 6379:6379 redis:alpine
 
 ### 3. Start Celery Worker
 
-```bash
-# In the project root directory
-celery -A celery_worker worker --loglevel=info
-```
+_Not applicable._ There is no Celery configuration or worker entrypoint.
 
 ### 4. Production Deployment
 
@@ -128,26 +101,7 @@ autorestart=true
 
 ### Automatic Triggering
 
-Emails are automatically sent when notifications are created with `target_audience: "root_admin"`:
-
-```python
-from app.services.notification_service import NotificationService
-
-notification_service = NotificationService()
-await notification_service.create_notification({
-    "title": "New Contact Form Submission",
-    "message": "A new inquiry has been received",
-    "type": "info",
-    "target_audience": "root_admin",
-    "priority": "medium",
-    "source": "contact_form",
-    "is_dismissible": True,
-    # Metadata for email template
-    "name": "John Doe",
-    "email": "john@example.com",
-    "company": "Example Corp"
-}, "system")
-```
+Emails are **not** sent automatically today. Creating a notification stores it for in-app display only.
 
 ### Manual Email Sending
 
@@ -325,12 +279,12 @@ python3 -c "from app.services.email_service_resend import ResendEmailService; pr
 
 ## Integration Points
 
-This email system integrates with:
+No automatic integrations are active yet. Planned triggers include:
 
-- **Contact Form API** (`app/api/public_endpoints.py`) - Automatic email on form submission
-- **User Registration** - New account notifications
-- **Payment Processing** - Billing event notifications
-- **Error Handling** - System alert notifications
-- **Admin Dashboard** - Notification management interface
+- **Contact Form API** (`app/api/public_endpoints.py`) – send alert when a new inquiry arrives
+- **User Registration** – notify admins about new planners and trial expirations
+- **Payment Processing** – surface billing failures
+- **Error Handling** – dispatch critical system alerts
+- **Admin Dashboard** – manage notification templates and delivery preferences
 
-The system is designed to be extensible and can easily accommodate new notification types and email templates as the platform grows.
+These items should be revisited once the queue-backed delivery system is in place.
