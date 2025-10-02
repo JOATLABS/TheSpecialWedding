@@ -99,7 +99,7 @@ Planner Action → RecordPaymentModal → budgetApi.recordPayment → POST /admi
 - `PaymentHistoryPanel` memoises totals, exposes filters, and renders a scrollable list with animations.
 - `budgetApi.recordPayment` and `budgetApi.getPaymentHistory` abstract fetch requests, headers, and response parsing.
 
-## Database Schema (proposed)
+## Database Schema
 
 ### payment_records
 

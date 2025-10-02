@@ -443,49 +443,68 @@ class BudgetService:
     
     # ===== PAYMENT TRACKING =====
     
+    def get_budget_category(self, category_id: str) -> Optional[Dict]:
+        """Fetch a single budget category by its identifier."""
+        try:
+            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            if not category:
+                return None
+
+            category["id"] = str(category["_id"])
+            category["_id"] = str(category["_id"])
+            return category
+        except ValueError as e:
+            logger.error(f"Invalid category id provided: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to fetch budget category: {str(e)}")
+            raise
+
     def record_payment(self, category_id: str, payment_data: Dict) -> Dict:
         """Record a payment for a budget category"""
         try:
+            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            if not category:
+                raise ValueError("Budget category not found")
+
             payment = PaymentRecord(
                 category_id=category_id,
                 **payment_data
             )
-            
+
             result = self.payment_records.insert_one(payment.dict())
             payment.id = str(result.inserted_id)
-            
+
             # Update category actual spending
-            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
-            if category:
-                new_actual_spent = category.get("actual_spent", 0) + payment.amount
-                self.budget_categories.update_one(
-                    {"_id": PyObjectId(category_id)},
-                    {"$set": {
-                        "actual_spent": new_actual_spent,
-                        "updated_at": datetime.utcnow()
-                    }}
-                )
-                
-                # Update payment status based on spending vs budget
-                budgeted = category.get("budgeted_amount", 0)
-                if new_actual_spent >= budgeted:
-                    payment_status = "paid"
-                elif new_actual_spent > 0:
-                    payment_status = "partial"
-                else:
-                    payment_status = "pending"
-                
-                self.budget_categories.update_one(
-                    {"_id": PyObjectId(category_id)},
-                    {"$set": {"payment_status": payment_status}}
-                )
-                
-                # Check for over-budget alerts
-                self._check_budget_alerts(category["wedding_id"])
-            
+            new_actual_spent = category.get("actual_spent", 0) + payment.amount
+            self.budget_categories.update_one(
+                {"_id": PyObjectId(category_id)},
+                {"$set": {
+                    "actual_spent": new_actual_spent,
+                    "updated_at": datetime.utcnow()
+                }}
+            )
+
+            # Update payment status based on spending vs budget
+            budgeted = category.get("budgeted_amount", 0)
+            if new_actual_spent >= budgeted:
+                payment_status = "paid"
+            elif new_actual_spent > 0:
+                payment_status = "partial"
+            else:
+                payment_status = "pending"
+
+            self.budget_categories.update_one(
+                {"_id": PyObjectId(category_id)},
+                {"$set": {"payment_status": payment_status}}
+            )
+
+            # Check for over-budget alerts
+            self._check_budget_alerts(category["wedding_id"])
+
             logger.info(f"Recorded payment of ${payment.amount} for category {category_id}")
             return payment.dict()
-            
+
         except Exception as e:
             logger.error(f"Failed to record payment: {str(e)}")
             raise
