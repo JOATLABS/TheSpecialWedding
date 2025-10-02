@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { formsApi } from '@/services/formsApi';
 
 interface Analytics {
   form_id: string;
@@ -70,9 +71,15 @@ export default function FormAnalyticsPage() {
       if (formResponse.ok && analyticsResponse.ok) {
         const formData = await formResponse.json();
         const analyticsData = await analyticsResponse.json();
-        
+
         setForm(formData);
         setAnalytics(analyticsData);
+
+        try {
+          await formsApi.markScopeViewed(token, formId, 'analytics', analyticsData?.total_responses);
+        } catch (viewError) {
+          console.warn('Failed to record analytics view', viewError);
+        }
       } else {
         setError('Failed to load form analytics');
       }
