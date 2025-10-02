@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { GlassCard } from '../ui/GlassCard';
 import { SaasLogoTitle } from './SaasLogoTitle';
 
@@ -85,11 +86,11 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({ config, theme 
           
         {/* CTA Buttons */}
         <div className="mt-8 sm:mt-12">
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-4 sm:mb-6">
             <button
               onClick={handleGetStarted}
-              className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 text-white font-semibold rounded-full 
-                         shadow-xl hover:shadow-2xl transform hover:scale-105 
+              className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 text-white font-semibold rounded-full
+                         shadow-xl hover:shadow-2xl transform hover:scale-105
                          transition-all duration-300 text-base sm:text-lg min-w-[200px]"
               style={{
                 backgroundColor: theme?.primary_color || '#1e3a5f'
@@ -112,6 +113,16 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({ config, theme 
               {config.hero_cta_secondary}
             </button>
           </div>
+
+          <p className="text-sm text-gray-600" role="note">
+            Already have an account?{' '}
+            <Link
+              href="/admin/login"
+              className="font-semibold text-gray-800 underline decoration-wavy decoration-2 underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gray-400"
+            >
+              Log in to the planner portal
+            </Link>
+          </p>
         </div>
           
         {/* Trust Indicators */}

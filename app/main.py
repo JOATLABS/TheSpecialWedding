@@ -44,6 +44,7 @@ from app.api.forms import router as forms_router
 from app.api.guest_verification import router as guest_verification_router
 from app.api.trial_management import router as trial_management_router
 from app.api.vendor_forms import router as vendor_forms_router
+from app.api.vendor_dashboard import router as vendor_dashboard_router
 from app.api.budget import router as budget_router
 from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
@@ -208,6 +209,7 @@ app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
 app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
+app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
 
