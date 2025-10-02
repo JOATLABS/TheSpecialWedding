@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from bson import ObjectId
+from copy import deepcopy
 from app.core.database import mongo
 from app.models.form import (
     FormModel, FormResponse, FormDistribution,
@@ -7,7 +8,7 @@ from app.models.form import (
 )
 from app.services.email_service_resend import ResendEmailService
 from app.utils.security_utils import (
-    FormSecurityValidator, InputSanitizer, SecurityHeaders, rate_limiter
+    FormSecurityValidator, InputSanitizer, SecurityHeaders, SecurityConfig, rate_limiter
 )
 from app.utils.csv_export import FormResponseCSVExporter, CSVSecurityError
 from datetime import datetime
@@ -87,6 +88,76 @@ class FormService:
         except Exception as e:
             logging.error(f"Error creating form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create form: {str(e)}")
+
+    def duplicate_form(
+        self,
+        form_id: str,
+        new_name: str,
+        created_by: str,
+        is_root_admin: bool = False,
+    ) -> Dict[str, Any]:
+        """Duplicate an existing form for the requesting planner or root admin."""
+
+        try:
+            if not form_id or not isinstance(form_id, str):
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+
+            if not InputSanitizer.validate_email(created_by):
+                raise HTTPException(status_code=400, detail="Invalid creator email")
+
+            sanitized_form_id = InputSanitizer.sanitize_text(form_id, 100)
+            if not sanitized_form_id:
+                raise HTTPException(status_code=400, detail="Invalid form ID")
+
+            query: Dict[str, Any] = {"_id": sanitized_form_id, "is_active": True}
+            if not is_root_admin:
+                query["created_by"] = created_by.lower().strip()
+
+            source_form = self.forms_collection.find_one(query)
+            if not source_form:
+                raise HTTPException(status_code=404, detail="Form not found")
+
+            sanitized_name = InputSanitizer.sanitize_text(new_name, SecurityConfig.MAX_FORM_NAME_LENGTH)
+            if not sanitized_name:
+                raise HTTPException(status_code=400, detail="Form name is required")
+
+            duplicate_payload: Dict[str, Any] = {
+                "name": sanitized_name,
+                "settings": deepcopy(source_form.get("settings", {})),
+                "fields": deepcopy(source_form.get("fields", [])),
+                "wedding_id": source_form.get("wedding_id"),
+                "template_type": source_form.get("template_type"),
+            }
+
+            try:
+                sanitized_data = FormSecurityValidator.validate_form_data(duplicate_payload)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
+            new_form_id = f"form_{int(datetime.now().timestamp() * 1000)}"
+            new_form_doc = {
+                "_id": new_form_id,
+                "name": sanitized_data["name"],
+                "settings": sanitized_data["settings"],
+                "fields": sanitized_data["fields"],
+                "created_by": created_by.lower().strip(),
+                "wedding_id": sanitized_data.get("wedding_id"),
+                "template_type": sanitized_data.get("template_type"),
+                "is_active": True,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+                "submission_count": 0,
+            }
+
+            self.forms_collection.insert_one(new_form_doc)
+
+            return {"id": new_form_id, "message": "Form duplicated successfully"}
+
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logging.error(f"Error duplicating form: {str(exc)}")
+            raise HTTPException(status_code=500, detail=f"Failed to duplicate form: {str(exc)}")
 
     def get_forms(self, created_by: str, wedding_id: Optional[str] = None, is_root_admin: bool = False) -> List[Dict[str, Any]]:
         """Get forms for a user"""

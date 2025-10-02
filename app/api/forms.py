@@ -169,6 +169,30 @@ def get_forms(
         )
         raise
 
+
+@router.post("/forms/duplicate/{form_id}", tags=["Forms"])
+def duplicate_form(
+    form_id: str,
+    new_name: str = Query(..., min_length=1, max_length=100, description="Name for the duplicated form"),
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+):
+    """Duplicate an existing form for the requesting planner or root admin."""
+
+    if not (current_user.is_wedding_planner or current_user.is_root_admin):
+        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+
+    logger.info(
+        f"Form duplication requested: id={form_id}, user={current_user.email}",
+        extra={"is_root_admin": current_user.is_root_admin},
+    )
+
+    return form_service.duplicate_form(
+        form_id=form_id,
+        new_name=new_name,
+        created_by=current_user.email,
+        is_root_admin=current_user.is_root_admin,
+    )
+
 @router.get("/forms/{form_id}", tags=["Forms"])
 def get_form(
     form_id: str,
