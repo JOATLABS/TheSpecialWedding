@@ -26,6 +26,7 @@ e defaults applied automatically.
 - Calls the dedicated duplication endpoint to copy fields/settings while resetting submissions and unread counters
 - Keeps analytics clean so the clone begins with zero responses and its own planner view state
 
+
 ### 2. Supported Field Types
 
 Template metadata references the field types below, but only a subset is exercised by the current UI. File uploads, rating, scale, and SMS-related fields require additional work before they can be surfaced reliably.
