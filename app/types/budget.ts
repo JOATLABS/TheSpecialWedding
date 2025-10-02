@@ -67,6 +67,23 @@ export interface BudgetTemplate {
   updated_at: string;
 }
 
+export interface BudgetTemplateCategoryInput {
+  name: string;
+  percentage: number;
+  priority: number;
+}
+
+export interface CreateBudgetTemplatePayload {
+  name: string;
+  description?: string;
+  wedding_type: string;
+  target_budget_min: number;
+  target_budget_max: number;
+  guest_count_range: { min: number; max: number };
+  categories: BudgetTemplateCategoryInput[];
+  is_public?: boolean;
+}
+
 export interface BudgetSummary {
   wedding_id: string;
   total_budget: number;
@@ -94,6 +111,18 @@ export interface PaymentRecord {
   status: 'pending' | 'completed' | 'failed';
   notes?: string;
   created_at: string;
+  category_name?: string;
+}
+
+export interface RecordPaymentRequest {
+  vendor_name?: string;
+  amount: number;
+  payment_method: 'cash' | 'check' | 'card' | 'transfer';
+  payment_date: string;
+  description?: string;
+  receipt_url?: string;
+  status?: 'pending' | 'completed' | 'failed';
+  notes?: string;
 }
 
 export interface BudgetAlert {

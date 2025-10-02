@@ -1,286 +1,167 @@
 # Platform Metrics Implementation Guide (Current State)
 
 ## Overview
-The Platform Metrics page in the admin area currently synthesises high-level counts using existing admin endpoints. A dedicated analytics service has **not** been built yet, so most of the metrics shown are estimates or hard-coded placeholders.
+The Platform Metrics dashboard now pulls authenticated analytics from a dedicated backend aggregator. Instead of estimations,
+the UI renders real counts for users, subscriptions, weddings, forms, notifications, and AI usage sourced directly from
+MongoDB. Performance monitoring and cache layers remain future enhancements.
 
 ## Architecture
 
-### Components in the codebase today
-1. **Frontend Dashboard**: `app/admin/metrics/page.tsx`
-   - Calls `/api/admin/users` and `/api/admin/subscription-plans`
-   - Derives metrics client-side with lightweight calculations
-   - Fills in missing values (usage, performance, revenue) with constants until real data is available
+### Components
+1. **Frontend Dashboard** – `app/admin/metrics/page.tsx`
+   - Authenticates requests with the admin token supplied by `AdminContext`
+   - Calls `/admin/saas/analytics/platform?timeframe=…` to retrieve pre-computed metrics
+   - Renders Apple glass-styled cards for user, subscription, and operational data
 
-2. **API Endpoints / Services**
-   - There is no `platform_analytics_service.py` module
-   - `/api/saas/analytics/overview` is referenced in the UI but is not implemented; the call is wrapped in a `catch(() => null)` guard
-   - No Redis caching or background aggregation exists
+2. **Analytics Aggregator** – `app/api/saas_config.py#get_platform_metrics`
+   - Normalises timeframes (`7d`, `30d`, `90d`, `1y`) and calculates period start windows
+   - Summarises MongoDB collections: `users`, `user_subscriptions`, `subscription_plans`, `weddings`, `guests`, `rsvps`,
+     `forms`, `form_responses`, `notifications`, `email_logs`, and `ai_usage`
+   - Returns a structured JSON payload containing counts, revenue totals, and plan breakdowns
+   - Guards access with `require_root_admin`
 
-## Metrics Categories
+## Delivered Metrics
 
-### 1. User Metrics (derived client-side)
-- **Total Users**: Count of `/api/admin/users`
-- **Active Users**: Filtered by `is_active` flag
-- **New Users This Month**: Calculated by comparing `created_at` timestamps
-- **Growth Rate**: Derived from current month sign-ups vs total
+### 1. User Metrics
+- **Total Accounts**: `users.count_documents({})`
+- **Active Accounts**: `users.count_documents({"is_active": True})`
+- **New Accounts (Timeframe)**: `users.count_documents({"created_at": {"$gte": period_start}})`
+- **Role Breakdown**: Mongo aggregation grouped by the `role` field
 
-### 2. Subscription Metrics (approximations)
-- **Total Subscriptions**: Users with a `subscription_plan_id`
-- **Active Subscriptions**: Users with `subscription_status === 'active'`
-- **Trial Users**: Users with `subscription_status === 'trialing'`
-- **Churned This Month**: Hard-coded to `0` pending activity logs
-- **MRR / ARR**: Estimated by multiplying plan counts by assumed prices
+### 2. Subscription Metrics
+- **Status Breakdown**: counts for `trial`, `active`, `cancelled`, and `expired` rows in `user_subscriptions`
+- **Active Plans**: `subscription_plans.count_documents({"is_active": True})`
+- **MRR / ARR**: derived from active subscriptions and plan pricing (monthly plans sum `price_monthly`, yearly plans
+  prorated over 12 months)
+- **Plan Breakdown**: per-plan active/trial user counts with associated revenue totals
 
-### 3. Usage Metrics (placeholders)
-- **Weddings Created**: Currently `0`
-- **Forms Created**: Currently `0`
-- **Guests Managed**: Currently `0`
-- **Emails Sent**: Currently `0`
-- **SMS Sent**: Currently `0`
+### 3. Operational Metrics
+- **Weddings**: total records, active statuses, upcoming dates (>= today), and creations inside the timeframe window
+- **Guest & RSVP Totals**: raw counts from `guests` and `rsvps`
+- **Forms**: active form count, new forms created in timeframe, and submission totals via `form_responses`
 
-### 4. Performance Metrics (static placeholders)
-- **Uptime**: Hard-coded to `99.9`
-- **Average Response Time**: Hard-coded to `245`
-- **Error Rate**: Hard-coded to `0.1`
-- **API Calls Today**: Hard-coded to `0`
-- **P50/P95/P99**: Not calculated
-- **Cache Hit Rate**: Not calculated
+### 4. Communications & Automation
+- **Notifications**: counts of `status: "sent"` notifications overall and within the timeframe
+- **Email Logs**: total emails plus successful sends within the timeframe from `email_logs`
+- **AI Usage**: total and in-period counts from `ai_usage`
 
-### 5. Revenue Metrics (estimates)
-- **Total Revenue**: Active subscriber count × assumed yearly plan price
-- **Monthly Growth**: Uses a constant `15.3` when new sign-ups exist
-- **ARPU**: Fixed estimate
-- **Customer LTV**: Fixed estimate
+### 5. Still Pending
+- **System Performance**: uptime, latency, and error-rate instrumentation remains on the backlog
+- **Churn Analytics**: dedicated churn and cohort analysis will arrive with subscription lifecycle tracking
+- **Caching**: responses are generated on demand; Redis-backed caching is not yet implemented
 
 ## Data Sources
 
-### Real-Time Data Collection
-Not yet implemented. Future work should aggregate from:
-- MongoDB collections: users, weddings, forms, guests, subscriptions
-- Monitoring tooling (once built) for performance data
-- Audit logs for API usage, errors, and security events
+- `mongo.get_users_collection()` – role and lifecycle data
+- `mongo.db["user_subscriptions"]` – subscription assignments with billing interval metadata
+- `mongo.get_subscription_plans_collection()` – plan pricing for revenue calculations
+- `mongo.get_weddings_collection()` – project cadence and upcoming events
+- `mongo.get_forms_collection()` / `mongo.get_form_responses_collection()` – planner engagement metrics
+- `mongo.db["notifications"]`, `mongo.db["email_logs"]`, `mongo.get_ai_usage_collection()` – outbound communication audit
 
-### Performance Monitoring Integration
-```python
-# PerformanceMonitoringMiddleware stores metrics in Redis:
-{
-    "/api/endpoint": {
-        "avg_response_time": 0.245,
-        "request_count": 1234,
-        "percentiles": {
-            "p50": 0.200,
-            "p95": 0.450,
-            "p99": 0.890
-        }
-    }
-}
-```
-
-## Caching Strategy
-
-### Redis Caching (planned)
-- Metrics caching has not been implemented
-- Once the analytics service exists, define cache keys such as `analytics:{metric_type}:{timeframe}:{date-hour}`
-- Establish TTL and invalidation strategy alongside the service work
-
-### Cache Warming (planned)
-- Background aggregation tasks have not been created
-- `/api/saas/analytics/refresh-cache` does not exist yet
-- Metrics currently fall back to client-side calculations only
+The aggregator guards against malformed timestamps via `_normalize_datetime` helpers before counting timeframe-bound records.
 
 ## Security & Access Control
 
-### ROOT_ADMIN Only Access
-Access control is handled by existing admin context/auth flows. Dedicated analytics endpoints should enforce ROOT_ADMIN scoping when they are built.
-
-### Audit Logging (not yet available)
-- No audit trail is captured for the placeholder metrics page
-- Logging requirements should be captured in the backlog when the backend is implemented
+- The `/admin/saas/analytics/platform` endpoint is protected by `require_root_admin`
+- Requests without a bearer token return HTTP 401/403
+- The frontend relies on `AdminContext` to inject the token header; missing tokens surface a descriptive error message
+- Audit logging for analytics access is not yet implemented and should be captured in the security backlog
 
 ## API Usage
 
-### Fetching Overview Metrics
+### Fetching Platform Analytics
 ```typescript
-// Frontend implementation (with fallback until endpoint exists)
-const analyticsResponse = await apiRequest('/api/saas/analytics/overview', 'GET')
-  .catch(() => null);
-
-if (!analyticsResponse) {
-  // Use derived data instead of backend metrics
-}
+const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
+const response = await fetch(
+  `${baseUrl}/admin/saas/analytics/platform?timeframe=${timeframe}`,
+  {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  }
+);
+const metrics = await response.json();
 ```
 
 ### Available Timeframes
-- `7days`: Last 7 days
-- `30days`: Last 30 days (default)
-- `90days`: Last 90 days
-- `1year`: Last year
+- `7d` – last 7 days
+- `30d` – last 30 days (default)
+- `90d` – last 90 days
+- `1y` – last 365 days
 
-### Response Format
+### Response Shape
 ```json
 {
-    "success": true,
-    "data": {
-        "users": {
-            "total": 1234,
-            "active": 890,
-            "new_this_month": 45,
-            "growth_rate": 12.5
-        },
-        "subscriptions": {
-            "total": 456,
-            "active": 320,
-            "trial": 89,
-            "churned_this_month": 12,
-            "mrr": 9280,
-            "arr": 111360
-        },
-        "usage": {
-            "weddings_created": 678,
-            "forms_created": 234,
-            "guests_managed": 45678,
-            "emails_sent": 12345,
-            "sms_sent": 5678
-        },
-        "performance": {
-            "uptime": 99.95,
-            "avg_response_time": 245,
-            "error_rate": 0.05,
-            "api_calls_today": 23456
-        },
-        "revenue": {
-            "total_revenue": 234567,
-            "monthly_growth": 15.3,
-            "average_revenue_per_user": 48,
-            "lifetime_value": 1200
-        }
+  "generated_at": "2025-02-03T18:12:45.123456",
+  "timeframe": "30d",
+  "users": {
+    "total": 245,
+    "active": 198,
+    "new_in_period": 24,
+    "growth_rate": 9.8,
+    "role_breakdown": {
+      "wedding_planner": 180,
+      "vendor": 40,
+      "root_admin": 5
+    }
+  },
+  "subscriptions": {
+    "total": 210,
+    "status_breakdown": {
+      "trial": 18,
+      "active": 180,
+      "cancelled": 8,
+      "expired": 4
     },
-    "timeframe": "30days"
+    "active_plans": 3,
+    "monthly_recurring_revenue": 9850,
+    "yearly_recurring_revenue": 21600,
+    "projected_annual_revenue": 118200,
+    "plan_breakdown": [
+      {
+        "plan_id": "plan_basic",
+        "plan_name": "Basic",
+        "active_users": 120,
+        "trial_users": 10,
+        "monthly_revenue": 6000,
+        "yearly_revenue": 14400,
+        "price_monthly": 50,
+        "price_yearly": 480
+      }
+    ]
+  },
+  "operations": {
+    "weddings": {
+      "total": 68,
+      "active": 52,
+      "upcoming": 34,
+      "created_in_period": 6,
+      "guest_total": 5240,
+      "rsvp_total": 3980
+    },
+    "forms": {
+      "total": 145,
+      "new_in_period": 12,
+      "responses_total": 2840,
+      "responses_in_period": 420
+    },
+    "communications": {
+      "notifications_sent": 980,
+      "notifications_in_period": 112,
+      "email_logs_total": 4380,
+      "emails_sent_in_period": 620,
+      "ai_events_total": 840,
+      "ai_events_in_period": 74
+    }
+  }
 }
 ```
 
-## Frontend Testing IDs
+### Error Handling
+- Invalid timeframe strings return HTTP 400 with `"Invalid timeframe. Use one of: 7d, 30d, 90d, 1y."`
+- Database errors propagate as HTTP 500 responses with diagnostic detail for root admins
 
-The metrics dashboard includes testing IDs for automated testing:
-- `timeframe-selector`: Timeframe dropdown
-- `metric-total-users`: Total users card
-- `metric-active-users`: Active users card
-- `metric-mrr`: MRR card
-- `metric-arr`: ARR card
-- `value-total-users`: Total users value
-- `value-active-users`: Active users value
-- `value-mrr`: MRR value
-- `value-arr`: ARR value
-
-## Environment Configuration
-
-Required environment variables in `.env`:
-```env
-# Application Settings
-ENVIRONMENT=development
-APP_NAME=Wedding WebApp API
-APP_VERSION=1.3.0
-
-# Redis Configuration (for caching)
-REDIS_ENABLED=true
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_DB=0
-
-# Performance Monitoring
-ENABLE_METRICS=true
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Metrics not updating**
-   - Check Redis connection: `docker logs wedding-redis`
-   - Force cache refresh: Call `/api/saas/analytics/refresh-cache`
-   - Verify MongoDB connectivity
-
-2. **Performance metrics showing zeros**
-   - Ensure PerformanceMonitoringMiddleware is enabled
-   - Check Redis for `performance_metrics` key
-   - Verify middleware ordering in `app/main.py`
-
-3. **Access denied errors**
-   - Verify user has `is_root_admin` flag
-   - Check authentication token validity
-   - Review audit logs for access attempts
-
-### Debug Commands
-```bash
-# Check Redis cache
-docker exec -it wedding-redis redis-cli
-> GET analytics:overview:30days:*
-> GET performance_metrics
-
-# Monitor API logs
-docker logs -f wedding-api | grep analytics
-
-# Check MongoDB metrics
-docker exec -it wedding-mongo mongosh
-> use wedding
-> db.users.countDocuments({is_active: true})
-```
-
-## Future Enhancements
-
-### Planned Features
-1. **Real-time WebSocket updates**: Live metric updates without refresh
-2. **Custom date ranges**: User-defined timeframe selection
-3. **Metric alerts**: Threshold-based notifications
-4. **Trend analysis**: Historical comparisons and predictions
-5. **Export scheduling**: Automated report generation
-6. **Metric drill-downs**: Detailed views per metric category
-
-### Performance Optimizations
-1. **Materialized views**: Pre-aggregated metrics in MongoDB
-2. **Time-series database**: InfluxDB for performance metrics
-3. **GraphQL subscriptions**: Efficient real-time updates
-4. **Worker queues**: Background metric calculation
-
-## Testing
-
-### Unit Tests
-Located in `tests/unit/test_platform_analytics_service.py`:
-- Metric calculation accuracy
-- Cache hit/miss scenarios
-- Error handling
-
-### Integration Tests
-Located in `tests/integration/test_metrics_dashboard.py`:
-- API endpoint responses
-- Access control verification
-- Data consistency checks
-
-### Playwright E2E Tests
-Located in `tests/e2e/test_metrics_dashboard.spec.ts`:
-- Dashboard loading
-- Timeframe switching
-- Metric value updates
-- Error state handling
-
-## Maintenance
-
-### Regular Tasks
-1. **Weekly**: Review cache hit rates and optimize TTLs
-2. **Monthly**: Analyze slow queries and add indexes
-3. **Quarterly**: Review metric definitions with stakeholders
-
-### Monitoring Checklist
-- [ ] Redis memory usage < 80%
-- [ ] API response time < 500ms
-- [ ] Cache hit rate > 70%
-- [ ] No error spikes in logs
-- [ ] Metrics match manual calculations
-
-## Support
-
-For issues or questions:
-1. Check this documentation
-2. Review error logs in Docker containers
-3. Contact the development team
-4. File an issue in the project repository
+## Follow-Up Enhancements
+- Add telemetry (uptime, latency, cache hit-rate) once observability tooling is integrated
+- Introduce Redis caching to reduce load on frequently accessed collections
+- Extend analytics to calculate churn, cohort analysis, and per-planner engagement trends

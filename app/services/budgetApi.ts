@@ -7,7 +7,10 @@ import type {
   CreateBudgetCategoryRequest,
   UpdateBudgetCategoryRequest,
   CreateVendorQuoteRequest,
-  BudgetAlert
+  BudgetAlert,
+  PaymentRecord,
+  RecordPaymentRequest,
+  CreateBudgetTemplatePayload
 } from '../types/budget';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -135,7 +138,40 @@ class BudgetApiService {
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget templates');
-    return response.json();
+
+    const payload = await response.json();
+    const templates: unknown = Array.isArray(payload?.templates) ? payload.templates : payload;
+    if (!Array.isArray(templates)) {
+      return [];
+    }
+
+    return templates.map((template) => this.normaliseTemplate(template));
+  }
+
+  async createBudgetTemplate(
+    token: string,
+    data: CreateBudgetTemplatePayload
+  ): Promise<BudgetTemplate> {
+    const response = await fetch(
+      `${BASE_URL}/admin/budget/templates`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data),
+      }
+    );
+
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => ({}));
+      const message = typeof errorPayload?.detail === 'string'
+        ? errorPayload.detail
+        : 'Failed to create budget template';
+      throw new Error(message);
+    }
+
+    const payload = await response.json();
+    const templateData = payload?.template ?? payload;
+    return this.normaliseTemplate(templateData);
   }
 
   async applyBudgetTemplate(token: string, weddingId: string, templateId: string, totalBudget: number): Promise<BudgetCategory[]> {
@@ -219,6 +255,88 @@ class BudgetApiService {
     );
     if (!response.ok) throw new Error('Failed to compare vendor quotes');
     return response.json();
+  }
+
+  // Payments
+  async recordPayment(
+    token: string,
+    categoryId: string,
+    data: RecordPaymentRequest
+  ): Promise<PaymentRecord> {
+    const response = await fetch(
+      `${BASE_URL}/admin/budget/category/${categoryId}/payment`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data)
+      }
+    );
+
+    if (!response.ok) throw new Error('Failed to record payment');
+
+    const payload = await response.json();
+    return payload.payment as PaymentRecord;
+  }
+
+  async getPaymentHistory(token: string, weddingId: string): Promise<PaymentRecord[]> {
+    const response = await fetch(
+      `${BASE_URL}/admin/weddings/${weddingId}/payments`,
+      { headers: this.getHeaders(token) }
+    );
+
+    if (!response.ok) throw new Error('Failed to fetch payment history');
+
+    const payload = await response.json();
+    return Array.isArray(payload.payments) ? payload.payments as PaymentRecord[] : [];
+}
+
+  private normaliseTemplate(template: unknown): BudgetTemplate {
+    if (!template || typeof template !== 'object') {
+      throw new Error('Invalid template payload received from server');
+    }
+
+    const raw = template as Record<string, unknown>;
+    const identifier = typeof raw.id === 'string'
+      ? raw.id
+      : typeof raw._id === 'string'
+        ? raw._id
+        : typeof raw._id === 'object' && raw._id && 'oid' in raw._id
+          ? String((raw._id as Record<string, unknown>).oid)
+          : typeof (raw._id as { $oid?: string })?.$oid === 'string'
+            ? (raw._id as { $oid: string }).$oid
+            : '';
+
+    const guestRange = (raw.guest_count_range ?? {}) as Record<string, unknown>;
+
+    const categories = Array.isArray(raw.categories)
+      ? raw.categories.map((category) => {
+          const cat = category as Record<string, unknown>;
+          return {
+            name: String(cat.name ?? ''),
+            percentage: Number(cat.percentage ?? 0),
+            priority: Number(cat.priority ?? 3),
+          };
+        })
+      : [];
+
+    return {
+      id: identifier,
+      _id: identifier,
+      name: String(raw.name ?? ''),
+      description: raw.description ? String(raw.description) : undefined,
+      wedding_type: String(raw.wedding_type ?? ''),
+      target_budget_min: Number(raw.target_budget_min ?? 0),
+      target_budget_max: Number(raw.target_budget_max ?? 0),
+      guest_count_range: {
+        min: Number(guestRange.min ?? guestRange['$min'] ?? 0),
+        max: Number(guestRange.max ?? guestRange['$max'] ?? 0),
+      },
+      categories,
+      created_by: raw.created_by ? String(raw.created_by) : undefined,
+      is_public: Boolean(raw.is_public),
+      created_at: String(raw.created_at ?? ''),
+      updated_at: String(raw.updated_at ?? raw.created_at ?? ''),
+    };
   }
 }
 

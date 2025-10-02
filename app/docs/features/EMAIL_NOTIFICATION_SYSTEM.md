@@ -2,29 +2,29 @@
 
 ## Overview
 
-The Wedding Web Application includes a basic notification service for storing announcements in MongoDB. Automatic email delivery to administrators is still a future enhancement—the Celery/Redis architecture described in earlier drafts has not been implemented.
+The Wedding Web Application now delivers administrative notifications both in-app and via email. When a root administrator sends a platform notification, the `NotificationService` resolves the target audience, renders an Apple glass–inspired HTML template, and dispatches individual emails through the shared `ResendEmailService`. Each send is recorded with delivery metrics so planners can audit which recipients received or missed the message without relying on manual exports.
 
 ## Architecture
 
 ### Components in the repository
 
 1. **NotificationService** (`app/services/notification_service.py`)
-   - Creates, updates, and deletes in-app notifications stored in MongoDB
-   - `send_notification` currently marks records as "sent" without dispatching emails
+   - Creates, updates, deletes, and now emails notifications stored in MongoDB
+   - `send_notification` resolves the target audience, composes glass-inspired HTML, and uses `ResendEmailService` to deliver one message per recipient while updating delivery analytics in MongoDB
 
 2. **Email utilities**
-   - `ResendEmailService` provides synchronous sending helpers for other flows
-   - No queueing layer or worker process exists
+   - `ResendEmailService` provides synchronous sending helpers for notifications and RSVP workflows
+   - No queueing layer or worker process exists yet; messages send inline with the admin request and are logged to the `email_logs` collection
 
 ## Features
 
 ### Automatic Email Triggers
 
-Automatic triggers are **not** enabled. Notifications created with `target_audience: "root_admin"` remain in the database until polled by the UI.
+Automatic triggers are enabled for admin notifications. When a notification is marked for `all`, `wedding_planners`, `vendors`, or a specific `user_id`, the service gathers active users with valid email addresses, sends them the announcement, and records the delivery results. Recipients also retain the notification in the in-app inbox so planners can track read/dismissed status.
 
 ### Email Templates
 
-Email templates for admin alerts have not been developed. The system currently relies on the existing Resend transactional templates used elsewhere in the app.
+Admin alerts now use a dedicated Apple glass–inspired template that mirrors the aesthetic of the planner dashboards. The template renders a gradient glass card with typographic hierarchy, welcome copy, and footer context so emails feel consistent with the SaaS experience.
 
 ### Retry Logic
 
@@ -101,7 +101,7 @@ autorestart=true
 
 ### Automatic Triggering
 
-Emails are **not** sent automatically today. Creating a notification stores it for in-app display only.
+Sending a notification through `/api/admin/notifications/{notification_id}/send` dispatches emails immediately. The response includes attempted/sent/failed counts, and the notification document stores the matching delivery summary for later review.
 
 ### Manual Email Sending
 
@@ -142,6 +142,10 @@ result = email_service.send_admin_notification(
 - **Action buttons** for immediate response
 
 ## Monitoring and Logging
+
+### Notification Delivery Summary
+
+Each notification document now stores `delivery_summary` (attempted, sent, failed counts, last attempt time, and latest error) and appends entries to `delivery_logs` for every send. These MongoDB fields allow root admins to audit delivery health directly from the API or future UI without scraping email provider dashboards.
 
 ### Email Logs
 
