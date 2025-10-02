@@ -7,7 +7,9 @@ import type {
   CreateBudgetCategoryRequest,
   UpdateBudgetCategoryRequest,
   CreateVendorQuoteRequest,
-  BudgetAlert
+  BudgetAlert,
+  PaymentRecord,
+  RecordPaymentRequest
 } from '../types/budget';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -219,6 +221,39 @@ class BudgetApiService {
     );
     if (!response.ok) throw new Error('Failed to compare vendor quotes');
     return response.json();
+  }
+
+  // Payments
+  async recordPayment(
+    token: string,
+    categoryId: string,
+    data: RecordPaymentRequest
+  ): Promise<PaymentRecord> {
+    const response = await fetch(
+      `${BASE_URL}/admin/budget/category/${categoryId}/payment`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data)
+      }
+    );
+
+    if (!response.ok) throw new Error('Failed to record payment');
+
+    const payload = await response.json();
+    return payload.payment as PaymentRecord;
+  }
+
+  async getPaymentHistory(token: string, weddingId: string): Promise<PaymentRecord[]> {
+    const response = await fetch(
+      `${BASE_URL}/admin/weddings/${weddingId}/payments`,
+      { headers: this.getHeaders(token) }
+    );
+
+    if (!response.ok) throw new Error('Failed to fetch payment history');
+
+    const payload = await response.json();
+    return Array.isArray(payload.payments) ? payload.payments as PaymentRecord[] : [];
   }
 }
 

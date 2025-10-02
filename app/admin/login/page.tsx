@@ -5,6 +5,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
 
 export default function AdminLoginPage() {
   const { login } = useAdmin();
@@ -34,6 +35,18 @@ export default function AdminLoginPage() {
         </CardHeader>
 
         <CardContent className="space-y-4">
+          <div className="space-y-3" aria-label="Social login options">
+            <SocialAuthButtons flow="login" redirectPath="/admin" />
+            <p className="text-xs text-wedding-navy/80 text-center">
+              Use your Google Workspace or Apple ID for secure, passwordless access.
+            </p>
+            <div className="flex items-center gap-3 text-wedding-navy/60 text-xs uppercase tracking-[0.3em]">
+              <div className="h-px flex-1 bg-wedding-navy/20" aria-hidden="true"></div>
+              <span>or</span>
+              <div className="h-px flex-1 bg-wedding-navy/20" aria-hidden="true"></div>
+            </div>
+          </div>
+
           <input
             type="email"
             placeholder="Email"
