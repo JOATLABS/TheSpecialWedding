@@ -6,7 +6,7 @@ The payment tracking system is live across the admin budget experience. Planners
 
 ## Quick Start Guide
 
-### For Wedding Planners
+### For Wedding Planners (current behaviour)
 
 1. **Access the Budget Module**
    - Log into the admin dashboard
@@ -47,7 +47,7 @@ The payment tracking system is live across the admin budget experience. Planners
    # Access at http://localhost:3000/admin/budget
    ```
 
-## Features Overview
+## Features Overview (planned vs current)
 
 ### Delivered Functionality
 - **Payment Recording**: Record vendor payments with amount, method, date, status, receipt link, and internal notes.
@@ -99,7 +99,7 @@ Planner Action → RecordPaymentModal → budgetApi.recordPayment → POST /admi
 - `PaymentHistoryPanel` memoises totals, exposes filters, and renders a scrollable list with animations.
 - `budgetApi.recordPayment` and `budgetApi.getPaymentHistory` abstract fetch requests, headers, and response parsing.
 
-## Database Schema
+## Database Schema (proposed)
 
 ### payment_records
 
