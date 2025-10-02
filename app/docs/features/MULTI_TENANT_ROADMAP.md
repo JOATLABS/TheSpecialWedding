@@ -67,11 +67,11 @@ Transform the current single-admin system into a comprehensive multi-tenant SAAS
 **Frontend Authentication System**
 
 - ✅ Planner and root admin dashboards are functional.
-- ⚠️ Vendor dashboard displays hard-coded placeholder data (`app/admin/vendor/page.tsx`) and is not production ready.
+- ✅ Vendor dashboard now surfaces live checklist tasks, planner forms, and glassmorphic analytics backed by the `/vendor/dashboard` API and task mutation endpoint.
 - ⚠️ Permission-gated navigation is partially implemented; several feature flags render UI for modules that do not exist yet.
 
 **Outstanding Work Before Production**
-- [ ] Build the real vendor dashboard backed by tenant APIs instead of placeholders.
+- [X] Build the real vendor dashboard backed by tenant APIs instead of placeholders.
 - [ ] Finish email verification and trial enforcement flows with real notification delivery.
 - [ ] Add refresh token rotation/session hardening.
 - [ ] Align documentation with the implemented features after each milestone.
@@ -342,9 +342,10 @@ Transform the current single-admin system into a comprehensive multi-tenant SAAS
 
 ### 3.3 Vendor Management System *(IN PROGRESS)*
 
+- [X] **Vendor Dashboard Workspace** *(Live data for tasks, forms, and analytics backed by `/vendor/dashboard` and task mutations)*
 - [ ] **Streamlined Vendor Form System** *(APIs pending – vendor submissions still rely on manual workflows)*
 - [ ] **Vendor Collaboration Tools** *(Requires backend endpoints and real-time updates)*
-- [ ] **Vendor Dashboard Enhancements** *(`/admin/vendor` renders placeholder data only)*
+- [ ] **Vendor Dashboard Enhancements** *(Next: real-time notifications, planner notes, and vendor-to-planner messaging)*
 
 ### 3.4 Staff Management
 

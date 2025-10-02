@@ -351,14 +351,26 @@ def record_payment(
 ):
     """Record a payment for a budget category"""
     try:
+        category = budget_service.get_budget_category(category_id)
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+
+        if not check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         payment = budget_service.record_payment(
             category_id,
             payment_data.dict(exclude_unset=True)
         )
         return {"message": "Payment recorded successfully", "payment": payment}
-        
+
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        detail = str(e)
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
     except Exception as e:
         logger.error(f"Failed to record payment: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to record payment")
