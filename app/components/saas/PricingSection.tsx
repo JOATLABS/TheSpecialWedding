@@ -22,7 +22,7 @@ interface SubscriptionPlan {
 
 interface PricingSectionProps {
   theme: ThemeConfig;
-  onPlanSelect?: (planId: string) => void;
+  onPlanSelect?: (plan: { id: string; name: string }) => void;
 }
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSelect }) => {
@@ -67,9 +67,9 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
     return value === -1 ? 'Unlimited' : value.toString();
   };
 
-  const handleSelectPlan = (planId: string) => {
+  const handleSelectPlan = (plan: SubscriptionPlan) => {
     if (onPlanSelect) {
-      onPlanSelect(planId);
+      onPlanSelect({ id: plan._id, name: plan.name });
     }
   };
 
@@ -216,7 +216,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
               </div>
 
               <button
-                onClick={() => handleSelectPlan(plan._id)}
+                onClick={() => handleSelectPlan(plan)}
                 className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
                   plan.is_featured
                     ? 'text-white shadow-lg hover:shadow-xl transform hover:scale-105'
