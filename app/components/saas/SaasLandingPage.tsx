@@ -1,15 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modern3DBackground } from '../landing-page/Modern3DBackground';
 import { SectionWrapper } from '../landing-page/SectionWrapper';
 import { GlassCard } from '../ui/GlassCard';
-import { SaasAuthPanel, SaasHeroSection } from './SaasHeroSection';
-import { FeatureCarousel } from './FeatureCarousel';
-import { BenefitsSection } from './BenefitsSection';
-import { TestimonialsSection } from './TestimonialsSection';
+import { SaasAuthPanel, SaasHeroSection, SubscriptionPlan } from './SaasHeroSection';
+import { SaasExperienceCarousel } from './SaasExperienceCarousel';
 import { CallToActionSection } from './CallToActionSection';
-import { PricingSection } from './PricingSection';
 
 interface Feature {
   title: string;
@@ -184,9 +181,16 @@ export const SaasLandingPage: React.FC = () => {
     secondary_color: process.env.NEXT_PUBLIC_DEFAULT_SECONDARY_COLOR || "#d4af37"
   });
   const [loading, setLoading] = useState(true);
+  const [planLoading, setPlanLoading] = useState(true);
+  const [planError, setPlanError] = useState('');
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
 
   useEffect(() => {
     fetchSaasConfig();
+  }, []);
+
+  useEffect(() => {
+    fetchSubscriptionPlans();
   }, []);
 
   const fetchSaasConfig = async () => {
@@ -204,19 +208,59 @@ export const SaasLandingPage: React.FC = () => {
     }
   };
 
+  const fetchSubscriptionPlans = async () => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/public/subscription-plans`);
+
+      if (response.ok) {
+        const data = await response.json();
+        const activePlans: SubscriptionPlan[] = (Array.isArray(data) ? data : [])
+          .filter((plan: SubscriptionPlan) => plan.is_active)
+          .sort((a: SubscriptionPlan, b: SubscriptionPlan) => {
+            const orderA = typeof a.display_order === 'number' ? a.display_order : Number.MAX_SAFE_INTEGER;
+            const orderB = typeof b.display_order === 'number' ? b.display_order : Number.MAX_SAFE_INTEGER;
+            if (orderA !== orderB) {
+              return orderA - orderB;
+            }
+            if (a.is_featured && !b.is_featured) return -1;
+            if (!a.is_featured && b.is_featured) return 1;
+            return a.name.localeCompare(b.name);
+          });
+        setPlans(activePlans);
+        setPlanError('');
+      } else {
+        setPlanError('Unable to load pricing plans. Please try again soon.');
+      }
+    } catch (error) {
+      setPlanError('Unable to load pricing plans. Please try again soon.');
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
   const scrollToAuthPanel = () => {
     if (typeof document === 'undefined') {
       return;
     }
     const panel = document.getElementById('saas-auth-panel');
-    panel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (panel) {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
-  const handlePlanSelect = (plan: { id: string; name?: string }) => {
-    setSelectedPlan(plan);
-    setAuthMode('signup');
-    scrollToAuthPanel();
-  };
+  useEffect(() => {
+    if (!planLoading && plans.length > 0 && !selectedPlan) {
+      const featuredPlan = plans.find((plan) => plan.is_featured) ?? plans[0];
+      setSelectedPlan({ id: featuredPlan._id, name: featuredPlan.name });
+    }
+  }, [planLoading, plans, selectedPlan]);
+
+  const condensedPlans = useMemo(() => plans.slice(0, 4), [plans]);
 
   if (loading) {
     return (
@@ -245,13 +289,13 @@ export const SaasLandingPage: React.FC = () => {
         theme={theme}
       />
 
-      <div className="relative z-10">
-        <div className="mx-auto flex w-full max-w-[1640px] flex-col gap-12 px-4 pb-16 pt-12 sm:px-6 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start lg:gap-14 lg:px-12 xl:px-16">
+      <div className="relative z-10 mx-auto w-full max-w-[1820px] px-4 pb-20 pt-12 sm:px-6 lg:px-10 xl:px-16">
+        <div className="relative flex flex-col gap-10 lg:flex-row">
           <aside
             id="saas-auth-panel"
-            className="order-1 -mx-1 rounded-[2.75rem] border border-white/40 bg-white/30 p-1 backdrop-blur-3xl sm:mx-0 lg:order-2 lg:sticky lg:top-16 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:p-2 lg:pl-3 lg:pr-3 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden"
+            className="order-1 -mx-1 rounded-[2.75rem] border border-white/40 bg-white/30 p-1 backdrop-blur-3xl sm:mx-0 lg:order-2 lg:mx-0 lg:w-[420px] lg:flex-shrink-0 lg:self-start lg:border-white/50 lg:bg-white/25 lg:p-2 lg:[transform:translateZ(0)] lg:[will-change:transform]"
           >
-            <div className="rounded-[2.5rem] border border-white/40 bg-white/40 p-2 shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)]">
+            <div className="rounded-[2.5rem] border border-white/40 bg-white/45 p-2 shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] lg:sticky lg:top-16 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto lg:p-2 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
               <SaasAuthPanel
                 mode={authMode}
                 onModeChange={(mode) => {
@@ -262,52 +306,47 @@ export const SaasLandingPage: React.FC = () => {
                 }}
                 selectedPlan={selectedPlan}
                 theme={theme}
+                plans={condensedPlans}
+                plansLoading={planLoading}
+                plansError={planError}
+                onSelectPlan={(plan) => {
+                  setSelectedPlan(plan);
+                  setAuthMode('signup');
+                  scrollToAuthPanel();
+                }}
               />
             </div>
           </aside>
 
-          <div className="order-2 flex flex-col gap-16 lg:order-1 lg:pr-4 xl:pr-8">
-            <SaasHeroSection
-              config={config}
-              theme={theme}
-              onAuthModeChange={(mode) => {
-                setAuthMode(mode);
-                if (mode === 'signup') {
-                  scrollToAuthPanel();
-                }
-              }}
-              onRequestSignupFocus={scrollToAuthPanel}
-            />
+          <div className="order-2 flex flex-col gap-16 lg:order-1 lg:flex-1 lg:pr-0 lg:pt-4 xl:pt-6">
+            <div className="lg:pr-[32px] xl:pr-[64px]">
+              <SaasHeroSection
+                config={config}
+                theme={theme}
+                onAuthModeChange={(mode) => {
+                  setAuthMode(mode);
+                  if (mode === 'signup') {
+                    scrollToAuthPanel();
+                  }
+                }}
+                onRequestSignupFocus={scrollToAuthPanel}
+              />
+            </div>
 
-            {config.features_enabled && (
-              <SectionWrapper id="features" glassEffect={false}>
+            {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
+              <SectionWrapper id="experience" glassEffect={false}>
                 <div className="mx-auto w-full max-w-4xl xl:max-w-none">
-                  <GlassCard depth="mid" className="rounded-[2.5rem] border border-white/50 bg-white/55 p-8 shadow-xl">
-                    <FeatureCarousel features={config.features} theme={theme} />
+                  <GlassCard depth="mid" className="rounded-[2.5rem] border border-white/50 bg-white/55 p-4 sm:p-6 lg:p-10">
+                    <SaasExperienceCarousel
+                      features={config.features}
+                      benefits={config.benefits}
+                      testimonials={config.testimonials}
+                      theme={theme}
+                    />
                   </GlassCard>
                 </div>
               </SectionWrapper>
             )}
-
-            {config.benefits_enabled && (
-              <SectionWrapper id="benefits" glassEffect={false}>
-                <div className="mx-auto w-full max-w-4xl xl:max-w-none">
-                  <BenefitsSection benefits={config.benefits} theme={theme} />
-                </div>
-              </SectionWrapper>
-            )}
-
-            {config.testimonials_enabled && (
-              <SectionWrapper id="testimonials" glassEffect={false}>
-                <div className="mx-auto w-full max-w-4xl xl:max-w-none">
-                  <TestimonialsSection testimonials={config.testimonials} theme={theme} />
-                </div>
-              </SectionWrapper>
-            )}
-
-            <SectionWrapper id="pricing" glassEffect={false}>
-              <PricingSection theme={theme} onPlanSelect={handlePlanSelect} />
-            </SectionWrapper>
 
             <SectionWrapper id="sign-up" glassEffect={false}>
               <div className="mx-auto w-full max-w-3xl xl:max-w-none">

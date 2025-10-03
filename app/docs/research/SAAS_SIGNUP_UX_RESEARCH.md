@@ -13,6 +13,11 @@
 5. **Adaptive microcopy by device size.** On large screens, display multi-step benefits in two columns; below 768 px collapse the content but keep the auth workspace docked using an overlay sheet with swipe-to-close gestures to avoid forcing vertical stacking. Preserve labelled controls per Google&apos;s mobile sign-in checklist.
 6. **Support-first footer band.** Keep a sticky footer link row (live chat, security overview, accessibility statement) beneath the auth pane. Conversion data indicates visible support options reduce drop-off for B2B planners evaluating new platforms.
 
+### 2025 layout refinements for the split pane
+- **Glass overlay with parallax depth.** Anchor the authentication workspace to a fixed glass card that rides above the marketing column and Modern3DBackground. Using `position: sticky` (desktop) and keeping padding offset on the content column maintains a parallax-style separation without blocking scroll interactions.
+- **Condensed plan selection inside the pane.** Surface subscription tiers in-line with the signup form so planners can compare pricing without hunting for a separate section. Toggle monthly/yearly totals with inline chips to mirror the “ever-present plan context” highlighted in 2025 conversion studies.
+- **Story carousel compression.** Collapse testimonial, feature, and benefit stories into a single carousel to reduce page height while still rotating high-signal proof points next to the persistent signup pane.
+
 ## Implementation checkpoints
 - **Accessibility:** Preserve logical tab order between the marketing column and auth form. All focusable elements inside the fixed pane should cycle before moving back to the scrollable column, and keep `<label>`/`aria-describedby` pairings to align with sign-in best practices.<sup>[1](#references)</sup>
 - **Performance:** Preload brand fonts and defer non-critical motion assets so the fixed pane renders instantly; shimmering skeletons can backfill plan perks while pricing data loads.

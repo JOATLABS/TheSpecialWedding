@@ -8,6 +8,17 @@ import { SaasLogoTitle } from './SaasLogoTitle';
 import { GlassCard } from '../ui/GlassCard';
 import { SocialAuthButtons } from '../auth/SocialAuthButtons';
 
+export interface SubscriptionPlan {
+  _id: string;
+  name: string;
+  description: string;
+  price_monthly: number;
+  price_yearly: number;
+  is_featured: boolean;
+  is_active: boolean;
+  display_order?: number;
+}
+
 interface SaasConfig {
   hero_title: string;
   hero_subtitle: string;
@@ -44,6 +55,124 @@ interface AuthPanelProps {
     primary_color: string;
     secondary_color: string;
   };
+  plans?: SubscriptionPlan[];
+  plansLoading?: boolean;
+  plansError?: string;
+  onSelectPlan?: (plan: { id: string; name?: string }) => void;
+}
+
+function MiniPlanSelector({
+  plans,
+  selectedPlanId,
+  onSelectPlan,
+  isLoading,
+  error,
+}: {
+  plans?: SubscriptionPlan[];
+  selectedPlanId?: string;
+  onSelectPlan?: (plan: { id: string; name?: string }) => void;
+  isLoading?: boolean;
+  error?: string;
+}) {
+  const [billingCycle, setBillingCycle] = React.useState<'monthly' | 'yearly'>('monthly');
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center rounded-2xl border border-white/40 bg-white/60 px-4 py-6 text-sm text-gray-600">
+        Loading pricing…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        {error}
+      </div>
+    );
+  }
+
+  if (!plans || plans.length === 0) {
+    return null;
+  }
+
+  const formatPrice = (plan: SubscriptionPlan) => {
+    if (plan.price_monthly === 0) {
+      return 'Free';
+    }
+    const yearlyValue = plan.price_yearly > 0 ? plan.price_yearly : plan.price_monthly * 12;
+    const value = billingCycle === 'monthly' ? plan.price_monthly : yearlyValue;
+    const suffix = billingCycle === 'monthly' ? '/mo' : '/yr';
+    return `$${value}${suffix}`;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between rounded-full bg-white/70 p-1 text-xs font-semibold text-gray-600">
+        <button
+          type="button"
+          onClick={() => setBillingCycle('monthly')}
+          className={`flex-1 rounded-full px-3 py-1.5 transition ${
+            billingCycle === 'monthly' ? 'bg-gray-900 text-white shadow' : 'hover:text-gray-900'
+          }`}
+          aria-pressed={billingCycle === 'monthly'}
+        >
+          Monthly
+        </button>
+        <button
+          type="button"
+          onClick={() => setBillingCycle('yearly')}
+          className={`flex-1 rounded-full px-3 py-1.5 transition ${
+            billingCycle === 'yearly' ? 'bg-gray-900 text-white shadow' : 'hover:text-gray-900'
+          }`}
+          aria-pressed={billingCycle === 'yearly'}
+        >
+          Yearly
+        </button>
+      </div>
+      <div className="space-y-3">
+        {plans.map((plan) => {
+          const isSelected = plan._id === selectedPlanId;
+          if (!plan.is_active) {
+            return null;
+          }
+          return (
+            <button
+              key={plan._id}
+              type="button"
+              onClick={() => onSelectPlan?.({ id: plan._id, name: plan.name })}
+              className={`w-full rounded-2xl border px-4 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900 ${
+                isSelected
+                  ? 'border-gray-900 bg-gray-900/90 text-white shadow-lg'
+                  : 'border-white/50 bg-white/70 text-gray-800 hover:border-gray-300 hover:bg-white'
+              }`}
+              aria-pressed={isSelected}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold">
+                    {plan.name}
+                    {plan.is_featured ? ' · Most popular' : ''}
+                  </p>
+                  <p className={`mt-1 text-xs ${isSelected ? 'text-white/80' : 'text-gray-600'}`}>
+                    {plan.description}
+                  </p>
+                </div>
+                <span className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-800'}`}>
+                  {formatPrice(plan)}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {billingCycle === 'yearly' && (
+        <p className="text-xs text-gray-500">
+          Yearly pricing shows the total annual investment so you can compare long-term savings.
+        </p>
+      )}
+    </div>
+  );
 }
 
 function PlannerLoginPanel({ theme }: { theme: { primary_color: string; secondary_color: string } }) {
@@ -72,7 +201,16 @@ function PlannerLoginPanel({ theme }: { theme: { primary_color: string; secondar
   );
 }
 
-export function SaasAuthPanel({ mode, onModeChange, selectedPlan, theme }: AuthPanelProps) {
+export function SaasAuthPanel({
+  mode,
+  onModeChange,
+  selectedPlan,
+  theme,
+  plans,
+  plansLoading,
+  plansError,
+  onSelectPlan,
+}: AuthPanelProps) {
   return (
     <GlassCard depth="near" blur="xl" className="flex h-full flex-col gap-6 rounded-[2.25rem] p-6 sm:p-8">
       <div className="space-y-3 text-left">
@@ -110,25 +248,31 @@ export function SaasAuthPanel({ mode, onModeChange, selectedPlan, theme }: AuthP
         </button>
       </div>
 
-      {selectedPlan && (
-        <div className="rounded-2xl border border-white/55 bg-white/70 p-4 text-sm text-gray-700 shadow-sm">
-          <p className="font-semibold text-gray-900">Selected plan</p>
-          <p className="mt-1 text-gray-600">
-            {selectedPlan.name ?? selectedPlan.id}
-          </p>
-          <p className="mt-2 text-xs text-gray-500">
-            We&apos;ll pre-fill this during onboarding so you can start your trial instantly.
-          </p>
-        </div>
-      )}
-
       {mode === 'signup' ? (
-        <PlannerSignupForm
-          theme={theme}
-          selectedPlanId={selectedPlan?.id ?? undefined}
-          selectedPlanLabel={selectedPlan?.name}
-          variant="panel"
-        />
+        <>
+          <MiniPlanSelector
+            plans={plans}
+            selectedPlanId={selectedPlan?.id}
+            onSelectPlan={onSelectPlan}
+            isLoading={plansLoading}
+            error={plansError}
+          />
+          <div className="rounded-2xl border border-white/55 bg-white/70 p-4 text-sm text-gray-700 shadow-sm">
+            <p className="font-semibold text-gray-900">Selected plan</p>
+            <p className="mt-1 text-gray-600">
+              {selectedPlan?.name ?? selectedPlan?.id ?? 'Choose the plan that fits your studio'}
+            </p>
+            <p className="mt-2 text-xs text-gray-500">
+              We&apos;ll pre-fill this during onboarding so your free trial starts with the right limits.
+            </p>
+          </div>
+          <PlannerSignupForm
+            theme={theme}
+            selectedPlanId={selectedPlan?.id ?? undefined}
+            selectedPlanLabel={selectedPlan?.name}
+            variant="panel"
+          />
+        </>
       ) : (
         <PlannerLoginPanel theme={theme} />
       )}
