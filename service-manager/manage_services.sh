@@ -11,6 +11,14 @@ LOG_DIR="$LOG_ROOT/logs"
 FRONTEND_LOG_FILE="$LOG_DIR/frontend.log"
 REQUIREMENTS_FILE="$PROJECT_ROOT/service-manager/requirements.txt"
 
+if [[ -z "${BASH_VERSINFO:-}" ]]; then
+  echo "This script must be run with Bash." >&2
+  exit 1
+elif (( BASH_VERSINFO[0] < 3 )); then
+  echo "Bash version 3 or newer is required." >&2
+  exit 1
+fi
+
 mkdir -p "$LOG_DIR"
 
 info() {
@@ -32,8 +40,9 @@ trim() {
 }
 
 declare -a DEPENDENCY_KEYS=()
-declare -A DEPENDENCY_DESCRIPTIONS=()
-declare -A PACKAGE_MAP=()
+declare -a DEPENDENCY_DESCRIPTIONS=()
+declare -a PACKAGE_KEYS=()
+declare -a PACKAGE_VALUES=()
 
 parse_requirements() {
   if [[ ! -f "$REQUIREMENTS_FILE" ]]; then
@@ -61,13 +70,22 @@ parse_requirements() {
       continue
     fi
 
-    if [[ -n "${DEPENDENCY_DESCRIPTIONS[$key]+x}" ]]; then
+    local exists="false"
+    local existing_key
+    for existing_key in "${DEPENDENCY_KEYS[@]}"; do
+      if [[ "$existing_key" == "$key" ]]; then
+        exists="true"
+        break
+      fi
+    done
+
+    if [[ "$exists" == "true" ]]; then
       warn "Duplicate dependency '$key' in $REQUIREMENTS_FILE; skipping."
       continue
     fi
 
     DEPENDENCY_KEYS+=("$key")
-    DEPENDENCY_DESCRIPTIONS["$key"]="$description"
+    DEPENDENCY_DESCRIPTIONS+=("$description")
 
     local idx field manager packages
     for ((idx=2; idx<${#parts[@]}; idx++)); do
@@ -85,7 +103,8 @@ parse_requirements() {
         warn "Skipping incomplete package mapping for dependency '$key': $field"
         continue
       fi
-      PACKAGE_MAP["$key:$manager"]="$packages"
+      PACKAGE_KEYS+=("$key|$manager")
+      PACKAGE_VALUES+=("$packages")
     done
   done < "$REQUIREMENTS_FILE"
 
@@ -125,7 +144,15 @@ detect_package_manager() {
 packages_for_dependency() {
   local dep="$1"
   local manager="$2"
-  echo "${PACKAGE_MAP["$dep:$manager"]:-}"
+  local search_key="$dep|$manager"
+  local i
+  for ((i = 0; i < ${#PACKAGE_KEYS[@]}; i++)); do
+    if [[ "${PACKAGE_KEYS[$i]}" == "$search_key" ]]; then
+      echo "${PACKAGE_VALUES[$i]}"
+      return
+    fi
+  done
+  echo ""
 }
 
 install_missing_dependencies() {
@@ -136,9 +163,8 @@ install_missing_dependencies() {
     exit 1
   fi
 
-  declare -A package_set=()
   local packages=()
-  local dep pkg_specs pkg
+  local dep pkg_specs pkg existing
   for dep in "${missing[@]}"; do
     pkg_specs="$(packages_for_dependency "$dep" "$manager")"
     if [[ -z "$pkg_specs" ]]; then
@@ -148,9 +174,18 @@ install_missing_dependencies() {
     local pkg_array=()
     read -r -a pkg_array <<<"$pkg_specs"
     for pkg in "${pkg_array[@]}"; do
-      if [[ -n "$pkg" && -z "${package_set[$pkg]:-}" ]]; then
+      if [[ -z "$pkg" ]]; then
+        continue
+      fi
+      local already_present="false"
+      for existing in "${packages[@]}"; do
+        if [[ "$existing" == "$pkg" ]]; then
+          already_present="true"
+          break
+        fi
+      done
+      if [[ "$already_present" == "false" ]]; then
         packages+=("$pkg")
-        package_set[$pkg]=1
       fi
     done
   done
@@ -179,9 +214,10 @@ install_missing_dependencies() {
 
 ensure_dependencies() {
   local missing=()
-  local key description
-  for key in "${DEPENDENCY_KEYS[@]}"; do
-    description="${DEPENDENCY_DESCRIPTIONS[$key]}"
+  local i key description
+  for ((i = 0; i < ${#DEPENDENCY_KEYS[@]}; i++)); do
+    key="${DEPENDENCY_KEYS[$i]}"
+    description="${DEPENDENCY_DESCRIPTIONS[$i]}"
     case "$key" in
       tmux)
         if ! command -v tmux >/dev/null 2>&1; then
@@ -252,19 +288,20 @@ window_exists() {
 }
 
 ensure_tmux_session() {
+  if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    tmux new-session -d -s "$SESSION_NAME" -n "$MENU_WINDOW" "$0" --menu
+  fi
+
   if [[ -z "${TMUX:-}" ]]; then
-    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-      tmux attach-session -t "$SESSION_NAME"
-    else
-      tmux new-session -d -s "$SESSION_NAME" -n "$MENU_WINDOW" "$0" --menu
-      tmux attach-session -t "$SESSION_NAME"
-    fi
+    tmux attach-session -t "$SESSION_NAME"
     exit 0
   fi
 
   if [[ "${1:-}" != "--menu" ]]; then
-    # If we are already inside tmux, restart script in menu mode.
-    "$0" --menu
+    if ! window_exists "$MENU_WINDOW"; then
+      tmux new-window -d -t "$SESSION_NAME" -n "$MENU_WINDOW" "$0" --menu
+    fi
+    tmux switch-client -t "$SESSION_NAME:$MENU_WINDOW"
     exit 0
   fi
 }
@@ -324,7 +361,10 @@ view_frontend_logs() {
 }
 
 view_service_logs() {
-  mapfile -t services < <(list_services)
+  local services=()
+  while IFS= read -r service; do
+    services+=("$service")
+  done < <(list_services)
   if [[ ${#services[@]} -eq 0 ]]; then
     warn "No services defined in docker-compose.yml."
     return
@@ -353,9 +393,11 @@ view_service_logs() {
 }
 
 close_service_log_windows() {
-  local windows
-  mapfile -t windows < <(tmux list-windows -t "$SESSION_NAME" -F '#{window_name}' 2>/dev/null)
+  local windows=()
   local name
+  while IFS= read -r name; do
+    windows+=("$name")
+  done < <(tmux list-windows -t "$SESSION_NAME" -F '#{window_name}' 2>/dev/null)
   for name in "${windows[@]}"; do
     if [[ "$name" == logs-* ]]; then
       tmux kill-window -t "$SESSION_NAME:$name"
@@ -368,8 +410,10 @@ close_service_log_windows() {
 }
 
 setup_all_logs_window() {
-  local services
-  mapfile -t services < <(list_services)
+  local services=()
+  while IFS= read -r service; do
+    services+=("$service")
+  done < <(list_services)
   if window_exists "$ALL_LOG_WINDOW"; then
     warn "All logs view already active."
     tmux switch-client -t "$SESSION_NAME:$ALL_LOG_WINDOW"
