@@ -28,7 +28,7 @@ const showcaseStats = [
 
 function WelcomeShowcase() {
   return (
-    <div className="relative w-full max-w-md overflow-hidden rounded-[2.5rem] border border-white/45 bg-gradient-to-br from-white/65 via-white/30 to-white/10 p-6 shadow-[0_40px_120px_-40px_rgba(29,53,87,0.35)] backdrop-blur-2xl sm:p-8">
+    <div className="relative w-full max-w-xl overflow-hidden rounded-[2.5rem] border border-white/45 bg-gradient-to-br from-white/65 via-white/30 to-white/10 p-6 shadow-[0_40px_120px_-40px_rgba(29,53,87,0.35)] backdrop-blur-2xl sm:p-8">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.65),transparent_55%),radial-gradient(circle_at_bottom_left,rgba(212,165,165,0.45),transparent_60%)]"
@@ -111,7 +111,7 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="relative overflow-hidden bg-gradient-to-br from-[#f8f5f2] via-[#f2ecff] to-[#eef6ff]">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#f8f5f2] via-[#f2ecff] to-[#eef6ff]">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-40 right-0 h-96 w-96 rounded-full bg-wedding-rose/20 blur-3xl"
@@ -121,23 +121,22 @@ export default function AdminLoginPage() {
         className="pointer-events-none absolute bottom-[-6rem] left-[-6rem] h-[22rem] w-[22rem] rounded-full bg-wedding-navy/10 blur-3xl"
       />
 
-      <div className="relative mx-auto flex min-h-[min(100vh,760px)] w-full max-w-5xl items-center px-4 py-12 sm:px-6 lg:px-8">
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1600px] items-center px-4 py-12 sm:px-6 lg:px-12">
         <div className="relative isolate w-full overflow-hidden rounded-[3rem] border border-white/40 bg-white/25 p-6 shadow-2xl backdrop-blur-2xl sm:p-8">
           <div aria-hidden="true" className="pointer-events-none absolute inset-0">
             <div className="absolute -left-16 top-12 h-32 w-32 rounded-full bg-white/50 blur-3xl" />
             <div className="absolute -right-20 bottom-10 h-28 w-40 rounded-full bg-wedding-rose/20 blur-3xl" />
-            <div className="absolute inset-y-12 left-1/2 hidden w-px -translate-x-1/2 bg-gradient-to-b from-white/5 via-white/50 to-white/5 opacity-70 blur-sm lg:block" />
+            <div className="absolute inset-y-12 left-1/2 hidden w-px -translate-x-1/2 bg-gradient-to-b from-white/5 via-white/50 to-white/5 opacity-70 blur-sm md:block" />
           </div>
-
-          <div className="relative grid items-center gap-8 lg:grid-cols-[1fr_0.95fr]">
-            <section className="order-2 flex justify-center lg:order-2 lg:pl-6">
-              <div className="w-full max-w-sm lg:max-w-md">
+          <div className="relative grid items-stretch gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-12 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+            <section className="order-2 flex justify-center md:order-2 md:pl-6 lg:pl-10">
+              <div className="w-full">
                 <WelcomeShowcase />
               </div>
             </section>
 
-            <section className="order-1 lg:order-1 lg:pr-6">
-              <GlassCard depth="near" blur="xl" className="px-6 py-7 sm:px-8">
+            <section className="order-1 md:order-1 md:pr-6 lg:pr-10">
+              <GlassCard depth="near" blur="xl" className="h-full px-6 py-7 sm:px-8 xl:px-10">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-[0.3em] text-wedding-navy/70 sm:text-sm">Planner portal</p>
