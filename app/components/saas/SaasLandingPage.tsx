@@ -4,13 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { Modern3DBackground } from '../landing-page/Modern3DBackground';
 import { SectionWrapper } from '../landing-page/SectionWrapper';
 import { GlassCard } from '../ui/GlassCard';
-import { SaasHeroSection } from './SaasHeroSection';
+import { SaasAuthPanel, SaasHeroSection } from './SaasHeroSection';
 import { FeatureCarousel } from './FeatureCarousel';
 import { BenefitsSection } from './BenefitsSection';
 import { TestimonialsSection } from './TestimonialsSection';
 import { CallToActionSection } from './CallToActionSection';
 import { PricingSection } from './PricingSection';
-import { SignupModal } from './SignupModal';
 
 interface Feature {
   title: string;
@@ -62,8 +61,8 @@ interface SaasConfig {
 }
 
 export const SaasLandingPage: React.FC = () => {
-  const [showSignupModal, setShowSignupModal] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [authMode, setAuthMode] = useState<'signup' | 'login'>('signup');
+  const [selectedPlan, setSelectedPlan] = useState<{ id: string; name?: string } | null>(null);
   const [config, setConfig] = useState<SaasConfig>({
     hero_title: "Welcome to Special Wedding",
     hero_subtitle: "Wedding Planning Made Simple",
@@ -205,9 +204,18 @@ export const SaasLandingPage: React.FC = () => {
     }
   };
 
-  const handlePlanSelect = (planId: string) => {
-    setSelectedPlanId(planId);
-    setShowSignupModal(true);
+  const scrollToAuthPanel = () => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    const panel = document.getElementById('saas-auth-panel');
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const handlePlanSelect = (plan: { id: string; name?: string }) => {
+    setSelectedPlan(plan);
+    setAuthMode('signup');
+    scrollToAuthPanel();
   };
 
   if (loading) {
@@ -230,68 +238,92 @@ export const SaasLandingPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen relative">
-      {/* Parallax Background */}
-      <Modern3DBackground 
+    <div className="relative min-h-screen">
+      <Modern3DBackground
         imageUrl={config.background_image}
         fallbackImages={config.fallback_images}
         theme={theme}
       />
-      
-      {/* Main Content */}
-      <div className="relative z-10">
-        {/* Hero Section */}
-        <SaasHeroSection config={config} theme={theme} />
-        
-        {/* Feature Carousel - Single card, no section background */}
-        {config.features_enabled && (
-          <SectionWrapper id="features" glassEffect={false}>
-            <div className="max-w-7xl mx-auto">
-              <GlassCard depth="mid" className="p-8">
-                <FeatureCarousel features={config.features} theme={theme} />
-              </GlassCard>
-            </div>
-          </SectionWrapper>
-        )}
-        
-        {/* Benefits Section - No section background */}
-        {config.benefits_enabled && (
-          <SectionWrapper id="benefits" glassEffect={false}>
-            <div className="max-w-7xl mx-auto">
-              <BenefitsSection benefits={config.benefits} theme={theme} />
-            </div>
-          </SectionWrapper>
-        )}
-        
-        {/* Testimonials Section - No section background */}
-        {config.testimonials_enabled && (
-          <SectionWrapper id="testimonials" glassEffect={false}>
-            <div className="max-w-7xl mx-auto">
-              <TestimonialsSection testimonials={config.testimonials} theme={theme} />
-            </div>
-          </SectionWrapper>
-        )}
-        
-        {/* Pricing Section */}
-        <SectionWrapper id="pricing" glassEffect={false}>
-          <PricingSection theme={theme} onPlanSelect={handlePlanSelect} />
-        </SectionWrapper>
-        
-        {/* Call to Action Section - Single card, no section background */}
-        <SectionWrapper id="sign-up" glassEffect={false}>
-          <div className="max-w-4xl mx-auto">
-            <CallToActionSection config={config} theme={theme} onGetStarted={() => setShowSignupModal(true)} />
-          </div>
-        </SectionWrapper>
-      </div>
 
-      {/* Signup Modal */}
-      <SignupModal
-        isOpen={showSignupModal}
-        onClose={() => setShowSignupModal(false)}
-        selectedPlanId={selectedPlanId}
-        theme={theme}
-      />
+      <div className="relative z-10">
+        <div className="mx-auto flex w-full max-w-[1640px] flex-col gap-12 px-4 pb-16 pt-12 sm:px-6 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start lg:gap-14 lg:px-12 xl:px-16">
+          <aside
+            id="saas-auth-panel"
+            className="order-1 -mx-1 rounded-[2.75rem] border border-white/40 bg-white/30 p-1 backdrop-blur-3xl sm:mx-0 lg:order-2 lg:sticky lg:top-16 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:p-2 lg:pl-3 lg:pr-3 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden"
+          >
+            <div className="rounded-[2.5rem] border border-white/40 bg-white/40 p-2 shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)]">
+              <SaasAuthPanel
+                mode={authMode}
+                onModeChange={(mode) => {
+                  setAuthMode(mode);
+                  if (mode === 'signup') {
+                    scrollToAuthPanel();
+                  }
+                }}
+                selectedPlan={selectedPlan}
+                theme={theme}
+              />
+            </div>
+          </aside>
+
+          <div className="order-2 flex flex-col gap-16 lg:order-1 lg:pr-4 xl:pr-8">
+            <SaasHeroSection
+              config={config}
+              theme={theme}
+              onAuthModeChange={(mode) => {
+                setAuthMode(mode);
+                if (mode === 'signup') {
+                  scrollToAuthPanel();
+                }
+              }}
+              onRequestSignupFocus={scrollToAuthPanel}
+            />
+
+            {config.features_enabled && (
+              <SectionWrapper id="features" glassEffect={false}>
+                <div className="mx-auto w-full max-w-4xl xl:max-w-none">
+                  <GlassCard depth="mid" className="rounded-[2.5rem] border border-white/50 bg-white/55 p-8 shadow-xl">
+                    <FeatureCarousel features={config.features} theme={theme} />
+                  </GlassCard>
+                </div>
+              </SectionWrapper>
+            )}
+
+            {config.benefits_enabled && (
+              <SectionWrapper id="benefits" glassEffect={false}>
+                <div className="mx-auto w-full max-w-4xl xl:max-w-none">
+                  <BenefitsSection benefits={config.benefits} theme={theme} />
+                </div>
+              </SectionWrapper>
+            )}
+
+            {config.testimonials_enabled && (
+              <SectionWrapper id="testimonials" glassEffect={false}>
+                <div className="mx-auto w-full max-w-4xl xl:max-w-none">
+                  <TestimonialsSection testimonials={config.testimonials} theme={theme} />
+                </div>
+              </SectionWrapper>
+            )}
+
+            <SectionWrapper id="pricing" glassEffect={false}>
+              <PricingSection theme={theme} onPlanSelect={handlePlanSelect} />
+            </SectionWrapper>
+
+            <SectionWrapper id="sign-up" glassEffect={false}>
+              <div className="mx-auto w-full max-w-3xl xl:max-w-none">
+                <CallToActionSection
+                  config={config}
+                  theme={theme}
+                  onGetStarted={() => {
+                    setAuthMode('signup');
+                    scrollToAuthPanel();
+                  }}
+                />
+              </div>
+            </SectionWrapper>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
