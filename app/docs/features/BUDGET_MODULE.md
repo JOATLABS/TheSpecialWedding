@@ -61,7 +61,7 @@ The Budget Management Module is a comprehensive financial tracking system for we
 - Export buttons for PDF and Excel financial reports
 - Right-rail payment history panel featuring quick stats, filtering, and receipt links
 
-### Payment System
+### Payment System (roadmap)
 
 **Payment Recording Modal**
 - Triggered from any category card’s **Record Payment** button
@@ -120,7 +120,7 @@ The Budget Management Module is a comprehensive financial tracking system for we
    - Apply to wedding
    - Adjust amounts as needed
 
-### Recording Payments
+### Recording Payments (future flow)
 
 1. Click **Record Payment** on the relevant category card
 2. Review the pre-filled budget metrics at the top of the modal
@@ -158,7 +158,7 @@ The Budget Management Module is a comprehensive financial tracking system for we
 | PUT | `/admin/budget/category/{id}` | Update category |
 | DELETE | `/admin/budget/categories/{id}` | Delete category |
 
-### Payments
+### Payments (planned)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -205,7 +205,7 @@ interface BudgetCategory {
 }
 ```
 
-### PaymentRecord
+### PaymentRecord (planned)
 
 ```typescript
 interface PaymentRecord {
