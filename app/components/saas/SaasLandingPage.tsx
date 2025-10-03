@@ -291,12 +291,12 @@ export const SaasLandingPage: React.FC = () => {
       />
 
       <div className="relative z-10 mx-auto w-full max-w-[1820px] px-4 pb-20 pt-12 sm:px-6 lg:px-10 xl:px-16">
-        <div className="relative flex flex-col gap-8 lg:flex-row">
+        <div className="relative flex flex-col gap-10 lg:flex-row lg:items-start">
           <aside
             id="saas-auth-panel"
-            className="order-1 -mx-1 rounded-[2.75rem] border border-white/40 bg-white/30 p-1 backdrop-blur-3xl sm:mx-0 lg:order-2 lg:mx-0 lg:min-w-[460px] lg:max-w-[520px] lg:flex-shrink-0 lg:self-start lg:border-white/50 lg:bg-white/25 lg:p-2 lg:[transform:translateZ(0)] lg:[will-change:transform]"
+            className="order-1 lg:order-2 lg:ml-10 lg:w-[min(560px,38vw)] lg:flex-shrink-0"
           >
-            <div className="rounded-[2.5rem] border border-white/40 bg-white/45 p-2 shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] lg:sticky lg:top-16 lg:p-2 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden">
+            <div className="lg:sticky lg:top-16">
               <SaasAuthPanel
                 mode={authMode}
                 onModeChange={(mode) => {
@@ -315,12 +315,13 @@ export const SaasLandingPage: React.FC = () => {
                   setAuthMode('signup');
                   scrollToAuthPanel();
                 }}
+                className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
               />
             </div>
           </aside>
 
-          <div className="order-2 flex flex-col gap-8 lg:order-1 lg:flex-1 lg:pr-0 lg:pt-4 xl:pt-6">
-            <div className="lg:pr-[24px] xl:pr-[48px]">
+          <div className="order-2 flex flex-col gap-10 lg:order-1 lg:flex-1 lg:pt-2 xl:pt-4">
+            <div className="lg:pr-[16px] xl:pr-[40px]">
               <SaasHeroSection
                 config={config}
                 theme={theme}
