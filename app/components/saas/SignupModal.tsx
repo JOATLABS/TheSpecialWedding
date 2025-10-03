@@ -5,6 +5,7 @@ import React from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { PlannerSignupForm } from './PlannerSignupForm';
 import { ThemeConfig } from '@/types/wedding';
+import { SocialAuthButtons } from '../auth/SocialAuthButtons';
 
 interface SignupModalProps {
   isOpen: boolean;
