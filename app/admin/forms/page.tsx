@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Button } from '@/components/ui/Button';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
+import { formatDate as formatUtcDate } from '@/utils/dateFormat';
 
 type CreationMode = 'template' | 'blank' | 'duplicate';
 
@@ -102,11 +103,13 @@ function CreationOptionCard({
 }
 
 function formatDate(dateString: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(dateString));
+  return (
+    formatUtcDate(dateString, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }) || ''
+  );
 }
 
 type BadgeTone = 'neutral' | 'accent' | 'success';

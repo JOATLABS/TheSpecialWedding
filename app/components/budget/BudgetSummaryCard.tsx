@@ -3,6 +3,7 @@
 import { Card } from '../ui/Card';
 import BudgetProgressBar from './BudgetProgressBar';
 import type { BudgetSummary } from '../../types/budget';
+import { formatDate } from '@/utils/dateFormat';
 
 interface BudgetSummaryCardProps {
   summary: BudgetSummary;
@@ -39,7 +40,7 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
         <div className="text-right">
           <div className="text-sm text-gray-600">Last Updated</div>
           <div className="text-sm font-medium">
-            {new Date(summary.last_updated).toLocaleDateString()}
+            {formatDate(summary.last_updated)}
           </div>
         </div>
       </div>
