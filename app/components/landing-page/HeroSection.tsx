@@ -1,4 +1,5 @@
 import React from "react";
+import { formatDate } from '@/utils/dateFormat';
 
 interface HeroSectionProps {
   coupleName: string;
@@ -6,28 +7,14 @@ interface HeroSectionProps {
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({ coupleName, date }) => {
-  // Fix timezone issues by parsing date components directly
-  const formattedDate = date ? (() => {
-    // If date is in YYYY-MM-DD format, parse manually to avoid timezone conversion
-    if (date.includes('-')) {
-      const [year, month, day] = date.split('-');
-      const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      return dateObj.toLocaleDateString('en-US', {
+  const formattedDate = date
+    ? formatDate(date, {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
-      });
-    } else {
-      // For other date formats, use direct parsing
-      return new Date(date).toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    }
-  })() : '';
+        day: 'numeric',
+      })
+    : '';
 
   return (
     <section className="flex flex-col items-center justify-center text-white text-center py-16 sm:py-24 md:py-32 px-4">

@@ -3,6 +3,7 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
+import { formatDate } from '@/utils/dateFormat';
 // Force dynamic rendering for this page
 export const dynamic = 'force-dynamic';
 
@@ -54,14 +55,14 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
  <div key={index} className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 bg-gray-50 rounded-lg">
  <div className="mb-2 sm:mb-0">
  <span className="font-medium capitalize text-lg">{event.type.replace('_', ' ')}</span>
- <div className="text-sm text-gray-600 mt-1">
- {new Date(event.date).toLocaleDateString('en-US', {
- weekday: 'long',
- month: 'long',
- day: 'numeric',
- year: 'numeric'
- })}
- </div>
+              <div className="text-sm text-gray-600 mt-1">
+                {formatDate(event.date, {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </div>
  </div>
  <div className="text-right">
  <span className="text-gray-900 font-medium">{event.details?.time || 'Time TBA'}</span>

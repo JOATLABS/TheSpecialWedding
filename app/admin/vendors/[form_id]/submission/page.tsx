@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAdmin } from '../../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
+import { formatDate, formatDateTime } from '@/utils/dateFormat';
 
 interface VendorSubmission {
  _id: string;
@@ -142,12 +143,8 @@ export default function VendorSubmissionPage() {
  </div>
  );
 
- case 'date':
- try {
- return new Date(value).toLocaleDateString();
- } catch {
- return value;
- }
+    case 'date':
+      return formatDate(value) || value;
 
  case 'email':
  return (
@@ -278,9 +275,15 @@ export default function VendorSubmissionPage() {
  <div className="flex items-center justify-between">
  <div>
  <span className="font-medium text-gray-700">Submitted:</span>
- <span className="ml-2 text-gray-900">
- {new Date(submission.submitted_at).toLocaleString()}
- </span>
+        <span className="ml-2 text-gray-900">
+          {formatDateTime(submission.submitted_at, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })}
+        </span>
  </div>
  <div className="flex items-center space-x-2">
  <span className="font-medium text-gray-700">Status:</span>
@@ -379,7 +382,7 @@ export default function VendorSubmissionPage() {
 
  {/* Footer */}
  <div className="text-center text-sm text-gray-500 mt-8 print:mt-4">
- <p>Generated from Wedding Planning Platform • {new Date().toLocaleDateString()}</p>
+  <p>Generated from Wedding Planning Platform • {formatDate(new Date())}</p>
  </div>
  </div>
  </div>

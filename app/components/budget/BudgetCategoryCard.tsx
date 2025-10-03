@@ -5,6 +5,7 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import BudgetProgressBar from './BudgetProgressBar';
 import type { BudgetCategory } from '../../types/budget';
+import { formatDate } from '@/utils/dateFormat';
 
 interface BudgetCategoryCardProps {
   category: BudgetCategory;
@@ -215,7 +216,7 @@ export default function BudgetCategoryCard({
 
       {/* Additional info */}
       <div className="mt-2 text-xs text-gray-500 text-center">
-        Last updated: {new Date(category.updated_at).toLocaleDateString()}
+        Last updated: {formatDate(category.updated_at)}
         {category.percentage_of_total && (
           <span className="ml-2">• {category.percentage_of_total.toFixed(1)}% of total budget</span>
         )}

@@ -9,6 +9,7 @@ import {
   fetchVendorDashboard,
   updateVendorTaskStatus,
 } from '@/services/vendorDashboardApi';
+import { formatDate as formatUtcDate, isSameLocalCalendarDate } from '@/utils/dateFormat';
 
 const STATUS_OPTIONS: Array<{ value: VendorDashboardResponse['tasks'][number]['status']; label: string }> = [
   { value: 'pending', label: 'Pending' },
@@ -22,14 +23,15 @@ const STATUS_STYLES: Record<VendorDashboardResponse['tasks'][number]['status'], 
   completed: 'bg-emerald-200/50 text-emerald-900 border border-emerald-300/60',
 };
 
-function formatDate(value?: string | null): string {
+function formatDisplayDate(value?: string | null): string {
   if (!value) return '—';
-  const date = new Date(value);
-  return new Intl.DateTimeFormat('en-US', {
+  const formatted = formatUtcDate(value, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-  }).format(date);
+  });
+
+  return formatted || '—';
 }
 
 export default function VendorDashboardPage(): JSX.Element {
@@ -81,9 +83,10 @@ export default function VendorDashboardPage(): JSX.Element {
   const completedTasksToday = useMemo(
     () =>
       dashboard?.tasks.filter((task) => {
-        if (task.status !== 'completed' || !task.updated_at) return false;
-        const completedDate = new Date(task.updated_at).toDateString();
-        return completedDate === new Date().toDateString();
+        if (task.status !== 'completed' || !task.updated_at) {
+          return false;
+        }
+        return isSameLocalCalendarDate(task.updated_at, new Date());
       }).length ?? 0,
     [dashboard],
   );
@@ -264,7 +267,7 @@ export default function VendorDashboardPage(): JSX.Element {
                       <div className="flex flex-wrap gap-3 text-xs text-slate-200/60">
                         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{task.wedding_name || 'Wedding'}</span>
                         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                          Due {task.due_date ? formatDate(task.due_date) : 'soon'}
+                          Due {task.due_date ? formatDisplayDate(task.due_date) : 'soon'}
                         </span>
                         {task.notes && <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Note available</span>}
                       </div>
@@ -311,7 +314,7 @@ export default function VendorDashboardPage(): JSX.Element {
                     <li key={form.id} className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-inner backdrop-blur-xl">
                       <p className="text-sm font-semibold text-white">{form.form_name}</p>
                       <p className="mt-1 text-xs text-slate-200/70">{form.wedding_name}</p>
-                      <p className="mt-1 text-xs text-slate-200/60">Sent {formatDate(form.sent_at)}</p>
+                      <p className="mt-1 text-xs text-slate-200/60">Sent {formatDisplayDate(form.sent_at)}</p>
                       {form.access_token && (
                         <a
                           href={`/vendor-form/${form.id}?token=${form.access_token}`}
@@ -331,7 +334,7 @@ export default function VendorDashboardPage(): JSX.Element {
                           <li key={form.id} className="flex items-center justify-between gap-2">
                             <span>{form.form_name}</span>
                             <span className="rounded-full border border-emerald-300/40 bg-emerald-200/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100">
-                              Submitted {formatDate(form.submitted_at)}
+                              Submitted {formatDisplayDate(form.submitted_at)}
                             </span>
                           </li>
                         ))}
@@ -357,7 +360,7 @@ export default function VendorDashboardPage(): JSX.Element {
                 </span>
               </div>
               <p className="text-sm text-slate-200/70">{wedding.location || 'Location pending'}</p>
-              <p className="text-xs text-slate-200/60">Event date {formatDate(wedding.date)}</p>
+              <p className="text-xs text-slate-200/60">Event date {formatDisplayDate(wedding.date)}</p>
               <div className="flex items-center gap-3 text-xs text-slate-200/70">
                 <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1">
                   {wedding.tasks_completed}/{wedding.tasks_total} tasks complete
