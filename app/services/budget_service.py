@@ -272,12 +272,84 @@ class BudgetService:
             query = {"is_public": True}
             if wedding_type:
                 query["wedding_type"] = wedding_type
-            
+
             templates = list(self.budget_templates.find(query).sort("name", 1))
-            return templates
-            
+            return [self._serialize_template(template) for template in templates]
+
         except Exception as e:
             logger.error(f"Failed to get budget templates: {str(e)}")
+            raise
+
+    def create_budget_template(self, template_data: Dict, created_by: Optional[str] = None) -> Dict:
+        """Create a custom budget template"""
+        try:
+            categories = template_data.get("categories", [])
+            if not categories:
+                raise ValueError("At least one category is required")
+
+            total_percentage = sum(category.get("percentage", 0) for category in categories)
+            if abs(total_percentage - 100) > 0.5:
+                raise ValueError("Category percentages must total 100%")
+
+            normalized_categories = []
+            seen_names = set()
+            for category in categories:
+                name = category.get("name", "").strip()
+                if not name:
+                    raise ValueError("Each category requires a name")
+
+                normalized_name = name.lower()
+                if normalized_name in seen_names:
+                    raise ValueError("Category names must be unique within a template")
+                seen_names.add(normalized_name)
+
+                percentage = float(category.get("percentage", 0))
+                if percentage <= 0:
+                    raise ValueError("Category percentages must be greater than zero")
+
+                priority = int(category.get("priority", 3))
+                if priority < 1 or priority > 5:
+                    raise ValueError("Category priority must be between 1 and 5")
+
+                normalized_categories.append(
+                    {
+                        "name": name,
+                        "percentage": round(percentage, 2),
+                        "priority": priority,
+                    }
+                )
+
+            guest_range = template_data.get("guest_count_range", {}) or {}
+            guest_min = int(guest_range.get("min", 0))
+            guest_max = int(guest_range.get("max", 0))
+            if guest_max < guest_min:
+                raise ValueError("Guest count max must be greater than or equal to min")
+
+            target_min = float(template_data.get("target_budget_min", 0))
+            target_max = float(template_data.get("target_budget_max", 0))
+            if target_max < target_min:
+                raise ValueError("Maximum budget must be greater than or equal to minimum budget")
+
+            template = BudgetTemplate(
+                name=template_data.get("name", "").strip(),
+                description=template_data.get("description"),
+                wedding_type=template_data.get("wedding_type", "").strip(),
+                target_budget_min=target_min,
+                target_budget_max=target_max,
+                guest_count_range={"min": guest_min, "max": guest_max},
+                categories=normalized_categories,
+                created_by=created_by,
+                is_public=bool(template_data.get("is_public", False)),
+            )
+
+            insert_payload = template.model_dump(by_alias=True)
+            result = self.budget_templates.insert_one(insert_payload)
+
+            stored_template = self.budget_templates.find_one({"_id": result.inserted_id})
+            return self._serialize_template(stored_template)
+
+        except Exception as e:
+            logger.error(f"Failed to create budget template: {str(e)}")
             raise
     
     def apply_budget_template(self, wedding_id: str, template_id: str, total_budget: float) -> Dict:
@@ -322,56 +394,117 @@ class BudgetService:
                 "categories_created": len(created_categories),
                 "categories": created_categories
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to apply budget template: {str(e)}")
             raise
+
+    def _serialize_template(self, template_doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize template documents for API responses"""
+        if not template_doc:
+            raise ValueError("Template not found")
+
+        identifier = str(template_doc.get("_id"))
+        guest_range = template_doc.get("guest_count_range") or {}
+
+        def _format_datetime(value: Any) -> str:
+            if isinstance(value, datetime):
+                return value.isoformat()
+            return str(value) if value else ""
+
+        categories = []
+        for category in template_doc.get("categories", []):
+            categories.append(
+                {
+                    "name": category.get("name", ""),
+                    "percentage": float(category.get("percentage", 0)),
+                    "priority": int(category.get("priority", 3)),
+                }
+            )
+
+        return {
+            "id": identifier,
+            "_id": identifier,
+            "name": template_doc.get("name", ""),
+            "description": template_doc.get("description"),
+            "wedding_type": template_doc.get("wedding_type", ""),
+            "target_budget_min": float(template_doc.get("target_budget_min", 0)),
+            "target_budget_max": float(template_doc.get("target_budget_max", 0)),
+            "guest_count_range": {
+                "min": int(guest_range.get("min", 0)),
+                "max": int(guest_range.get("max", 0)),
+            },
+            "categories": categories,
+            "created_by": template_doc.get("created_by"),
+            "is_public": bool(template_doc.get("is_public", False)),
+            "created_at": _format_datetime(template_doc.get("created_at")),
+            "updated_at": _format_datetime(template_doc.get("updated_at")),
+        }
     
     # ===== PAYMENT TRACKING =====
     
+    def get_budget_category(self, category_id: str) -> Optional[Dict]:
+        """Fetch a single budget category by its identifier."""
+        try:
+            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            if not category:
+                return None
+
+            category["id"] = str(category["_id"])
+            category["_id"] = str(category["_id"])
+            return category
+        except ValueError as e:
+            logger.error(f"Invalid category id provided: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to fetch budget category: {str(e)}")
+            raise
+
     def record_payment(self, category_id: str, payment_data: Dict) -> Dict:
         """Record a payment for a budget category"""
         try:
+            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            if not category:
+                raise ValueError("Budget category not found")
+
             payment = PaymentRecord(
                 category_id=category_id,
                 **payment_data
             )
-            
+
             result = self.payment_records.insert_one(payment.dict())
             payment.id = str(result.inserted_id)
-            
+
             # Update category actual spending
-            category = self.budget_categories.find_one({"_id": PyObjectId(category_id)})
-            if category:
-                new_actual_spent = category.get("actual_spent", 0) + payment.amount
-                self.budget_categories.update_one(
-                    {"_id": PyObjectId(category_id)},
-                    {"$set": {
-                        "actual_spent": new_actual_spent,
-                        "updated_at": datetime.utcnow()
-                    }}
-                )
-                
-                # Update payment status based on spending vs budget
-                budgeted = category.get("budgeted_amount", 0)
-                if new_actual_spent >= budgeted:
-                    payment_status = "paid"
-                elif new_actual_spent > 0:
-                    payment_status = "partial"
-                else:
-                    payment_status = "pending"
-                
-                self.budget_categories.update_one(
-                    {"_id": PyObjectId(category_id)},
-                    {"$set": {"payment_status": payment_status}}
-                )
-                
-                # Check for over-budget alerts
-                self._check_budget_alerts(category["wedding_id"])
-            
+            new_actual_spent = category.get("actual_spent", 0) + payment.amount
+            self.budget_categories.update_one(
+                {"_id": PyObjectId(category_id)},
+                {"$set": {
+                    "actual_spent": new_actual_spent,
+                    "updated_at": datetime.utcnow()
+                }}
+            )
+
+            # Update payment status based on spending vs budget
+            budgeted = category.get("budgeted_amount", 0)
+            if new_actual_spent >= budgeted:
+                payment_status = "paid"
+            elif new_actual_spent > 0:
+                payment_status = "partial"
+            else:
+                payment_status = "pending"
+
+            self.budget_categories.update_one(
+                {"_id": PyObjectId(category_id)},
+                {"$set": {"payment_status": payment_status}}
+            )
+
+            # Check for over-budget alerts
+            self._check_budget_alerts(category["wedding_id"])
+
             logger.info(f"Recorded payment of ${payment.amount} for category {category_id}")
             return payment.dict()
-            
+
         except Exception as e:
             logger.error(f"Failed to record payment: {str(e)}")
             raise

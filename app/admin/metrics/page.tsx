@@ -1,159 +1,189 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 
-interface PlatformMetrics {
+interface RoleBreakdown {
+  [role: string]: number;
+}
+
+interface PlatformMetricsResponse {
+  generated_at: string;
+  timeframe: string;
   users: {
     total: number;
     active: number;
-    new_this_month: number;
+    new_in_period: number;
     growth_rate: number;
+    role_breakdown: RoleBreakdown;
   };
   subscriptions: {
     total: number;
-    active: number;
-    trial: number;
-    churned_this_month: number;
-    mrr: number;
-    arr: number;
+    status_breakdown: {
+      trial: number;
+      active: number;
+      cancelled: number;
+      expired: number;
+      [status: string]: number;
+    };
+    active_plans: number;
+    monthly_recurring_revenue: number;
+    yearly_recurring_revenue: number;
+    projected_annual_revenue: number;
+    plan_breakdown: Array<{
+      plan_id: string;
+      plan_name?: string;
+      active_users: number;
+      trial_users: number;
+      monthly_revenue: number;
+      yearly_revenue: number;
+      price_monthly: number;
+      price_yearly: number;
+    }>;
   };
-  usage: {
-    weddings_created: number;
-    forms_created: number;
-    guests_managed: number;
-    emails_sent: number;
-    sms_sent: number;
-  };
-  performance: {
-    uptime: number;
-    avg_response_time: number;
-    error_rate: number;
-    api_calls_today: number;
-  };
-  revenue: {
-    total_revenue: number;
-    monthly_growth: number;
-    average_revenue_per_user: number;
-    lifetime_value: number;
+  operations: {
+    weddings: {
+      total: number;
+      active: number;
+      upcoming: number;
+      created_in_period: number;
+      guest_total: number;
+      rsvp_total: number;
+    };
+    forms: {
+      total: number;
+      new_in_period: number;
+      responses_total: number;
+      responses_in_period: number;
+    };
+    communications: {
+      notifications_sent: number;
+      notifications_in_period: number;
+      email_logs_total: number;
+      emails_sent_in_period: number;
+      ai_events_total: number;
+      ai_events_in_period: number;
+    };
   };
 }
 
-export default function PlatformMetricsPage() {
-  const { apiRequest } = useAdmin();
-  const [metrics, setMetrics] = useState<PlatformMetrics | null>(null);
+type TimeframeKey = '7d' | '30d' | '90d' | '1y';
+
+const TIMEFRAME_OPTIONS: Array<{ value: TimeframeKey; label: string }> = [
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: '90d', label: 'Last 90 Days' },
+  { value: '1y', label: 'Last 12 Months' },
+];
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function formatNumber(amount: number): string {
+  return new Intl.NumberFormat('en-US').format(amount);
+}
+
+function formatPercentage(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+export default function PlatformMetricsPage(): JSX.Element {
+  const { token } = useAdmin();
+  const [metrics, setMetrics] = useState<PlatformMetricsResponse | null>(null);
+  const [timeframe, setTimeframe] = useState<TimeframeKey>('30d');
   const [loading, setLoading] = useState(true);
-  const [timeframe, setTimeframe] = useState('30days');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchMetrics();
-  }, [timeframe]);
+  const fetchWithAuth = useCallback(
+    async (path: string) => {
+      if (!token) {
+        throw new Error('Missing admin authentication token. Please log in again.');
+      }
 
-  const fetchMetrics = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Fetch real data from multiple endpoints
-      const [usersResponse, subscriptionsResponse, analyticsResponse] = await Promise.all([
-        apiRequest('/api/admin/users', 'GET'),
-        apiRequest('/api/admin/subscription-plans', 'GET'),
-        apiRequest('/api/saas/analytics/overview', 'GET').catch(() => null) // This endpoint may not exist yet
-      ]);
-
-      // Process users data
-      const users = usersResponse || [];
-      const activeUsers = users.filter((u: any) => u.is_active);
-      const newUsersThisMonth = users.filter((u: any) => {
-        if (!u.created_at) return false;
-        const createdDate = new Date(u.created_at);
-        const now = new Date();
-        return createdDate.getMonth() === now.getMonth() && createdDate.getFullYear() === now.getFullYear();
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const url = `${baseUrl}${path}`;
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+        cache: 'no-store',
       });
 
-      // Process subscription plans data
-      const plans = subscriptionsResponse || [];
-      const activePlans = plans.filter((p: any) => p.is_active);
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Request failed (${response.status}): ${detail || response.statusText}`);
+      }
 
-      // Build metrics from real data
-      const realMetrics: PlatformMetrics = {
-        users: {
-          total: users.length,
-          active: activeUsers.length,
-          new_this_month: newUsersThisMonth.length,
-          growth_rate: users.length > 0 ? (newUsersThisMonth.length / users.length) * 100 : 0
-        },
-        subscriptions: {
-          total: users.filter((u: any) => u.subscription_plan_id).length,
-          active: users.filter((u: any) => u.subscription_status === 'active').length,
-          trial: users.filter((u: any) => u.subscription_status === 'trialing').length,
-          churned_this_month: 0, // Would need activity log data
-          mrr: users.filter((u: any) => u.subscription_status === 'active').length * 29, // Estimated
-          arr: users.filter((u: any) => u.subscription_status === 'active').length * 348 // Estimated
-        },
-        usage: {
-          weddings_created: 0, // Would need wedding data
-          forms_created: 0, // Would need forms data
-          guests_managed: 0, // Would need guests data
-          emails_sent: 0, // Would need email log data
-          sms_sent: 0 // Would need SMS log data
-        },
-        performance: {
-          uptime: 99.9, // Would come from monitoring system
-          avg_response_time: 245, // Would come from monitoring system
-          error_rate: 0.1, // Would come from monitoring system
-          api_calls_today: 0 // Would need API analytics
-        },
-        revenue: {
-          total_revenue: users.filter((u: any) => u.subscription_status === 'active').length * 348, // Estimated yearly
-          monthly_growth: newUsersThisMonth.length > 0 ? 15.3 : 0,
-          average_revenue_per_user: users.filter((u: any) => u.subscription_status === 'active').length > 0 ? 348 : 0,
-          lifetime_value: 1200 // Estimated
-        }
-      };
+      return response.json() as Promise<PlatformMetricsResponse>;
+    },
+    [token],
+  );
 
-      setMetrics(realMetrics);
-    } catch (error) {
-      console.error('Error fetching metrics:', error);
-      setError('Failed to load metrics');
+  const fetchMetrics = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await fetchWithAuth(`/admin/saas/analytics/platform?timeframe=${timeframe}`);
+      setMetrics(data);
+    } catch (err) {
+      console.error('Failed to load platform metrics', err);
+      setError(err instanceof Error ? err.message : 'Failed to load platform metrics.');
+      setMetrics(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchWithAuth, timeframe]);
 
+  useEffect(() => {
+    fetchMetrics();
+  }, [fetchMetrics]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
+  const roleBreakdown = useMemo(() => {
+    if (!metrics) {
+      return [] as Array<{ role: string; count: number }>;
+    }
 
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('en-US').format(num);
-  };
+    return Object.entries(metrics.users.role_breakdown)
+      .map(([role, count]) => ({ role, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [metrics]);
 
-  const formatPercentage = (num: number) => {
-    return `${num.toFixed(1)}%`;
-  };
+  const statusBreakdown = useMemo(() => {
+    if (!metrics) {
+      return [] as Array<{ status: string; count: number }>;
+    }
+
+    return Object.entries(metrics.subscriptions.status_breakdown);
+  }, [metrics]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-64">
-        <div className="text-lg">Loading metrics...</div>
+      <div className="flex min-h-64 items-center justify-center">
+        <div className="rounded-xl bg-white/70 px-6 py-4 text-lg text-wedding-navy shadow-sm backdrop-blur">
+          Loading platform analytics…
+        </div>
       </div>
     );
   }
 
-  if (!metrics) {
+  if (error) {
     return (
-      <div className="text-center py-8">
-        <div className="text-red-600 mb-4">Failed to load metrics</div>
-        <button 
+      <div className="space-y-4">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-6 py-4 text-red-700">
+          {error}
+        </div>
+        <button
           onClick={fetchMetrics}
-          className="bg-wedding-rose text-white px-4 py-2 rounded-lg hover:bg-wedding-rose/80"
+          className="rounded-lg bg-wedding-rose px-4 py-2 font-semibold text-white shadow-md transition hover:bg-wedding-rose/80"
         >
           Retry
         </button>
@@ -161,246 +191,225 @@ export default function PlatformMetricsPage() {
     );
   }
 
+  if (!metrics) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white/70 px-6 py-4 text-gray-600 shadow-sm backdrop-blur">
+        Metrics data is currently unavailable.
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-heading text-wedding-rose">Platform Metrics</h1>
-          <p className="text-gray-600">Monitor platform performance and growth</p>
+          <h1 className="text-3xl font-heading text-wedding-rose">Platform Analytics</h1>
+          <p className="text-gray-600">
+            Updated {new Date(metrics.generated_at).toLocaleString()} · Timeframe: {
+              TIMEFRAME_OPTIONS.find((option) => option.value === metrics.timeframe)?.label || metrics.timeframe
+            }
+          </p>
         </div>
-        
         <select
           value={timeframe}
-          onChange={(e) => setTimeframe(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+          onChange={(event) => setTimeframe(event.target.value as TimeframeKey)}
+          className="rounded-lg border border-white/40 bg-white/70 px-4 py-2 text-sm font-medium text-wedding-navy shadow-inner backdrop-blur focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
         >
-          <option value="7days">Last 7 Days</option>
-          <option value="30days">Last 30 Days</option>
-          <option value="90days">Last 90 Days</option>
-          <option value="1year">Last Year</option>
+          {TIMEFRAME_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-700">{error}</p>
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold text-wedding-navy">User Growth</h2>
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <p className="text-sm font-medium text-gray-500">Total Accounts</p>
+            <p className="mt-2 text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.total)}</p>
+            <p className="mt-1 text-xs text-gray-500">Active Roles: {roleBreakdown.length}</p>
+          </Card>
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <p className="text-sm font-medium text-gray-500">Active This Period</p>
+            <p className="mt-2 text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.active)}</p>
+            <p className="mt-1 text-xs text-green-600">Growth {formatPercentage(metrics.users.growth_rate)}</p>
+          </Card>
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <p className="text-sm font-medium text-gray-500">New Accounts</p>
+            <p className="mt-2 text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.new_in_period)}</p>
+            <p className="mt-1 text-xs text-gray-500">Within selected timeframe</p>
+          </Card>
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <p className="text-sm font-medium text-gray-500">Role Distribution</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              {roleBreakdown.map(({ role, count }) => (
+                <span key={role} className="rounded-full bg-white/80 px-3 py-1 text-wedding-navy shadow-sm">
+                  {role.replace('_', ' ')} · {formatNumber(count)}
+                </span>
+              ))}
+              {roleBreakdown.length === 0 && <span className="text-gray-500">No accounts recorded.</span>}
+            </div>
+          </Card>
         </div>
-      )}
+      </section>
 
-      {/* User Metrics */}
-      <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">User Growth</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Total Users</h3>
-            <p className="text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.total)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-green-600">+{metrics.users.new_this_month} this month</span>
-            </div>
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold text-wedding-navy">Subscription &amp; Revenue</h2>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <p className="text-sm font-medium text-gray-500">Active Subscriptions</p>
+            <p className="mt-2 text-3xl font-bold text-wedding-navy">
+              {formatNumber(metrics.subscriptions.status_breakdown.active)}
+            </p>
+            <ul className="mt-3 space-y-1 text-sm text-gray-600">
+              {statusBreakdown.map(([status, count]) => (
+                <li key={status} className="flex justify-between">
+                  <span className="capitalize">{status.replace('_', ' ')}</span>
+                  <span>{formatNumber(count)}</span>
+                </li>
+              ))}
+            </ul>
           </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Active Users</h3>
-            <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.users.active)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">
-                {formatPercentage((metrics.users.active / metrics.users.total) * 100)} active rate
-              </span>
-            </div>
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <p className="text-sm font-medium text-gray-500">Recurring Revenue</p>
+            <p className="mt-2 text-3xl font-bold text-wedding-navy">
+              {formatCurrency(metrics.subscriptions.monthly_recurring_revenue)}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Annual Projection {formatCurrency(metrics.subscriptions.projected_annual_revenue)}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Yearly Contracts {formatCurrency(metrics.subscriptions.yearly_recurring_revenue)}
+            </p>
           </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">New Users</h3>
-            <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.users.new_this_month)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-green-600">
-                +{formatPercentage(metrics.users.growth_rate)} growth
-              </span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Growth Rate</h3>
-            <p className="text-3xl font-bold text-purple-600">{formatPercentage(metrics.users.growth_rate)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Month over month</span>
-            </div>
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <p className="text-sm font-medium text-gray-500">Subscription Plans</p>
+            <p className="mt-2 text-3xl font-bold text-wedding-navy">{metrics.subscriptions.active_plans}</p>
+            <p className="mt-1 text-xs text-gray-500">Active plans available to assign</p>
           </Card>
         </div>
-      </div>
 
-      {/* Revenue Metrics */}
-      <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Revenue</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Monthly Recurring Revenue</h3>
-            <p className="text-3xl font-bold text-wedding-rose">{formatCurrency(metrics.subscriptions.mrr)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-green-600">
-                +{formatPercentage(metrics.revenue.monthly_growth)} growth
-              </span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Annual Recurring Revenue</h3>
-            <p className="text-3xl font-bold text-green-600">{formatCurrency(metrics.subscriptions.arr)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Projected yearly</span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">ARPU</h3>
-            <p className="text-3xl font-bold text-blue-600">{formatCurrency(metrics.revenue.average_revenue_per_user)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Avg revenue per user</span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Customer LTV</h3>
-            <p className="text-3xl font-bold text-purple-600">{formatCurrency(metrics.revenue.lifetime_value)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Lifetime value</span>
-            </div>
-          </Card>
-        </div>
-      </div>
+        <Card className="border border-white/40 bg-white/70 shadow-sm backdrop-blur overflow-hidden">
+          <div className="border-b border-white/40 px-6 py-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Plan Breakdown</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-white/40 text-sm">
+              <thead className="bg-white/60 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-6 py-3">Plan</th>
+                  <th className="px-6 py-3">Active Users</th>
+                  <th className="px-6 py-3">Trial Users</th>
+                  <th className="px-6 py-3">MRR</th>
+                  <th className="px-6 py-3">ARR</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/40 bg-white/30 text-gray-700">
+                {metrics.subscriptions.plan_breakdown.length === 0 && (
+                  <tr>
+                    <td className="px-6 py-4" colSpan={5}>
+                      No subscription plan activity recorded yet.
+                    </td>
+                  </tr>
+                )}
+                {metrics.subscriptions.plan_breakdown.map((plan) => (
+                  <tr key={plan.plan_id}>
+                    <td className="px-6 py-4 font-medium text-wedding-navy">
+                      {plan.plan_name || plan.plan_id}
+                    </td>
+                    <td className="px-6 py-4">{formatNumber(plan.active_users)}</td>
+                    <td className="px-6 py-4">{formatNumber(plan.trial_users)}</td>
+                    <td className="px-6 py-4">{formatCurrency(plan.monthly_revenue)}</td>
+                    <td className="px-6 py-4">{formatCurrency(plan.yearly_revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </section>
 
-      {/* Subscription Metrics */}
-      <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Subscriptions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Active Subscriptions</h3>
-            <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.subscriptions.active)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">
-                {formatPercentage((metrics.subscriptions.active / metrics.subscriptions.total) * 100)} of total
-              </span>
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold text-wedding-navy">Operational Load</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <h3 className="text-lg font-semibold text-wedding-navy">Wedding Projects</h3>
+            <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600">
+              <div>
+                <p className="font-medium text-wedding-navy">Total Weddings</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.weddings.total)}</p>
+              </div>
+              <div>
+                <p className="font-medium text-wedding-navy">Active</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.weddings.active)}</p>
+              </div>
+              <div>
+                <p className="font-medium text-wedding-navy">Upcoming</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.weddings.upcoming)}</p>
+              </div>
+              <div>
+                <p className="font-medium text-wedding-navy">New This Period</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.weddings.created_in_period)}</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-lg bg-white/70 px-4 py-3 text-sm text-gray-600 shadow-inner">
+              <p>Guests managed: {formatNumber(metrics.operations.weddings.guest_total)}</p>
+              <p>RSVP records: {formatNumber(metrics.operations.weddings.rsvp_total)}</p>
             </div>
           </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Trial Users</h3>
-            <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.subscriptions.trial)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Currently on trial</span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Churn This Month</h3>
-            <p className="text-3xl font-bold text-red-600">{formatNumber(metrics.subscriptions.churned_this_month)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">
-                {formatPercentage((metrics.subscriptions.churned_this_month / metrics.subscriptions.total) * 100)} churn rate
-              </span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Total Subscriptions</h3>
-            <p className="text-3xl font-bold text-wedding-navy">{formatNumber(metrics.subscriptions.total)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">All time</span>
-            </div>
-          </Card>
-        </div>
-      </div>
 
-      {/* Usage Metrics */}
-      <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Platform Usage</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Weddings Created</h3>
-            <p className="text-3xl font-bold text-wedding-rose">{formatNumber(metrics.usage.weddings_created)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">This period</span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Guests Managed</h3>
-            <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.usage.guests_managed)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Total guests</span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Forms Created</h3>
-            <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.usage.forms_created)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Custom forms</span>
+          <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+            <h3 className="text-lg font-semibold text-wedding-navy">Form Engagement</h3>
+            <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600">
+              <div>
+                <p className="font-medium text-wedding-navy">Active Forms</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.forms.total)}</p>
+              </div>
+              <div>
+                <p className="font-medium text-wedding-navy">New Forms</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.forms.new_in_period)}</p>
+              </div>
+              <div>
+                <p className="font-medium text-wedding-navy">Responses</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.forms.responses_total)}</p>
+              </div>
+              <div>
+                <p className="font-medium text-wedding-navy">Responses This Period</p>
+                <p className="text-2xl font-semibold">{formatNumber(metrics.operations.forms.responses_in_period)}</p>
+              </div>
             </div>
           </Card>
         </div>
-      </div>
 
-      {/* Communication Metrics */}
-      <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Communications</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Emails Sent</h3>
-            <p className="text-3xl font-bold text-blue-600">{formatNumber(metrics.usage.emails_sent)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">This period</span>
+        <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
+          <h3 className="text-lg font-semibold text-wedding-navy">Communication Volume</h3>
+          <div className="mt-4 grid gap-6 md:grid-cols-3 text-sm text-gray-600">
+            <div>
+              <p className="font-medium text-wedding-navy">Notifications Sent</p>
+              <p className="text-2xl font-semibold">{formatNumber(metrics.operations.communications.notifications_sent)}</p>
+              <p className="text-xs text-gray-500">
+                +{formatNumber(metrics.operations.communications.notifications_in_period)} this timeframe
+              </p>
             </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">SMS Sent</h3>
-            <p className="text-3xl font-bold text-green-600">{formatNumber(metrics.usage.sms_sent)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">This period</span>
+            <div>
+              <p className="font-medium text-wedding-navy">Email Logs</p>
+              <p className="text-2xl font-semibold">{formatNumber(metrics.operations.communications.email_logs_total)}</p>
+              <p className="text-xs text-gray-500">
+                {formatNumber(metrics.operations.communications.emails_sent_in_period)} successful deliveries
+              </p>
             </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* System Performance */}
-      <div>
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">System Performance</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Uptime</h3>
-            <p className="text-3xl font-bold text-green-600">{formatPercentage(metrics.performance.uptime)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-green-600">Excellent</span>
+            <div>
+              <p className="font-medium text-wedding-navy">AI Automations</p>
+              <p className="text-2xl font-semibold">{formatNumber(metrics.operations.communications.ai_events_total)}</p>
+              <p className="text-xs text-gray-500">
+                {formatNumber(metrics.operations.communications.ai_events_in_period)} requests this timeframe
+              </p>
             </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Response Time</h3>
-            <p className="text-3xl font-bold text-blue-600">{metrics.performance.avg_response_time}ms</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">Average</span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">Error Rate</h3>
-            <p className="text-3xl font-bold text-yellow-600">{formatPercentage(metrics.performance.error_rate)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-green-600">Within limits</span>
-            </div>
-          </Card>
-          
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-500">API Calls Today</h3>
-            <p className="text-3xl font-bold text-purple-600">{formatNumber(metrics.performance.api_calls_today)}</p>
-            <div className="flex items-center mt-2">
-              <span className="text-sm text-gray-500">24 hours</span>
-            </div>
-          </Card>
-        </div>
-      </div>
+          </div>
+        </Card>
+      </section>
     </div>
   );
 }

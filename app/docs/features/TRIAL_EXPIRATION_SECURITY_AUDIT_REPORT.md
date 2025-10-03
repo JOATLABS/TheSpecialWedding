@@ -187,16 +187,13 @@ logger.warning(f"Expired trial access attempt: {email} from {request_ip}")
 
 ### Automated Test Coverage
 **Files Examined**:
-- `/tests/security/test_trial_expiration.py`
-- `/tests/security/test_trial_fix_advanced.py`  
-- `/tests/security/security_audit_tests.py`
+- `/tests/backend/test_trial_expiration.py`
 
 **Test Scenarios Covered**:
-- ✅ Expired trial enforcement
-- ✅ HTTP 402 response validation
-- ✅ Auto-deactivation logic
-- ✅ Trial warning system
-- ✅ Settings validation
+- ✅ Expired trial enforcement and automatic deactivation with email notifications
+- ✅ HTTP 402 response validation inside `get_current_user_extended`
+- ✅ Trial warning outreach when expiration is within the configured window
+- ✅ Respect for disabled auto-expiration settings
 
 **Recommendation**: Execute tests regularly in CI/CD pipeline
 
