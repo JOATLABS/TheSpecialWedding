@@ -1,8 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from typing import List, Dict, Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from app.services.budget_service import BudgetService
-from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import (
+    get_current_user_extended,
+    ExtendedAuthUser,
+    check_wedding_access,
+    require_wedding_planner,
+)
 from app.models.budget import BudgetCategory, VendorQuote, BudgetTemplate, PaymentRecord
 import logging
 
@@ -44,6 +49,49 @@ class CreateVendorQuoteRequest(BaseModel):
 class ApplyBudgetTemplateRequest(BaseModel):
     template_id: str = Field(..., min_length=1)
     total_budget: float = Field(..., gt=0)
+
+class TemplateCategoryInput(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    percentage: float = Field(..., gt=0, le=100)
+    priority: int = Field(default=3, ge=1, le=5)
+
+class GuestCountRangeInput(BaseModel):
+    min: int = Field(..., ge=0, le=2000)
+    max: int = Field(..., ge=0, le=5000)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "GuestCountRangeInput":
+        if self.max < self.min:
+            raise ValueError("Guest count max must be greater than or equal to min")
+        return self
+
+class CreateBudgetTemplateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    wedding_type: str = Field(..., min_length=1, max_length=50)
+    target_budget_min: float = Field(..., ge=0)
+    target_budget_max: float = Field(..., ge=0)
+    guest_count_range: GuestCountRangeInput
+    categories: List[TemplateCategoryInput] = Field(..., min_length=1)
+    is_public: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def validate_budget_and_percentages(self) -> "CreateBudgetTemplateRequest":
+        if self.target_budget_max < self.target_budget_min:
+            raise ValueError("Maximum budget must be greater than or equal to minimum budget")
+
+        total_percentage = sum(category.percentage for category in self.categories)
+        if abs(total_percentage - 100) > 0.5:
+            raise ValueError("Category percentages must total 100%")
+
+        seen_names = set()
+        for category in self.categories:
+            normalized = category.name.strip().lower()
+            if normalized in seen_names:
+                raise ValueError("Category names must be unique within a template")
+            seen_names.add(normalized)
+
+        return self
 
 class RecordPaymentRequest(BaseModel):
     vendor_name: Optional[str] = Field(None)
@@ -242,10 +290,31 @@ def get_budget_templates(
     try:
         templates = budget_service.get_budget_templates(wedding_type)
         return {"templates": templates, "count": len(templates)}
-        
+
     except Exception as e:
         logger.error(f"Failed to get budget templates: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve budget templates")
+
+@router.post("/budget/templates", tags=["Budget"], status_code=201)
+def create_budget_template(
+    request_data: CreateBudgetTemplateRequest,
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner)
+):
+    """Create a custom budget template for planners"""
+    try:
+        template = budget_service.create_budget_template(
+            request_data.model_dump(),
+            created_by=current_user.email,
+        )
+        return {"message": "Budget template created successfully", "template": template}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to create budget template: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create budget template")
 
 @router.post("/weddings/{wedding_id}/budget/apply-template", tags=["Budget"])
 def apply_budget_template(
@@ -282,14 +351,26 @@ def record_payment(
 ):
     """Record a payment for a budget category"""
     try:
+        category = budget_service.get_budget_category(category_id)
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+
+        if not check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         payment = budget_service.record_payment(
             category_id,
             payment_data.dict(exclude_unset=True)
         )
         return {"message": "Payment recorded successfully", "payment": payment}
-        
+
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        detail = str(e)
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
     except Exception as e:
         logger.error(f"Failed to record payment: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to record payment")

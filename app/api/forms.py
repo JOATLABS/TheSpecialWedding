@@ -1,8 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.responses import Response as FastAPIResponse
 from app.models.form import (
-    CreateFormRequest, UpdateFormRequest, SendFormRequest, SubmitFormRequest,
-    FormModel, FormResponse
+    CreateFormRequest,
+    UpdateFormRequest,
+    SendFormRequest,
+    SubmitFormRequest,
+    DuplicateFormRequest,
+    FormViewUpdateRequest,
+    FormModel,
+    FormResponse,
 )
 from app.services.form_service import FormService
 from app.dependencies.auth_extended import (
@@ -394,8 +400,27 @@ def get_form_responses(
     """Get all responses for a form"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
-    
+
     return form_service.get_form_responses(form_id, current_user.email)
+
+
+@router.post("/forms/{form_id}/views", tags=["Forms"])
+def mark_form_view(
+    form_id: str,
+    payload: FormViewUpdateRequest,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+):
+    """Update the planner's last viewed timestamp for a form scope."""
+    if not (current_user.is_wedding_planner or current_user.is_root_admin):
+        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+
+    return form_service.mark_form_viewed(
+        form_id,
+        current_user.email,
+        payload.scope,
+        submission_count=payload.submission_count,
+        is_root_admin=current_user.is_root_admin,
+    )
 
 @router.get("/forms/{form_id}/analytics", tags=["Forms"])
 def get_form_analytics(
@@ -1054,5 +1079,18 @@ def create_form_from_template(
         wedding_id=wedding_id,
         template_type=template_id
     )
-    
+
     return form_service.create_form(form_data, current_user.email)
+
+
+@router.post("/forms/{form_id}/duplicate", tags=["Forms"])
+def duplicate_form(
+    form_id: str,
+    duplicate_request: DuplicateFormRequest,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+):
+    """Duplicate an existing form for the authenticated planner."""
+    if not (current_user.is_wedding_planner or current_user.is_root_admin):
+        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+
+    return form_service.duplicate_form(form_id, duplicate_request, current_user.email)
