@@ -25,6 +25,8 @@ interface SaasConfig {
   hero_description: string;
   hero_cta_primary: string;
   hero_cta_secondary: string;
+  contact_cta_label?: string;
+  contact_url?: string;
   trust_indicators: string[];
   statistics: Array<{
     label: string;
@@ -306,6 +308,26 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
     handlePrimaryCta();
   }, [config.demo_url, handlePrimaryCta]);
 
+  const handleContactCta = useCallback(() => {
+    const fallbackContact = process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com';
+    const target = config.contact_url || fallbackContact;
+
+    if (!target) {
+      return;
+    }
+
+    const isHttp = target.startsWith('http://') || target.startsWith('https://');
+
+    if (typeof window !== 'undefined') {
+      if (isHttp) {
+        window.open(target, '_blank', 'noopener');
+        return;
+      }
+
+      window.location.href = target;
+    }
+  }, [config.contact_url]);
+
   return (
     <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] py-16 sm:py-20 xl:py-24">
       <div
@@ -355,6 +377,13 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
                 className="inline-flex items-center justify-center rounded-full border border-gray-300 bg-white/80 px-6 py-3 text-base font-semibold text-gray-800 shadow transition hover:bg-white"
               >
                 {config.hero_cta_secondary}
+              </button>
+              <button
+                type="button"
+                onClick={handleContactCta}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-white/60 px-6 py-3 text-base font-semibold text-gray-900 shadow transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
+              >
+                {config.contact_cta_label ?? 'Contact Sales'}
               </button>
             </div>
           </div>

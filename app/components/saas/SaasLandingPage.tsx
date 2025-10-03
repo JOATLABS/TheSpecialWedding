@@ -6,7 +6,6 @@ import { SectionWrapper } from '../landing-page/SectionWrapper';
 import { GlassCard } from '../ui/GlassCard';
 import { SaasAuthPanel, SaasHeroSection, SubscriptionPlan } from './SaasHeroSection';
 import { SaasExperienceCarousel } from './SaasExperienceCarousel';
-import { CallToActionSection } from './CallToActionSection';
 
 interface Feature {
   title: string;
@@ -38,6 +37,8 @@ interface SaasConfig {
   hero_description: string;
   hero_cta_primary: string;
   hero_cta_secondary: string;
+  contact_cta_label?: string;
+  contact_url?: string;
   trust_indicators: string[];
   statistics: Array<{
     label: string;
@@ -66,6 +67,8 @@ export const SaasLandingPage: React.FC = () => {
     hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
     hero_cta_primary: "Start Free Trial",
     hero_cta_secondary: "Watch Demo",
+    contact_cta_label: 'Contact Sales',
+    contact_url: process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com',
     trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
     statistics: [
       { label: "Wedding Planners Trust Us", value: "500+" },
@@ -348,18 +351,6 @@ export const SaasLandingPage: React.FC = () => {
               </SectionWrapper>
             )}
 
-            <SectionWrapper id="sign-up" glassEffect={false}>
-              <div className="mx-auto w-full max-w-3xl xl:max-w-none">
-                <CallToActionSection
-                  config={config}
-                  theme={theme}
-                  onGetStarted={() => {
-                    setAuthMode('signup');
-                    scrollToAuthPanel();
-                  }}
-                />
-              </div>
-            </SectionWrapper>
           </div>
         </div>
       </div>
