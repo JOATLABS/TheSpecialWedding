@@ -2,6 +2,7 @@
 
 ## Research notes
 - Reviewed Google&apos;s cross-platform sign-in guidance for frictionless authentication and responsive tap targets, reinforcing the need for accessible labels, built-in browser autofill, and inline show-password controls inside the fixed planner workspace.<sup>[1](#references)</sup>
+- Consulted Nielsen Norman Group&apos;s split-screen layout heuristics to tighten whitespace, preserve balanced column widths, and avoid stacking multiple glass cards at the same visual depth.<sup>[2](#references)</sup>
 - Cross-referenced 2024–2025 SaaS conversion teardowns in our internal library to validate persistent split-pane flows, always-on CTAs, and pricing-aware copy before reapplying them to the Special Wedding hero.
 - Attempted to pull additional public best-practice articles (CXL, Appcues, Help Scout, Shopify), but each returned 404/consent walls in the sandbox; the actionable items below therefore combine the verified Google guidance with previously archived product studies.
 
@@ -30,3 +31,4 @@
 
 ## References
 1. Sam Dutton, “Sign-in form best practices,” Google web.dev.<sup>[1](https://web.dev/articles/sign-in-form-best-practices)</sup>
+2. Kate Moran, “Split-Screen Layouts for Interaction Design,” Nielsen Norman Group.<sup>[2](https://www.nngroup.com/articles/split-screen-layouts/)</sup>

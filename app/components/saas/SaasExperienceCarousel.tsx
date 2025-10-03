@@ -58,14 +58,14 @@ export function SaasExperienceCarousel({
         label: "Signature features",
         eyebrow: "All-in-one operations",
         content: (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {sortedFeatures.map((feature) => (
               <GlassCard
                 key={feature.title}
                 depth="mid"
                 blur="xl"
                 theme={theme}
-                className="group rounded-3xl border border-white/40 bg-white/65 p-6 transition duration-500 hover:-translate-y-1 hover:shadow-xl"
+                className="group rounded-3xl border border-white/35 bg-white/60 p-5 transition duration-500 hover:-translate-y-1 hover:shadow-xl"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -92,14 +92,14 @@ export function SaasExperienceCarousel({
         label: "Planner outcomes",
         eyebrow: "Why planners switch",
         content: (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {sortedBenefits.map((benefit) => (
               <GlassCard
                 key={benefit.title}
                 depth="far"
                 blur="lg"
                 theme={theme}
-                className="rounded-3xl border border-white/35 bg-white/55 p-6"
+                className="rounded-3xl border border-white/30 bg-white/55 p-5"
               >
                 <h3 className="text-base font-semibold text-slate-900">{benefit.title}</h3>
                 <p className="mt-2 text-sm text-slate-600">{benefit.description}</p>
@@ -113,14 +113,14 @@ export function SaasExperienceCarousel({
         label: "Planner voices",
         eyebrow: "Proof in the field",
         content: (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {sortedTestimonials.map((testimonial) => (
               <GlassCard
                 key={`${testimonial.name}-${testimonial.company}`}
                 depth="near"
                 blur="xl"
                 theme={theme}
-                className="rounded-3xl border border-white/45 bg-white/70 p-6"
+                className="rounded-3xl border border-white/40 bg-white/65 p-5"
               >
                 <p className="text-base font-medium text-slate-800">“{testimonial.content}”</p>
                 <div className="mt-4 text-sm text-slate-500">
@@ -147,44 +147,37 @@ export function SaasExperienceCarousel({
   }, [slides.length]);
 
   return (
-    <section
-      className="relative overflow-hidden rounded-[2.75rem] border border-white/45 bg-white/40 p-1 shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)]"
-      aria-label="Planner experience highlights"
-    >
-      <div className="rounded-[2.5rem] bg-white/65 p-6 sm:p-10">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">
-              {slides[activeIndex]?.eyebrow}
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">
-              {slides[activeIndex]?.label}
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {slides.map((slide, index) => (
-              <button
-                key={slide.id}
-                type="button"
-                className={`h-2.5 w-8 rounded-full transition ${
-                  index === activeIndex ? "bg-slate-900" : "bg-slate-200 hover:bg-slate-300"
-                }`}
-                onClick={() => setActiveIndex(index)}
-                aria-label={`Show ${slide.label}`}
-              />
-            ))}
-          </div>
+    <div className="space-y-6" aria-labelledby="experience-showcase" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.35em] text-slate-500">
+            {slides[activeIndex]?.eyebrow}
+          </p>
+          <h2 id="experience-showcase" className="mt-2 text-2xl font-semibold text-slate-900 sm:text-[1.75rem]">
+            {slides[activeIndex]?.label}
+          </h2>
         </div>
-
-        <div className="mt-8">
-          <div
-            key={slides[activeIndex]?.id}
-            className="transition-opacity duration-500"
-          >
-            {slides[activeIndex]?.content}
-          </div>
+        <div className="flex items-center gap-2">
+          {slides.map((slide, index) => (
+            <button
+              key={slide.id}
+              type="button"
+              className={`h-2 w-7 rounded-full transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 ${
+                index === activeIndex ? 'bg-slate-900' : 'bg-slate-200 hover:bg-slate-300'
+              }`}
+              onClick={() => setActiveIndex(index)}
+              aria-label={`Show ${slide.label}`}
+            />
+          ))}
         </div>
       </div>
-    </section>
+
+      <div
+        key={slides[activeIndex]?.id}
+        className="transition-opacity duration-500"
+      >
+        {slides[activeIndex]?.content}
+      </div>
+    </div>
   );
 }

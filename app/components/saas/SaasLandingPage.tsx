@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modern3DBackground } from '../landing-page/Modern3DBackground';
-import { SectionWrapper } from '../landing-page/SectionWrapper';
-import { GlassCard } from '../ui/GlassCard';
 import { SaasAuthPanel, SaasHeroSection, SubscriptionPlan } from './SaasHeroSection';
 import { SaasExperienceCarousel } from './SaasExperienceCarousel';
 
@@ -293,7 +291,7 @@ export const SaasLandingPage: React.FC = () => {
       />
 
       <div className="relative z-10 mx-auto w-full max-w-[1820px] px-4 pb-20 pt-12 sm:px-6 lg:px-10 xl:px-16">
-        <div className="relative flex flex-col gap-10 lg:flex-row">
+        <div className="relative flex flex-col gap-8 lg:flex-row">
           <aside
             id="saas-auth-panel"
             className="order-1 -mx-1 rounded-[2.75rem] border border-white/40 bg-white/30 p-1 backdrop-blur-3xl sm:mx-0 lg:order-2 lg:mx-0 lg:w-[420px] lg:flex-shrink-0 lg:self-start lg:border-white/50 lg:bg-white/25 lg:p-2 lg:[transform:translateZ(0)] lg:[will-change:transform]"
@@ -321,8 +319,8 @@ export const SaasLandingPage: React.FC = () => {
             </div>
           </aside>
 
-          <div className="order-2 flex flex-col gap-16 lg:order-1 lg:flex-1 lg:pr-0 lg:pt-4 xl:pt-6">
-            <div className="lg:pr-[32px] xl:pr-[64px]">
+          <div className="order-2 flex flex-col gap-8 lg:order-1 lg:flex-1 lg:pr-0 lg:pt-4 xl:pt-6">
+            <div className="lg:pr-[24px] xl:pr-[48px]">
               <SaasHeroSection
                 config={config}
                 theme={theme}
@@ -337,18 +335,24 @@ export const SaasLandingPage: React.FC = () => {
             </div>
 
             {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
-              <SectionWrapper id="experience" glassEffect={false}>
-                <div className="mx-auto w-full max-w-4xl xl:max-w-none">
-                  <GlassCard depth="mid" className="rounded-[2.5rem] border border-white/50 bg-white/55 p-4 sm:p-6 lg:p-10">
-                    <SaasExperienceCarousel
-                      features={config.features}
-                      benefits={config.benefits}
-                      testimonials={config.testimonials}
-                      theme={theme}
+              <section aria-labelledby="experience-showcase" className="relative">
+                <div className="relative mx-auto w-full max-w-4xl xl:max-w-none">
+                  <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),rgba(255,255,255,0))]"
                     />
-                  </GlassCard>
+                    <div className="relative rounded-[2.6rem] bg-white/65 px-5 py-8 sm:px-7 sm:py-9 lg:px-9 lg:py-10">
+                      <SaasExperienceCarousel
+                        features={config.features}
+                        benefits={config.benefits}
+                        testimonials={config.testimonials}
+                        theme={theme}
+                      />
+                    </div>
+                  </div>
                 </div>
-              </SectionWrapper>
+              </section>
             )}
 
           </div>
