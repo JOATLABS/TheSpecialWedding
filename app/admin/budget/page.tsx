@@ -7,12 +7,16 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import BudgetSummaryCard from '../../components/budget/BudgetSummaryCard';
 import BudgetCategoryCard from '../../components/budget/BudgetCategoryCard';
+import PaymentHistoryPanel from '../../components/budget/PaymentHistoryPanel';
+import RecordPaymentModal from '../../components/budget/RecordPaymentModal';
 import { budgetApi } from '../../services/budgetApi';
-import type { 
-  BudgetCategory, 
-  BudgetSummary, 
+import type {
+  BudgetCategory,
+  BudgetSummary,
   CreateBudgetCategoryRequest,
-  UpdateBudgetCategoryRequest
+  UpdateBudgetCategoryRequest,
+  PaymentRecord,
+  RecordPaymentRequest
 } from '../../types/budget';
 
 interface Wedding {
@@ -31,7 +35,7 @@ export default function BudgetDashboard() {
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  
+
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<BudgetCategory | null>(null);
@@ -42,6 +46,14 @@ export default function BudgetDashboard() {
     priority: 3,
     percentage_of_total: 0
   });
+
+  const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([]);
+  const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
+  const [paymentHistoryError, setPaymentHistoryError] = useState<string>('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<BudgetCategory | null>(null);
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+  const [paymentModalError, setPaymentModalError] = useState<string>('');
 
   // Filters and search
   const [searchTerm, setSearchTerm] = useState('');
@@ -77,22 +89,41 @@ export default function BudgetDashboard() {
 
   const fetchBudgetData = async () => {
     if (!token || !selectedWedding) return;
-    
+
     setLoading(true);
     try {
       const [summaryData, categoriesData] = await Promise.all([
         budgetApi.getBudgetSummary(token, selectedWedding),
         budgetApi.getBudgetCategories(token, selectedWedding)
       ]);
-      
+
       setBudgetSummary(summaryData);
       setCategories(categoriesData);
       setError('');
+      await fetchPaymentHistory(selectedWedding);
     } catch (err: any) {
       setError(err.message || 'Failed to load budget data');
       toast.error(err.message || 'Failed to load budget data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPaymentHistory = async (weddingId: string) => {
+    if (!token) return;
+
+    setPaymentHistoryLoading(true);
+    try {
+      const paymentData = await budgetApi.getPaymentHistory(token, weddingId);
+      setPaymentHistory(paymentData);
+      setPaymentHistoryError('');
+    } catch (err: any) {
+      const message = err.message || 'Failed to load payment history';
+      setPaymentHistoryError(message);
+      setPaymentHistory([]);
+      toast.error(message);
+    } finally {
+      setPaymentHistoryLoading(false);
     }
   };
 
@@ -191,9 +222,40 @@ export default function BudgetDashboard() {
     setEditingCategory(null);
   };
 
-  const handleAddPayment = (categoryId: string) => {
-    // Placeholder for payment modal
-    toast.info('Payment tracking feature coming soon');
+  const handleAddPayment = (category: BudgetCategory) => {
+    setActiveCategory(category);
+    setPaymentModalError('');
+    setShowPaymentModal(true);
+  };
+
+  const handleRecordPayment = async (paymentData: RecordPaymentRequest) => {
+    if (!token || !activeCategory) {
+      toast.error('Select a wedding category before recording a payment.');
+      return;
+    }
+
+    const categoryId = activeCategory.id || activeCategory._id;
+    if (!categoryId) {
+      toast.error('This category is missing an identifier. Please refresh and try again.');
+      return;
+    }
+
+    setIsRecordingPayment(true);
+    setPaymentModalError('');
+    try {
+      await budgetApi.recordPayment(token, categoryId, paymentData);
+      toast.success('Payment recorded successfully');
+      setShowPaymentModal(false);
+      setActiveCategory(null);
+      await fetchBudgetData();
+    } catch (err: any) {
+      const message = err.message || 'Failed to record payment';
+      setPaymentModalError(message);
+      toast.error(message);
+      throw new Error(message);
+    } finally {
+      setIsRecordingPayment(false);
+    }
   };
 
   const exportBudgetReport = async (format: 'pdf' | 'excel') => {
@@ -296,92 +358,102 @@ export default function BudgetDashboard() {
 
       {/* Categories Section */}
       {selectedWedding && (
-        <>
-          {/* Controls */}
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <div className="flex flex-col sm:flex-row gap-4 items-center flex-1">
-              {/* Search */}
-              <input
-                type="text"
-                placeholder="Search categories..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-              />
-              
-              {/* Status Filter */}
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[2fr_1fr] items-start">
+          <div className="space-y-6">
+            {/* Controls */}
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white/60 backdrop-blur-xl border border-white/40 rounded-2xl p-4 shadow-md">
+              <div className="flex flex-col sm:flex-row gap-4 items-center flex-1 w-full">
+                {/* Search */}
+                <input
+                  type="text"
+                  placeholder="Search categories..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full sm:w-auto flex-1 rounded-xl border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                />
+
+                {/* Status Filter */}
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full sm:w-auto rounded-xl border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                >
+                  <option value="all">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="partial">Partial</option>
+                  <option value="paid">Paid</option>
+                  <option value="overdue">Overdue</option>
+                </select>
+
+                {/* Sort */}
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                  className="w-full sm:w-auto rounded-xl border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                >
+                  <option value="priority">Sort by Priority</option>
+                  <option value="name">Sort by Name</option>
+                  <option value="budget">Sort by Budget</option>
+                  <option value="spent">Sort by Spent</option>
+                </select>
+              </div>
+
+              <Button
+                onClick={() => setShowCategoryModal(true)}
+                className="whitespace-nowrap"
               >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="partial">Partial</option>
-                <option value="paid">Paid</option>
-                <option value="overdue">Overdue</option>
-              </select>
-              
-              {/* Sort */}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-              >
-                <option value="priority">Sort by Priority</option>
-                <option value="name">Sort by Name</option>
-                <option value="budget">Sort by Budget</option>
-                <option value="spent">Sort by Spent</option>
-              </select>
+                Add Category
+              </Button>
             </div>
-            
-            <Button 
-              onClick={() => setShowCategoryModal(true)}
-              className="whitespace-nowrap"
-            >
-              Add Category
-            </Button>
+
+            {/* Categories Grid */}
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
+                <p className="mt-2 text-gray-600">Loading budget data...</p>
+              </div>
+            ) : error ? (
+              <Card className="p-8 text-center">
+                <p className="text-red-600 mb-4">{error}</p>
+                <Button onClick={fetchBudgetData}>Retry</Button>
+              </Card>
+            ) : filteredCategories.length === 0 ? (
+              <Card className="p-8 text-center">
+                <p className="text-gray-600 mb-4">
+                  {categories.length === 0
+                    ? "No budget categories found. Create your first category to get started."
+                    : "No categories match your search criteria."
+                  }
+                </p>
+                {categories.length === 0 && (
+                  <Button onClick={() => setShowCategoryModal(true)}>
+                    Create First Category
+                  </Button>
+                )}
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {filteredCategories.map((category) => (
+                  <BudgetCategoryCard
+                    key={category.id || category._id}
+                    category={category}
+                    onEdit={openEditModal}
+                    onDelete={handleDeleteCategory}
+                    onAddPayment={handleAddPayment}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Categories Grid */}
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
-              <p className="mt-2 text-gray-600">Loading budget data...</p>
-            </div>
-          ) : error ? (
-            <Card className="p-8 text-center">
-              <p className="text-red-600 mb-4">{error}</p>
-              <Button onClick={fetchBudgetData}>Retry</Button>
-            </Card>
-          ) : filteredCategories.length === 0 ? (
-            <Card className="p-8 text-center">
-              <p className="text-gray-600 mb-4">
-                {categories.length === 0 
-                  ? "No budget categories found. Create your first category to get started."
-                  : "No categories match your search criteria."
-                }
-              </p>
-              {categories.length === 0 && (
-                <Button onClick={() => setShowCategoryModal(true)}>
-                  Create First Category
-                </Button>
-              )}
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filteredCategories.map((category) => (
-                <BudgetCategoryCard
-                  key={category.id}
-                  category={category}
-                  onEdit={openEditModal}
-                  onDelete={handleDeleteCategory}
-                  onAddPayment={handleAddPayment}
-                />
-              ))}
-            </div>
-          )}
-        </>
+          <PaymentHistoryPanel
+            payments={paymentHistory}
+            categories={categories}
+            isLoading={paymentHistoryLoading}
+            error={paymentHistoryError}
+            onRefresh={() => selectedWedding && fetchPaymentHistory(selectedWedding)}
+          />
+        </div>
       )}
 
       {/* Category Modal */}
@@ -486,6 +558,19 @@ export default function BudgetDashboard() {
           </div>
         </div>
       )}
+
+      <RecordPaymentModal
+        category={activeCategory}
+        isOpen={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setActiveCategory(null);
+          setPaymentModalError('');
+        }}
+        onSubmit={handleRecordPayment}
+        isSubmitting={isRecordingPayment}
+        errorMessage={paymentModalError}
+      />
     </div>
   );
 }
