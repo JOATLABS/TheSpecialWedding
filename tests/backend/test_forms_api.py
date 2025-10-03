@@ -162,3 +162,131 @@ def test_planner_blank_form_creation_sanitises_payload(api_client):
 
     assert stored["settings"]["collect_email"] is True
     assert stored["fields"] == []
+
+
+def test_planner_cannot_update_view_state_for_other_form(api_client):
+    client, database, forms_module, override_user = api_client
+
+    owner_email = "owner@example.com"
+    intruder_email = "intruder@example.com"
+    planner_state_key = owner_email.replace(".", "_")
+
+    database["forms"].insert_one(
+        _form_document(
+            owner_email,
+            _id="form_shared",
+            submission_count=4,
+            planner_state={
+                planner_state_key: {
+                    "last_viewed_submission_count": 1,
+                    "last_viewed_responses_at": None,
+                }
+            },
+        )
+    )
+
+    intruder = forms_module.ExtendedAuthUser(
+        email=intruder_email,
+        role="wedding_planner",
+        user_data={"role": "wedding_planner"},
+    )
+    override_user(intruder)
+
+    response = client.post(
+        "/admin/forms/form_shared/views",
+        json={"scope": "responses", "submission_count": 4},
+    )
+
+    assert response.status_code == 403
+    payload = response.json()
+    assert payload["detail"] == "Access denied to form"
+
+    stored = database["forms"].find_one({"_id": "form_shared"})
+    state = stored["planner_state"][planner_state_key]
+    assert state["last_viewed_submission_count"] == 1
+    assert "intruder@example_com" not in stored["planner_state"]
+
+
+def test_planner_updates_own_view_state(api_client):
+    client, database, forms_module, override_user = api_client
+
+    planner_email = "planner@example.com"
+    planner_state_key = planner_email.replace(".", "_")
+
+    database["forms"].insert_one(
+        _form_document(
+            planner_email,
+            _id="form_personal",
+            submission_count=6,
+            planner_state={
+                planner_state_key: {
+                    "last_viewed_submission_count": 2,
+                    "last_viewed_responses_at": None,
+                }
+            },
+        )
+    )
+
+    planner = forms_module.ExtendedAuthUser(
+        email=planner_email,
+        role="wedding_planner",
+        user_data={"role": "wedding_planner"},
+    )
+    override_user(planner)
+
+    response = client.post(
+        "/admin/forms/form_personal/views",
+        json={"scope": "responses", "submission_count": 5},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unread_responses"] == 1
+
+    stored = database["forms"].find_one({"_id": "form_personal"})
+    state = stored["planner_state"][planner_state_key]
+    assert state["last_viewed_submission_count"] == 5
+    assert state["last_viewed_responses_at"] is not None
+
+
+def test_root_admin_can_mark_form_viewed(api_client):
+    client, database, forms_module, override_user = api_client
+
+    owner_email = "owner@example.com"
+    planner_state_key = owner_email.replace(".", "_")
+
+    database["forms"].insert_one(
+        _form_document(
+            owner_email,
+            _id="form_admin_view",
+            submission_count=3,
+            planner_state={
+                planner_state_key: {
+                    "last_viewed_submission_count": 0,
+                    "last_viewed_responses_at": None,
+                }
+            },
+        )
+    )
+
+    root_admin = forms_module.ExtendedAuthUser(
+        email=os.environ["ROOT_ADMIN_EMAIL"],
+        role="ROOT_ADMIN",
+        user_data={"role": "ROOT_ADMIN"},
+    )
+    override_user(root_admin)
+
+    response = client.post(
+        "/admin/forms/form_admin_view/views",
+        json={"scope": "analytics"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "Form view recorded"
+
+    stored = database["forms"].find_one({"_id": "form_admin_view"})
+    # Root admin updates their own email state, but original owner data should remain
+    assert stored["planner_state"][planner_state_key]["last_viewed_submission_count"] == 0
+    admin_key = os.environ["ROOT_ADMIN_EMAIL"].lower().replace(".", "_")
+    assert stored["planner_state"][admin_key]["last_viewed_analytics_at"] is not None

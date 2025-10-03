@@ -632,6 +632,8 @@ class FormService:
         viewer_email: str,
         scope: str,
         submission_count: Optional[int] = None,
+        *,
+        is_root_admin: bool = False,
     ) -> Dict[str, Any]:
         """Persist when a planner last viewed responses or analytics for a form."""
 
@@ -641,11 +643,34 @@ class FormService:
         if scope not in {"responses", "analytics"}:
             raise HTTPException(status_code=400, detail="Unsupported view scope")
 
+        if not form_id or not isinstance(form_id, str):
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+
+        sanitized_form_id = InputSanitizer.sanitize_text(form_id, 100)
+        if not sanitized_form_id:
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+
         normalized_email = viewer_email.lower().strip()
         state_key = self._planner_state_key(normalized_email)
 
-        form = self.forms_collection.find_one({"_id": form_id})
+        base_projection = {"planner_state": 1, "submission_count": 1, "is_active": 1, "created_by": 1}
+        if is_root_admin:
+            form = self.forms_collection.find_one({"_id": sanitized_form_id}, base_projection)
+        else:
+            form = self.forms_collection.find_one(
+                {"_id": sanitized_form_id, "is_active": True, "created_by": normalized_email},
+                base_projection,
+            )
+
         if not form:
+            if not is_root_admin:
+                # Differentiate between unauthorized access and missing forms for clearer errors
+                exists = self.forms_collection.find_one({"_id": sanitized_form_id}, {"_id": 1})
+                if exists:
+                    raise HTTPException(status_code=403, detail="Access denied to form")
+            raise HTTPException(status_code=404, detail="Form not found")
+
+        if not form.get("is_active", True) and not is_root_admin:
             raise HTTPException(status_code=404, detail="Form not found")
 
         now = datetime.utcnow()
@@ -669,7 +694,7 @@ class FormService:
         if scope == "analytics":
             update_fields[f"planner_state.{state_key}.last_viewed_analytics_at"] = now
 
-        self.forms_collection.update_one({"_id": form_id}, {"$set": update_fields}, upsert=False)
+        self.forms_collection.update_one({"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False)
 
         return {
             "message": "Form view recorded",

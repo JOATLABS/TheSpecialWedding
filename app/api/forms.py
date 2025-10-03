@@ -419,6 +419,7 @@ def mark_form_view(
         current_user.email,
         payload.scope,
         submission_count=payload.submission_count,
+        is_root_admin=current_user.is_root_admin,
     )
 
 @router.get("/forms/{form_id}/analytics", tags=["Forms"])

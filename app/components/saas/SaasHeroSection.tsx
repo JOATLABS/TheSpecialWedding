@@ -61,6 +61,7 @@ interface AuthPanelProps {
   plansLoading?: boolean;
   plansError?: string;
   onSelectPlan?: (plan: { id: string; name?: string }) => void;
+  className?: string;
 }
 
 function MiniPlanSelector({
@@ -212,73 +213,87 @@ export function SaasAuthPanel({
   plansLoading,
   plansError,
   onSelectPlan,
+  className,
 }: AuthPanelProps) {
+  const containerClass = [
+    'relative flex flex-col gap-6 rounded-[2.6rem] border border-white/55 bg-white/75 p-6 shadow-[0_35px_120px_-60px_rgba(15,23,42,0.5)] backdrop-blur-2xl sm:p-8',
+    className ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <GlassCard depth="near" blur="xl" className="flex flex-col gap-6 rounded-[2.25rem] p-6 sm:p-8">
-      <div className="space-y-3 text-left">
-        <p className="text-xs font-semibold uppercase tracking-[0.32em] text-gray-600">Planner access</p>
-        <h2 className="text-2xl font-semibold text-gray-900">
-          {mode === 'signup' ? 'Launch your workspace' : 'Welcome back, planner'}
-        </h2>
-        <p className="text-sm text-gray-600">
-          Keep budgets, forms, vendors, and couples in sync with glassmorphic controls optimised for 2025 workflows.
-        </p>
-      </div>
+    <div className={containerClass}>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 rounded-[2.6rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),transparent_55%),radial-gradient(circle_at_bottom_left,rgba(180,209,255,0.45),transparent_60%)]"
+      />
+      <div className="relative flex flex-col gap-6 text-left">
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-gray-600">Planner access</p>
+          <h2 className="text-2xl font-semibold text-gray-900">
+            {mode === 'signup' ? 'Launch your workspace' : 'Welcome back, planner'}
+          </h2>
+          <p className="text-sm text-gray-600">
+            Keep budgets, forms, vendors, and couples in sync with glassmorphic controls optimised for 2025 workflows.
+          </p>
+        </div>
 
-      <div className="inline-flex rounded-full bg-white/70 p-1 text-sm font-medium shadow-inner">
-        <button
-          type="button"
-          onClick={() => onModeChange('signup')}
-          className={`flex-1 rounded-full px-4 py-2 transition ${
-            mode === 'signup'
-              ? 'bg-gray-900 text-white shadow'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Sign up
-        </button>
-        <button
-          type="button"
-          onClick={() => onModeChange('login')}
-          className={`flex-1 rounded-full px-4 py-2 transition ${
-            mode === 'login'
-              ? 'bg-gray-900 text-white shadow'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Log in
-        </button>
-      </div>
+        <div className="inline-flex rounded-full bg-white/70 p-1 text-sm font-medium shadow-inner">
+          <button
+            type="button"
+            onClick={() => onModeChange('signup')}
+            className={`flex-1 rounded-full px-4 py-2 transition ${
+              mode === 'signup'
+                ? 'bg-gray-900 text-white shadow'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Sign up
+          </button>
+          <button
+            type="button"
+            onClick={() => onModeChange('login')}
+            className={`flex-1 rounded-full px-4 py-2 transition ${
+              mode === 'login'
+                ? 'bg-gray-900 text-white shadow'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Log in
+          </button>
+        </div>
 
-      {mode === 'signup' ? (
-        <>
-          <MiniPlanSelector
-            plans={plans}
-            selectedPlanId={selectedPlan?.id}
-            onSelectPlan={onSelectPlan}
-            isLoading={plansLoading}
-            error={plansError}
-          />
-          <div className="rounded-2xl border border-white/55 bg-white/70 p-4 text-sm text-gray-700 shadow-sm">
-            <p className="font-semibold text-gray-900">Selected plan</p>
-            <p className="mt-1 text-gray-600">
-              {selectedPlan?.name ?? selectedPlan?.id ?? 'Choose the plan that fits your studio'}
-            </p>
-            <p className="mt-2 text-xs text-gray-500">
-              We&apos;ll pre-fill this during onboarding so your free trial starts with the right limits.
-            </p>
-          </div>
-          <PlannerSignupForm
-            theme={theme}
-            selectedPlanId={selectedPlan?.id ?? undefined}
-            selectedPlanLabel={selectedPlan?.name}
-            variant="panel"
-          />
-        </>
-      ) : (
-        <PlannerLoginPanel theme={theme} />
-      )}
-    </GlassCard>
+        {mode === 'signup' ? (
+          <>
+            <MiniPlanSelector
+              plans={plans}
+              selectedPlanId={selectedPlan?.id}
+              onSelectPlan={onSelectPlan}
+              isLoading={plansLoading}
+              error={plansError}
+            />
+            <div className="rounded-2xl border border-white/60 bg-white/75 p-4 text-sm text-gray-700 shadow-sm">
+              <p className="font-semibold text-gray-900">Selected plan</p>
+              <p className="mt-1 text-gray-600">
+                {selectedPlan?.name ?? selectedPlan?.id ?? 'Choose the plan that fits your studio'}
+              </p>
+              <p className="mt-2 text-xs text-gray-500">
+                We&apos;ll pre-fill this during onboarding so your free trial starts with the right limits.
+              </p>
+            </div>
+            <PlannerSignupForm
+              theme={theme}
+              selectedPlanId={selectedPlan?.id ?? undefined}
+              selectedPlanLabel={selectedPlan?.name}
+              variant="panel"
+            />
+          </>
+        ) : (
+          <PlannerLoginPanel theme={theme} />
+        )}
+      </div>
+    </div>
   );
 }
 
