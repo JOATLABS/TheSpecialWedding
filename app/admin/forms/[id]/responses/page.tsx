@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { fetchFormResponsesCsv } from '@/services/formExport';
 import { formsApi } from '@/services/formsApi';
+import { formatDate, formatDateTime } from '@/utils/dateFormat';
 
 interface FormResponse {
  id: string;
@@ -412,12 +413,15 @@ export default function FormResponsesPage() {
  {filteredAndSortedResponses.map((response) => (
  <tr key={response.id} className="hover:bg-gray-50">
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
- <div>
- {new Date(response.submitted_at).toLocaleDateString()}
- </div>
- <div className="text-xs text-gray-500">
- {new Date(response.submitted_at).toLocaleTimeString()}
- </div>
+        <div>
+          {formatDate(response.submitted_at)}
+        </div>
+        <div className="text-xs text-gray-500">
+          {formatDateTime(response.submitted_at, {
+            hour: 'numeric',
+            minute: '2-digit',
+          })}
+        </div>
  </td>
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
  {response.submitted_by_name || <span className="text-gray-400 italic">Anonymous</span>}
@@ -485,8 +489,14 @@ export default function FormResponsesPage() {
  <div className="bg-gray-50 rounded-lg p-4 mb-6">
  <div className="grid grid-cols-2 gap-4 text-sm">
  <div>
- <span className="font-medium text-gray-700">Submitted:</span>
- <div>{new Date(selectedResponse.submitted_at).toLocaleString()}</div>
+        <span className="font-medium text-gray-700">Submitted:</span>
+        <div>{formatDateTime(selectedResponse.submitted_at, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })}</div>
  </div>
  <div>
  <span className="font-medium text-gray-700">Name:</span>

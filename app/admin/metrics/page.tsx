@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
+import { formatDateTime } from '@/utils/dateFormat';
 
 interface RoleBreakdown {
   [role: string]: number;
@@ -205,7 +206,13 @@ export default function PlatformMetricsPage(): JSX.Element {
         <div>
           <h1 className="text-3xl font-heading text-wedding-rose">Platform Analytics</h1>
           <p className="text-gray-600">
-            Updated {new Date(metrics.generated_at).toLocaleString()} · Timeframe: {
+            Updated {formatDateTime(metrics.generated_at, {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })} · Timeframe: {
               TIMEFRAME_OPTIONS.find((option) => option.value === metrics.timeframe)?.label || metrics.timeframe
             }
           </p>
