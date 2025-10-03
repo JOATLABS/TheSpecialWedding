@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
+import { formatDateTime } from '@/utils/dateFormat';
 
 interface Wedding {
  id?: string;
@@ -64,6 +65,15 @@ export default function AdminRemindersPage() {
  const [customMessage, setCustomMessage] = useState<string>('');
  const [inviteMessage, setInviteMessage] = useState<string>('');
  const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
+
+ const formatLogTimestamp = (timestamp: string) =>
+   formatDateTime(timestamp, {
+     month: 'short',
+     day: 'numeric',
+     year: 'numeric',
+     hour: 'numeric',
+     minute: '2-digit',
+   });
 
  useEffect(() => {
  fetchWeddings();
@@ -836,7 +846,7 @@ export default function AdminRemindersPage() {
  <div key={index} className="bg-gray-50 rounded-lg p-4 space-y-2">
  <div className="flex justify-between items-start">
  <div className="text-xs text-gray-500">
- {new Date(log.sent_at).toLocaleString()}
+ {formatLogTimestamp(log.sent_at)}
  </div>
  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
  log.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
@@ -894,7 +904,7 @@ export default function AdminRemindersPage() {
  {messageHistory.map((log, index) => (
  <tr key={index}>
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
- {new Date(log.sent_at).toLocaleString()}
+ {formatLogTimestamp(log.sent_at)}
  </td>
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
  {log.phone || log.to || 'N/A'}

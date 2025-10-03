@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wedding, WeddingEvent } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { formatDate as formatDisplayDate } from '@/utils/dateFormat';
 
 interface EventLocationSectionProps {
   wedding: Wedding;
@@ -55,19 +56,6 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
       .split(' ')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
-  };
-
-  // Format date
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    });
   };
 
   // Generate Google Maps URL
@@ -160,7 +148,12 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                         <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                        {formatDate(selectedEvent.date)}
+                        {formatDisplayDate(selectedEvent.date, {
+                          weekday: 'long',
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
                       </p>
                     </div>
                     {selectedEvent.details?.location && (
