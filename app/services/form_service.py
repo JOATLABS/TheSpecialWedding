@@ -2,8 +2,14 @@ from fastapi import HTTPException
 from bson import ObjectId
 from app.core.database import mongo
 from app.models.form import (
-    FormModel, FormResponse, FormDistribution,
-    CreateFormRequest, UpdateFormRequest, SendFormRequest, SubmitFormRequest
+    FormModel,
+    FormResponse,
+    FormDistribution,
+    CreateFormRequest,
+    UpdateFormRequest,
+    SendFormRequest,
+    SubmitFormRequest,
+    DuplicateFormRequest,
 )
 from app.services.email_service_resend import ResendEmailService
 from app.utils.security_utils import (
@@ -12,6 +18,7 @@ from app.utils.security_utils import (
 from app.utils.csv_export import FormResponseCSVExporter, CSVSecurityError
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from copy import deepcopy
 import logging
 import uuid
 import os
@@ -25,6 +32,10 @@ class FormService:
         self.responses_collection = mongo.db["form_responses"]
         self.distributions_collection = mongo.db["form_distributions"]
         self.email_service = ResendEmailService()
+
+    @staticmethod
+    def _planner_state_key(email: str) -> str:
+        return email.replace('.', '_')
 
     def create_form(self, form_data: CreateFormRequest, created_by: str) -> Dict[str, Any]:
         """Create a new form with enhanced security validation"""
@@ -59,19 +70,31 @@ class FormService:
             if not InputSanitizer.validate_email(created_by):
                 raise HTTPException(status_code=400, detail="Invalid creator email")
 
+            creator_email = created_by.lower().strip()
+
+            planner_state_key = self._planner_state_key(creator_email)
+            planner_state = {
+                planner_state_key: {
+                    "last_viewed_responses_at": None,
+                    "last_viewed_submission_count": 0,
+                    "last_viewed_analytics_at": None,
+                }
+            }
+
             # Create form document with sanitized data
             form_doc = {
                 "_id": form_id,
                 "name": InputSanitizer.sanitize_text(sanitized_data['name'], 100),
                 "settings": sanitized_data['settings'],
                 "fields": sanitized_data['fields'],
-                "created_by": created_by.lower().strip(),
+                "created_by": creator_email,
                 "wedding_id": sanitized_data.get('wedding_id'),
                 "template_type": sanitized_data.get('template_type'),
                 "is_active": True,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
-                "submission_count": 0
+                "submission_count": 0,
+                "planner_state": planner_state,
             }
 
             # Insert form
@@ -88,6 +111,37 @@ class FormService:
             logging.error(f"Error creating form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create form: {str(e)}")
 
+    def duplicate_form(self, source_form_id: str, payload: DuplicateFormRequest, created_by: str) -> Dict[str, Any]:
+        """Create a copy of an existing form for the same planner."""
+        try:
+            # Ensure the user can access the source form
+            original_form = self.get_form(source_form_id, created_by)
+
+            # Build the new form payload using the original structure
+            duplicated_fields = deepcopy(original_form.get("fields", []))
+            duplicated_settings = deepcopy(original_form.get("settings", {}))
+
+            new_form_request = CreateFormRequest(
+                name=payload.new_name,
+                settings=duplicated_settings,
+                fields=duplicated_fields,
+                wedding_id=original_form.get("wedding_id"),
+                template_type=original_form.get("template_type"),
+            )
+
+            return self.create_form(new_form_request, created_by)
+
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logging.error(
+                "Error duplicating form %s for user %s: %s",
+                source_form_id,
+                created_by,
+                str(exc),
+            )
+            raise HTTPException(status_code=500, detail="Failed to duplicate form")
+
     def get_forms(self, created_by: str, wedding_id: Optional[str] = None, is_root_admin: bool = False) -> List[Dict[str, Any]]:
         """Get forms for a user"""
         try:
@@ -103,9 +157,31 @@ class FormService:
             forms = list(self.forms_collection.find(query).sort("created_at", -1))
 
             # Convert ObjectId to string and format response
+            viewer_key = None
+            raw_viewer_email = None
+            if created_by and not is_root_admin:
+                raw_viewer_email = created_by.lower().strip()
+                viewer_key = self._planner_state_key(raw_viewer_email)
+
             for form in forms:
                 form["id"] = form["_id"]
                 form.pop("_id", None)
+
+                submission_total = int(form.get("submission_count", 0) or 0)
+                planner_state = form.get("planner_state", {}) or {}
+                unread = 0
+
+                if viewer_key:
+                    state = (
+                        planner_state.get(viewer_key)
+                        or (planner_state.get(raw_viewer_email) if raw_viewer_email else {})
+                        or {}
+                    )
+                    last_seen = int(state.get("last_viewed_submission_count", 0) or 0)
+                    unread = max(submission_total - last_seen, 0)
+
+                form["unread_responses"] = unread
+                form.pop("planner_state", None)
 
             return forms
 
@@ -148,6 +224,7 @@ class FormService:
             # Sanitize form data before returning
             form["id"] = form["_id"]
             form.pop("_id", None)
+            form.pop("planner_state", None)
 
             # Sanitize sensitive data for public access
             if not created_by:  # Public access
@@ -482,7 +559,10 @@ class FormService:
                 # Update form submission count
                 self.forms_collection.update_one(
                     {"_id": form_id},
-                    {"$inc": {"submission_count": 1}}
+                    {
+                        "$inc": {"submission_count": 1},
+                        "$set": {"updated_at": datetime.utcnow()},
+                    },
                 )
 
                 # Update distribution status if applicable
@@ -545,6 +625,81 @@ class FormService:
         except Exception as e:
             logging.error(f"Error fetching form responses: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch responses: {str(e)}")
+
+    def mark_form_viewed(
+        self,
+        form_id: str,
+        viewer_email: str,
+        scope: str,
+        submission_count: Optional[int] = None,
+        *,
+        is_root_admin: bool = False,
+    ) -> Dict[str, Any]:
+        """Persist when a planner last viewed responses or analytics for a form."""
+
+        if not InputSanitizer.validate_email(viewer_email):
+            raise HTTPException(status_code=400, detail="Invalid viewer email")
+
+        if scope not in {"responses", "analytics"}:
+            raise HTTPException(status_code=400, detail="Unsupported view scope")
+
+        if not form_id or not isinstance(form_id, str):
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+
+        sanitized_form_id = InputSanitizer.sanitize_text(form_id, 100)
+        if not sanitized_form_id:
+            raise HTTPException(status_code=400, detail="Invalid form ID")
+
+        normalized_email = viewer_email.lower().strip()
+        state_key = self._planner_state_key(normalized_email)
+
+        base_projection = {"planner_state": 1, "submission_count": 1, "is_active": 1, "created_by": 1}
+        if is_root_admin:
+            form = self.forms_collection.find_one({"_id": sanitized_form_id}, base_projection)
+        else:
+            form = self.forms_collection.find_one(
+                {"_id": sanitized_form_id, "is_active": True, "created_by": normalized_email},
+                base_projection,
+            )
+
+        if not form:
+            if not is_root_admin:
+                # Differentiate between unauthorized access and missing forms for clearer errors
+                exists = self.forms_collection.find_one({"_id": sanitized_form_id}, {"_id": 1})
+                if exists:
+                    raise HTTPException(status_code=403, detail="Access denied to form")
+            raise HTTPException(status_code=404, detail="Form not found")
+
+        if not form.get("is_active", True) and not is_root_admin:
+            raise HTTPException(status_code=404, detail="Form not found")
+
+        now = datetime.utcnow()
+        update_fields: Dict[str, Any] = {}
+
+        total_submissions = int(form.get("submission_count", 0) or 0)
+        planner_state = form.get("planner_state", {}) or {}
+        existing_state = planner_state.get(state_key) or planner_state.get(normalized_email) or {}
+        unread_after_update = max(total_submissions - int(existing_state.get("last_viewed_submission_count", 0) or 0), 0)
+
+        if scope == "responses":
+            latest_known = submission_count
+            if latest_known is None:
+                latest_known = total_submissions
+
+            latest_int = max(int(latest_known or 0), 0)
+            update_fields[f"planner_state.{state_key}.last_viewed_submission_count"] = latest_int
+            update_fields[f"planner_state.{state_key}.last_viewed_responses_at"] = now
+            unread_after_update = max(total_submissions - latest_int, 0)
+
+        if scope == "analytics":
+            update_fields[f"planner_state.{state_key}.last_viewed_analytics_at"] = now
+
+        self.forms_collection.update_one({"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False)
+
+        return {
+            "message": "Form view recorded",
+            "unread_responses": unread_after_update,
+        }
 
     def get_form_analytics(self, form_id: str, created_by: str) -> Dict[str, Any]:
         """Get analytics for a form"""
