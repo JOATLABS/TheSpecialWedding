@@ -1,5 +1,7 @@
 export type DateInput = string | number | Date | null | undefined
 
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/
+
 function isValidDate(date: Date): boolean {
   return !Number.isNaN(date.getTime())
 }
@@ -24,7 +26,7 @@ export function parseDateInput(value: DateInput): Date | null {
       return null
     }
 
-    const isoDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    const isoDateMatch = trimmed.match(DATE_ONLY_REGEX)
     if (isoDateMatch) {
       const [, year, month, day] = isoDateMatch
       const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
@@ -83,6 +85,42 @@ export function formatDateTime(
   return formatDate(value, mergedOptions, locale)
 }
 
+export function endOfLocalDay(value: DateInput): Date | null {
+  if (value == null) {
+    return null
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    const isoDateMatch = trimmed.match(DATE_ONLY_REGEX)
+    if (isoDateMatch) {
+      const [, year, month, day] = isoDateMatch
+      const endOfDay = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        23,
+        59,
+        59,
+        999,
+      )
+
+      return isValidDate(endOfDay) ? endOfDay : null
+    }
+  }
+
+  const parsed = parseDateInput(value)
+  if (!parsed) {
+    return null
+  }
+
+  return parsed
+}
+
 export function isSameUtcCalendarDate(a: DateInput, b: DateInput): boolean {
   const first = parseDateInput(a)
   const second = parseDateInput(b)
@@ -95,5 +133,20 @@ export function isSameUtcCalendarDate(a: DateInput, b: DateInput): boolean {
     first.getUTCFullYear() === second.getUTCFullYear() &&
     first.getUTCMonth() === second.getUTCMonth() &&
     first.getUTCDate() === second.getUTCDate()
+  )
+}
+
+export function isSameLocalCalendarDate(a: DateInput, b: DateInput): boolean {
+  const first = parseDateInput(a)
+  const second = parseDateInput(b)
+
+  if (!first || !second) {
+    return false
+  }
+
+  return (
+    first.getFullYear() === second.getFullYear() &&
+    first.getMonth() === second.getMonth() &&
+    first.getDate() === second.getDate()
   )
 }

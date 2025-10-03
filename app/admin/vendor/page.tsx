@@ -9,7 +9,7 @@ import {
   fetchVendorDashboard,
   updateVendorTaskStatus,
 } from '@/services/vendorDashboardApi';
-import { formatDate as formatUtcDate, isSameUtcCalendarDate } from '@/utils/dateFormat';
+import { formatDate as formatUtcDate, isSameLocalCalendarDate } from '@/utils/dateFormat';
 
 const STATUS_OPTIONS: Array<{ value: VendorDashboardResponse['tasks'][number]['status']; label: string }> = [
   { value: 'pending', label: 'Pending' },
@@ -86,7 +86,7 @@ export default function VendorDashboardPage(): JSX.Element {
         if (task.status !== 'completed' || !task.updated_at) {
           return false;
         }
-        return isSameUtcCalendarDate(task.updated_at, new Date());
+        return isSameLocalCalendarDate(task.updated_at, new Date());
       }).length ?? 0,
     [dashboard],
   );

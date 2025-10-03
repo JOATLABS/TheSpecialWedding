@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import type { VendorQuote } from '../../types/budget';
-import { formatDate, parseDateInput } from '@/utils/dateFormat';
+import { endOfLocalDay, formatDate } from '@/utils/dateFormat';
 
 interface VendorQuoteCardProps {
   quote: VendorQuote;
@@ -46,7 +46,11 @@ export default function VendorQuoteCard({
   };
 
   const isExpired = (() => {
-    const deadline = parseDateInput(quote.valid_until);
+    if (!quote.valid_until) {
+      return false;
+    }
+
+    const deadline = endOfLocalDay(quote.valid_until);
     if (!deadline) {
       return false;
     }

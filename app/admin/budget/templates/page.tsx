@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAdmin } from '../../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
