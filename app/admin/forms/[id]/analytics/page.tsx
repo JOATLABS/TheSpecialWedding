@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formsApi } from '@/services/formsApi';
+import { formatDate, formatDateTime } from '@/utils/dateFormat';
 
 interface Analytics {
   form_id: string;
@@ -345,14 +346,14 @@ export default function FormAnalyticsPage() {
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-gray-900">
-                    {new Date(analytics.created_at).toLocaleDateString()}
+                    {formatDate(analytics.created_at)}
                   </p>
                   <p className="text-sm text-gray-600">
-                    {new Date(analytics.created_at).toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
+                    {formatDate(analytics.created_at, {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
                     })}
                   </p>
                 </div>
@@ -366,10 +367,13 @@ export default function FormAnalyticsPage() {
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-gray-900">
-                      {new Date(analytics.last_response).toLocaleDateString()}
+                      {formatDate(analytics.last_response)}
                     </p>
                     <p className="text-sm text-gray-600">
-                      {new Date(analytics.last_response).toLocaleTimeString()}
+                      {formatDateTime(analytics.last_response, {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
                     </p>
                   </div>
                 </div>
