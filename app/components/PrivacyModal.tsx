@@ -1,8 +1,9 @@
 'use client';
 
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import { formatDate } from '@/utils/dateFormat';
 
 interface PrivacyModalProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ interface PrivacyModalProps {
 }
 
 export default function PrivacyModal({ isOpen, onClose, weddingName = "The Special Wedding" }: PrivacyModalProps) {
+  const lastUpdated = useMemo(() => formatDate(new Date()), []);
+
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -49,7 +52,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName = "The Speci
                 </Dialog.Title>
                 
                 <div className="mt-2 max-h-[60vh] overflow-y-auto prose prose-sm">
-                  <p className="text-sm text-gray-500 mb-4">Last updated: {new Date().toLocaleDateString()}</p>
+                  <p className="text-sm text-gray-500 mb-4">Last updated: {lastUpdated}</p>
                   
                   <h4 className="text-lg font-semibold mt-4">1. Information We Collect</h4>
                   <p>

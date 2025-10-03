@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '../../contexts/AdminContext';
+import { formatDate } from '@/utils/dateFormat';
 
 interface Wedding {
   id: string;
@@ -872,7 +873,7 @@ export default function AdminWeddingsPage() {
                         {wedding.couple_names}
                       </h3>
                       <p className="text-gray-600">
-                        {new Date(wedding.date).toLocaleDateString()} 
+                        {formatDate(wedding.date)}
                         {wedding.venue && ` • ${wedding.venue}`}
                       </p>
                       <div className="flex gap-4 mt-2 text-sm text-gray-500">
