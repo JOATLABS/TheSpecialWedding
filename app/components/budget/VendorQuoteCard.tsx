@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import type { VendorQuote } from '../../types/budget';
+import { endOfLocalDay, formatDate } from '@/utils/dateFormat';
 
 interface VendorQuoteCardProps {
   quote: VendorQuote;
@@ -44,7 +45,17 @@ export default function VendorQuoteCard({
     }
   };
 
-  const isExpired = quote.valid_until && new Date(quote.valid_until) < new Date();
+  const isExpired = (() => {
+    if (!quote.valid_until) {
+      return false;
+    }
+
+    const deadline = endOfLocalDay(quote.valid_until);
+    if (!deadline) {
+      return false;
+    }
+    return deadline.getTime() < Date.now();
+  })();
 
   const handleSubmitRating = () => {
     onRate(quote.id, rating, ratingNotes);
@@ -102,7 +113,7 @@ export default function VendorQuoteCard({
           </div>
           {quote.valid_until && (
             <div className="text-sm text-gray-600">
-              Valid until: {new Date(quote.valid_until).toLocaleDateString()}
+              Valid until: {formatDate(quote.valid_until)}
             </div>
           )}
         </div>
@@ -224,9 +235,9 @@ export default function VendorQuoteCard({
 
         {/* Quote dates */}
         <div className="mt-4 text-xs text-gray-500 text-center border-t border-gray-200 pt-2">
-          Created: {new Date(quote.created_at).toLocaleDateString()}
+          Created: {formatDate(quote.created_at)}
           {quote.updated_at !== quote.created_at && (
-            <span className="ml-2">• Updated: {new Date(quote.updated_at).toLocaleDateString()}</span>
+            <span className="ml-2">• Updated: {formatDate(quote.updated_at)}</span>
           )}
         </div>
       </Card>

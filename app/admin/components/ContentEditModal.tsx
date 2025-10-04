@@ -332,7 +332,7 @@ export const ContentEditModal: React.FC<ContentEditModalProps> = ({
  default:
  return (
  <div className="text-center py-8 text-gray-500">
- Content editor for "{sectionType}" is not implemented yet.
+        Content editor for “{sectionType}” is not implemented yet.
  </div>
  );
  }

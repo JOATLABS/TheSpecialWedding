@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../../components/ui/Card';
 import { ContentEditModal } from '../components/ContentEditModal';
+import { formatDate } from '@/utils/dateFormat';
 
 interface SubscriptionPlan {
  _id: string;
@@ -1346,10 +1347,10 @@ const SaasAdminDashboard = () => {
  </span>
  </td>
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
- {planner.lastLogin 
- ? new Date(planner.lastLogin).toLocaleDateString()
- : 'Never'
- }
+            {planner.lastLogin
+              ? formatDate(planner.lastLogin)
+              : 'Never'
+            }
  </td>
  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
  <button

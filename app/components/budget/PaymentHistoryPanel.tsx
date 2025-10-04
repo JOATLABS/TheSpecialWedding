@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { BudgetCategory, PaymentRecord } from '../../types/budget';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { formatDate } from '@/utils/dateFormat';
 
 interface PaymentHistoryPanelProps {
   payments: PaymentRecord[];
@@ -121,7 +122,7 @@ export function PaymentHistoryPanel({
       totalCompleted,
       totalPending,
       lastPaymentLabel: lastPayment
-        ? `${formatCurrency(lastPayment.amount)} • ${new Date(lastPayment.payment_date).toLocaleDateString()}`
+        ? `${formatCurrency(lastPayment.amount)} • ${formatDate(lastPayment.payment_date)}`
         : 'No payments logged yet',
     };
   }, [payments, resolvedPayments]);
@@ -255,7 +256,7 @@ export function PaymentHistoryPanel({
                         <div>
                           <p className="text-sm font-semibold text-wedding-navy">{payment.category_name}</p>
                           <p className="text-xs text-gray-500">
-                            {new Date(payment.payment_date).toLocaleDateString(undefined, {
+                            {formatDate(payment.payment_date, {
                               month: 'short',
                               day: 'numeric',
                               year: 'numeric',
