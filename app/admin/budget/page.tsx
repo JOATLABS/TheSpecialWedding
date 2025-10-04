@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -10,6 +10,7 @@ import BudgetCategoryCard from '../../components/budget/BudgetCategoryCard';
 import PaymentHistoryPanel from '../../components/budget/PaymentHistoryPanel';
 import RecordPaymentModal from '../../components/budget/RecordPaymentModal';
 import { budgetApi } from '../../services/budgetApi';
+import { formatDate } from '@/utils/dateFormat';
 import type {
   BudgetCategory,
   BudgetSummary,
@@ -344,7 +345,7 @@ export default function BudgetDashboard() {
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
               <option key={wedding._id || wedding.id} value={wedding._id || wedding.id}>
-                {wedding.couple_names} - {new Date(wedding.date).toLocaleDateString()}
+                {wedding.couple_names} - {formatDate(wedding.date)}
               </option>
             ))}
           </select>

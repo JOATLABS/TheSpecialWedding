@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 
 interface Wedding {
   id?: string;
@@ -386,7 +386,7 @@ export default function AdminGuestsPage() {
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
-                    RSVP'd ({rsvps.length})
+                    RSVP’d ({rsvps.length})
                   </button>
                   <button
                     onClick={() => setActiveTab('pending')}
@@ -451,7 +451,7 @@ export default function AdminGuestsPage() {
                                 </span>
                                 {rsvp && (
                                   <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                    RSVP'd
+                                    RSVP’d
                                   </span>
                                 )}
                               </div>

@@ -20,6 +20,7 @@ type AdminContextType = {
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
     logout: () => void;
     fetchUserProfile: () => Promise<void>;
+    apiRequest: <T = any>(path: string, method?: string, body?: unknown) => Promise<T>;
 };
 
 const AdminContext = createContext<AdminContextType | null>(null);
@@ -158,6 +159,30 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         window.location.href = '/admin/login';
     };
 
+    const apiRequest = async <T = any>(path: string, method = 'GET', body?: unknown): Promise<T> => {
+        if (!token) {
+            throw new Error('Authentication required');
+        }
+
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const response = await fetch(`${baseUrl}${path}`, {
+            method,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+            cache: 'no-store'
+        });
+
+        if (!response.ok) {
+            const detail = await response.text();
+            throw new Error(detail || 'Request failed');
+        }
+
+        return (await response.json()) as T;
+    };
+
     return (
         <AdminContext.Provider
             value={{
@@ -167,6 +192,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 login,
                 logout,
                 fetchUserProfile,
+                apiRequest,
             }}
         >
             {children}

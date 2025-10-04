@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { formatDate } from '@/utils/dateFormat';
 
 interface SupportTicket {
   _id: string;
@@ -307,7 +308,7 @@ export default function SupportPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(ticket.created_at).toLocaleDateString()}
+                        {formatDate(ticket.created_at)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
@@ -407,7 +408,7 @@ export default function SupportPage() {
               <div className="flex justify-between items-start mb-2">
                 <span className="font-medium">{selectedTicket.user_name}</span>
                 <span className="text-sm text-gray-500">
-                  {new Date(selectedTicket.created_at).toLocaleDateString()}
+                  {formatDate(selectedTicket.created_at)}
                 </span>
               </div>
               <p className="text-gray-700">{selectedTicket.message}</p>

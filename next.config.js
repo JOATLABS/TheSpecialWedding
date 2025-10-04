@@ -24,13 +24,32 @@ const nextConfig = {
         fs: false,
       };
     }
-    
+
+    const resolveTinyInvariant = () => {
+      const candidates = ['tiny-invariant', '@hello-pangea/dnd/node_modules/tiny-invariant'];
+
+      for (const candidate of candidates) {
+        try {
+          return require.resolve(candidate);
+        } catch (error) {
+          if (error?.code !== 'MODULE_NOT_FOUND') {
+            throw error;
+          }
+        }
+      }
+
+      throw new Error(
+        'The "tiny-invariant" package is required by @hello-pangea/dnd. ' +
+          'Run "npm install" to reinstall dependencies before building.'
+      );
+    };
+
     // Fix for @hello-pangea/dnd dependency issues
     config.resolve.alias = {
       ...config.resolve.alias,
-      'tiny-invariant': require.resolve('tiny-invariant'),
+      'tiny-invariant': resolveTinyInvariant(),
     };
-    
+
     return config;
   },
 }

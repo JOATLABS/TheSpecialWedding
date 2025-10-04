@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactElement } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
+import { formatDateTime } from '@/utils/dateFormat';
 
 interface RoleBreakdown {
   [role: string]: number;
@@ -93,7 +95,7 @@ function formatPercentage(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
-export default function PlatformMetricsPage(): JSX.Element {
+export default function PlatformMetricsPage(): ReactElement {
   const { token } = useAdmin();
   const [metrics, setMetrics] = useState<PlatformMetricsResponse | null>(null);
   const [timeframe, setTimeframe] = useState<TimeframeKey>('30d');
@@ -162,7 +164,10 @@ export default function PlatformMetricsPage(): JSX.Element {
       return [] as Array<{ status: string; count: number }>;
     }
 
-    return Object.entries(metrics.subscriptions.status_breakdown);
+    return Object.entries(metrics.subscriptions.status_breakdown).map(([status, count]) => ({
+      status,
+      count,
+    }));
   }, [metrics]);
 
   if (loading) {
@@ -205,7 +210,13 @@ export default function PlatformMetricsPage(): JSX.Element {
         <div>
           <h1 className="text-3xl font-heading text-wedding-rose">Platform Analytics</h1>
           <p className="text-gray-600">
-            Updated {new Date(metrics.generated_at).toLocaleString()} · Timeframe: {
+            Updated {formatDateTime(metrics.generated_at, {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })} · Timeframe: {
               TIMEFRAME_OPTIONS.find((option) => option.value === metrics.timeframe)?.label || metrics.timeframe
             }
           </p>
@@ -264,7 +275,7 @@ export default function PlatformMetricsPage(): JSX.Element {
               {formatNumber(metrics.subscriptions.status_breakdown.active)}
             </p>
             <ul className="mt-3 space-y-1 text-sm text-gray-600">
-              {statusBreakdown.map(([status, count]) => (
+              {statusBreakdown.map(({ status, count }) => (
                 <li key={status} className="flex justify-between">
                   <span className="capitalize">{status.replace('_', ' ')}</span>
                   <span>{formatNumber(count)}</span>

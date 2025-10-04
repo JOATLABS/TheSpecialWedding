@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { formatDate } from '@/utils/dateFormat';
 
 interface NotificationTemplate {
   _id: string;
@@ -284,7 +285,7 @@ export default function NotificationsPage() {
                     <tr key={notification._id} className="border-t">
                       <td className="px-6 py-4 text-sm">{notification.subject}</td>
                       <td className="px-6 py-4 text-sm">{notification.recipients_count}</td>
-                      <td className="px-6 py-4 text-sm">{new Date(notification.sent_at).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 text-sm">{formatDate(notification.sent_at)}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">
                           {notification.delivery_status}
@@ -300,7 +301,7 @@ export default function NotificationsPage() {
               <div className="text-gray-400 text-4xl mb-4">📊</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No Notifications Sent Yet</h3>
               <p className="text-gray-600 mb-4">
-                Once you start sending platform notifications, you'll see delivery statistics, 
+                Once you start sending platform notifications, you’ll see delivery statistics,
                 open rates, and performance metrics here.
               </p>
               <div className="text-sm text-gray-500">

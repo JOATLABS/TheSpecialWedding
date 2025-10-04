@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useAdmin } from '../../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import VendorQuoteCard from '../../../components/budget/VendorQuoteCard';
 import { budgetApi } from '../../../services/budgetApi';
 import type { VendorQuote, CreateVendorQuoteRequest } from '../../../types/budget';
+import { formatDate } from '@/utils/dateFormat';
 
 interface Wedding {
   id?: string;
@@ -320,7 +321,7 @@ export default function VendorQuotesPage() {
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
               <option key={wedding._id || wedding.id} value={wedding._id || wedding.id}>
-                {wedding.couple_names} - {new Date(wedding.date).toLocaleDateString()}
+                {wedding.couple_names} - {formatDate(wedding.date)}
               </option>
             ))}
           </select>
@@ -543,10 +544,10 @@ export default function VendorQuotesPage() {
                   </div>
                 </div>
 
-                {/* What's Included */}
+                {/* What’s Included */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    What's Included
+                    What’s Included
                   </label>
                   {quoteForm.includes.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">
@@ -576,10 +577,10 @@ export default function VendorQuotesPage() {
                   </Button>
                 </div>
 
-                {/* What's Excluded */}
+                {/* What’s Excluded */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    What's Excluded
+                    What’s Excluded
                   </label>
                   {quoteForm.excludes.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">
