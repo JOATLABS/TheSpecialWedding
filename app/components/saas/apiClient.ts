@@ -4,33 +4,17 @@ export function resolveApiUrl(path: string): string {
   }
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
+  const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
 
-  if (configuredBase) {
-    return `${configuredBase}${normalizedPath}`;
+  if (!configuredBase) {
+    throw new Error(
+      'NEXT_PUBLIC_API_BASE_URL must be set to resolve SaaS API endpoints. Update your environment configuration.'
+    );
   }
 
-  // When no explicit API base URL is provided we rely on the frontend proxying requests
-  // through a rewrite such as `/api/:path* -> https://api.example.com/:path*`. Default to
-  // the conventional `/api` prefix while allowing deployments to override it.
-  const proxyPrefixEnv = process.env.NEXT_PUBLIC_API_PROXY_PREFIX;
-  const proxyPrefix = proxyPrefixEnv
-    ? proxyPrefixEnv.startsWith('/')
-      ? proxyPrefixEnv.replace(/\/$/, '')
-      : `/${proxyPrefixEnv.replace(/\/$/, '')}`
-    : '/api';
+  const base = configuredBase.endsWith('/') ? configuredBase.slice(0, -1) : configuredBase;
 
-  if (!proxyPrefix || proxyPrefix === '/') {
-    return normalizedPath;
-  }
-
-  const normalizedProxyPrefix = proxyPrefix.replace(/\/$/, '');
-
-  if (normalizedPath.startsWith(`${normalizedProxyPrefix}/`)) {
-    return normalizedPath;
-  }
-
-  return `${normalizedProxyPrefix}${normalizedPath}`;
+  return `${base}${normalizedPath}`;
 }
 
 export async function fetchWithTimeout(
