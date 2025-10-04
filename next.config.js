@@ -1,3 +1,5 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
@@ -25,6 +27,12 @@ const nextConfig = {
       };
     }
 
+    const fallbackTinyInvariantPath = path.resolve(
+      __dirname,
+      'app/utils/tinyInvariantFallback.ts'
+    );
+    let hasWarnedAboutFallback = false;
+
     const resolveTinyInvariant = () => {
       const candidates = ['tiny-invariant', '@hello-pangea/dnd/node_modules/tiny-invariant'];
 
@@ -38,10 +46,15 @@ const nextConfig = {
         }
       }
 
-      throw new Error(
-        'The "tiny-invariant" package is required by @hello-pangea/dnd. ' +
-          'Run "npm install" to reinstall dependencies before building.'
-      );
+      if (!hasWarnedAboutFallback) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          'The "tiny-invariant" package is missing. Using the local fallback implementation. '
+        );
+        hasWarnedAboutFallback = true;
+      }
+
+      return fallbackTinyInvariantPath;
     };
 
     // Fix for @hello-pangea/dnd dependency issues

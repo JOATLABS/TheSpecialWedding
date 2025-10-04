@@ -44,6 +44,7 @@ interface SaasHeroSectionProps {
   theme: ThemeConfig;
   onAuthModeChange: (mode: 'signup' | 'login') => void;
   onRequestSignupFocus?: () => void;
+  onContactClick?: () => void;
 }
 
 interface AuthPanelProps {
@@ -296,6 +297,7 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   theme,
   onAuthModeChange,
   onRequestSignupFocus,
+  onContactClick,
 }) => {
   const handlePrimaryCta = useCallback(() => {
     onAuthModeChange('signup');
@@ -318,6 +320,11 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   }, [config.demo_url, handlePrimaryCta]);
 
   const handleContactCta = useCallback(() => {
+    if (onContactClick) {
+      onContactClick();
+      return;
+    }
+
     const fallbackContact = process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com';
     const target = config.contact_url || fallbackContact;
 
@@ -335,7 +342,7 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
 
       window.location.href = target;
     }
-  }, [config.contact_url]);
+  }, [config.contact_url, onContactClick]);
 
   return (
     <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] py-16 sm:py-20 xl:py-24">
