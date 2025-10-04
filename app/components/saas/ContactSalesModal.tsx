@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { ThemeConfig } from '@/types/wedding';
+import { resolveApiUrl } from './apiClient';
 
 interface ContactSalesModalProps {
   isOpen: boolean;
@@ -32,8 +33,6 @@ export const ContactSalesModal: React.FC<ContactSalesModalProps> = ({ isOpen, on
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const baseUrl = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000', []);
-
   useEffect(() => {
     if (isOpen) {
       setError('');
@@ -59,7 +58,8 @@ export const ContactSalesModal: React.FC<ContactSalesModalProps> = ({ isOpen, on
     setSuccess('');
 
     try {
-      const response = await fetch(`${baseUrl}/saas/contact`, {
+      const endpoint = resolveApiUrl('/saas/contact');
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

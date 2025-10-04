@@ -5,6 +5,7 @@ import { Modern3DBackground } from '../landing-page/Modern3DBackground';
 import { SaasAuthPanel, SaasHeroSection, SubscriptionPlan } from './SaasHeroSection';
 import { SaasExperienceCarousel } from './SaasExperienceCarousel';
 import ContactSalesModal from './ContactSalesModal';
+import { fetchWithTimeout, resolveApiUrl } from './apiClient';
 
 interface Feature {
   title: string;
