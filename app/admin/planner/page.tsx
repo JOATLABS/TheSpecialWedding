@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 
 interface Wedding {
  id: string;
@@ -96,13 +97,13 @@ export default function WeddingPlannerDashboard() {
  }
  };
 
- const formatDate = (dateString: string) => {
- return new Date(dateString).toLocaleDateString('en-US', {
- year: 'numeric',
- month: 'long',
- day: 'numeric'
- });
- };
+  const formatDisplayDate = (dateString: string) => {
+    return formatUtcDate(dateString, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
 
  if (loading) {
  return (
@@ -122,7 +123,7 @@ export default function WeddingPlannerDashboard() {
  <h1 className="text-2xl font-bold text-gray-900 mb-2">
  Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
  </h1>
- <p className="text-gray-600">Here's what's happening with your weddings today.</p>
+        <p className="text-gray-600">Here’s what’s happening with your weddings today.</p>
  </div>
 
  {/* Stats Cards */}
@@ -230,7 +231,7 @@ export default function WeddingPlannerDashboard() {
  {wedding.couple_names}
  </h3>
  <div className="flex items-center space-x-4 text-sm text-gray-500">
- <span> {formatDate(wedding.date)}</span>
+ <span> {formatDisplayDate(wedding.date)}</span>
  {wedding.venue && <span> {wedding.venue}</span>}
  {wedding.guest_count && <span> {wedding.guest_count} guests</span>}
  <span className={`px-2 py-1 rounded-full text-xs ${
@@ -365,9 +366,15 @@ export default function WeddingPlannerDashboard() {
  }`}></div>
  <div>
  <p className="text-sm text-gray-900">{activity.message}</p>
- <p className="text-xs text-gray-500">
- {new Date(activity.timestamp).toLocaleString()}
- </p>
+          <p className="text-xs text-gray-500">
+            {formatDateTime(activity.timestamp, {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </p>
  </div>
  </div>
  )) : (

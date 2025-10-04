@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 
 import { SocialAuthButtons } from '../auth/SocialAuthButtons';
 import { ThemeConfig } from '@/types/wedding';
@@ -270,8 +271,8 @@ export function PlannerSignupForm({
             required
           />
           <label htmlFor="signup-terms" className="text-xs text-gray-600">
-            I agree to the Special Wedding <a href="/legal/terms" className="underline">Terms</a> and{' '}
-            <a href="/legal/privacy" className="underline">Privacy Policy</a>.
+            I agree to the Special Wedding <Link href="/legal/terms" className="underline">Terms</Link> and{' '}
+            <Link href="/legal/privacy" className="underline">Privacy Policy</Link>.
           </label>
         </div>
 

@@ -105,11 +105,11 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             </h2>
             
             <div className="space-y-8">
-              {/* Bride's Side */}
+              {/* Bride’s Side */}
               {bridesSide.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
-                    Bride's Side
+                    Bride’s Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
                     {bridesSide.map((member) => (
@@ -137,11 +137,11 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                 </div>
               )}
 
-              {/* Groom's Side */}
+              {/* Groom’s Side */}
               {groomsSide.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
-                    Groom's Side
+                    Groom’s Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
                     {groomsSide.map((member) => (

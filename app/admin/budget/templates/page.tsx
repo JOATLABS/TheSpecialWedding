@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAdmin } from '../../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { budgetApi } from '../../../services/budgetApi';
 import type { BudgetTemplate, CreateBudgetTemplatePayload } from '../../../types/budget';
 import { CreateTemplateModal } from '../../../components/budget/CreateTemplateModal';
+import { formatDate } from '@/utils/dateFormat';
 
 interface Wedding {
   id?: string;
@@ -314,7 +315,7 @@ export default function BudgetTemplatesPage() {
                 {template.created_by && (
                   <div>Created by: {template.created_by}</div>
                 )}
-                <div>Created: {new Date(template.created_at).toLocaleDateString()}</div>
+                <div>Created: {formatDate(template.created_at)}</div>
               </div>
             </Card>
           ))}
@@ -343,7 +344,7 @@ export default function BudgetTemplatesPage() {
                   <option value="">Choose a wedding...</option>
                   {weddings.map((wedding) => (
                     <option key={wedding._id || wedding.id} value={wedding._id || wedding.id}>
-                      {wedding.couple_names} - {new Date(wedding.date).toLocaleDateString()}
+                      {wedding.couple_names} - {formatDate(wedding.date)}
                     </option>
                   ))}
                 </select>

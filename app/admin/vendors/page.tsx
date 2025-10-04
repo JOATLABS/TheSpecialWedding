@@ -1,8 +1,20 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+const vendorTypes = [
+  'photographer', 'videographer', 'florist', 'caterer',
+  'musician', 'decorator', 'makeup_artist', 'venue',
+  'transport', 'baker', 'jewelry', 'other'
+] as const;
+
+type VendorType = typeof vendorTypes[number];
+
+const isVendorType = (value: string): value is VendorType =>
+  (vendorTypes as readonly string[]).includes(value);
 
 interface VendorForm {
   _id?: string;
@@ -10,7 +22,7 @@ interface VendorForm {
   form_name: string;
   vendor_email: string;
   vendor_name: string;
-  vendor_type: string;
+  vendor_type: VendorType;
   fields: FormField[];
   status: 'draft' | 'sent' | 'submitted' | 'approved' | 'rejected';
   created_at?: string;
@@ -55,13 +67,7 @@ export default function VendorManagementPage() {
     status: 'draft'
   });
 
-  const vendorTypes = [
-    'photographer', 'videographer', 'florist', 'caterer', 
-    'musician', 'decorator', 'makeup_artist', 'venue', 
-    'transport', 'baker', 'jewelry', 'other'
-  ];
-
-  const defaultFields = {
+  const defaultFields: Partial<Record<VendorType, FormField[]>> = {
     photographer: [
       { id: 'portfolio', label: 'Portfolio Link', type: 'text', required: true, placeholder: 'https://...' },
       { id: 'packages', label: 'Available Packages', type: 'textarea', required: true },
@@ -199,12 +205,13 @@ export default function VendorManagementPage() {
   };
 
   const handleVendorTypeChange = (type: string) => {
-    const defaultFieldsForType = defaultFields[type as keyof typeof defaultFields] || [];
-    setFormData({
-      ...formData,
-      vendor_type: type,
+    const nextType: VendorType = isVendorType(type) ? type : 'other';
+    const defaultFieldsForType = defaultFields[nextType] ?? [];
+    setFormData(previous => ({
+      ...previous,
+      vendor_type: nextType,
       fields: defaultFieldsForType.map(field => ({ ...field }))
-    });
+    }));
   };
 
   const sendVendorForm = async (vendorId: string) => {
@@ -499,13 +506,16 @@ export default function VendorManagementPage() {
                               View Submission
                             </button>
                           )}
-                          <button
-                            onClick={() => router.push(`/vendor-form/${vendor._id}`)}
-                            target="_blank"
-                            className="text-indigo-600 hover:text-indigo-900"
-                          >
-                            Preview
-                          </button>
+                          {vendor._id && (
+                            <Link
+                              href={`/vendor-form/${vendor._id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-indigo-600 hover:text-indigo-900"
+                            >
+                              Preview
+                            </Link>
+                          )}
                         </td>
                       </tr>
                     ))}

@@ -262,7 +262,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
               </div>
             ))}
             <p className="text-sm text-gray-600 italic">
-              * Leave blank if you're not bringing additional guests
+              * Leave blank if you’re not bringing additional guests
             </p>
           </div>
         </div>

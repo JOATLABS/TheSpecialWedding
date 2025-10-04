@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
+import { formatDateTime } from '@/utils/dateFormat';
 
 interface Wedding {
  id?: string;
@@ -64,6 +65,15 @@ export default function AdminRemindersPage() {
  const [customMessage, setCustomMessage] = useState<string>('');
  const [inviteMessage, setInviteMessage] = useState<string>('');
  const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
+
+ const formatLogTimestamp = (timestamp: string) =>
+   formatDateTime(timestamp, {
+     month: 'short',
+     day: 'numeric',
+     year: 'numeric',
+     hour: 'numeric',
+     minute: '2-digit',
+   });
 
  useEffect(() => {
  fetchWeddings();
@@ -545,7 +555,7 @@ export default function AdminRemindersPage() {
  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 mt-1">
- Use {"{url}"} for the RSVP link and {"{name}"} for the guest's name. Leave empty to use default message.
+          Use {"{url}"} for the RSVP link and {"{name}"} for the guest’s name. Leave empty to use default message.
  </p>
  </div>
  )}
@@ -561,7 +571,7 @@ export default function AdminRemindersPage() {
  type="text"
  value={emailSubject}
  onChange={(e) => setEmailSubject(e.target.value)}
- placeholder={`You're Invited - ${selectedWeddingData?.couple_names}`}
+          placeholder={`You’re Invited - ${selectedWeddingData?.couple_names}`}
  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  </div>
@@ -654,7 +664,7 @@ export default function AdminRemindersPage() {
  <div className="p-6 bg-blue-50 rounded-lg">
  <h4 className="font-medium text-blue-900 mb-2">SMS Preview:</h4>
  <p className="text-blue-700 text-sm">
- "{inviteMessage.replace('{url}', `https://thespecialwedding.com/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}"
+        “{inviteMessage.replace('{url}', `https://thespecialwedding.com/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}”
  </p>
  </div>
  )}
@@ -744,10 +754,10 @@ export default function AdminRemindersPage() {
  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 mt-1">
- This will be sent to guests who have RSVP'd for the {eventType.replace('_', ' ')} event.
+        This will be sent to guests who have RSVP’d for the {eventType.replace('_', ' ')} event.
  </p>
  <p className="text-sm text-yellow-600 mt-1">
- Note: If no messages are sent, guests may not have RSVP'd yet. Use "Send Invites" first to get responses.
+        Note: If no messages are sent, guests may not have RSVP’d yet. Use “Send Invites” first to get responses.
  </p>
  </div>
 
@@ -836,7 +846,7 @@ export default function AdminRemindersPage() {
  <div key={index} className="bg-gray-50 rounded-lg p-4 space-y-2">
  <div className="flex justify-between items-start">
  <div className="text-xs text-gray-500">
- {new Date(log.sent_at).toLocaleString()}
+ {formatLogTimestamp(log.sent_at)}
  </div>
  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
  log.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
@@ -894,7 +904,7 @@ export default function AdminRemindersPage() {
  {messageHistory.map((log, index) => (
  <tr key={index}>
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
- {new Date(log.sent_at).toLocaleString()}
+ {formatLogTimestamp(log.sent_at)}
  </td>
  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
  {log.phone || log.to || 'N/A'}

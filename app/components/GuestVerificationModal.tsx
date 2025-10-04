@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 
 interface GuestVerificationModalProps {
@@ -46,11 +46,7 @@ export default function GuestVerificationModal({
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
   const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
-  useEffect(() => {
-    fetchPrivacyInfo();
-  }, [slug]);
-
-  const fetchPrivacyInfo = async () => {
+  const fetchPrivacyInfo = useCallback(async () => {
     try {
       const response = await fetch(`${API_URL}/weddings/privacy-info/${slug}`);
       if (!response.ok) {
@@ -63,7 +59,17 @@ export default function GuestVerificationModal({
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL, slug]);
+
+  useEffect(() => {
+    fetchPrivacyInfo();
+  }, [fetchPrivacyInfo]);
+
+  useEffect(() => {
+    if (privacyInfo?.privacy_mode === 'public') {
+      onVerified({ couple_names: privacyInfo.couple_names });
+    }
+  }, [onVerified, privacyInfo]);
 
   const handleVerification = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,10 +227,7 @@ export default function GuestVerificationModal({
   }
 
   // If wedding is public, don't show modal
-  if (privacyInfo.privacy_mode === 'public') {
-    useEffect(() => {
-      onVerified({ couple_names: privacyInfo.couple_names });
-    }, []);
+  if (!loading && privacyInfo.privacy_mode === 'public') {
     return null;
   }
 
@@ -385,7 +388,7 @@ export default function GuestVerificationModal({
 
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                       <p className="text-sm text-green-800">
-                        <strong>Don't have your token?</strong> Enter your phone number or email below to receive a verification code.
+                        <strong>Don’t have your token?</strong> Enter your phone number or email below to receive a verification code.
                       </p>
                     </div>
 

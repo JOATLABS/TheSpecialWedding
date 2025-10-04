@@ -1,13 +1,14 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, ReactElement } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { SparklesIcon, SquaresPlusIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Button } from '@/components/ui/Button';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
+import { formatDate as formatUtcDate } from '@/utils/dateFormat';
 
 type CreationMode = 'template' | 'blank' | 'duplicate';
 
@@ -69,7 +70,7 @@ function CreationOptionCard({
   option: (typeof CREATION_OPTIONS)[number];
   isActive: boolean;
   onSelect: () => void;
-}): JSX.Element {
+}): ReactElement {
   const stateClass = isActive
     ? 'border-wedding-rose/80 bg-white/80 shadow-xl'
     : 'border-white/40 bg-white/40 hover:border-white/70 hover:bg-white/60';
@@ -102,11 +103,13 @@ function CreationOptionCard({
 }
 
 function formatDate(dateString: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(dateString));
+  return (
+    formatUtcDate(dateString, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }) || ''
+  );
 }
 
 type BadgeTone = 'neutral' | 'accent' | 'success';
@@ -131,7 +134,7 @@ function FormBadge({
   );
 }
 
-export default function FormsManagementPage(): JSX.Element {
+export default function FormsManagementPage(): ReactElement {
   const router = useRouter();
   const { token, userProfile } = useAdmin();
 
