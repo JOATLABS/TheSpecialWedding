@@ -196,7 +196,7 @@ export const SaasLandingPage: React.FC = () => {
         _id: 'studio-growth',
         name: 'Studio Growth',
         description: 'Everything established planners need for 10 active weddings.',
-        price_monthly: 179,
+        price_monthly: 200,
         price_yearly: 1890,
         is_featured: true,
         is_active: true,
@@ -216,7 +216,7 @@ export const SaasLandingPage: React.FC = () => {
         _id: 'boutique',
         name: 'Boutique',
         description: 'For new planners onboarding their first 3 weddings with concierge support.',
-        price_monthly: 89,
+        price_monthly: 109,
         price_yearly: 930,
         is_featured: false,
         is_active: true,
@@ -233,6 +233,31 @@ export const SaasLandingPage: React.FC = () => {
   useEffect(() => {
     fetchSubscriptionPlans();
   }, []);
+
+  const resolveApiUrl = useCallback((path: string) => {
+    const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
+    if (configuredBase) {
+      return `${configuredBase}${path}`;
+    }
+    return path;
+  }, []);
+
+  const fetchWithTimeout = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(input, {
+          ...init,
+          signal: controller.signal,
+        });
+        return response;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    []
+  );
 
   const fetchSaasConfig = async () => {
     try {
@@ -377,7 +402,7 @@ export const SaasLandingPage: React.FC = () => {
                   <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
                     <div
                       aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),rgba(255,255,255,0))]"
+                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),rgba(255,255,255,0))]"
                     />
                     <div className="relative rounded-[2.6rem] bg-white/65 px-5 py-8 sm:px-7 sm:py-9">
                       <SaasExperienceCarousel
