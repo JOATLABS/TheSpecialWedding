@@ -27,41 +27,17 @@ const nextConfig = {
       };
     }
 
-    const fallbackTinyInvariantPath = path.resolve(
-      __dirname,
-      'app/utils/tinyInvariantFallback.ts'
-    );
-    let hasWarnedAboutFallback = false;
-
-    const resolveTinyInvariant = () => {
-      const candidates = ['tiny-invariant', '@hello-pangea/dnd/node_modules/tiny-invariant'];
-
-      for (const candidate of candidates) {
-        try {
-          return require.resolve(candidate);
-        } catch (error) {
-          if (error?.code !== 'MODULE_NOT_FOUND') {
-            throw error;
-          }
-        }
-      }
-
-      if (!hasWarnedAboutFallback) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          'The "tiny-invariant" package is missing. Using the local fallback implementation. '
+    try {
+      require.resolve('tiny-invariant');
+    } catch (error) {
+      if (error?.code === 'MODULE_NOT_FOUND') {
+        throw new Error(
+          'Missing required dependency "tiny-invariant". Run "npm install" to ensure all packages are installed before starting Next.js.'
         );
-        hasWarnedAboutFallback = true;
       }
 
-      return fallbackTinyInvariantPath;
-    };
-
-    // Fix for @hello-pangea/dnd dependency issues
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      'tiny-invariant': resolveTinyInvariant(),
-    };
+      throw error;
+    }
 
     return config;
   },
