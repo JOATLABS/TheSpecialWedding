@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Modern3DBackground } from '../landing-page/Modern3DBackground';
 import { SaasAuthPanel, SaasHeroSection, SubscriptionPlan } from './SaasHeroSection';
 import { SaasExperienceCarousel } from './SaasExperienceCarousel';
+import ContactSalesModal from './ContactSalesModal';
+import { fetchWithTimeout, resolveApiUrl } from './apiClient';
 
 interface Feature {
   title: string;
@@ -185,6 +187,7 @@ export const SaasLandingPage: React.FC = () => {
   const [planLoading, setPlanLoading] = useState(true);
   const [planError, setPlanError] = useState('');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [isContactOpen, setIsContactOpen] = useState(false);
 
   useEffect(() => {
     fetchSaasConfig();
@@ -196,8 +199,7 @@ export const SaasLandingPage: React.FC = () => {
 
   const fetchSaasConfig = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/saas/config`);
+      const response = await fetchWithTimeout(resolveApiUrl('/saas/config'));
       if (response.ok) {
         const data = await response.json();
         setConfig(prev => ({ ...prev, ...data }));
@@ -211,8 +213,7 @@ export const SaasLandingPage: React.FC = () => {
 
   const fetchSubscriptionPlans = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/public/subscription-plans`);
+      const response = await fetchWithTimeout(resolveApiUrl('/public/subscription-plans'));
 
       if (response.ok) {
         const data = await response.json();
@@ -263,6 +264,14 @@ export const SaasLandingPage: React.FC = () => {
 
   const condensedPlans = useMemo(() => plans.slice(0, 4), [plans]);
 
+  const handleContactOpen = useCallback(() => {
+    setIsContactOpen(true);
+  }, []);
+
+  const handleContactClose = useCallback(() => {
+    setIsContactOpen(false);
+  }, []);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 flex items-center justify-center">
@@ -291,12 +300,56 @@ export const SaasLandingPage: React.FC = () => {
       />
 
       <div className="relative z-10 mx-auto w-full max-w-[1820px] px-4 pb-20 pt-12 sm:px-6 lg:px-10 xl:px-16">
-        <div className="relative flex flex-col gap-10 lg:flex-row lg:items-start">
+        <div className="relative flex flex-col gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,38vw)] lg:items-start lg:gap-12">
+          <div className="order-1 flex flex-col gap-8 lg:order-1 lg:pr-6 xl:pr-10">
+            <div className="lg:pr-[12px] xl:pr-[36px]">
+              <SaasHeroSection
+                config={config}
+                theme={theme}
+                onAuthModeChange={(mode) => {
+                  setAuthMode(mode);
+                  if (mode === 'signup') {
+                    scrollToAuthPanel();
+                  }
+                }}
+                onRequestSignupFocus={scrollToAuthPanel}
+                onContactClick={handleContactOpen}
+              />
+            </div>
+
+            {planError && !planLoading && (
+              <div className="rounded-3xl border border-red-200/80 bg-red-50/80 px-4 py-3 text-sm text-red-700 shadow-sm backdrop-blur">
+                {planError}
+              </div>
+            )}
+
+            {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
+              <section aria-labelledby="experience-showcase" className="relative lg:hidden">
+                <div className="relative mx-auto w-full max-w-4xl">
+                  <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),rgba(255,255,255,0))]"
+                    />
+                    <div className="relative rounded-[2.6rem] bg-white/65 px-5 py-8 sm:px-7 sm:py-9">
+                      <SaasExperienceCarousel
+                        features={config.features}
+                        benefits={config.benefits}
+                        testimonials={config.testimonials}
+                        theme={theme}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
+
           <aside
             id="saas-auth-panel"
-            className="order-1 lg:order-2 lg:ml-10 lg:w-[min(560px,38vw)] lg:flex-shrink-0"
+            className="order-2 lg:order-2 lg:ml-0 lg:w-full lg:max-w-[560px]"
           >
-            <div className="lg:sticky lg:top-16">
+            <div className="flex flex-col gap-8 lg:sticky lg:top-16">
               <SaasAuthPanel
                 mode={authMode}
                 onModeChange={(mode) => {
@@ -317,33 +370,15 @@ export const SaasLandingPage: React.FC = () => {
                 }}
                 className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
               />
-            </div>
-          </aside>
 
-          <div className="order-2 flex flex-col gap-10 lg:order-1 lg:flex-1 lg:pt-2 xl:pt-4">
-            <div className="lg:pr-[16px] xl:pr-[40px]">
-              <SaasHeroSection
-                config={config}
-                theme={theme}
-                onAuthModeChange={(mode) => {
-                  setAuthMode(mode);
-                  if (mode === 'signup') {
-                    scrollToAuthPanel();
-                  }
-                }}
-                onRequestSignupFocus={scrollToAuthPanel}
-              />
-            </div>
-
-            {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
-              <section aria-labelledby="experience-showcase" className="relative">
-                <div className="relative mx-auto w-full max-w-4xl xl:max-w-none">
-                  <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
+              {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
+                <section aria-labelledby="experience-showcase" className="hidden lg:block">
+                  <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/25 p-[1px] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
                     <div
                       aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),rgba(255,255,255,0))]"
+                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),rgba(255,255,255,0))]"
                     />
-                    <div className="relative rounded-[2.6rem] bg-white/65 px-5 py-8 sm:px-7 sm:py-9 lg:px-9 lg:py-10">
+                    <div className="relative rounded-[2.6rem] bg-white/70 px-6 py-8 xl:px-8 xl:py-10">
                       <SaasExperienceCarousel
                         features={config.features}
                         benefits={config.benefits}
@@ -352,13 +387,14 @@ export const SaasLandingPage: React.FC = () => {
                       />
                     </div>
                   </div>
-                </div>
-              </section>
-            )}
-
-          </div>
+                </section>
+              )}
+            </div>
+          </aside>
         </div>
       </div>
+
+      <ContactSalesModal isOpen={isContactOpen} onClose={handleContactClose} theme={theme} />
     </div>
   );
 };
