@@ -61,6 +61,7 @@ interface SaasConfig {
 export const SaasLandingPage: React.FC = () => {
   const [authMode, setAuthMode] = useState<'signup' | 'login'>('signup');
   const [selectedPlan, setSelectedPlan] = useState<{ id: string; name?: string } | null>(null);
+  const [planNotice, setPlanNotice] = useState('');
   const [config, setConfig] = useState<SaasConfig>({
     hero_title: "Welcome to Special Wedding",
     hero_subtitle: "Wedding Planning Made Simple",
@@ -189,6 +190,42 @@ export const SaasLandingPage: React.FC = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [isContactOpen, setIsContactOpen] = useState(false);
 
+  const defaultPlans: SubscriptionPlan[] = useMemo(
+    () => [
+      {
+        _id: 'studio-growth',
+        name: 'Studio Growth',
+        description: 'Everything established planners need for 10 active weddings.',
+        price_monthly: 200,
+        price_yearly: 1890,
+        is_featured: true,
+        is_active: true,
+        display_order: 1,
+      },
+      {
+        _id: 'signature',
+        name: 'Signature',
+        description: 'Collaborate with unlimited vendors and automate client touchpoints.',
+        price_monthly: 289,
+        price_yearly: 3090,
+        is_featured: false,
+        is_active: true,
+        display_order: 2,
+      },
+      {
+        _id: 'boutique',
+        name: 'Boutique',
+        description: 'For new planners onboarding their first 3 weddings with concierge support.',
+        price_monthly: 109,
+        price_yearly: 930,
+        is_featured: false,
+        is_active: true,
+        display_order: 0,
+      },
+    ],
+    []
+  );
+
   useEffect(() => {
     fetchSaasConfig();
   }, []);
@@ -237,6 +274,7 @@ export const SaasLandingPage: React.FC = () => {
   };
 
   const fetchSubscriptionPlans = async () => {
+    let resolvedPlans: SubscriptionPlan[] | null = null;
     try {
       const response = await fetchWithTimeout(resolveApiUrl('/public/subscription-plans'));
 
@@ -254,14 +292,24 @@ export const SaasLandingPage: React.FC = () => {
             if (!a.is_featured && b.is_featured) return 1;
             return a.name.localeCompare(b.name);
           });
-        setPlans(activePlans);
-        setPlanError('');
+        if (activePlans.length > 0) {
+          resolvedPlans = activePlans;
+          setPlans(activePlans);
+          setPlanError('');
+          setPlanNotice('');
+          return;
+        }
       } else {
-        setPlanError('Unable to load pricing plans. Please try again soon.');
+        console.warn('Received non-ok response when loading subscription plans', response.statusText);
       }
     } catch (error) {
-      setPlanError('Unable to load pricing plans. Please try again soon.');
+      console.error('Failed to load subscription plans', error);
     } finally {
+      if (!resolvedPlans) {
+        setPlans(defaultPlans);
+        setPlanError('');
+        setPlanNotice('Showing signature tiers while live pricing reconnects. Your selections will sync during onboarding.');
+      }
       setPlanLoading(false);
     }
   };
@@ -317,16 +365,16 @@ export const SaasLandingPage: React.FC = () => {
   };
 
   return (
-    <div className="relative min-h-screen">
+    <div className="relative min-h-screen overflow-x-clip">
       <Modern3DBackground
         imageUrl={config.background_image}
         fallbackImages={config.fallback_images}
         theme={theme}
       />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1820px] px-4 pb-20 pt-12 sm:px-6 lg:px-10 xl:px-16">
-        <div className="relative flex flex-col gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,38vw)] lg:items-start lg:gap-12">
-          <div className="order-1 flex flex-col gap-8 lg:order-1 lg:pr-6 xl:pr-10">
+      <div className="relative z-10 mx-auto w-full max-w-[1820px] px-4 pb-20 pt-16 sm:px-6 lg:px-10 xl:px-16">
+        <div className="relative grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)] lg:items-start xl:gap-14">
+          <div className="flex flex-col gap-8 lg:pr-6 xl:pr-12">
             <div className="lg:pr-[12px] xl:pr-[36px]">
               <SaasHeroSection
                 config={config}
@@ -354,7 +402,7 @@ export const SaasLandingPage: React.FC = () => {
                   <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
                     <div
                       aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),rgba(255,255,255,0))]"
+                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),rgba(255,255,255,0))]"
                     />
                     <div className="relative rounded-[2.6rem] bg-white/65 px-5 py-8 sm:px-7 sm:py-9">
                       <SaasExperienceCarousel
@@ -370,31 +418,31 @@ export const SaasLandingPage: React.FC = () => {
             )}
           </div>
 
-          <aside
-            id="saas-auth-panel"
-            className="order-2 lg:order-2 lg:ml-0 lg:w-full lg:max-w-[560px]"
-          >
-            <div className="flex flex-col gap-8 lg:sticky lg:top-16">
-              <SaasAuthPanel
-                mode={authMode}
-                onModeChange={(mode) => {
-                  setAuthMode(mode);
-                  if (mode === 'signup') {
+          <aside id="saas-auth-panel" className="lg:w-full lg:max-w-[560px] xl:max-w-[600px]">
+            <div className="flex flex-col gap-10">
+              <div className="lg:sticky lg:top-16">
+                <SaasAuthPanel
+                  mode={authMode}
+                  onModeChange={(mode) => {
+                    setAuthMode(mode);
+                    if (mode === 'signup') {
+                      scrollToAuthPanel();
+                    }
+                  }}
+                  selectedPlan={selectedPlan}
+                  theme={theme}
+                  plans={condensedPlans}
+                  plansLoading={planLoading}
+                  plansError={planError}
+                  plansNotice={planNotice}
+                  onSelectPlan={(plan) => {
+                    setSelectedPlan(plan);
+                    setAuthMode('signup');
                     scrollToAuthPanel();
-                  }
-                }}
-                selectedPlan={selectedPlan}
-                theme={theme}
-                plans={condensedPlans}
-                plansLoading={planLoading}
-                plansError={planError}
-                onSelectPlan={(plan) => {
-                  setSelectedPlan(plan);
-                  setAuthMode('signup');
-                  scrollToAuthPanel();
-                }}
-                className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
-              />
+                  }}
+                  className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
+                />
+              </div>
 
               {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
                 <section aria-labelledby="experience-showcase" className="hidden lg:block">
