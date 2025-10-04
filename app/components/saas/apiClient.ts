@@ -4,13 +4,17 @@ export function resolveApiUrl(path: string): string {
   }
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
+  const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
 
-  if (configuredBase) {
-    return `${configuredBase}${normalizedPath}`;
+  if (!configuredBase) {
+    throw new Error(
+      'NEXT_PUBLIC_API_BASE_URL must be set to resolve SaaS API endpoints. Update your environment configuration.'
+    );
   }
 
-  return normalizedPath;
+  const base = configuredBase.endsWith('/') ? configuredBase.slice(0, -1) : configuredBase;
+
+  return `${base}${normalizedPath}`;
 }
 
 export async function fetchWithTimeout(
