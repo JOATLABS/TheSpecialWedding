@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 
 interface GuestVerificationModalProps {
@@ -39,24 +39,30 @@ export default function GuestVerificationModal({
  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
  const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
- useEffect(() => {
- fetchPrivacyInfo();
- }, [slug]);
+  const fetchPrivacyInfo = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/weddings/privacy-info/${slug}`);
+      if (!response.ok) {
+        throw new Error('Failed to load wedding information');
+      }
+      const data = await response.json();
+      setPrivacyInfo(data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load wedding information');
+    } finally {
+      setLoading(false);
+    }
+  }, [API_URL, slug]);
 
- const fetchPrivacyInfo = async () => {
- try {
- const response = await fetch(`${API_URL}/weddings/privacy-info/${slug}`);
- if (!response.ok) {
- throw new Error('Failed to load wedding information');
- }
- const data = await response.json();
- setPrivacyInfo(data);
- } catch (err: any) {
- setError(err.message || 'Failed to load wedding information');
- } finally {
- setLoading(false);
- }
- };
+  useEffect(() => {
+    fetchPrivacyInfo();
+  }, [fetchPrivacyInfo]);
+
+  useEffect(() => {
+    if (privacyInfo?.privacy_mode === 'public') {
+      onVerified({ couple_names: privacyInfo.couple_names });
+    }
+  }, [onVerified, privacyInfo]);
 
  const handleVerification = async (e: React.FormEvent) => {
  e.preventDefault();
@@ -132,14 +138,10 @@ export default function GuestVerificationModal({
  );
  }
 
- // If wedding is public, don't show modal
- if (privacyInfo.privacy_mode === 'public') {
- // This shouldn't happen, but just in case
- useEffect(() => {
- onVerified({ couple_names: privacyInfo.couple_names });
- }, []);
- return null;
- }
+  // If wedding is public, don't show modal
+  if (!loading && privacyInfo.privacy_mode === 'public') {
+    return null;
+  }
 
  const requiresName = privacyInfo.verification_requirements?.require_name ?? true;
  const requiresPhone = privacyInfo.verification_requirements?.require_phone ?? true;

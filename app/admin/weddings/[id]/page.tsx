@@ -1007,7 +1007,7 @@ export default function WeddingDetailsPage() {
  
  {(!wedding.wedding_party || wedding.wedding_party.length === 0) && (
  <p className="text-gray-500 text-center py-8">
- No wedding party members added yet. Click "Add Member" to get started.
+            No wedding party members added yet. Click “Add Member” to get started.
  </p>
  )}
  </div>

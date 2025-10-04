@@ -544,10 +544,10 @@ export default function VendorQuotesPage() {
                   </div>
                 </div>
 
-                {/* What's Included */}
+                {/* What’s Included */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    What's Included
+                    What’s Included
                   </label>
                   {quoteForm.includes.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">
@@ -577,10 +577,10 @@ export default function VendorQuotesPage() {
                   </Button>
                 </div>
 
-                {/* What's Excluded */}
+                {/* What’s Excluded */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    What's Excluded
+                    What’s Excluded
                   </label>
                   {quoteForm.excludes.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">

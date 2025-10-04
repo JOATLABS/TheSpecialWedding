@@ -89,7 +89,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName = "The Speci
                   <ul>
                     <li>Your phone number will only be used for wedding-related communications</li>
                     <li>You can opt-out at any time by replying STOP</li>
-                    <li>Message frequency may vary but typically won't exceed 5 messages per month</li>
+                    <li>Message frequency may vary but typically won’t exceed 5 messages per month</li>
                     <li>Standard message and data rates may apply</li>
                   </ul>
 
@@ -124,7 +124,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName = "The Speci
                     <li>Opt-out of SMS communications at any time</li>
                   </ul>
 
-                  <h4 className="text-lg font-semibold mt-4">8. Children's Privacy</h4>
+                  <h4 className="text-lg font-semibold mt-4">8. Children’s Privacy</h4>
                   <p>
                     Our website is not intended for children under 13. We do not knowingly collect information from children under 13.
                   </p>

@@ -7,6 +7,7 @@ import { PlannerSignupForm } from './PlannerSignupForm';
 import { SaasLogoTitle } from './SaasLogoTitle';
 import { GlassCard } from '../ui/GlassCard';
 import { SocialAuthButtons } from '../auth/SocialAuthButtons';
+import { ThemeConfig } from '@/types/wedding';
 
 export interface SubscriptionPlan {
   _id: string;
@@ -40,11 +41,7 @@ interface SaasConfig {
 
 interface SaasHeroSectionProps {
   config: SaasConfig;
-  theme: {
-    primary_color: string;
-    secondary_color: string;
-    background_style: 'gradient' | 'solid';
-  };
+  theme: ThemeConfig;
   onAuthModeChange: (mode: 'signup' | 'login') => void;
   onRequestSignupFocus?: () => void;
 }
@@ -53,10 +50,7 @@ interface AuthPanelProps {
   mode: 'signup' | 'login';
   onModeChange: (mode: 'signup' | 'login') => void;
   selectedPlan?: { id: string; name?: string } | null;
-  theme: {
-    primary_color: string;
-    secondary_color: string;
-  };
+  theme: ThemeConfig;
   plans?: SubscriptionPlan[];
   plansLoading?: boolean;
   plansError?: string;
@@ -178,7 +172,7 @@ function MiniPlanSelector({
   );
 }
 
-function PlannerLoginPanel({ theme }: { theme: { primary_color: string; secondary_color: string } }) {
+function PlannerLoginPanel({ theme }: { theme: ThemeConfig }) {
   return (
     <div className="space-y-5">
       <SocialAuthButtons flow="login" redirectPath="/admin" />

@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, ReactElement } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { SparklesIcon, SquaresPlusIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
@@ -70,7 +70,7 @@ function CreationOptionCard({
   option: (typeof CREATION_OPTIONS)[number];
   isActive: boolean;
   onSelect: () => void;
-}): JSX.Element {
+}): ReactElement {
   const stateClass = isActive
     ? 'border-wedding-rose/80 bg-white/80 shadow-xl'
     : 'border-white/40 bg-white/40 hover:border-white/70 hover:bg-white/60';
@@ -134,7 +134,7 @@ function FormBadge({
   );
 }
 
-export default function FormsManagementPage(): JSX.Element {
+export default function FormsManagementPage(): ReactElement {
   const router = useRouter();
   const { token, userProfile } = useAdmin();
 

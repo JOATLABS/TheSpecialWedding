@@ -123,7 +123,7 @@ export default function WeddingPlannerDashboard() {
  <h1 className="text-2xl font-bold text-gray-900 mb-2">
  Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
  </h1>
- <p className="text-gray-600">Here's what's happening with your weddings today.</p>
+        <p className="text-gray-600">Here’s what’s happening with your weddings today.</p>
  </div>
 
  {/* Stats Cards */}

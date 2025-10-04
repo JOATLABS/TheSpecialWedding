@@ -555,7 +555,7 @@ export default function AdminRemindersPage() {
  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 mt-1">
- Use {"{url}"} for the RSVP link and {"{name}"} for the guest's name. Leave empty to use default message.
+          Use {"{url}"} for the RSVP link and {"{name}"} for the guest’s name. Leave empty to use default message.
  </p>
  </div>
  )}
@@ -571,7 +571,7 @@ export default function AdminRemindersPage() {
  type="text"
  value={emailSubject}
  onChange={(e) => setEmailSubject(e.target.value)}
- placeholder={`You're Invited - ${selectedWeddingData?.couple_names}`}
+          placeholder={`You’re Invited - ${selectedWeddingData?.couple_names}`}
  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  </div>
@@ -664,7 +664,7 @@ export default function AdminRemindersPage() {
  <div className="p-6 bg-blue-50 rounded-lg">
  <h4 className="font-medium text-blue-900 mb-2">SMS Preview:</h4>
  <p className="text-blue-700 text-sm">
- "{inviteMessage.replace('{url}', `https://thespecialwedding.com/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}"
+        “{inviteMessage.replace('{url}', `https://thespecialwedding.com/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}”
  </p>
  </div>
  )}
@@ -754,10 +754,10 @@ export default function AdminRemindersPage() {
  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 mt-1">
- This will be sent to guests who have RSVP'd for the {eventType.replace('_', ' ')} event.
+        This will be sent to guests who have RSVP’d for the {eventType.replace('_', ' ')} event.
  </p>
  <p className="text-sm text-yellow-600 mt-1">
- Note: If no messages are sent, guests may not have RSVP'd yet. Use "Send Invites" first to get responses.
+        Note: If no messages are sent, guests may not have RSVP’d yet. Use “Send Invites” first to get responses.
  </p>
  </div>
 

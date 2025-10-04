@@ -36,11 +36,11 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
  {/* Header */}
  <div className="text-center bg-white rounded-lg shadow-lg p-8 mt-8">
  <h1 className="text-4xl md:text-5xl font-bold text-wedding-navy mb-4">
- {wedding.couple_names}'s Wedding
+        {wedding.couple_names}’s Wedding
  </h1>
  <div className="w-24 h-1 bg-wedding-rose mx-auto mb-6"></div>
  <p className="text-2xl text-gray-700 mb-2">Hi {guest.name}!</p>
- <p className="text-lg text-gray-600">You're invited to celebrate with us.</p>
+        <p className="text-lg text-gray-600">You’re invited to celebrate with us.</p>
  </div>
 
  {/* Wedding Details */}
@@ -86,7 +86,7 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
  {/* Footer */}
  <div className="text-center text-gray-600">
  <p>Questions? Contact us at (555) 123-4567</p>
- <p className="mt-2">We can't wait to celebrate with you! </p>
+        <p className="mt-2">We can’t wait to celebrate with you! </p>
  </div>
  </div>
  </div>
