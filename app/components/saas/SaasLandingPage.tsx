@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Modern3DBackground } from '../landing-page/Modern3DBackground';
 import { SaasAuthPanel, SaasHeroSection, SubscriptionPlan } from './SaasHeroSection';
 import { SaasExperienceCarousel } from './SaasExperienceCarousel';
@@ -196,6 +196,31 @@ export const SaasLandingPage: React.FC = () => {
   useEffect(() => {
     fetchSubscriptionPlans();
   }, []);
+
+  const resolveApiUrl = useCallback((path: string) => {
+    const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
+    if (configuredBase) {
+      return `${configuredBase}${path}`;
+    }
+    return path;
+  }, []);
+
+  const fetchWithTimeout = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(input, {
+          ...init,
+          signal: controller.signal,
+        });
+        return response;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    []
+  );
 
   const fetchSaasConfig = async () => {
     try {
