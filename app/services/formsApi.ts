@@ -20,9 +20,9 @@ export interface FormSummaryResponse {
   };
   template_type?: string;
   wedding_id?: string;
-  submission_count?: number;
-  unread_responses?: number;
-  created_at?: string;
+  submission_count: number;
+  unread_responses: number;
+  created_at: string;
 }
 
 export interface FormTemplateResponse {

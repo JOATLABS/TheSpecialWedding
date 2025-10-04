@@ -49,16 +49,16 @@ export default function SupportPage() {
       // Try to fetch from actual API endpoints, fall back to empty arrays
       try {
         // These endpoints would need to be created in the backend
-        const ticketsResponse = await apiRequest('/api/admin/support/tickets', 'GET');
-        setTickets(ticketsResponse.tickets || []);
+        const ticketsResponse = await apiRequest<{ tickets: SupportTicket[] }>('/api/admin/support/tickets', 'GET');
+        setTickets(ticketsResponse?.tickets ?? []);
       } catch (error) {
         console.warn('Support tickets endpoint not available, using empty array');
         setTickets([]);
       }
 
       try {
-        const metricsResponse = await apiRequest('/api/admin/support/metrics', 'GET');
-        setMetrics(metricsResponse || {
+        const metricsResponse = await apiRequest<SupportMetrics>('/api/admin/support/metrics', 'GET');
+        setMetrics(metricsResponse ?? {
           total_tickets: 0,
           open_tickets: 0,
           resolved_today: 0,

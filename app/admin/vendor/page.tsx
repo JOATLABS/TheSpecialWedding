@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactElement } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useAdmin } from '@/contexts/AdminContext';
@@ -34,7 +35,7 @@ function formatDisplayDate(value?: string | null): string {
   return formatted || '—';
 }
 
-export default function VendorDashboardPage(): JSX.Element {
+export default function VendorDashboardPage(): ReactElement {
   const router = useRouter();
   const { token, userProfile, fetchUserProfile } = useAdmin();
 

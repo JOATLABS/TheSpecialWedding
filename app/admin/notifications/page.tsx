@@ -49,16 +49,16 @@ export default function NotificationsPage() {
       // Try to fetch from actual API endpoints, fall back to empty arrays
       try {
         // These endpoints would need to be created in the backend
-        const templatesResponse = await apiRequest('/api/admin/notification-templates', 'GET');
-        setTemplates(templatesResponse.templates || []);
+        const templatesResponse = await apiRequest<{ templates: NotificationTemplate[] }>('/api/admin/notification-templates', 'GET');
+        setTemplates(templatesResponse?.templates ?? []);
       } catch (error) {
         console.warn('Notification templates endpoint not available, using empty array');
         setTemplates([]);
       }
 
       try {
-        const historyResponse = await apiRequest('/api/admin/notifications/history', 'GET');
-        setSentNotifications(historyResponse.notifications || []);
+        const historyResponse = await apiRequest<{ notifications: SentNotification[] }>('/api/admin/notifications/history', 'GET');
+        setSentNotifications(historyResponse?.notifications ?? []);
       } catch (error) {
         console.warn('Notification history endpoint not available, using empty array');
         setSentNotifications([]);
@@ -83,8 +83,8 @@ export default function NotificationsPage() {
     setSending(true);
     try {
       // First get the users to send to based on filter
-      const usersResponse = await apiRequest('/api/admin/users', 'GET');
-      const allUsers = usersResponse || [];
+      const usersResponse = await apiRequest<any[]>('/api/admin/users', 'GET');
+      const allUsers = usersResponse ?? [];
       
       let targetUsers = [];
       switch (recipientFilter) {
@@ -301,7 +301,7 @@ export default function NotificationsPage() {
               <div className="text-gray-400 text-4xl mb-4">📊</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No Notifications Sent Yet</h3>
               <p className="text-gray-600 mb-4">
-                Once you start sending platform notifications, you'll see delivery statistics, 
+                Once you start sending platform notifications, you’ll see delivery statistics,
                 open rates, and performance metrics here.
               </p>
               <div className="text-sm text-gray-500">

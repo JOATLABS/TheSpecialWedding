@@ -106,7 +106,7 @@ export default function TermsModal({ isOpen, onClose, weddingName = "JOAT Labs' 
 
                   <h4 className="text-lg font-semibold mt-4">7. Limitations of Liability</h4>
                   <p>
-                    This website is provided "as is" without warranties of any kind. We are not liable for any damages arising from your use of this website.
+                    This website is provided “as is” without warranties of any kind. We are not liable for any damages arising from your use of this website.
                   </p>
 
                   <h4 className="text-lg font-semibold mt-4">8. Changes to Terms</h4>
