@@ -55,6 +55,7 @@ interface AuthPanelProps {
   plans?: SubscriptionPlan[];
   plansLoading?: boolean;
   plansError?: string;
+  plansNotice?: string;
   onSelectPlan?: (plan: { id: string; name?: string }) => void;
   className?: string;
 }
@@ -65,12 +66,14 @@ function MiniPlanSelector({
   onSelectPlan,
   isLoading,
   error,
+  notice,
 }: {
   plans?: SubscriptionPlan[];
   selectedPlanId?: string;
   onSelectPlan?: (plan: { id: string; name?: string }) => void;
   isLoading?: boolean;
   error?: string;
+  notice?: string;
 }) {
   const [billingCycle, setBillingCycle] = React.useState<'monthly' | 'yearly'>('monthly');
 
@@ -164,6 +167,11 @@ function MiniPlanSelector({
           );
         })}
       </div>
+      {notice && (
+        <p className="rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-xs text-amber-700">
+          {notice}
+        </p>
+      )}
       {billingCycle === 'yearly' && (
         <p className="text-xs text-gray-500">
           Yearly pricing shows the total annual investment so you can compare long-term savings.
@@ -207,6 +215,7 @@ export function SaasAuthPanel({
   plans,
   plansLoading,
   plansError,
+  plansNotice,
   onSelectPlan,
   className,
 }: AuthPanelProps) {
@@ -267,6 +276,7 @@ export function SaasAuthPanel({
               onSelectPlan={onSelectPlan}
               isLoading={plansLoading}
               error={plansError}
+              notice={plansNotice}
             />
             <div className="rounded-2xl border border-white/60 bg-white/75 p-4 text-sm text-gray-700 shadow-sm">
               <p className="font-semibold text-gray-900">Selected plan</p>
