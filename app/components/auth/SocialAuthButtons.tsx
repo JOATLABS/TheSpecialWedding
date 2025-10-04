@@ -86,7 +86,7 @@ export const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
 
   return (
     <div
-      className={`flex ${buttonLayout === 'inline' ? 'flex-row gap-3' : 'flex-col gap-3'} ${className}`}
+      className={`flex ${buttonLayout === 'inline' ? 'flex-row gap-2 sm:gap-3' : 'flex-col gap-2 sm:gap-3'} ${className}`}
       role="group"
       aria-label={`${flow === 'signup' ? 'Sign up' : 'Log in'} with a social account`}
     >
@@ -100,16 +100,19 @@ export const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
             key={provider}
             type="button"
             onClick={() => handleProvider(provider)}
-            className={`flex items-center justify-center gap-3 rounded-lg border px-4 py-2 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
-              ${buttonLayout === 'inline' ? 'flex-1' : 'w-full'}
+            className={`group relative flex h-12 w-12 items-center justify-center rounded-full border text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:h-auto sm:w-auto sm:rounded-lg sm:px-4 sm:py-2 sm:gap-3
+              ${buttonLayout === 'inline' ? 'sm:flex-1' : 'sm:w-full'}
               ${isLight ? 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50 focus-visible:outline-gray-400' : 'border-transparent bg-black text-white hover:bg-black/90 focus-visible:outline-black'}
             `}
             aria-label={`${meta.label} (${meta.description})`}
           >
-            <span className={isLight ? 'text-current' : 'text-white'} aria-hidden="true">
+            <span
+              className={`${isLight ? 'text-current' : 'text-white'} flex items-center justify-center text-base sm:text-inherit`}
+              aria-hidden="true"
+            >
               {meta.icon}
             </span>
-            <span className="flex flex-col items-start leading-tight text-left">
+            <span className="hidden sm:flex sm:flex-col sm:items-start sm:leading-tight sm:text-left">
               <span>{meta.label}</span>
               <span className={`text-xs font-normal ${subTextClass}`}>
                 {flow === 'signup' ? 'Fast account setup' : 'Quick access without password'}

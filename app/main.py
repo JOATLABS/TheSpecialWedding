@@ -49,6 +49,7 @@ from app.api.budget import router as budget_router
 from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
 from app.api.support_management import router as support_router
+from app.api.public_contact import router as public_contact_router
 
 # Setup logging
 logging.basicConfig(
@@ -206,6 +207,7 @@ app.include_router(wedding_router, tags=["Wedding"])  # Public wedding endpoints
 app.include_router(gallery_public_router, tags=["Gallery"])  # Public gallery endpoints
 app.include_router(subscription_router, tags=["Subscription"])  # Public subscription plans
 app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
+app.include_router(public_contact_router, tags=["Sales"])
 app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms

@@ -44,6 +44,8 @@ interface SaasHeroSectionProps {
   theme: ThemeConfig;
   onAuthModeChange: (mode: 'signup' | 'login') => void;
   onRequestSignupFocus?: () => void;
+  onContactClick?: () => void;
+  className?: string;
 }
 
 interface AuthPanelProps {
@@ -54,6 +56,7 @@ interface AuthPanelProps {
   plans?: SubscriptionPlan[];
   plansLoading?: boolean;
   plansError?: string;
+  plansNotice?: string;
   onSelectPlan?: (plan: { id: string; name?: string }) => void;
   className?: string;
 }
@@ -64,12 +67,14 @@ function MiniPlanSelector({
   onSelectPlan,
   isLoading,
   error,
+  notice,
 }: {
   plans?: SubscriptionPlan[];
   selectedPlanId?: string;
   onSelectPlan?: (plan: { id: string; name?: string }) => void;
   isLoading?: boolean;
   error?: string;
+  notice?: string;
 }) {
   const [billingCycle, setBillingCycle] = React.useState<'monthly' | 'yearly'>('monthly');
 
@@ -163,6 +168,11 @@ function MiniPlanSelector({
           );
         })}
       </div>
+      {notice && (
+        <p className="rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-xs text-amber-700">
+          {notice}
+        </p>
+      )}
       {billingCycle === 'yearly' && (
         <p className="text-xs text-gray-500">
           Yearly pricing shows the total annual investment so you can compare long-term savings.
@@ -206,6 +216,7 @@ export function SaasAuthPanel({
   plans,
   plansLoading,
   plansError,
+  plansNotice,
   onSelectPlan,
   className,
 }: AuthPanelProps) {
@@ -266,6 +277,7 @@ export function SaasAuthPanel({
               onSelectPlan={onSelectPlan}
               isLoading={plansLoading}
               error={plansError}
+              notice={plansNotice}
             />
             <div className="rounded-2xl border border-white/60 bg-white/75 p-4 text-sm text-gray-700 shadow-sm">
               <p className="font-semibold text-gray-900">Selected plan</p>
@@ -296,6 +308,8 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   theme,
   onAuthModeChange,
   onRequestSignupFocus,
+  onContactClick,
+  className,
 }) => {
   const handlePrimaryCta = useCallback(() => {
     onAuthModeChange('signup');
@@ -318,6 +332,11 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   }, [config.demo_url, handlePrimaryCta]);
 
   const handleContactCta = useCallback(() => {
+    if (onContactClick) {
+      onContactClick();
+      return;
+    }
+
     const fallbackContact = process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com';
     const target = config.contact_url || fallbackContact;
 
@@ -335,10 +354,14 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
 
       window.location.href = target;
     }
-  }, [config.contact_url]);
+  }, [config.contact_url, onContactClick]);
 
   return (
-    <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] py-16 sm:py-20 xl:py-24">
+    <section
+      className={`relative isolate w-full overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] px-6 py-12 sm:px-8 sm:py-16 lg:px-10 lg:py-14 xl:py-16 ${
+        className ?? ''
+      }`}
+    >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-[-12rem] h-[26rem] bg-gradient-to-b from-white/60 via-white/10 to-transparent"
