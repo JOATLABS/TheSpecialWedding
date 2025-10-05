@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { SocialAuthButtons } from '../auth/SocialAuthButtons';
 import { ThemeConfig } from '@/types/wedding';
+import { resolveApiUrl } from './apiClient';
 
 interface PlannerSignupFormProps {
   theme: ThemeConfig;
@@ -75,8 +76,7 @@ export function PlannerSignupForm({
     setError('');
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/public/register`, {
+      const response = await fetch(resolveApiUrl('/public/register'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -101,7 +101,14 @@ export function PlannerSignupForm({
       setStatus('success');
       onRegistered?.();
     } catch (submitError) {
-      setError('Registration failed. Please try again.');
+      if (
+        submitError instanceof Error &&
+        submitError.message.includes('NEXT_PUBLIC_API_BASE_URL must be set')
+      ) {
+        setError('Registration is unavailable because the platform URL is not configured. Please contact support.');
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
