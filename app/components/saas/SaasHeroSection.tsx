@@ -45,6 +45,7 @@ interface SaasHeroSectionProps {
   onAuthModeChange: (mode: 'signup' | 'login') => void;
   onRequestSignupFocus?: () => void;
   onContactClick?: () => void;
+  className?: string;
 }
 
 interface AuthPanelProps {
@@ -308,6 +309,7 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   onAuthModeChange,
   onRequestSignupFocus,
   onContactClick,
+  className,
 }) => {
   const handlePrimaryCta = useCallback(() => {
     onAuthModeChange('signup');
@@ -355,7 +357,11 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   }, [config.contact_url, onContactClick]);
 
   return (
-    <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] py-16 sm:py-20 xl:py-24">
+    <section
+      className={`relative isolate w-full overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] px-6 py-12 sm:px-8 sm:py-16 lg:px-10 lg:py-14 xl:py-16 ${
+        className ?? ''
+      }`}
+    >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-[-12rem] h-[26rem] bg-gradient-to-b from-white/60 via-white/10 to-transparent"
