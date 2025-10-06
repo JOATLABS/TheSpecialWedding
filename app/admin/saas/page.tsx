@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../components/ui/Card';
 import { ContentEditModal } from '../components/ContentEditModal';
 import { formatDate } from '@/utils/dateFormat';
@@ -105,172 +105,244 @@ const SaasAdminDashboard = () => {
  const [editModalOpen, setEditModalOpen] = useState(false);
  const [editingSectionType, setEditingSectionType] = useState<string>('');
  const [editingSectionData, setEditingSectionData] = useState<any>(null);
+  const fetchData = useCallback(async () => {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
- // Fetch real data from API
- useEffect(() => {
- const fetchData = async () => {
- try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- 
- if (!token) {
- setLoading(false);
- return;
- }
+      if (!token) {
+        setLoading(false);
+        return;
+      }
 
- const headers = {
- 'Authorization': `Bearer ${token}`,
- 'Content-Type': 'application/json'
- };
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
 
- // Fetch subscription plans
- const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, { headers });
- if (plansResponse.ok) {
- const plansData = await plansResponse.json();
- setPlans(plansData);
- }
+      const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, { headers });
+      if (plansResponse.ok) {
+        const plansData = await plansResponse.json();
+        setPlans(plansData);
+      }
 
- // Fetch wedding planners
- const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers });
- if (plannersResponse.ok) {
- const plannersData = await plannersResponse.json();
- setPlanners(plannersData.map((planner: any) => ({
- id: planner.id,
- email: planner.email,
- companyName: planner.company_name,
- subscriptionPlanId: planner.subscription_plan_id,
- subscriptionStatus: planner.subscription_status,
- maxWeddings: planner.max_weddings,
- is_active: planner.is_active,
- createdAt: planner.created_at,
- lastLogin: planner.last_login
- })));
- }
+      const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers });
+      if (plannersResponse.ok) {
+        const plannersData = await plannersResponse.json();
+        setPlanners(plannersData.map((planner: any) => ({
+          id: planner.id,
+          email: planner.email,
+          companyName: planner.company_name,
+          subscriptionPlanId: planner.subscription_plan_id,
+          subscriptionStatus: planner.subscription_status,
+          maxWeddings: planner.max_weddings,
+          is_active: planner.is_active,
+          createdAt: planner.created_at,
+          lastLogin: planner.last_login
+        })) );
+      }
 
- // Fetch SAAS configuration
- const configResponse = await fetch(`${baseUrl}/admin/saas-config`, { headers });
- if (configResponse.ok) {
- const configData = await configResponse.json();
- setSaasConfig(configData);
- } else {
- // Set default config if API fails
- setSaasConfig({
- hero_title: "Welcome to Special Wedding",
- hero_subtitle: "Wedding Planning Made Simple",
- hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
- hero_cta_primary: "Start Free Trial",
- hero_cta_secondary: "Watch Demo",
- trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
- statistics: [
- { label: "Wedding Planners Trust Us", value: "500+" },
- { label: "Weddings Managed", value: "10K+" },
- { label: "Uptime Guarantee", value: "99.9%" }
- ],
- features: [
- {
- title: "Complete Wedding Management",
- description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
- status: "available" as const,
- order: 1
- },
- {
- title: "AI Presentation Generator",
- description: "Create stunning wedding presentations in minutes with our AI-powered design tools.",
- status: "coming_soon" as const,
- order: 5
- }
- ],
- benefits: [
- {
- title: "Save Time",
- description: "Automate repetitive tasks and streamline wedding planning operations",
- order: 1
- },
- {
- title: "Scale Your Business",
- description: "Manage multiple weddings efficiently and grow your planning business",
- order: 2
- }
- ],
- testimonials: [
- {
- name: "Sarah Johnson",
- company: "Elegant Events Planning",
- role: "Senior Wedding Planner",
- content: "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
- order: 1
- }
- ],
- features_enabled: true,
- benefits_enabled: true,
- testimonials_enabled: true,
- statistics_enabled: true,
- theme: {
- primary_color: "#1e3a5f",
- secondary_color: "#d4af37",
- fallback_images: [
- "/wedding-images/wedding-ceremony.jpg",
- "/wedding-images/wedding-reception.jpg"
- ]
- }
- });
- }
+      const configResponse = await fetch(`${baseUrl}/admin/saas-config`, { headers });
+      if (configResponse.ok) {
+        const configData = await configResponse.json();
+        setSaasConfig(configData);
+      } else {
+        setSaasConfig({
+          hero_title: "Welcome to Special Wedding",
+          hero_subtitle: "Wedding Planning Made Simple",
+          hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+          hero_cta_primary: "Start Free Trial",
+          hero_cta_secondary: "Watch Demo",
+          trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+          statistics: [
+            { label: "Wedding Planners Trust Us", value: "500+" },
+            { label: "Weddings Managed", value: "10K+" },
+            { label: "Uptime Guarantee", value: "99.9%" }
+          ],
+          features: [
+            {
+              title: "Complete Wedding Management",
+              description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
+              status: "available" as const,
+              order: 1
+            },
+            {
+              title: "AI Presentation Generator",
+              description: "Create stunning wedding presentations in minutes with our AI-powered design tools.",
+              status: "coming_soon" as const,
+              order: 5
+            }
+          ],
+          benefits: [
+            {
+              title: "Save Time",
+              description: "Automate repetitive tasks and streamline wedding planning operations",
+              order: 1
+            },
+            {
+              title: "Scale Your Business",
+              description: "Manage multiple weddings efficiently and grow your planning business",
+              order: 2
+            }
+          ],
+          testimonials: [
+            {
+              name: "Sarah Johnson",
+              company: "Elegant Events Planning",
+              role: "Senior Wedding Planner",
+              content: "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
+              order: 1
+            }
+          ],
+          features_enabled: true,
+          benefits_enabled: true,
+          testimonials_enabled: true,
+          statistics_enabled: true,
+          theme: {
+            primary_color: "#1e3a5f",
+            secondary_color: "#d4af37",
+            fallback_images: [
+              "/wedding-images/wedding-ceremony.jpg",
+              "/wedding-images/wedding-reception.jpg"
+            ]
+          }
+        });
+      }
 
- // Fetch content sections
- const sectionsResponse = await fetch(`${baseUrl}/admin/content-sections`, { headers });
- if (sectionsResponse.ok) {
- const sectionsData = await sectionsResponse.json();
- setContentSections(sectionsData.map((section: any) => ({
- id: section._id || section.id,
- section: section.section,
- content: section.content,
- isActive: section.is_active,
- displayOrder: section.display_order,
- updatedBy: section.updated_by,
- updatedAt: section.updated_at
- })));
- }
+      const sectionsResponse = await fetch(`${baseUrl}/admin/content-sections`, { headers });
+      if (sectionsResponse.ok) {
+        const sectionsData = await sectionsResponse.json();
+        setContentSections(sectionsData.map((section: any) => ({
+          id: section._id || section.id,
+          section: section.section,
+          content: section.content,
+          isActive: section.is_active,
+          displayOrder: section.display_order,
+          updatedBy: section.updated_by,
+          updatedAt: section.updated_at
+        })) );
+      }
+    } catch (error) {
+      console.error('Error fetching SaaS data:', error);
+      setError('Failed to load SaaS admin data. Using sample data.');
+      setPlans([
+        {
+          _id: 'plan-1',
+          name: 'Studio Growth',
+          description: 'Grow your planning studio with advanced automation and analytics.',
+          price_monthly: 179,
+          price_yearly: 1890,
+          max_weddings: 15,
+          max_guests_per_wedding: 500,
+          ai_credits_monthly: 800,
+          storage_gb: 150,
+          staff_seats: 10,
+          features: {
+            timeline: true,
+            guest_management: true,
+            vendor_portal: true,
+            budgeting: true,
+            ai_email: true,
+            ai_design: true,
+            analytics: true
+          },
+          is_featured: true,
+          is_active: true,
+          display_order: 1,
+          created_by: 'system',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          _id: 'plan-2',
+          name: 'Signature',
+          description: 'Collaborate with unlimited vendors and automate client touchpoints.',
+          price_monthly: 289,
+          price_yearly: 3090,
+          max_weddings: 30,
+          max_guests_per_wedding: 1200,
+          ai_credits_monthly: 2000,
+          storage_gb: 500,
+          staff_seats: 25,
+          features: {
+            timeline: true,
+            guest_management: true,
+            vendor_portal: true,
+            budgeting: true,
+            ai_email: true,
+            ai_design: true,
+            analytics: true
+          },
+          is_featured: false,
+          is_active: true,
+          display_order: 2,
+          created_by: 'system',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ]);
 
- } catch (error) {
- console.error('Error fetching SAAS data:', error);
- // Set default saasConfig if there's an error
- if (!saasConfig) {
- setSaasConfig({
- hero_title: "Welcome to Special Wedding",
- hero_subtitle: "Wedding Planning Made Simple",
- hero_description: "The ultimate wedding planning platform for professional wedding planners.",
- hero_cta_primary: "Start Free Trial",
- hero_cta_secondary: "Watch Demo",
- trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
- statistics: [
- { label: "Wedding Planners Trust Us", value: "500+" },
- { label: "Weddings Managed", value: "10K+" },
- { label: "Uptime Guarantee", value: "99.9%" }
- ],
- features: [],
- benefits: [],
- testimonials: [],
- features_enabled: true,
- benefits_enabled: true,
- testimonials_enabled: true,
- statistics_enabled: true,
- theme: {
- primary_color: "#1e3a5f",
- secondary_color: "#d4af37",
- fallback_images: [
- "/wedding-images/wedding-ceremony.jpg",
- "/wedding-images/wedding-reception.jpg"
- ]
- }
- });
- }
- } finally {
- setLoading(false);
- }
- };
+      setPlanners([
+        {
+          id: 'planner-1',
+          email: 'alicia@luxeplanners.com',
+          companyName: 'Luxe Planners',
+          subscriptionPlanId: 'plan-1',
+          subscriptionStatus: 'active',
+          maxWeddings: 15,
+          is_active: true,
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
+        },
+        {
+          id: 'planner-2',
+          email: 'jordan@everafterstudio.com',
+          companyName: 'EverAfter Studio',
+          subscriptionPlanId: 'plan-2',
+          subscriptionStatus: 'trialing',
+          maxWeddings: 30,
+          is_active: true,
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
+        }
+      ]);
 
- fetchData();
- }, []);
+      setSaasConfig(prev => prev ?? {
+        hero_title: "Welcome to Special Wedding",
+        hero_subtitle: "Wedding Planning Made Simple",
+        hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+        hero_cta_primary: "Start Free Trial",
+        hero_cta_secondary: "Watch Demo",
+        trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+        statistics: [
+          { label: "Wedding Planners Trust Us", value: "500+" },
+          { label: "Weddings Managed", value: "10K+" },
+          { label: "Uptime Guarantee", value: "99.9%" }
+        ],
+        features: [],
+        benefits: [],
+        testimonials: [],
+        features_enabled: true,
+        benefits_enabled: true,
+        testimonials_enabled: true,
+        statistics_enabled: true,
+        theme: {
+          primary_color: "#1e3a5f",
+          secondary_color: "#d4af37",
+          fallback_images: [
+            "/wedding-images/wedding-ceremony.jpg",
+            "/wedding-images/wedding-reception.jpg"
+          ]
+        }
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
  const handleCreatePlan = () => {
  setEditingPlan(null);

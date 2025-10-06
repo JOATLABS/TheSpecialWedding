@@ -80,12 +80,14 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             <div className="flex flex-col items-center">
               {wedding.our_story.image_url && (
                 <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
-                  <img
-                    src={wedding.our_story.image_url.startsWith('http') 
-                      ? wedding.our_story.image_url 
+                  <Image
+                    src={wedding.our_story.image_url.startsWith('http')
+                      ? wedding.our_story.image_url
                       : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`}
                     alt="Couple"
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="192px"
                   />
                 </div>
               )}
@@ -116,10 +118,12 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                       <div key={member.id} className="text-center">
                         <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
                           {member.image_url ? (
-                            <img
+                            <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
-                              className="w-full h-full object-cover"
+                              fill
+                              className="object-cover"
+                              sizes="128px"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
@@ -148,10 +152,12 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                       <div key={member.id} className="text-center">
                         <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
                           {member.image_url ? (
-                            <img
+                            <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
-                              className="w-full h-full object-cover"
+                              fill
+                              className="object-cover"
+                              sizes="128px"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">

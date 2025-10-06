@@ -227,14 +227,6 @@ export const SaasLandingPage: React.FC = () => {
     []
   );
 
-  useEffect(() => {
-    fetchSaasConfig();
-  }, []);
-
-  useEffect(() => {
-    fetchSubscriptionPlans();
-  }, []);
-
   const resolveApiUrl = useCallback((path: string) => {
     const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
     if (configuredBase) {
@@ -260,7 +252,7 @@ export const SaasLandingPage: React.FC = () => {
     []
   );
 
-  const fetchSaasConfig = async () => {
+  const fetchSaasConfig = useCallback(async () => {
     try {
       const response = await fetchWithTimeout(resolveApiUrl('/saas/config'));
       if (response.ok) {
@@ -272,9 +264,9 @@ export const SaasLandingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchWithTimeout, resolveApiUrl]);
 
-  const fetchSubscriptionPlans = async () => {
+  const fetchSubscriptionPlans = useCallback(async () => {
     let resolvedPlans: SubscriptionPlan[] | null = null;
     try {
       const response = await fetchWithTimeout(resolveApiUrl('/public/subscription-plans'));
@@ -313,7 +305,15 @@ export const SaasLandingPage: React.FC = () => {
       }
       setPlanLoading(false);
     }
-  };
+  }, [defaultPlans, fetchWithTimeout, resolveApiUrl]);
+
+  useEffect(() => {
+    fetchSaasConfig();
+  }, [fetchSaasConfig]);
+
+  useEffect(() => {
+    fetchSubscriptionPlans();
+  }, [fetchSubscriptionPlans]);
 
   const scrollToAuthPanel = () => {
     if (typeof document === 'undefined') {

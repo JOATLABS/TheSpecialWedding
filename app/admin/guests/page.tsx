@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 
 interface Wedding {
@@ -70,17 +70,7 @@ export default function AdminGuestsPage() {
     number_of_plus_ones_allowed: 0
   });
 
-  useEffect(() => {
-    fetchWeddings();
-  }, []);
-
-  useEffect(() => {
-    if (selectedWedding) {
-      fetchGuestData();
-    }
-  }, [selectedWedding]);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/admin/weddings`);
@@ -89,9 +79,13 @@ export default function AdminGuestsPage() {
     } catch (err) {
       setError('Failed to load weddings');
     }
-  };
+  }, []);
 
-  const fetchGuestData = async () => {
+  const fetchGuestData = useCallback(async () => {
+    if (!selectedWedding) {
+      return;
+    }
+
     setLoading(true);
     try {
       // Fetch guests
@@ -111,9 +105,10 @@ export default function AdminGuestsPage() {
       }
       
       const guestsData = await guestsResponse.json();
-      console.log('Guests data:', guestsData); // Debug log
+      const normalizedGuests: Guest[] = Array.isArray(guestsData) ? guestsData : [];
+      console.log('Guests data:', normalizedGuests); // Debug log
       console.log('Selected wedding ID:', selectedWedding); // Debug log
-      setGuests(Array.isArray(guestsData) ? guestsData : []);
+      setGuests(normalizedGuests);
 
       // Fetch RSVPs
       try {
@@ -141,7 +136,7 @@ export default function AdminGuestsPage() {
       // Fetch plus ones for all guests
       try {
         const plusOnesResponse = await Promise.all(
-          guests.map(async (guest: any) => {
+          normalizedGuests.map(async (guest: any) => {
             try {
               const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
                 headers: {
@@ -181,7 +176,17 @@ export default function AdminGuestsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedWedding, token]);
+
+  useEffect(() => {
+    fetchWeddings();
+  }, [fetchWeddings]);
+
+  useEffect(() => {
+    if (selectedWedding) {
+      fetchGuestData();
+    }
+  }, [fetchGuestData, selectedWedding]);
 
   const handleSendReminder = async (guestId: string) => {
     try {

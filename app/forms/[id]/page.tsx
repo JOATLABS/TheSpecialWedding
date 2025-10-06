@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 
 interface FormField {
@@ -42,13 +42,7 @@ export default function PublicFormPage() {
  const [error, setError] = useState('');
  const [successMessage, setSuccessMessage] = useState('');
 
- useEffect(() => {
- if (formId) {
- fetchForm();
- }
- }, [formId]);
-
- const fetchForm = async () => {
+ const fetchForm = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/public/forms/${formId}`);
@@ -68,7 +62,13 @@ export default function PublicFormPage() {
  } finally {
  setLoading(false);
  }
- };
+ }, [formId]);
+
+ useEffect(() => {
+ if (formId) {
+ fetchForm();
+ }
+ }, [fetchForm, formId]);
 
  const handleInputChange = (fieldId: string, value: any) => {
  setResponses(prev => ({

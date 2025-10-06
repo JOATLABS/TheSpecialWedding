@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 
@@ -19,16 +19,37 @@ export default function AdminDashboardPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!token) {
-      router.push('/admin/login');
-      return;
+  const parseJwtPayload = useCallback((authToken: string) => {
+    try {
+      const payload = authToken.split('.')[1];
+      const decoded = atob(payload);
+      return JSON.parse(decoded);
+    } catch (error) {
+      console.error('Failed to parse JWT:', error);
+      return null;
     }
+  }, []);
 
-    fetchUserProfile();
-  }, [token, router]);
+  const redirectToRoleDashboard = useCallback((role: string) => {
+    switch (role) {
+      case 'ROOT_ADMIN':
+      case 'admin':
+        router.push('/admin/saas');
+        break;
+      case 'wedding_planner':
+        router.push('/admin/planner');
+        break;
+      case 'vendor':
+        router.push('/admin/vendor');
+        break;
+      default:
+        // SECURITY: Unknown role - redirect to login, never grant admin access
+        console.warn(`Unknown user role: ${role}`);
+        router.push('/admin/login');
+    }
+  }, [router]);
 
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
@@ -45,7 +66,7 @@ export default function AdminDashboardPage() {
       if (response.ok) {
         const profile = await response.json();
         setUserProfile(profile);
-        
+
         // Redirect based on role
         redirectToRoleDashboard(profile.role);
       } else {
@@ -70,37 +91,16 @@ export default function AdminDashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [parseJwtPayload, redirectToRoleDashboard, router, token]);
 
-  const parseJwtPayload = (token: string) => {
-    try {
-      const payload = token.split('.')[1];
-      const decoded = atob(payload);
-      return JSON.parse(decoded);
-    } catch (error) {
-      console.error('Failed to parse JWT:', error);
-      return null;
+  useEffect(() => {
+    if (!token) {
+      router.push('/admin/login');
+      return;
     }
-  };
 
-  const redirectToRoleDashboard = (role: string) => {
-    switch (role) {
-      case 'ROOT_ADMIN':
-      case 'admin':
-        router.push('/admin/saas');
-        break;
-      case 'wedding_planner':
-        router.push('/admin/planner');
-        break;
-      case 'vendor':
-        router.push('/admin/vendor');
-        break;
-      default:
-        // SECURITY: Unknown role - redirect to login, never grant admin access
-        console.warn(`Unknown user role: ${role}`);
-        router.push('/admin/login');
-    }
-  };
+    fetchUserProfile();
+  }, [fetchUserProfile, router, token]);
 
   if (loading) {
     return (

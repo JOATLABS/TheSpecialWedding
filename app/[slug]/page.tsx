@@ -1,5 +1,5 @@
 'use client';
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { WeddingContext } from '@/contexts/WeddingContext';
 import { LandingLayout } from '@/components/landing-page/LandingLayout';
@@ -43,13 +43,14 @@ export default function WeddingLandingPage() {
  fetchGallery(weddingData, guestData);
  };
 
- const fetchGallery = async (weddingData?: any, guestData?: any) => {
- if (!slug) return;
- 
- const targetWedding = weddingData || wedding;
- const targetGuest = guestData || guest;
- 
- try {
+ const fetchGallery = useCallback(
+ async (weddingData?: any, guestData?: any) => {
+  if (!slug) return;
+
+  const targetWedding = weddingData || wedding;
+  const targetGuest = guestData || guest;
+
+  try {
  // Use the verified gallery endpoint
  const requestBody = new URLSearchParams({
  wedding_slug: slug,
@@ -81,18 +82,20 @@ export default function WeddingLandingPage() {
  console.warn('Gallery access failed, continuing without images');
  setImages([]);
  }
- } catch (err: any) {
- console.warn('Gallery could not be loaded:', err);
- setImages([]); // Continue without gallery instead of showing error
- }
- };
+  } catch (err: any) {
+  console.warn('Gallery could not be loaded:', err);
+  setImages([]); // Continue without gallery instead of showing error
+  }
+ },
+ [guest, slug, wedding]
+ );
 
  // Fetch gallery when access is granted and we have wedding data
  useEffect(() => {
  if (accessGranted && wedding) {
  fetchGallery();
  }
- }, [accessGranted, wedding, guest, slug]);
+ }, [accessGranted, fetchGallery, wedding]);
 
  if (loading) {
  return (
