@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Modern3DBackground } from '../landing-page/Modern3DBackground';
-import { SaasAuthPanel, SaasHeroSection, SubscriptionPlan } from './SaasHeroSection';
+import { SaasHeroSection } from './SaasHeroSection';
+import { PlannerAuthSection, SubscriptionPlan } from './PlannerAuthSection';
 import { SaasExperienceCarousel } from './SaasExperienceCarousel';
 import ContactSalesModal from './ContactSalesModal';
 import { fetchWithTimeout, resolveApiUrl } from './apiClient';
@@ -318,7 +319,7 @@ export const SaasLandingPage: React.FC = () => {
     if (typeof document === 'undefined') {
       return;
     }
-    const panel = document.getElementById('saas-auth-panel');
+    const panel = document.getElementById('planner-auth-section');
     if (panel) {
       panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
@@ -365,28 +366,48 @@ export const SaasLandingPage: React.FC = () => {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950">
+    <div className="relative min-h-screen bg-slate-950 text-slate-900">
       <Modern3DBackground imageUrl={config.background_image} fallbackImages={config.fallback_images} theme={theme} />
 
-      <div className="relative z-10 flex flex-col">
-        <div className="mx-auto w-full max-w-7xl px-4 pb-16 pt-12 sm:px-6 lg:px-8 lg:pb-24 lg:pt-16">
-          <div className="flex flex-col gap-12 lg:grid lg:min-h-[720px] lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)] lg:items-stretch xl:gap-16">
-            <div className="flex flex-col gap-8 lg:h-full lg:justify-between lg:pr-6 xl:pr-12">
-              <div className="flex flex-1 flex-col">
-                <SaasHeroSection
-                  config={config}
-                  theme={theme}
-                  onAuthModeChange={(mode) => {
-                    setAuthMode(mode);
-                    if (mode === 'signup') {
-                      scrollToAuthPanel();
-                    }
-                  }}
-                  onRequestSignupFocus={scrollToAuthPanel}
-                  onContactClick={handleContactOpen}
-                  className="h-full rounded-[2.75rem] border border-white/25 shadow-[0_30px_120px_-60px_rgba(15,23,42,0.55)]"
-                />
-              </div>
+      <div className="relative z-10">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-16 px-4 pb-16 pt-12 sm:px-6 lg:px-8 lg:pb-24 lg:pt-16 xl:px-12">
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] xl:gap-16 xl:items-start">
+            <SaasHeroSection
+              config={config}
+              theme={theme}
+              onAuthModeChange={(mode) => {
+                setAuthMode(mode);
+                if (mode === 'signup') {
+                  scrollToAuthPanel();
+                }
+              }}
+              onRequestSignupFocus={scrollToAuthPanel}
+              onContactClick={handleContactOpen}
+              className="lg:px-0 lg:py-0"
+            />
+
+            <div id="planner-auth-section" className="flex flex-col gap-8 lg:sticky lg:top-16">
+              <PlannerAuthSection
+                mode={authMode}
+                onModeChange={(mode) => {
+                  setAuthMode(mode);
+                  if (mode === 'signup') {
+                    scrollToAuthPanel();
+                  }
+                }}
+                theme={theme}
+                plans={condensedPlans}
+                plansLoading={planLoading}
+                plansError={planError}
+                plansNotice={planNotice}
+                selectedPlan={selectedPlan}
+                onSelectPlan={(plan) => {
+                  setSelectedPlan(plan);
+                  setAuthMode('signup');
+                  scrollToAuthPanel();
+                }}
+                className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
+              />
 
               {planError && !planLoading && (
                 <div className="rounded-3xl border border-red-200/80 bg-red-50/80 px-4 py-3 text-sm text-red-700 shadow-sm backdrop-blur">
@@ -395,60 +416,13 @@ export const SaasLandingPage: React.FC = () => {
               )}
 
               {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
-                <section aria-labelledby="experience-showcase" className="relative lg:hidden">
-                  <div className="relative mx-auto w-full max-w-4xl">
-                    <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),rgba(255,255,255,0))]"
-                      />
-                      <div className="relative rounded-[2.6rem] bg-white/65 px-5 py-8 sm:px-7 sm:py-9">
-                        <SaasExperienceCarousel
-                          features={config.features}
-                          benefits={config.benefits}
-                          testimonials={config.testimonials}
-                          theme={theme}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              )}
-            </div>
-
-            <aside id="saas-auth-panel" className="flex flex-col gap-8 lg:h-full lg:max-w-[560px] lg:justify-between xl:max-w-[600px]">
-              <div className="lg:sticky lg:top-20">
-                <SaasAuthPanel
-                  mode={authMode}
-                  onModeChange={(mode) => {
-                    setAuthMode(mode);
-                    if (mode === 'signup') {
-                      scrollToAuthPanel();
-                    }
-                  }}
-                  selectedPlan={selectedPlan}
-                  theme={theme}
-                  plans={condensedPlans}
-                  plansLoading={planLoading}
-                  plansError={planError}
-                  plansNotice={planNotice}
-                  onSelectPlan={(plan) => {
-                    setSelectedPlan(plan);
-                    setAuthMode('signup');
-                    scrollToAuthPanel();
-                  }}
-                  className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
-                />
-              </div>
-
-              {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
-                <section aria-labelledby="experience-showcase" className="hidden lg:mt-auto lg:block">
+                <div className="hidden lg:block">
                   <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/25 p-[1px] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
                     <div
                       aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),rgba(255,255,255,0))]"
+                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),transparent_60%)]"
                     />
-                    <div className="relative rounded-[2.6rem] bg-white/70 px-6 py-8 xl:px-8 xl:py-10">
+                    <div className="relative rounded-[2.6rem] bg-white/75 px-6 py-8 xl:px-8 xl:py-10">
                       <SaasExperienceCarousel
                         features={config.features}
                         benefits={config.benefits}
@@ -457,59 +431,32 @@ export const SaasLandingPage: React.FC = () => {
                       />
                     </div>
                   </div>
-                </section>
+                </div>
               )}
-            </aside>
+            </div>
           </div>
 
-          <aside id="saas-auth-panel" className="lg:w-full lg:max-w-[560px] xl:max-w-[600px]">
-            <div className="flex flex-col gap-10">
-              <div className="lg:sticky lg:top-16">
-                <SaasAuthPanel
-                  mode={authMode}
-                  onModeChange={(mode) => {
-                    setAuthMode(mode);
-                    if (mode === 'signup') {
-                      scrollToAuthPanel();
-                    }
-                  }}
-                  selectedPlan={selectedPlan}
-                  theme={theme}
-                  plans={condensedPlans}
-                  plansLoading={planLoading}
-                  plansError={planError}
-                  plansNotice={planNotice}
-                  onSelectPlan={(plan) => {
-                    setSelectedPlan(plan);
-                    setAuthMode('signup');
-                    scrollToAuthPanel();
-                  }}
-                  className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
+          {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
+            <section aria-labelledby="experience-showcase" className="lg:hidden">
+              <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),transparent_60%)]"
                 />
+                <div className="relative rounded-[2.6rem] bg-white/70 px-5 py-8 sm:px-7 sm:py-9">
+                  <SaasExperienceCarousel
+                    features={config.features}
+                    benefits={config.benefits}
+                    testimonials={config.testimonials}
+                    theme={theme}
+                  />
+                </div>
               </div>
-
-              {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
-                <section aria-labelledby="experience-showcase" className="hidden lg:block">
-                  <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/25 p-[1px] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),rgba(255,255,255,0))]"
-                    />
-                    <div className="relative rounded-[2.6rem] bg-white/70 px-6 py-8 xl:px-8 xl:py-10">
-                      <SaasExperienceCarousel
-                        features={config.features}
-                        benefits={config.benefits}
-                        testimonials={config.testimonials}
-                        theme={theme}
-                      />
-                    </div>
-                  </div>
-                </section>
-              )}
-            </div>
-          </aside>
+            </section>
+          )}
         </div>
       </div>
+
       <ContactSalesModal isOpen={isContactOpen} onClose={handleContactClose} theme={theme} />
     </div>
   );
