@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 
@@ -49,12 +49,7 @@ export default function SendFormPage() {
  // Recipient categories
  const [recipientCategory, setRecipientCategory] = useState<'couples' | 'wedding_party' | 'vendors' | 'custom'>('custom');
 
- useEffect(() => {
- if (!token || !formId) return;
- fetchForm();
- }, [token, formId]);
-
- const fetchForm = async () => {
+ const fetchForm = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/admin/forms/${formId}`, {
@@ -83,7 +78,12 @@ export default function SendFormPage() {
  } finally {
  setLoading(false);
  }
- };
+ }, [formId, token]);
+
+ useEffect(() => {
+ if (!token || !formId) return;
+ fetchForm();
+ }, [fetchForm, formId, token]);
 
  const addRecipient = () => {
  setRecipients([...recipients, '']);

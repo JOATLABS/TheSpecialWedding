@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { GlassCard } from '../ui/GlassCard';
 
 interface Testimonial {
@@ -62,10 +63,12 @@ export const TestimonialsSection: React.FC<TestimonialsSectionProps> = ({ testim
                 }}
               >
                 {testimonial.avatar_url ? (
-                  <img
+                  <Image
                     src={testimonial.avatar_url}
                     alt={testimonial.name}
-                    className="w-full h-full rounded-full object-cover"
+                    fill
+                    className="rounded-full object-cover"
+                    sizes="48px"
                   />
                 ) : (
                   <span className="text-white font-bold text-lg">

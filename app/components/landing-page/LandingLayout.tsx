@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from 'next/image';
 
 import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
 import { Modern3DBackground } from "@/components/landing-page/Modern3DBackground";
@@ -78,11 +79,13 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 {images.slice(0, 8).map((img, i) => (
                   <div key={img.key} className="relative w-full h-48 rounded-lg overflow-hidden shadow-lg">
-                    <img
+                    <Image
                       src={img.url}
                       alt={`Memory ${i + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 50vw, 25vw"
+                      onError={(event) => { event.currentTarget.style.display = 'none'; }}
                     />
                   </div>
                 ))}

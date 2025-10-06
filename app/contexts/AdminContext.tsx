@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
@@ -52,16 +52,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
-    // Automatically fetch user profile when token is set
-    useEffect(() => {
-        if (token && !userProfile) {
-            fetchUserProfile();
-        }
-    }, [token, userProfile]);
-
-    const fetchUserProfile = async () => {
+    const fetchUserProfile = useCallback(async () => {
         if (!token) return;
-        
+
         try {
             const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
             const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
@@ -86,7 +79,14 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 console.error('Failed to fetch user profile');
             }
         }
-    };
+    }, [token]);
+
+    // Automatically fetch user profile when token is set
+    useEffect(() => {
+        if (token && !userProfile) {
+            fetchUserProfile();
+        }
+    }, [fetchUserProfile, token, userProfile]);
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {

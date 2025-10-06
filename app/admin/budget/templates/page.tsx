@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
@@ -18,6 +18,38 @@ interface Wedding {
   slug: string;
 }
 
+const normaliseTemplate = (template: any): BudgetTemplate => {
+  if (!template) {
+    throw new Error('Invalid template payload');
+  }
+
+  const identifier = template.id || template._id || template?._id?.$oid || template?._id?.oid || '';
+  return {
+    id: identifier,
+    _id: identifier,
+    name: template.name || '',
+    description: template.description || undefined,
+    wedding_type: template.wedding_type || '',
+    target_budget_min: Number(template.target_budget_min ?? 0),
+    target_budget_max: Number(template.target_budget_max ?? 0),
+    guest_count_range: {
+      min: Number(template?.guest_count_range?.min ?? 0),
+      max: Number(template?.guest_count_range?.max ?? 0),
+    },
+    categories: Array.isArray(template.categories)
+      ? template.categories.map((category: any) => ({
+          name: category.name || '',
+          percentage: Number(category.percentage ?? 0),
+          priority: Number(category.priority ?? 3),
+        }))
+      : [],
+    created_by: template.created_by || undefined,
+    is_public: Boolean(template.is_public),
+    created_at: template.created_at || '',
+    updated_at: template.updated_at || template.created_at || '',
+  };
+};
+
 export default function BudgetTemplatesPage() {
   const { token } = useAdmin();
   const [templates, setTemplates] = useState<BudgetTemplate[]>([]);
@@ -27,53 +59,14 @@ export default function BudgetTemplatesPage() {
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  
+
   // Apply template modal
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<BudgetTemplate | null>(null);
   const [selectedWedding, setSelectedWedding] = useState<string>('');
   const [totalBudget, setTotalBudget] = useState<number>(0);
 
-  useEffect(() => {
-    if (token) {
-      fetchTemplates();
-      fetchWeddings();
-    }
-  }, [token]);
-
-  const normaliseTemplate = (template: any): BudgetTemplate => {
-    if (!template) {
-      throw new Error('Invalid template payload');
-    }
-
-    const identifier = template.id || template._id || template?._id?.$oid || template?._id?.oid || '';
-    return {
-      id: identifier,
-      _id: identifier,
-      name: template.name || '',
-      description: template.description || undefined,
-      wedding_type: template.wedding_type || '',
-      target_budget_min: Number(template.target_budget_min ?? 0),
-      target_budget_max: Number(template.target_budget_max ?? 0),
-      guest_count_range: {
-        min: Number(template?.guest_count_range?.min ?? 0),
-        max: Number(template?.guest_count_range?.max ?? 0),
-      },
-      categories: Array.isArray(template.categories)
-        ? template.categories.map((category: any) => ({
-            name: category.name || '',
-            percentage: Number(category.percentage ?? 0),
-            priority: Number(category.priority ?? 3),
-          }))
-        : [],
-      created_by: template.created_by || undefined,
-      is_public: Boolean(template.is_public),
-      created_at: template.created_at || '',
-      updated_at: template.updated_at || template.created_at || '',
-    };
-  };
-
-  const fetchTemplates = async () => {
+  const fetchTemplates = useCallback(async () => {
     if (!token) return;
 
     setLoading(true);
@@ -87,7 +80,7 @@ export default function BudgetTemplatesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
   const handleCreateTemplate = async (payload: CreateBudgetTemplatePayload) => {
     if (!token) {
@@ -116,7 +109,7 @@ export default function BudgetTemplatesPage() {
     }
   };
 
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/weddings`);
@@ -125,7 +118,14 @@ export default function BudgetTemplatesPage() {
     } catch (err) {
       console.error('Failed to load weddings');
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      fetchTemplates();
+      fetchWeddings();
+    }
+  }, [fetchTemplates, fetchWeddings, token]);
 
   const handleApplyTemplate = async () => {
     if (!token || !selectedTemplate || !selectedWedding || !totalBudget) {

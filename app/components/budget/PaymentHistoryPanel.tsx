@@ -105,7 +105,7 @@ export function PaymentHistoryPanel({
 
       return true;
     });
-  }, [resolvedPayments, categoryFilter, methodFilter, statusFilter, searchTerm]);
+  }, [categoryFilter, categoryLookup, methodFilter, resolvedPayments, searchTerm, statusFilter]);
 
   const summary = useMemo(() => {
     const totalRecorded = payments.reduce((acc, payment) => acc + (payment.amount || 0), 0);

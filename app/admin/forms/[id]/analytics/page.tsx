@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formsApi } from '@/services/formsApi';
@@ -44,12 +44,7 @@ export default function FormAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!token || !formId) return;
-    fetchFormAndAnalytics();
-  }, [token, formId]);
-
-  const fetchFormAndAnalytics = async () => {
+  const fetchFormAndAnalytics = useCallback(async () => {
     if (!token) {
       return;
     }
@@ -92,7 +87,12 @@ export default function FormAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [formId, token]);
+
+  useEffect(() => {
+    if (!token || !formId) return;
+    fetchFormAndAnalytics();
+  }, [fetchFormAndAnalytics, formId, token]);
 
   const AnalyticsCard = ({ 
     title, 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 
@@ -51,11 +51,7 @@ export default function ProfilePage() {
     company_name: ''
   });
 
-  useEffect(() => {
-    fetchUserProfile();
-  }, [token]);
-
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = useCallback(async () => {
     if (!token) return;
 
     try {
@@ -78,7 +74,7 @@ export default function ProfilePage() {
           last_name: profile.last_name || '',
           company_name: profile.company_name || ''
         });
-        setEmailData({ ...emailData, new_email: profile.email });
+        setEmailData((prev) => ({ ...prev, new_email: profile.email }));
       }
     } catch (error) {
       console.error('Failed to fetch profile:', error);
@@ -86,7 +82,11 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, [fetchUserProfile]);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();

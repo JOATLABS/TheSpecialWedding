@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
@@ -37,13 +37,7 @@ export default function VendorSubmissionPage() {
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');
 
- useEffect(() => {
- if (formId && token) {
- fetchSubmission();
- }
- }, [formId, token]);
-
- const fetchSubmission = async () => {
+ const fetchSubmission = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/admin/vendor-forms/${formId}`, {
@@ -93,7 +87,13 @@ export default function VendorSubmissionPage() {
  } finally {
  setLoading(false);
  }
- };
+ }, [formId, token]);
+
+ useEffect(() => {
+ if (formId && token) {
+ fetchSubmission();
+ }
+ }, [fetchSubmission, formId, token]);
 
  const updateSubmissionStatus = async (newStatus: string) => {
  try {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -18,11 +18,7 @@ export default function WeddingDetailsPage() {
  const [error, setError] = useState<string>('');
  const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq' | 'theme' | 'story'>('events');
 
- useEffect(() => {
- fetchWedding();
- }, [weddingId]);
-
- const fetchWedding = async () => {
+ const fetchWedding = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/admin/weddings`, {
@@ -69,7 +65,11 @@ export default function WeddingDetailsPage() {
  } finally {
  setLoading(false);
  }
- };
+ }, [token, weddingId]);
+
+ useEffect(() => {
+ fetchWedding();
+ }, [fetchWedding]);
 
  const saveWedding = async () => {
  if (!wedding) return;
