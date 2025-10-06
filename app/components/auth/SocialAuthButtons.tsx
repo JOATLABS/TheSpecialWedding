@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo } from 'react';
 
-const DEFAULT_BASE_URL = 'http://localhost:8000';
+import { resolveApiUrl } from '../saas/apiClient';
 
 type AuthFlow = 'signup' | 'login';
 
@@ -58,15 +58,31 @@ export const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
   className = '',
   buttonLayout = 'stacked',
 }) => {
-  const baseUrl = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_BASE_URL, []);
+  const destinations = useMemo(() => {
+    const computeDestination = (provider: Provider, override?: string | null): string | null => {
+      const trimmed = override?.trim();
+      if (trimmed) {
+        return trimmed;
+      }
 
-  const destinations = useMemo(
-    () => ({
-      google: process.env.NEXT_PUBLIC_GOOGLE_OAUTH_URL ?? `${baseUrl}${providerMeta.google.defaultPath}`,
-      apple: process.env.NEXT_PUBLIC_APPLE_OAUTH_URL ?? `${baseUrl}${providerMeta.apple.defaultPath}`,
-    }),
-    [baseUrl]
-  );
+      try {
+        return resolveApiUrl(providerMeta[provider].defaultPath);
+      } catch (error) {
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.error(`[social-auth] Unable to resolve ${provider} OAuth URL`, error);
+        }
+        return null;
+      }
+    };
+
+    const resolved: Record<Provider, string | null> = {
+      google: computeDestination('google', process.env.NEXT_PUBLIC_GOOGLE_OAUTH_URL ?? null),
+      apple: computeDestination('apple', process.env.NEXT_PUBLIC_APPLE_OAUTH_URL ?? null),
+    };
+
+    return resolved;
+  }, []);
 
   const handleProvider = useCallback(
     (provider: Provider) => {
@@ -74,19 +90,42 @@ export const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
         return;
       }
 
-      const url = destinations[provider];
-      const redirectTarget = redirectPath ?? (flow === 'signup' ? '/setup-account' : '/admin');
-      const redirectParam = encodeURIComponent(`${window.location.origin}${redirectTarget}`);
-      const connector = url.includes('?') ? '&' : '?';
+      const destination = destinations[provider];
 
-      window.location.href = `${url}${connector}redirect_uri=${redirectParam}&context=${flow}`;
+      if (!destination) {
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.warn(`[social-auth] Missing destination for provider: ${provider}`);
+        }
+        return;
+      }
+
+      let url: URL;
+
+      try {
+        url = new URL(destination);
+      } catch (error) {
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.error(`[social-auth] Invalid destination URL for ${provider}: ${destination}`, error);
+        }
+        return;
+      }
+
+      const redirectTarget = redirectPath ?? (flow === 'signup' ? '/setup-account' : '/admin');
+      const redirectUrl = new URL(redirectTarget, window.location.origin);
+
+      url.searchParams.set('redirect_uri', redirectUrl.toString());
+      url.searchParams.set('context', flow);
+
+      window.location.href = url.toString();
     },
     [destinations, flow, redirectPath]
   );
 
   return (
     <div
-      className={`flex ${buttonLayout === 'inline' ? 'flex-row gap-3' : 'flex-col gap-3'} ${className}`}
+      className={`flex ${buttonLayout === 'inline' ? 'flex-row gap-2 sm:gap-3' : 'flex-col gap-2 sm:gap-3'} ${className}`}
       role="group"
       aria-label={`${flow === 'signup' ? 'Sign up' : 'Log in'} with a social account`}
     >
@@ -95,26 +134,36 @@ export const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
         const isLight = meta.brandColor === '#ffffff';
         const subTextClass = isLight ? 'text-gray-500' : 'text-gray-200';
 
+        const isDisabled = !destinations[provider];
+
         return (
           <button
             key={provider}
             type="button"
             onClick={() => handleProvider(provider)}
-            className={`flex items-center justify-center gap-3 rounded-lg border px-4 py-2 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
-              ${buttonLayout === 'inline' ? 'flex-1' : 'w-full'}
+            className={`group relative flex h-12 w-12 items-center justify-center rounded-full border text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:h-auto sm:w-auto sm:rounded-lg sm:px-4 sm:py-2 sm:gap-3
+              ${buttonLayout === 'inline' ? 'sm:flex-1' : 'sm:w-full'}
               ${isLight ? 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50 focus-visible:outline-gray-400' : 'border-transparent bg-black text-white hover:bg-black/90 focus-visible:outline-black'}
             `}
             aria-label={`${meta.label} (${meta.description})`}
+            disabled={isDisabled}
+            aria-disabled={isDisabled}
           >
-            <span className={isLight ? 'text-current' : 'text-white'} aria-hidden="true">
+            <span
+              className={`${isLight ? 'text-current' : 'text-white'} flex items-center justify-center text-base sm:text-inherit`}
+              aria-hidden="true"
+            >
               {meta.icon}
             </span>
-            <span className="flex flex-col items-start leading-tight text-left">
+            <span className="hidden sm:flex sm:flex-col sm:items-start sm:leading-tight sm:text-left">
               <span>{meta.label}</span>
               <span className={`text-xs font-normal ${subTextClass}`}>
                 {flow === 'signup' ? 'Fast account setup' : 'Quick access without password'}
               </span>
             </span>
+            {isDisabled && (
+              <span className="pointer-events-none absolute inset-0 rounded-full bg-white/60 sm:rounded-lg" aria-hidden="true" />
+            )}
           </button>
         );
       })}

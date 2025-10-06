@@ -10,115 +10,93 @@ interface SaasLogoTitleProps {
 }
 
 export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
+  const primaryColor = theme?.primary_color || '#1e3a5f';
+  const secondaryColor = theme?.secondary_color || '#d4af37';
+
   return (
-    <div className="flex flex-col items-center justify-center w-full max-w-5xl mx-auto">
-      {/* Logo on Top with Glass Glow */}
-      <div className="mb-6 md:mb-8">
-        <div 
-          className="relative w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48"
+    <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-6 px-4 text-center sm:gap-8">
+      <div className="md:mb-2">
+        <div
+          className="relative h-28 w-28 sm:h-32 sm:w-32 md:h-40 md:w-40"
           style={{
             filter: `
-              drop-shadow(0 0 30px rgba(255, 255, 255, 0.9))
-              drop-shadow(0 0 60px rgba(255, 255, 255, 0.6))
-              drop-shadow(0 0 90px ${theme?.primary_color || '#1e3a5f'}50)
+              drop-shadow(0 0 24px rgba(255, 255, 255, 0.9))
+              drop-shadow(0 0 60px rgba(255, 255, 255, 0.55))
+              drop-shadow(0 0 90px ${primaryColor}55)
             `,
           }}
         >
           <img
             src="/Logo.svg"
             alt="Special Wedding Logo"
-            className="w-full h-full object-contain"
-            style={{
-              filter: 'brightness(1.1) contrast(1.1)',
-            }}
+            className="h-full w-full object-contain"
+            style={{ filter: 'brightness(1.05) contrast(1.08)' }}
           />
         </div>
       </div>
-      
-      {/* Title Text with Enhanced Glass Glow for Visibility */}
-      <div className="text-center">
-        {/* Welcome - Sans Serif, Bigger with stronger glow */}
-        <div className="relative">
-          <span 
-            className="block text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-medium tracking-wider"
-            style={{
-              fontFamily: "'Poppins', sans-serif",
-              color: theme?.primary_color || '#1e3a5f',
-              textShadow: `
-                0 0 30px rgba(255, 255, 255, 1),
-                0 0 60px rgba(255, 255, 255, 0.8),
-                0 0 90px rgba(255, 255, 255, 0.6),
-                0 0 120px ${theme?.primary_color || '#1e3a5f'}80,
-                0 4px 6px rgba(0, 0, 0, 0.3),
-                0 8px 12px rgba(0, 0, 0, 0.2)
-              `,
-              WebkitTextStroke: '1px rgba(255, 255, 255, 0.8)',
-              filter: 'drop-shadow(0 0 40px rgba(255, 255, 255, 0.8))',
-            }}
-          >
-            Welcome
-          </span>
-        </div>
-        
-        {/* TO The - Sans Serif, Indented with glow */}
-        <div className="relative -mt-2 ml-16 sm:ml-20 md:ml-24 lg:ml-32">
-          <span 
-            className="inline-block text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-medium tracking-widest mr-4"
-            style={{
-              fontFamily: "'Poppins', sans-serif",
-              color: theme?.secondary_color || '#d4af37',
-              textShadow: `
-                0 0 25px rgba(255, 255, 255, 1),
-                0 0 50px rgba(255, 255, 255, 0.8),
-                0 0 75px ${theme?.secondary_color || '#d4af37'}80,
-                0 3px 5px rgba(0, 0, 0, 0.3)
-              `,
-              WebkitTextStroke: '0.8px rgba(255, 255, 255, 0.6)',
-              filter: 'drop-shadow(0 0 30px rgba(255, 255, 255, 0.7))',
-            }}
-          >
-            TO
-          </span>
-          <span 
-            className="inline-block text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-semibold"
-            style={{
-              fontFamily: "'Dancing Script', cursive",
-              color: theme?.primary_color || '#1e3a5f',
-              textShadow: `
-                0 0 35px rgba(255, 255, 255, 1),
-                0 0 70px rgba(255, 255, 255, 0.8),
-                0 0 100px ${theme?.primary_color || '#1e3a5f'}60,
-                0 4px 8px rgba(0, 0, 0, 0.3)
-              `,
-              WebkitTextStroke: '1px rgba(255, 255, 255, 0.7)',
-              filter: 'drop-shadow(0 0 35px rgba(255, 255, 255, 0.8))',
-            }}
-          >
-            The
-          </span>
-        </div>
-        
-        {/* Special Wedding - Script Font, Much Larger with strongest glow */}
-        <div className="relative -mt-6 ml-24 sm:ml-32 md:ml-40 lg:ml-48">
-          <span 
-            className="block text-6xl sm:text-7xl md:text-8xl lg:text-[8rem] font-bold"
+
+      <div className="flex w-full flex-col items-center text-balance text-center md:items-end md:text-right">
+        <span
+          className="block w-full text-[clamp(2.75rem,5.2vw,4.75rem)] font-medium tracking-[0.25em] text-slate-900"
+          style={{
+            fontFamily: "'Poppins', sans-serif",
+            color: primaryColor,
+            textShadow: `
+              0 0 28px rgba(255, 255, 255, 0.95),
+              0 0 60px rgba(255, 255, 255, 0.65),
+              0 4px 12px rgba(15, 23, 42, 0.25)
+            `,
+            WebkitTextStroke: '1px rgba(255, 255, 255, 0.7)',
+          }}
+        >
+          Welcome
+        </span>
+
+        <div className="mt-4 flex w-full flex-col items-center gap-4 md:items-end">
+          <div className="flex flex-wrap items-center justify-center gap-3 md:justify-end">
+            <span
+              className="text-[clamp(1.5rem,3.4vw,2.5rem)] font-semibold uppercase tracking-[0.35em] text-slate-800"
+              style={{
+                fontFamily: "'Poppins', sans-serif",
+                color: secondaryColor,
+                textShadow: `
+                  0 0 18px rgba(255, 255, 255, 0.9),
+                  0 0 45px rgba(255, 255, 255, 0.55)
+                `,
+                WebkitTextStroke: '0.8px rgba(255, 255, 255, 0.6)',
+              }}
+            >
+              To
+            </span>
+            <span
+              className="text-[clamp(2.75rem,5.5vw,4rem)] font-semibold text-slate-900"
+              style={{
+                fontFamily: "'Dancing Script', cursive",
+                color: primaryColor,
+                textShadow: `
+                  0 0 30px rgba(255, 255, 255, 0.9),
+                  0 0 70px rgba(255, 255, 255, 0.65),
+                  0 6px 12px rgba(15, 23, 42, 0.25)
+                `,
+                WebkitTextStroke: '1px rgba(255, 255, 255, 0.65)',
+              }}
+            >
+              The
+            </span>
+          </div>
+
+          <span
+            className="block w-full text-[clamp(3.5rem,7.5vw,6.5rem)] font-bold leading-[1.05] text-white"
             style={{
               fontFamily: "'Dancing Script', cursive",
-              color: 'white',
               textShadow: `
-                0 0 40px rgba(255, 255, 255, 1),
-                0 0 80px rgba(255, 255, 255, 0.9),
-                0 0 120px ${theme?.primary_color || '#1e3a5f'}90,
-                0 0 160px ${theme?.secondary_color || '#d4af37'}60,
-                0 6px 12px rgba(0, 0, 0, 0.4),
-                0 12px 24px rgba(0, 0, 0, 0.3)
+                0 0 40px rgba(255, 255, 255, 0.95),
+                0 0 90px ${primaryColor}80,
+                0 0 120px ${secondaryColor}55,
+                0 8px 18px rgba(15, 23, 42, 0.3)
               `,
-              WebkitTextStroke: `2px ${theme?.primary_color || '#1e3a5f'}`,
-              filter: `
-                drop-shadow(0 0 50px rgba(255, 255, 255, 0.9))
-                drop-shadow(0 0 100px ${theme?.primary_color || '#1e3a5f'}80)
-              `,
-              background: `linear-gradient(135deg, white, ${theme?.primary_color || '#1e3a5f'}20)`,
+              WebkitTextStroke: `1.6px ${primaryColor}`,
+              background: `linear-gradient(135deg, rgba(255,255,255,0.95), ${primaryColor}1f)`,
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',

@@ -3,10 +3,8 @@
 import React, { useCallback } from 'react';
 import Link from 'next/link';
 
-import { PlannerSignupForm } from './PlannerSignupForm';
 import { SaasLogoTitle } from './SaasLogoTitle';
 import { GlassCard } from '../ui/GlassCard';
-import { SocialAuthButtons } from '../auth/SocialAuthButtons';
 import { ThemeConfig } from '@/types/wedding';
 
 export interface SubscriptionPlan {
@@ -42,18 +40,19 @@ interface SaasConfig {
 interface SaasHeroSectionProps {
   config: SaasConfig;
   theme: ThemeConfig;
-  onAuthModeChange: (mode: 'signup' | 'login') => void;
-  onRequestSignupFocus?: () => void;
+  onSignupClick: () => void;
+  onContactClick?: () => void;
+  className?: string;
 }
 
 interface AuthPanelProps {
-  mode: 'signup' | 'login';
-  onModeChange: (mode: 'signup' | 'login') => void;
+  onRequestSignup: () => void;
   selectedPlan?: { id: string; name?: string } | null;
   theme: ThemeConfig;
   plans?: SubscriptionPlan[];
   plansLoading?: boolean;
   plansError?: string;
+  plansNotice?: string;
   onSelectPlan?: (plan: { id: string; name?: string }) => void;
   className?: string;
 }
@@ -64,16 +63,24 @@ function MiniPlanSelector({
   onSelectPlan,
   isLoading,
   error,
+  notice,
 }: {
   plans?: SubscriptionPlan[];
   selectedPlanId?: string;
   onSelectPlan?: (plan: { id: string; name?: string }) => void;
   isLoading?: boolean;
   error?: string;
+  notice?: string;
 }) {
   const [billingCycle, setBillingCycle] = React.useState<'monthly' | 'yearly'>('monthly');
 
-  if (isLoading) {
+  const activePlans = React.useMemo(
+    () => (plans ?? []).filter((plan) => plan.is_active),
+    [plans]
+  );
+  const hasPlans = activePlans.length > 0;
+
+  if (!hasPlans && isLoading) {
     return (
       <div className="flex items-center justify-center rounded-2xl border border-white/40 bg-white/60 px-4 py-6 text-sm text-gray-600">
         Loading pricing…
@@ -81,15 +88,14 @@ function MiniPlanSelector({
     );
   }
 
-  if (error) {
-    return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {error}
-      </div>
-    );
-  }
-
-  if (!plans || plans.length === 0) {
+  if (!hasPlans) {
+    if (error) {
+      return (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      );
+    }
     return null;
   }
 
@@ -105,6 +111,18 @@ function MiniPlanSelector({
 
   return (
     <div className="space-y-4">
+      {isLoading && (
+        <div className="rounded-2xl border border-white/40 bg-white/60 px-4 py-3 text-xs text-gray-600">
+          Refreshing pricing…
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <div className="flex items-center justify-between rounded-full bg-white/70 p-1 text-xs font-semibold text-gray-600">
         <button
           type="button"
@@ -128,11 +146,8 @@ function MiniPlanSelector({
         </button>
       </div>
       <div className="space-y-3">
-        {plans.map((plan) => {
+        {activePlans.map((plan) => {
           const isSelected = plan._id === selectedPlanId;
-          if (!plan.is_active) {
-            return null;
-          }
           return (
             <button
               key={plan._id}
@@ -163,6 +178,11 @@ function MiniPlanSelector({
           );
         })}
       </div>
+      {notice && (
+        <p className="rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-xs text-amber-700">
+          {notice}
+        </p>
+      )}
       {billingCycle === 'yearly' && (
         <p className="text-xs text-gray-500">
           Yearly pricing shows the total annual investment so you can compare long-term savings.
@@ -172,40 +192,14 @@ function MiniPlanSelector({
   );
 }
 
-function PlannerLoginPanel({ theme }: { theme: ThemeConfig }) {
-  return (
-    <div className="space-y-5">
-      <SocialAuthButtons flow="login" redirectPath="/admin" />
-      <div className="rounded-2xl border border-white/50 bg-white/70 p-4 text-sm text-gray-700 shadow-sm">
-        <p className="font-medium text-gray-900">Prefer email access?</p>
-        <p className="mt-2 text-gray-600">
-          Use your verified planner credentials to continue with password or magic link.
-        </p>
-        <Link
-          href="/admin/login"
-          className="mt-3 inline-flex items-center justify-center rounded-xl border border-transparent bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
-        >
-          Go to secure planner login
-        </Link>
-      </div>
-      <p className="text-xs text-gray-500">
-        Single sign-on keeps vendor and couple data protected with the same 2-step verification we enforce in the admin portal.
-      </p>
-      <p className="text-xs text-gray-500">
-        Tip: save this page to your home screen for a glass-optimised mobile shortcut.
-      </p>
-    </div>
-  );
-}
-
 export function SaasAuthPanel({
-  mode,
-  onModeChange,
+  onRequestSignup,
   selectedPlan,
   theme,
   plans,
   plansLoading,
   plansError,
+  plansNotice,
   onSelectPlan,
   className,
 }: AuthPanelProps) {
@@ -216,6 +210,10 @@ export function SaasAuthPanel({
     .filter(Boolean)
     .join(' ');
 
+  const primaryButtonStyle = theme?.primary_color
+    ? { backgroundColor: theme.primary_color }
+    : undefined;
+
   return (
     <div className={containerClass}>
       <div
@@ -225,67 +223,53 @@ export function SaasAuthPanel({
       <div className="relative flex flex-col gap-6 text-left">
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-gray-600">Planner access</p>
-          <h2 className="text-2xl font-semibold text-gray-900">
-            {mode === 'signup' ? 'Launch your workspace' : 'Welcome back, planner'}
-          </h2>
+          <h2 className="text-2xl font-semibold text-gray-900">Launch your workspace</h2>
           <p className="text-sm text-gray-600">
             Keep budgets, forms, vendors, and couples in sync with glassmorphic controls optimised for 2025 workflows.
           </p>
         </div>
 
-        <div className="inline-flex rounded-full bg-white/70 p-1 text-sm font-medium shadow-inner">
-          <button
-            type="button"
-            onClick={() => onModeChange('signup')}
-            className={`flex-1 rounded-full px-4 py-2 transition ${
-              mode === 'signup'
-                ? 'bg-gray-900 text-white shadow'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Sign up
-          </button>
-          <button
-            type="button"
-            onClick={() => onModeChange('login')}
-            className={`flex-1 rounded-full px-4 py-2 transition ${
-              mode === 'login'
-                ? 'bg-gray-900 text-white shadow'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Log in
-          </button>
+        <MiniPlanSelector
+          plans={plans}
+          selectedPlanId={selectedPlan?.id}
+          onSelectPlan={onSelectPlan}
+          isLoading={plansLoading}
+          error={plansError}
+          notice={plansNotice}
+        />
+
+        <div className="rounded-2xl border border-white/60 bg-white/75 p-4 text-sm text-gray-700 shadow-sm">
+          <p className="font-semibold text-gray-900">Selected plan</p>
+          <p className="mt-1 text-gray-600">
+            {selectedPlan?.name ?? selectedPlan?.id ?? 'Choose the plan that fits your studio'}
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            We&apos;ll pre-fill this during onboarding so your free trial starts with the right limits.
+          </p>
         </div>
 
-        {mode === 'signup' ? (
-          <>
-            <MiniPlanSelector
-              plans={plans}
-              selectedPlanId={selectedPlan?.id}
-              onSelectPlan={onSelectPlan}
-              isLoading={plansLoading}
-              error={plansError}
-            />
-            <div className="rounded-2xl border border-white/60 bg-white/75 p-4 text-sm text-gray-700 shadow-sm">
-              <p className="font-semibold text-gray-900">Selected plan</p>
-              <p className="mt-1 text-gray-600">
-                {selectedPlan?.name ?? selectedPlan?.id ?? 'Choose the plan that fits your studio'}
-              </p>
-              <p className="mt-2 text-xs text-gray-500">
-                We&apos;ll pre-fill this during onboarding so your free trial starts with the right limits.
-              </p>
-            </div>
-            <PlannerSignupForm
-              theme={theme}
-              selectedPlanId={selectedPlan?.id ?? undefined}
-              selectedPlanLabel={selectedPlan?.name}
-              variant="panel"
-            />
-          </>
-        ) : (
-          <PlannerLoginPanel theme={theme} />
-        )}
+        <button
+          type="button"
+          onClick={onRequestSignup}
+          className="inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
+          style={primaryButtonStyle}
+        >
+          Continue to sign up
+        </button>
+
+        <div className="space-y-2 text-xs text-gray-500">
+          <p>
+            Already have a workspace?{' '}
+            <Link
+              href="/admin/login"
+              className="font-semibold text-gray-900 underline-offset-4 transition hover:underline"
+            >
+              Access the secure planner login
+            </Link>
+            .
+          </p>
+          <p>Prefer SSO? Use your verified planner credentials on the next screen.</p>
+        </div>
       </div>
     </div>
   );
@@ -294,20 +278,13 @@ export function SaasAuthPanel({
 export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   config,
   theme,
-  onAuthModeChange,
-  onRequestSignupFocus,
+  onSignupClick,
+  onContactClick,
+  className,
 }) => {
   const handlePrimaryCta = useCallback(() => {
-    onAuthModeChange('signup');
-    if (onRequestSignupFocus) {
-      onRequestSignupFocus();
-      return;
-    }
-    if (typeof document !== 'undefined') {
-      const panel = document.getElementById('saas-auth-panel');
-      panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [onAuthModeChange, onRequestSignupFocus]);
+    onSignupClick();
+  }, [onSignupClick]);
 
   const handleSecondaryCta = useCallback(() => {
     if (config.demo_url && typeof window !== 'undefined') {
@@ -318,6 +295,11 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
   }, [config.demo_url, handlePrimaryCta]);
 
   const handleContactCta = useCallback(() => {
+    if (onContactClick) {
+      onContactClick();
+      return;
+    }
+
     const fallbackContact = process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com';
     const target = config.contact_url || fallbackContact;
 
@@ -335,10 +317,14 @@ export const SaasHeroSection: React.FC<SaasHeroSectionProps> = ({
 
       window.location.href = target;
     }
-  }, [config.contact_url]);
+  }, [config.contact_url, onContactClick]);
 
   return (
-    <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] py-16 sm:py-20 xl:py-24">
+    <section
+      className={`relative isolate w-full overflow-hidden bg-gradient-to-br from-[#f6f3ff] via-[#eef7ff] to-[#f9fcff] px-6 py-12 sm:px-8 sm:py-16 lg:px-10 lg:py-14 xl:py-16 ${
+        className ?? ''
+      }`}
+    >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-[-12rem] h-[26rem] bg-gradient-to-b from-white/60 via-white/10 to-transparent"
