@@ -3,9 +3,8 @@
 import React from 'react';
 
 import { GlassCard } from '../ui/GlassCard';
-import { PlannerSignupForm } from './PlannerSignupForm';
+import { PlannerAuthSection } from './PlannerAuthSection';
 import { ThemeConfig } from '@/types/wedding';
-import { SocialAuthButtons } from '../auth/SocialAuthButtons';
 
 interface SignupModalProps {
   isOpen: boolean;
@@ -37,7 +36,13 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
           Join thousands of wedding planners who trust Special Wedding for their business.
         </p>
 
-        <PlannerSignupForm theme={theme} selectedPlanId={selectedPlanId} onDismiss={onClose} variant="modal" />
+        <PlannerAuthSection
+          defaultMode="signup"
+          layout="modal"
+          theme={theme}
+          selectedPlan={selectedPlanId ? { id: selectedPlanId } : undefined}
+          onSignupSuccess={onClose}
+        />
       </GlassCard>
     </div>
   );
