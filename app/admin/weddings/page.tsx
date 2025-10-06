@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
@@ -142,52 +142,22 @@ export default function AdminWeddingsPage() {
     events: []
   });
 
-  useEffect(() => {
-    if (!userProfile) {
-      fetchUserProfile();
-    } else {
-      fetchWeddings();
-      if (userProfile.is_root_admin) {
-        fetchPlanners();
-      }
-    }
-  }, [userProfile]);
-
-  useEffect(() => {
-    filterWeddings();
-  }, [allWeddings, filter, userProfile, searchTerm, statusFilter, dateFilter]);
-
-  // Auto-enable event details toggle when status is active or editing wedding with details
-  useEffect(() => {
-    if (formData.status === 'active') {
-      setShowEventDetails(true);
-    } else if (editingId && formData.events.some(event => 
-      event.details && (event.details.venue_name || event.details.location || event.details.time || event.details.attire)
-    )) {
-      setShowEventDetails(true);
-    }
-  }, [formData.status, editingId, formData.events]);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     setLoading(true);
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      
-      // Use the same endpoint for both roles - backend handles filtering
       const endpoint = `${baseUrl}/admin/weddings`;
-      
       const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch weddings');
       }
       const data = await response.json();
-      // Ensure data is an array
       const weddingList = Array.isArray(data) ? data : [];
       setAllWeddings(weddingList);
     } catch (err) {
@@ -197,9 +167,9 @@ export default function AdminWeddingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
-  const fetchPlanners = async () => {
+  const fetchPlanners = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/admin/users?role=wedding_planner`, {
@@ -208,22 +178,33 @@ export default function AdminWeddingsPage() {
           'Content-Type': 'application/json',
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         const plannerOptions = data.map((user: any) => ({
           email: user.email,
           name: user.user_data?.company_name || `${user.user_data?.first_name || ''} ${user.user_data?.last_name || ''}`.trim() || user.email,
-          id: user._id
+          id: user._id,
         }));
         setPlanners(plannerOptions);
       }
     } catch (err) {
       console.error('Error fetching planners:', err);
     }
-  };
+  }, [token]);
 
-  const filterWeddings = () => {
+  useEffect(() => {
+    if (!userProfile) {
+      fetchUserProfile();
+    } else {
+      fetchWeddings();
+      if (userProfile.is_root_admin) {
+        fetchPlanners();
+      }
+    }
+  }, [fetchPlanners, fetchUserProfile, fetchWeddings, userProfile]);
+
+  const filterWeddings = useCallback(() => {
     if (!userProfile) return;
 
     let filtered = [...allWeddings];
@@ -273,7 +254,22 @@ export default function AdminWeddingsPage() {
     }
 
     setWeddings(filtered);
-  };
+  }, [allWeddings, dateFilter, filter, searchTerm, statusFilter, userProfile]);
+
+  useEffect(() => {
+    filterWeddings();
+  }, [filterWeddings]);
+
+  // Auto-enable event details toggle when status is active or editing wedding with details
+  useEffect(() => {
+    if (formData.status === 'active') {
+      setShowEventDetails(true);
+    } else if (editingId && formData.events.some(event =>
+      event.details && (event.details.venue_name || event.details.location || event.details.time || event.details.attire)
+    )) {
+      setShowEventDetails(true);
+    }
+  }, [editingId, formData.events, formData.status]);
 
   const generateSlug = (coupleName: string): string => {
     return coupleName.toLowerCase()

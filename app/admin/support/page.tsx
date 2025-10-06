@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 
@@ -38,11 +38,7 @@ export default function SupportPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -89,7 +85,11 @@ export default function SupportPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiRequest]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
 
   const updateTicketStatus = async (ticketId: string, newStatus: SupportTicket['status']) => {

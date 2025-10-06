@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface FormField {
@@ -38,52 +38,65 @@ export default function PublicVendorFormPage() {
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
+  const fetchForm = useCallback(async (id: string, inviteToken: string) => {
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const response = await fetch(`${baseUrl}/vendor-form/${id}/public?token=${inviteToken}`);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Form not found or link has expired.');
+      }
+      throw new Error('Failed to load form.');
+    }
+
+    return (await response.json()) as VendorForm;
+  }, []);
+
   useEffect(() => {
-    if (formId && token) {
-      fetchForm();
-    } else {
+    if (!formId || !token) {
       setError('Invalid form link. Please check your email for the correct link.');
       setLoading(false);
+      return;
     }
-  }, [formId, token]);
 
-  const fetchForm = async () => {
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/vendor-form/${formId}/public?token=${token}`);
+    let isActive = true;
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Form not found or link has expired.');
+    const loadForm = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchForm(formId, token);
+        if (!isActive) return;
+
+        setForm(data);
+        setSubmitted(data.status === 'submitted');
+
+        const initialData: {[key: string]: any} = {};
+        data.fields.forEach((field: FormField) => {
+          if (field.type === 'checkbox') {
+            initialData[field.id] = [];
+          } else {
+            initialData[field.id] = '';
+          }
+        });
+        setFormData(initialData);
+        setError('');
+      } catch (err) {
+        if (!isActive) return;
+        setForm(null);
+        setError(err instanceof Error ? err.message : 'Failed to load form');
+      } finally {
+        if (isActive) {
+          setLoading(false);
         }
-        throw new Error('Failed to load form.');
       }
+    };
 
-      const data = await response.json();
-      setForm(data);
+    loadForm();
 
-      // Check if already submitted
-      if (data.status === 'submitted') {
-        setSubmitted(true);
-      }
-
-      // Initialize form data
-      const initialData: {[key: string]: any} = {};
-      data.fields.forEach((field: FormField) => {
-        if (field.type === 'checkbox') {
-          initialData[field.id] = [];
-        } else {
-          initialData[field.id] = '';
-        }
-      });
-      setFormData(initialData);
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load form');
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => {
+      isActive = false;
+    };
+  }, [formId, token, fetchForm]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
@@ -61,24 +61,19 @@ export default function BudgetDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'budget' | 'spent' | 'priority'>('priority');
 
-  useEffect(() => {
-    fetchWeddings();
-  }, []);
-
-  useEffect(() => {
-    if (selectedWedding && token) {
-      fetchBudgetData();
+  const fetchWeddings = useCallback(async () => {
+    if (!token) {
+      setWeddings([]);
+      return;
     }
-  }, [selectedWedding, token]);
 
-  const fetchWeddings = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/admin/weddings`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
@@ -86,16 +81,41 @@ export default function BudgetDashboard() {
       setError('Failed to load weddings');
       toast.error('Failed to load weddings');
     }
-  };
+  }, [token]);
 
-  const fetchBudgetData = async () => {
+  useEffect(() => {
+    fetchWeddings();
+  }, [fetchWeddings]);
+
+  const fetchPaymentHistory = useCallback(
+    async (weddingId: string) => {
+      if (!token) return;
+
+      setPaymentHistoryLoading(true);
+      try {
+        const paymentData = await budgetApi.getPaymentHistory(token, weddingId);
+        setPaymentHistory(paymentData);
+        setPaymentHistoryError('');
+      } catch (err: any) {
+        const message = err.message || 'Failed to load payment history';
+        setPaymentHistoryError(message);
+        setPaymentHistory([]);
+        toast.error(message);
+      } finally {
+        setPaymentHistoryLoading(false);
+      }
+    },
+    [token]
+  );
+
+  const fetchBudgetData = useCallback(async () => {
     if (!token || !selectedWedding) return;
 
     setLoading(true);
     try {
       const [summaryData, categoriesData] = await Promise.all([
         budgetApi.getBudgetSummary(token, selectedWedding),
-        budgetApi.getBudgetCategories(token, selectedWedding)
+        budgetApi.getBudgetCategories(token, selectedWedding),
       ]);
 
       setBudgetSummary(summaryData);
@@ -108,25 +128,13 @@ export default function BudgetDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchPaymentHistory, selectedWedding, token]);
 
-  const fetchPaymentHistory = async (weddingId: string) => {
-    if (!token) return;
-
-    setPaymentHistoryLoading(true);
-    try {
-      const paymentData = await budgetApi.getPaymentHistory(token, weddingId);
-      setPaymentHistory(paymentData);
-      setPaymentHistoryError('');
-    } catch (err: any) {
-      const message = err.message || 'Failed to load payment history';
-      setPaymentHistoryError(message);
-      setPaymentHistory([]);
-      toast.error(message);
-    } finally {
-      setPaymentHistoryLoading(false);
+  useEffect(() => {
+    if (selectedWedding && token) {
+      fetchBudgetData();
     }
-  };
+  }, [fetchBudgetData, selectedWedding, token]);
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +147,7 @@ export default function BudgetDashboard() {
       };
 
       const newCategory = await budgetApi.createBudgetCategory(token, categoryData);
-      setCategories([...categories, newCategory]);
+      setCategories((prev) => [...prev, newCategory]);
       setShowCategoryModal(false);
       resetCategoryForm();
       toast.success('Budget category created successfully');
@@ -170,9 +178,9 @@ export default function BudgetDashboard() {
         updateData
       );
       
-      setCategories(categories.map(cat => 
-        cat.id === editingCategory.id ? updatedCategory : cat
-      ));
+      setCategories((prev) =>
+        prev.map((cat) => (cat.id === editingCategory.id ? updatedCategory : cat))
+      );
       setShowCategoryModal(false);
       setEditingCategory(null);
       resetCategoryForm();
@@ -190,7 +198,7 @@ export default function BudgetDashboard() {
 
     try {
       await budgetApi.deleteBudgetCategory(token, categoryId);
-      setCategories(categories.filter(cat => cat.id !== categoryId));
+      setCategories((prev) => prev.filter((cat) => cat.id !== categoryId));
       toast.success('Budget category deleted successfully');
       
       // Refresh summary

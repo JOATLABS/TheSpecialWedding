@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -91,28 +91,7 @@ export default function VendorManagementPage() {
     ]
   };
 
-  useEffect(() => {
-    if (!userProfile) {
-      fetchUserProfile();
-    } else if (!userProfile.is_wedding_planner && !userProfile.is_root_admin) {
-      router.push('/admin');
-    } else {
-      fetchData();
-    }
-  }, [userProfile]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      await Promise.all([fetchVendors(), fetchWeddings()]);
-    } catch (err) {
-      setError('Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchVendors = async () => {
+  const fetchVendors = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/admin/vendor-forms`, {
@@ -129,13 +108,13 @@ export default function VendorManagementPage() {
     } catch (err) {
       console.error('Error fetching vendors:', err);
     }
-  };
+  }, [token]);
 
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const endpoint = userProfile?.is_root_admin 
-        ? `${baseUrl}/admin/weddings` 
+      const endpoint = userProfile?.is_root_admin
+        ? `${baseUrl}/admin/weddings`
         : `${baseUrl}/admin/planner/weddings`;
       
       const response = await fetch(endpoint, {
@@ -152,7 +131,28 @@ export default function VendorManagementPage() {
     } catch (err) {
       console.error('Error fetching weddings:', err);
     }
-  };
+  }, [token, userProfile?.is_root_admin]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      await Promise.all([fetchVendors(), fetchWeddings()]);
+    } catch (err) {
+      setError('Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchVendors, fetchWeddings]);
+
+  useEffect(() => {
+    if (!userProfile) {
+      fetchUserProfile();
+    } else if (!userProfile.is_wedding_planner && !userProfile.is_root_admin) {
+      router.push('/admin');
+    } else {
+      fetchData();
+    }
+  }, [fetchData, fetchUserProfile, router, userProfile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
