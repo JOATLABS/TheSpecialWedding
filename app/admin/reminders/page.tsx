@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
 
@@ -75,20 +75,7 @@ export default function AdminRemindersPage() {
      minute: '2-digit',
    });
 
- useEffect(() => {
- fetchWeddings();
- if (token) {
- fetchMessageHistory();
- }
- }, [token]);
-
- useEffect(() => {
- if (selectedWedding && token) {
- fetchGuests();
- }
- }, [selectedWedding, token]);
-
- const fetchWeddings = async () => {
+ const fetchWeddings = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/weddings`);
@@ -97,11 +84,11 @@ export default function AdminRemindersPage() {
  } catch (err) {
  setError('Failed to load weddings');
  }
- };
+ }, []);
 
- const fetchGuests = async () => {
+ const fetchGuests = useCallback(async () => {
  if (!selectedWedding || !token) return;
- 
+
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(
@@ -110,26 +97,26 @@ export default function AdminRemindersPage() {
  headers: { 'Authorization': `Bearer ${token}` },
  }
  );
- 
+
  if (!response.ok) {
  console.error('Failed to fetch guests:', response.status);
  return;
  }
- 
+
  const data = await response.json();
- console.log('Fetched guests:', data.length, 'guests');
+ console.log('Fetched guests:', Array.isArray(data) ? data.length : 0, 'guests');
  setGuests(Array.isArray(data) ? data : []);
  } catch (err) {
  console.error('Failed to load guests:', err);
  }
- };
+ }, [selectedWedding, token]);
 
- const fetchMessageHistory = async () => {
+ const fetchMessageHistory = useCallback(async () => {
  if (!token) return;
- 
+
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- 
+
  // Fetch both SMS and Email logs
  const [smsResponse, emailResponse] = await Promise.all([
  fetch(`${baseUrl}/admin/reminders/logs`, {
@@ -139,21 +126,34 @@ export default function AdminRemindersPage() {
  headers: { 'Authorization': `Bearer ${token}` },
  })
  ]);
- 
+
  const smsData = smsResponse.ok ? await smsResponse.json() : [];
  const emailData = emailResponse.ok ? await emailResponse.json() : { logs: [] };
- 
+
  // Combine and sort by date
  const combined = [
  ...(Array.isArray(smsData) ? smsData : []),
  ...(Array.isArray(emailData.logs) ? emailData.logs : [])
  ].sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime());
- 
+
  setMessageHistory(combined);
  } catch (err) {
  console.error('Failed to load message history:', err);
  }
- };
+ }, [token]);
+
+ useEffect(() => {
+ fetchWeddings();
+ if (token) {
+ fetchMessageHistory();
+ }
+ }, [fetchMessageHistory, fetchWeddings, token]);
+
+ useEffect(() => {
+ if (selectedWedding && token) {
+ fetchGuests();
+ }
+ }, [fetchGuests, selectedWedding, token]);
 
  const handleSendInviteLinks = async () => {
  if (!selectedWedding) {

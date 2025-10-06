@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 
@@ -40,30 +40,20 @@ export default function AdminImportPage() {
  const [guests, setGuests] = useState<Guest[]>([]);
  const [loadingGuests, setLoadingGuests] = useState(false);
 
- useEffect(() => {
- fetchWeddings();
- }, []);
-
- useEffect(() => {
- if (selectedWedding) {
- fetchGuests();
- }
- }, [selectedWedding]);
-
- const fetchWeddings = async () => {
+ const fetchWeddings = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/weddings`);
  const data = await response.json();
- setWeddings(data);
+ setWeddings(Array.isArray(data) ? data : []);
  } catch (err) {
  setError('Failed to load weddings');
  }
- };
+ }, []);
 
- const fetchGuests = async () => {
+ const fetchGuests = useCallback(async () => {
  if (!selectedWedding) return;
- 
+
  setLoadingGuests(true);
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -75,22 +65,31 @@ export default function AdminImportPage() {
  },
  }
  );
- 
+
  if (!response.ok) {
  throw new Error('Failed to fetch guests');
  }
- 
+
  const data = await response.json();
- // Ensure data is an array
  setGuests(Array.isArray(data) ? data : []);
  } catch (err) {
  console.error('Error fetching guests:', err);
  setError('Failed to load guests');
- setGuests([]); // Set to empty array on error
+ setGuests([]);
  } finally {
  setLoadingGuests(false);
  }
- };
+ }, [selectedWedding, token]);
+
+ useEffect(() => {
+ fetchWeddings();
+ }, [fetchWeddings]);
+
+ useEffect(() => {
+ if (selectedWedding) {
+ fetchGuests();
+ }
+ }, [fetchGuests, selectedWedding]);
 
  const handleDeleteGuest = async (guestId: string) => {
  if (!confirm('Are you sure you want to delete this guest?')) return;

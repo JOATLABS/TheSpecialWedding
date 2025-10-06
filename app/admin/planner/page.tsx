@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
@@ -46,26 +46,7 @@ export default function WeddingPlannerDashboard() {
  const [error, setError] = useState('');
  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
- useEffect(() => {
- if (!token) {
- router.push('/admin/login');
- return;
- }
-
- if (!userProfile) {
- fetchUserProfile();
- return;
- }
-
- if (userProfile && !userProfile.is_wedding_planner) {
- router.push('/admin');
- return;
- }
-
- fetchMyWeddings();
- }, [token, userProfile, router]);
-
- const fetchMyWeddings = async () => {
+ const fetchMyWeddings = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  
@@ -95,7 +76,26 @@ export default function WeddingPlannerDashboard() {
  } finally {
  setLoading(false);
  }
- };
+ }, [token]);
+
+ useEffect(() => {
+ if (!token) {
+ router.push('/admin/login');
+ return;
+ }
+
+ if (!userProfile) {
+ fetchUserProfile();
+ return;
+ }
+
+ if (userProfile && !userProfile.is_wedding_planner) {
+ router.push('/admin');
+ return;
+ }
+
+ fetchMyWeddings();
+ }, [fetchMyWeddings, fetchUserProfile, router, token, userProfile]);
 
   const formatDisplayDate = (dateString: string) => {
     return formatUtcDate(dateString, {

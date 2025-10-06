@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { GlassCard } from '../components/ui/GlassCard';
 
@@ -41,33 +41,55 @@ function SetupAccountContent() {
     confirmPassword: ''
   });
 
+  const validateToken = useCallback(async (invitationToken: string) => {
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const response = await fetch(`${baseUrl}/admin/setup/validate-token/${invitationToken}`);
+
+    if (!response.ok) {
+      throw new Error('Invalid or expired invitation link');
+    }
+
+    return (await response.json()) as InvitationDetails;
+  }, []);
+
   useEffect(() => {
     if (!token) {
+      setInvitationDetails(null);
       setError('Invalid invitation link');
       setLoading(false);
       return;
     }
 
-    validateToken();
-  }, [token]);
+    let isActive = true;
 
-  const validateToken = async () => {
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/setup/validate-token/${token}`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        setInvitationDetails(data);
-      } else {
-        setError('Invalid or expired invitation link');
+    const runValidation = async () => {
+      setLoading(true);
+      try {
+        const details = await validateToken(token);
+        if (!isActive) return;
+        setInvitationDetails(details);
+        setError('');
+      } catch (err) {
+        if (!isActive) return;
+        setInvitationDetails(null);
+        if (err instanceof Error && err.message === 'Invalid or expired invitation link') {
+          setError(err.message);
+        } else {
+          setError('Failed to validate invitation link');
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      setError('Failed to validate invitation link');
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    runValidation();
+
+    return () => {
+      isActive = false;
+    };
+  }, [token, validateToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

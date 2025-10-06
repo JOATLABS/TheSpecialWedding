@@ -1,8 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+
+import { clearAdminAuthStorage, persistAdminAuthToken } from '@/utils/adminAuthStorage';
 
 interface UserProfile {
     email: string;
@@ -50,16 +52,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
-    // Automatically fetch user profile when token is set
-    useEffect(() => {
-        if (token && !userProfile) {
-            fetchUserProfile();
-        }
-    }, [token, userProfile]);
-
-    const fetchUserProfile = async () => {
+    const fetchUserProfile = useCallback(async () => {
         if (!token) return;
-        
+
         try {
             const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
             const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
@@ -84,14 +79,19 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 console.error('Failed to fetch user profile');
             }
         }
-    };
+    }, [token]);
+
+    // Automatically fetch user profile when token is set
+    useEffect(() => {
+        if (token && !userProfile) {
+            fetchUserProfile();
+        }
+    }, [fetchUserProfile, token, userProfile]);
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {
-            // SECURITY: Clear any existing sessions first to prevent session mixing
-            localStorage.removeItem('admin_token');
-            sessionStorage.removeItem('admin_token');
-            document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+        // SECURITY: Clear any existing sessions first to prevent session mixing
+        clearAdminAuthStorage();
             
             const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
             const loginUrl = `${baseUrl}/admin/token`;
@@ -108,13 +108,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
             const { access_token } = await res.json();
 
-            // Store token in localStorage or sessionStorage
-            const storage = rememberMe ? localStorage : sessionStorage;
-            storage.setItem('admin_token', access_token);
-            
-            // Set cookie for middleware to check (with secure attributes)
-            const cookieString = `admin_token=${access_token}; path=/; SameSite=Strict; ${rememberMe ? 'max-age=604800;' : 'max-age=3600;'} ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
-            document.cookie = cookieString;
+            persistAdminAuthToken(access_token, rememberMe);
             
             setToken(access_token);
 
@@ -129,18 +123,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
     const logout = () => {
         // Clear all possible storage locations
+        clearAdminAuthStorage();
         localStorage.clear(); // Clear ALL localStorage, not just admin_token
         sessionStorage.clear(); // Clear ALL sessionStorage
-        
-        // Clear ALL cookies, not just admin_token
-        document.cookie.split(";").forEach(cookie => {
-            const eqPos = cookie.indexOf("=");
-            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
-            // Clear for current path and domain
-            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;`;
-            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
-            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
-        });
         
         // Clear React state
         setToken(null);

@@ -67,17 +67,7 @@ export default function VendorQuotesPage() {
   const [comparisonMode, setComparisonMode] = useState(false);
   const [selectedQuotes, setSelectedQuotes] = useState<string[]>([]);
 
-  useEffect(() => {
-    fetchWeddings();
-  }, []);
-
-  useEffect(() => {
-    if (selectedWedding && token) {
-      fetchQuotes();
-    }
-  }, [selectedWedding, token, categoryFilter]);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/weddings`);
@@ -87,16 +77,16 @@ export default function VendorQuotesPage() {
       setError('Failed to load weddings');
       toast.error('Failed to load weddings');
     }
-  };
+  }, []);
 
-  const fetchQuotes = async () => {
+  const fetchQuotes = useCallback(async () => {
     if (!token || !selectedWedding) return;
-    
+
     setLoading(true);
     try {
       const quotesData = await budgetApi.getVendorQuotes(
-        token, 
-        selectedWedding, 
+        token,
+        selectedWedding,
         categoryFilter === 'all' ? undefined : categoryFilter
       );
       setQuotes(quotesData);
@@ -107,7 +97,17 @@ export default function VendorQuotesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [categoryFilter, selectedWedding, token]);
+
+  useEffect(() => {
+    fetchWeddings();
+  }, [fetchWeddings]);
+
+  useEffect(() => {
+    if (selectedWedding && token) {
+      fetchQuotes();
+    }
+  }, [fetchQuotes, selectedWedding, token]);
 
   const handleCreateQuote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,7 +123,7 @@ export default function VendorQuotesPage() {
       };
 
       const newQuote = await budgetApi.createVendorQuote(token, quoteData);
-      setQuotes([...quotes, newQuote]);
+      setQuotes((prev) => [...prev, newQuote]);
       setShowQuoteModal(false);
       resetQuoteForm();
       toast.success('Vendor quote created successfully');
@@ -137,36 +137,36 @@ export default function VendorQuotesPage() {
 
     try {
       const updatedQuote = await budgetApi.updateVendorQuoteStatus(token, quoteId, 'accepted');
-      setQuotes(quotes.map(q => q.id === quoteId ? updatedQuote : q));
+      setQuotes((prev) => prev.map((q) => (q.id === quoteId ? updatedQuote : q)));
       toast.success('Quote accepted successfully');
     } catch (err: any) {
       toast.error(err.message || 'Failed to accept quote');
     }
-  }, [token, quotes]);
+  }, [token]);
 
   const handleRejectQuote = useCallback(async (quoteId: string) => {
     if (!token) return;
 
     try {
       const updatedQuote = await budgetApi.updateVendorQuoteStatus(token, quoteId, 'rejected');
-      setQuotes(quotes.map(q => q.id === quoteId ? updatedQuote : q));
+      setQuotes((prev) => prev.map((q) => (q.id === quoteId ? updatedQuote : q)));
       toast.success('Quote rejected');
     } catch (err: any) {
       toast.error(err.message || 'Failed to reject quote');
     }
-  }, [token, quotes]);
+  }, [token]);
 
   const handleRateQuote = useCallback(async (quoteId: string, rating: number, notes?: string) => {
     if (!token) return;
 
     try {
       const updatedQuote = await budgetApi.rateVendorQuote(token, quoteId, rating, notes);
-      setQuotes(quotes.map(q => q.id === quoteId ? updatedQuote : q));
+      setQuotes((prev) => prev.map((q) => (q.id === quoteId ? updatedQuote : q)));
       toast.success('Quote rated successfully');
     } catch (err: any) {
       toast.error(err.message || 'Failed to rate quote');
     }
-  }, [token, quotes]);
+  }, [token]);
 
   const resetQuoteForm = () => {
     setQuoteForm({
