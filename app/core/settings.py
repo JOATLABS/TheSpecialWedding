@@ -129,10 +129,11 @@ class Settings(BaseSettings):
     feature_custom_integrations: bool = Field(default=False, alias="FEATURE_CUSTOM_INTEGRATIONS")
     
     # Subscription & Billing
-    stripe_enabled: bool = Field(default=False, alias="STRIPE_ENABLED")
+    stripe_enabled: bool = Field(default=True, alias="STRIPE_ENABLED")
     stripe_secret_key: Optional[str] = Field(default=None, alias="STRIPE_SECRET_KEY")
+    stripe_publishable_key: Optional[str] = Field(default=None, alias="STRIPE_PUBLISHABLE_KEY")
     stripe_webhook_secret: Optional[str] = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
-    
+
     free_trial_days: int = Field(default=14, alias="FREE_TRIAL_DAYS")
     
     # Admin Settings

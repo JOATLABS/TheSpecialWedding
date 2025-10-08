@@ -50,6 +50,7 @@ from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
 from app.api.support_management import router as support_router
 from app.api.public_contact import router as public_contact_router
+from app.api.stripe_payment import router as stripe_router
 
 # Setup logging
 logging.basicConfig(
@@ -432,6 +433,7 @@ app.include_router(auth_router, prefix="/admin")
 app.include_router(saas_config_router, prefix="/admin")  # SAAS configuration management
 app.include_router(planner_metrics_router, prefix="/admin")  # Wedding planner metrics and analytics
 app.include_router(budget_router, prefix="/admin")  # Budget management system
+app.include_router(stripe_router, prefix="/admin")  # Stripe payment processing
 # app.include_router(forms_router, prefix="/admin")  # Form builder and management (admin endpoints)
 # app.include_router(trial_management_router, prefix="/admin")  # Trial management endpoints (ROOT_ADMIN only)
 
