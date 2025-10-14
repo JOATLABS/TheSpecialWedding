@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
 
 export default function BillingSuccessPage() {
@@ -139,7 +139,7 @@ export default function BillingSuccessPage() {
               </li>
               <li className="flex items-start">
                 <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />
-                You'll receive a confirmation email shortly
+                You&apos;ll receive a confirmation email shortly
               </li>
               <li className="flex items-start">
                 <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />

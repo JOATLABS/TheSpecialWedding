@@ -37,7 +37,21 @@ export function CardTitle({ className = '', children }: CardProps) {
   );
 }
 
+// Description/subtitle styling
+export function CardDescription({ className = '', children }: CardProps) {
+  return (
+    <p className={`text-sm text-gray-600 dark:text-gray-400 ${className}`}>
+      {children}
+    </p>
+  );
+}
+
 // Content area inside the card
 export function CardContent({ className = '', children }: CardProps) {
   return <div className={className}>{children}</div>;
+}
+
+// Footer area inside the card
+export function CardFooter({ className = '', children }: CardProps) {
+  return <div className={`flex items-center mt-4 ${className}`}>{children}</div>;
 }

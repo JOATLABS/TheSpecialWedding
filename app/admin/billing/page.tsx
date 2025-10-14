@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { Loader2, CreditCard, ExternalLink, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -73,8 +73,9 @@ export default function BillingPage() {
         }
       );
 
+      let plansData: SubscriptionPlan[] = [];
       if (plansResponse.ok) {
-        const plansData = await plansResponse.json();
+        plansData = await plansResponse.json();
         setPlans(plansData);
       }
 
