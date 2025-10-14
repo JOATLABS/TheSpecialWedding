@@ -818,7 +818,7 @@ class FormService:
         </html>
         """
 
-    def export_form_responses_csv(
+    async def export_form_responses_csv(
         self,
         form_id: str,
         created_by: str,
