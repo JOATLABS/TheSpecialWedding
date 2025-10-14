@@ -36,7 +36,8 @@ class SubscriptionPlanModel(BaseModel):
     
     # Feature flags
     features: Dict[str, bool] = Field(default_factory=dict, description="Feature availability flags")
-    
+    features_list: Optional[List[str]] = Field(None, description="Human-readable feature highlights for display")
+
     # System fields
     is_active: bool = Field(True, description="Whether plan is available for new subscriptions")
     is_featured: bool = Field(False, description="Whether to highlight this plan")
