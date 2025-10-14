@@ -7,12 +7,12 @@ router = APIRouter()
 import_service = GuestImportService()
 
 @router.post("/guests/import", tags=["Admin"])
-def import_guests(file: UploadFile = File(...), wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def import_guests(file: UploadFile = File(...), wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
-        return import_service.import_csv(file, wedding_id)
+        return await import_service.import_csv(file, wedding_id)
     except HTTPException as e:
         raise e
     except Exception:

@@ -28,7 +28,7 @@ class ResendEmailService:
         self.email_log_collection = mongo.db["email_logs"]
         self.wedding_collection = mongo.db["weddings"]
     
-    def send_email(
+    async def send_email(
         self, 
         to_email: str, 
         subject: str, 
@@ -88,7 +88,7 @@ class ResendEmailService:
                 "resend_id": email_response.get("id"),
                 "provider": "resend"
             }
-            self.email_log_collection.insert_one(log_entry)
+            await self.email_log_collection.insert_one(log_entry)
             
             logger.info(f"Email sent successfully to {to_email}, ID: {email_response.get('id')}")
             return {"success": True, "id": email_response.get("id")}
@@ -109,11 +109,11 @@ class ResendEmailService:
                 "error": str(e),
                 "provider": "resend"
             }
-            self.email_log_collection.insert_one(log_entry)
+            await self.email_log_collection.insert_one(log_entry)
             
             return {"success": False, "error": str(e)}
     
-    def send_rsvp_invitations(
+    async def send_rsvp_invitations(
         self, 
         wedding_slug: str, 
         custom_html: Optional[str] = None,
@@ -122,7 +122,7 @@ class ResendEmailService:
     ) -> Dict[str, Any]:
         """Send RSVP invitation emails to guests with email addresses"""
         # Get wedding details
-        wedding = self.wedding_collection.find_one({"slug": wedding_slug})
+        wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
         if not wedding:
             return {"sent": 0, "failed": 0, "error": "Wedding not found"}
         
@@ -194,7 +194,7 @@ class ResendEmailService:
         
         return {"sent": sent, "failed": failed}
     
-    def send_reminders(
+    async def send_reminders(
         self,
         wedding_slug: str,
         event_type: str,
@@ -204,7 +204,7 @@ class ResendEmailService:
     ) -> Dict[str, Any]:
         """Send reminder emails to guests who have RSVP'd"""
         # Get wedding details
-        wedding = self.wedding_collection.find_one({"slug": wedding_slug})
+        wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
         if not wedding:
             return {"sent": 0, "failed": 0, "error": "Wedding not found"}
         
@@ -231,7 +231,7 @@ class ResendEmailService:
             
             for guest in guests:
                 # Check if guest has RSVP'd for this event
-                rsvp = self.rsvp_collection.find_one({"guest_id": guest["_id"]})
+                rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
                 if not rsvp or event_type not in rsvp.get("attending", []):
                     continue
                 

@@ -9,7 +9,7 @@ import logging
 
 # Import settings and core components
 from app.core.settings import settings
-from app.core.database_async import init_database, close_database
+from app.core.database import init_database, close_database
 from app.core.cache import init_cache, close_cache
 
 # Import middleware

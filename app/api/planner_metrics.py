@@ -9,7 +9,7 @@ import logging
 router = APIRouter()
 
 @router.get("/planner/metrics", tags=["Wedding Planner"])
-def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
+async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
     """Get comprehensive metrics for wedding planner dashboard"""
     
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
@@ -60,7 +60,7 @@ def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_use
             wedding_id = wedding["_id"]
             
             # Get guest count
-            guest_count = guests_collection.count_documents({"wedding_id": wedding_id})
+            guest_count = await guests_collection.count_documents({"wedding_id": wedding_id})
             metrics["summary"]["total_guests"] += guest_count
             
             # Get RSVP statistics

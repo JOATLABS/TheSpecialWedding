@@ -571,7 +571,7 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
 
 
 @router.get("/analytics/platform", tags=["ROOT_ADMIN"])
-def get_platform_metrics(
+async def get_platform_metrics(
     timeframe: str = Query(
         "30d",
         description="Timeframe window for growth metrics (supported: 7d, 30d, 90d, 1y)",
@@ -593,9 +593,9 @@ def get_platform_metrics(
 
         # User metrics
         users_collection = mongo.get_users_collection()
-        total_users = users_collection.count_documents({})
-        active_users = users_collection.count_documents({"is_active": True})
-        new_users = users_collection.count_documents({"created_at": {"$gte": period_start}})
+        total_users = await users_collection.count_documents({})
+        active_users = await users_collection.count_documents({"is_active": True})
+        new_users = await users_collection.count_documents({"created_at": {"$gte": period_start}})
         role_breakdown = {
             (doc.get("_id") or "unassigned"): doc.get("count", 0)
             for doc in users_collection.aggregate([
@@ -612,13 +612,13 @@ def get_platform_metrics(
 
         status_breakdown: Dict[str, int] = {}
         for status in ["trial", "active", "cancelled", "expired"]:
-            status_breakdown[status] = subscriptions_collection.count_documents({"status": status})
+            status_breakdown[status] = await subscriptions_collection.count_documents({"status": status})
         total_subscriptions = sum(status_breakdown.values())
-        active_plans = plans_collection.count_documents({"is_active": True})
+        active_plans = await plans_collection.count_documents({"is_active": True})
 
         monthly_revenue = 0.0
         yearly_revenue = 0.0
-        for subscription in subscriptions_collection.find({"status": "active"}):
+        async for subscription in subscriptions_collection.find({"status": "active"}):
             plan = plan_lookup.get(str(subscription.get("plan_id")))
             if not plan:
                 continue
@@ -644,11 +644,11 @@ def get_platform_metrics(
             if plan.get("id"):
                 identifier_variants.add(str(plan["id"]))
 
-            active_count = subscriptions_collection.count_documents({
+            active_count = await subscriptions_collection.count_documents({
                 "plan_id": {"$in": list(identifier_variants)},
                 "status": "active",
             })
-            trial_count = subscriptions_collection.count_documents({
+            trial_count = await subscriptions_collection.count_documents({
                 "plan_id": {"$in": list(identifier_variants)},
                 "status": "trial",
             })
@@ -687,32 +687,32 @@ def get_platform_metrics(
         rsvp_total = mongo.get_rsvps_collection().count_documents({})
 
         forms_collection = mongo.get_forms_collection()
-        forms_total = forms_collection.count_documents({"is_active": True})
-        forms_new_in_period = forms_collection.count_documents({
+        forms_total = await forms_collection.count_documents({"is_active": True})
+        forms_new_in_period = await forms_collection.count_documents({
             "is_active": True,
             "created_at": {"$gte": period_start},
         })
         responses_collection = mongo.get_form_responses_collection()
-        responses_total = responses_collection.count_documents({})
-        responses_in_period = responses_collection.count_documents({"submitted_at": {"$gte": period_start}})
+        responses_total = await responses_collection.count_documents({})
+        responses_in_period = await responses_collection.count_documents({"submitted_at": {"$gte": period_start}})
 
         notifications_collection = mongo.db.get_collection("notifications")
-        notifications_sent_total = notifications_collection.count_documents({"status": "sent"})
-        notifications_sent_in_period = notifications_collection.count_documents({
+        notifications_sent_total = await notifications_collection.count_documents({"status": "sent"})
+        notifications_sent_in_period = await notifications_collection.count_documents({
             "status": "sent",
             "sent_at": {"$gte": period_start},
         })
 
         email_logs_collection = mongo.db.get_collection("email_logs")
-        email_logs_total = email_logs_collection.count_documents({})
-        email_logs_in_period = email_logs_collection.count_documents({
+        email_logs_total = await email_logs_collection.count_documents({})
+        email_logs_in_period = await email_logs_collection.count_documents({
             "status": "success",
             "sent_at": {"$gte": period_start},
         })
 
         ai_usage_collection = mongo.get_ai_usage_collection()
-        ai_events_total = ai_usage_collection.count_documents({})
-        ai_events_in_period = ai_usage_collection.count_documents({"created_at": {"$gte": period_start}})
+        ai_events_total = await ai_usage_collection.count_documents({})
+        ai_events_in_period = await ai_usage_collection.count_documents({"created_at": {"$gte": period_start}})
 
         return {
             "generated_at": now.isoformat(),

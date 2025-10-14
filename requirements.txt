@@ -22,3 +22,4 @@ aiohttp>=3.12.14
 starlette>=0.47.2
 pillow>=11.3.0
 protobuf>=6.31.1
+stripe>=13.0.1

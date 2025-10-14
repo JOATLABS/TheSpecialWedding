@@ -35,7 +35,7 @@ def run_trial_maintenance(current_user: ExtendedAuthUser = Depends(require_root_
         raise HTTPException(status_code=500, detail=f"Error running trial maintenance: {str(e)}")
 
 @router.get("/trials/status", tags=["ROOT_ADMIN"])
-def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get overview of trial statuses - ROOT_ADMIN only"""
     try:
         from app.core.database import mongo
@@ -45,25 +45,25 @@ def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root_admin
         now = datetime.utcnow()
         
         # Count trials by status
-        active_trials = users_collection.count_documents({
+        active_trials = await users_collection.count_documents({
             "subscription_status": "trial",
             "is_active": True,
             "email_verified": True
         })
         
-        expired_trials = users_collection.count_documents({
+        expired_trials = await users_collection.count_documents({
             "subscription_status": "expired"
         })
         
         # Trials expiring in next 7 days
-        expiring_soon = users_collection.count_documents({
+        expiring_soon = await users_collection.count_documents({
             "subscription_status": "trial",
             "trial_end_date": {"$lte": now + timedelta(days=7), "$gt": now},
             "is_active": True
         })
         
         # Trials expiring today
-        expiring_today = users_collection.count_documents({
+        expiring_today = await users_collection.count_documents({
             "subscription_status": "trial",
             "trial_end_date": {"$lte": now + timedelta(days=1), "$gt": now},
             "is_active": True

@@ -11,16 +11,16 @@ class AuthService:
         self.admin_collection = mongo.db["admin_users"]
         self.users_collection = mongo.db["users"]
 
-    def authenticate_user(self, email: str, password: str):
+    async def authenticate_user(self, email: str, password: str):
         # Check admin users first (legacy)
-        user = self.admin_collection.find_one({"email": email})
+        user = await self.admin_collection.find_one({"email": email})
         if user:
             if not verify_password(password, user["hashed_password"]):
                 raise HTTPException(status_code=401, detail="Invalid credentials")
             return user
         
         # Check new users collection (wedding planners, vendors, etc.)
-        user = self.users_collection.find_one({"email": email})
+        user = await self.users_collection.find_one({"email": email})
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
@@ -38,23 +38,23 @@ class AuthService:
         
         return user
 
-    def login_and_get_token(self, email: str, password: str):
+    async def login_and_get_token(self, email: str, password: str):
         user = self.authenticate_user(email, password)
         
         # Update last_login timestamp
         login_time = datetime.utcnow()
         try:
             # Check if user is from legacy admin_users collection
-            if user.get("_id") and self.admin_collection.find_one({"_id": user["_id"]}):
+            if user.get("_id") and await self.admin_collection.find_one({"_id": user["_id"]}):
                 # Update in admin_users collection
-                self.admin_collection.update_one(
+                await self.admin_collection.update_one(
                     {"_id": user["_id"]},
                     {"$set": {"last_login": login_time}}
                 )
                 logger.info(f"Updated last_login for legacy admin user: {email}")
             else:
                 # Update in users collection
-                self.users_collection.update_one(
+                await self.users_collection.update_one(
                     {"_id": user["_id"]},
                     {"$set": {"last_login": login_time}}
                 )

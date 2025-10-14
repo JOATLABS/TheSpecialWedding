@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,16 +37,29 @@ interface UserSubscription {
 
 export default function BillingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [processingCheckout, setProcessingCheckout] = useState(false);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [selectedBillingInterval, setSelectedBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
   const [currentPlan, setCurrentPlan] = useState<SubscriptionPlan | null>(null);
+  const [preSelectedPlanId, setPreSelectedPlanId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Check for pre-selected plan from URL
+    const planParam = searchParams.get('plan');
+    const intervalParam = searchParams.get('interval');
+
+    if (planParam) {
+      setPreSelectedPlanId(planParam);
+    }
+    if (intervalParam && (intervalParam === 'monthly' || intervalParam === 'yearly')) {
+      setSelectedBillingInterval(intervalParam);
+    }
+
     loadData();
-  }, []);
+  }, [searchParams]);
 
   const loadData = async () => {
     try {
@@ -334,6 +347,7 @@ export default function BillingPage() {
           const price =
             selectedBillingInterval === 'yearly' ? plan.price_yearly : plan.price_monthly;
           const isCurrentPlan = currentSubscription?.plan_id === plan._id;
+          const isPreSelected = preSelectedPlanId === plan._id;
 
           return (
             <Card
@@ -341,12 +355,19 @@ export default function BillingPage() {
               className={`relative ${
                 plan.is_featured
                   ? 'border-primary shadow-lg ring-2 ring-primary'
+                  : isPreSelected
+                  ? 'border-green-500 shadow-lg ring-2 ring-green-500 animate-pulse'
                   : ''
               }`}
             >
-              {plan.is_featured && (
+              {plan.is_featured && !isPreSelected && (
                 <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
                   <Badge className="bg-primary text-primary-foreground">Popular</Badge>
+                </div>
+              )}
+              {isPreSelected && (
+                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                  <Badge className="bg-green-500 text-white">Selected from Pricing</Badge>
                 </div>
               )}
               <CardHeader>
@@ -382,7 +403,7 @@ export default function BillingPage() {
                   <Button
                     onClick={() => handleSubscribe(plan._id)}
                     disabled={processingCheckout}
-                    className="w-full"
+                    className={`w-full ${isPreSelected ? 'bg-green-600 hover:bg-green-700' : ''}`}
                   >
                     {processingCheckout ? (
                       <>
@@ -392,7 +413,7 @@ export default function BillingPage() {
                     ) : (
                       <>
                         <CreditCard className="w-4 h-4 mr-2" />
-                        Subscribe
+                        {isPreSelected ? 'Subscribe to Selected Plan' : 'Subscribe'}
                       </>
                     )}
                   </Button>

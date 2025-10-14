@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { GlassCard } from '../ui/GlassCard';
 import { ThemeConfig } from '@/types/wedding';
@@ -107,6 +108,7 @@ const fallbackPlans: SubscriptionPlan[] = [
 ];
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSelect }) => {
+  const router = useRouter();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -165,6 +167,13 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
   const handleSelectPlan = (plan: SubscriptionPlan) => {
     setActivePlanId(plan._id);
     onPlanSelect?.({ id: plan._id, name: plan.name });
+
+    // If user is authenticated, redirect to billing page with pre-selected plan
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      const billingInterval = isYearly ? 'yearly' : 'monthly';
+      router.push(`/admin/billing?plan=${encodeURIComponent(plan._id)}&interval=${billingInterval}`);
+    }
   };
 
   const getPriceLabel = (plan: SubscriptionPlan) => {
