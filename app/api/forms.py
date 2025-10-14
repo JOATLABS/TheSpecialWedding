@@ -434,7 +434,7 @@ async def get_form_analytics(
     return await form_service.get_form_analytics(form_id, current_user.email)
 
 @router.get("/forms/{form_id}/export/csv", tags=["Forms"])
-def export_form_responses_csv(
+async def export_form_responses_csv(
     form_id: str,
     request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended),
@@ -540,7 +540,7 @@ def export_form_responses_csv(
         )
         
         # Call the form service to generate CSV
-        export_result = form_service.export_form_responses_csv(
+        export_result = await form_service.export_form_responses_csv(
             form_id=form_id,
             created_by=current_user.email,
             date_from=date_from,
@@ -606,7 +606,7 @@ def export_form_responses_csv(
 
 # Public endpoints (no authentication required) - Enhanced security
 @router.get("/public/forms/{form_id}", tags=["Public Forms"])
-def get_public_form(form_id: str, request: Request, response: Response):
+async def get_public_form(form_id: str, request: Request, response: Response):
     """Get a form for public submission with security validation"""
     try:
         # Rate limiting for public form access
@@ -689,7 +689,7 @@ def get_public_form(form_id: str, request: Request, response: Response):
         raise HTTPException(status_code=404, detail="Form not found")
 
 @router.post("/public/forms/{form_id}/submit", tags=["Public Forms"])
-def submit_form(
+async def submit_form(
     form_id: str,
     response_data: SubmitFormRequest,
     request: Request,
