@@ -15,7 +15,9 @@ interface SubscriptionPlan {
   max_guests_per_wedding: number;
   ai_credits_monthly: number;
   storage_gb: number;
-  features: string[];
+  staff_seats: number;
+  features: Record<string, boolean>;  // Backend format: {feature_name: true/false}
+  features_list?: string[];  // Optional display list
   is_featured: boolean;
   is_active: boolean;
   display_order: number;
@@ -28,9 +30,10 @@ interface PricingSectionProps {
 
 const formatLimit = (value: number) => (value === -1 ? 'Unlimited' : value.toString());
 
+// Fallback plans matching backend schema
 const fallbackPlans: SubscriptionPlan[] = [
   {
-    _id: 'boutique',
+    _id: 'plan_boutique',
     name: 'Boutique',
     description: 'For new planners onboarding their first weddings with concierge support.',
     price_monthly: 89,
@@ -39,13 +42,20 @@ const fallbackPlans: SubscriptionPlan[] = [
     max_guests_per_wedding: 150,
     ai_credits_monthly: 400,
     storage_gb: 150,
-    features: ['Client-ready wedding websites', 'Unlimited vendor invites', 'Shared task boards', 'Automated payment reminders'],
+    staff_seats: 1,
+    features: {
+      basic_website_builder: true,
+      guest_management: true,
+      rsvp_system: true,
+      multi_user_collaboration: true,
+    },
+    features_list: ['Client-ready wedding websites', 'Unlimited vendor invites', 'Shared task boards', 'Automated payment reminders'],
     is_featured: false,
     is_active: true,
     display_order: 0,
   },
   {
-    _id: 'studio-growth',
+    _id: 'plan_studio_growth',
     name: 'Studio Growth',
     description: 'Everything established planners need for 10 active weddings.',
     price_monthly: 179,
@@ -54,13 +64,22 @@ const fallbackPlans: SubscriptionPlan[] = [
     max_guests_per_wedding: 350,
     ai_credits_monthly: 900,
     storage_gb: 400,
-    features: ['AI timeline builder', 'Branded dashboards', 'Team permissions', 'Priority concierge support'],
+    staff_seats: 3,
+    features: {
+      basic_website_builder: true,
+      guest_management: true,
+      ai_tools: true,
+      advanced_reporting: true,
+      multi_user_collaboration: true,
+      priority_support: true,
+    },
+    features_list: ['AI timeline builder', 'Branded dashboards', 'Team permissions', 'Priority concierge support'],
     is_featured: true,
     is_active: true,
     display_order: 1,
   },
   {
-    _id: 'signature',
+    _id: 'plan_signature',
     name: 'Signature',
     description: 'Collaborate with unlimited vendors and automate client touchpoints.',
     price_monthly: 289,
@@ -69,7 +88,18 @@ const fallbackPlans: SubscriptionPlan[] = [
     max_guests_per_wedding: -1,
     ai_credits_monthly: 2000,
     storage_gb: 1024,
-    features: ['Unlimited automations', 'White-glove onboarding', 'Advanced analytics', 'Dedicated success manager'],
+    staff_seats: -1,
+    features: {
+      basic_website_builder: true,
+      guest_management: true,
+      ai_tools: true,
+      advanced_reporting: true,
+      white_label: true,
+      custom_integrations: true,
+      multi_user_collaboration: true,
+      priority_support: true,
+    },
+    features_list: ['Unlimited automations', 'White-glove onboarding', 'Advanced analytics', 'Dedicated success manager'],
     is_featured: false,
     is_active: true,
     display_order: 2,
@@ -255,7 +285,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
                   <div className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Highlights</p>
                     <ul className="space-y-1 text-sm text-slate-600">
-                      {(plan.features || []).slice(0, 4).map((feature, index) => (
+                      {(plan.features_list || []).slice(0, 4).map((feature, index) => (
                         <li key={index} className="flex items-start gap-2">
                           <span className={`mt-1 h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-slate-900' : 'bg-slate-400'}`} aria-hidden="true" />
                           <span>{feature}</span>

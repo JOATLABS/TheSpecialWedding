@@ -186,7 +186,7 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
     
     default_plans = [
         {
-            "name": "Free Trial",
+            "name": "Boutique",
             "description": "14-day free trial to explore all features",
             "price_monthly": 0.00,
             "price_yearly": 0.00,
