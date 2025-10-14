@@ -21,7 +21,7 @@ class SubscriptionService:
         self.weddings_collection = mongo.db["weddings"]
 
     # Subscription Plan Management (ROOT_ADMIN only)
-    def create_plan(self, plan_data: dict, creator_email: str) -> dict:
+    async def create_plan(self, plan_data: dict, creator_email: str) -> dict:
         """Create a new subscription plan"""
         try:
             plan_data["_id"] = f"plan_{plan_data['name'].lower().replace(' ', '_')}"
@@ -30,11 +30,11 @@ class SubscriptionService:
             plan_data["updated_at"] = datetime.utcnow()
             
             # Check if plan ID already exists
-            existing = self.plans_collection.find_one({"_id": plan_data["_id"]})
+            existing = await self.plans_collection.find_one({"_id": plan_data["_id"]})
             if existing:
                 raise HTTPException(status_code=400, detail="Plan with this name already exists")
             
-            result = self.plans_collection.insert_one(plan_data)
+            result = await self.plans_collection.insert_one(plan_data)
             return {"message": "Subscription plan created successfully", "plan_id": plan_data["_id"]}
             
         except HTTPException:
@@ -51,10 +51,10 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing plans: {str(e)}")
 
-    def get_plan(self, plan_id: str) -> dict:
+    async def get_plan(self, plan_id: str) -> dict:
         """Get subscription plan by ID"""
         try:
-            plan = self.plans_collection.find_one({"_id": plan_id})
+            plan = await self.plans_collection.find_one({"_id": plan_id})
             if not plan:
                 raise HTTPException(status_code=404, detail="Subscription plan not found")
             return plan
@@ -63,7 +63,7 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving plan: {str(e)}")
 
-    def update_plan(self, plan_id: str, update_data: dict) -> dict:
+    async def update_plan(self, plan_id: str, update_data: dict) -> dict:
         """Update subscription plan"""
         try:
             # Remove protected fields
@@ -73,7 +73,7 @@ class SubscriptionService:
             
             update_data["updated_at"] = datetime.utcnow()
             
-            result = self.plans_collection.update_one(
+            result = await self.plans_collection.update_one(
                 {"_id": plan_id},
                 {"$set": update_data}
             )
@@ -88,11 +88,11 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating plan: {str(e)}")
 
-    def delete_plan(self, plan_id: str) -> dict:
+    async def delete_plan(self, plan_id: str) -> dict:
         """Delete subscription plan (only if no active subscriptions)"""
         try:
             # Check if any users have active subscriptions to this plan
-            active_subs = self.subscriptions_collection.count_documents({
+            active_subs = await self.subscriptions_collection.count_documents({
                 "plan_id": plan_id,
                 "status": {"$in": ["active", "trial"]}
             })
@@ -103,7 +103,7 @@ class SubscriptionService:
                     detail=f"Cannot delete plan: {active_subs} active subscriptions exist"
                 )
             
-            result = self.plans_collection.delete_one({"_id": plan_id})
+            result = await self.plans_collection.delete_one({"_id": plan_id})
             
             if result.deleted_count == 0:
                 raise HTTPException(status_code=404, detail="Subscription plan not found")
@@ -116,12 +116,12 @@ class SubscriptionService:
             raise HTTPException(status_code=500, detail=f"Error deleting plan: {str(e)}")
 
     # User Subscription Management
-    def assign_subscription(self, user_id: str, plan_id: str, billing_interval: str = "monthly", 
+    async def assign_subscription(self, user_id: str, plan_id: str, billing_interval: str = "monthly", 
                           trial_days: int = 14, creator_email: str = "") -> dict:
         """Assign subscription plan to user"""
         try:
             # Verify user exists
-            user = self.users_collection.find_one({"_id": ObjectId(user_id)})
+            user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
             
@@ -129,7 +129,7 @@ class SubscriptionService:
             plan = self.get_plan(plan_id)
             
             # Check if user already has an active subscription
-            existing_sub = self.subscriptions_collection.find_one({
+            existing_sub = await self.subscriptions_collection.find_one({
                 "user_id": user_id,
                 "status": {"$in": ["active", "trial"]}
             })
@@ -172,13 +172,13 @@ class SubscriptionService:
                 "created_by": creator_email
             }
             
-            result = self.subscriptions_collection.insert_one(subscription_data)
+            result = await self.subscriptions_collection.insert_one(subscription_data)
             
             # Initialize usage tracking
             self.initialize_usage_tracking(user_id, subscription_data["_id"])
             
             # Update user subscription info
-            self.users_collection.update_one(
+            await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
                 {"$set": {
                     "subscription_plan_id": plan_id,
@@ -199,10 +199,10 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error assigning subscription: {str(e)}")
 
-    def get_user_subscription(self, user_id: str) -> Optional[dict]:
+    async def get_user_subscription(self, user_id: str) -> Optional[dict]:
         """Get user's current subscription"""
         try:
-            subscription = self.subscriptions_collection.find_one({
+            subscription = await self.subscriptions_collection.find_one({
                 "user_id": user_id,
                 "status": {"$in": ["active", "trial"]}
             })
@@ -210,12 +210,12 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving subscription: {str(e)}")
 
-    def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
+    async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
         """Cancel user subscription"""
         try:
             now = datetime.utcnow()
             
-            result = self.subscriptions_collection.update_one(
+            result = await self.subscriptions_collection.update_one(
                 {"user_id": user_id, "status": {"$in": ["active", "trial"]}},
                 {"$set": {
                     "status": "cancelled",
@@ -229,7 +229,7 @@ class SubscriptionService:
                 raise HTTPException(status_code=404, detail="No active subscription found")
             
             # Update user status
-            self.users_collection.update_one(
+            await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
                 {"$set": {
                     "subscription_status": "cancelled",
@@ -245,7 +245,7 @@ class SubscriptionService:
             raise HTTPException(status_code=500, detail=f"Error cancelling subscription: {str(e)}")
 
     # Usage Tracking
-    def initialize_usage_tracking(self, user_id: str, subscription_id: str) -> dict:
+    async def initialize_usage_tracking(self, user_id: str, subscription_id: str) -> dict:
         """Initialize usage tracking for a new subscription"""
         try:
             now = datetime.utcnow()
@@ -271,7 +271,7 @@ class SubscriptionService:
             }
             
             # Use upsert to avoid duplicates
-            self.usage_collection.update_one(
+            await self.usage_collection.update_one(
                 {"_id": usage_data["_id"]},
                 {"$set": usage_data},
                 upsert=True
@@ -282,12 +282,12 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error initializing usage tracking: {str(e)}")
 
-    def get_usage_stats(self, user_id: str) -> dict:
+    async def get_usage_stats(self, user_id: str) -> dict:
         """Get current usage statistics for user"""
         try:
             current_month = datetime.utcnow().strftime("%Y-%m")
             
-            usage = self.usage_collection.find_one({
+            usage = await self.usage_collection.find_one({
                 "user_id": user_id,
                 "current_month": current_month
             })
@@ -357,7 +357,7 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error checking usage limits: {str(e)}")
 
-    def increment_usage(self, user_id: str, resource_type: str, amount: int = 1) -> dict:
+    async def increment_usage(self, user_id: str, resource_type: str, amount: int = 1) -> dict:
         """Increment usage for a specific resource"""
         try:
             current_month = datetime.utcnow().strftime("%Y-%m")
@@ -374,7 +374,7 @@ class SubscriptionService:
             
             field_name = field_mapping[resource_type]
             
-            result = self.usage_collection.update_one(
+            result = await self.usage_collection.update_one(
                 {"user_id": user_id, "current_month": current_month},
                 {
                     "$inc": {field_name: amount},
@@ -392,7 +392,7 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error incrementing usage: {str(e)}")
 
-    def reset_monthly_usage(self, user_id: str) -> dict:
+    async def reset_monthly_usage(self, user_id: str) -> dict:
         """Reset monthly usage counters (called on subscription renewal)"""
         try:
             now = datetime.utcnow()
@@ -424,7 +424,7 @@ class SubscriptionService:
                 "last_updated": now
             }
             
-            self.usage_collection.update_one(
+            await self.usage_collection.update_one(
                 {"_id": new_usage_id},
                 {"$set": usage_data},
                 upsert=True
@@ -438,13 +438,13 @@ class SubscriptionService:
             raise HTTPException(status_code=500, detail=f"Error resetting monthly usage: {str(e)}")
 
     # Analytics and Reporting
-    def get_subscription_analytics(self) -> dict:
+    async def get_subscription_analytics(self) -> dict:
         """Get platform-wide subscription analytics (ROOT_ADMIN only)"""
         try:
             # Total subscriptions by status
             status_counts = {}
             for status in ["trial", "active", "cancelled", "expired"]:
-                count = self.subscriptions_collection.count_documents({"status": status})
+                count = await self.subscriptions_collection.count_documents({"status": status})
                 status_counts[status] = count
             
             # Total subscriptions by plan

@@ -32,7 +32,7 @@ form_service = FormService()
 
 # Admin endpoints (require authentication)
 @router.post("/forms", tags=["Forms"])
-def create_form(
+async def create_form(
     form_data: CreateFormRequest,
     request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
@@ -87,7 +87,7 @@ def create_form(
     )
     
     try:
-        result = form_service.create_form(form_data, current_user.email)
+        result = await form_service.create_form(form_data, current_user.email)
         
         # Log successful creation
         logger.info(
@@ -125,7 +125,7 @@ def create_form(
         raise
 
 @router.get("/forms", tags=["Forms"])
-def get_forms(
+async def get_forms(
     wedding_id: Optional[str] = None,
     request: Request = None,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
@@ -158,7 +158,7 @@ def get_forms(
             )
     
     try:
-        forms = form_service.get_forms(current_user.email, wedding_id, current_user.is_root_admin)
+        forms = await form_service.get_forms(current_user.email, wedding_id, current_user.is_root_admin)
         
         # Log access
         logger.info(
@@ -176,7 +176,7 @@ def get_forms(
         raise
 
 @router.get("/forms/{form_id}", tags=["Forms"])
-def get_form(
+async def get_form(
     form_id: str,
     request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
@@ -201,7 +201,7 @@ def get_form(
         raise HTTPException(status_code=400, detail="Invalid form ID")
     
     try:
-        form = form_service.get_form(form_id, current_user.email)
+        form = await form_service.get_form(form_id, current_user.email)
         
         # Additional wedding access check if form has wedding_id
         if form.get('wedding_id') and not check_wedding_access(current_user, form['wedding_id']):
@@ -231,7 +231,7 @@ def get_form(
         raise HTTPException(status_code=500, detail="Failed to retrieve form")
 
 @router.put("/forms/{form_id}", tags=["Forms"])
-def update_form(
+async def update_form(
     form_id: str,
     form_data: UpdateFormRequest,
     request: Request,
@@ -258,7 +258,7 @@ def update_form(
     
     # Get existing form to check wedding access
     try:
-        existing_form = form_service.get_form(form_id, current_user.email)
+        existing_form = await form_service.get_form(form_id, current_user.email)
         
         # Check wedding access if form has wedding_id
         if existing_form.get('wedding_id'):
@@ -279,7 +279,7 @@ def update_form(
             f"ip={client_ip}"
         )
         
-        result = form_service.update_form(form_id, form_data, current_user.email)
+        result = await form_service.update_form(form_id, form_data, current_user.email)
         
         # Log successful update
         logger.info(
@@ -298,7 +298,7 @@ def update_form(
         raise HTTPException(status_code=500, detail="Failed to update form")
 
 @router.delete("/forms/{form_id}", tags=["Forms"])
-def delete_form(
+async def delete_form(
     form_id: str,
     request: Request,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
@@ -333,10 +333,10 @@ def delete_form(
         
         # For ROOT_ADMIN, get form without created_by constraint
         if current_user.is_root_admin:
-            existing_form = form_service.get_form(form_id)  # No created_by for ROOT_ADMIN
+            existing_form = await form_service.get_form(form_id)  # No created_by for ROOT_ADMIN
             logger.info(f"ROOT_ADMIN form retrieval successful")
         else:
-            existing_form = form_service.get_form(form_id, current_user.email)
+            existing_form = await form_service.get_form(form_id, current_user.email)
             logger.info(f"Regular user form retrieval successful")
         
         # Check wedding access if form has wedding_id
@@ -360,7 +360,7 @@ def delete_form(
         )
         
         logger.info(f"About to call form_service.delete_form...")
-        result = form_service.delete_form(form_id, current_user.email, current_user.is_root_admin)
+        result = await form_service.delete_form(form_id, current_user.email, current_user.is_root_admin)
         
         # Log successful deletion
         logger.warning(
@@ -381,7 +381,7 @@ def delete_form(
         raise HTTPException(status_code=500, detail="Failed to delete form")
 
 @router.post("/forms/{form_id}/send", tags=["Forms"])
-def send_form(
+async def send_form(
     form_id: str,
     send_data: SendFormRequest,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
@@ -390,10 +390,10 @@ def send_form(
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
     
-    return form_service.send_form(form_id, send_data, current_user.email)
+    return await form_service.send_form(form_id, send_data, current_user.email)
 
 @router.get("/forms/{form_id}/responses", tags=["Forms"])
-def get_form_responses(
+async def get_form_responses(
     form_id: str,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
@@ -401,7 +401,7 @@ def get_form_responses(
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
 
-    return form_service.get_form_responses(form_id, current_user.email)
+    return await form_service.get_form_responses(form_id, current_user.email)
 
 
 @router.post("/forms/{form_id}/views", tags=["Forms"])
@@ -423,7 +423,7 @@ def mark_form_view(
     )
 
 @router.get("/forms/{form_id}/analytics", tags=["Forms"])
-def get_form_analytics(
+async def get_form_analytics(
     form_id: str,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
@@ -431,7 +431,7 @@ def get_form_analytics(
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
     
-    return form_service.get_form_analytics(form_id, current_user.email)
+    return await form_service.get_form_analytics(form_id, current_user.email)
 
 @router.get("/forms/{form_id}/export/csv", tags=["Forms"])
 def export_form_responses_csv(
@@ -514,7 +514,7 @@ def export_form_responses_csv(
         
         # Get form to check wedding access before export
         try:
-            form = form_service.get_form(form_id, current_user.email)
+            form = await form_service.get_form(form_id, current_user.email)
             
             # Additional wedding access check if form has wedding_id
             if form.get('wedding_id') and not check_wedding_access(current_user, form['wedding_id']):
@@ -632,7 +632,7 @@ def get_public_form(form_id: str, request: Request, response: Response):
             raise HTTPException(status_code=400, detail="Invalid form ID")
         
         # Get form with public access (no creator email)
-        form = form_service.get_form(form_id)
+        form = await form_service.get_form(form_id)
         
         # Verify form is public
         if not form.get("settings", {}).get("is_public", False):
@@ -728,7 +728,7 @@ def submit_form(
         
         # Additional validation: Check if form allows public submissions
         try:
-            form = form_service.get_form(form_id)
+            form = await form_service.get_form(form_id)
             if not form.get("settings", {}).get("is_public", False):
                 logger.warning(
                     f"Attempt to submit to non-public form {form_id} from IP: {client_ip}"
@@ -750,7 +750,7 @@ def submit_form(
         )
         
         # Submit form with security validation
-        result = form_service.submit_form_response(
+        result = await form_service.submit_form_response(
             form_id, 
             response_data, 
             client_ip, 
@@ -1043,7 +1043,7 @@ def get_form_templates(
     return {"templates": templates}
 
 @router.post("/forms/from-template/{template_id}", tags=["Form Templates"])
-def create_form_from_template(
+async def create_form_from_template(
     template_id: str,
     form_name: str,
     wedding_id: Optional[str] = None,
@@ -1080,11 +1080,11 @@ def create_form_from_template(
         template_type=template_id
     )
 
-    return form_service.create_form(form_data, current_user.email)
+    return await form_service.create_form(form_data, current_user.email)
 
 
 @router.post("/forms/{form_id}/duplicate", tags=["Forms"])
-def duplicate_form(
+async def duplicate_form(
     form_id: str,
     duplicate_request: DuplicateFormRequest,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended),
@@ -1093,4 +1093,4 @@ def duplicate_form(
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
 
-    return form_service.duplicate_form(form_id, duplicate_request, current_user.email)
+    return await form_service.duplicate_form(form_id, duplicate_request, current_user.email)

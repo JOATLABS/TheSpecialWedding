@@ -38,7 +38,7 @@ class NotificationService:
             }
 
             # Insert notification
-            result = self.notifications_collection.insert_one(notification)
+            result = await self.notifications_collection.insert_one(notification)
 
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create notification")
@@ -71,7 +71,7 @@ class NotificationService:
                     query["wedding_id"] = filters["wedding_id"]
 
             # Count total documents
-            total = self.notifications_collection.count_documents(query)
+            total = await self.notifications_collection.count_documents(query)
 
             # Calculate pagination
             skip = (page - 1) * limit
@@ -81,7 +81,7 @@ class NotificationService:
             cursor = self.notifications_collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
             notifications = []
 
-            for notification in cursor:
+            async for notification in cursor:
                 notification["id"] = str(notification["_id"])
                 notification["_id"] = str(notification["_id"])
                 notification["read_count"] = len(notification.get("read_by", []))
@@ -108,7 +108,7 @@ class NotificationService:
             except:
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
-            notification = self.notifications_collection.find_one({"_id": obj_id})
+            notification = await self.notifications_collection.find_one({"_id": obj_id})
             if not notification:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
@@ -135,7 +135,7 @@ class NotificationService:
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification exists
-            existing = self.notifications_collection.find_one({"_id": obj_id})
+            existing = await self.notifications_collection.find_one({"_id": obj_id})
             if not existing:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
@@ -144,7 +144,7 @@ class NotificationService:
             update_data["updated_by"] = updated_by
 
             # Update notification
-            result = self.notifications_collection.update_one(
+            result = await self.notifications_collection.update_one(
                 {"_id": obj_id},
                 {"$set": update_data}
             )
@@ -173,7 +173,7 @@ class NotificationService:
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Delete notification
-            result = self.notifications_collection.delete_one({"_id": obj_id})
+            result = await self.notifications_collection.delete_one({"_id": obj_id})
 
             if result.deleted_count == 0:
                 raise HTTPException(status_code=404, detail="Notification not found")
@@ -194,7 +194,7 @@ class NotificationService:
             if not getattr(self.email_service, "configured", False):
                 raise HTTPException(status_code=503, detail="Email service not configured")
 
-            recipients = self._resolve_recipients(notification)
+            recipients = await self._resolve_recipients(notification)
             if not recipients:
                 raise HTTPException(status_code=400, detail="No active recipients found for this notification")
 
@@ -250,7 +250,7 @@ class NotificationService:
                 # Store a trimmed view of failures to keep document size manageable
                 log_entry["failed_recipients"] = failed[:10]
 
-            self.notifications_collection.update_one(
+            await self.notifications_collection.update_one(
                 {"_id": obj_id},
                 {
                     "$set": {
@@ -314,7 +314,7 @@ class NotificationService:
             query["$and"].append({"dismissed_by.user_id": {"$ne": user_email}})
 
             # Count total documents
-            total = self.notifications_collection.count_documents(query)
+            total = await self.notifications_collection.count_documents(query)
 
             # Calculate pagination
             skip = (page - 1) * limit
@@ -326,7 +326,7 @@ class NotificationService:
 
             priority_order = {"urgent": 4, "high": 3, "medium": 2, "low": 1}
 
-            for notification in cursor:
+            async for notification in cursor:
                 notification["id"] = str(notification["_id"])
                 notification["_id"] = str(notification["_id"])
 
@@ -359,7 +359,7 @@ class NotificationService:
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if already read by this user
-            existing_read = self.notifications_collection.find_one({
+            existing_read = await self.notifications_collection.find_one({
                 "_id": obj_id,
                 "read_by.user_id": user_id
             })
@@ -368,7 +368,7 @@ class NotificationService:
                 return {"message": "Notification already marked as read"}
 
             # Mark as read
-            result = self.notifications_collection.update_one(
+            result = await self.notifications_collection.update_one(
                 {"_id": obj_id},
                 {
                     "$push": {
@@ -401,7 +401,7 @@ class NotificationService:
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification is dismissible
-            notification = self.notifications_collection.find_one({"_id": obj_id})
+            notification = await self.notifications_collection.find_one({"_id": obj_id})
             if not notification:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
@@ -409,7 +409,7 @@ class NotificationService:
                 raise HTTPException(status_code=400, detail="Notification cannot be dismissed")
 
             # Check if already dismissed by this user
-            existing_dismissed = self.notifications_collection.find_one({
+            existing_dismissed = await self.notifications_collection.find_one({
                 "_id": obj_id,
                 "dismissed_by.user_id": user_id
             })
@@ -418,7 +418,7 @@ class NotificationService:
                 return {"message": "Notification already dismissed"}
 
             # Mark as dismissed
-            result = self.notifications_collection.update_one(
+            result = await self.notifications_collection.update_one(
                 {"_id": obj_id},
                 {
                     "$push": {
@@ -467,12 +467,12 @@ class NotificationService:
             }
 
             # Count total notifications
-            total = self.notifications_collection.count_documents(query)
+            total = await self.notifications_collection.count_documents(query)
 
             # Count unread notifications
             unread_query = query.copy()
             unread_query["$and"].append({"read_by.user_id": {"$ne": user_email}})
-            unread = self.notifications_collection.count_documents(unread_query)
+            unread = await self.notifications_collection.count_documents(unread_query)
 
             return {
                 "total": total,
@@ -484,7 +484,7 @@ class NotificationService:
             logger.error(f"Error getting notification count: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error getting notification count: {str(e)}")
 
-    def _resolve_recipients(self, notification: dict) -> List[Dict[str, Optional[str]]]:
+    async def _resolve_recipients(self, notification: dict) -> List[Dict[str, Optional[str]]]:
         """Resolve the actual recipient list for the notification."""
         target = notification.get("target_audience", "all")
         recipients: List[Dict[str, Optional[str]]] = []
@@ -492,7 +492,7 @@ class NotificationService:
 
         targeted_user_id = notification.get("user_id")
         if targeted_user_id:
-            user = self._find_user_by_identifier(targeted_user_id)
+            user = await self._find_user_by_identifier(targeted_user_id)
             if user and user.get("email"):
                 formatted = self._format_user_contact(user)
                 recipients.append(formatted)
@@ -512,7 +512,7 @@ class NotificationService:
         else:
             cursor = []
 
-        for user in cursor:
+        async for user in cursor:
             email = user.get("email")
             if not email or email in seen_emails:
                 continue
@@ -523,20 +523,20 @@ class NotificationService:
 
         return recipients
 
-    def _find_user_by_identifier(self, identifier: str) -> Optional[Dict]:
+    async def _find_user_by_identifier(self, identifier: str) -> Optional[Dict]:
         """Locate a user by ObjectId or email address."""
         if not identifier:
             return None
 
         try:
             if ObjectId.is_valid(identifier):
-                user = self.users_collection.find_one({"_id": ObjectId(identifier)})
+                user = await self.users_collection.find_one({"_id": ObjectId(identifier)})
                 if user:
                     return user
         except Exception as exc:  # noqa: BLE001 - capture lookup issues without aborting send
             logger.debug("Failed ObjectId lookup for user identifier %s: %s", identifier, str(exc))
 
-        return self.users_collection.find_one({"email": identifier})
+        return await self.users_collection.find_one({"email": identifier})
 
     @staticmethod
     def _format_user_contact(user: Dict) -> Dict[str, Optional[str]]:
@@ -594,11 +594,11 @@ class NotificationService:
             target = notification["target_audience"]
 
             if target == "all":
-                return self.users_collection.count_documents({"is_active": True})
+                return await self.users_collection.count_documents({"is_active": True})
             elif target == "wedding_planners":
-                return self.users_collection.count_documents({"role": "wedding_planner", "is_active": True})
+                return await self.users_collection.count_documents({"role": "wedding_planner", "is_active": True})
             elif target == "vendors":
-                return self.users_collection.count_documents({"role": "vendor", "is_active": True})
+                return await self.users_collection.count_documents({"role": "vendor", "is_active": True})
             elif notification.get("user_id"):
                 return 1  # Targeted to specific user
             else:

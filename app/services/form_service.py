@@ -37,7 +37,7 @@ class FormService:
     def _planner_state_key(email: str) -> str:
         return email.replace('.', '_')
 
-    def create_form(self, form_data: CreateFormRequest, created_by: str) -> Dict[str, Any]:
+    async def create_form(self, form_data: CreateFormRequest, created_by: str) -> Dict[str, Any]:
         """Create a new form with enhanced security validation"""
         try:
             # Rate limiting check
@@ -98,7 +98,7 @@ class FormService:
             }
 
             # Insert form
-            result = self.forms_collection.insert_one(form_doc)
+            result = await self.forms_collection.insert_one(form_doc)
 
             if result.inserted_id:
                 return {"id": form_id, "message": "Form created successfully"}
@@ -111,11 +111,11 @@ class FormService:
             logging.error(f"Error creating form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create form: {str(e)}")
 
-    def duplicate_form(self, source_form_id: str, payload: DuplicateFormRequest, created_by: str) -> Dict[str, Any]:
+    async def duplicate_form(self, source_form_id: str, payload: DuplicateFormRequest, created_by: str) -> Dict[str, Any]:
         """Create a copy of an existing form for the same planner."""
         try:
             # Ensure the user can access the source form
-            original_form = self.get_form(source_form_id, created_by)
+            original_form = await self.get_form(source_form_id, created_by)
 
             # Build the new form payload using the original structure
             duplicated_fields = deepcopy(original_form.get("fields", []))
@@ -129,7 +129,7 @@ class FormService:
                 template_type=original_form.get("template_type"),
             )
 
-            return self.create_form(new_form_request, created_by)
+            return await self.create_form(new_form_request, created_by)
 
         except HTTPException:
             raise
@@ -142,7 +142,7 @@ class FormService:
             )
             raise HTTPException(status_code=500, detail="Failed to duplicate form")
 
-    def get_forms(self, created_by: str, wedding_id: Optional[str] = None, is_root_admin: bool = False) -> List[Dict[str, Any]]:
+    async def get_forms(self, created_by: str, wedding_id: Optional[str] = None, is_root_admin: bool = False) -> List[Dict[str, Any]]:
         """Get forms for a user"""
         try:
             # ROOT_ADMIN can see all forms, others see only their own
@@ -154,7 +154,7 @@ class FormService:
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
-            forms = list(self.forms_collection.find(query).sort("created_at", -1))
+            forms = await self.forms_collection.find(query).sort("created_at", -1).to_list(length=None)
 
             # Convert ObjectId to string and format response
             viewer_key = None
@@ -189,7 +189,7 @@ class FormService:
             logging.error(f"Error fetching forms: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch forms: {str(e)}")
 
-    def get_form(self, form_id: str, created_by: Optional[str] = None) -> Dict[str, Any]:
+    async def get_form(self, form_id: str, created_by: Optional[str] = None) -> Dict[str, Any]:
         """Get a specific form with security validation"""
         try:
             logger.info(f"get_form called: form_id={form_id}, created_by={created_by}")
@@ -214,7 +214,7 @@ class FormService:
                 query["created_by"] = created_by.lower().strip()
             
             logger.info(f"Database query: {query}")
-            form = self.forms_collection.find_one(query)
+            form = await self.forms_collection.find_one(query)
             logger.info(f"Form found: {form is not None}")
 
             if not form:
@@ -259,7 +259,7 @@ class FormService:
             logging.error(f"Error fetching form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch form: {str(e)}")
 
-    def update_form(self, form_id: str, form_data: UpdateFormRequest, created_by: str) -> Dict[str, Any]:
+    async def update_form(self, form_id: str, form_data: UpdateFormRequest, created_by: str) -> Dict[str, Any]:
         """Update an existing form with security validation"""
         try:
             # Validate inputs
@@ -273,7 +273,7 @@ class FormService:
             form_id = InputSanitizer.sanitize_text(form_id, 100)
 
             # Check if form exists and user owns it
-            existing_form = self.forms_collection.find_one({
+            existing_form = await self.forms_collection.find_one({
                 "_id": form_id,
                 "created_by": created_by.lower().strip(),
                 "is_active": True
@@ -325,7 +325,7 @@ class FormService:
                 update_doc["is_active"] = bool(form_data.is_active)
 
             # Update form
-            result = self.forms_collection.update_one(
+            result = await self.forms_collection.update_one(
                 {"_id": form_id},
                 {"$set": update_doc}
             )
@@ -341,7 +341,7 @@ class FormService:
             logging.error(f"Error updating form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to update form: {str(e)}")
 
-    def delete_form(self, form_id: str, created_by: str, is_root_admin: bool = False) -> Dict[str, Any]:
+    async def delete_form(self, form_id: str, created_by: str, is_root_admin: bool = False) -> Dict[str, Any]:
         """Soft delete a form"""
         try:
             logger.info(f"delete_form called: form_id={form_id}, created_by={created_by}, is_root_admin={is_root_admin}")
@@ -355,12 +355,12 @@ class FormService:
                 logger.info(f"Using regular user query: {query}")
             
             # First, check if form exists
-            existing_form = self.forms_collection.find_one({"_id": form_id})
+            existing_form = await self.forms_collection.find_one({"_id": form_id})
             logger.info(f"Form exists check: {existing_form is not None}")
             if existing_form:
                 logger.info(f"Form details: _id={existing_form.get('_id')}, created_by={existing_form.get('created_by')}, is_active={existing_form.get('is_active')}")
             
-            result = self.forms_collection.update_one(
+            result = await self.forms_collection.update_one(
                 query,
                 {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
             )
@@ -382,11 +382,11 @@ class FormService:
             logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Failed to delete form: {str(e)}")
 
-    def send_form(self, form_id: str, send_data: SendFormRequest, created_by: str) -> Dict[str, Any]:
+    async def send_form(self, form_id: str, send_data: SendFormRequest, created_by: str) -> Dict[str, Any]:
         """Send form to recipients via email"""
         try:
             # Get form
-            form = self.get_form(form_id, created_by)
+            form = await self.get_form(form_id, created_by)
 
             # Generate form URL
             base_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000")
@@ -438,7 +438,7 @@ class FormService:
                         failed_count += 1
 
                     # Save distribution record
-                    self.distributions_collection.insert_one(distribution_doc)
+                    await self.distributions_collection.insert_one(distribution_doc)
 
                 except Exception as email_error:
                     logging.error(f"Failed to send form to {recipient_email}: {str(email_error)}")
@@ -457,7 +457,7 @@ class FormService:
             logging.error(f"Error sending form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to send form: {str(e)}")
 
-    def submit_form_response(self, form_id: str, response_data: SubmitFormRequest,
+    async def submit_form_response(self, form_id: str, response_data: SubmitFormRequest,
                             ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Dict[str, Any]:
         """Submit a form response with security validation"""
         try:
@@ -478,7 +478,7 @@ class FormService:
                 raise HTTPException(status_code=400, detail="Invalid form ID")
 
             # Get form (public access)
-            form = self.get_form(form_id)
+            form = await self.get_form(form_id)
 
             if not form["is_active"]:
                 logger.info(f"Submission attempt to inactive form: {form_id}")
@@ -519,7 +519,7 @@ class FormService:
             # Check if multiple submissions are allowed
             if not form["settings"].get("allow_multiple_submissions", False):
                 if submitted_by_email:
-                    existing_response = self.responses_collection.find_one({
+                    existing_response = await self.responses_collection.find_one({
                         "form_id": form_id,
                         "submitted_by_email": submitted_by_email
                     })
@@ -553,11 +553,11 @@ class FormService:
             }
 
             # Save response
-            result = self.responses_collection.insert_one(response_doc)
+            result = await self.responses_collection.insert_one(response_doc)
 
             if result.inserted_id:
                 # Update form submission count
-                self.forms_collection.update_one(
+                await self.forms_collection.update_one(
                     {"_id": form_id},
                     {
                         "$inc": {"submission_count": 1},
@@ -567,7 +567,7 @@ class FormService:
 
                 # Update distribution status if applicable
                 if submitted_by_email:
-                    self.distributions_collection.update_one(
+                    await self.distributions_collection.update_one(
                         {"form_id": form_id, "recipient_email": submitted_by_email},
                         {"$set": {"submitted_at": datetime.utcnow(), "status": "submitted"}}
                     )
@@ -603,15 +603,15 @@ class FormService:
             logging.error(f"Error submitting form response: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to submit response: {str(e)}")
 
-    def get_form_responses(self, form_id: str, created_by: str) -> List[Dict[str, Any]]:
+    async def get_form_responses(self, form_id: str, created_by: str) -> List[Dict[str, Any]]:
         """Get all responses for a form"""
         try:
             # Verify user owns the form
-            form = self.get_form(form_id, created_by)
+            form = await self.get_form(form_id, created_by)
 
-            responses = list(self.responses_collection.find(
+            responses = await self.responses_collection.find(
                 {"form_id": form_id}
-            ).sort("submitted_at", -1))
+            ).sort("submitted_at", -1).to_list(length=None)
 
             # Format responses
             for response in responses:
@@ -626,7 +626,7 @@ class FormService:
             logging.error(f"Error fetching form responses: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch responses: {str(e)}")
 
-    def mark_form_viewed(
+    async def mark_form_viewed(
         self,
         form_id: str,
         viewer_email: str,
@@ -655,9 +655,9 @@ class FormService:
 
         base_projection = {"planner_state": 1, "submission_count": 1, "is_active": 1, "created_by": 1}
         if is_root_admin:
-            form = self.forms_collection.find_one({"_id": sanitized_form_id}, base_projection)
+            form = await self.forms_collection.find_one({"_id": sanitized_form_id}, base_projection)
         else:
-            form = self.forms_collection.find_one(
+            form = await self.forms_collection.find_one(
                 {"_id": sanitized_form_id, "is_active": True, "created_by": normalized_email},
                 base_projection,
             )
@@ -665,7 +665,7 @@ class FormService:
         if not form:
             if not is_root_admin:
                 # Differentiate between unauthorized access and missing forms for clearer errors
-                exists = self.forms_collection.find_one({"_id": sanitized_form_id}, {"_id": 1})
+                exists = await self.forms_collection.find_one({"_id": sanitized_form_id}, {"_id": 1})
                 if exists:
                     raise HTTPException(status_code=403, detail="Access denied to form")
             raise HTTPException(status_code=404, detail="Form not found")
@@ -694,24 +694,24 @@ class FormService:
         if scope == "analytics":
             update_fields[f"planner_state.{state_key}.last_viewed_analytics_at"] = now
 
-        self.forms_collection.update_one({"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False)
+        await self.forms_collection.update_one({"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False)
 
         return {
             "message": "Form view recorded",
             "unread_responses": unread_after_update,
         }
 
-    def get_form_analytics(self, form_id: str, created_by: str) -> Dict[str, Any]:
+    async def get_form_analytics(self, form_id: str, created_by: str) -> Dict[str, Any]:
         """Get analytics for a form"""
         try:
             # Verify user owns the form
-            form = self.get_form(form_id, created_by)
+            form = await self.get_form(form_id, created_by)
 
             # Get response count
-            response_count = self.responses_collection.count_documents({"form_id": form_id})
+            response_count = await self.responses_collection.count_documents({"form_id": form_id})
 
             # Get distribution stats
-            distributions = list(self.distributions_collection.find({"form_id": form_id}))
+            distributions = await self.distributions_collection.find({"form_id": form_id}).to_list(length=None)
             sent_count = len(distributions)
             opened_count = len([d for d in distributions if d.get("opened_at")])
             clicked_count = len([d for d in distributions if d.get("clicked_at")])
@@ -745,10 +745,10 @@ class FormService:
             logging.error(f"Error fetching form analytics: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch analytics: {str(e)}")
 
-    def _get_last_response_time(self, form_id: str):
+    async def _get_last_response_time(self, form_id: str):
         """Get the timestamp of the most recent form response"""
         try:
-            last_response = self.responses_collection.find_one(
+            last_response = await self.responses_collection.find_one(
                 {"form_id": form_id},
                 sort=[("submitted_at", -1)]
             )
@@ -867,12 +867,12 @@ class FormService:
                 raise HTTPException(status_code=400, detail="Invalid form ID")
 
             # Get form (this also verifies user ownership)
-            form = self.get_form(form_id, created_by)
+            form = await self.get_form(form_id, created_by)
             if not form:
                 raise HTTPException(status_code=404, detail="Form not found")
 
             # Get all responses for the form
-            responses = self.get_form_responses(form_id, created_by)
+            responses = await self.get_form_responses(form_id, created_by)
 
             # Validate date parameters
             parsed_date_from = None

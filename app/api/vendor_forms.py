@@ -22,7 +22,7 @@ class VendorFormService:
         """Generate a secure token for vendor form access"""
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
     
-    def create_vendor_form(self, form_data: dict, created_by: str) -> dict:
+    async def create_vendor_form(self, form_data: dict, created_by: str) -> dict:
         """Create a new vendor form"""
         try:
             # Add system fields
@@ -37,7 +37,7 @@ class VendorFormService:
                 "submission_data": None
             }
             
-            result = self.vendor_forms_collection.insert_one(vendor_form)
+            result = await self.vendor_forms_collection.insert_one(vendor_form)
             vendor_form["_id"] = str(result.inserted_id)
             
             return {"message": "Vendor form created successfully", "form_id": str(result.inserted_id)}
@@ -83,16 +83,16 @@ class VendorFormService:
             logging.error(f"Error fetching all vendor forms: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
     
-    def send_vendor_form(self, form_id: str, planner_email: str) -> dict:
+    async def send_vendor_form(self, form_id: str, planner_email: str) -> dict:
         """Send vendor form via email"""
         try:
             # Get the form
-            form = self.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
+            form = await self.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
             if not form:
                 raise HTTPException(status_code=404, detail="Vendor form not found")
             
             # Get wedding details
-            wedding = self.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
+            wedding = await self.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
             
@@ -178,7 +178,7 @@ class VendorFormService:
             
             if email_result.get("success"):
                 # Update form status
-                self.vendor_forms_collection.update_one(
+                await self.vendor_forms_collection.update_one(
                     {"_id": ObjectId(form_id)},
                     {
                         "$set": {
@@ -220,10 +220,10 @@ def send_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(requ
     return vendor_service.send_vendor_form(form_id, current_user.email)
 
 @router.get("/vendor-forms/{form_id}", tags=["Vendor Management"])
-def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get a specific vendor form"""
     try:
-        form = vendor_service.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
+        form = await vendor_service.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
         if not form:
             raise HTTPException(status_code=404, detail="Vendor form not found")
         
@@ -234,10 +234,10 @@ def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(requi
 
 # Public endpoint for vendors to access forms
 @router.get("/vendor-form/{form_id}/public", tags=["Public Vendor Form"])
-def get_vendor_form_public(form_id: str, token: str):
+async def get_vendor_form_public(form_id: str, token: str):
     """Get vendor form for public access (no auth required)"""
     try:
-        form = vendor_service.vendor_forms_collection.find_one({
+        form = await vendor_service.vendor_forms_collection.find_one({
             "_id": ObjectId(form_id),
             "access_token": token
         })
@@ -246,7 +246,7 @@ def get_vendor_form_public(form_id: str, token: str):
             raise HTTPException(status_code=404, detail="Form not found or invalid token")
         
         # Get wedding details
-        wedding = vendor_service.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
+        wedding = await vendor_service.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
         
         # Return form data without sensitive information
         return {
@@ -266,11 +266,11 @@ def get_vendor_form_public(form_id: str, token: str):
         raise HTTPException(status_code=500, detail="Failed to load form")
 
 @router.post("/vendor-form/{form_id}/submit", tags=["Public Vendor Form"])
-def submit_vendor_form(form_id: str, submission_data: dict, token: str):
+async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
     """Submit vendor form (no auth required)"""
     try:
         # Verify form and token
-        form = vendor_service.vendor_forms_collection.find_one({
+        form = await vendor_service.vendor_forms_collection.find_one({
             "_id": ObjectId(form_id),
             "access_token": token
         })
@@ -292,10 +292,10 @@ def submit_vendor_form(form_id: str, submission_data: dict, token: str):
             "status": "submitted"
         }
         
-        result = vendor_service.vendor_submissions_collection.insert_one(submission)
+        result = await vendor_service.vendor_submissions_collection.insert_one(submission)
         
         # Update form status
-        vendor_service.vendor_forms_collection.update_one(
+        await vendor_service.vendor_forms_collection.update_one(
             {"_id": ObjectId(form_id)},
             {
                 "$set": {
@@ -309,7 +309,7 @@ def submit_vendor_form(form_id: str, submission_data: dict, token: str):
         
         # Send notification email to planner
         try:
-            wedding = vendor_service.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
+            wedding = await vendor_service.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
             planner_email = wedding.get("assigned_planner_email") if wedding else form.get("created_by")
             
             if planner_email:
