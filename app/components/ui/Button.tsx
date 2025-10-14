@@ -40,9 +40,10 @@ export function Button({ variant = 'primary', size = 'default', className = '', 
     case 'ghost':
       variantStyle = 'bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-400/60 dark:text-gray-300 dark:hover:bg-gray-800';
       break;
-    case 'default':
     case 'primary':
+    case 'default':
     default:
+      // Primary and default variants both use the same wedding theme styling
       variantStyle = 'bg-wedding-rose text-white hover:bg-wedding-gold focus:ring-wedding-gold/70';
       break;
   }
