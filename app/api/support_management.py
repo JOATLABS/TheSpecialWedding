@@ -246,3 +246,291 @@ async def get_ticket_categories(current_user: ExtendedAuthUser = Depends(require
             {"value": "urgent", "label": "Urgent", "description": "Critical issues requiring immediate attention"}
         ]
     }
+
+# ==================== SMS SUPPORT TICKETS (NEW) ====================
+
+class SMSResponseModel(BaseModel):
+    message: str = Field(..., min_length=1, max_length=1600, description="SMS response message (max 1600 chars)")
+    mark_resolved: bool = Field(default=True, description="Mark ticket as resolved after sending")
+
+@router.get("/sms-tickets", tags=["SMS Support"])
+async def get_sms_tickets(
+    status: Optional[str] = Query(None, description="Filter by status: new, in_progress, resolved"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(50, ge=1, le=100, description="Items per page"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get SMS support tickets
+    - Wedding planners see only tickets for their assigned weddings
+    - ROOT_ADMIN sees all tickets
+    """
+    from app.core.database import mongo
+    from bson import ObjectId
+
+    # Build query
+    query = {"source": "sms"}
+
+    if status:
+        query["status"] = status
+
+    # Filter by assigned planner (multi-tenant security)
+    if not current_user.is_root_admin:
+        query["assigned_to"] = current_user.email
+
+    # Pagination
+    skip = (page - 1) * limit
+
+    tickets = list(
+        mongo.db["support_tickets"]
+        .find(query)
+        .sort("created_at", -1)
+        .skip(skip)
+        .limit(limit)
+    )
+
+    # Convert ObjectId to string
+    for ticket in tickets:
+        ticket["_id"] = str(ticket["_id"])
+        if "guest_id" in ticket and ticket["guest_id"]:
+            ticket["guest_id"] = str(ticket["guest_id"])
+        if "wedding_id" in ticket and ticket["wedding_id"]:
+            ticket["wedding_id"] = str(ticket["wedding_id"])
+
+    total = mongo.db["support_tickets"].count_documents(query)
+
+    return {
+        "tickets": tickets,
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit,
+        "limit": limit
+    }
+
+@router.get("/sms-tickets/{ticket_id}", tags=["SMS Support"])
+async def get_sms_ticket(
+    ticket_id: str,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Get specific SMS ticket with full details and response history"""
+    from app.core.database import mongo
+    from bson import ObjectId
+
+    try:
+        ticket = mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ticket ID format")
+
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Security: Check if user has access to this ticket
+    if not current_user.is_root_admin:
+        if ticket.get("assigned_to") != current_user.email:
+            raise HTTPException(status_code=403, detail="Access denied to this ticket")
+
+    # Convert ObjectId to string
+    ticket["_id"] = str(ticket["_id"])
+    if "guest_id" in ticket and ticket["guest_id"]:
+        ticket["guest_id"] = str(ticket["guest_id"])
+    if "wedding_id" in ticket and ticket["wedding_id"]:
+        ticket["wedding_id"] = str(ticket["wedding_id"])
+
+    return {"ticket": ticket}
+
+@router.post("/sms-tickets/{ticket_id}/respond", tags=["SMS Support"])
+async def respond_to_sms_ticket(
+    ticket_id: str,
+    response_data: SMSResponseModel,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Send SMS response to guest
+    - Sends SMS via configured provider (Twilio/Telnyx)
+    - Logs response in ticket history
+    - Updates ticket status
+    - Calculates response time metrics
+    """
+    from app.core.database import mongo
+    from bson import ObjectId
+    from app.services.sms_service import SMSService
+    from datetime import datetime, timezone
+
+    # Get ticket
+    try:
+        ticket = mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ticket ID format")
+
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Security: Check if user has access to this ticket
+    if not current_user.is_root_admin:
+        if ticket.get("assigned_to") != current_user.email:
+            raise HTTPException(status_code=403, detail="Access denied to this ticket")
+
+    # Validate ticket has phone number
+    if not ticket.get("phone"):
+        raise HTTPException(status_code=400, detail="Ticket has no phone number")
+
+    # Send SMS
+    sms_service = SMSService()
+    result = sms_service.send_sms(ticket["phone"], response_data.message)
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send SMS: {result.get('error', 'Unknown error')}"
+        )
+
+    # Calculate response time
+    now = datetime.now(timezone.utc)
+    response_time_minutes = None
+    if ticket.get("created_at"):
+        delta = now - ticket["created_at"]
+        response_time_minutes = int(delta.total_seconds() / 60)
+
+    # Build update
+    update = {
+        "$push": {
+            "responses": {
+                "message": response_data.message,
+                "sent_by": current_user.email,
+                "sent_by_name": current_user.user_data.get("company_name") or current_user.email,
+                "sent_at": now,
+                "sms_provider": result.get("provider"),
+                "message_id": result.get("message_id")
+            }
+        },
+        "$set": {
+            "updated_at": now,
+            "is_read": True
+        }
+    }
+
+    # Set first response time if this is the first response
+    if not ticket.get("first_response_at"):
+        update["$set"]["first_response_at"] = now
+        if response_time_minutes:
+            update["$set"]["first_response_time_minutes"] = response_time_minutes
+
+    # Mark as resolved if requested
+    if response_data.mark_resolved:
+        update["$set"]["status"] = "resolved"
+        update["$set"]["resolved_at"] = now
+        if response_time_minutes:
+            update["$set"]["resolution_time_minutes"] = response_time_minutes
+
+    # Update ticket
+    mongo.db["support_tickets"].update_one(
+        {"_id": ObjectId(ticket_id)},
+        update
+    )
+
+    logger.info(f"SMS response sent for ticket {ticket_id} by {current_user.email}")
+
+    return {
+        "success": True,
+        "message": "SMS response sent successfully",
+        "sms_result": result,
+        "ticket_status": "resolved" if response_data.mark_resolved else ticket.get("status"),
+        "response_time_minutes": response_time_minutes
+    }
+
+@router.put("/sms-tickets/{ticket_id}/status", tags=["SMS Support"])
+async def update_sms_ticket_status(
+    ticket_id: str,
+    status: str = Query(..., description="New status: new, in_progress, resolved, closed"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Update SMS ticket status without sending a response"""
+    from app.core.database import mongo
+    from bson import ObjectId
+    from datetime import datetime, timezone
+
+    if status not in ["new", "in_progress", "resolved", "closed"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    # Get ticket
+    try:
+        ticket = mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ticket ID format")
+
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Security check
+    if not current_user.is_root_admin:
+        if ticket.get("assigned_to") != current_user.email:
+            raise HTTPException(status_code=403, detail="Access denied to this ticket")
+
+    # Update status
+    update = {
+        "status": status,
+        "updated_at": datetime.now(timezone.utc),
+        "updated_by": current_user.email
+    }
+
+    if status == "resolved" and not ticket.get("resolved_at"):
+        update["resolved_at"] = datetime.now(timezone.utc)
+
+    mongo.db["support_tickets"].update_one(
+        {"_id": ObjectId(ticket_id)},
+        {"$set": update}
+    )
+
+    logger.info(f"Ticket {ticket_id} status updated to {status} by {current_user.email}")
+
+    return {
+        "success": True,
+        "message": f"Ticket status updated to {status}",
+        "ticket_id": ticket_id,
+        "new_status": status
+    }
+
+@router.get("/sms-tickets/stats/summary", tags=["SMS Support"])
+async def get_sms_ticket_stats(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Get summary statistics for SMS support tickets"""
+    from app.core.database import mongo
+
+    # Build base query for user's tickets
+    base_query = {"source": "sms"}
+    if not current_user.is_root_admin:
+        base_query["assigned_to"] = current_user.email
+
+    # Get counts by status
+    new_count = mongo.db["support_tickets"].count_documents({**base_query, "status": "new"})
+    in_progress_count = mongo.db["support_tickets"].count_documents({**base_query, "status": "in_progress"})
+    resolved_count = mongo.db["support_tickets"].count_documents({**base_query, "status": "resolved"})
+    total_count = mongo.db["support_tickets"].count_documents(base_query)
+
+    # Calculate average response time for resolved tickets
+    pipeline = [
+        {"$match": {**base_query, "status": "resolved", "first_response_time_minutes": {"$exists": True}}},
+        {"$group": {
+            "_id": None,
+            "avg_response_time": {"$avg": "$first_response_time_minutes"},
+            "min_response_time": {"$min": "$first_response_time_minutes"},
+            "max_response_time": {"$max": "$first_response_time_minutes"}
+        }}
+    ]
+
+    response_stats = list(mongo.db["support_tickets"].aggregate(pipeline))
+    avg_response = response_stats[0] if response_stats else {}
+
+    return {
+        "total": total_count,
+        "by_status": {
+            "new": new_count,
+            "in_progress": in_progress_count,
+            "resolved": resolved_count
+        },
+        "response_time": {
+            "average_minutes": round(avg_response.get("avg_response_time", 0), 1),
+            "min_minutes": avg_response.get("min_response_time", 0),
+            "max_minutes": avg_response.get("max_response_time", 0)
+        },
+        "unread_count": mongo.db["support_tickets"].count_documents({**base_query, "is_read": False})
+    }

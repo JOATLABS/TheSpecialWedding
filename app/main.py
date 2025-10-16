@@ -11,6 +11,7 @@ import logging
 from app.core.settings import settings
 from app.core.database import init_database, close_database
 from app.core.cache import init_cache, close_cache
+from app.core.database_indexes import create_all_indexes
 
 # Import middleware
 from app.middleware.error_handler import ErrorHandlerMiddleware
@@ -76,7 +77,11 @@ async def lifespan(app: FastAPI):
         if settings.redis_enabled:
             await init_cache()
             logger.info("Cache initialized")
-        
+
+        # Create database indexes
+        create_all_indexes()
+        logger.info("Database indexes created/verified")
+
         logger.info("Application startup complete")
         
         yield  # Application runs here
@@ -420,7 +425,7 @@ app.include_router(auth_router, prefix="/admin")
 # app.include_router(import_router, prefix="/admin")
 # app.include_router(guest_router, prefix="/admin")  # Admin guest endpoints (list, delete)
 # app.include_router(admin_rsvp_router, prefix="/admin")
-# app.include_router(reminder_router, prefix="/admin")
+app.include_router(reminder_router, prefix="/admin")
 # app.include_router(reminder_telnyx_router, prefix="/admin")  # Telnyx SMS endpoints
 # app.include_router(email_reminder_router, prefix="/admin")  # Email endpoints
 # app.include_router(checkin_router, prefix="/admin")
@@ -434,6 +439,7 @@ app.include_router(saas_config_router, prefix="/admin")  # SAAS configuration ma
 app.include_router(planner_metrics_router, prefix="/admin")  # Wedding planner metrics and analytics
 app.include_router(budget_router, prefix="/admin")  # Budget management system
 app.include_router(stripe_router, prefix="/admin")  # Stripe payment processing
+app.include_router(support_router, prefix="/admin/support")  # SMS Support ticket management
 # app.include_router(forms_router, prefix="/admin")  # Form builder and management (admin endpoints)
 # app.include_router(trial_management_router, prefix="/admin")  # Trial management endpoints (ROOT_ADMIN only)
 
