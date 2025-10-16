@@ -1,0 +1,601 @@
+name: Deploy WeddingApp Backend
+
+on:
+  push:
+    branches:
+      - '**'  # Trigger on any branch push (filter by DEPLOY_BRANCH variable)
+  workflow_dispatch:  # Allow manual deployment
+
+env:
+  REGISTRY: ghcr.io  # GitHub Container Registry
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ===========================================
+  # BUILD AND PUSH DOCKER IMAGE
+  # ===========================================
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    # Only run if pushing to the configured deployment branch
+    if: github.ref == format('refs/heads/{0}', vars.DEPLOY_BRANCH || 'development/saas-features')
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+  # ===========================================
+  # DEPLOY TO PRODUCTION
+  # ===========================================
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production  # Use production environment for secrets
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Send Slack notification - Deployment Started
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚀 WeddingApp Backend Deployment Started",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 Deployment Started",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n<${{ github.server_url }}/${{ github.repository }}|${{ github.repository }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n`${{ github.ref_name }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n`Production (VPS)`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.event.head_commit.message }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Triggered by:*\n${{ github.actor }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Workflow: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Watch Progress>"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      # Deploy to VPS with Docker Compose
+      - name: Deploy to VPS via SSH
+        if: ${{ vars.DEPLOYMENT_TARGET == 'VPS' }}
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 60s
+          command_timeout: 30m
+          script: |
+            # Navigate to app directory
+            cd /opt/weddingapp
+
+            # Pull latest code from the configured deployment branch
+            DEPLOY_BRANCH="${{ vars.DEPLOY_BRANCH || 'development/saas-features' }}"
+            git fetch origin
+            git checkout $DEPLOY_BRANCH
+            git pull origin $DEPLOY_BRANCH
+
+            # Remove old .env file to ensure fresh configuration
+            rm -f .env
+
+            # Create .env file with secrets
+            cat > .env << EOF
+            # ================================
+            # DATABASE CONFIGURATION
+            # ================================
+            MONGO_ROOT_USER=admin
+            MONGO_ROOT_PASSWORD=${{ secrets.MONGO_ROOT_PASSWORD }}
+            MONGO_DB=${{ secrets.MONGO_DB }}
+            MONGO_URI=mongodb://admin:${{ secrets.MONGO_ROOT_PASSWORD }}@mongo:27017
+            MONGO_NAME=${{ secrets.MONGO_DB }}
+            MONGODB_URI=mongodb://admin:${{ secrets.MONGO_ROOT_PASSWORD }}@mongo:27017/${{ secrets.MONGO_DB }}?authSource=admin
+            MONGODB_URL=mongodb://admin:${{ secrets.MONGO_ROOT_PASSWORD }}@mongo:27017/${{ secrets.MONGO_DB }}?authSource=admin
+
+            # ================================
+            # APPLICATION SETTINGS
+            # ================================
+            NODE_ENV=production
+            PORT=8000
+            API_PORT=8000
+            PYTHONPATH=/app
+            ENVIRONMENT=production
+
+            # ================================
+            # SECURITY CONFIGURATION
+            # ================================
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
+            JWT_ALGORITHM=HS256
+            JWT_EXPIRE_MINUTES=60
+            API_KEY=${{ secrets.API_KEY }}
+
+            # CORS Configuration
+            CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
+
+            # Security Features
+            ENABLE_CSRF_PROTECTION=true
+            ENABLE_SECURITY_HEADERS=true
+            ENABLE_RATE_LIMITING=true
+
+            # Rate Limiting
+            RATE_LIMIT_REQUESTS=${{ secrets.RATE_LIMIT_REQUESTS || '100' }}
+            RATE_LIMIT_WINDOW=${{ secrets.RATE_LIMIT_WINDOW || '900' }}
+            RATE_LIMIT_PER_MINUTE=${{ secrets.RATE_LIMIT_PER_MINUTE || '60' }}
+
+            # ================================
+            # ADMIN CONFIGURATION
+            # ================================
+            PRIMARY_ADMIN_EMAIL=${{ secrets.ROOT_ADMIN_EMAIL }}
+            PRIMARY_ADMIN_PASSWORD=${{ secrets.ROOT_ADMIN_PASSWORD }}
+            PRIMARY_ADMIN_ROLE=admin
+            ROOT_ADMIN_EMAIL=${{ secrets.ROOT_ADMIN_EMAIL }}
+            ROOT_ADMIN_PASSWORD=${{ secrets.ROOT_ADMIN_PASSWORD }}
+
+            # ================================
+            # EMAIL CONFIGURATION
+            # ================================
+            RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
+            RESEND_FROM_EMAIL=${{ secrets.RESEND_FROM_EMAIL }}
+            FROM_EMAIL=${{ secrets.RESEND_FROM_EMAIL }}
+
+            # ================================
+            # SMS CONFIGURATION
+            # ================================
+            SMS_PROVIDER=${{ secrets.SMS_PROVIDER }}
+
+            # Twilio Configuration
+            TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
+            TWILIO_AUTH_TOKEN=${{ secrets.TWILIO_AUTH_TOKEN }}
+            TWILIO_PHONE_NUMBER=${{ secrets.TWILIO_PHONE_NUMBER }}
+
+            # Telnyx Configuration (alternative)
+            TELNYX_API_KEY=${{ secrets.TELNYX_API_KEY }}
+            TELNYX_PUBLIC_KEY=${{ secrets.TELNYX_PUBLIC_KEY }}
+            TELNYX_PHONE_NUMBER=${{ secrets.TELNYX_PHONE_NUMBER }}
+            TELNYX_PROFILE_ID=${{ secrets.TELNYX_PROFILE_ID }}
+            TELNYX_TEST_WEBHOOK_URL=${{ secrets.TELNYX_TEST_WEBHOOK_URL }}
+
+            # ================================
+            # FILE STORAGE CONFIGURATION
+            # ================================
+            # Cloudflare R2 / S3 Configuration
+            S3_ENDPOINT_URL=${{ secrets.S3_ENDPOINT_URL }}
+            S3_ACCESS_KEY_ID=${{ secrets.S3_ACCESS_KEY_ID }}
+            S3_SECRET_ACCESS_KEY=${{ secrets.S3_SECRET_ACCESS_KEY }}
+            S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+            MEDIA_DOMAIN=${{ secrets.MEDIA_DOMAIN }}
+
+            # AWS S3 Configuration (alternative)
+            AWS_ACCESS_KEY_ID=${{ secrets.S3_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY=${{ secrets.S3_SECRET_ACCESS_KEY }}
+            AWS_S3_BUCKET=${{ secrets.S3_BUCKET_NAME }}
+            AWS_REGION=${{ secrets.AWS_REGION || 'us-east-1' }}
+
+            # File Upload Configuration
+            MAX_UPLOAD_SIZE=${{ secrets.MAX_UPLOAD_SIZE || '10485760' }}
+            ALLOWED_FILE_TYPES=${{ secrets.ALLOWED_FILE_TYPES || '.jpg,.jpeg,.png,.gif,.pdf' }}
+
+            # ================================
+            # GALLERY CONFIGURATION
+            # ================================
+            NEXT_PUBLIC_API_BASE_URL=${{ secrets.API_URL }}
+
+            # ================================
+            # MAPS CONFIGURATION
+            # ================================
+            GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
+
+            # ================================
+            # SAAS CONFIGURATION
+            # ================================
+            ENABLE_SAAS_FEATURES=true
+            DEFAULT_TRIAL_DAYS=${{ secrets.DEFAULT_TRIAL_DAYS || '14' }}
+
+            # Stripe Payment Configuration
+            STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+            STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+
+            # ================================
+            # CACHING CONFIGURATION
+            # ================================
+            REDIS_URL=redis://redis:6379/0
+
+            # ================================
+            # MONITORING & ANALYTICS
+            # ================================
+            LOG_LEVEL=${{ secrets.LOG_LEVEL || 'INFO' }}
+            SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+            GOOGLE_ANALYTICS_ID=${{ secrets.GOOGLE_ANALYTICS_ID }}
+            VERCEL_ANALYTICS_ENABLED=false
+
+            # ================================
+            # FEATURE FLAGS
+            # ================================
+            ENABLE_ADMIN_PANEL=true
+            ENABLE_SMS_REMINDERS=true
+            ENABLE_EMAIL_REMINDERS=true
+            ENABLE_GALLERY_UPLOAD=true
+
+            # ================================
+            # TESTING CONFIGURATION (disabled in production)
+            # ================================
+            BYPASS_AUTH=false
+            MOCK_SMS_PROVIDER=false
+            MOCK_EMAIL_PROVIDER=false
+            EOF
+
+            # Update host-level nginx configurations (if applicable)
+            echo "Updating nginx configurations..."
+            if [ -f "nginx-api-ssl.conf" ]; then
+              sudo cp nginx-api-ssl.conf /etc/nginx/sites-available/weddingapp-ssl
+              echo "✓ SSL config updated"
+            fi
+            if [ -f "nginx-api-backend.conf" ]; then
+              sudo cp nginx-api-backend.conf /etc/nginx/sites-available/weddingapp-backend
+              echo "✓ Backend config updated"
+            fi
+
+            # Test nginx configuration before reloading
+            if sudo nginx -t 2>/dev/null; then
+              sudo systemctl reload nginx
+              echo "✓ Nginx configuration reloaded"
+            else
+              echo "⚠ Nginx config test failed, skipping reload"
+            fi
+
+            # Deploy using production docker-compose
+            # Stop existing containers first
+            docker compose -f docker-compose.production.yml down
+
+            # Pull latest images from registry
+            docker compose -f docker-compose.production.yml pull
+
+            # Rebuild and start containers
+            docker compose -f docker-compose.production.yml up -d --build --force-recreate
+
+            # Clean up old images
+            docker image prune -af
+
+  # ===========================================
+  # RUN DATABASE SETUP (after deployment)
+  # ===========================================
+  database-setup:
+    name: Setup Database
+    runs-on: ubuntu-latest
+    needs: deploy
+    environment: production
+
+    steps:
+      - name: Run database indexes on VPS
+        if: ${{ vars.DEPLOYMENT_TARGET == 'VPS' }}
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            cd /opt/weddingapp
+            # Run admin setup inside Docker network where MongoDB is accessible
+            docker compose -f docker-compose.production.yml run --rm admin-setup
+
+  # ===========================================
+  # HEALTH CHECK
+  # ===========================================
+  health-check:
+    name: Verify Deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    environment: production
+
+    steps:
+      - name: Wait for deployment to stabilize
+        run: |
+          echo "Waiting 60 seconds for containers to initialize..."
+          sleep 60
+
+      - name: Verify Docker containers are healthy
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true  # Exit on first error - critical for health checks
+          script: |
+            cd /opt/weddingapp
+
+            echo "Checking Docker container status..."
+            docker compose -f docker-compose.production.yml ps
+
+            # Check if all critical services are running
+            API_RUNNING=$(docker compose -f docker-compose.production.yml ps api --filter "status=running" -q | wc -l)
+            MONGO_RUNNING=$(docker compose -f docker-compose.production.yml ps mongo --filter "status=running" -q | wc -l)
+            REDIS_RUNNING=$(docker compose -f docker-compose.production.yml ps redis --filter "status=running" -q | wc -l)
+            NGINX_RUNNING=$(docker compose -f docker-compose.production.yml ps nginx --filter "status=running" -q | wc -l)
+
+            echo "API containers running: $API_RUNNING"
+            echo "MongoDB containers running: $MONGO_RUNNING"
+            echo "Redis containers running: $REDIS_RUNNING"
+            echo "Nginx containers running: $NGINX_RUNNING"
+
+            if [ "$API_RUNNING" -eq 0 ] || [ "$MONGO_RUNNING" -eq 0 ] || [ "$REDIS_RUNNING" -eq 0 ] || [ "$NGINX_RUNNING" -eq 0 ]; then
+              echo "❌ Not all containers are running!"
+              echo ""
+              echo "=== Container Logs (Last 100 lines) ==="
+              docker compose -f docker-compose.production.yml logs --tail=100
+              exit 1
+            fi
+
+            echo "✅ All containers are running"
+
+      - name: Check API Health with Retries
+        run: |
+          MAX_ATTEMPTS=10
+          ATTEMPT=1
+          SUCCESS=false
+
+          echo "Starting health check (max $MAX_ATTEMPTS attempts)..."
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+            # Perform health check with timeout
+            HTTP_CODE_RAW=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --connect-timeout 5 "${{ secrets.API_URL }}/health/" 2>/dev/null || echo "000")
+            HTTP_CODE=$(printf '%s' "$HTTP_CODE_RAW" | tr -cd '0-9' | tail -c 3)
+
+            if [ "${#HTTP_CODE}" -ne 3 ]; then
+              HTTP_CODE="000"
+            fi
+
+            echo "Response code: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ API is healthy!"
+              SUCCESS=true
+              break
+            elif [ "$HTTP_CODE" = "503" ]; then
+              echo "⚠️  API responded but database is not ready (503)"
+            elif [ "$HTTP_CODE" = "000" ]; then
+              echo "⚠️  Could not connect to API (connection refused or timeout)"
+            else
+              echo "⚠️  Unexpected status code: $HTTP_CODE"
+            fi
+
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Waiting 15 seconds before retry..."
+              sleep 15
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ API health check failed after $MAX_ATTEMPTS attempts"
+            echo "Fetching recent logs for debugging..."
+            exit 1
+          fi
+
+      - name: Fetch logs on failure
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            cd /opt/weddingapp
+            echo "=== Recent API Logs ==="
+            docker compose -f docker-compose.production.yml logs api --tail=100
+            echo ""
+            echo "=== Recent MongoDB Logs ==="
+            docker compose -f docker-compose.production.yml logs mongo --tail=50
+            echo ""
+            echo "=== Recent Redis Logs ==="
+            docker compose -f docker-compose.production.yml logs redis --tail=50
+            echo ""
+            echo "=== Recent Nginx Logs ==="
+            docker compose -f docker-compose.production.yml logs nginx --tail=50
+
+      - name: Send Slack notification - Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "✅ WeddingApp Backend Deployment Successful",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "✅ Deployment Successful",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n<${{ github.server_url }}/${{ github.repository }}|${{ github.repository }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n`${{ github.ref_name }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n`Production (VPS)`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*API URL:*\n<${{ secrets.API_URL }}|${{ secrets.API_URL }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.event.head_commit.message }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Deployed by:*\n${{ github.actor }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Workflow: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Send Slack notification - Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "❌ WeddingApp Backend Deployment Failed",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "❌ Deployment Failed",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n<${{ github.server_url }}/${{ github.repository }}|${{ github.repository }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n`${{ github.ref_name }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:*\n`Production (VPS)`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.event.head_commit.message }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Failed by:*\n${{ github.actor }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "⚠️ *Action Required*\nCheck logs and retry deployment or rollback if necessary."
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Workflow: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
