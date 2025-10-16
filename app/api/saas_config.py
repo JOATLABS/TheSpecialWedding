@@ -57,84 +57,146 @@ def _is_upcoming(date_value: Any, reference: datetime) -> bool:
 
 # ==================== SAAS CONFIGURATION MANAGEMENT ====================
 
+def _get_default_saas_config():
+    """Shared default configuration used by both admin and public endpoints"""
+    return {
+        # Legacy hero fields (backward compatibility)
+        "hero_title": "Welcome to Special Wedding",
+        "hero_subtitle": "Wedding Planning Made Simple",
+        "hero_description": "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+
+        # Modern hero fields (benefit-driven)
+        "hero_headline": "Manage 10+ Weddings Simultaneously",
+        "hero_subheadline": "For Professional Wedding Planners",
+        "hero_problem_statement": "Stop juggling spreadsheets, email chains, and vendor chaos",
+        "hero_solution_statement": "One platform to manage guests, vendors, timelines, and budgets—all in sync",
+
+        # CTA buttons
+        "hero_cta_primary": "Start Free Trial",
+        "hero_cta_secondary": "Watch Demo",
+        "contact_cta_label": "Contact Sales",
+        "contact_url": "mailto:sales@specialwedding.com",
+
+        # Product showcase
+        "hero_screenshot_primary": None,
+        "hero_screenshot_secondary": None,
+        "demo_video_url": None,
+        "show_product_demo": False,
+
+        # Layout settings
+        "hero_layout": "split",
+        "hero_image_position": "right",
+        "show_decorative_logo": True,  # Keep legacy design by default
+
+        # Trust indicators
+        "trust_indicators": ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+
+        # Legacy statistics (generic)
+        "statistics": [
+            {"label": "Wedding Planners Trust Us", "value": "500+"},
+            {"label": "Weddings Managed", "value": "10K+"},
+            {"label": "Uptime Guarantee", "value": "99.9%"}
+        ],
+        "statistics_enabled": True,
+
+        # Modern impact metrics (specific, measurable)
+        "impact_metrics": [
+            {"metric": "15 hours/week", "label": "Average time saved per planner"},
+            {"metric": "80%", "label": "Reduction in vendor miscommunication"},
+            {"metric": "2.5x", "label": "Increase in weddings managed per year"}
+        ],
+        "show_impact_metrics": False,  # Disabled by default, admin can enable
+
+        # Customer logos (social proof)
+        "customer_logos": [],
+        "show_customer_logos": False,
+
+        # Content sections
+        "features": [
+            {
+                "title": "Complete Wedding Management",
+                "description": "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
+                "status": "available",
+                "order": 1
+            },
+            {
+                "title": "AI Presentation Generator",
+                "description": "Create stunning wedding presentations in minutes with our AI-powered design tools.",
+                "status": "coming_soon",
+                "order": 5
+            }
+        ],
+        "benefits": [
+            {
+                "title": "Save Time",
+                "description": "Automate repetitive tasks and streamline wedding planning operations",
+                "order": 1
+            },
+            {
+                "title": "Scale Your Business",
+                "description": "Manage multiple weddings efficiently and grow your planning business",
+                "order": 2
+            }
+        ],
+        "testimonials": [
+            {
+                "name": "Sarah Johnson",
+                "company": "Elegant Events Planning",
+                "role": "Senior Wedding Planner",
+                "content": "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
+                "order": 1
+            }
+        ],
+
+        # Section toggles
+        "features_enabled": True,
+        "benefits_enabled": True,
+        "testimonials_enabled": True,
+
+        # Theme configuration
+        "theme": {
+            "primary_color": "#1e3a5f",
+            "secondary_color": "#d4af37",
+            "fallback_images": [
+                "/wedding-images/wedding-ceremony.jpg",
+                "/wedding-images/wedding-reception.jpg"
+            ]
+        },
+
+        # Animation settings
+        "animations_enabled": True,
+        "scroll_animations": True,
+        "animation_speed": "medium",
+
+        # Trial settings
+        "trial_settings": {
+            "default_trial_days": 30,
+            "trial_warning_days": 7,
+            "auto_expire_trials": True,
+            "allow_multiple_trials": False
+        }
+    }
+
 @router.get("/saas-config", tags=["ROOT_ADMIN"])
-def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get current SAAS configuration - ROOT_ADMIN only"""
     try:
-        config = mongo.db["saas_config"].find_one({"type": "main_config"})
+        config = await mongo.db["saas_config"].find_one({"type": "main_config"})
         if not config:
             # Return default config if none exists
-            return {
-                "hero_title": "Welcome to Special Wedding",
-                "hero_subtitle": "Wedding Planning Made Simple",
-                "hero_description": "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
-                "hero_cta_primary": "Start Free Trial",
-                "hero_cta_secondary": "Watch Demo",
-                "trust_indicators": ["Free 30-day trial", "No setup fees", "Cancel anytime"],
-                "trial_settings": {
-                    "default_trial_days": 30,
-                    "trial_warning_days": 7,
-                    "auto_expire_trials": True,
-                    "allow_multiple_trials": False
-                },
-                "statistics": [
-                    {"label": "Wedding Planners Trust Us", "value": "500+"},
-                    {"label": "Weddings Managed", "value": "10K+"},
-                    {"label": "Uptime Guarantee", "value": "99.9%"}
-                ],
-                "features": [
-                    {
-                        "title": "Complete Wedding Management",
-                        "description": "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
-                        "status": "available",
-                        "order": 1
-                    },
-                    {
-                        "title": "AI Presentation Generator",
-                        "description": "Create stunning wedding presentations in minutes with our AI-powered design tools.",
-                        "status": "coming_soon",
-                        "order": 5
-                    }
-                ],
-                "benefits": [
-                    {
-                        "title": "Save Time",
-                        "description": "Automate repetitive tasks and streamline wedding planning operations",
-                        "order": 1
-                    },
-                    {
-                        "title": "Scale Your Business",
-                        "description": "Manage multiple weddings efficiently and grow your planning business",
-                        "order": 2
-                    }
-                ],
-                "testimonials": [
-                    {
-                        "name": "Sarah Johnson",
-                        "company": "Elegant Events Planning",
-                        "role": "Senior Wedding Planner",
-                        "content": "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
-                        "order": 1
-                    }
-                ],
-                "features_enabled": True,
-                "benefits_enabled": True,
-                "testimonials_enabled": True,
-                "statistics_enabled": True,
-                "theme": {
-                    "primary_color": "#1e3a5f",
-                    "secondary_color": "#d4af37",
-                    "fallback_images": [
-                        "/wedding-images/wedding-ceremony.jpg",
-                        "/wedding-images/wedding-reception.jpg"
-                    ]
-                }
-            }
-        
+            return _get_default_saas_config()
+
         # Convert ObjectId to string for JSON serialization
         config["_id"] = str(config["_id"])
+
+        # Ensure all new fields have defaults if missing
+        default_config = _get_default_saas_config()
+        for key, value in default_config.items():
+            if key not in config:
+                config[key] = value
+
         return config
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching SAAS config: {str(e)}")
 
@@ -351,103 +413,27 @@ def toggle_planner_status(
 # ==================== PUBLIC SAAS CONFIGURATION ====================
 
 @router.get("/config", tags=["Public"])
-def get_public_saas_config():
+async def get_public_saas_config():
     """Get SAAS configuration for public landing page - No auth required"""
     try:
-        config = mongo.db["saas_config"].find_one({"type": "main_config"})
+        config = await mongo.db["saas_config"].find_one({"type": "main_config"})
         if not config:
             # Return default config if none exists
-            return {
-                "hero_title": "Welcome to Special Wedding",
-                "hero_subtitle": "Wedding Planning Made Simple",
-                "hero_description": "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
-                "hero_cta_primary": "Start Free Trial",
-                "hero_cta_secondary": "Watch Demo",
-                "trust_indicators": ["Free 30-day trial", "No setup fees", "Cancel anytime"],
-                "trial_settings": {
-                    "default_trial_days": 30,
-                    "trial_warning_days": 7,
-                    "auto_expire_trials": True,
-                    "allow_multiple_trials": False
-                },
-                "statistics": [
-                    {"label": "Wedding Planners Trust Us", "value": "500+"},
-                    {"label": "Weddings Managed", "value": "10K+"},
-                    {"label": "Uptime Guarantee", "value": "99.9%"}
-                ],
-                "features": [
-                    {
-                        "title": "Complete Wedding Management",
-                        "description": "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
-                        "status": "available",
-                        "order": 1
-                    },
-                    {
-                        "title": "AI Presentation Generator",
-                        "description": "Create stunning wedding presentations in minutes with our AI-powered design tools.",
-                        "status": "coming_soon",
-                        "order": 5
-                    }
-                ],
-                "benefits": [
-                    {
-                        "title": "Save Time",
-                        "description": "Automate repetitive tasks and streamline wedding planning operations",
-                        "order": 1
-                    },
-                    {
-                        "title": "Scale Your Business",
-                        "description": "Manage multiple weddings efficiently and grow your planning business",
-                        "order": 2
-                    }
-                ],
-                "testimonials": [
-                    {
-                        "name": "Sarah Johnson",
-                        "company": "Elegant Events Planning",
-                        "role": "Senior Wedding Planner",
-                        "content": "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
-                        "order": 1
-                    }
-                ],
-                "features_enabled": True,
-                "benefits_enabled": True,
-                "testimonials_enabled": True,
-                "statistics_enabled": True,
-                "primary_color": "#1e3a5f",
-                "secondary_color": "#d4af37",
-                "fallback_images": [
-                    "/wedding-images/wedding-ceremony.jpg",
-                    "/wedding-images/wedding-reception.jpg"
-                ]
-            }
-        
-        # Remove private fields and prepare for public consumption
-        public_config = {
-            "hero_title": config.get("hero_title", "Welcome to Special Wedding"),
-            "hero_subtitle": config.get("hero_subtitle", "Wedding Planning Made Simple"),
-            "hero_description": config.get("hero_description", "The ultimate wedding planning platform for professional wedding planners."),
-            "hero_cta_primary": config.get("hero_cta_primary", "Start Free Trial"),
-            "hero_cta_secondary": config.get("hero_cta_secondary", "Watch Demo"),
-            "trust_indicators": config.get("trust_indicators", ["Free 30-day trial", "No setup fees", "Cancel anytime"]),
-            "statistics": config.get("statistics", []),
-            "features": config.get("features", []),
-            "benefits": config.get("benefits", []),
-            "testimonials": config.get("testimonials", []),
-            "features_enabled": config.get("features_enabled", True),
-            "benefits_enabled": config.get("benefits_enabled", True),
-            "testimonials_enabled": config.get("testimonials_enabled", True),
-            "statistics_enabled": config.get("statistics_enabled", True),
-            "primary_color": config.get("theme", {}).get("primary_color", "#1e3a5f"),
-            "secondary_color": config.get("theme", {}).get("secondary_color", "#d4af37"),
-            "fallback_images": config.get("theme", {}).get("fallback_images", [
-                "/wedding-images/wedding-ceremony.jpg",
-                "/wedding-images/wedding-reception.jpg"
-            ])
-        }
-        
-        return public_config
-        
+            return _get_default_saas_config()
+
+        # Return all config fields (no need to filter for public use)
+        # Remove only MongoDB internal fields
+        if "_id" in config:
+            del config["_id"]
+
+        # Ensure all new fields have defaults if missing
+        default_config = _get_default_saas_config()
+        for key, value in default_config.items():
+            if key not in config:
+                config[key] = value
+
+        return config
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching public SAAS config: {str(e)}")
 

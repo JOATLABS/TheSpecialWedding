@@ -57,16 +57,60 @@ interface ThemeConfig {
 }
 
 interface SaasFullConfig {
+ // Legacy hero fields (backward compatibility)
  hero_title: string;
  hero_subtitle: string;
  hero_description: string;
+
+ // Modern hero fields (benefit-driven)
+ hero_headline?: string;
+ hero_subheadline?: string;
+ hero_problem_statement?: string;
+ hero_solution_statement?: string;
+
+ // CTA buttons
  hero_cta_primary: string;
  hero_cta_secondary: string;
+ contact_cta_label?: string;
+ contact_url?: string;
+
+ // Product showcase
+ hero_screenshot_primary?: string;
+ hero_screenshot_secondary?: string;
+ demo_video_url?: string;
+ show_product_demo?: boolean;
+
+ // Layout settings
+ hero_layout?: string;
+ hero_image_position?: string;
+ show_decorative_logo?: boolean;
+
+ // Trust indicators
  trust_indicators: string[];
+
+ // Legacy statistics (generic)
  statistics: Array<{
  label: string;
  value: string;
  }>;
+ statistics_enabled: boolean;
+
+ // Modern impact metrics (specific, measurable)
+ impact_metrics?: Array<{
+ metric: string;
+ label: string;
+ icon?: string;
+ }>;
+ show_impact_metrics?: boolean;
+
+ // Customer logos (social proof)
+ customer_logos?: Array<{
+ name: string;
+ logo_url: string;
+ }>;
+ show_customer_logos?: boolean;
+
+ // Content sections
  features: Array<{
  title: string;
  description: string;
@@ -85,12 +129,130 @@ interface SaasFullConfig {
  content: string;
  order: number;
  }>;
+
+ // Section toggles
  features_enabled: boolean;
  benefits_enabled: boolean;
  testimonials_enabled: boolean;
- statistics_enabled: boolean;
+
+ // Theme configuration
  theme: ThemeConfig;
+
+ // Animation settings
+ animations_enabled?: boolean;
+ scroll_animations?: boolean;
+ animation_speed?: string;
 }
+
+// Default SaaS configuration (used as fallback if API fails)
+const DEFAULT_SAAS_CONFIG: SaasFullConfig = {
+  // Legacy hero fields
+  hero_title: "Welcome to Special Wedding",
+  hero_subtitle: "Wedding Planning Made Simple",
+  hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+
+  // Modern hero fields
+  hero_headline: "Manage 10+ Weddings Simultaneously",
+  hero_subheadline: "For Professional Wedding Planners",
+  hero_problem_statement: "Stop juggling spreadsheets, email chains, and vendor chaos",
+  hero_solution_statement: "One platform to manage guests, vendors, timelines, and budgets—all in sync",
+
+  // CTAs
+  hero_cta_primary: "Start Free Trial",
+  hero_cta_secondary: "Watch Demo",
+  contact_cta_label: "Contact Sales",
+  contact_url: "mailto:sales@specialwedding.com",
+
+  // Product showcase
+  hero_screenshot_primary: undefined,
+  demo_video_url: undefined,
+  show_product_demo: false,
+
+  // Layout
+  hero_layout: "split",
+  hero_image_position: "right",
+  show_decorative_logo: true, // Keep legacy by default
+
+  // Trust & social proof
+  trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+
+  // Legacy statistics
+  statistics: [
+    { label: "Wedding Planners Trust Us", value: "500+" },
+    { label: "Weddings Managed", value: "10K+" },
+    { label: "Uptime Guarantee", value: "99.9%" }
+  ],
+  statistics_enabled: true,
+
+  // Modern impact metrics
+  impact_metrics: [
+    { metric: "15 hours/week", label: "Average time saved per planner" },
+    { metric: "80%", label: "Reduction in vendor miscommunication" },
+    { metric: "2.5x", label: "Increase in weddings managed per year" }
+  ],
+  show_impact_metrics: false,
+
+  // Customer logos
+  customer_logos: [],
+  show_customer_logos: false,
+
+  // Content sections
+  features: [
+    {
+      title: "Complete Wedding Management",
+      description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
+      status: "available",
+      order: 1
+    },
+    {
+      title: "AI Presentation Generator",
+      description: "Create stunning wedding presentations in minutes with our AI-powered design tools.",
+      status: "coming_soon",
+      order: 5
+    }
+  ],
+  benefits: [
+    {
+      title: "Save Time",
+      description: "Automate repetitive tasks and streamline wedding planning operations",
+      order: 1
+    },
+    {
+      title: "Scale Your Business",
+      description: "Manage multiple weddings efficiently and grow your planning business",
+      order: 2
+    }
+  ],
+  testimonials: [
+    {
+      name: "Sarah Johnson",
+      company: "Elegant Events Planning",
+      role: "Senior Wedding Planner",
+      content: "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
+      order: 1
+    }
+  ],
+
+  // Section toggles
+  features_enabled: true,
+  benefits_enabled: true,
+  testimonials_enabled: true,
+
+  // Theme
+  theme: {
+    primary_color: "#1e3a5f",
+    secondary_color: "#d4af37",
+    fallback_images: [
+      "/wedding-images/wedding-ceremony.jpg",
+      "/wedding-images/wedding-reception.jpg"
+    ]
+  },
+
+  // Animations
+  animations_enabled: true,
+  scroll_animations: true,
+  animation_speed: "medium"
+};
 
 const SaasAdminDashboard = () => {
  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'content' | 'theme' | 'planners'>('overview');
@@ -147,66 +309,7 @@ const SaasAdminDashboard = () => {
         const configData = await configResponse.json();
         setSaasConfig(configData);
       } else {
-        setSaasConfig({
-          hero_title: "Welcome to Special Wedding",
-          hero_subtitle: "Wedding Planning Made Simple",
-          hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
-          hero_cta_primary: "Start Free Trial",
-          hero_cta_secondary: "Watch Demo",
-          trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
-          statistics: [
-            { label: "Wedding Planners Trust Us", value: "500+" },
-            { label: "Weddings Managed", value: "10K+" },
-            { label: "Uptime Guarantee", value: "99.9%" }
-          ],
-          features: [
-            {
-              title: "Complete Wedding Management",
-              description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
-              status: "available" as const,
-              order: 1
-            },
-            {
-              title: "AI Presentation Generator",
-              description: "Create stunning wedding presentations in minutes with our AI-powered design tools.",
-              status: "coming_soon" as const,
-              order: 5
-            }
-          ],
-          benefits: [
-            {
-              title: "Save Time",
-              description: "Automate repetitive tasks and streamline wedding planning operations",
-              order: 1
-            },
-            {
-              title: "Scale Your Business",
-              description: "Manage multiple weddings efficiently and grow your planning business",
-              order: 2
-            }
-          ],
-          testimonials: [
-            {
-              name: "Sarah Johnson",
-              company: "Elegant Events Planning",
-              role: "Senior Wedding Planner",
-              content: "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
-              order: 1
-            }
-          ],
-          features_enabled: true,
-          benefits_enabled: true,
-          testimonials_enabled: true,
-          statistics_enabled: true,
-          theme: {
-            primary_color: "#1e3a5f",
-            secondary_color: "#d4af37",
-            fallback_images: [
-              "/wedding-images/wedding-ceremony.jpg",
-              "/wedding-images/wedding-reception.jpg"
-            ]
-          }
-        });
+        setSaasConfig(DEFAULT_SAAS_CONFIG);
       }
 
       const sectionsResponse = await fetch(`${baseUrl}/admin/content-sections`, { headers });
@@ -307,34 +410,7 @@ const SaasAdminDashboard = () => {
         }
       ]);
 
-      setSaasConfig(prev => prev ?? {
-        hero_title: "Welcome to Special Wedding",
-        hero_subtitle: "Wedding Planning Made Simple",
-        hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
-        hero_cta_primary: "Start Free Trial",
-        hero_cta_secondary: "Watch Demo",
-        trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
-        statistics: [
-          { label: "Wedding Planners Trust Us", value: "500+" },
-          { label: "Weddings Managed", value: "10K+" },
-          { label: "Uptime Guarantee", value: "99.9%" }
-        ],
-        features: [],
-        benefits: [],
-        testimonials: [],
-        features_enabled: true,
-        benefits_enabled: true,
-        testimonials_enabled: true,
-        statistics_enabled: true,
-        theme: {
-          primary_color: "#1e3a5f",
-          secondary_color: "#d4af37",
-          fallback_images: [
-            "/wedding-images/wedding-ceremony.jpg",
-            "/wedding-images/wedding-reception.jpg"
-          ]
-        }
-      });
+      setSaasConfig(prev => prev ?? DEFAULT_SAAS_CONFIG);
     } finally {
       setLoading(false);
     }
@@ -1150,6 +1226,272 @@ const SaasAdminDashboard = () => {
  >
  + Add Trust Indicator
  </button>
+ </div>
+ </Card>
+
+ {/* Modern Hero Content Editor */}
+ <Card className="p-6">
+ <div className="flex justify-between items-center mb-4">
+ <h3 className="text-lg font-semibold">Modern Hero Content</h3>
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={!saasConfig.show_decorative_logo}
+ onChange={(e) => setSaasConfig({...saasConfig, show_decorative_logo: !e.target.checked})}
+ className="mr-2"
+ />
+ Use Modern Design
+ </label>
+ </div>
+ <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+ <div className="lg:col-span-2">
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Benefit Headline <span className="text-gray-400">(What does it do?)</span>
+ </label>
+ <input
+ type="text"
+ value={saasConfig.hero_headline || ''}
+ onChange={(e) => setSaasConfig({...saasConfig, hero_headline: e.target.value})}
+ className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="Manage 10+ Weddings Simultaneously"
+ />
+ </div>
+ <div className="lg:col-span-2">
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Target Audience <span className="text-gray-400">(Who is it for?)</span>
+ </label>
+ <input
+ type="text"
+ value={saasConfig.hero_subheadline || ''}
+ onChange={(e) => setSaasConfig({...saasConfig, hero_subheadline: e.target.value})}
+ className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="For Professional Wedding Planners"
+ />
+ </div>
+ <div className="lg:col-span-2">
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Problem Statement
+ </label>
+ <input
+ type="text"
+ value={saasConfig.hero_problem_statement || ''}
+ onChange={(e) => setSaasConfig({...saasConfig, hero_problem_statement: e.target.value})}
+ className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="Stop juggling spreadsheets, email chains, and vendor chaos"
+ />
+ </div>
+ <div className="lg:col-span-2">
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Solution Statement
+ </label>
+ <input
+ type="text"
+ value={saasConfig.hero_solution_statement || ''}
+ onChange={(e) => setSaasConfig({...saasConfig, hero_solution_statement: e.target.value})}
+ className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="One platform to manage guests, vendors, timelines, and budgets—all in sync"
+ />
+ </div>
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Primary Screenshot URL
+ </label>
+ <input
+ type="url"
+ value={saasConfig.hero_screenshot_primary || ''}
+ onChange={(e) => setSaasConfig({...saasConfig, hero_screenshot_primary: e.target.value})}
+ className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="https://example.com/screenshot.png"
+ />
+ </div>
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Demo Video URL
+ </label>
+ <input
+ type="url"
+ value={saasConfig.demo_video_url || ''}
+ onChange={(e) => setSaasConfig({...saasConfig, demo_video_url: e.target.value})}
+ className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="https://youtube.com/embed/..."
+ />
+ </div>
+ <div className="lg:col-span-2">
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={saasConfig.show_product_demo || false}
+ onChange={(e) => setSaasConfig({...saasConfig, show_product_demo: e.target.checked})}
+ className="mr-2"
+ />
+ Show video demo instead of screenshot
+ </label>
+ </div>
+ </div>
+ </Card>
+
+ {/* Impact Metrics Manager */}
+ <Card className="p-6">
+ <div className="flex justify-between items-center mb-4">
+ <h3 className="text-lg font-semibold">Impact Metrics</h3>
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={saasConfig.show_impact_metrics || false}
+ onChange={(e) => setSaasConfig({...saasConfig, show_impact_metrics: e.target.checked})}
+ className="mr-2"
+ />
+ Enable Section
+ </label>
+ </div>
+ <div className="space-y-3">
+ {(saasConfig.impact_metrics || []).map((metric, index) => (
+ <div key={index} className="grid grid-cols-12 gap-3 items-center">
+ <input
+ type="text"
+ value={metric.metric}
+ onChange={(e) => {
+ const newMetrics = [...(saasConfig.impact_metrics || [])];
+ newMetrics[index] = {...metric, metric: e.target.value};
+ setSaasConfig({...saasConfig, impact_metrics: newMetrics});
+ }}
+ placeholder="15 hours/week"
+ className="col-span-3 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ <input
+ type="text"
+ value={metric.label}
+ onChange={(e) => {
+ const newMetrics = [...(saasConfig.impact_metrics || [])];
+ newMetrics[index] = {...metric, label: e.target.value};
+ setSaasConfig({...saasConfig, impact_metrics: newMetrics});
+ }}
+ placeholder="Average time saved per planner"
+ className="col-span-8 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ <button
+ onClick={() => {
+ const newMetrics = (saasConfig.impact_metrics || []).filter((_, i) => i !== index);
+ setSaasConfig({...saasConfig, impact_metrics: newMetrics});
+ }}
+ className="col-span-1 text-red-600 hover:text-red-800"
+ >
+ ✕
+ </button>
+ </div>
+ ))}
+ <button
+ onClick={() => setSaasConfig({
+ ...saasConfig,
+ impact_metrics: [...(saasConfig.impact_metrics || []), {metric: '', label: '', icon: ''}]
+ })}
+ className="text-blue-600 hover:text-blue-800 text-sm"
+ >
+ + Add Impact Metric
+ </button>
+ </div>
+ </Card>
+
+ {/* Customer Logos Manager */}
+ <Card className="p-6">
+ <div className="flex justify-between items-center mb-4">
+ <h3 className="text-lg font-semibold">Customer Logos</h3>
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={saasConfig.show_customer_logos || false}
+ onChange={(e) => setSaasConfig({...saasConfig, show_customer_logos: e.target.checked})}
+ className="mr-2"
+ />
+ Enable Section
+ </label>
+ </div>
+ <div className="space-y-3">
+ {(saasConfig.customer_logos || []).map((logo, index) => (
+ <div key={index} className="grid grid-cols-12 gap-3 items-center">
+ <input
+ type="text"
+ value={logo.name}
+ onChange={(e) => {
+ const newLogos = [...(saasConfig.customer_logos || [])];
+ newLogos[index] = {...logo, name: e.target.value};
+ setSaasConfig({...saasConfig, customer_logos: newLogos});
+ }}
+ placeholder="Company Name"
+ className="col-span-4 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ <input
+ type="url"
+ value={logo.logo_url}
+ onChange={(e) => {
+ const newLogos = [...(saasConfig.customer_logos || [])];
+ newLogos[index] = {...logo, logo_url: e.target.value};
+ setSaasConfig({...saasConfig, customer_logos: newLogos});
+ }}
+ placeholder="https://example.com/logo.png"
+ className="col-span-7 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ />
+ <button
+ onClick={() => {
+ const newLogos = (saasConfig.customer_logos || []).filter((_, i) => i !== index);
+ setSaasConfig({...saasConfig, customer_logos: newLogos});
+ }}
+ className="col-span-1 text-red-600 hover:text-red-800"
+ >
+ ✕
+ </button>
+ </div>
+ ))}
+ <button
+ onClick={() => setSaasConfig({
+ ...saasConfig,
+ customer_logos: [...(saasConfig.customer_logos || []), {name: '', logo_url: ''}]
+ })}
+ className="text-blue-600 hover:text-blue-800 text-sm"
+ >
+ + Add Customer Logo
+ </button>
+ </div>
+ </Card>
+
+ {/* Animation Settings */}
+ <Card className="p-6">
+ <div className="flex justify-between items-center mb-4">
+ <h3 className="text-lg font-semibold">Animation Settings</h3>
+ </div>
+ <div className="space-y-4">
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={saasConfig.animations_enabled !== false}
+ onChange={(e) => setSaasConfig({...saasConfig, animations_enabled: e.target.checked})}
+ className="mr-2"
+ />
+ Enable animations globally
+ </label>
+ <label className="flex items-center">
+ <input
+ type="checkbox"
+ checked={saasConfig.scroll_animations !== false}
+ onChange={(e) => setSaasConfig({...saasConfig, scroll_animations: e.target.checked})}
+ className="mr-2"
+ />
+ Enable scroll-triggered animations
+ </label>
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Animation Speed
+ </label>
+ <select
+ value={saasConfig.animation_speed || 'medium'}
+ onChange={(e) => setSaasConfig({...saasConfig, animation_speed: e.target.value})}
+ className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+ >
+ <option value="fast">Fast (200ms)</option>
+ <option value="medium">Medium (400ms)</option>
+ <option value="slow">Slow (600ms)</option>
+ </select>
+ </div>
  </div>
  </Card>
  </div>
