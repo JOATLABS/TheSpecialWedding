@@ -139,7 +139,7 @@ export default function BillingSuccessPage() {
               </li>
               <li className="flex items-start">
                 <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />
-                You'll receive a confirmation email shortly
+                You&apos;ll receive a confirmation email shortly
               </li>
               <li className="flex items-start">
                 <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />
