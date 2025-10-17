@@ -281,14 +281,19 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             </div>
           </div>
 
-          {/* Phase 4: Pricing preview (70-100% scroll) */}
+          {/* Phase 4: Pricing preview (75-100% scroll) - Dramatic entrance with glow */}
           {featuredPlan && (
             <div
               className="absolute inset-x-0 bottom-32"
               style={{
-                opacity: scrollProgress > 0.7 ? Math.min(1, (scrollProgress - 0.7) * 3.3) : 0,
-                transform: `translateY(${scrollProgress > 0.7 ? '0' : '50px'})`,
-                transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)',
+                opacity: scrollProgress > 0.75 ? Math.min(1, (scrollProgress - 0.75) * 4) : 0,
+                transform: scrollProgress > 0.75
+                  ? `translateY(0) scale(${0.9 + Math.min((scrollProgress - 0.75) * 0.4, 0.1)})`
+                  : 'translateY(60px) scale(0.85)',
+                transition: 'all 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+                filter: scrollProgress > 0.75
+                  ? `brightness(${1 + (scrollProgress - 0.75) * 0.3}) saturate(${1 + (scrollProgress - 0.75) * 0.2})`
+                  : 'brightness(0.8) saturate(0.8)',
               }}
             >
               <div className="mx-auto max-w-2xl px-6">
