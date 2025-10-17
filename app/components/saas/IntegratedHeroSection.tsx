@@ -97,6 +97,46 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   const stats = config.statistics || [];
   const featuredPlan = plans.find(p => p.is_featured) || plans[0];
 
+  // Calculate phase visibility with NO OVERLAP - gaps between phases
+  const getPhaseOpacity = (phase: 1 | 2 | 3 | 4) => {
+    switch (phase) {
+      case 1: // 0-22% scroll, fade out 18-22%
+        if (scrollProgress <= 0.18) return 1;
+        if (scrollProgress <= 0.22) return 1 - ((scrollProgress - 0.18) / 0.04);
+        return 0;
+
+      case 2: // 28-48% scroll, fade in 28-32%, fade out 44-48%
+        if (scrollProgress < 0.28) return 0;
+        if (scrollProgress <= 0.32) return (scrollProgress - 0.28) / 0.04;
+        if (scrollProgress <= 0.44) return 1;
+        if (scrollProgress <= 0.48) return 1 - ((scrollProgress - 0.44) / 0.04);
+        return 0;
+
+      case 3: // 54-74% scroll, fade in 54-58%, fade out 70-74%
+        if (scrollProgress < 0.54) return 0;
+        if (scrollProgress <= 0.58) return (scrollProgress - 0.54) / 0.04;
+        if (scrollProgress <= 0.70) return 1;
+        if (scrollProgress <= 0.74) return 1 - ((scrollProgress - 0.70) / 0.04);
+        return 0;
+
+      case 4: // 80-100% scroll, fade in 80-84%
+        if (scrollProgress < 0.80) return 0;
+        if (scrollProgress <= 0.84) return (scrollProgress - 0.80) / 0.04;
+        return 1;
+
+      default:
+        return 0;
+    }
+  };
+
+  const getPhaseZIndex = (phase: 1 | 2 | 3 | 4) => {
+    const currentPhase =
+      scrollProgress <= 0.22 ? 1 :
+      scrollProgress <= 0.48 ? 2 :
+      scrollProgress <= 0.74 ? 3 : 4;
+    return phase === currentPhase ? 20 : 10;
+  };
+
   return (
     <section
       ref={sectionRef}
@@ -109,23 +149,31 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
         {/* Dynamic gradient orbs that move with scroll */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute right-0 top-0 h-[600px] w-[600px] rounded-full bg-blue-600/20 blur-3xl transition-transform duration-700"
-          style={{ transform: `translate(${scrollProgress * 100}px, ${scrollProgress * -50}px) scale(${1 + scrollProgress * 0.5})` }}
+          className="pointer-events-none absolute right-0 top-0 h-[600px] w-[600px] rounded-full bg-blue-600/20 blur-3xl"
+          style={{
+            transform: `translate(${scrollProgress * 100}px, ${scrollProgress * -50}px) scale(${1 + scrollProgress * 0.5})`,
+            transition: 'transform 0.3s ease-out',
+          }}
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 left-0 h-[500px] w-[500px] rounded-full bg-purple-600/10 blur-3xl transition-transform duration-700"
-          style={{ transform: `translate(${scrollProgress * -100}px, ${scrollProgress * 50}px) scale(${1 + scrollProgress * 0.3})` }}
+          className="pointer-events-none absolute bottom-0 left-0 h-[500px] w-[500px] rounded-full bg-purple-600/10 blur-3xl"
+          style={{
+            transform: `translate(${scrollProgress * -100}px, ${scrollProgress * 50}px) scale(${1 + scrollProgress * 0.3})`,
+            transition: 'transform 0.3s ease-out',
+          }}
         />
 
         <div className="relative mx-auto max-w-7xl px-6 py-20 lg:py-32">
-          {/* Phase 1: Initial hero (0-35% scroll) - Smoother fade with cubic easing */}
+          {/* Phase 1: Initial hero (0-22% scroll) - Clean fade out */}
           <div
-            className="transition-all duration-500 ease-out"
+            className="absolute inset-0"
             style={{
-              opacity: scrollProgress < 0.35 ? 1 - Math.pow(scrollProgress / 0.35, 1.5) * 0.8 : 0.2,
-              transform: `translateY(${scrollProgress * -80}px) scale(${1 - scrollProgress * 0.15})`,
-              filter: `blur(${scrollProgress * 8}px)`,
+              opacity: getPhaseOpacity(1),
+              transform: `translateY(${scrollProgress * -50}px) scale(${1 - scrollProgress * 0.1})`,
+              zIndex: getPhaseZIndex(1),
+              transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              pointerEvents: getPhaseOpacity(1) > 0 ? 'auto' : 'none',
             }}
           >
             <div className="grid gap-16 lg:grid-cols-2 lg:items-center lg:gap-24">
@@ -195,20 +243,15 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             </div>
           </div>
 
-          {/* Phase 2: Stats section (20-50% scroll) - Slide up with bounce */}
+          {/* Phase 2: Stats section (28-48% scroll) - NO OVERLAP */}
           <div
             className="absolute inset-x-0 top-1/2 -translate-y-1/2"
             style={{
-              opacity: scrollProgress > 0.2 && scrollProgress < 0.6
-                ? Math.min(1, (scrollProgress - 0.2) * 3.5)
-                : scrollProgress >= 0.6
-                ? 1 - ((scrollProgress - 0.6) * 2)
-                : 0,
-              transform: scrollProgress > 0.2
-                ? `translateY(${Math.max(0, (0.3 - scrollProgress) * 200)}px) scale(${0.95 + Math.min(scrollProgress, 0.05) * 1})`
-                : 'translateY(80px) scale(0.9)',
-              transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              pointerEvents: scrollProgress > 0.2 && scrollProgress < 0.6 ? 'auto' : 'none',
+              opacity: getPhaseOpacity(2),
+              transform: `translateY(${Math.max(0, (0.32 - scrollProgress) * 150)}px) scale(${0.95 + (getPhaseOpacity(2) * 0.05)})`,
+              zIndex: getPhaseZIndex(2),
+              transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              pointerEvents: getPhaseOpacity(2) > 0 ? 'auto' : 'none',
             }}
           >
             <div className="mx-auto max-w-6xl px-6">
@@ -238,20 +281,15 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             </div>
           </div>
 
-          {/* Phase 3: Feature preview cards (50-75% scroll) - Staggered zoom-in */}
+          {/* Phase 3: Feature preview cards (54-74% scroll) - NO OVERLAP */}
           <div
             className="absolute inset-x-0 top-1/2 -translate-y-1/2"
             style={{
-              opacity: scrollProgress > 0.5 && scrollProgress < 0.8
-                ? Math.min(1, (scrollProgress - 0.5) * 3.3)
-                : scrollProgress >= 0.8
-                ? 1 - ((scrollProgress - 0.8) * 2.5)
-                : 0,
-              transform: scrollProgress > 0.5
-                ? `scale(${0.92 + Math.min((scrollProgress - 0.5) * 0.3, 0.08)})`
-                : 'scale(0.85)',
-              transition: 'all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              pointerEvents: scrollProgress > 0.5 && scrollProgress < 0.8 ? 'auto' : 'none',
+              opacity: getPhaseOpacity(3),
+              transform: `scale(${0.92 + (getPhaseOpacity(3) * 0.08)})`,
+              zIndex: getPhaseZIndex(3),
+              transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              pointerEvents: getPhaseOpacity(3) > 0 ? 'auto' : 'none',
             }}
           >
             <div className="mx-auto max-w-6xl px-6">
@@ -281,19 +319,16 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             </div>
           </div>
 
-          {/* Phase 4: Pricing preview (75-100% scroll) - Dramatic entrance with glow */}
+          {/* Phase 4: Pricing preview (80-100% scroll) - NO OVERLAP */}
           {featuredPlan && (
             <div
               className="absolute inset-x-0 bottom-32"
               style={{
-                opacity: scrollProgress > 0.75 ? Math.min(1, (scrollProgress - 0.75) * 4) : 0,
-                transform: scrollProgress > 0.75
-                  ? `translateY(0) scale(${0.9 + Math.min((scrollProgress - 0.75) * 0.4, 0.1)})`
-                  : 'translateY(60px) scale(0.85)',
-                transition: 'all 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
-                filter: scrollProgress > 0.75
-                  ? `brightness(${1 + (scrollProgress - 0.75) * 0.3}) saturate(${1 + (scrollProgress - 0.75) * 0.2})`
-                  : 'brightness(0.8) saturate(0.8)',
+                opacity: getPhaseOpacity(4),
+                transform: `translateY(${Math.max(0, (0.84 - scrollProgress) * 100)}px) scale(${0.9 + (getPhaseOpacity(4) * 0.1)})`,
+                zIndex: getPhaseZIndex(4),
+                transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                filter: `brightness(${1 + (getPhaseOpacity(4) * 0.2)})`,
               }}
             >
               <div className="mx-auto max-w-2xl px-6">
