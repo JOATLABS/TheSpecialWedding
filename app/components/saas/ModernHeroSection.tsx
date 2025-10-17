@@ -2,6 +2,7 @@
 
 import React, { useCallback } from 'react';
 import Image from 'next/image';
+import IsometricPlatformHero from './IsometricPlatformHero';
 
 interface ModernHeroSectionProps {
   config: {
@@ -121,7 +122,7 @@ export const ModernHeroSection: React.FC<ModernHeroSectionProps> = ({
           </div>
         </div>
 
-        {/* Right: Product Screenshot */}
+        {/* Right: 3D Interactive Platform Visualization */}
         <div className="relative">
           {config.hero_screenshot_primary ? (
             <div className="relative rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-1 shadow-2xl shadow-blue-500/20">
@@ -137,32 +138,9 @@ export const ModernHeroSection: React.FC<ModernHeroSectionProps> = ({
               </div>
             </div>
           ) : (
-            // Placeholder mockup when no screenshot provided
-            <div className="relative rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-1 shadow-2xl shadow-blue-500/20">
-              <div className="relative overflow-hidden rounded-xl bg-slate-900 p-8">
-                <div className="space-y-4">
-                  {/* Mock browser chrome */}
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-red-500" />
-                    <div className="h-3 w-3 rounded-full bg-yellow-500" />
-                    <div className="h-3 w-3 rounded-full bg-green-500" />
-                  </div>
-
-                  {/* Mock dashboard content */}
-                  <div className="space-y-3">
-                    <div className="h-12 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 opacity-90" />
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="h-24 rounded-lg bg-slate-800/50 backdrop-blur" />
-                      <div className="h-24 rounded-lg bg-slate-800/50 backdrop-blur" />
-                      <div className="h-24 rounded-lg bg-slate-800/50 backdrop-blur" />
-                    </div>
-                    <div className="h-32 rounded-lg bg-slate-800/50 backdrop-blur" />
-                  </div>
-
-                  {/* Glow effect */}
-                  <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/10 to-purple-500/10 blur-2xl" />
-                </div>
-              </div>
+            // 3D Isometric Platform Visualization - Way cooler than a static screenshot
+            <div className="relative h-[500px] w-full">
+              <IsometricPlatformHero />
             </div>
           )}
 
