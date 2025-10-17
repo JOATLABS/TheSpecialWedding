@@ -120,6 +120,13 @@ POST /admin/stripe/create-checkout-session
 }
 ```
 
+> #### Trial configuration & card collection
+>
+> * Checkout sessions now delegate the free-trial lifecycle to Stripe. We pass `trial_period_days`, `trial_settings.end_behavior.missing_payment_method=cancel`, and `payment_method_collection="always"` so the hosted page always collects a card while still honoring the plan’s trial length.
+> * Stripe automatically stores the card for renewals because we set `payment_settings.save_default_payment_method=on_subscription`. This keeps us aligned with Stripe’s trial guidance while upholding the business rule that planners must provide a payment method up front.
+> * When testing, use Stripe’s canonical trial card `4242 4242 4242 4242` with any future expiration date, CVC, and ZIP. Stripe accepts this card without creating real charges.
+> * Webhook handlers sync `trial_end` and `stripe_status` back into MongoDB so internal reminders (for example `TrialExpirationService`) and admin dashboards stay consistent with Stripe’s timelines.
+
 #### 3. Get Checkout Session
 ```http
 GET /admin/stripe/checkout-session/{session_id}
@@ -232,6 +239,7 @@ Select these events to listen for:
 - ✅ `customer.subscription.created` - Subscription activated
 - ✅ `customer.subscription.updated` - Subscription changed (upgrade/downgrade)
 - ✅ `customer.subscription.deleted` - Subscription cancelled
+- ✅ `customer.subscription.trial_will_end` - Stripe reminder that a trial is ending
 - ✅ `invoice.paid` - Recurring payment successful
 - ✅ `invoice.payment_failed` - Payment failed, retry needed
 

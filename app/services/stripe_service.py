@@ -1,14 +1,15 @@
-"""
-Stripe Payment Service for handling subscription payments and customer management
-"""
+"""Stripe payment utilities used to manage subscription checkout and lifecycle."""
+
 import stripe
 from fastapi import HTTPException
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from datetime import datetime
 from app.core.settings import settings
 from app.core.database import mongo
 from bson import ObjectId
 import logging
+
+from app.models.subscription import SubscriptionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,15 @@ class StripeService:
             if not plan:
                 raise HTTPException(status_code=404, detail="Subscription plan not found")
 
+            if not plan.get("is_active", True):
+                raise HTTPException(status_code=400, detail="Subscription plan is not currently active")
+
+            # Respect plan-level trial configuration when available
+            plan_trial_days = plan.get("trial_days")
+            if isinstance(plan_trial_days, int) and plan_trial_days >= 0:
+                trial_days = plan_trial_days
+            trial_days = max(trial_days, 0)
+
             # Get or create Stripe customer
             customer_id = self.get_or_create_customer(
                 user_id=user_id,
@@ -155,7 +165,11 @@ class StripeService:
             )
 
             # Determine price based on billing interval
-            price_amount = plan.get(f"price_{billing_interval}", plan.get("price_monthly", 0))
+            price_key = f"price_{billing_interval}"
+            price_amount = plan.get(price_key, plan.get("price_monthly", 0))
+
+            if price_amount is None:
+                raise HTTPException(status_code=400, detail=f"Plan is missing pricing for {billing_interval} billing")
 
             # Create Stripe price object if not exists
             # Note: In production, you should create prices in Stripe Dashboard
@@ -179,16 +193,23 @@ class StripeService:
                 cancel_url = f"{settings.frontend_url}/admin/billing/cancelled"
 
             # Prepare subscription data
-            subscription_data = {
+            subscription_data: Dict[str, Any] = {
                 "metadata": {
                     "user_id": user_id,
                     "plan_id": plan_id,
-                    "billing_interval": billing_interval
+                    "billing_interval": billing_interval,
+                    "trial_days": trial_days,
                 }
             }
 
             if trial_days > 0:
                 subscription_data["trial_period_days"] = trial_days
+                subscription_data["trial_settings"] = {
+                    "end_behavior": {
+                        # We collect cards up front, so cancel if a payment method is missing at the end of trial
+                        "missing_payment_method": "cancel"
+                    }
+                }
 
             # Create checkout session
             checkout_session = stripe.checkout.Session.create(
@@ -204,6 +225,10 @@ class StripeService:
                 subscription_data=subscription_data,
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
+                payment_method_collection="always",
+                payment_settings={
+                    "save_default_payment_method": "on_subscription"
+                },
                 customer_update={
                     "address": "auto",
                     "name": "auto"
@@ -237,6 +262,137 @@ class StripeService:
         except Exception as e:
             logger.error(f"Error creating checkout session: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error creating checkout session: {str(e)}")
+
+    def _parse_timestamp(self, timestamp: Optional[int]) -> Optional[datetime]:
+        """Convert Stripe timestamps to naive UTC datetimes."""
+
+        if not timestamp:
+            return None
+        try:
+            return datetime.utcfromtimestamp(timestamp)
+        except Exception:
+            return None
+
+    def _map_stripe_status(self, stripe_status: Optional[str]) -> str:
+        """Translate Stripe subscription status to internal subscription state."""
+
+        if not stripe_status:
+            return SubscriptionStatus.ACTIVE.value
+
+        mapping = {
+            "trialing": SubscriptionStatus.TRIAL.value,
+            "active": SubscriptionStatus.ACTIVE.value,
+            "past_due": SubscriptionStatus.SUSPENDED.value,
+            "unpaid": SubscriptionStatus.SUSPENDED.value,
+            "incomplete": SubscriptionStatus.SUSPENDED.value,
+            "incomplete_expired": SubscriptionStatus.CANCELLED.value,
+            "canceled": SubscriptionStatus.CANCELLED.value,
+            "cancelled": SubscriptionStatus.CANCELLED.value,
+        }
+        return mapping.get(stripe_status, SubscriptionStatus.ACTIVE.value)
+
+    def _sync_subscription_state(
+        self,
+        user_id: Optional[str],
+        subscription: Optional[Dict[str, Any]],
+        customer_id: Optional[str] = None,
+        plan_id: Optional[str] = None,
+        extra_updates: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Persist subscription details so MongoDB mirrors Stripe's lifecycle."""
+
+        now = datetime.utcnow()
+        subscription = subscription or {}
+
+        if not plan_id:
+            plan_id = subscription.get("metadata", {}).get("plan_id")
+
+        if not user_id:
+            user_id = subscription.get("metadata", {}).get("user_id")
+
+        stripe_subscription_id = subscription.get("id")
+        stripe_status = subscription.get("status")
+        internal_status = self._map_stripe_status(stripe_status)
+
+        trial_end = self._parse_timestamp(subscription.get("trial_end"))
+        trial_start = self._parse_timestamp(subscription.get("trial_start"))
+        current_period_start = self._parse_timestamp(subscription.get("current_period_start")) or now
+        current_period_end = self._parse_timestamp(subscription.get("current_period_end")) or now
+
+        subscription_updates: Dict[str, Any] = {
+            "stripe_subscription_id": stripe_subscription_id,
+            "stripe_customer_id": customer_id,
+            "status": internal_status,
+            "stripe_status": stripe_status,
+            "trial_end_date": trial_end,
+            "trial_start_date": trial_start,
+            "current_period_start": current_period_start,
+            "current_period_end": current_period_end,
+            "updated_at": now,
+        }
+
+        if plan_id:
+            subscription_updates["plan_id"] = plan_id
+
+        if extra_updates:
+            subscription_updates.update(extra_updates)
+
+        query: Dict[str, Any] = {}
+        if stripe_subscription_id:
+            query["stripe_subscription_id"] = stripe_subscription_id
+        if user_id:
+            query.setdefault("user_id", user_id)
+
+        if not query:
+            raise HTTPException(status_code=500, detail="Unable to associate Stripe subscription with local record")
+
+        update_document: Dict[str, Any] = {"$set": subscription_updates}
+        set_on_insert: Dict[str, Any] = {}
+
+        if user_id:
+            set_on_insert["user_id"] = user_id
+        if plan_id:
+            set_on_insert["plan_id"] = plan_id
+        if stripe_subscription_id:
+            set_on_insert["stripe_subscription_id"] = stripe_subscription_id
+
+        if set_on_insert:
+            update_document["$setOnInsert"] = set_on_insert
+
+        self.subscriptions_collection.update_one(query, update_document, upsert=True)
+
+        if user_id:
+            user_updates: Dict[str, Any] = {
+                "subscription_status": internal_status,
+                "updated_at": now,
+            }
+
+            if plan_id:
+                user_updates["subscription_plan_id"] = plan_id
+            if customer_id:
+                user_updates["stripe_customer_id"] = customer_id
+            if stripe_subscription_id:
+                user_updates["stripe_subscription_id"] = stripe_subscription_id
+
+            if internal_status == SubscriptionStatus.TRIAL.value:
+                user_updates["trial_end_date"] = trial_end
+                user_updates["trial_warning_sent"] = False
+            else:
+                user_updates["trial_end_date"] = None
+                user_updates["trial_warning_sent"] = False
+
+            self.users_collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": user_updates}
+            )
+
+        return {
+            "status": internal_status,
+            "stripe_status": stripe_status,
+            "trial_end": trial_end,
+            "user_id": user_id,
+            "stripe_subscription_id": stripe_subscription_id,
+        }
 
     # ==================== CUSTOMER PORTAL ====================
 
@@ -323,6 +479,8 @@ class StripeService:
                 return self._handle_subscription_updated(data)
             elif event_type == "customer.subscription.deleted":
                 return self._handle_subscription_deleted(data)
+            elif event_type == "customer.subscription.trial_will_end":
+                return self._handle_subscription_trial_will_end(data)
             elif event_type == "invoice.paid":
                 return self._handle_invoice_paid(data)
             elif event_type == "invoice.payment_failed":
@@ -349,32 +507,33 @@ class StripeService:
                 logger.error("Missing metadata in checkout session")
                 return {"status": "error", "message": "Missing metadata"}
 
-            # Update subscription record
-            self.subscriptions_collection.update_one(
-                {"user_id": user_id},
-                {
-                    "$set": {
-                        "stripe_subscription_id": subscription_id,
-                        "stripe_customer_id": session.get("customer"),
-                        "status": "active",
-                        "payment_status": "paid",
-                        "updated_at": datetime.utcnow()
-                    }
+            subscription: Optional[Dict[str, Any]] = None
+
+            if subscription_id:
+                try:
+                    subscription = stripe.Subscription.retrieve(subscription_id)
+                except stripe.error.StripeError as e:
+                    logger.error(f"Unable to retrieve subscription {subscription_id}: {str(e)}")
+
+            sync_result = self._sync_subscription_state(
+                user_id=user_id,
+                subscription=subscription,
+                customer_id=session.get("customer"),
+                plan_id=plan_id,
+                extra_updates={
+                    "stripe_subscription_id": subscription_id,
+                    "payment_status": session.get("payment_status"),
+                    "stripe_checkout_session_id": session.get("id"),
+                    "stripe_checkout_completed_at": datetime.utcnow(),
                 }
             )
 
-            # Update user record
-            self.users_collection.update_one(
-                {"_id": ObjectId(user_id)},
-                {
-                    "$set": {
-                        "subscription_status": "active",
-                        "updated_at": datetime.utcnow()
-                    }
-                }
+            logger.info(
+                "Checkout completed for user %s, subscription %s (status: %s)",
+                user_id,
+                subscription_id,
+                sync_result.get("stripe_status") or sync_result.get("status")
             )
-
-            logger.info(f"Checkout completed for user {user_id}, subscription {subscription_id}")
             return {"status": "success", "user_id": user_id, "subscription_id": subscription_id}
 
         except Exception as e:
@@ -384,26 +543,19 @@ class StripeService:
     def _handle_subscription_created(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
         """Handle new subscription creation"""
         try:
-            user_id = subscription["metadata"].get("user_id")
-            if not user_id:
-                logger.error("Missing user_id in subscription metadata")
-                return {"status": "error", "message": "Missing user_id"}
-
-            self.subscriptions_collection.update_one(
-                {"user_id": user_id},
-                {
-                    "$set": {
-                        "stripe_subscription_id": subscription["id"],
-                        "status": "active" if subscription["status"] == "active" else "trial",
-                        "current_period_start": datetime.fromtimestamp(subscription["current_period_start"]),
-                        "current_period_end": datetime.fromtimestamp(subscription["current_period_end"]),
-                        "updated_at": datetime.utcnow()
-                    }
-                }
+            result = self._sync_subscription_state(
+                user_id=subscription.get("metadata", {}).get("user_id"),
+                subscription=subscription,
+                customer_id=subscription.get("customer")
             )
 
-            logger.info(f"Subscription created for user {user_id}")
-            return {"status": "success", "user_id": user_id}
+            logger.info(
+                "Subscription %s created (user=%s, status=%s)",
+                subscription.get("id"),
+                result.get("user_id"),
+                result.get("stripe_status") or result.get("status")
+            )
+            return {"status": "success", "user_id": result.get("user_id")}
 
         except Exception as e:
             logger.error(f"Error handling subscription created: {str(e)}")
@@ -412,41 +564,18 @@ class StripeService:
     def _handle_subscription_updated(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
         """Handle subscription updates"""
         try:
-            stripe_sub_id = subscription["id"]
-
-            # Find subscription by Stripe subscription ID
-            sub_record = self.subscriptions_collection.find_one({"stripe_subscription_id": stripe_sub_id})
-            if not sub_record:
-                logger.warning(f"Subscription {stripe_sub_id} not found in database")
-                return {"status": "not_found"}
-
-            # Update subscription status and period
-            self.subscriptions_collection.update_one(
-                {"stripe_subscription_id": stripe_sub_id},
-                {
-                    "$set": {
-                        "status": subscription["status"],
-                        "current_period_start": datetime.fromtimestamp(subscription["current_period_start"]),
-                        "current_period_end": datetime.fromtimestamp(subscription["current_period_end"]),
-                        "updated_at": datetime.utcnow()
-                    }
-                }
+            result = self._sync_subscription_state(
+                user_id=subscription.get("metadata", {}).get("user_id"),
+                subscription=subscription,
+                customer_id=subscription.get("customer")
             )
 
-            # Update user status
-            if sub_record.get("user_id"):
-                self.users_collection.update_one(
-                    {"_id": ObjectId(sub_record["user_id"])},
-                    {
-                        "$set": {
-                            "subscription_status": subscription["status"],
-                            "updated_at": datetime.utcnow()
-                        }
-                    }
-                )
-
-            logger.info(f"Subscription {stripe_sub_id} updated to status {subscription['status']}")
-            return {"status": "success", "subscription_id": stripe_sub_id}
+            logger.info(
+                "Subscription %s updated (status=%s)",
+                subscription.get("id"),
+                result.get("stripe_status") or result.get("status")
+            )
+            return {"status": "success", "subscription_id": subscription.get("id")}
 
         except Exception as e:
             logger.error(f"Error handling subscription updated: {str(e)}")
@@ -457,40 +586,49 @@ class StripeService:
         try:
             stripe_sub_id = subscription["id"]
 
-            # Update subscription status
-            result = self.subscriptions_collection.update_one(
-                {"stripe_subscription_id": stripe_sub_id},
-                {
-                    "$set": {
-                        "status": "cancelled",
-                        "cancelled_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
-                    }
+            result = self._sync_subscription_state(
+                user_id=subscription.get("metadata", {}).get("user_id"),
+                subscription=subscription,
+                customer_id=subscription.get("customer"),
+                extra_updates={
+                    "status": SubscriptionStatus.CANCELLED.value,
+                    "cancelled_at": datetime.utcnow(),
                 }
             )
 
-            if result.matched_count > 0:
-                # Get subscription to find user
-                sub_record = self.subscriptions_collection.find_one({"stripe_subscription_id": stripe_sub_id})
-                if sub_record and sub_record.get("user_id"):
-                    self.users_collection.update_one(
-                        {"_id": ObjectId(sub_record["user_id"])},
-                        {
-                            "$set": {
-                                "subscription_status": "cancelled",
-                                "updated_at": datetime.utcnow()
-                            }
-                        }
-                    )
-
-                logger.info(f"Subscription {stripe_sub_id} cancelled")
-                return {"status": "success", "subscription_id": stripe_sub_id}
-            else:
-                logger.warning(f"Subscription {stripe_sub_id} not found for cancellation")
-                return {"status": "not_found"}
+            logger.info(
+                "Subscription %s cancelled (user=%s)",
+                stripe_sub_id,
+                result.get("user_id")
+            )
+            return {"status": "success", "subscription_id": stripe_sub_id}
 
         except Exception as e:
             logger.error(f"Error handling subscription deleted: {str(e)}")
+            return {"status": "error", "message": str(e)}
+
+    def _handle_subscription_trial_will_end(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+        """Record trial end reminders for alignment with internal notifications."""
+
+        try:
+            result = self._sync_subscription_state(
+                user_id=subscription.get("metadata", {}).get("user_id"),
+                subscription=subscription,
+                customer_id=subscription.get("customer"),
+                extra_updates={
+                    "trial_will_end_notified_at": datetime.utcnow()
+                }
+            )
+
+            logger.info(
+                "Trial will end soon for subscription %s (user=%s)",
+                subscription.get("id"),
+                result.get("user_id")
+            )
+            return {"status": "success", "subscription_id": subscription.get("id")}
+
+        except Exception as e:
+            logger.error(f"Error handling subscription trial end notice: {str(e)}")
             return {"status": "error", "message": str(e)}
 
     def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
@@ -500,17 +638,31 @@ class StripeService:
             if not subscription_id:
                 return {"status": "ignored"}
 
-            # Update subscription payment status
-            self.subscriptions_collection.update_one(
-                {"stripe_subscription_id": subscription_id},
-                {
-                    "$set": {
+            subscription = None
+            try:
+                subscription = stripe.Subscription.retrieve(subscription_id)
+            except stripe.error.StripeError as e:
+                logger.error(f"Unable to refresh subscription {subscription_id} during invoice.paid: {str(e)}")
+
+            if subscription:
+                self._sync_subscription_state(
+                    user_id=subscription.get("metadata", {}).get("user_id"),
+                    subscription=subscription,
+                    customer_id=subscription.get("customer"),
+                    extra_updates={
+                        "payment_status": "paid",
+                        "last_payment_date": datetime.utcnow(),
+                    }
+                )
+            else:
+                self.subscriptions_collection.update_one(
+                    {"stripe_subscription_id": subscription_id},
+                    {"$set": {
                         "payment_status": "paid",
                         "last_payment_date": datetime.utcnow(),
                         "updated_at": datetime.utcnow()
-                    }
-                }
-            )
+                    }}
+                )
 
             logger.info(f"Invoice paid for subscription {subscription_id}")
             return {"status": "success", "subscription_id": subscription_id}
@@ -526,17 +678,31 @@ class StripeService:
             if not subscription_id:
                 return {"status": "ignored"}
 
-            # Update subscription payment status
-            self.subscriptions_collection.update_one(
-                {"stripe_subscription_id": subscription_id},
-                {
-                    "$set": {
+            subscription = None
+            try:
+                subscription = stripe.Subscription.retrieve(subscription_id)
+            except stripe.error.StripeError as e:
+                logger.error(f"Unable to refresh subscription {subscription_id} during invoice.payment_failed: {str(e)}")
+
+            if subscription:
+                self._sync_subscription_state(
+                    user_id=subscription.get("metadata", {}).get("user_id"),
+                    subscription=subscription,
+                    customer_id=subscription.get("customer"),
+                    extra_updates={
+                        "payment_status": "past_due",
+                        "last_payment_attempt": datetime.utcnow(),
+                    }
+                )
+            else:
+                self.subscriptions_collection.update_one(
+                    {"stripe_subscription_id": subscription_id},
+                    {"$set": {
                         "payment_status": "past_due",
                         "last_payment_attempt": datetime.utcnow(),
                         "updated_at": datetime.utcnow()
-                    }
-                }
-            )
+                    }}
+                )
 
             logger.warning(f"Invoice payment failed for subscription {subscription_id}")
             return {"status": "success", "subscription_id": subscription_id}
