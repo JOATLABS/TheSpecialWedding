@@ -164,10 +164,10 @@ async def handle_sms_callback(request: Request):
 
                     # Notify the responsible wedding planner
                     if assigned_planner_email:
-                        _notify_planner_support_ticket(support_ticket, assigned_planner_email)
+                        await _notify_planner_support_ticket(support_ticket, assigned_planner_email)
                     else:
                         # Fallback: notify ROOT_ADMIN if no planner assigned
-                        _notify_root_admin_support_ticket(support_ticket)
+                        await _notify_root_admin_support_ticket(support_ticket)
         
         # Handle Twilio format (for backward compatibility)
         elif "MessageStatus" in data or "Body" in data:
@@ -279,10 +279,10 @@ async def handle_sms_callback(request: Request):
 
                 # Notify the responsible wedding planner
                 if assigned_planner_email:
-                    _notify_planner_support_ticket(support_ticket, assigned_planner_email)
+                    await _notify_planner_support_ticket(support_ticket, assigned_planner_email)
                 else:
                     # Fallback: notify ROOT_ADMIN if no planner assigned
-                    _notify_root_admin_support_ticket(support_ticket)
+                    await _notify_root_admin_support_ticket(support_ticket)
         
         return {"status": "ok"}
         
@@ -293,7 +293,7 @@ async def handle_sms_callback(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Helper functions for notifications
-def _notify_planner_support_ticket(ticket: dict, planner_email: str):
+async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
     """Send email notification to wedding planner about new support ticket"""
     try:
         from app.services.email_service_resend import ResendEmailService
@@ -333,7 +333,7 @@ def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         </div>
         """
 
-        email_service.send_email(
+        await email_service.send_email(
             to_email=planner_email,
             subject=subject,
             html_content=html_content,
@@ -344,7 +344,7 @@ def _notify_planner_support_ticket(ticket: dict, planner_email: str):
     except Exception as e:
         logger.error(f"Failed to send email notification to planner: {str(e)}")
 
-def _notify_root_admin_support_ticket(ticket: dict):
+async def _notify_root_admin_support_ticket(ticket: dict):
     """Send notification to ROOT_ADMIN for tickets without assigned planner"""
     try:
         import os
@@ -389,7 +389,7 @@ def _notify_root_admin_support_ticket(ticket: dict):
 
         # Also send email to ROOT_ADMIN
         root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
-        _notify_planner_support_ticket(ticket, root_admin_email)
+        await _notify_planner_support_ticket(ticket, root_admin_email)
 
     except Exception as e:
         logger.error(f"Failed to send ROOT_ADMIN notification: {str(e)}")
