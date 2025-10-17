@@ -24,12 +24,12 @@ def create_subscription_plan(
     return subscription_service.create_plan(plan_data.dict(), current_user.email)
 
 @router.get("/subscription-plans", tags=["ROOT_ADMIN"])
-def list_subscription_plans(
+async def list_subscription_plans(
     include_inactive: bool = Query(False, description="Include inactive plans"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """List all subscription plans - ROOT_ADMIN only"""
-    return subscription_service.list_plans(include_inactive)
+    return await subscription_service.list_plans(include_inactive)
 
 @router.get("/subscription-plans/{plan_id}", tags=["ROOT_ADMIN"])
 def get_subscription_plan(
@@ -342,9 +342,9 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
 # ==================== PUBLIC SUBSCRIPTION PLANS (FOR PRICING PAGE) ====================
 
 @router.get("/public/subscription-plans", tags=["Public"])
-def get_public_subscription_plans():
+async def get_public_subscription_plans():
     """Get active subscription plans for public pricing page"""
-    return subscription_service.list_plans(include_inactive=False)
+    return await subscription_service.list_plans(include_inactive=False)
 
 @router.get("/public/subscription-plans/{plan_id}", tags=["Public"])
 def get_public_subscription_plan(plan_id: str):
