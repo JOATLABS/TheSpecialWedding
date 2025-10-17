@@ -261,7 +261,7 @@ export function PlannerAuthSection({
   const containerClass = useMemo(
     () =>
       [
-        'relative rounded-[2.5rem] border border-white/60 bg-white/80 text-left shadow-[0_30px_100px_-45px_rgba(15,23,42,0.35)] backdrop-blur-2xl',
+        'relative rounded-2xl sm:rounded-[2.5rem] border border-white/60 bg-white/90 text-left text-slate-900 shadow-[0_30px_100px_-45px_rgba(15,23,42,0.35)] backdrop-blur-2xl',
         layout === 'modal' ? 'p-6 sm:p-8' : 'p-6 sm:p-8 lg:p-10',
         className,
       ]

@@ -330,6 +330,45 @@ export const SaasLandingPage: React.FC = () => {
   }, [fetchSaasConfig]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const reduceMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const smallViewportQuery = window.matchMedia('(max-width: 1023px)');
+
+    const computeShouldUseIntegratedHero = () => {
+      const prefersReducedMotion = reduceMotionQuery.matches;
+      const isSmallViewport = smallViewportQuery.matches;
+      // Disable the cinematic hero when motion should be reduced or screen estate is limited
+      return !(prefersReducedMotion || isSmallViewport);
+    };
+
+    const updateHeroMode = () => {
+      setUseIntegratedHero(computeShouldUseIntegratedHero());
+    };
+
+    updateHeroMode();
+
+    try {
+      reduceMotionQuery.addEventListener('change', updateHeroMode);
+      smallViewportQuery.addEventListener('change', updateHeroMode);
+      return () => {
+        reduceMotionQuery.removeEventListener('change', updateHeroMode);
+        smallViewportQuery.removeEventListener('change', updateHeroMode);
+      };
+    } catch (error) {
+      // Safari < 14 fallback for matchMedia listeners
+      reduceMotionQuery.addListener(updateHeroMode);
+      smallViewportQuery.addListener(updateHeroMode);
+      return () => {
+        reduceMotionQuery.removeListener(updateHeroMode);
+        smallViewportQuery.removeListener(updateHeroMode);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
     fetchSubscriptionPlans();
   }, [fetchSubscriptionPlans]);
 
@@ -384,7 +423,7 @@ export const SaasLandingPage: React.FC = () => {
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-950 text-slate-900">
+    <div className="relative min-h-screen bg-slate-950 text-slate-100">
       {/* Use integrated hero by default, fall back to old layout if disabled */}
       {useIntegratedHero ? (
         <>

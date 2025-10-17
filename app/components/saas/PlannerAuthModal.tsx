@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PlannerAuthSection, SubscriptionPlan } from './PlannerAuthSection';
 import { ThemeConfig } from '@/types/wedding';
 
@@ -32,6 +32,7 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
   onSelectPlan,
 }) => {
   const [isAnimating, setIsAnimating] = useState(false);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -47,10 +48,16 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
     };
   }, [isOpen]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsAnimating(false);
-    setTimeout(onClose, 300); // Wait for animation to complete
-  };
+    if (closeTimeoutRef.current) {
+      window.clearTimeout(closeTimeoutRef.current);
+    }
+    closeTimeoutRef.current = window.setTimeout(() => {
+      onClose();
+      closeTimeoutRef.current = null;
+    }, 300);
+  }, [onClose]);
 
   // Close on escape key
   useEffect(() => {
@@ -62,7 +69,16 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
+  }, [handleClose, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        window.clearTimeout(closeTimeoutRef.current);
+        closeTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   if (!isOpen && !isAnimating) return null;
 
@@ -84,24 +100,23 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
 
       {/* Modal content */}
       <div
-        className={`relative max-w-lg w-full max-h-[90vh] overflow-y-auto transition-all duration-500 ease-out ${
+        className={`relative w-full sm:w-auto max-w-[min(100vw-2rem,34rem)] sm:max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl transition-all duration-500 ease-out ${
           isAnimating ? 'scale-100 translate-y-0' : 'scale-95 translate-y-8'
         }`}
       >
-        {/* Close button */}
-        <button
-          onClick={handleClose}
-          className="absolute -top-12 right-0 z-10 p-2 rounded-full bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all duration-200 backdrop-blur-sm"
-          aria-label="Close modal"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-
         {/* Glassmorphic container with gradient border */}
         <div className="relative rounded-3xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 p-[1px] shadow-2xl">
           <div className="relative rounded-3xl bg-slate-900/95 backdrop-blur-2xl">
+            {/* Close button */}
+            <button
+              onClick={handleClose}
+              className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-800/70 text-slate-300 transition-all duration-200 hover:bg-slate-700 hover:text-white"
+              aria-label="Close modal"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             {/* Animated gradient orb */}
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/30 rounded-full blur-3xl animate-pulse" />
             <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-purple-500/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />

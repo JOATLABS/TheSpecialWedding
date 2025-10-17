@@ -140,12 +140,12 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   return (
     <section
       ref={sectionRef}
-      className={`relative min-h-[300vh] w-full bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 ${
+      className={`relative min-h-[160vh] lg:min-h-[300vh] w-full bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-slate-100 ${
         className ?? ''
       }`}
     >
       {/* Sticky container that stays in viewport */}
-      <div className="sticky top-0 min-h-screen w-full flex items-center justify-center">
+      <div className="sticky top-0 min-h-screen w-full flex items-center justify-center px-4 sm:px-6">
         {/* Dynamic gradient orbs that move with scroll */}
         <div
           aria-hidden="true"
@@ -165,7 +165,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
         />
 
         {/* Phase container - centered content */}
-        <div className="relative w-full max-w-7xl px-6">
+        <div className="relative w-full max-w-7xl">
           {/* Phase 1: Initial hero (0-22% scroll) - Clean fade out */}
           <div
             className="absolute inset-0 flex items-center justify-center"
@@ -177,7 +177,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
               pointerEvents: getPhaseOpacity(1) > 0 ? 'auto' : 'none',
             }}
           >
-            <div className="grid gap-16 lg:grid-cols-2 lg:items-center lg:gap-24">
+            <div className="grid gap-16 px-4 sm:px-6 lg:grid-cols-2 lg:items-center lg:gap-24 lg:px-0">
               {/* Left: Copy */}
               <div className="space-y-8 text-center lg:text-left">
                 {config.hero_subheadline && (
