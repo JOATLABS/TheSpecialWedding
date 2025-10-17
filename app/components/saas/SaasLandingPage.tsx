@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Modern3DBackground } from '../landing-page/Modern3DBackground';
 import { SaasHeroSection } from './SaasHeroSection';
+import { ModernHeroSection } from './ModernHeroSection';
 import { PlannerAuthSection, SubscriptionPlan } from './PlannerAuthSection';
 import { SaasExperienceCarousel } from './SaasExperienceCarousel';
 import ContactSalesModal from './ContactSalesModal';
@@ -57,6 +58,13 @@ interface SaasConfig {
   demo_url?: string;
   primary_color: string;
   secondary_color: string;
+  // Modern hero fields
+  show_decorative_logo?: boolean;
+  hero_headline?: string;
+  hero_subheadline?: string;
+  hero_problem_statement?: string;
+  hero_solution_statement?: string;
+  hero_screenshot_primary?: string;
 }
 
 export const SaasLandingPage: React.FC = () => {
@@ -72,6 +80,12 @@ export const SaasLandingPage: React.FC = () => {
     contact_cta_label: 'Contact Sales',
     contact_url: process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com',
     trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+    // Modern hero defaults
+    show_decorative_logo: false, // Use modern design by default
+    hero_headline: "Manage 10+ Weddings Simultaneously",
+    hero_subheadline: "For Professional Wedding Planners",
+    hero_problem_statement: "Stop juggling spreadsheets, email chains, and vendor chaos",
+    hero_solution_statement: "One platform to manage guests, vendors, timelines, and budgets—all in sync",
     statistics: [
       { label: "Wedding Planners Trust Us", value: "500+" },
       { label: "Weddings Managed", value: "10K+" },
@@ -372,19 +386,33 @@ export const SaasLandingPage: React.FC = () => {
       <div className="relative z-10">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-16 px-4 pb-16 pt-12 sm:px-6 lg:px-8 lg:pb-24 lg:pt-16 xl:px-12">
           <div className="grid gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] xl:gap-16 xl:items-start">
-            <SaasHeroSection
-              config={config}
-              theme={theme}
-              onAuthModeChange={(mode) => {
-                setAuthMode(mode);
-                if (mode === 'signup') {
-                  scrollToAuthPanel();
-                }
-              }}
-              onRequestSignupFocus={scrollToAuthPanel}
-              onContactClick={handleContactOpen}
-              className="lg:px-0 lg:py-0"
-            />
+            {config.show_decorative_logo !== false ? (
+              <SaasHeroSection
+                config={config}
+                theme={theme}
+                onAuthModeChange={(mode) => {
+                  setAuthMode(mode);
+                  if (mode === 'signup') {
+                    scrollToAuthPanel();
+                  }
+                }}
+                onRequestSignupFocus={scrollToAuthPanel}
+                onContactClick={handleContactOpen}
+                className="lg:px-0 lg:py-0"
+              />
+            ) : (
+              <ModernHeroSection
+                config={config}
+                onAuthModeChange={(mode) => {
+                  setAuthMode(mode);
+                  if (mode === 'signup') {
+                    scrollToAuthPanel();
+                  }
+                }}
+                onRequestSignupFocus={scrollToAuthPanel}
+                className="lg:col-span-2"
+              />
+            )}
 
             <div id="planner-auth-section" className="flex flex-col gap-8 lg:sticky lg:top-16">
               <PlannerAuthSection
