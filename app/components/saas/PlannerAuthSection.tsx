@@ -261,7 +261,7 @@ export function PlannerAuthSection({
   const containerClass = useMemo(
     () =>
       [
-        'relative rounded-[2.5rem] border border-white/60 bg-white/80 text-left shadow-[0_30px_100px_-45px_rgba(15,23,42,0.35)] backdrop-blur-2xl',
+        'relative rounded-2xl sm:rounded-[2.5rem] border border-white/60 bg-white/90 text-left text-slate-900 shadow-[0_30px_100px_-45px_rgba(15,23,42,0.35)] backdrop-blur-2xl',
         layout === 'modal' ? 'p-6 sm:p-8' : 'p-6 sm:p-8 lg:p-10',
         className,
       ]
@@ -288,7 +288,7 @@ export function PlannerAuthSection({
           <div className="space-y-3">
             <button
               type="button"
-              className="w-full rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:opacity-95"
+              className="w-full rounded-xl px-4 py-3 text-base font-semibold text-white shadow-md transition hover:opacity-95"
               style={{ backgroundColor: theme.primary_color }}
               onClick={() => {
                 if (typeof window !== 'undefined') {
@@ -300,7 +300,7 @@ export function PlannerAuthSection({
             </button>
             <button
               type="button"
-              className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50"
               onClick={() => setSignupComplete(false)}
             >
               Back to registration
@@ -397,7 +397,7 @@ export function PlannerAuthSection({
               type="text"
               autoComplete="given-name"
               {...register('firstName', { required: 'First name is required' })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.firstName ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -412,7 +412,7 @@ export function PlannerAuthSection({
               type="text"
               autoComplete="family-name"
               {...register('lastName', { required: 'Last name is required' })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.lastName ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -429,7 +429,7 @@ export function PlannerAuthSection({
             type="text"
             autoComplete="organization"
             {...register('companyName', { required: 'Company name helps us prepare the workspace' })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.companyName ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -448,7 +448,7 @@ export function PlannerAuthSection({
               required: 'Work email is required',
               validate: (value) => emailPattern.test(value) || 'Enter a valid email address',
             })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.email ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -472,7 +472,7 @@ export function PlannerAuthSection({
                 required: 'Password is required',
                 minLength: { value: 8, message: 'Password must be at least 8 characters' },
               })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.password ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -494,7 +494,7 @@ export function PlannerAuthSection({
                 required: 'Confirm your password',
                 validate: (value) => value === watch('password') || 'Passwords must match',
               })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.confirmPassword ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -526,7 +526,7 @@ export function PlannerAuthSection({
 
         <button
           type="submit"
-          className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          className="w-full rounded-xl px-4 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           style={{ backgroundColor: theme.primary_color }}
           disabled={isSubmitting}
         >
@@ -615,7 +615,7 @@ export function PlannerAuthSection({
               required: 'Email is required',
               validate: (value) => emailPattern.test(value) || 'Enter a valid email address',
             })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.email ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -631,7 +631,7 @@ export function PlannerAuthSection({
             type="password"
             autoComplete="current-password"
             {...register('password', { required: 'Password is required' })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.password ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -650,7 +650,7 @@ export function PlannerAuthSection({
 
         <button
           type="submit"
-          className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          className="w-full rounded-xl px-4 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           style={{ backgroundColor: theme.primary_color }}
           disabled={isSubmitting}
         >
