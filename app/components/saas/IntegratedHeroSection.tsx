@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import IsometricPlatformHero from './IsometricPlatformHero';
+import WeddingThemedHero from './WeddingThemedHero';
 
 interface Feature {
   title: string;
@@ -119,12 +119,13 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
         />
 
         <div className="relative mx-auto max-w-7xl px-6 py-20 lg:py-32">
-          {/* Phase 1: Initial hero (0-30% scroll) */}
+          {/* Phase 1: Initial hero (0-35% scroll) - Smoother fade with cubic easing */}
           <div
-            className="transition-all duration-700"
+            className="transition-all duration-500 ease-out"
             style={{
-              opacity: Math.max(0, 1 - scrollProgress * 3),
-              transform: `translateY(${scrollProgress * -100}px) scale(${1 - scrollProgress * 0.2})`,
+              opacity: scrollProgress < 0.35 ? 1 - Math.pow(scrollProgress / 0.35, 1.5) * 0.8 : 0.2,
+              transform: `translateY(${scrollProgress * -80}px) scale(${1 - scrollProgress * 0.15})`,
+              filter: `blur(${scrollProgress * 8}px)`,
             }}
           >
             <div className="grid gap-16 lg:grid-cols-2 lg:items-center lg:gap-24">
@@ -187,20 +188,27 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
                 </div>
               </div>
 
-              {/* Right: 3D Platform Visualization */}
-              <div className="relative h-[500px] w-full">
-                <IsometricPlatformHero />
+              {/* Right: Wedding-Themed 3D Visualization */}
+              <div className="relative h-[600px] w-full">
+                <WeddingThemedHero />
               </div>
             </div>
           </div>
 
-          {/* Phase 2: Stats section (15-45% scroll) */}
+          {/* Phase 2: Stats section (20-50% scroll) - Slide up with bounce */}
           <div
             className="absolute inset-x-0 top-1/2 -translate-y-1/2"
             style={{
-              opacity: visibleStats ? Math.min(1, (scrollProgress - 0.15) * 5) : 0,
-              transform: `translateY(${visibleStats ? '0' : '50px'})`,
-              transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)',
+              opacity: scrollProgress > 0.2 && scrollProgress < 0.6
+                ? Math.min(1, (scrollProgress - 0.2) * 3.5)
+                : scrollProgress >= 0.6
+                ? 1 - ((scrollProgress - 0.6) * 2)
+                : 0,
+              transform: scrollProgress > 0.2
+                ? `translateY(${Math.max(0, (0.3 - scrollProgress) * 200)}px) scale(${0.95 + Math.min(scrollProgress, 0.05) * 1})`
+                : 'translateY(80px) scale(0.9)',
+              transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              pointerEvents: scrollProgress > 0.2 && scrollProgress < 0.6 ? 'auto' : 'none',
             }}
           >
             <div className="mx-auto max-w-6xl px-6">
@@ -230,12 +238,20 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             </div>
           </div>
 
-          {/* Phase 3: Feature preview cards (35-70% scroll) */}
+          {/* Phase 3: Feature preview cards (50-75% scroll) - Staggered zoom-in */}
           <div
             className="absolute inset-x-0 top-1/2 -translate-y-1/2"
             style={{
-              opacity: scrollProgress > 0.35 ? Math.min(1, (scrollProgress - 0.35) * 3) : 0,
-              pointerEvents: scrollProgress > 0.35 ? 'auto' : 'none',
+              opacity: scrollProgress > 0.5 && scrollProgress < 0.8
+                ? Math.min(1, (scrollProgress - 0.5) * 3.3)
+                : scrollProgress >= 0.8
+                ? 1 - ((scrollProgress - 0.8) * 2.5)
+                : 0,
+              transform: scrollProgress > 0.5
+                ? `scale(${0.92 + Math.min((scrollProgress - 0.5) * 0.3, 0.08)})`
+                : 'scale(0.85)',
+              transition: 'all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              pointerEvents: scrollProgress > 0.5 && scrollProgress < 0.8 ? 'auto' : 'none',
             }}
           >
             <div className="mx-auto max-w-6xl px-6">
