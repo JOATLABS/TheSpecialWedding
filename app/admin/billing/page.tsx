@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { Loader2, CreditCard, ExternalLink, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -99,7 +99,7 @@ export default function BillingPage() {
           setCurrentSubscription(subData);
 
           // Find the current plan details
-          const planDetail = plansData.find((p: SubscriptionPlan) => p._id === subData.plan_id);
+          const planDetail = plans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
           setCurrentPlan(planDetail || null);
           setSelectedBillingInterval(subData.billing_interval || 'monthly');
         }

@@ -1,6 +1,6 @@
 // components/ui/Button.tsx
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger';
+  variant?: 'primary' | 'secondary' | 'danger' | 'outline';
 }
 
 export function Button({ variant = 'primary', className = '', ...props }: ButtonProps) {
@@ -13,6 +13,9 @@ export function Button({ variant = 'primary', className = '', ...props }: Button
       break;
     case 'danger':
       style = 'bg-red-500 text-white hover:bg-red-600 focus:ring-red-400/80';
+      break;
+    case 'outline':
+      style = 'border border-gray-300 bg-transparent text-gray-700 hover:bg-gray-50 focus:ring-gray-400/80';
       break;
     case 'primary':
     default:
