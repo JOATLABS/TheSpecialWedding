@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import WeddingThemedHero from './WeddingThemedHero';
+import ElegantWeddingHero from './ElegantWeddingHero';
 
 interface Feature {
   title: string;
@@ -236,9 +236,9 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
                 </div>
               </div>
 
-              {/* Right: Wedding-Themed 3D Visualization */}
+              {/* Right: Elegant Wedding Visualization */}
               <div className="relative h-[600px] w-full">
-                <WeddingThemedHero />
+                <ElegantWeddingHero />
               </div>
             </div>
           </div>
