@@ -122,83 +122,203 @@ export default function ElegantWeddingHero() {
     <div className="elegant-hero-container">
       <FallingPetals />
 
-      {/* Center focal point - simplified, not chaotic */}
-      <div className="hero-grid">
-        {/* RSVP Counter - Top Left */}
-        <Card3D className="card-rsvp" delay={0}>
-          <div className="card-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <circle cx="16" cy="16" r="14" stroke="#10b981" strokeWidth="2" fill="none" />
-              <path d="M10 16L14 20L22 12" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+      <div className="hero-content">
+        {/* Main headline and CTA - Center stage */}
+        <div className="hero-center">
+          <h1 className="hero-headline">
+            Your Dream Wedding,
+            <br />
+            <span className="gradient-text">Perfectly Planned</span>
+          </h1>
+          <p className="hero-description">
+            Manage guests, vendors, and every detail in one beautiful platform.
+            From RSVP to the big day.
+          </p>
+          <div className="hero-cta">
+            <button className="btn-primary">
+              Start Planning Free
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M7 4L13 10L7 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button className="btn-secondary">Watch Demo</button>
           </div>
-          <div className="card-label">Confirmed</div>
-          <div className="card-value">{rsvpCount}</div>
-          <div className="card-sublabel">RSVPs</div>
-        </Card3D>
+        </div>
 
-        {/* Total Guests - Top Right */}
-        <Card3D className="card-guests" delay={0.2}>
-          <div className="card-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <path d="M16 18C19.866 18 23 14.866 23 11C23 7.134 19.866 4 16 4C12.134 4 9 7.134 9 11C9 14.866 12.134 18 16 18Z" stroke="#8b5cf6" strokeWidth="2" />
-              <path d="M25 28C25 23.582 21.418 20 17 20H15C10.582 20 7 23.582 7 28" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </div>
-          <div className="card-label">Total Guests</div>
-          <div className="card-value">{guestCount}</div>
-          <div className="card-sublabel">Invited</div>
-        </Card3D>
+        {/* Supporting stats - Asymmetric layout for visual interest */}
+        <div className="stats-container">
+          <Card3D className="stat-card stat-primary" delay={0.2}>
+            <div className="stat-value">{rsvpCount}+</div>
+            <div className="stat-label">Happy Couples</div>
+          </Card3D>
 
-        {/* Timeline - Bottom Left */}
-        <Card3D className="card-timeline" delay={0.4}>
-          <div className="card-label">Timeline</div>
-          <div className="timeline-steps">
-            <div className="timeline-step completed">
-              <div className="step-dot" />
-              <span>Engaged</span>
+          <Card3D className="stat-card stat-secondary" delay={0.4}>
+            <div className="stat-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="#10b981" strokeWidth="2" fill="none" />
+                <path d="M8 12L11 15L16 10" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </div>
-            <div className="timeline-step active">
-              <div className="step-dot pulse" />
-              <span>Planning</span>
-            </div>
-            <div className="timeline-step">
-              <div className="step-dot" />
-              <span>Big Day</span>
-            </div>
-          </div>
-        </Card3D>
+            <div className="stat-value">{guestCount}</div>
+            <div className="stat-label">Guests Managed</div>
+          </Card3D>
 
-        {/* Vendors - Bottom Right */}
-        <Card3D className="card-vendors" delay={0.6}>
-          <div className="card-label">Vendors</div>
-          <div className="vendor-grid">
-            <div className="vendor-item confirmed">
-              <span>🍰</span>
+          <Card3D className="stat-card stat-accent" delay={0.6}>
+            <div className="stat-label">Average Rating</div>
+            <div className="rating-display">
+              <span className="rating-value">4.9</span>
+              <div className="stars">★★★★★</div>
             </div>
-            <div className="vendor-item confirmed">
-              <span>📸</span>
-            </div>
-            <div className="vendor-item">
-              <span>🎵</span>
-            </div>
-            <div className="vendor-item confirmed">
-              <span>💐</span>
-            </div>
-          </div>
-        </Card3D>
+          </Card3D>
+        </div>
       </div>
 
       <style jsx>{`
         .elegant-hero-container {
           position: relative;
           width: 100%;
-          height: 600px;
+          min-height: 550px;
           display: flex;
           align-items: center;
           justify-content: center;
           overflow: hidden;
           background: linear-gradient(135deg, #FFF8F0 0%, #FFF0E5 50%, #FFE4D6 100%);
+          padding: 4rem 2rem;
+        }
+
+        .hero-content {
+          max-width: 1200px;
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 3rem;
+        }
+
+        /* Center headline and CTA */
+        .hero-center {
+          text-align: center;
+          max-width: 700px;
+        }
+
+        .hero-headline {
+          font-size: clamp(2.5rem, 5vw, 3.5rem);
+          font-weight: 700;
+          line-height: 1.1;
+          color: #6B4E3D;
+          margin-bottom: 1.5rem;
+        }
+
+        .gradient-text {
+          background: linear-gradient(135deg, #C4A57B 0%, #D4AF37 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .hero-description {
+          font-size: 1.25rem;
+          color: #8B7355;
+          margin-bottom: 2rem;
+          line-height: 1.6;
+        }
+
+        .hero-cta {
+          display: flex;
+          gap: 1rem;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        .btn-primary, .btn-secondary {
+          padding: 1rem 2rem;
+          border-radius: 12px;
+          font-weight: 600;
+          font-size: 1rem;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .btn-primary {
+          background: linear-gradient(135deg, #C4A57B 0%, #D4AF37 100%);
+          color: white;
+          border: none;
+          box-shadow: 0 4px 20px rgba(196, 165, 123, 0.4);
+        }
+
+        .btn-primary:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 30px rgba(196, 165, 123, 0.5);
+        }
+
+        .btn-secondary {
+          background: rgba(255, 255, 255, 0.5);
+          backdrop-filter: blur(12px);
+          color: #6B4E3D;
+          border: 1px solid rgba(196, 165, 123, 0.3);
+        }
+
+        .btn-secondary:hover {
+          background: rgba(255, 255, 255, 0.7);
+          transform: translateY(-2px);
+        }
+
+        /* Stats container - asymmetric for visual interest */
+        .stats-container {
+          display: flex;
+          gap: 1.5rem;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        .stat-card {
+          min-width: 200px;
+        }
+
+        .stat-primary {
+          padding: 2rem;
+        }
+
+        .stat-value {
+          font-size: 3rem;
+          font-weight: 700;
+          color: #6B4E3D;
+          line-height: 1;
+          margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+          font-size: 0.875rem;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          color: #A89080;
+        }
+
+        .stat-icon {
+          margin-bottom: 1rem;
+        }
+
+        .rating-display {
+          display: flex;
+          align-items: baseline;
+          gap: 0.75rem;
+          margin-top: 0.5rem;
+        }
+
+        .rating-value {
+          font-size: 2.5rem;
+          font-weight: 700;
+          color: #6B4E3D;
+        }
+
+        .stars {
+          color: #D4AF37;
+          font-size: 1.25rem;
+          letter-spacing: 0.1em;
         }
 
         /* Falling petals - subtle and elegant */
@@ -230,16 +350,6 @@ export default function ElegantWeddingHero() {
         .petal {
           position: absolute;
           animation: fall linear infinite, sway ease-in-out infinite;
-        }
-
-        /* Card grid - clean 2x2 layout */
-        .hero-grid {
-          position: relative;
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 2rem;
-          max-width: 800px;
-          padding: 2rem;
         }
 
         /* Wedding card - glassmorphism done RIGHT */
@@ -290,138 +400,10 @@ export default function ElegantWeddingHero() {
           z-index: 1;
         }
 
-        /* Card styling - warm wedding colors */
-        .card-icon {
-          margin-bottom: 1rem;
-        }
-
-        .card-label {
-          font-size: 0.75rem;
-          font-weight: 500;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-          color: #A89080;
-          margin-bottom: 0.5rem;
-        }
-
-        .card-value {
-          font-size: 3rem;
-          font-weight: 700;
-          color: #8B7355;
-          line-height: 1;
-          margin-bottom: 0.25rem;
-        }
-
-        .card-sublabel {
-          font-size: 0.875rem;
-          color: #B5A79A;
-        }
-
-        /* Timeline steps */
-        .timeline-steps {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          margin-top: 1rem;
-        }
-
-        .timeline-step {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-
-        .step-dot {
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          background: #E5DDD5;
-          position: relative;
-        }
-
-        .timeline-step.completed .step-dot {
-          background: #10b981;
-        }
-
-        .timeline-step.active .step-dot {
-          background: #8b5cf6;
-        }
-
-        .step-dot.pulse::after {
-          content: '';
-          position: absolute;
-          inset: -4px;
-          border-radius: 50%;
-          border: 2px solid #8b5cf6;
-          animation: pulse 2s ease-out infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 0;
-            transform: scale(1.5);
-          }
-        }
-
-        .timeline-step span {
-          font-size: 0.875rem;
-          color: #8B7355;
-        }
-
-        .timeline-step.completed span {
-          text-decoration: line-through;
-          opacity: 0.6;
-        }
-
-        .timeline-step.active span {
-          font-weight: 600;
-        }
-
-        /* Vendor grid */
-        .vendor-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 0.75rem;
-          margin-top: 1rem;
-        }
-
-        .vendor-item {
-          aspect-ratio: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: rgba(255, 255, 255, 0.3);
-          border-radius: 12px;
-          font-size: 1.5rem;
-          position: relative;
-          transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-        }
-
-        .vendor-item:hover {
-          transform: scale(1.1);
-        }
-
-        .vendor-item.confirmed::after {
-          content: '';
-          position: absolute;
-          top: -4px;
-          right: -4px;
-          width: 16px;
-          height: 16px;
-          background: #10b981;
-          border-radius: 50%;
-          border: 2px solid white;
-        }
-
         /* Accessibility */
         @media (prefers-reduced-motion: reduce) {
           .petal,
-          .wedding-card,
-          .step-dot.pulse::after {
+          .wedding-card {
             animation: none;
           }
 
@@ -433,9 +415,35 @@ export default function ElegantWeddingHero() {
 
         /* Responsive */
         @media (max-width: 768px) {
-          .hero-grid {
-            grid-template-columns: 1fr;
+          .elegant-hero-container {
+            padding: 3rem 1.5rem;
+            min-height: 450px;
+          }
+
+          .hero-content {
+            gap: 2rem;
+          }
+
+          .hero-headline {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+          }
+
+          .hero-description {
+            font-size: 1.125rem;
+            margin-bottom: 1.5rem;
+          }
+
+          .stats-container {
             gap: 1rem;
+          }
+
+          .stat-card {
+            min-width: 160px;
+          }
+
+          .stat-value {
+            font-size: 2.5rem;
           }
         }
       `}</style>
