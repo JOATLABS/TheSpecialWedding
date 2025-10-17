@@ -42,11 +42,12 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error creating subscription plan: {str(e)}")
 
-    def list_plans(self, include_inactive: bool = False) -> List[dict]:
+    async def list_plans(self, include_inactive: bool = False) -> List[dict]:
         """List all subscription plans"""
         try:
             query = {} if include_inactive else {"is_active": True}
-            plans = list(self.plans_collection.find(query).sort("sort_order", 1))
+            cursor = self.plans_collection.find(query).sort("display_order", 1)
+            plans = await cursor.to_list(length=None)
             return plans
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing plans: {str(e)}")
