@@ -79,7 +79,11 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
       if (progress > featureStartProgress) {
         const featureProgress = (progress - featureStartProgress) / 0.3;
         const visibleCount = Math.floor(featureProgress * 6);
-        setVisibleFeatures(new Set(Array.from({ length: visibleCount }, (_, i) => i)));
+        const indices = [];
+        for (let i = 0; i < visibleCount; i++) {
+          indices.push(i);
+        }
+        setVisibleFeatures(new Set(indices));
       }
     };
 
