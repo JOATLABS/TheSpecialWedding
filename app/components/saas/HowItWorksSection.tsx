@@ -51,7 +51,7 @@ export const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ theme }) =
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             const index = parseInt(entry.target.getAttribute('data-step') || '0');
-            setVisibleSteps((prev) => new Set([...prev, index]));
+            setVisibleSteps((prev) => new Set(Array.from(prev).concat(index)));
           }
         });
       },

@@ -2,19 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { PlannerAuthSection, SubscriptionPlan } from './PlannerAuthSection';
+import { ThemeConfig } from '@/types/wedding';
 
 interface PlannerAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode: 'signup' | 'login';
   onModeChange: (mode: 'signup' | 'login') => void;
-  theme?: {
-    primary_color?: string;
-    secondary_color?: string;
-    accent_color?: string;
-    background_style?: string;
-    font_style?: string;
-  };
+  theme?: ThemeConfig;
   plans: SubscriptionPlan[];
   plansLoading?: boolean;
   plansError?: string;
@@ -113,18 +108,20 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
 
             {/* Auth section */}
             <div className="relative p-8">
-              <PlannerAuthSection
-                mode={mode}
-                onModeChange={onModeChange}
-                theme={theme}
-                plans={plans}
-                plansLoading={plansLoading}
-                plansError={plansError}
-                plansNotice={plansNotice}
-                selectedPlan={selectedPlan}
-                onSelectPlan={onSelectPlan}
-                className="shadow-none"
-              />
+              {theme && (
+                <PlannerAuthSection
+                  mode={mode}
+                  onModeChange={onModeChange}
+                  theme={theme}
+                  plans={plans}
+                  plansLoading={plansLoading}
+                  plansError={plansError}
+                  plansNotice={plansNotice}
+                  selectedPlan={selectedPlan}
+                  onSelectPlan={onSelectPlan}
+                  className="shadow-none"
+                />
+              )}
 
               {plansError && !plansLoading && (
                 <div className="mt-4 rounded-xl border border-red-200/80 bg-red-50/10 px-4 py-3 text-sm text-red-400 backdrop-blur">
