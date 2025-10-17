@@ -21,7 +21,7 @@ class CreateCheckoutSessionRequest(BaseModel):
     billing_interval: str = Field(default="monthly", description="Billing interval: monthly or yearly")
     success_url: Optional[str] = Field(None, description="Success redirect URL")
     cancel_url: Optional[str] = Field(None, description="Cancel redirect URL")
-    trial_days: int = Field(default=0, description="Number of trial days")
+    trial_days: int = Field(default=0, ge=0, description="Number of trial days")
 
 
 class CreatePortalSessionRequest(BaseModel):
@@ -171,6 +171,7 @@ async def stripe_webhook(
     - customer.subscription.created
     - customer.subscription.updated
     - customer.subscription.deleted
+    - customer.subscription.trial_will_end
     - invoice.paid
     - invoice.payment_failed
     """
