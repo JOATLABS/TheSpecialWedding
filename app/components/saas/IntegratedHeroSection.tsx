@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import ElegantWeddingHero from './ElegantWeddingHero';
 
 interface Feature {
@@ -26,21 +26,33 @@ interface SubscriptionPlan {
 
 interface IntegratedHeroSectionProps {
   config: {
+    hero_title?: string;
     hero_headline?: string;
     hero_subheadline?: string;
     hero_problem_statement?: string;
     hero_solution_statement?: string;
+    hero_description?: string;
     hero_cta_primary: string;
     hero_cta_secondary: string;
     demo_url?: string;
     primary_color?: string;
     statistics?: Statistic[];
     features?: Feature[];
+    trust_indicators?: string[];
+    statistics_enabled?: boolean;
+    features_enabled?: boolean;
   };
   plans: SubscriptionPlan[];
   onAuthModalOpen: () => void;
   className?: string;
 }
+
+const primaryLinks = [
+  { href: '#features', label: 'Features' },
+  { href: '#workflow', label: 'Workflow' },
+  { href: '#pricing', label: 'Pricing' },
+  { href: '#testimonials', label: 'Stories' },
+];
 
 export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   config,
@@ -48,311 +60,184 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   onAuthModalOpen,
   className,
 }) => {
-  const sectionRef = useRef<HTMLElement>(null);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [visibleStats, setVisibleStats] = useState(false);
-  const [visibleFeatures, setVisibleFeatures] = useState<Set<number>>(new Set());
-
-  // Track scroll progress through hero section
-  useEffect(() => {
-    const handleScroll = () => {
-      if (!sectionRef.current) return;
-
-      const rect = sectionRef.current.getBoundingClientRect();
-      const sectionHeight = rect.height;
-      const viewportHeight = window.innerHeight;
-
-      // Calculate how far through the section we've scrolled
-      const scrolled = Math.max(0, -rect.top);
-      const total = sectionHeight - viewportHeight;
-      const progress = Math.min(Math.max(scrolled / total, 0), 1);
-
-      setScrollProgress(progress);
-
-      // Trigger stats visibility
-      if (progress > 0.15 && !visibleStats) {
-        setVisibleStats(true);
-      }
-
-      // Trigger feature cards visibility based on scroll
-      const featureStartProgress = 0.35;
-      if (progress > featureStartProgress) {
-        const featureProgress = (progress - featureStartProgress) / 0.3;
-        const visibleCount = Math.floor(featureProgress * 6);
-        const indices = [];
-        for (let i = 0; i < visibleCount; i++) {
-          indices.push(i);
-        }
-        setVisibleFeatures(new Set(indices));
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    handleScroll(); // Initial check
-
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [visibleStats]);
-
-  const topFeatures = config.features?.slice(0, 6) || [];
-  const stats = config.statistics || [];
-  const featuredPlan = plans.find(p => p.is_featured) || plans[0];
-
-  // Calculate phase visibility with NO OVERLAP - gaps between phases
-  const getPhaseOpacity = (phase: 1 | 2 | 3 | 4) => {
-    switch (phase) {
-      case 1: // 0-22% scroll, fade out 18-22%
-        if (scrollProgress <= 0.18) return 1;
-        if (scrollProgress <= 0.22) return 1 - ((scrollProgress - 0.18) / 0.04);
-        return 0;
-
-      case 2: // 28-48% scroll, fade in 28-32%, fade out 44-48%
-        if (scrollProgress < 0.28) return 0;
-        if (scrollProgress <= 0.32) return (scrollProgress - 0.28) / 0.04;
-        if (scrollProgress <= 0.44) return 1;
-        if (scrollProgress <= 0.48) return 1 - ((scrollProgress - 0.44) / 0.04);
-        return 0;
-
-      case 3: // 54-74% scroll, fade in 54-58%, fade out 70-74%
-        if (scrollProgress < 0.54) return 0;
-        if (scrollProgress <= 0.58) return (scrollProgress - 0.54) / 0.04;
-        if (scrollProgress <= 0.70) return 1;
-        if (scrollProgress <= 0.74) return 1 - ((scrollProgress - 0.70) / 0.04);
-        return 0;
-
-      case 4: // 80-100% scroll, fade in 80-84%
-        if (scrollProgress < 0.80) return 0;
-        if (scrollProgress <= 0.84) return (scrollProgress - 0.80) / 0.04;
-        return 1;
-
-      default:
-        return 0;
+  const statistics = config.statistics_enabled === false ? [] : config.statistics?.slice(0, 3) ?? [];
+  const trustIndicators = config.trust_indicators?.slice(0, 3) ?? [
+    'Free 30-day trial',
+    'No credit card required',
+    'Cancel anytime',
+  ];
+  const primaryFeatureCallouts = useMemo(() => {
+    if (config.features_enabled === false) {
+      return [] as Feature[];
     }
-  };
+    return (config.features ?? [])
+      .filter((feature) => feature.status === 'available')
+      .slice(0, 3);
+  }, [config.features, config.features_enabled]);
 
-  const getPhaseZIndex = (phase: 1 | 2 | 3 | 4) => {
-    const currentPhase =
-      scrollProgress <= 0.22 ? 1 :
-      scrollProgress <= 0.48 ? 2 :
-      scrollProgress <= 0.74 ? 3 : 4;
-    return phase === currentPhase ? 20 : 10;
-  };
+  const featuredPlan = useMemo(() => {
+    if (!plans || plans.length === 0) {
+      return undefined;
+    }
+    return plans.find((plan) => plan.is_featured) ?? plans[0];
+  }, [plans]);
 
   return (
     <section
-      ref={sectionRef}
-      className={`relative min-h-[300vh] w-full bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 ${
-        className ?? ''
-      }`}
+      className={`relative overflow-hidden bg-slate-950 text-slate-100 ${className ?? ''}`}
     >
-      {/* Sticky container that stays in viewport */}
-      <div className="sticky top-0 min-h-screen w-full flex items-center justify-center">
-        {/* Dynamic gradient orbs that move with scroll */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute right-0 top-0 h-[600px] w-[600px] rounded-full bg-blue-600/20 blur-3xl"
-          style={{
-            transform: `translate(${scrollProgress * 100}px, ${scrollProgress * -50}px) scale(${1 + scrollProgress * 0.5})`,
-            transition: 'transform 0.3s ease-out',
-          }}
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 left-0 h-[500px] w-[500px] rounded-full bg-purple-600/10 blur-3xl"
-          style={{
-            transform: `translate(${scrollProgress * -100}px, ${scrollProgress * 50}px) scale(${1 + scrollProgress * 0.3})`,
-            transition: 'transform 0.3s ease-out',
-          }}
-        />
+      <div className="pointer-events-none absolute -top-48 left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-blue-500/25 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-[-12rem] right-[-6rem] h-[28rem] w-[28rem] rounded-full bg-purple-500/30 blur-3xl" />
+      <div className="pointer-events-none absolute top-1/3 left-[-8rem] hidden h-[24rem] w-[24rem] rounded-full bg-cyan-400/20 blur-3xl lg:block" />
 
-        {/* Phase container - centered content */}
-        <div className="relative w-full max-w-7xl px-6">
-          {/* Phase 1: Initial hero (0-22% scroll) - Clean fade out */}
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{
-              opacity: getPhaseOpacity(1),
-              transform: `translateY(${scrollProgress * -50}px) scale(${1 - scrollProgress * 0.1})`,
-              zIndex: getPhaseZIndex(1),
-              transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              pointerEvents: getPhaseOpacity(1) > 0 ? 'auto' : 'none',
-            }}
-          >
-            <div className="grid gap-16 lg:grid-cols-2 lg:items-center lg:gap-24">
-              {/* Left: Copy */}
-              <div className="space-y-8 text-center lg:text-left">
-                {config.hero_subheadline && (
-                  <div className="inline-block rounded-full bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-400 ring-1 ring-blue-500/20">
-                    {config.hero_subheadline}
-                  </div>
-                )}
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-16 px-4 pb-28 pt-10 sm:px-6 lg:px-8 lg:pb-36 lg:pt-16">
+        <header className="flex flex-wrap items-center justify-between gap-6 rounded-full border border-white/15 bg-white/[0.04] px-6 py-4 backdrop-blur-xl">
+          <div className="flex items-center gap-3 text-lg font-semibold tracking-tight text-white">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400/80 to-purple-500/70 text-base font-bold text-slate-950">
+              SW
+            </span>
+            <span>Special Wedding Platform</span>
+          </div>
+          <nav className="hidden items-center gap-6 text-sm text-slate-200 md:flex">
+            {primaryLinks.map((link) => (
+              <a key={link.href} href={link.href} className="transition hover:text-white">
+                {link.label}
+              </a>
+            ))}
+          </nav>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => config.demo_url && window.open(config.demo_url, '_blank')}
+              className="hidden rounded-full border border-white/25 px-5 py-2 text-sm font-semibold text-white/80 transition hover:border-white hover:text-white lg:inline-flex"
+            >
+              Watch product tour
+            </button>
+            <button
+              type="button"
+              onClick={onAuthModalOpen}
+              className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 transition hover:shadow-lg"
+            >
+              Book a demo
+            </button>
+          </div>
+        </header>
 
-                <h1 className="text-5xl font-bold leading-tight text-white lg:text-6xl xl:text-7xl">
-                  {config.hero_headline || 'Manage 10+ Weddings Simultaneously'}
-                </h1>
+        <div className="grid gap-16 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center">
+          <div className="space-y-10 text-center lg:text-left">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.3em] text-blue-100">
+              {config.hero_subheadline ?? 'Built for elite planning studios'}
+            </div>
+            <div className="space-y-6">
+              <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
+                {config.hero_headline ?? config.hero_title ?? 'Craft iconic celebrations without the chaos'}
+              </h1>
+              <p className="mx-auto max-w-2xl text-base leading-relaxed text-slate-200 sm:text-lg lg:mx-0">
+                {config.hero_solution_statement ??
+                  config.hero_description ??
+                  'Streamline proposals, guest management, vendors, and beautifully branded experiences in one collaborative hub purpose-built for wedding planners.'}
+              </p>
+              {config.hero_problem_statement && (
+                <p className="text-sm font-medium uppercase tracking-[0.35em] text-blue-200/80">
+                  {config.hero_problem_statement}
+                </p>
+              )}
+            </div>
 
-                {config.hero_problem_statement && (
-                  <p className="text-lg text-slate-300 lg:text-xl">
-                    {config.hero_problem_statement}
-                  </p>
-                )}
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-start">
+              <button
+                type="button"
+                onClick={onAuthModalOpen}
+                className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-blue-500 via-sky-400 to-purple-500 px-8 py-3 text-base font-semibold text-white shadow-[0_20px_45px_-20px_rgba(59,130,246,0.8)] transition hover:translate-y-[-1px] hover:shadow-[0_30px_60px_-30px_rgba(56,189,248,0.9)] sm:w-auto"
+              >
+                {config.hero_cta_primary}
+              </button>
+              <button
+                type="button"
+                onClick={() => config.demo_url && window.open(config.demo_url, '_blank')}
+                className="inline-flex w-full items-center justify-center rounded-full border border-white/25 bg-white/5 px-8 py-3 text-base font-semibold text-white/90 transition hover:bg-white/10 hover:text-white sm:w-auto"
+              >
+                {config.hero_cta_secondary}
+              </button>
+            </div>
 
-                {config.hero_solution_statement && (
-                  <p className="text-lg font-medium text-white lg:text-xl">
-                    {config.hero_solution_statement}
-                  </p>
-                )}
-
-                <div className="flex flex-col gap-4 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={onAuthModalOpen}
-                    className="group relative inline-flex items-center justify-center overflow-hidden rounded-lg bg-blue-600 px-8 py-4 text-base font-semibold text-white shadow-lg transition-all hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-500/50"
-                  >
-                    <span className="relative z-10">{config.hero_cta_primary}</span>
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 opacity-0 transition-opacity group-hover:opacity-100" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => config.demo_url && window.open(config.demo_url, '_blank')}
-                    className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800/50 px-8 py-4 text-base font-semibold text-white backdrop-blur-sm transition-all hover:bg-slate-700/50 hover:border-slate-600"
-                  >
-                    {config.hero_cta_secondary}
-                  </button>
+            <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-slate-200 sm:justify-start">
+              {trustIndicators.map((indicator) => (
+                <div key={indicator} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                  <svg className="h-4 w-4 text-emerald-300" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span>{indicator}</span>
                 </div>
+              ))}
+            </div>
 
-                <div className="flex items-center gap-6 text-sm text-slate-400">
-                  <div className="flex items-center gap-2">
-                    <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Free 30-day trial</span>
+            {statistics.length > 0 && (
+              <div className="grid w-full gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur lg:max-w-xl">
+                {statistics.map((stat) => (
+                  <div key={stat.label} className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3 text-left">
+                    <div>
+                      <p className="text-2xl font-semibold text-white">{stat.value}</p>
+                      <p className="text-xs uppercase tracking-[0.35em] text-blue-100/80">{stat.label}</p>
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      Always-on insights
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>No credit card required</span>
-                  </div>
-                </div>
+                ))}
               </div>
+            )}
+          </div>
 
-              {/* Right: Elegant Wedding Visualization */}
-              <div className="relative h-[600px] w-full">
+          <div className="relative">
+            <div className="absolute inset-0 -translate-y-12 rounded-[3rem] bg-gradient-to-br from-blue-400/30 via-purple-500/20 to-sky-400/20 blur-3xl" />
+            <div className="relative grid gap-6 rounded-[3rem] border border-white/15 bg-white/[0.06] p-6 shadow-[0_60px_160px_-80px_rgba(56,189,248,0.75)] backdrop-blur-xl lg:p-8">
+              <div className="rounded-[2.5rem] border border-white/15 bg-slate-950/70 p-5 shadow-[0_20px_80px_-50px_rgba(59,130,246,0.9)]">
                 <ElegantWeddingHero />
               </div>
-            </div>
-          </div>
-
-          {/* Phase 2: Stats section (28-48% scroll) - NO OVERLAP */}
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{
-              opacity: getPhaseOpacity(2),
-              transform: `translateY(${Math.max(0, (0.32 - scrollProgress) * 150)}px) scale(${0.95 + (getPhaseOpacity(2) * 0.05)})`,
-              zIndex: getPhaseZIndex(2),
-              transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              pointerEvents: getPhaseOpacity(2) > 0 ? 'auto' : 'none',
-            }}
-          >
-            <div className="mx-auto max-w-6xl px-6">
-              <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-12 backdrop-blur-xl">
-                <h3 className="mb-12 text-center text-3xl font-bold text-white">
-                  Trusted by Wedding Professionals Worldwide
-                </h3>
-                <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
-                  {stats.map((stat, index) => (
-                    <div
-                      key={index}
-                      className="text-center transition-all duration-500"
-                      style={{
-                        opacity: visibleStats ? 1 : 0,
-                        transform: visibleStats ? 'translateY(0)' : 'translateY(20px)',
-                        transitionDelay: `${index * 150}ms`,
-                      }}
-                    >
-                      <div className="mb-2 text-5xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                        {stat.value}
-                      </div>
-                      <div className="text-sm text-slate-400">{stat.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Phase 3: Feature preview cards (54-74% scroll) - NO OVERLAP */}
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{
-              opacity: getPhaseOpacity(3),
-              transform: `scale(${0.92 + (getPhaseOpacity(3) * 0.08)})`,
-              zIndex: getPhaseZIndex(3),
-              transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              pointerEvents: getPhaseOpacity(3) > 0 ? 'auto' : 'none',
-            }}
-          >
-            <div className="mx-auto max-w-6xl px-6">
-              <h3 className="mb-8 text-center text-3xl font-bold text-white">
-                Everything You Need in One Platform
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {topFeatures.map((feature, index) => {
-                  const isVisible = visibleFeatures.has(index);
-                  return (
-                    <div
-                      key={index}
-                      className="group rounded-2xl border border-white/10 bg-slate-800/30 p-6 backdrop-blur-sm transition-all duration-500 hover:bg-slate-800/50 hover:border-blue-500/30"
-                      style={{
-                        opacity: isVisible ? 1 : 0,
-                        transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(30px) scale(0.9)',
-                        transitionDelay: `${(index % 3) * 100}ms`,
-                      }}
-                    >
-                      <div className="mb-3 text-3xl">{feature.icon || '✨'}</div>
-                      <h4 className="mb-2 font-semibold text-white">{feature.title}</h4>
-                      <p className="text-sm text-slate-400">{feature.description}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Phase 4: Pricing preview (80-100% scroll) - NO OVERLAP */}
-          {featuredPlan && (
-            <div
-              className="absolute inset-0 flex items-center justify-center"
-              style={{
-                opacity: getPhaseOpacity(4),
-                transform: `translateY(${Math.max(0, (0.84 - scrollProgress) * 100)}px) scale(${0.9 + (getPhaseOpacity(4) * 0.1)})`,
-                zIndex: getPhaseZIndex(4),
-                transition: 'opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                filter: `brightness(${1 + (getPhaseOpacity(4) * 0.2)})`,
-              }}
-            >
-              <div className="mx-auto max-w-2xl px-6">
-                <div className="rounded-3xl border border-purple-500/30 bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-8 text-center backdrop-blur-xl">
-                  <div className="mb-2 inline-block rounded-full bg-blue-500/20 px-3 py-1 text-xs font-bold text-blue-400">
-                    MOST POPULAR
+              {featuredPlan && (
+                <div className="rounded-3xl border border-white/15 bg-slate-950/60 p-6 text-left">
+                  <div className="flex items-center justify-between text-sm text-blue-100/80">
+                    <span className="inline-flex items-center gap-2 font-semibold">
+                      Featured Plan
+                      <span className="inline-flex items-center rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.25em] text-blue-100">
+                        {featuredPlan.is_featured ? 'Recommended' : 'Popular'}
+                      </span>
+                    </span>
+                    <span className="text-white">${featuredPlan.price_monthly}/mo</span>
                   </div>
-                  <h3 className="mb-2 text-3xl font-bold text-white">{featuredPlan.name}</h3>
-                  <p className="mb-6 text-slate-400">{featuredPlan.description}</p>
-                  <div className="mb-6 flex items-baseline justify-center gap-2">
-                    <span className="text-5xl font-bold text-white">${featuredPlan.price_monthly}</span>
-                    <span className="text-slate-400">/month</span>
-                  </div>
+                  <p className="mt-3 text-sm text-slate-200">{featuredPlan.description}</p>
                   <button
+                    type="button"
                     onClick={onAuthModalOpen}
-                    className="mx-auto inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-500 to-purple-500 px-8 py-3 font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:scale-105 hover:shadow-xl hover:shadow-blue-500/50"
+                    className="mt-5 inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:shadow-lg"
                   >
-                    Start Free Trial
+                    Preview onboarding
                   </button>
                 </div>
-              </div>
+              )}
+              {primaryFeatureCallouts.length > 0 && (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {primaryFeatureCallouts.map((feature) => (
+                    <article key={feature.title} className="flex flex-col gap-3 rounded-2xl border border-white/15 bg-white/[0.05] p-4 text-left">
+                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/20 text-lg text-blue-100">
+                        {feature.icon ?? '✨'}
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">{feature.title}</h3>
+                        <p className="mt-1 text-xs text-slate-300">{feature.description}</p>
+                      </div>
+                      <span className="mt-auto text-[10px] uppercase tracking-[0.4em] text-blue-200/70">In platform</span>
+                    </article>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </section>
