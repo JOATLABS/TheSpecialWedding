@@ -145,7 +145,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
       }`}
     >
       {/* Sticky container that stays in viewport */}
-      <div className="sticky top-0 min-h-screen w-full overflow-hidden">
+      <div className="sticky top-0 min-h-screen w-full flex items-center justify-center">
         {/* Dynamic gradient orbs that move with scroll */}
         <div
           aria-hidden="true"
@@ -164,10 +164,11 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
           }}
         />
 
-        <div className="relative mx-auto max-w-7xl px-6 py-20 lg:py-32">
+        {/* Phase container - centered content */}
+        <div className="relative w-full max-w-7xl px-6">
           {/* Phase 1: Initial hero (0-22% scroll) - Clean fade out */}
           <div
-            className="absolute inset-0"
+            className="absolute inset-0 flex items-center justify-center"
             style={{
               opacity: getPhaseOpacity(1),
               transform: `translateY(${scrollProgress * -50}px) scale(${1 - scrollProgress * 0.1})`,
@@ -245,7 +246,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
 
           {/* Phase 2: Stats section (28-48% scroll) - NO OVERLAP */}
           <div
-            className="absolute inset-x-0 top-1/2 -translate-y-1/2"
+            className="absolute inset-0 flex items-center justify-center"
             style={{
               opacity: getPhaseOpacity(2),
               transform: `translateY(${Math.max(0, (0.32 - scrollProgress) * 150)}px) scale(${0.95 + (getPhaseOpacity(2) * 0.05)})`,
@@ -283,7 +284,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
 
           {/* Phase 3: Feature preview cards (54-74% scroll) - NO OVERLAP */}
           <div
-            className="absolute inset-x-0 top-1/2 -translate-y-1/2"
+            className="absolute inset-0 flex items-center justify-center"
             style={{
               opacity: getPhaseOpacity(3),
               transform: `scale(${0.92 + (getPhaseOpacity(3) * 0.08)})`,
@@ -322,7 +323,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
           {/* Phase 4: Pricing preview (80-100% scroll) - NO OVERLAP */}
           {featuredPlan && (
             <div
-              className="absolute inset-x-0 bottom-32"
+              className="absolute inset-0 flex items-center justify-center"
               style={{
                 opacity: getPhaseOpacity(4),
                 transform: `translateY(${Math.max(0, (0.84 - scrollProgress) * 100)}px) scale(${0.9 + (getPhaseOpacity(4) * 0.1)})`,
