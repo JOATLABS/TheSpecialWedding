@@ -14,8 +14,9 @@ import {
 } from "@heroicons/react/24/outline";
 import React from "react";
 
+import HeroAurora from "./components/ui/HeroAurora";
 import HeroCanvas from "./components/ui/HeroCanvas";
-import RosePetals from "./components/ui/RosePetals";
+import PetalCanvas from "./components/ui/PetalCanvas";
 
 type Feature = {
   title: string;
@@ -268,7 +269,8 @@ export default function HomePage() {
       {/* HERO */}
       <section className="relative overflow-hidden bg-gradient-to-b from-[#0b1120] via-slate-950 to-slate-950">
         <HeroCanvas />
-        <RosePetals count={40} />
+        <HeroAurora />
+        <PetalCanvas />
         <div
           className="absolute inset-0 opacity-60"
           style={{
