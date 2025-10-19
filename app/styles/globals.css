@@ -52,7 +52,7 @@
   100% { transform: translateX(0); }
 }
 
-.petal { position: absolute; top: -10vh; animation-name: petal-sway; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.petal { position: absolute; top: -10vh; animation-name: petal-sway; animation-timing-function: ease-in-out; animation-iteration-count: infinite; will-change: transform; }
 .petal-inner {
   display: block;
   background: radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.1) 35%, rgba(216,112,147,0.9) 36%, rgba(200,80,120,0.95) 100%);
@@ -63,4 +63,55 @@
   animation-timing-function: linear;
   animation-iteration-count: infinite;
   filter: blur(0.2px);
+  will-change: transform;
+}
+
+/* Aurora ribbons */
+.hero-aurora { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.hero-aurora__ribbon {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: clamp(22rem, 40vw, 34rem);
+  height: clamp(12rem, 28vw, 22rem);
+  background: var(--gradient);
+  border-radius: 40% 60% 55% 45% / 60% 40% 60% 40%;
+  filter: blur(40px) saturate(130%);
+  mix-blend-mode: screen;
+  opacity: var(--opacity);
+  transform-origin: center;
+  animation: aurora-flow var(--duration) ease-in-out infinite alternate,
+             aurora-glisten calc(var(--duration) * 1.35) ease-in-out infinite;
+  animation-delay: var(--delay);
+  will-change: transform, opacity;
+}
+
+@keyframes aurora-flow {
+  0% {
+    transform: translate3d(var(--start-x), var(--start-y), 0) rotate(var(--rotation)) scale(1);
+  }
+  100% {
+    transform: translate3d(var(--end-x), var(--end-y), 0) rotate(calc(var(--rotation) + var(--swing))) scale(1.08);
+  }
+}
+
+@keyframes aurora-glisten {
+  0%, 100% { opacity: calc(var(--opacity) * 0.7); }
+  45% { opacity: calc(var(--opacity) * 1.05); }
+  65% { opacity: calc(var(--opacity) * 0.9); }
+}
+
+.hero-canvas { will-change: transform, opacity; }
+
+@media (prefers-reduced-motion: reduce) {
+  .petal,
+  .petal-inner,
+  .hero-aurora__ribbon,
+  .hero-canvas {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-play-state: paused !important;
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
 }
