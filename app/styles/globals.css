@@ -107,7 +107,8 @@
   .petal,
   .petal-inner,
   .hero-aurora__ribbon,
-  .hero-canvas {
+  .hero-canvas,
+  .petal-canvas {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     animation-play-state: paused !important;
