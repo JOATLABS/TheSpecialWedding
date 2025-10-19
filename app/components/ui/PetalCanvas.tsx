@@ -146,24 +146,33 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
       // Layered draw by depth for natural overlap
       const order = petals.current.map((p, i) => [i, p.z] as const).sort((a, b) => a[1] - b[1]);
 
-      // Time-based breeze (smooth, low-frequency)
+      // Time-based breeze (smooth, low-frequency) with vertical bias
       t += 0.005;
-      const wind = Math.sin(t * 0.6) * 0.14 + Math.sin(t * 0.13) * 0.06;
+      const wind = Math.sin(t * 0.45) * 0.05 + Math.sin(t * 0.11) * 0.03;
 
       for (const [idx] of order) {
         const p = petals.current[idx];
         const sprite = sprites.current[idx];
 
-        p.ax = wind * (0.3 + p.z * 0.9);
-        p.vx += p.ax;
-        p.vy += p.ay * (0.8 + p.z * 0.6);
+        // Subtle horizontal drift with friction and clamp
+        p.ax = wind * (0.15 + p.z * 0.35);
+        p.vx = (p.vx + p.ax) * 0.985;
+        const maxVx = 0.35;
+        if (p.vx > maxVx) p.vx = maxVx;
+        if (p.vx < -maxVx) p.vx = -maxVx;
+
+        // Gravity-driven vertical fall with terminal velocity clamp
+        p.vy += p.ay * (0.85 + p.z * 0.55);
+        const maxVy = 1.6 + p.z * 0.9;
+        if (p.vy > maxVy) p.vy = maxVy;
+
         p.x += p.vx;
         p.y += p.vy;
         p.angle += p.spin * (0.6 + p.z * 0.8);
         p.tilt += 0.04 + p.z * 0.03; // flip phase controls subtle front/back flip
 
-        // Recycle when below screen or out of bounds
-        if (p.y - p.size > h || p.x < -200 || p.x > w + 200) {
+        // Recycle when below screen or out of bounds (tighter horizontal bounds)
+        if (p.y - p.size > h || p.x < -120 || p.x > w + 120) {
           const i = Math.floor(Math.random() * 10000);
           const fresh = createPetal(w, h, i);
           fresh.y = -fresh.size;
