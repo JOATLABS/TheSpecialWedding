@@ -1,14 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Modern3DBackground } from '../landing-page/Modern3DBackground';
-import { SaasHeroSection } from './SaasHeroSection';
-import { ModernHeroSection } from './ModernHeroSection';
 import { IntegratedHeroSection } from './IntegratedHeroSection';
-import { PlannerAuthSection, SubscriptionPlan } from './PlannerAuthSection';
 import { PlannerAuthModal } from './PlannerAuthModal';
-import { SaasExperienceCarousel } from './SaasExperienceCarousel';
 import ContactSalesModal from './ContactSalesModal';
+import { SubscriptionPlan } from './PlannerAuthSection';
 import { fetchWithTimeout, resolveApiUrl } from './apiClient';
 
 interface Feature {
@@ -71,12 +67,14 @@ interface SaasConfig {
 
 export const SaasLandingPage: React.FC = () => {
   const [authMode, setAuthMode] = useState<'signup' | 'login'>('signup');
+  const [authVariant, setAuthVariant] = useState<'signup' | 'login' | 'hybrid'>('signup');
   const [selectedPlan, setSelectedPlan] = useState<{ id: string; name?: string } | null>(null);
   const [planNotice, setPlanNotice] = useState('');
   const [config, setConfig] = useState<SaasConfig>({
     hero_title: "Welcome to Special Wedding",
     hero_subtitle: "Wedding Planning Made Simple",
-    hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+    hero_description:
+      'The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites without juggling disconnected tools.',
     hero_cta_primary: "Start Free Trial",
     hero_cta_secondary: "Watch Demo",
     contact_cta_label: 'Contact Sales',
@@ -89,59 +87,35 @@ export const SaasLandingPage: React.FC = () => {
     hero_problem_statement: "Stop juggling spreadsheets, email chains, and vendor chaos",
     hero_solution_statement: "One platform to manage guests, vendors, timelines, and budgets—all in sync",
     statistics: [
-      { label: "Wedding Planners Trust Us", value: "500+" },
-      { label: "Weddings Managed", value: "10K+" },
-      { label: "Uptime Guarantee", value: "99.9%" }
+      { label: 'Wedding planners onboarded', value: 'Trusted by our beta teams' },
+      { label: 'Weddings managed', value: 'Built for multi-event studios' },
+      { label: 'Support response time', value: 'Under 24 hours on business days' },
     ],
     features: [
       {
-        title: "Complete Wedding Management",
-        description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
+        title: 'Complete wedding management',
+        description: 'Track guests, RSVPs, vendors, and timelines for every couple in one collaborative workspace.',
         status: "available" as const,
         order: 1
       },
       {
-        title: "Vendor Collaboration",
-        description: "Give vendors access to update their portions of the wedding checklist and collaborate seamlessly.",
+        title: 'Vendor collaboration',
+        description: 'Give vendors scoped access to the tasks and files they need so updates stay in sync.',
         status: "available" as const,
         order: 2
       },
       {
-        title: "Beautiful Wedding Websites",
-        description: "Create stunning, customizable wedding websites for each couple with our easy-to-use builder.",
+        title: 'Client-facing wedding sites',
+        description: 'Publish customizable wedding microsites with RSVP tracking and secure guest messaging.',
         status: "available" as const,
         order: 3
       },
       {
-        title: "RSVP & Guest Management",
-        description: "Streamline guest management with advanced RSVP tracking, meal preferences, and seating arrangements.",
+        title: 'RSVP & guest management',
+        description: 'Collect RSVPs, track meal preferences, and manage seating without manual spreadsheet updates.',
         status: "available" as const,
         order: 4
       },
-      {
-        title: "AI Presentation Generator",
-        description: "Create stunning wedding presentations in minutes with our AI-powered design tools.",
-        status: "coming_soon" as const,
-        order: 5
-      },
-      {
-        title: "Smart Email Assistant",
-        description: "Send professional emails with embedded reports and updates using AI-generated content.",
-        status: "coming_soon" as const,
-        order: 6
-      },
-      {
-        title: "Budget Optimization Engine",
-        description: "Calculate optimal spending for maximum impact on your client's special day with AI insights.",
-        status: "coming_soon" as const,
-        order: 7
-      },
-      {
-        title: "Design Research AI",
-        description: "Get color palettes, themes, and design inspiration tailored to your clients' preferences.",
-        status: "coming_soon" as const,
-        order: 8
-      }
     ],
     benefits: [
       {
@@ -167,11 +141,11 @@ export const SaasLandingPage: React.FC = () => {
     ],
     testimonials: [
       {
-        name: "Sarah Johnson",
-        company: "Elegant Events Planning",
-        role: "Senior Wedding Planner",
-        content: "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
-        order: 1
+        name: 'Sarah Johnson',
+        company: 'Elegant Events Planning',
+        role: 'Senior Wedding Planner',
+        content: 'Special Wedding keeps every client deliverable organized so my team never worries about missing details.',
+        order: 1,
       },
       {
         name: "Michael Chen",
@@ -207,7 +181,6 @@ export const SaasLandingPage: React.FC = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [useIntegratedHero, setUseIntegratedHero] = useState(true); // New integrated design by default
 
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
@@ -242,31 +215,6 @@ export const SaasLandingPage: React.FC = () => {
         display_order: 0,
       },
     ],
-    []
-  );
-
-  const resolveApiUrl = useCallback((path: string) => {
-    const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
-    if (configuredBase) {
-      return `${configuredBase}${path}`;
-    }
-    return path;
-  }, []);
-
-  const fetchWithTimeout = useCallback(
-    async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8000) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await fetch(input, {
-          ...init,
-          signal: controller.signal,
-        });
-        return response;
-      } finally {
-        clearTimeout(timer);
-      }
-    },
     []
   );
 
@@ -333,20 +281,6 @@ export const SaasLandingPage: React.FC = () => {
     fetchSubscriptionPlans();
   }, [fetchSubscriptionPlans]);
 
-  const scrollToAuthPanel = () => {
-    if (typeof document === 'undefined') {
-      return;
-    }
-    const panel = document.getElementById('planner-auth-section');
-    if (panel) {
-      panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
   useEffect(() => {
     if (!planLoading && plans.length > 0 && !selectedPlan) {
       const featuredPlan = plans.find((plan) => plan.is_featured) ?? plans[0];
@@ -356,6 +290,25 @@ export const SaasLandingPage: React.FC = () => {
 
   const condensedPlans = useMemo(() => plans.slice(0, 4), [plans]);
 
+  const orderedFeatures = useMemo(() => {
+    return [...config.features].sort((a, b) => a.order - b.order);
+  }, [config.features]);
+
+  const orderedBenefits = useMemo(() => {
+    return [...config.benefits].sort((a, b) => a.order - b.order);
+  }, [config.benefits]);
+
+  const orderedTestimonials = useMemo(() => {
+    return [...config.testimonials].sort((a, b) => a.order - b.order);
+  }, [config.testimonials]);
+
+  const statistics = useMemo(() => {
+    if (config.statistics_enabled === false) {
+      return [] as SaasConfig['statistics'];
+    }
+    return (config.statistics ?? []).slice(0, 3);
+  }, [config.statistics, config.statistics_enabled]);
+
   const handleContactOpen = useCallback(() => {
     setIsContactOpen(true);
   }, []);
@@ -363,6 +316,35 @@ export const SaasLandingPage: React.FC = () => {
   const handleContactClose = useCallback(() => {
     setIsContactOpen(false);
   }, []);
+
+  const openSignupModal = useCallback(
+    (plan?: { id: string; name?: string }) => {
+      if (plan) {
+        setSelectedPlan(plan);
+      }
+      setAuthVariant('signup');
+      setAuthMode('signup');
+      setIsAuthModalOpen(true);
+    },
+    [setSelectedPlan, setAuthMode, setAuthVariant, setIsAuthModalOpen]
+  );
+
+  const openLoginModal = useCallback(() => {
+    setAuthVariant('login');
+    setAuthMode('login');
+    setIsAuthModalOpen(true);
+  }, [setAuthMode, setAuthVariant, setIsAuthModalOpen]);
+
+  const handleAuthIntentChange = useCallback(
+    (mode: 'signup' | 'login') => {
+      if (mode === 'signup') {
+        openSignupModal();
+      } else {
+        openLoginModal();
+      }
+    },
+    [openLoginModal, openSignupModal]
+  );
 
   if (loading) {
     return (
@@ -380,135 +362,341 @@ export const SaasLandingPage: React.FC = () => {
     secondary_color: config.secondary_color,
     accent_color: config.secondary_color,
     background_style: 'gradient' as const,
-    font_style: 'elegant' as const
+    font_style: 'elegant' as const,
   };
 
+  const resourceHighlights = [
+    {
+      title: 'Onboarding playbook',
+      description: 'Step-by-step guide to migrate weddings, invite teams, and configure automations.',
+      href: '#',
+    },
+    {
+      title: 'Wedding workflow templates',
+      description: 'Curated task boards and checklist templates inspired by top 1% planning studios.',
+      href: '#',
+    },
+    {
+      title: 'Planner community calls',
+      description: 'Monthly office hours featuring best practices and new feature walkthroughs.',
+      href: '#',
+    },
+  ];
+
+  const faqs = [
+    {
+      question: 'How quickly can I onboard my team?',
+      answer:
+        'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
+    },
+    {
+      question: 'Do you support client-facing wedding websites?',
+      answer:
+        'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
+    },
+    {
+      question: 'Can vendors access only their assigned tasks?',
+      answer:
+        'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
+    },
+  ];
+
+  const workflow = [
+    {
+      title: 'Discovery & onboarding',
+      description: 'Collect couple questionnaires, import spreadsheets, and set expectations in minutes.',
+      badge: 'Week 1',
+    },
+    {
+      title: 'Vendor alignment',
+      description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
+      badge: 'Week 2',
+    },
+    {
+      title: 'Guest communication',
+      description: 'Centralize RSVPs, table assignments, and messaging without endless email threads.',
+      badge: 'Week 3',
+    },
+    {
+      title: 'Event execution',
+      description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
+      badge: 'Wedding week',
+    },
+  ];
+
   return (
-    <div className="relative min-h-screen bg-slate-950 text-slate-900">
-      {/* Use integrated hero by default, fall back to old layout if disabled */}
-      {useIntegratedHero ? (
-        <>
-          {/* New integrated hero with everything built-in */}
-          <IntegratedHeroSection
-            config={config}
-            plans={plans}
-            onAuthModalOpen={() => {
-              setAuthMode('signup');
-              setIsAuthModalOpen(true);
-            }}
-          />
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+      <IntegratedHeroSection
+        config={config}
+        plans={plans}
+        onSignupOpen={() => openSignupModal()}
+        onLoginOpen={openLoginModal}
+      />
 
-          {/* Optional: Add FAQ or footer sections below hero if needed */}
-        </>
-      ) : (
-        <>
-          <Modern3DBackground imageUrl={config.background_image} fallbackImages={config.fallback_images} theme={theme} />
-
-          <div className="relative z-10">
-            <div className="mx-auto flex w-full max-w-7xl flex-col gap-16 px-4 pb-16 pt-12 sm:px-6 lg:px-8 lg:pb-24 lg:pt-16 xl:px-12">
-              <div className="grid gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] xl:gap-16 xl:items-start">
-                {config.show_decorative_logo !== false ? (
-                  <SaasHeroSection
-                    config={config}
-                    theme={theme}
-                    onAuthModeChange={(mode) => {
-                      setAuthMode(mode);
-                      if (mode === 'signup') {
-                        scrollToAuthPanel();
-                      }
-                    }}
-                    onRequestSignupFocus={scrollToAuthPanel}
-                    onContactClick={handleContactOpen}
-                    className="lg:px-0 lg:py-0"
-                  />
-                ) : (
-                  <ModernHeroSection
-                    config={config}
-                    onAuthModeChange={(mode) => {
-                      setAuthMode(mode);
-                      if (mode === 'signup') {
-                        scrollToAuthPanel();
-                      }
-                    }}
-                    onRequestSignupFocus={scrollToAuthPanel}
-                    className="lg:col-span-2"
-                  />
-                )}
-
-                <div id="planner-auth-section" className="flex flex-col gap-8 lg:sticky lg:top-16">
-                  <PlannerAuthSection
-                    mode={authMode}
-                    onModeChange={(mode) => {
-                      setAuthMode(mode);
-                      if (mode === 'signup') {
-                        scrollToAuthPanel();
-                      }
-                    }}
-                    theme={theme}
-                    plans={condensedPlans}
-                    plansLoading={planLoading}
-                    plansError={planError}
-                    plansNotice={planNotice}
-                    selectedPlan={selectedPlan}
-                    onSelectPlan={(plan) => {
-                      setSelectedPlan(plan);
-                      setAuthMode('signup');
-                      scrollToAuthPanel();
-                    }}
-                    className="shadow-[0_28px_120px_-45px_rgba(15,23,42,0.4)]"
-                  />
-
-                  {planError && !planLoading && (
-                    <div className="rounded-3xl border border-red-200/80 bg-red-50/80 px-4 py-3 text-sm text-red-700 shadow-sm backdrop-blur">
-                      {planError}
-                    </div>
-                  )}
-
-                  {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
-                    <div className="hidden lg:block">
-                      <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/25 p-[1px] shadow-[0_30px_90px_-50px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.6),transparent_60%)]"
-                        />
-                        <div className="relative rounded-[2.6rem] bg-white/75 px-6 py-8 xl:px-8 xl:py-10">
-                          <SaasExperienceCarousel
-                            features={config.features}
-                            benefits={config.benefits}
-                            testimonials={config.testimonials}
-                            theme={theme}
-                          />
-                        </div>
+      <div className="relative -mt-24 rounded-t-[3rem] bg-gradient-to-b from-white via-slate-50 to-slate-100 text-slate-900 shadow-[0_-60px_120px_-80px_rgba(15,23,42,0.7)]">
+        <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-24 px-4 pb-28 pt-28 sm:px-6 lg:px-8">
+          {config.features_enabled && orderedFeatures.length > 0 && (
+            <section id="features" className="space-y-12">
+              <div className="space-y-4 text-center">
+                <span className="inline-flex items-center justify-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-900">
+                  Platform capabilities
+                </span>
+                <h2 className="text-3xl font-semibold text-slate-900 sm:text-4xl">Command every detail from one canvas</h2>
+                <p className="mx-auto max-w-2xl text-base text-slate-600">
+                  Purpose-built modules cover planning workflows end-to-end so your team can focus on the moments that matter most to your couples.
+                </p>
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {orderedFeatures.slice(0, 6).map((feature) => (
+                  <article
+                    key={feature.title}
+                    className="group flex h-full flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_24px_90px_-60px_rgba(15,23,42,0.35)] transition hover:-translate-y-1 hover:border-blue-300/80 hover:shadow-[0_40px_120px_-70px_rgba(59,130,246,0.55)]"
+                  >
+                    <div className="space-y-3 text-left">
+                      <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-lg text-blue-600">
+                        {feature.icon ?? '✨'}
                       </div>
+                      <h3 className="text-lg font-semibold text-slate-900">{feature.title}</h3>
+                      <p className="text-sm leading-relaxed text-slate-600">{feature.description}</p>
                     </div>
-                  )}
+                    <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-slate-900">
+                      {feature.status === 'coming_soon' ? 'Coming soon' : 'Available now'}
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </span>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section
+            id="workflow"
+            className="grid gap-10 rounded-[2.5rem] border border-slate-200/80 bg-white p-10 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.35)] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center"
+          >
+            <div className="space-y-6">
+              <span className="inline-flex items-center justify-center rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-900">
+                Orchestrate end-to-end
+              </span>
+              <h2 className="text-3xl font-semibold text-slate-900 sm:text-4xl">An automation backbone tuned for wedding planners</h2>
+              <p className="text-base text-slate-600">
+                Turn your signature approach into a repeatable client journey. Each stage is mapped with templates, automations, and visibility to keep couples confident.
+              </p>
+              <button
+                type="button"
+                onClick={() => openSignupModal()}
+                className="inline-flex items-center justify-center rounded-full bg-slate-900 px-7 py-3 text-base font-semibold text-white shadow-[0_12px_30px_-18px_rgba(15,23,42,0.6)] transition hover:-translate-y-[1px] hover:shadow-[0_22px_50px_-28px_rgba(59,130,246,0.55)]"
+              >
+                Explore automations
+              </button>
+            </div>
+            <div className="space-y-4">
+              {workflow.map((step, index) => (
+                <div
+                  key={step.title}
+                  className="flex flex-col gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-5 transition hover:border-blue-200/80 hover:bg-white"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">Step {index + 1}</p>
+                    <span className="rounded-full bg-blue-100 px-3 py-1 text-[11px] font-semibold text-blue-900">{step.badge}</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900">{step.title}</h3>
+                  <p className="text-sm text-slate-600">{step.description}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {config.benefits_enabled && orderedBenefits.length > 0 && (
+            <section id="benefits" className="grid gap-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center">
+              <div className="space-y-6">
+                <h2 className="text-3xl font-semibold text-slate-900 sm:text-4xl">A modern back office for premium planners</h2>
+                <p className="text-base text-slate-600">
+                  Translate your signature service into a reliable, repeatable system. We pair automation with human-friendly controls so nothing feels generic.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {statistics.slice(0, 2).map((stat) => (
+                    <div key={stat.label} className="rounded-2xl border border-slate-200/70 bg-white p-5 text-left shadow-sm">
+                      <p className="text-2xl font-semibold text-slate-900">{stat.value}</p>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{stat.label}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
-
-              {(config.features_enabled || config.benefits_enabled || config.testimonials_enabled) && (
-                <section aria-labelledby="experience-showcase" className="lg:hidden">
-                  <div className="relative overflow-hidden rounded-[2.75rem] border border-white/30 bg-white/20 p-[1px] shadow-[0_25px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur-2xl">
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 rounded-[2.75rem] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.55),transparent_60%)]"
-                    />
-                    <div className="relative rounded-[2.6rem] bg-white/70 px-5 py-8 sm:px-7 sm:py-9">
-                      <SaasExperienceCarousel
-                        features={config.features}
-                        benefits={config.benefits}
-                        testimonials={config.testimonials}
-                        theme={theme}
-                      />
-                    </div>
+              <div className="grid gap-6 sm:grid-cols-2">
+                {orderedBenefits.slice(0, 4).map((benefit) => (
+                  <div key={benefit.title} className="rounded-3xl border border-slate-200/70 bg-white p-6 shadow-[0_20px_80px_-60px_rgba(15,23,42,0.3)]">
+                    <h3 className="text-lg font-semibold text-slate-900">{benefit.title}</h3>
+                    <p className="mt-2 text-sm text-slate-600">{benefit.description}</p>
                   </div>
-                </section>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+                ))}
+              </div>
+            </section>
+          )}
 
-      {/* Auth modal - opens when any CTA is clicked */}
+          <section id="pricing" className="space-y-10">
+            <div className="space-y-4 text-center">
+              <span className="inline-flex items-center justify-center rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                Pricing built for momentum
+              </span>
+              <h2 className="text-3xl font-semibold text-slate-900 sm:text-4xl">Plans that scale with every celebration</h2>
+              <p className="mx-auto max-w-2xl text-base text-slate-600">
+                Flexible pricing helps boutique studios through enterprise teams orchestrate unforgettable weddings without messy add-ons.
+              </p>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-3">
+              {plans.slice(0, 3).map((plan) => (
+                <article
+                  key={plan._id}
+                  className={`flex h-full flex-col rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_30px_110px_-70px_rgba(15,23,42,0.35)] transition hover:-translate-y-1 hover:border-blue-300/80 hover:shadow-[0_50px_140px_-80px_rgba(59,130,246,0.5)] ${
+                    plan.is_featured ? 'lg:scale-[1.01] lg:border-blue-400/80' : ''
+                  }`}
+                >
+                  <div className="flex items-baseline justify-between text-sm text-slate-500">
+                    <span className="font-semibold text-slate-900">{plan.name}</span>
+                    {plan.is_featured && (
+                      <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-900">
+                        Most popular
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-600">{plan.description}</p>
+                  <div className="mt-6 flex items-baseline gap-2 text-slate-900">
+                    <span className="text-4xl font-semibold">${plan.price_monthly}</span>
+                    <span className="text-sm text-slate-500">/month</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openSignupModal({ id: plan._id, name: plan.name });
+                    }}
+                    className="mt-6 inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-[1px] hover:bg-slate-800"
+                  >
+                    Start with {plan.name}
+                  </button>
+                </article>
+              ))}
+            </div>
+            {planError && !planLoading && (
+              <p className="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {planError}
+              </p>
+            )}
+            {planNotice && !planError && (
+              <p className="rounded-3xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                {planNotice}
+              </p>
+            )}
+          </section>
+
+          {config.testimonials_enabled && orderedTestimonials.length > 0 && (
+            <section id="testimonials" className="space-y-10">
+              <div className="space-y-4 text-center">
+                <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-900">
+                  Planners sharing wins
+                </span>
+                <h2 className="text-3xl font-semibold text-slate-900 sm:text-4xl">Loved by planners crafting iconic events</h2>
+                <p className="mx-auto max-w-2xl text-base text-slate-600">
+                  Hear how teams replace patchwork tools with a platform that keeps every couple feeling like your only client.
+                </p>
+              </div>
+              <div className="grid gap-6 lg:grid-cols-3">
+                {orderedTestimonials.map((testimonial) => (
+                  <blockquote
+                    key={testimonial.name}
+                    className="flex h-full flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_30px_110px_-70px_rgba(15,23,42,0.3)]"
+                  >
+                    <p className="text-sm leading-relaxed text-slate-700">“{testimonial.content}”</p>
+                    <footer className="mt-6 text-sm text-slate-500">
+                      <div className="font-semibold text-slate-900">{testimonial.name}</div>
+                      <div>{testimonial.role}</div>
+                      <div className="text-xs uppercase tracking-[0.25em] text-slate-400">{testimonial.company}</div>
+                    </footer>
+                  </blockquote>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section id="faq" className="grid gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-start">
+            <div className="space-y-6">
+              <h2 className="text-3xl font-semibold text-slate-900 sm:text-4xl">Answers before you onboard</h2>
+              <p className="text-base text-slate-600">
+                We partner with you from discovery call to launch. If you have bespoke requirements, our concierge success team is ready to assist.
+              </p>
+              <button
+                type="button"
+                onClick={handleContactOpen}
+                className="inline-flex items-center justify-center rounded-full border border-slate-900/10 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-[0_12px_35px_-25px_rgba(15,23,42,0.45)] transition hover:-translate-y-[1px] hover:border-slate-900/20"
+              >
+                Talk to a specialist
+              </button>
+            </div>
+            <div className="space-y-4">
+              {faqs.map((faq) => (
+                <div key={faq.question} className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm">
+                  <h3 className="text-base font-semibold text-slate-900">{faq.question}</h3>
+                  <p className="mt-2 text-sm text-slate-600">{faq.answer}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="grid gap-6 rounded-[2.5rem] border border-slate-200/80 bg-white p-10 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.35)] lg:grid-cols-3">
+            {resourceHighlights.map((resource) => (
+              <a
+                key={resource.title}
+                href={resource.href}
+                className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200/70 bg-slate-50/70 p-6 text-left transition hover:-translate-y-1 hover:border-slate-300"
+              >
+                <div className="space-y-3">
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                    Resource
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                  <h3 className="text-lg font-semibold text-slate-900">{resource.title}</h3>
+                  <p className="text-sm text-slate-600">{resource.description}</p>
+                </div>
+                <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  Explore
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H7" />
+                  </svg>
+                </span>
+              </a>
+            ))}
+          </section>
+
+          <section className="overflow-hidden rounded-[2.5rem] border border-slate-200/80 bg-gradient-to-r from-blue-600 to-purple-600 p-10 text-center text-white shadow-[0_40px_160px_-80px_rgba(79,70,229,0.55)]">
+            <div className="mx-auto max-w-2xl space-y-4">
+              <h2 className="text-3xl font-semibold sm:text-4xl">Give every celebration the spotlight it deserves</h2>
+              <p className="text-base text-blue-50">
+                Secure, collaborative, and elegantly branded—Special Wedding keeps your studio ahead of the expectations of modern couples.
+              </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+                <button
+                  type="button"
+                  onClick={() => openSignupModal()}
+                  className="inline-flex items-center justify-center rounded-full bg-white px-8 py-3 text-base font-semibold text-slate-900 transition hover:-translate-y-[1px] hover:bg-blue-50"
+                >
+                  Create my planner account
+                </button>
+                <button
+                  type="button"
+                  onClick={handleContactOpen}
+                  className="inline-flex items-center justify-center rounded-full border border-white/60 px-8 py-3 text-base font-semibold text-white transition hover:-translate-y-[1px] hover:bg-white/10"
+                >
+                  Schedule a guided tour
+                </button>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+
       <PlannerAuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
@@ -522,8 +710,11 @@ export const SaasLandingPage: React.FC = () => {
         selectedPlan={selectedPlan}
         onSelectPlan={(plan) => {
           setSelectedPlan(plan);
+          setAuthVariant('signup');
           setAuthMode('signup');
         }}
+        variant={authVariant}
+        onIntentChange={handleAuthIntentChange}
       />
 
       <ContactSalesModal isOpen={isContactOpen} onClose={handleContactClose} theme={theme} />

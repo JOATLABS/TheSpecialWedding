@@ -39,6 +39,8 @@ type PlannerAuthSectionProps = {
   onSignupSuccess?: () => void;
   className?: string;
   layout?: 'panel' | 'modal';
+  availableModes?: AuthMode[];
+  showModeToggle?: boolean;
 };
 
 type SignupFormValues = {
@@ -210,9 +212,44 @@ export function PlannerAuthSection({
   onSignupSuccess,
   className = '',
   layout = 'panel',
+  availableModes,
+  showModeToggle,
 }: PlannerAuthSectionProps) {
-  const [internalMode, setInternalMode] = useState<AuthMode>(defaultMode);
-  const resolvedMode = mode ?? internalMode;
+  const allowedModes = useMemo(() => {
+    const fallback: AuthMode[] = ['signup', 'login'];
+    if (!availableModes || availableModes.length === 0) {
+      return fallback;
+    }
+    const unique = Array.from(new Set(availableModes)) as AuthMode[];
+    return unique.length > 0 ? unique : fallback;
+  }, [availableModes]);
+
+  const hasSignup = allowedModes.includes('signup');
+  const hasLogin = allowedModes.includes('login');
+
+  const initialMode = allowedModes.includes(defaultMode) ? defaultMode : allowedModes[0];
+  const [internalMode, setInternalMode] = useState<AuthMode>(initialMode);
+
+  useEffect(() => {
+    if (!allowedModes.includes(internalMode)) {
+      setInternalMode(allowedModes[0]);
+    }
+  }, [allowedModes, internalMode]);
+
+  const resolvedMode = useMemo(() => {
+    const candidate = mode ?? internalMode;
+    return allowedModes.includes(candidate) ? candidate : allowedModes[0];
+  }, [allowedModes, internalMode, mode]);
+
+  useEffect(() => {
+    if (!allowedModes.includes(resolvedMode)) {
+      const fallbackMode = allowedModes[0];
+      onModeChange?.(fallbackMode);
+      if (mode === undefined) {
+        setInternalMode(fallbackMode);
+      }
+    }
+  }, [allowedModes, mode, onModeChange, resolvedMode]);
 
   const [internalPlan, setInternalPlan] = useState<PlanSelection | null>(selectedPlan ?? null);
   const activePlan = selectedPlan ?? internalPlan;
@@ -225,6 +262,9 @@ export function PlannerAuthSection({
   }, [selectedPlan]);
 
   const handleModeChange = (next: AuthMode) => {
+    if (!allowedModes.includes(next)) {
+      return;
+    }
     onModeChange?.(next);
     if (mode === undefined) {
       setInternalMode(next);
@@ -236,7 +276,9 @@ export function PlannerAuthSection({
     if (!selectedPlan) {
       setInternalPlan(plan);
     }
-    handleModeChange('signup');
+    if (hasSignup) {
+      handleModeChange('signup');
+    }
   };
 
   const signupForm = useForm<SignupFormValues>({
@@ -261,7 +303,7 @@ export function PlannerAuthSection({
   const containerClass = useMemo(
     () =>
       [
-        'relative rounded-[2.5rem] border border-white/60 bg-white/80 text-left shadow-[0_30px_100px_-45px_rgba(15,23,42,0.35)] backdrop-blur-2xl',
+        'relative rounded-2xl sm:rounded-[2.5rem] border border-white/60 bg-white/90 text-left text-slate-900 shadow-[0_30px_100px_-45px_rgba(15,23,42,0.35)] backdrop-blur-2xl',
         layout === 'modal' ? 'p-6 sm:p-8' : 'p-6 sm:p-8 lg:p-10',
         className,
       ]
@@ -286,21 +328,23 @@ export function PlannerAuthSection({
             </p>
           </div>
           <div className="space-y-3">
+            {hasLogin && (
+              <button
+                type="button"
+                className="w-full rounded-xl px-4 py-3 text-base font-semibold text-white shadow-md transition hover:opacity-95"
+                style={{ backgroundColor: theme.primary_color }}
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.location.href = '/admin/login';
+                  }
+                }}
+              >
+                Go to planner login
+              </button>
+            )}
             <button
               type="button"
-              className="w-full rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:opacity-95"
-              style={{ backgroundColor: theme.primary_color }}
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.location.href = '/admin/login';
-                }
-              }}
-            >
-              Go to planner login
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50"
               onClick={() => setSignupComplete(false)}
             >
               Back to registration
@@ -397,7 +441,7 @@ export function PlannerAuthSection({
               type="text"
               autoComplete="given-name"
               {...register('firstName', { required: 'First name is required' })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.firstName ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -412,7 +456,7 @@ export function PlannerAuthSection({
               type="text"
               autoComplete="family-name"
               {...register('lastName', { required: 'Last name is required' })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.lastName ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -429,7 +473,7 @@ export function PlannerAuthSection({
             type="text"
             autoComplete="organization"
             {...register('companyName', { required: 'Company name helps us prepare the workspace' })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.companyName ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -448,7 +492,7 @@ export function PlannerAuthSection({
               required: 'Work email is required',
               validate: (value) => emailPattern.test(value) || 'Enter a valid email address',
             })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.email ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -472,7 +516,7 @@ export function PlannerAuthSection({
                 required: 'Password is required',
                 minLength: { value: 8, message: 'Password must be at least 8 characters' },
               })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.password ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -494,7 +538,7 @@ export function PlannerAuthSection({
                 required: 'Confirm your password',
                 validate: (value) => value === watch('password') || 'Passwords must match',
               })}
-              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+              className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.confirmPassword ? 'border-red-300' : 'border-slate-200'
               }`}
             />
@@ -526,7 +570,7 @@ export function PlannerAuthSection({
 
         <button
           type="submit"
-          className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          className="w-full rounded-xl px-4 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           style={{ backgroundColor: theme.primary_color }}
           disabled={isSubmitting}
         >
@@ -615,7 +659,7 @@ export function PlannerAuthSection({
               required: 'Email is required',
               validate: (value) => emailPattern.test(value) || 'Enter a valid email address',
             })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.email ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -631,7 +675,7 @@ export function PlannerAuthSection({
             type="password"
             autoComplete="current-password"
             {...register('password', { required: 'Password is required' })}
-            className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
+            className={`w-full rounded-xl border px-4 py-3 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
               errors.password ? 'border-red-300' : 'border-slate-200'
             }`}
           />
@@ -650,24 +694,26 @@ export function PlannerAuthSection({
 
         <button
           type="submit"
-          className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          className="w-full rounded-xl px-4 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           style={{ backgroundColor: theme.primary_color }}
           disabled={isSubmitting}
         >
           {isSubmitting ? 'Checking credentials…' : 'Log in securely'}
         </button>
 
-        <p className="text-xs text-slate-500">
-          Need access for your team?{' '}
-          <button
-            type="button"
-            onClick={() => handleModeChange('signup')}
-            className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
-          >
-            Start a new workspace
-          </button>
-          .
-        </p>
+        {hasSignup && (
+          <p className="text-xs text-slate-500">
+            Need access for your team?{' '}
+            <button
+              type="button"
+              onClick={() => handleModeChange('signup')}
+              className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
+            >
+              Start a new workspace
+            </button>
+            .
+          </p>
+        )}
       </form>
     );
   };
@@ -689,42 +735,46 @@ export function PlannerAuthSection({
           </p>
         </div>
 
-        <div className="inline-flex rounded-full bg-white/80 p-1 text-sm font-medium shadow-inner">
-          <button
-            type="button"
-            onClick={() => handleModeChange('signup')}
-            className={`flex-1 rounded-full px-4 py-2 transition ${resolvedMode === 'signup' ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}
-            aria-pressed={resolvedMode === 'signup'}
-          >
-            Sign up
-          </button>
-          <button
-            type="button"
-            onClick={() => handleModeChange('login')}
-            className={`flex-1 rounded-full px-4 py-2 transition ${resolvedMode === 'login' ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}
-            aria-pressed={resolvedMode === 'login'}
-          >
-            Log in
-          </button>
-        </div>
+        {(showModeToggle ?? allowedModes.length > 1) && allowedModes.length > 1 && (
+          <div className="inline-flex rounded-full bg-white/80 p-1 text-sm font-medium shadow-inner">
+            <button
+              type="button"
+              onClick={() => handleModeChange('signup')}
+              className={`flex-1 rounded-full px-4 py-2 transition ${resolvedMode === 'signup' ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}
+              aria-pressed={resolvedMode === 'signup'}
+              disabled={!allowedModes.includes('signup')}
+            >
+              Sign up
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('login')}
+              className={`flex-1 rounded-full px-4 py-2 transition ${resolvedMode === 'login' ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}
+              aria-pressed={resolvedMode === 'login'}
+              disabled={!allowedModes.includes('login')}
+            >
+              Log in
+            </button>
+          </div>
+        )}
 
         {resolvedMode === 'signup' && (
-          <div className="space-y-5">
-            <PlanToggle
-              plans={plans}
-              selectedPlan={activePlan}
-              onSelectPlan={handlePlanSelect}
-              isLoading={plansLoading}
-              error={plansError}
-              notice={plansNotice}
-            />
-            <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-4 text-sm text-slate-700 shadow-sm">
-              <p className="font-semibold text-slate-900">Selected plan</p>
-              <p className="mt-1 text-slate-600">
-                {activePlan?.name ?? 'Choose the plan that fits your studio. You can adjust this during onboarding.'}
-              </p>
-            </div>
+        <div className="space-y-5">
+          <PlanToggle
+            plans={plans}
+            selectedPlan={activePlan}
+            onSelectPlan={handlePlanSelect}
+            isLoading={plansLoading}
+            error={plansError}
+            notice={plansNotice}
+          />
+          <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-4 text-sm text-slate-700 shadow-sm">
+            <p className="font-semibold text-slate-900">Selected plan</p>
+            <p className="mt-1 text-slate-600">
+              {activePlan?.name ?? 'Choose the plan that fits your studio. You can adjust this during onboarding.'}
+            </p>
           </div>
+        </div>
         )}
 
         {resolvedMode === 'signup' ? renderSignupForm() : renderLoginForm()}
