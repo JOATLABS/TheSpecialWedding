@@ -81,7 +81,7 @@
   opacity: var(--opacity);
   transform-origin: center;
   animation: aurora-flow var(--duration) ease-in-out infinite alternate,
-             aurora-glisten calc(var(--duration) * 1.35) ease-in-out infinite;
+             aurora-glisten var(--glisten-duration) ease-in-out infinite;
   animation-delay: var(--delay);
   will-change: transform, opacity;
 }
