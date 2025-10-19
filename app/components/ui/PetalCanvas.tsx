@@ -119,7 +119,7 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
       canvas.style.width = "100%";
       canvas.style.height = "100%";
 
-      const target = reduce ? 0 : Math.max(14, Math.min(40, Math.round(window.innerWidth / 38)));
+      const target = reduce ? 0 : Math.max(count, Math.min(72, Math.round(window.innerWidth / 22)));
       petals.current = Array.from({ length: target }, (_, i) => createPetal(w, h, i + 1));
       sprites.current = petals.current.map((p) => drawPetalSprite(p.size, p.tint));
       ctx.clearRect(0, 0, w, h);
