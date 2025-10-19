@@ -9,77 +9,58 @@
 :root {
   --theme-primary: #1e3a5f;
   --theme-secondary: #d4af37;
-  --theme-accent: #c8847e;
+  --theme-accent: #c8847e; /* rose accent */
   --theme-font-heading: 'Playfair Display', serif;
   --theme-font-body: 'Cormorant Garamond', serif;
 }
 
 @layer base {
-  html {
-    font-family: var(--theme-font-body);
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--theme-font-heading);
-  }
-  
-  /* Dynamic theme colors */
-  .theme-primary {
-    color: var(--theme-primary);
-  }
-  
-  .theme-secondary {
-    color: var(--theme-secondary);
-  }
-  
-  .theme-accent {
-    color: var(--theme-accent);
-  }
-  
-  .theme-bg-primary {
-    background-color: var(--theme-primary);
-  }
-  
-  .theme-bg-secondary {
-    background-color: var(--theme-secondary);
-  }
-  
-  .theme-bg-accent {
-    background-color: var(--theme-accent);
-  }
-  
-  .theme-border-primary {
-    border-color: var(--theme-primary);
-  }
-  
-  .theme-border-secondary {
-    border-color: var(--theme-secondary);
-  }
-  
-  .theme-border-accent {
-    border-color: var(--theme-accent);
-  }
+  html { font-family: var(--theme-font-body); }
+  h1, h2, h3, h4, h5, h6 { font-family: var(--theme-font-heading); }
+
+  .theme-primary { color: var(--theme-primary); }
+  .theme-secondary { color: var(--theme-secondary); }
+  .theme-accent { color: var(--theme-accent); }
+
+  .theme-bg-primary { background-color: var(--theme-primary); }
+  .theme-bg-secondary { background-color: var(--theme-secondary); }
+  .theme-bg-accent { background-color: var(--theme-accent); }
+
+  .theme-border-primary { border-color: var(--theme-primary); }
+  .theme-border-secondary { border-color: var(--theme-secondary); }
+  .theme-border-accent { border-color: var(--theme-accent); }
 }
 
 @layer components {
-  /* Custom wedding-themed components */
-  .wedding-card {
-    @apply bg-white/80 backdrop-blur-sm border border-wedding-rose/20 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300;
-  }
-  
-  .wedding-button {
-    @apply bg-gradient-to-r from-wedding-rose to-wedding-gold text-white px-6 py-3 rounded-lg font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200;
-  }
-  
-  .wedding-input {
-    @apply border border-wedding-sage/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all duration-200;
-  }
-  
-  .admin-header {
-    @apply bg-gradient-to-r from-wedding-navy to-wedding-sage text-white shadow-lg;
-  }
-  
-  .glass-effect {
-    @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl;
-  }
+  .wedding-card { @apply bg-white/80 backdrop-blur-sm border border-wedding-rose/20 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300; }
+  .wedding-button { @apply bg-gradient-to-r from-wedding-rose to-wedding-gold text-white px-6 py-3 rounded-lg font-medium hover:shadow-lg transform hover:scale-105 transition-all duration-200; }
+  .wedding-input { @apply border border-wedding-sage/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all duration-200; }
+  .admin-header { @apply bg-gradient-to-r from-wedding-navy to-wedding-sage text-white shadow-lg; }
+  .glass-effect { @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl; }
+}
+
+/* Rose petal animations */
+@keyframes petal-fall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(110vh) rotate(360deg); opacity: 0.9; }
+}
+
+@keyframes petal-sway {
+  0% { transform: translateX(0); }
+  50% { transform: translateX(var(--drift, 24px)); }
+  100% { transform: translateX(0); }
+}
+
+.petal { position: absolute; top: -10vh; animation-name: petal-sway; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.petal-inner {
+  display: block;
+  background: radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.1) 35%, rgba(216,112,147,0.9) 36%, rgba(200,80,120,0.95) 100%);
+  border-radius: 60% 60% 60% 60% / 75% 75% 25% 25%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  transform-origin: 50% -20%;
+  animation-name: petal-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  filter: blur(0.2px);
 }
