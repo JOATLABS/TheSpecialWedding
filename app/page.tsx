@@ -9,10 +9,12 @@ import {
   PhotoIcon,
   QrCodeIcon,
   RectangleGroupIcon,
+  SparklesIcon,
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
 import React from "react";
 
+import HeroCanvas from "./components/ui/HeroCanvas";
 import RosePetals from "./components/ui/RosePetals";
 
 type Feature = {
@@ -73,6 +75,12 @@ const features: Feature[] = [
     description: "Send branded email invitations, track bounces, and personalize every RSVP link.",
     icon: EnvelopeIcon,
     category: "Engagement",
+  },
+  {
+    title: "Wedding websites",
+    description: "Launch a stunning site for every celebration—custom domains, schedules, travel, and galleries.",
+    icon: SparklesIcon,
+    category: "Experience",
   },
   {
     title: "RSVP & meal selections",
@@ -139,7 +147,7 @@ const workflow: WorkflowStage[] = [
     title: "Invite & delight",
     subtitle: "Intelligent guest journeys",
     bullets: [
-      "Personalized invitation microsites for every household",
+      "Personalized wedding websites with per-wedding slugs",
       "Automated reminders that adapt to RSVP behavior",
       "Guest portal with travel guidance and gallery teasers",
     ],
@@ -196,8 +204,8 @@ const pricing: PricingTier[] = [
     features: [
       "Guest & RSVP manager",
       "Email invitations",
+      "Wedding website",
       "Timeline builder",
-      "Photo collection portal",
     ],
     cta: "Start planning",
   },
@@ -245,6 +253,11 @@ const faqs: FAQ[] = [
     answer:
       "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
   },
+  {
+    question: "What’s next for messaging?",
+    answer:
+      "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon.",
+  },
 ];
 
 const partners = ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"];
@@ -253,8 +266,9 @@ export default function HomePage() {
   return (
     <main className="bg-slate-950 text-white">
       {/* HERO */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-[#0f1729] via-slate-950 to-slate-950">
-        <RosePetals count={32} />
+      <section className="relative overflow-hidden bg-gradient-to-b from-[#0b1120] via-slate-950 to-slate-950">
+        <HeroCanvas />
+        <RosePetals count={40} />
         <div
           className="absolute inset-0 opacity-60"
           style={{
@@ -263,17 +277,18 @@ export default function HomePage() {
           }}
         />
         <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'160\' height=\'160\' viewBox=\'0 0 40 40\'%3E%3Cg fill=%27none%27 stroke=%27rgba(255,255,255,0.06)%27 stroke-width=%270.5%27%3E%3Cpath d=%27M0 0h40v40H0z%27/%3E%3Cpath d=%27M0 20h40M20 0v40%27/%3E%3C/g%3E%3C/svg%3E')] opacity-40" />
-        <div className="relative mx-auto max-w-7xl px-6 pb-32 pt-36 sm:px-10 lg:px-16">
-          <div className="grid items-center gap-14 lg:grid-cols-[1.1fr_1fr]">
-            <div>
+        <div className="relative mx-auto max-w-7xl px-6 pb-32 pt-40 sm:px-10 lg:px-16">
+          <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
+            <div className="relative">
+              <div className="absolute -left-16 top-10 hidden h-60 w-60 rounded-full bg-wedding-rose/25 blur-3xl lg:block" />
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-sm uppercase tracking-[0.3em] backdrop-blur">
                 The Special Wedding
               </div>
               <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl">
-                The luminous operating system for unforgettable weddings.
+                A stage-set platform where every wedding feels like a cinematic premiere.
               </h1>
               <p className="mt-6 text-lg text-slate-200 sm:max-w-xl">
-                Craft every guest touchpoint—from invitations to day-of execution—inside a single, elegant workspace built for planners, venues, and modern couples.
+                Sculpt invitations, RSVP journeys, wedding websites, seating, timelines, and on-site orchestration—woven together with romantic motion and intelligent automation.
               </p>
               <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
                 <a
@@ -297,11 +312,11 @@ export default function HomePage() {
               </div>
             </div>
             <div className="relative">
-              <div className="absolute inset-0 -translate-x-10 translate-y-10 rounded-[3rem] bg-wedding-rose/20 blur-3xl" />
-              <div className="relative grid gap-6 rounded-[2.5rem] border border-white/15 bg-white/10 p-8 backdrop-blur-2xl shadow-[0_40px_120px_rgba(15,23,41,0.6)]">
-                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/15 via-white/5 to-transparent p-6">
+              <div className="absolute inset-0 -translate-x-10 translate-y-12 rounded-[3rem] bg-wedding-rose/25 blur-3xl" />
+              <div className="relative grid gap-6 rounded-[2.8rem] border border-white/15 bg-white/10 p-8 backdrop-blur-3xl shadow-[0_40px_140px_rgba(11,17,32,0.7)]">
+                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/15 via-white/5 to-transparent p-6 shadow-inner">
                   <p className="text-sm uppercase tracking-[0.3em] text-slate-300">Wedding overview</p>
-                  <div className="mt-4 flex flex-wrap gap-4 text-slate-200">
+                  <div className="mt-4 grid gap-4 text-slate-200 sm:grid-cols-3">
                     <div>
                       <p className="text-xs text-slate-300">Guests confirmed</p>
                       <p className="text-2xl font-semibold text-white">182</p>
@@ -316,15 +331,25 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
+                <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/10 p-5">
+                  <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-wedding-rose/20 blur-3xl" />
+                  <h3 className="text-sm font-semibold text-white">Ceremony timeline</h3>
+                  <ul className="mt-3 space-y-2 text-xs text-slate-200">
+                    <li className="flex items-start gap-3">
+                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-wedding-rose" />
+                      2:00 PM Guest arrivals & prosecco welcome
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-wedding-rose" />
+                      3:00 PM Garden ceremony begins
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-wedding-rose" />
+                      4:15 PM Sunset portraits & lounge hour
+                    </li>
+                  </ul>
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-3xl border border-white/10 bg-white/10 p-5">
-                    <h3 className="text-sm font-semibold text-white">Ceremony timeline</h3>
-                    <ul className="mt-3 space-y-2 text-xs text-slate-200">
-                      <li>2:00 PM Guest arrivals & signature cocktails</li>
-                      <li>3:00 PM Garden ceremony begins</li>
-                      <li>4:15 PM Sunset portraits</li>
-                    </ul>
-                  </div>
                   <div className="rounded-3xl border border-white/10 bg-white/10 p-5">
                     <h3 className="text-sm font-semibold text-white">Seating snapshot</h3>
                     <ul className="mt-3 space-y-2 text-xs text-slate-200">
@@ -333,10 +358,18 @@ export default function HomePage() {
                       <li>Vendor meals confirmed</li>
                     </ul>
                   </div>
+                  <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-wedding-rose/25 via-transparent to-slate-900/40 p-5">
+                    <h3 className="text-sm font-semibold text-white">Wedding website</h3>
+                    <p className="mt-3 text-xs text-slate-200">
+                      Share the per-wedding link with travel guides, RSVP, and gallery teasers—auto-updated from your workspace.
+                    </p>
+                  </div>
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-wedding-rose/20 via-transparent to-slate-900/40 p-6">
-                  <p className="text-sm font-semibold text-white">Reminder flow</p>
-                  <p className="mt-3 text-xs text-slate-200">RSVP closing in 2 days · Shuttle logistics tomorrow · Gallery reveal 1 day after event</p>
+                <div className="rounded-3xl border border-white/10 bg-white/10 p-6">
+                  <p className="text-sm font-semibold text-white">Messaging studio (coming soon)</p>
+                  <p className="mt-3 text-xs text-slate-200">
+                    Centralize vendor and couple conversations with synced payments, contracts, and budgets in one timeline.
+                  </p>
                 </div>
               </div>
             </div>
@@ -361,6 +394,13 @@ export default function HomePage() {
                   <p className="mt-3 text-sm text-slate-200">{suite.stat}</p>
                 </div>
               ))}
+              <div className="rounded-3xl border border-wedding-rose/40 bg-wedding-rose/15 p-6 backdrop-blur-xl">
+                <p className="text-xs uppercase tracking-[0.3em] text-wedding-rose">On the horizon</p>
+                <h3 className="mt-3 text-lg font-semibold text-white">Messaging studio</h3>
+                <p className="mt-3 text-sm text-slate-200">
+                  A dedicated dashboard for planner, couple, and vendor conversations with searchable history, shared assets, and hooks into payments, contracts, and budgets. Joining the platform soon.
+                </p>
+              </div>
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
