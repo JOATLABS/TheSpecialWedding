@@ -39,13 +39,11 @@ function createParticle(width: number, height: number): Particle {
   };
 }
 
-const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 export default function HeroCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particles = useRef<Particle[]>([]);
-  const animationRef = useRef<number>();
-  const resizeFrame = useRef<number>();
+  const animationRef = useRef<number | null>(null);
+  const resizeFrame = useRef<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -73,7 +71,7 @@ export default function HeroCanvas() {
     const scheduleResize = () => {
       if (resizeFrame.current) cancelAnimationFrame(resizeFrame.current);
       resizeFrame.current = requestAnimationFrame(() => {
-        resizeFrame.current = undefined;
+        resizeFrame.current = null;
         configureParticles();
       });
     };
@@ -128,22 +126,22 @@ export default function HeroCanvas() {
     }
 
     const handleVisibility = () => {
-      if (document.hidden && animationRef.current) {
+      if (document.hidden && animationRef.current !== null) {
         cancelAnimationFrame(animationRef.current);
-        animationRef.current = undefined;
-      } else if (!document.hidden && !reduceMotion && !animationRef.current) {
+        animationRef.current = null;
+      } else if (!document.hidden && !reduceMotion && animationRef.current === null) {
         animationRef.current = requestAnimationFrame(render);
       }
     };
 
     const handleMotionChange = () => {
       reduceMotion = mediaQuery.matches;
-      if (reduceMotion && animationRef.current) {
+      if (reduceMotion && animationRef.current !== null) {
         cancelAnimationFrame(animationRef.current);
-        animationRef.current = undefined;
+        animationRef.current = null;
       }
       configureParticles();
-      if (!reduceMotion && !animationRef.current && !document.hidden) {
+      if (!reduceMotion && animationRef.current === null && !document.hidden) {
         animationRef.current = requestAnimationFrame(render);
       }
     };
@@ -155,8 +153,8 @@ export default function HeroCanvas() {
       document.removeEventListener("visibilitychange", handleVisibility);
       mediaQuery.removeEventListener("change", handleMotionChange);
       window.removeEventListener("resize", scheduleResize);
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      if (resizeFrame.current) cancelAnimationFrame(resizeFrame.current);
+      if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+      if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current);
     };
   }, []);
 
