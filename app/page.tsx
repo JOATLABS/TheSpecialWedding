@@ -237,7 +237,7 @@ export default function HomePage() {
       <section id="platform" className="relative mx-auto max-w-7xl px-6 py-20 sm:px-10 lg:px-16">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
         <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-          <div className="rounded-4xl relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-8 backdrop-blur-xl">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-8 backdrop-blur-xl">
             <h2 className="text-3xl font-semibold text-white sm:text-4xl">Compose intelligent journeys in minutes.</h2>
             <p className="mt-4 text-base text-slate-200">
               Combine data, content, and AI into a single command center. Build with intent using modular sections, test variations instantly, and orchestrate outcomes with serverless precision.
