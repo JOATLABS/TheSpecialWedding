@@ -270,7 +270,7 @@ export default function HomePage() {
       <section className="relative overflow-hidden bg-gradient-to-b from-[#0b1120] via-slate-950 to-slate-950">
         <HeroCanvas />
         <HeroAurora />
-        <PetalCanvas />
+        <PetalCanvas count={64} />
         <div
           className="absolute inset-0 opacity-60"
           style={{
