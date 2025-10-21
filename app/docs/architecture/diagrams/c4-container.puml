@@ -1,0 +1,37 @@
+@startuml C4_Container_Diagram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Wedding Web Application - Container Diagram
+
+Person(planner, "Wedding Planner", "Primary user")
+Person(guest, "Wedding Guest", "RSVP and info")
+
+System_Boundary(wedding_system, "Wedding Web Application") {
+    Container(web_app, "Web Application", "Next.js 15, React 19, TypeScript", "Provides wedding management UI and public wedding sites")
+    Container(api, "REST API", "FastAPI, Python 3.11", "Provides wedding management functionality via RESTful API")
+    Container(worker, "Background Worker", "Celery, Python", "Processes async tasks like email/SMS sending")
+    ContainerDb(database, "Database", "MongoDB 5.0", "Stores wedding, guest, and configuration data")
+    ContainerDb(cache, "Cache", "Redis 7.0", "Session store and message queue")
+}
+
+System_Ext(cdn, "CDN", "Vercel/Cloudflare for static assets")
+System_Ext(email, "Email Service", "Resend API")
+System_Ext(sms, "SMS Service", "Twilio/Telnyx")
+System_Ext(storage, "Object Storage", "Cloudflare R2")
+
+Rel(planner, web_app, "Uses", "HTTPS")
+Rel(guest, web_app, "Views and interacts", "HTTPS")
+
+Rel(web_app, api, "Makes API calls", "JSON/HTTPS")
+Rel(api, database, "Reads/writes data", "MongoDB Protocol")
+Rel(api, cache, "Caches data", "Redis Protocol")
+Rel(api, worker, "Enqueues tasks", "Redis/Celery")
+
+Rel(worker, database, "Updates data", "MongoDB Protocol")
+Rel(worker, email, "Sends emails", "HTTPS")
+Rel(worker, sms, "Sends SMS", "HTTPS")
+
+Rel(web_app, cdn, "Serves static assets", "HTTPS")
+Rel(api, storage, "Stores files", "S3 API")
+
+@enduml
