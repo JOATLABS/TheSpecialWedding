@@ -10,6 +10,7 @@ export interface GalleryImage {
 export interface LandingLayoutProps {
   wedding: Wedding;
   images: GalleryImage[];
+  guest?: unknown;
 }
 
 export type SectionId = 'rsvp' | 'gallery' | 'registry' | 'faq';

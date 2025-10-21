@@ -1,6 +1,7 @@
 import React from "react";
 import { Wedding } from "@/types/wedding";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { formatDate } from '@/utils/dateFormat';
 
 interface ThemedHeroSectionProps {
   wedding: Wedding;
@@ -32,23 +33,15 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding })
     const sortedDates = Array.from(allDates).sort();
     
     // Format each date
-    const formatted = sortedDates.map(date => {
-      if (date.includes('-')) {
-        const [year, month, day] = date.split('-');
-        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-        return dateObj.toLocaleDateString('en-US', {
+    const formatted = sortedDates
+      .map(dateValue =>
+        formatDate(dateValue, {
           month: 'long',
           day: 'numeric',
-          year: 'numeric'
-        });
-      } else {
-        return new Date(date).toLocaleDateString('en-US', {
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric'
-        });
-      }
-    });
+          year: 'numeric',
+        }),
+      )
+      .filter(Boolean);
     
     // Join with separator
     if (formatted.length === 0) return '';

@@ -2,12 +2,14 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
 from app.services.email_service_resend import ResendEmailService
-from app.dependencies.auth import require_admin
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner
+from app.services.wedding_service import WeddingService
 from pydantic import BaseModel
 from typing import Optional, List
 import base64
 
 router = APIRouter()
+wedding_service = WeddingService()
 
 # Initialize email service
 try:
@@ -39,11 +41,19 @@ def get_email_status():
         "message": "Email service configured and ready" if email_available else "Email service not configured (RESEND_API_KEY missing)"
     }
 
-@router.post("/email/send-invites", tags=["Admin"], dependencies=[Depends(require_admin)])
-async def send_email_invites(payload: EmailInviteModel):
+@router.post("/email/send-invites", tags=["Admin"])
+async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send RSVP invitation emails (JSON endpoint)"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
+    
+    # Get wedding and verify access
+    wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    
+    if not check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
     
     result = email_service.send_rsvp_invitations(
         wedding_slug=payload.wedding_slug,
@@ -54,16 +64,25 @@ async def send_email_invites(payload: EmailInviteModel):
     
     return result
 
-@router.post("/email/send-invites-with-attachment", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.post("/email/send-invites-with-attachment", tags=["Admin"])
 async def send_email_invites_with_attachment(
     wedding_slug: str = Form(...),
     custom_subject: Optional[str] = Form(None),
     custom_html: Optional[str] = Form(None),
-    attachment: UploadFile = File(...)
+    attachment: UploadFile = File(...),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Send RSVP invitation emails with attachment (multipart/form-data endpoint)"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
+    
+    # Get wedding and verify access
+    wedding = wedding_service.get_wedding_by_slug(wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    
+    if not check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
     
     # Handle attachment
     attachments = []
@@ -85,11 +104,19 @@ async def send_email_invites_with_attachment(
     
     return result
 
-@router.post("/email/send-reminders", tags=["Admin"], dependencies=[Depends(require_admin)])
-def send_email_reminders(payload: EmailReminderModel):
+@router.post("/email/send-reminders", tags=["Admin"])
+def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Send event reminder emails"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
+    
+    # Get wedding and verify access
+    wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    
+    if not check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
     
     result = email_service.send_reminders(
         wedding_slug=payload.wedding_slug,
@@ -101,8 +128,8 @@ def send_email_reminders(payload: EmailReminderModel):
     
     return result
 
-@router.get("/email/logs", tags=["Admin"], dependencies=[Depends(require_admin)])
-def get_email_logs(
+@router.get("/email/logs", tags=["Admin"])
+def get_email_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     limit: int = Query(100, description="Number of logs to return")
 ):
@@ -113,8 +140,8 @@ def get_email_logs(
     logs = email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
     return {"logs": logs, "count": len(logs)}
 
-@router.get("/email/preview-invitation", tags=["Admin"], dependencies=[Depends(require_admin)])
-def preview_invitation_email(
+@router.get("/email/preview-invitation", tags=["Admin"])
+def preview_invitation_email(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     guest_name: str = Query("John Doe", description="Guest name for preview"),
     couple_names: str = Query("Jane & John", description="Couple names"),
     wedding_date: str = Query("2024-12-25", description="Wedding date")
@@ -132,8 +159,8 @@ def preview_invitation_email(
     
     return {"html": html}
 
-@router.get("/email/preview-reminder", tags=["Admin"], dependencies=[Depends(require_admin)])
-def preview_reminder_email(
+@router.get("/email/preview-reminder", tags=["Admin"])
+def preview_reminder_email(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     guest_name: str = Query("John Doe", description="Guest name for preview"),
     event_type: str = Query("white_wedding", description="Event type"),
     event_date: str = Query("2024-12-25", description="Event date"),

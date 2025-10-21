@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Hashing setup
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], bcrypt__rounds=12, deprecated="auto")
 
 # Load environment variables
 PRIMARY_ADMIN_EMAIL = os.getenv("PRIMARY_ADMIN_EMAIL")
