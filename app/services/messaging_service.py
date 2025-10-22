@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import HTTPException, status
 
 from app.core.database import mongo
@@ -39,22 +40,30 @@ class MessagingService:
     def get_conversation(self, wedding_id: str, conversation_id: str) -> Conversation:
         """Fetch a single conversation by its identifiers."""
 
+        try:
+            object_id = ObjectId(conversation_id)
+        except (InvalidId, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid conversation identifier provided.",
+            )
+
         document: Optional[dict] = self._conversation_collection.find_one(
-            {"_id": ObjectId(conversation_id), "wedding_id": wedding_id}
+            {"_id": object_id, "wedding_id": wedding_id}
         )
         if not document:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
         return self._serialize_conversation(document)
 
     def send_message(
-        self, wedding_id: str, conversation_id: str, payload: SendMessageRequest
+        self, wedding_id: str, conversation_id: str, sender_id: str, payload: SendMessageRequest
     ) -> Message:
         """Persist a new message within a conversation."""
 
         new_document = {
             "wedding_id": wedding_id,
             "conversation_id": conversation_id,
-            "sender_id": payload.sender_id,
+            "sender_id": sender_id,
             "body": payload.body,
             "created_at": datetime.utcnow(),
         }

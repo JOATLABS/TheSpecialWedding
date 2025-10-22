@@ -30,5 +30,4 @@ class Message(BaseModel):
 class SendMessageRequest(BaseModel):
     """Payload required to create a new outbound message."""
 
-    sender_id: str = Field(..., description="Identifier for the user sending the message")
     body: str = Field(..., description="Message contents")
