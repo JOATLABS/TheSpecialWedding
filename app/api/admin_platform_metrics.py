@@ -349,10 +349,58 @@ async def save_metrics_snapshot(
 
     result = await async_mongo.db["platform_metrics"].insert_one(snapshot)
 
+    health_metrics = snapshot.get("health", {})
+    error_metrics = snapshot.get("errors", {})
+    business_metrics = snapshot.get("business", {})
+    performance_metrics = snapshot.get("performance", {})
+
+    metrics_summary = {
+        "health": {
+            "database": health_metrics.get("database"),
+            "db_latency_ms": health_metrics.get("db_latency_ms"),
+            "disk_usage_percent": health_metrics.get("disk_usage_percent"),
+            "disk_free_gb": health_metrics.get("disk_free_gb"),
+            "memory_usage_percent": health_metrics.get("memory_usage_percent"),
+            "memory_available_gb": health_metrics.get("memory_available_gb"),
+            "cpu_usage_percent": health_metrics.get("cpu_usage_percent"),
+        },
+        "errors": {
+            "total_24h": error_metrics.get("total_24h"),
+            "critical_24h": error_metrics.get("critical_24h"),
+            "unacknowledged": error_metrics.get("unacknowledged"),
+            "error_rate_per_hour": error_metrics.get("error_rate_per_hour"),
+        },
+        "business": {
+            "total_users": business_metrics.get("total_users"),
+            "active_users_week": business_metrics.get("active_users_week"),
+            "new_users_week": business_metrics.get("new_users_week"),
+            "active_subscriptions": business_metrics.get("active_subscriptions"),
+            "trial_subscriptions": business_metrics.get("trial_subscriptions"),
+            "canceled_subscriptions": business_metrics.get("canceled_subscriptions"),
+            "conversion_rate": business_metrics.get("conversion_rate"),
+            "mrr": business_metrics.get("mrr"),
+            "arr": business_metrics.get("arr"),
+            "total_weddings": business_metrics.get("total_weddings"),
+            "active_weddings": business_metrics.get("active_weddings"),
+        },
+        "performance": {
+            "slow_endpoints": [
+                {
+                    "endpoint": endpoint.get("endpoint"),
+                    "avg_response_time": endpoint.get("avg_response_time"),
+                    "max_response_time": endpoint.get("max_response_time"),
+                    "request_count": endpoint.get("request_count"),
+                }
+                for endpoint in performance_metrics.get("slow_endpoints", [])
+            ],
+        },
+    }
+
     return {
         "status": "success",
         "snapshot_id": str(result.inserted_id),
-        "timestamp": snapshot["snapshot_time"].isoformat()
+        "timestamp": snapshot["snapshot_time"].isoformat(),
+        "metrics": metrics_summary,
     }
 
 
