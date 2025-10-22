@@ -1,72 +1,61 @@
-from __future__ import annotations
-
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from app.core.database import mongo
-from app.models.messaging import Conversation, Message, SendMessageRequest
 
 
 class MessagingService:
-    """Service layer responsible for messaging persistence and retrieval."""
+    """Service for managing conversations and messages."""
 
     def __init__(self) -> None:
-        self._conversation_collection = mongo.db["conversations"]
-        self._message_collection = mongo.db["messages"]
+        self.conversations = mongo.db["conversations"]
+        self.messages = mongo.db["messages"]
 
-    def _serialize_conversation(self, document: dict) -> Conversation:
-        return Conversation(
-            id=str(document["_id"]),
-            wedding_id=document["wedding_id"],
-            participants=document.get("participants", []),
-            title=document.get("title"),
-            created_at=document.get("created_at"),
-        )
-
-    def _serialize_message(self, document: dict) -> Message:
-        return Message(
-            id=str(document["_id"]),
-            wedding_id=document["wedding_id"],
-            conversation_id=document["conversation_id"],
-            sender_id=document["sender_id"],
-            body=document["body"],
-            created_at=document.get("created_at", datetime.utcnow()),
-        )
-
-    def get_conversation(self, wedding_id: str, conversation_id: str) -> Conversation:
-        """Fetch a single conversation by its identifiers."""
-
+    def _normalize_conversation_id(self, conversation_id: Any) -> ObjectId:
+        """Ensure the conversation identifier is stored as a BSON ObjectId."""
+        if isinstance(conversation_id, ObjectId):
+            return conversation_id
+        if not conversation_id:
+            raise HTTPException(status_code=400, detail="conversation_id is required")
         try:
-            object_id = ObjectId(conversation_id)
+            return ObjectId(conversation_id)
         except (InvalidId, TypeError):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid conversation identifier provided.",
-            )
+            raise HTTPException(status_code=400, detail="Invalid conversation_id")
 
-        document: Optional[dict] = self._conversation_collection.find_one(
-            {"_id": object_id, "wedding_id": wedding_id}
-        )
-        if not document:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-        return self._serialize_conversation(document)
+    def get_conversation(self, conversation_id: Any) -> Dict[str, Any]:
+        normalized_id = self._normalize_conversation_id(conversation_id)
+        conversation = self.conversations.find_one({"_id": normalized_id})
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        conversation["id"] = str(conversation["_id"])
+        conversation.pop("_id", None)
+        return conversation
 
-    def send_message(
-        self, wedding_id: str, conversation_id: str, sender_id: str, payload: SendMessageRequest
-    ) -> Message:
-        """Persist a new message within a conversation."""
-
-        new_document = {
-            "wedding_id": wedding_id,
-            "conversation_id": conversation_id,
-            "sender_id": sender_id,
-            "body": payload.body,
+    def add_message(
+        self,
+        *,
+        conversation_id: Any,
+        body: str,
+        sender: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Persist a message in a conversation and return the saved document."""
+        normalized_conversation_id = self._normalize_conversation_id(conversation_id)
+        message_doc: Dict[str, Any] = {
+            "conversation_id": normalized_conversation_id,
+            "body": body,
+            "sender": sender,
+            "metadata": metadata or {},
             "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
         }
-        result = self._message_collection.insert_one(new_document)
-        new_document["_id"] = result.inserted_id
-        return self._serialize_message(new_document)
+
+        result = self.messages.insert_one(message_doc)
+
+        message_doc["id"] = str(result.inserted_id)
+        message_doc["conversation_id"] = str(normalized_conversation_id)
+        return message_doc
