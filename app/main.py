@@ -37,6 +37,7 @@ from app.api.gallery_public import router as gallery_public_router
 from app.api.gallery_admin import router as gallery_admin_router
 from app.api.wedding import router as wedding_router
 from app.api.reminder_utilities import router as reminder_utils_router
+from app.api.messaging import router as messaging_router
 from app.api.user_management import router as user_management_router
 from app.api.subscription_management import router as subscription_router
 from app.api.saas_config import router as saas_config_router
@@ -53,6 +54,7 @@ from app.api.support_management import router as support_router
 from app.api.messaging import router as messaging_router
 from app.api.public_contact import router as public_contact_router
 from app.api.stripe_payment import router as stripe_router
+
 
 # Setup logging
 logging.basicConfig(
@@ -207,6 +209,7 @@ if settings.enable_metrics:
         return await performance_monitor.get_metrics()
 
 # Public routes (no authentication required)
+app.include_router(messaging_router)
 app.include_router(guest_router, prefix="/guest", tags=["Guest"])
 app.include_router(rsvp_router, prefix="/rsvp", tags=["RSVP"])
 app.include_router(plus_one_router, prefix="/plus_one", tags=["Plus-Ones"])
@@ -338,112 +341,3 @@ if __name__ == "__main__":
         reload=settings.is_development(),
         log_level="info"
     )
-
-
-# from fastapi import FastAPI, Depends
-# from fastapi.security import HTTPBasic
-# from fastapi.middleware.cors import CORSMiddleware
-# from app.dependencies.auth import require_admin
-# from app.middleware.rate_limiting import RateLimitMiddleware
-# from app.middleware.error_handler import ErrorHandlerMiddleware
-# import os
-# from app.api.health import router as health_router
-# from app.api.guest import router as guest_router
-# from app.api.admin_import import router as import_router
-# from app.api.rspv import router as rsvp_router
-# from app.api.plus_one import router as plus_one_router
-# from app.core.database import mongo
-# from app.utils.token_generator import generate_token
-# from app.api.admin_rsvp import router as admin_rsvp_router
-# from app.api.admin_auth import router as auth_router
-# from app.api.reminder import router as reminder_router
-# from app.api.reminder_telnyx import router as reminder_telnyx_router
-# from app.api.email_reminders import router as email_reminder_router
-# from app.api.checkin import router as checkin_router
-# from app.api.gallery_public import router as gallery_public_router
-# from app.api.gallery_admin import router as gallery_admin_router
-# from app.api.wedding import router as wedding_router
-# from app.api.reminder_utilities import router as reminder_utils_router
-# from app.api.user_management import router as user_management_router
-# from app.api.subscription_management import router as subscription_router
-# from app.api.saas_config import router as saas_config_router
-# from app.api.planner_metrics import router as planner_metrics_router
-# from app.api.forms import router as forms_router
-# from app.api.guest_verification import router as guest_verification_router
-# from app.api.trial_management import router as trial_management_router
-
-# app = FastAPI(
-#     title="Wedding WebApp API",
-#     version="0.2.0",
-#     # Define security scheme for OpenAPI docs
-#     openapi_tags=[
-#         {"name": "Admin", "description": "Admin operations requiring authentication"},
-#         {"name": "Auth", "description": "Authentication operations"},
-#         {"name": "Guest", "description": "Guest operations"},
-#         {"name": "RSVP", "description": "RSVP operations"},
-#         {"name": "Plus-Ones", "description": "Plus-one operations"},
-#         {"name": "Health", "description": "Health check operations"}
-#     ]
-# )
-
-# # Add error handling middleware (should be first)
-# app.add_middleware(ErrorHandlerMiddleware)
-
-# # Add rate limiting middleware
-# app.add_middleware(
-#     RateLimitMiddleware,
-#     calls=100,  # 100 requests per minute for general endpoints
-#     period=60,
-#     auth_calls=10,  # 10 requests per minute for auth endpoints
-#     auth_period=60
-# )
-
-# # Add CORS middleware
-# # Get allowed origins from environment variable
-# allowed_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=allowed_origins,
-#     allow_credentials=True,
-#     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#     allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
-#     expose_headers=["Content-Length", "Content-Type", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
-#     max_age=3600,
-# )
-
-# app.include_router(health_router, prefix="/health")
-# app.include_router(guest_router, prefix="/guest")  # Public guest endpoints (search, invite)
-# app.include_router(rsvp_router, prefix="/rsvp")
-# app.include_router(plus_one_router, prefix="/plus_one")
-# app.include_router(wedding_router)  # Public wedding endpoints (list, get by slug)
-# app.include_router(gallery_public_router)  # Public gallery endpoints (view, QR)
-# app.include_router(subscription_router)  # Public subscription plan endpoints
-# app.include_router(saas_config_router, prefix="/saas")  # Public SAAS config endpoints
-# app.include_router(guest_verification_router)  # Guest verification endpoints
-
-# # Admin routes - all under /admin prefix
-app.include_router(auth_router, prefix="/admin")
-# app.include_router(import_router, prefix="/admin")
-# app.include_router(guest_router, prefix="/admin")  # Admin guest endpoints (list, delete)
-# app.include_router(admin_rsvp_router, prefix="/admin")
-app.include_router(reminder_router, prefix="/admin")
-# app.include_router(reminder_telnyx_router, prefix="/admin")  # Telnyx SMS endpoints
-# app.include_router(email_reminder_router, prefix="/admin")  # Email endpoints
-# app.include_router(checkin_router, prefix="/admin")
-# app.include_router(gallery_admin_router, prefix="/admin")  # Admin gallery endpoints (upload, delete)
-# app.include_router(wedding_router, prefix="/admin")  # Admin wedding endpoints (create, update, delete) - DUPLICATE REMOVED
-# app.include_router(reminder_utils_router, prefix="/admin")
-# app.include_router(user_management_router, prefix="/admin")  # ROOT_ADMIN user management
-# app.include_router(user_management_router)  # Public registration endpoints (no prefix)
-# app.include_router(subscription_router, prefix="/admin")  # Subscription management
-app.include_router(saas_config_router, prefix="/admin")  # SAAS configuration management
-app.include_router(planner_metrics_router, prefix="/admin")  # Wedding planner metrics and analytics
-app.include_router(budget_router, prefix="/admin")  # Budget management system
-app.include_router(stripe_router, prefix="/admin")  # Stripe payment processing
-app.include_router(support_router, prefix="/admin/support")  # SMS Support ticket management
-# app.include_router(forms_router, prefix="/admin")  # Form builder and management (admin endpoints)
-# app.include_router(trial_management_router, prefix="/admin")  # Trial management endpoints (ROOT_ADMIN only)
-
-# # Public form endpoints (no prefix, no auth required)
-# app.include_router(forms_router)  # Public form submission endpoints
