@@ -80,12 +80,14 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             <div className="flex flex-col items-center">
               {wedding.our_story.image_url && (
                 <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
-                  <img
-                    src={wedding.our_story.image_url.startsWith('http') 
-                      ? wedding.our_story.image_url 
+                  <Image
+                    src={wedding.our_story.image_url.startsWith('http')
+                      ? wedding.our_story.image_url
                       : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`}
                     alt="Couple"
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="192px"
                   />
                 </div>
               )}
@@ -105,21 +107,23 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             </h2>
             
             <div className="space-y-8">
-              {/* Bride's Side */}
+              {/* Bride’s Side */}
               {bridesSide.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
-                    Bride's Side
+                    Bride’s Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
                     {bridesSide.map((member) => (
                       <div key={member.id} className="text-center">
                         <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
                           {member.image_url ? (
-                            <img
+                            <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
-                              className="w-full h-full object-cover"
+                              fill
+                              className="object-cover"
+                              sizes="128px"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
@@ -137,21 +141,23 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                 </div>
               )}
 
-              {/* Groom's Side */}
+              {/* Groom’s Side */}
               {groomsSide.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
-                    Groom's Side
+                    Groom’s Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
                     {groomsSide.map((member) => (
                       <div key={member.id} className="text-center">
                         <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
                           {member.image_url ? (
-                            <img
+                            <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
-                              className="w-full h-full object-cover"
+                              fill
+                              className="object-cover"
+                              sizes="128px"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
