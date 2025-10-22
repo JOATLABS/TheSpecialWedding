@@ -20,6 +20,7 @@ from app.api.gallery_public import router as gallery_public_router
 from app.api.gallery_admin import router as gallery_admin_router
 from app.api.wedding import router as wedding_router
 from app.api.reminder_utilities import router as reminder_utils_router
+from app.api.messaging import router as messaging_router
 
 app = FastAPI(
     title="Wedding WebApp API",
@@ -68,3 +69,4 @@ app.include_router(checkin_router, prefix="/admin")
 app.include_router(gallery_admin_router, prefix="/admin")  # Admin gallery endpoints (upload, delete)
 app.include_router(wedding_router, prefix="/admin")  # Admin wedding endpoints (create, update, delete)
 app.include_router(reminder_utils_router, prefix="/admin")
+app.include_router(messaging_router)
