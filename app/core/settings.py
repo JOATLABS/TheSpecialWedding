@@ -135,11 +135,39 @@ class Settings(BaseSettings):
     stripe_webhook_secret: Optional[str] = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
 
     free_trial_days: int = Field(default=14, alias="FREE_TRIAL_DAYS")
-    
+
     # Admin Settings
     root_admin_email: Optional[str] = Field(default=None, alias="ROOT_ADMIN_EMAIL")
     root_admin_password: Optional[str] = Field(default=None, alias="ROOT_ADMIN_PASSWORD")
-    
+
+    # Firebase
+    firebase_enabled: bool = Field(default=False, alias="FIREBASE_ENABLED")
+    firebase_project_id: Optional[str] = Field(default=None, alias="FIREBASE_PROJECT_ID")
+    firebase_client_email: Optional[str] = Field(default=None, alias="FIREBASE_CLIENT_EMAIL")
+    firebase_private_key: Optional[str] = Field(default=None, alias="FIREBASE_PRIVATE_KEY")
+    firebase_private_key_id: Optional[str] = Field(default=None, alias="FIREBASE_PRIVATE_KEY_ID")
+    firebase_client_id: Optional[str] = Field(default=None, alias="FIREBASE_CLIENT_ID")
+    firebase_token_uri: str = Field(
+        default="https://oauth2.googleapis.com/token",
+        alias="FIREBASE_TOKEN_URI"
+    )
+    firebase_auth_uri: str = Field(
+        default="https://accounts.google.com/o/oauth2/auth",
+        alias="FIREBASE_AUTH_URI"
+    )
+    firebase_provider_cert_url: str = Field(
+        default="https://www.googleapis.com/oauth2/v1/certs",
+        alias="FIREBASE_PROVIDER_CERT_URL"
+    )
+    firebase_client_cert_url: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_CLIENT_CERT_URL"
+    )
+    firebase_service_account_json: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_SERVICE_ACCOUNT_JSON"
+    )
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
@@ -198,6 +226,52 @@ class Settings(BaseSettings):
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    def is_firebase_configured(self) -> bool:
+        """Determine whether Firebase integration is enabled and has credentials."""
+        if not self.firebase_enabled:
+            return False
+
+        if self.firebase_service_account_json:
+            return True
+
+        required_fields = [
+            self.firebase_project_id,
+            self.firebase_client_email,
+            self.firebase_private_key,
+            self.firebase_private_key_id,
+            self.firebase_client_id,
+        ]
+        return all(required_fields)
+
+    def get_firebase_service_account(self) -> Optional[Dict[str, Any]]:
+        """Return service account credentials for Firebase if configured."""
+        if not self.is_firebase_configured():
+            return None
+
+        if self.firebase_service_account_json:
+            try:
+                import json
+                return json.loads(self.firebase_service_account_json)
+            except Exception:
+                raise ValueError("Invalid FIREBASE_SERVICE_ACCOUNT_JSON payload; expected valid JSON string")
+
+        private_key = None
+        if self.firebase_private_key:
+            private_key = self.firebase_private_key.replace("\\n", "\n")
+
+        return {
+            "type": "service_account",
+            "project_id": self.firebase_project_id,
+            "private_key_id": self.firebase_private_key_id,
+            "private_key": private_key,
+            "client_email": self.firebase_client_email,
+            "client_id": self.firebase_client_id,
+            "auth_uri": self.firebase_auth_uri,
+            "token_uri": self.firebase_token_uri,
+            "auth_provider_x509_cert_url": self.firebase_provider_cert_url,
+            "client_x509_cert_url": self.firebase_client_cert_url,
+        }
     
     def is_production(self) -> bool:
         """Check if running in production"""
