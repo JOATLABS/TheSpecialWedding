@@ -1,0 +1,21 @@
+<!-- Notebook with heart and color tabs (SVG) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="The Special Wedding — notebook heart logo">
+  <!-- Page background -->
+  <rect x="16" y="16" width="96" height="96" fill="#F6E4B8"/>
+  <!-- Left spine -->
+  <rect x="16" y="16" width="14" height="96" fill="#1F1F1F"/>
+  <!-- Right color tabs (top→bottom: blue, red, yellow, green, purple) -->
+  <rect x="98" y="16" width="14" height="19.2" fill="#2DA8FF"/>
+  <rect x="98" y="35.2" width="14" height="19.2" fill="#E53935"/>
+  <rect x="98" y="54.4" width="14" height="19.2" fill="#F9D24A"/>
+  <rect x="98" y="73.6" width="14" height="19.2" fill="#6BCB77"/>
+  <rect x="98" y="92.8" width="14" height="19.2" fill="#9B59B6"/>
+  <!-- Heart (centered in the beige page area) -->
+  <path fill="#5A3A2C" d="M64 76
+    C64 69 59 60 51 60
+    C44 60 40 66 40 72
+    C40 84 56 92 64 100
+    C72 92 88 84 88 72
+    C88 66 84 60 77 60
+    C69 60 64 69 64 76Z"/>
+</svg>
