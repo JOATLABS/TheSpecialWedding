@@ -41,3 +41,21 @@ export function CardTitle({ className = '', children }: CardProps) {
 export function CardContent({ className = '', children }: CardProps) {
   return <div className={className}>{children}</div>;
 }
+
+// Description text in card header
+export function CardDescription({ className = '', children }: CardProps) {
+  return (
+    <p className={`text-sm text-gray-600 ${className}`}>
+      {children}
+    </p>
+  );
+}
+
+// Footer area for actions/buttons
+export function CardFooter({ className = '', children }: CardProps) {
+  return (
+    <div className={`mt-4 flex items-center gap-2 ${className}`}>
+      {children}
+    </div>
+  );
+}

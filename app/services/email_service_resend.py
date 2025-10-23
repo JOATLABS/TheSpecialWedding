@@ -28,7 +28,7 @@ class ResendEmailService:
         self.email_log_collection = mongo.db["email_logs"]
         self.wedding_collection = mongo.db["weddings"]
     
-    def send_email(
+    async def send_email(
         self, 
         to_email: str, 
         subject: str, 
@@ -88,7 +88,7 @@ class ResendEmailService:
                 "resend_id": email_response.get("id"),
                 "provider": "resend"
             }
-            self.email_log_collection.insert_one(log_entry)
+            await self.email_log_collection.insert_one(log_entry)
             
             logger.info(f"Email sent successfully to {to_email}, ID: {email_response.get('id')}")
             return {"success": True, "id": email_response.get("id")}
@@ -109,11 +109,11 @@ class ResendEmailService:
                 "error": str(e),
                 "provider": "resend"
             }
-            self.email_log_collection.insert_one(log_entry)
+            await self.email_log_collection.insert_one(log_entry)
             
             return {"success": False, "error": str(e)}
     
-    def send_rsvp_invitations(
+    async def send_rsvp_invitations(
         self, 
         wedding_slug: str, 
         custom_html: Optional[str] = None,
@@ -122,7 +122,7 @@ class ResendEmailService:
     ) -> Dict[str, Any]:
         """Send RSVP invitation emails to guests with email addresses"""
         # Get wedding details
-        wedding = self.wedding_collection.find_one({"slug": wedding_slug})
+        wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
         if not wedding:
             return {"sent": 0, "failed": 0, "error": "Wedding not found"}
         
@@ -168,7 +168,8 @@ class ResendEmailService:
                     guest_name=guest.get("name", "Guest"),
                     couple_names=from_name,
                     wedding_date=wedding.get("date", ""),
-                    rsvp_url=rsvp_url
+                    rsvp_url=rsvp_url,
+                    plus_ones=guest.get("plus_ones", [])
                 )
             
             # Send email
@@ -193,7 +194,7 @@ class ResendEmailService:
         
         return {"sent": sent, "failed": failed}
     
-    def send_reminders(
+    async def send_reminders(
         self,
         wedding_slug: str,
         event_type: str,
@@ -203,7 +204,7 @@ class ResendEmailService:
     ) -> Dict[str, Any]:
         """Send reminder emails to guests who have RSVP'd"""
         # Get wedding details
-        wedding = self.wedding_collection.find_one({"slug": wedding_slug})
+        wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
         if not wedding:
             return {"sent": 0, "failed": 0, "error": "Wedding not found"}
         
@@ -230,7 +231,7 @@ class ResendEmailService:
             
             for guest in guests:
                 # Check if guest has RSVP'd for this event
-                rsvp = self.rsvp_collection.find_one({"guest_id": guest["_id"]})
+                rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
                 if not rsvp or event_type not in rsvp.get("attending", []):
                     continue
                 
@@ -256,7 +257,8 @@ class ResendEmailService:
                         event_type=event_type,
                         event_date=event.get("date", ""),
                         event_details=event.get("details", {}),
-                        couple_names=from_name
+                        couple_names=from_name,
+                        plus_ones=guest.get("plus_ones", [])
                     )
                 
                 # Send email
@@ -278,7 +280,19 @@ class ResendEmailService:
                 # Add delay to respect Resend rate limit (2 requests per second)
                 time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
         
-        # TODO: Add plus-ones support if needed
+        # Add plus-ones support
+        plus_ones_collection = mongo.db["plus_ones"]
+        
+        for recipient in recipients:
+            guest_id = recipient.get("guest_id")
+            if guest_id:
+                # Get plus-ones for this guest
+                plus_ones = list(plus_ones_collection.find({"guest_id": str(guest_id)}))
+                recipient["plus_ones"] = plus_ones
+                recipient["plus_ones_count"] = len(plus_ones)
+            else:
+                recipient["plus_ones"] = []
+                recipient["plus_ones_count"] = 0
         
         return {"sent": sent, "failed": failed}
     
@@ -295,7 +309,7 @@ class ResendEmailService:
         
         return logs
     
-    def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str) -> str:
+    def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str, plus_ones: list = None) -> str:
         """Generate default RSVP invitation HTML"""
         return f"""
         <!DOCTYPE html>
@@ -331,6 +345,7 @@ class ResendEmailService:
                     
                     <div class="details">
                         <p style="margin: 0;"><strong>Save the Date:</strong> {wedding_date}</p>
+                        {self._generate_plus_ones_section(plus_ones)}
                     </div>
                     
                     <p>Please let us know if you'll be able to attend by clicking the button below:</p>
@@ -359,7 +374,24 @@ class ResendEmailService:
         </html>
         """
     
-    def _generate_default_reminder_html(self, guest_name: str, event_type: str, event_date: str, event_details: dict, couple_names: str) -> str:
+    def _generate_plus_ones_section(self, plus_ones: list = None) -> str:
+        """Generate HTML section for plus-ones information"""
+        if not plus_ones:
+            return ""
+        
+        plus_ones_html = "<br><p style='margin: 10px 0 0;'><strong>Your Plus-Ones:</strong></p>"
+        for plus_one in plus_ones:
+            plus_one_name = plus_one.get("name", "Plus One")
+            attending_events = plus_one.get("attending", [])
+            if attending_events:
+                events_text = ", ".join([event.replace("_", " ").title() for event in attending_events])
+                plus_ones_html += f"<p style='margin: 5px 0; font-size: 14px;'>• {plus_one_name} - {events_text}</p>"
+            else:
+                plus_ones_html += f"<p style='margin: 5px 0; font-size: 14px;'>• {plus_one_name}</p>"
+        
+        return plus_ones_html
+    
+    def _generate_default_reminder_html(self, guest_name: str, event_type: str, event_date: str, event_details: dict, couple_names: str, plus_ones: list = None) -> str:
         """Generate default reminder HTML"""
         event_title = event_type.replace('_', ' ').title()
         venue_name = event_details.get('venue_name', 'Venue details coming soon')
@@ -419,6 +451,7 @@ class ResendEmailService:
                             <strong>Dress Code:</strong>
                             <span>{attire}</span>
                         </div>''' if attire else ''}
+                        {self._generate_plus_ones_section(plus_ones)}
                     </div>
                     
                     <p>We can't wait to see you there!</p>
