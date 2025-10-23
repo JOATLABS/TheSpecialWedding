@@ -32,6 +32,15 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["guests"]
 
+    def get_platform_metrics_collection(self):
+        collection = self.db["platform_metrics"]
+        collection.create_index("snapshot_time")
+        return collection
+
+    def get_collection(self, name: str):
+        return self.db[name]
+
+
     # SAAS collections (backward compatible additions)
     def get_users_collection(self):
         """Extended users collection for wedding planners and vendors"""
@@ -134,9 +143,7 @@ class MongoConnector:
             self.client.close()
             logger.info("MongoDB connection closed")
 
-# Global instance - maintains backward compatibility
 mongo = MongoConnector(settings.MONGO_URI, settings.MONGO_DB)
-
 
 # Helper functions for application lifecycle
 async def init_database():

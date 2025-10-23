@@ -9,14 +9,12 @@ class Settings:
     VERSION: str = "0.1.0"
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://mongo:27017")
     MONGO_DB: str = os.getenv("MONGO_DB", "wedding")
-    SECRET_KEY: Optional[str] = os.getenv("SECRET_KEY")
-    API_KEY: Optional[str] = os.getenv("API_KEY")
-    
-    def __init__(self):
-        """Validate required environment variables"""
-        if not self.SECRET_KEY:
-            raise ValueError("SECRET_KEY environment variable is required")
-        if not self.API_KEY:
-            raise ValueError("API_KEY environment variable is required")
+    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    API_KEY: str = os.getenv("API_KEY", "default-api-key")
+    PLATFORM_METRICS_TOKEN: str = (
+        os.getenv("PLATFORM_METRICS_TOKEN")
+        or os.getenv("API_TOKEN")
+        or API_KEY
+    )
 
 settings = Settings()
