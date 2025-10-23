@@ -14,7 +14,7 @@ from app.core.cache import init_cache, close_cache
 from app.core.database_indexes import create_all_indexes
 
 # Import middleware
-from app.middleware.error_handler import ErrorHandlerMiddleware
+from app.middleware.error_handler_enhanced import EnhancedErrorHandlerMiddleware
 from app.middleware.rate_limiting import RateLimitMiddleware
 from app.middleware.csrf_protection import CSRFProtectionMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -53,6 +53,8 @@ from app.api.notification_management import router as notification_router
 from app.api.support_management import router as support_router
 from app.api.public_contact import router as public_contact_router
 from app.api.stripe_payment import router as stripe_router
+from app.api.admin_platform_metrics import router as platform_metrics_router
+from app.api.admin_backup import router as backup_router
 
 # Setup logging
 logging.basicConfig(
@@ -82,6 +84,12 @@ async def lifespan(app: FastAPI):
         # Create database indexes
         create_all_indexes()
         logger.info("Database indexes created/verified")
+
+        # Run database migrations
+        from app.utils.migrations import migration_manager, migration_registry
+        migrations = migration_registry.get_all_migrations()
+        await migration_manager.run_migrations(migrations)
+        logger.info("Database migrations completed")
 
         logger.info("Application startup complete")
         
@@ -125,8 +133,11 @@ app = FastAPI(
 # ==================== MIDDLEWARE STACK ====================
 # Order matters! Add from outermost to innermost
 
-# 1. Error handling (outermost)
-app.add_middleware(ErrorHandlerMiddleware)
+# 1. Error handling (outermost) - Enhanced with MongoDB logging and email alerts
+app.add_middleware(
+    EnhancedErrorHandlerMiddleware,
+    enable_email_alerts=settings.is_production()  # Only send emails in production
+)
 
 # 2. Security headers
 if settings.security_headers_enabled:
@@ -248,7 +259,9 @@ admin_routers = [
     (trial_management_router, "Admin"),
     (vendor_forms_router, "Vendor Management"),
     (notification_router, "Notifications"),
-    (support_router, "Support")
+    (support_router, "Support"),
+    (platform_metrics_router, "ROOT_ADMIN"),
+    (backup_router, "ROOT_ADMIN")
 ]
 
 for router, tag in admin_routers:
