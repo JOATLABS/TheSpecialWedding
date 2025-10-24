@@ -23,124 +23,150 @@
  */
 
 export default {
-	async scheduled(event, env, ctx) {
-		console.log('Saving metrics snapshot...');
+  async scheduled(event, env, ctx) {
+    console.log('Saving metrics snapshot...');
 
-		try {
-			// Save metrics snapshot
-			const response = await fetch(`${env.API_URL}/admin/platform/metrics/snapshot`, {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${env.ADMIN_TOKEN}`,
-					'Content-Type': 'application/json'
-				}
-			});
+    try {
+      const response = await fetch(`${env.API_URL}/admin/platform/metrics/snapshot`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.ADMIN_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`Metrics snapshot failed: ${response.status} - ${errorText}`);
-			}
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Metrics snapshot failed: ${response.status} - ${errorText}`);
+      }
 
-                        const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (parseError) {
+        throw new Error(`Failed to parse metrics snapshot response: ${parseError.message}`);
+      }
 
-                        console.log('✓ Metrics snapshot saved', result);
+      console.log('✓ Metrics snapshot saved', result);
 
-                        if (env.WEDDING_ANALYTICAL && result.metrics) {
-                                console.log('→ Writing metrics to Workers Analytics Engine dataset');
-                                writeMetricsToAnalyticsEngine(env.WEDDING_ANALYTICAL, result.metrics, {
-                                        environment: env.DEPLOYMENT_ENV || inferEnvironment(env.API_URL),
-                                        index: env.ANALYTICS_INDEX || 'special-wedding',
-                                });
-                        } else {
-                                console.log('ℹ️ Analytics Engine binding missing or metrics payload unavailable; skipping dataset write');
-                        }
+      if (env.WEDDING_ANALYTICAL && result.metrics) {
+        console.log('→ Writing metrics to Workers Analytics Engine dataset');
+        const writePromise = writeMetricsToAnalyticsEngine(env.WEDDING_ANALYTICAL, result.metrics, {
+          environment: env.DEPLOYMENT_ENV || inferEnvironment(env.API_URL),
+          index: env.ANALYTICS_INDEX || 'special-wedding',
+        });
 
-                        return new Response('Snapshot saved successfully', { status: 200 });
+        ctx.waitUntil(writePromise);
+        await writePromise;
+      } else {
+        console.log('ℹ️ Analytics Engine binding missing or metrics payload unavailable; skipping dataset write');
+      }
 
-		} catch (error) {
-			console.error('✗ Metrics snapshot failed:', error);
-			throw error;
-		}
-	}
+      return new Response('Snapshot saved successfully', { status: 200 });
+    } catch (error) {
+      console.error('✗ Metrics snapshot failed:', error);
+      throw error;
+    }
+  },
 };
 
-function writeMetricsToAnalyticsEngine(dataset, metrics, context) {
-        const environment = context.environment || 'production';
-        const index = context.index || 'special-wedding';
+async function writeMetricsToAnalyticsEngine(dataset, metrics, context) {
+  if (!dataset || typeof dataset.writeDataPoint !== 'function') {
+    console.warn('Analytics Engine dataset binding is unavailable or invalid');
+    return;
+  }
 
-        const writeMetric = (category, name, value, dimension = 'overall') => {
-                const numericValue = typeof value === 'number' ? value : Number(value);
+  if (!metrics || typeof metrics !== 'object') {
+    console.warn('Metrics payload missing or invalid; skipping Analytics Engine write');
+    return;
+  }
 
-                if (!Number.isFinite(numericValue)) {
-                        return;
-                }
+  const environment = context.environment || 'production';
+  const index = context.index || 'special-wedding';
+  const writes = [];
 
-                try {
-                        dataset.writeDataPoint({
-                                blobs: [category, name, dimension, environment],
-                                doubles: [numericValue],
-                                indexes: [index],
-                        });
-                } catch (error) {
-                        console.error('Failed to write metric to Analytics Engine', { category, name, dimension, error });
-                }
-        };
+  const enqueueMetric = (category, name, value, dimension = 'overall') => {
+    const numericValue = typeof value === 'number' ? value : Number(value);
 
-        const health = metrics.health || {};
-        const databaseHealth = health.database || {};
-        const cpuHealth = health.cpu || {};
-        const memoryHealth = health.memory || {};
-        const diskHealth = health.disk || {};
+    if (!Number.isFinite(numericValue)) {
+      return;
+    }
 
-        if (databaseHealth.status) {
-                const statusValue = databaseHealth.status === 'healthy' ? 1 : 0;
-                writeMetric('health', 'database_status', statusValue, databaseHealth.status);
-        }
-        writeMetric('health', 'db_latency_ms', databaseHealth.latency_ms);
-        writeMetric('health', 'cpu_usage_percent', cpuHealth.percent);
-        if (cpuHealth.cores) {
-                writeMetric('health', 'cpu_cores', cpuHealth.cores);
-        }
-        writeMetric('health', 'memory_usage_percent', memoryHealth.percent_used);
-        writeMetric('health', 'memory_available_gb', memoryHealth.available_gb);
-        writeMetric('health', 'memory_used_gb', memoryHealth.used_gb);
-        writeMetric('health', 'disk_usage_percent', diskHealth.percent_used);
-        writeMetric('health', 'disk_free_gb', diskHealth.free_gb);
-        writeMetric('health', 'disk_used_gb', diskHealth.used_gb);
+    writes.push(
+      dataset
+        .writeDataPoint({
+          blobs: [category, name, dimension, environment],
+          doubles: [numericValue],
+          indexes: [index],
+        })
+        .catch((error) => {
+          console.error('Failed to write metric to Analytics Engine', {
+            category,
+            name,
+            dimension,
+            error,
+          });
+        })
+    );
+  };
 
-        const errors = metrics.errors || {};
-        writeMetric('errors', 'total_24h', errors.total_24h);
-        writeMetric('errors', 'critical_24h', errors.critical_24h);
-        writeMetric('errors', 'unacknowledged', errors.unacknowledged);
-        writeMetric('errors', 'error_rate_per_hour', errors.error_rate_per_hour);
+  const health = metrics.health || {};
+  const databaseHealth = health.database || {};
+  const cpuHealth = health.cpu || {};
+  const memoryHealth = health.memory || {};
+  const diskHealth = health.disk || {};
 
-        const business = metrics.business || {};
-        Object.entries(business).forEach(([name, value]) => {
-                writeMetric('business', name, value);
-        });
+  if (databaseHealth.status) {
+    const statusValue = databaseHealth.status === 'healthy' ? 1 : 0;
+    enqueueMetric('health', 'database_status', statusValue, databaseHealth.status);
+  }
+  enqueueMetric('health', 'db_latency_ms', databaseHealth.latency_ms);
+  enqueueMetric('health', 'cpu_usage_percent', cpuHealth.percent);
+  if (cpuHealth.cores) {
+    enqueueMetric('health', 'cpu_cores', cpuHealth.cores);
+  }
+  enqueueMetric('health', 'memory_usage_percent', memoryHealth.percent_used);
+  enqueueMetric('health', 'memory_available_gb', memoryHealth.available_gb);
+  enqueueMetric('health', 'memory_used_gb', memoryHealth.used_gb);
+  enqueueMetric('health', 'disk_usage_percent', diskHealth.percent_used);
+  enqueueMetric('health', 'disk_free_gb', diskHealth.free_gb);
+  enqueueMetric('health', 'disk_used_gb', diskHealth.used_gb);
 
-        const performance = metrics.performance || {};
-        const slowEndpoints = performance.slow_endpoints || [];
-        slowEndpoints.forEach((endpoint, indexPosition) => {
-                const endpointName = endpoint.endpoint || `unknown-${indexPosition}`;
-                writeMetric('performance', 'avg_response_seconds', endpoint.avg_response_time, endpointName);
-                writeMetric('performance', 'max_response_seconds', endpoint.max_response_time, endpointName);
-                writeMetric('performance', 'request_count', endpoint.request_count, endpointName);
-        });
+  const errors = metrics.errors || {};
+  enqueueMetric('errors', 'total_24h', errors.total_24h);
+  enqueueMetric('errors', 'critical_24h', errors.critical_24h);
+  enqueueMetric('errors', 'unacknowledged', errors.unacknowledged);
+  enqueueMetric('errors', 'error_rate_per_hour', errors.error_rate_per_hour);
+
+  const business = metrics.business || {};
+  Object.entries(business).forEach(([name, value]) => {
+    enqueueMetric('business', name, value);
+  });
+
+  const performance = metrics.performance || {};
+  const slowEndpoints = performance.slow_endpoints || [];
+  slowEndpoints.forEach((endpoint, indexPosition) => {
+    const endpointName = endpoint.endpoint || `unknown-${indexPosition}`;
+    enqueueMetric('performance', 'avg_response_seconds', endpoint.avg_response_time, endpointName);
+    enqueueMetric('performance', 'max_response_seconds', endpoint.max_response_time, endpointName);
+    enqueueMetric('performance', 'request_count', endpoint.request_count, endpointName);
+  });
+
+  await Promise.all(writes);
 }
 
 function inferEnvironment(apiUrl) {
-        if (!apiUrl) {
-                return 'production';
-        }
+  if (!apiUrl) {
+    return 'production';
+  }
 
-        const lowerUrl = apiUrl.toLowerCase();
-        if (lowerUrl.includes('staging')) {
-                return 'staging';
-        }
-        if (lowerUrl.includes('dev') || lowerUrl.includes('localhost')) {
-                return 'development';
-        }
+  const lowerUrl = apiUrl.toLowerCase();
+  if (lowerUrl.includes('staging')) {
+    return 'staging';
+  }
+  if (lowerUrl.includes('dev') || lowerUrl.includes('localhost')) {
+    return 'development';
+  }
 
-        return 'production';
+  return 'production';
 }
