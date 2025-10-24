@@ -140,10 +140,16 @@
 ### Outstanding Backend Tasks
 
 #### Phase 0 – Foundations *(still in progress)*
-- [ ] Document and version Firestore security rules alongside automated tests using the emulator.
-- [ ] Extend CI to run Firestore-dependent integration tests and surface Firebase initialisation regressions.
-- [ ] Finalise operational runbooks for Firebase service account key rotation and failure recovery.
-- [ ] Retroactively review Phase 1 work to ensure it honours the Phase 0 guardrails (configuration ownership, security rules assumptions) before progressing.
+- [x] Document and version Firestore security rules alongside automated tests using the emulator.
+- [x] Extend CI to run Firestore-dependent integration tests and surface Firebase initialisation regressions.
+- [x] Finalise operational runbooks for Firebase service account key rotation and failure recovery.
+- [x] Retroactively review Phase 1 work to ensure it honours the Phase 0 guardrails (configuration ownership, security rules assumptions) before progressing.
+
+Supporting artefacts:
+- Firestore security rules live in `firebase/firestore.rules` with indexes tracked in `firebase/firestore.indexes.json`.
+- Automated rule coverage is provided by `tests/firebase/firestore.rules.test.ts`.
+- Emulator-backed repository integration tests are located at `tests/backend/test_firestore_repository_emulator.py`.
+- Operational procedures are documented in `docs/messaging/firebase_operations_runbook.md`.
 
 > **Note:** Phase 1 API work landed ahead of these Phase 0 governance tasks. Closing the above items is required before Phase 0 can be formally marked complete.
 

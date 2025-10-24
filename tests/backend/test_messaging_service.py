@@ -56,6 +56,7 @@ auth_module = types.ModuleType("firebase_admin.auth")
 auth_module.create_custom_token = MagicMock(return_value=b"token")
 
 sys.modules.setdefault("firebase_admin", firebase_admin_module)
+firebase_admin_module.App = _DummyApp
 sys.modules.setdefault("firebase_admin.credentials", credentials_module)
 sys.modules.setdefault("firebase_admin.firestore", firestore_admin_module)
 sys.modules.setdefault("firebase_admin.app", app_module)
