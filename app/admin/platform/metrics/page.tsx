@@ -24,7 +24,9 @@ interface HealthMetrics {
   cpu: {
     percent: number;
     cores: number;
+    status?: string;
   };
+  psutil_available: boolean;
 }
 
 interface ErrorMetrics {
@@ -51,10 +53,10 @@ interface BusinessMetrics {
 
 interface PerformanceMetrics {
   slow_endpoints: Array<{
-    path: string;
-    method: string;
-    avg_duration_ms: number;
-    call_count: number;
+    endpoint: string;
+    avg_response_time: number;
+    max_response_time: number;
+    request_count: number;
   }>;
 }
 
@@ -297,6 +299,14 @@ export default function PlatformMonitoringDashboard() {
                 ></div>
               </div>
             </Card>
+            {!metrics.health.psutil_available && (
+              <div className="md:col-span-2 xl:col-span-4">
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                  System resource metrics are unavailable. Install the optional <code className="font-mono">psutil</code>
+                  {' '}package on the API server to enable CPU, memory, and disk insights.
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -431,24 +441,20 @@ export default function PlatformMonitoringDashboard() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Endpoint</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Duration</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Duration (s)</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Max Duration (s)</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Calls</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {metrics.performance.slow_endpoints.map((endpoint, idx) => (
-                      <tr key={idx}>
-                        <td className="px-6 py-4 text-sm font-mono text-gray-900">{endpoint.path}</td>
+                      <tr key={endpoint.endpoint ?? idx}>
+                        <td className="px-6 py-4 text-sm font-mono text-gray-900">{endpoint.endpoint}</td>
                         <td className="px-6 py-4 text-sm">
-                          <span className="px-2 py-1 rounded bg-blue-100 text-blue-800 font-medium">
-                            {endpoint.method}
-                          </span>
+                          <span className="font-semibold text-orange-600">{endpoint.avg_response_time.toFixed(3)}s</span>
                         </td>
-                        <td className="px-6 py-4 text-sm">
-                          <span className="font-semibold text-orange-600">{endpoint.avg_duration_ms.toFixed(0)}ms</span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{endpoint.call_count}</td>
+                        <td className="px-6 py-4 text-sm text-gray-700">{endpoint.max_response_time.toFixed(3)}s</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{endpoint.request_count}</td>
                       </tr>
                     ))}
                   </tbody>
