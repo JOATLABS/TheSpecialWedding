@@ -139,10 +139,13 @@
 
 ### Outstanding Backend Tasks
 
-#### Phase 0 – Foundations
+#### Phase 0 – Foundations *(still in progress)*
 - [ ] Document and version Firestore security rules alongside automated tests using the emulator.
 - [ ] Extend CI to run Firestore-dependent integration tests and surface Firebase initialisation regressions.
 - [ ] Finalise operational runbooks for Firebase service account key rotation and failure recovery.
+- [ ] Retroactively review Phase 1 work to ensure it honours the Phase 0 guardrails (configuration ownership, security rules assumptions) before progressing.
+
+> **Note:** Phase 1 API work landed ahead of these Phase 0 governance tasks. Closing the above items is required before Phase 0 can be formally marked complete.
 
 #### Phase 1 – Messaging Services
 - [x] Expose REST endpoints for conversation creation, retrieval, listing, and message pagination backed by the Firestore repository.
