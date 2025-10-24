@@ -159,7 +159,7 @@ class FirestoreMessagingRepository:
             sender_role=payload.sender_role,
             body=payload.body,
             created_at=now,
-            attachments=payload.attachments,
+            attachments=list(payload.attachments or []),
             linked_resource=payload.linked_resource,
             delivery_status=payload.delivery_status,
         )
