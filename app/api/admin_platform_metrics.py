@@ -295,9 +295,27 @@ async def get_platform_metrics(
 
         audit_total_errors = error_stats.get("total", [{}])[0].get("count", 0)
         audit_critical_errors = error_stats.get("critical", [{}])[0].get("count", 0)
+        top_error_endpoints = error_stats.get("by_endpoint", [])
+
+        # Check if errors collection exists (self-hosted error tracking)
+        try:
+            self_hosted_errors = await async_mongo.db["errors"].count_documents({
+                "timestamp": {"$gte": day_ago},
+                "acknowledged": False
+            })
+            errors_collection_total = await async_mongo.db["errors"].count_documents({
+                "timestamp": {"$gte": day_ago}
+            })
+            errors_collection_critical = await async_mongo.db["errors"].count_documents({
+                "timestamp": {"$gte": day_ago},
+                "severity": "critical"
+            })
+        except Exception:
+            # Collection might not exist yet
+            pass
+
         total_errors = audit_total_errors + errors_collection_total
         critical_errors = audit_critical_errors + errors_collection_critical
-        top_error_endpoints = error_stats.get("by_endpoint", [])
 
         # Build consolidated recent error list from both error sources
         recent_error_docs: List[Dict[str, Any]] = []
@@ -337,23 +355,6 @@ async def get_platform_metrics(
             reverse=True
         )
         recent_errors = [_extract_error_summary(error) for error in recent_error_docs]
-
-        # Check if errors collection exists (self-hosted error tracking)
-        try:
-            self_hosted_errors = await async_mongo.db["errors"].count_documents({
-                "timestamp": {"$gte": day_ago},
-                "acknowledged": False
-            })
-            errors_collection_total = await async_mongo.db["errors"].count_documents({
-                "timestamp": {"$gte": day_ago}
-            })
-            errors_collection_critical = await async_mongo.db["errors"].count_documents({
-                "timestamp": {"$gte": day_ago},
-                "severity": "critical"
-            })
-        except Exception:
-            # Collection might not exist yet
-            pass
 
         # ==================== BUSINESS METRICS ====================
 
