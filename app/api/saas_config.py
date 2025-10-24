@@ -1,9 +1,13 @@
+import inspect
+from collections.abc import Iterable
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Dict, Any, List, Optional
+
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
 from app.utils.pydantic_objectid import PyObjectId
-from datetime import datetime, timedelta
 
 router = APIRouter()
 
@@ -556,6 +560,52 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
         raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")
 
 
+async def _maybe_await(value: Any) -> Any:
+    """Await coroutine-like values produced by Motor, otherwise return as-is."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def _cursor_to_list(cursor: Any, *, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Consume Motor or PyMongo style cursors into a concrete list."""
+    if cursor is None:
+        return []
+
+    # Async iterator interface (Motor command/find cursors).
+    if hasattr(cursor, "__aiter__"):
+        items: List[Dict[str, Any]] = []
+        async for document in cursor:
+            items.append(document)
+            if limit is not None and limit >= 0 and len(items) >= limit:
+                break
+        return items
+
+    # Motor cursors provide ``to_list`` which returns awaitable results.
+    if hasattr(cursor, "to_list"):
+        try:
+            # When limit is unspecified, request a large batch; Motor requires an integer.
+            fetch_length = limit if (limit is not None and limit >= 0) else 1000
+            result = await cursor.to_list(length=fetch_length)
+            if limit is not None and limit >= 0:
+                return result[:limit]
+            return result
+        except TypeError:
+            # Some PyMongo cursors also expose ``to_list`` but expect positional args;
+            # fall back to generic iteration below if invocation fails.
+            pass
+
+    # PyMongo / mongomock cursor implements synchronous iteration.
+    if isinstance(cursor, Iterable):
+        items = list(cursor)
+        if limit is not None and limit >= 0:
+            return items[:limit]
+        return items
+
+    # Unknown cursor type – return empty list instead of raising to keep metrics resilient.
+    return []
+
+
 @router.get("/analytics/platform", tags=["ROOT_ADMIN"])
 async def get_platform_metrics(
     timeframe: str = Query(
@@ -579,32 +629,42 @@ async def get_platform_metrics(
 
         # User metrics
         users_collection = mongo.get_users_collection()
-        total_users = await users_collection.count_documents({})
-        active_users = await users_collection.count_documents({"is_active": True})
-        new_users = await users_collection.count_documents({"created_at": {"$gte": period_start}})
-        role_breakdown = {
-            (doc.get("_id") or "unassigned"): doc.get("count", 0)
-            for doc in users_collection.aggregate([
+        total_users = await _maybe_await(users_collection.count_documents({}))
+        active_users = await _maybe_await(users_collection.count_documents({"is_active": True}))
+        new_users = await _maybe_await(
+            users_collection.count_documents({"created_at": {"$gte": period_start}})
+        )
+
+        role_breakdown_docs = await _cursor_to_list(
+            users_collection.aggregate([
                 {"$group": {"_id": "$role", "count": {"$sum": 1}}},
                 {"$sort": {"count": -1}},
             ])
+        )
+        role_breakdown = {
+            (doc.get("_id") or "unassigned"): doc.get("count", 0)
+            for doc in role_breakdown_docs
         }
 
         # Subscription metrics
         subscriptions_collection = mongo.db.get_collection("user_subscriptions")
         plans_collection = mongo.get_subscription_plans_collection()
-        plans = list(plans_collection.find({}))
+        plans = await _cursor_to_list(plans_collection.find({}))
         plan_lookup = {str(plan.get("_id")): plan for plan in plans}
 
         status_breakdown: Dict[str, int] = {}
         for status in ["trial", "active", "cancelled", "expired"]:
-            status_breakdown[status] = await subscriptions_collection.count_documents({"status": status})
+            status_breakdown[status] = await _maybe_await(
+                subscriptions_collection.count_documents({"status": status})
+            )
         total_subscriptions = sum(status_breakdown.values())
-        active_plans = await plans_collection.count_documents({"is_active": True})
+        active_plans = await _maybe_await(plans_collection.count_documents({"is_active": True}))
 
         monthly_revenue = 0.0
         yearly_revenue = 0.0
-        async for subscription in subscriptions_collection.find({"status": "active"}):
+        active_cursor = subscriptions_collection.find({"status": "active"})
+        active_subscriptions_docs = await _cursor_to_list(active_cursor)
+        for subscription in active_subscriptions_docs:
             plan = plan_lookup.get(str(subscription.get("plan_id")))
             if not plan:
                 continue
@@ -630,14 +690,18 @@ async def get_platform_metrics(
             if plan.get("id"):
                 identifier_variants.add(str(plan["id"]))
 
-            active_count = await subscriptions_collection.count_documents({
-                "plan_id": {"$in": list(identifier_variants)},
-                "status": "active",
-            })
-            trial_count = await subscriptions_collection.count_documents({
-                "plan_id": {"$in": list(identifier_variants)},
-                "status": "trial",
-            })
+            active_count = await _maybe_await(
+                subscriptions_collection.count_documents({
+                    "plan_id": {"$in": list(identifier_variants)},
+                    "status": "active",
+                })
+            )
+            trial_count = await _maybe_await(
+                subscriptions_collection.count_documents({
+                    "plan_id": {"$in": list(identifier_variants)},
+                    "status": "trial",
+                })
+            )
 
             monthly_price = float(plan.get("price_monthly", 0) or 0)
             yearly_price = float(plan.get("price_yearly", 0) or 0)
@@ -655,8 +719,11 @@ async def get_platform_metrics(
 
         # Operational metrics
         weddings_collection = mongo.get_weddings_collection()
-        wedding_docs = list(
-            weddings_collection.find({}, {"status": 1, "date": 1, "guest_count": 1, "created_at": 1})
+        wedding_docs = await _cursor_to_list(
+            weddings_collection.find(
+                {},
+                {"status": 1, "date": 1, "guest_count": 1, "created_at": 1},
+            )
         )
         total_weddings = len(wedding_docs)
         active_weddings = sum(
@@ -669,36 +736,48 @@ async def get_platform_metrics(
             1 for wedding in wedding_docs if _is_within_period(wedding.get("created_at"), period_start)
         )
 
-        guest_total = mongo.get_guest_collection().count_documents({})
-        rsvp_total = mongo.get_rsvps_collection().count_documents({})
+        guest_total = await _maybe_await(mongo.get_guest_collection().count_documents({}))
+        rsvp_total = await _maybe_await(mongo.get_rsvps_collection().count_documents({}))
 
         forms_collection = mongo.get_forms_collection()
-        forms_total = await forms_collection.count_documents({"is_active": True})
-        forms_new_in_period = await forms_collection.count_documents({
-            "is_active": True,
-            "created_at": {"$gte": period_start},
-        })
+        forms_total = await _maybe_await(forms_collection.count_documents({"is_active": True}))
+        forms_new_in_period = await _maybe_await(
+            forms_collection.count_documents({
+                "is_active": True,
+                "created_at": {"$gte": period_start},
+            })
+        )
         responses_collection = mongo.get_form_responses_collection()
-        responses_total = await responses_collection.count_documents({})
-        responses_in_period = await responses_collection.count_documents({"submitted_at": {"$gte": period_start}})
+        responses_total = await _maybe_await(responses_collection.count_documents({}))
+        responses_in_period = await _maybe_await(
+            responses_collection.count_documents({"submitted_at": {"$gte": period_start}})
+        )
 
         notifications_collection = mongo.db.get_collection("notifications")
-        notifications_sent_total = await notifications_collection.count_documents({"status": "sent"})
-        notifications_sent_in_period = await notifications_collection.count_documents({
-            "status": "sent",
-            "sent_at": {"$gte": period_start},
-        })
+        notifications_sent_total = await _maybe_await(
+            notifications_collection.count_documents({"status": "sent"})
+        )
+        notifications_sent_in_period = await _maybe_await(
+            notifications_collection.count_documents({
+                "status": "sent",
+                "sent_at": {"$gte": period_start},
+            })
+        )
 
         email_logs_collection = mongo.db.get_collection("email_logs")
-        email_logs_total = await email_logs_collection.count_documents({})
-        email_logs_in_period = await email_logs_collection.count_documents({
-            "status": "success",
-            "sent_at": {"$gte": period_start},
-        })
+        email_logs_total = await _maybe_await(email_logs_collection.count_documents({}))
+        email_logs_in_period = await _maybe_await(
+            email_logs_collection.count_documents({
+                "status": "success",
+                "sent_at": {"$gte": period_start},
+            })
+        )
 
         ai_usage_collection = mongo.get_ai_usage_collection()
-        ai_events_total = await ai_usage_collection.count_documents({})
-        ai_events_in_period = await ai_usage_collection.count_documents({"created_at": {"$gte": period_start}})
+        ai_events_total = await _maybe_await(ai_usage_collection.count_documents({}))
+        ai_events_in_period = await _maybe_await(
+            ai_usage_collection.count_documents({"created_at": {"$gte": period_start}})
+        )
 
         return {
             "generated_at": now.isoformat(),
