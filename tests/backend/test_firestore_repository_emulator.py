@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import os
 import pytest
 from google.auth.credentials import AnonymousCredentials
@@ -126,3 +127,39 @@ def test_list_conversations_filters_by_participant(firestore_client: FirestoreCl
     assert len(conversations) == 1
     assert conversations[0].wedding_id == "wed-team"
     assert conversations[0].participants[0].user_id == "planner@example.com"
+
+
+def test_acknowledge_read_updates_last_read_at(firestore_client: FirestoreClient) -> None:
+    repository = FirestoreMessagingRepository(client=firestore_client)
+
+    participant = ConversationParticipant(user_id="reader@example.com", role=ParticipantRole.PLANNER)
+    conversation = repository.create_conversation(
+        ConversationCreateRequest(
+            wedding_id="wed-read",
+            channel=ConversationChannel.CHAT,
+            participants=[participant],
+        ),
+        created_by="reader@example.com",
+    )
+
+    first_timestamp = datetime.now(timezone.utc).replace(microsecond=0)
+    updated_participant = repository.acknowledge_read(
+        conversation.conversation_id,
+        "reader@example.com",
+        read_at=first_timestamp,
+    )
+
+    assert updated_participant.last_read_at == first_timestamp
+
+    conversation_state = repository.get_conversation(conversation.conversation_id)
+    assert conversation_state is not None
+    assert conversation_state.participants[0].last_read_at == first_timestamp
+
+    earlier = first_timestamp - timedelta(days=1)
+    monotonic_participant = repository.acknowledge_read(
+        conversation.conversation_id,
+        "reader@example.com",
+        read_at=earlier,
+    )
+
+    assert monotonic_participant.last_read_at == first_timestamp

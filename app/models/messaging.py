@@ -165,3 +165,28 @@ class SendMessageRequest(BaseModel):
     @classmethod
     def _prepare_send_body(cls, value: str) -> str:
         return _normalize_message_body(value)
+
+
+class ReadReceiptUpdateRequest(BaseModel):
+    """Payload used to acknowledge the latest read message in a conversation."""
+
+    last_read_at: datetime = Field(
+        default_factory=_utcnow,
+        description="Timestamp for when the conversation was last read.",
+    )
+
+    @field_validator("last_read_at")
+    @classmethod
+    def _ensure_aware_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("last_read_at must include timezone information")
+
+        return value
+
+
+class ReadReceiptResponse(BaseModel):
+    """Response payload returned after updating a read receipt."""
+
+    conversation_id: str = Field(..., description="Conversation identifier for the read receipt")
+    participant_id: str = Field(..., description="Participant whose read receipt was updated")
+    last_read_at: datetime = Field(..., description="Timestamp recorded for the last read acknowledgement")

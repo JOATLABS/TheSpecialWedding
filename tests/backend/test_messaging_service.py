@@ -75,6 +75,7 @@ from app.models.messaging import (
     MessageListResponse,
     MessageResponse,
     ParticipantRole,
+    ReadReceiptUpdateRequest,
     SendMessageRequest,
 )
 from app.services.messaging import MessagingRepositoryError, MessagingService
@@ -234,3 +235,57 @@ def test_message_create_request_enforces_bounds() -> None:
 def test_message_create_request_rejects_long_body() -> None:
     with pytest.raises(ValidationError):
         MessageCreateRequest(sender_id="user-1", body="x" * 6000)
+
+
+def test_acknowledge_read_returns_response() -> None:
+    repository = MagicMock()
+    participant = ConversationParticipant(
+        user_id="user-1",
+        role=ParticipantRole.PLANNER,
+        last_read_at=datetime.now(timezone.utc),
+    )
+    repository.acknowledge_read.return_value = participant
+
+    service = MessagingService(repository=repository)
+    payload = ReadReceiptUpdateRequest(last_read_at=datetime.now(timezone.utc))
+
+    result = asyncio.run(service.acknowledge_read("convo-1", "user-1", payload))
+
+    assert result.participant_id == "user-1"
+    assert result.conversation_id == "convo-1"
+    assert result.last_read_at == participant.last_read_at
+    repository.acknowledge_read.assert_called_once_with(
+        "convo-1", "user-1", read_at=payload.last_read_at
+    )
+
+
+def test_acknowledge_read_raises_on_repository_error() -> None:
+    repository = MagicMock()
+    repository.acknowledge_read.side_effect = MessagingRepositoryError("boom")
+
+    service = MessagingService(repository=repository)
+
+    payload = ReadReceiptUpdateRequest(last_read_at=datetime.now(timezone.utc))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(service.acknowledge_read("convo-1", "user-1", payload))
+
+    assert exc.value.status_code == 502
+
+
+def test_acknowledge_read_raises_when_timestamp_missing() -> None:
+    repository = MagicMock()
+    participant = ConversationParticipant(
+        user_id="user-1",
+        role=ParticipantRole.PLANNER,
+        last_read_at=None,
+    )
+    repository.acknowledge_read.return_value = participant
+
+    service = MessagingService(repository=repository)
+    payload = ReadReceiptUpdateRequest(last_read_at=datetime.now(timezone.utc))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(service.acknowledge_read("convo-1", "user-1", payload))
+
+    assert exc.value.status_code == 500
