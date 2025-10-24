@@ -4,7 +4,28 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+MAX_MESSAGE_BODY_LENGTH = 5000
+
+
+def _normalize_message_body(value: str) -> str:
+    """Trim message bodies and ensure they contain meaningful content."""
+
+    if not isinstance(value, str):
+        raise TypeError("Message body must be a string.")
+
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("Message body must include non-whitespace characters.")
+
+    if len(stripped) > MAX_MESSAGE_BODY_LENGTH:
+        raise ValueError(
+            f"Message body must not exceed {MAX_MESSAGE_BODY_LENGTH} characters after trimming whitespace."
+        )
+
+    return stripped
 
 
 def _utcnow() -> datetime:
@@ -94,10 +115,18 @@ class MessageCreateRequest(BaseModel):
 
     sender_id: str = Field(..., description="Identifier of the user sending the message")
     sender_role: ParticipantRole = Field(default=ParticipantRole.PLANNER, description="Role of the sender")
-    body: str = Field(..., description="Content of the message")
+    body: str = Field(
+        ...,
+        description="Content of the message (up to 5000 characters after trimming)",
+    )
     attachments: Optional[List[MessageAttachment]] = Field(default=None, description="Attachments included with the message")
     linked_resource: Optional[LinkedResource] = Field(default=None, description="Contextual linked resource")
     delivery_status: Optional[str] = Field(default=None, description="Delivery state from downstream providers")
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def _prepare_message_body(cls, value: str) -> str:
+        return _normalize_message_body(value)
 
 
 class MessageResponse(BaseModel):
@@ -124,7 +153,15 @@ class MessageListResponse(BaseModel):
 class SendMessageRequest(BaseModel):
     """API payload for sending a message from the authenticated participant."""
 
-    body: str = Field(..., description="Content of the outbound message")
+    body: str = Field(
+        ...,
+        description="Content of the outbound message (up to 5000 characters after trimming)",
+    )
     attachments: Optional[List[MessageAttachment]] = Field(default=None, description="Attachments included with the message")
     linked_resource: Optional[LinkedResource] = Field(default=None, description="Contextual linked resource")
     delivery_status: Optional[str] = Field(default=None, description="Optional delivery state supplied by the client")
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def _prepare_send_body(cls, value: str) -> str:
+        return _normalize_message_body(value)
