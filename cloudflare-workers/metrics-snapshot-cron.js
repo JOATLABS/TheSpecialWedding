@@ -87,16 +87,26 @@ function writeMetricsToAnalyticsEngine(dataset, metrics, context) {
         };
 
         const health = metrics.health || {};
-        if (health.database) {
-                const statusValue = health.database === 'healthy' ? 1 : 0;
-                writeMetric('health', 'database_status', statusValue, health.database);
+        const databaseHealth = health.database || {};
+        const cpuHealth = health.cpu || {};
+        const memoryHealth = health.memory || {};
+        const diskHealth = health.disk || {};
+
+        if (databaseHealth.status) {
+                const statusValue = databaseHealth.status === 'healthy' ? 1 : 0;
+                writeMetric('health', 'database_status', statusValue, databaseHealth.status);
         }
-        writeMetric('health', 'db_latency_ms', health.db_latency_ms);
-        writeMetric('health', 'disk_usage_percent', health.disk_usage_percent);
-        writeMetric('health', 'disk_free_gb', health.disk_free_gb);
-        writeMetric('health', 'memory_usage_percent', health.memory_usage_percent);
-        writeMetric('health', 'memory_available_gb', health.memory_available_gb);
-        writeMetric('health', 'cpu_usage_percent', health.cpu_usage_percent);
+        writeMetric('health', 'db_latency_ms', databaseHealth.latency_ms);
+        writeMetric('health', 'cpu_usage_percent', cpuHealth.percent);
+        if (cpuHealth.cores) {
+                writeMetric('health', 'cpu_cores', cpuHealth.cores);
+        }
+        writeMetric('health', 'memory_usage_percent', memoryHealth.percent_used);
+        writeMetric('health', 'memory_available_gb', memoryHealth.available_gb);
+        writeMetric('health', 'memory_used_gb', memoryHealth.used_gb);
+        writeMetric('health', 'disk_usage_percent', diskHealth.percent_used);
+        writeMetric('health', 'disk_free_gb', diskHealth.free_gb);
+        writeMetric('health', 'disk_used_gb', diskHealth.used_gb);
 
         const errors = metrics.errors || {};
         writeMetric('errors', 'total_24h', errors.total_24h);

@@ -58,32 +58,61 @@ async def get_platform_metrics(
             db_latency = 9999
 
         # System resources (if psutil available)
-        system_metrics = {}
+        cpu_metrics: Dict[str, Any] = {
+            "percent": 0.0,
+            "cores": 0,
+            "status": "unknown"
+        }
+        memory_metrics: Dict[str, Any] = {
+            "total_gb": 0.0,
+            "used_gb": 0.0,
+            "available_gb": 0.0,
+            "percent_used": 0.0
+        }
+        disk_metrics: Dict[str, Any] = {
+            "total_gb": 0.0,
+            "used_gb": 0.0,
+            "free_gb": 0.0,
+            "percent_used": 0.0
+        }
+
         if PSUTIL_AVAILABLE:
             try:
                 disk = psutil.disk_usage('/')
                 memory = psutil.virtual_memory()
-                cpu = psutil.cpu_percent(interval=0.5)
+                cpu_percent = psutil.cpu_percent(interval=0.5)
+                cpu_count = psutil.cpu_count(logical=True) or 0
 
-                system_metrics = {
-                    "disk_usage_percent": round(disk.percent, 1),
-                    "disk_free_gb": round(disk.free / (1024**3), 2),
-                    "memory_usage_percent": round(memory.percent, 1),
-                    "memory_available_gb": round(memory.available / (1024**3), 2),
-                    "cpu_usage_percent": round(cpu, 1)
-                }
+                total_memory_gb = memory.total / (1024**3)
+                used_memory_gb = (memory.total - memory.available) / (1024**3)
+
+                total_disk_gb = disk.total / (1024**3)
+                used_disk_gb = disk.used / (1024**3)
+
+                cpu_metrics.update({
+                    "percent": round(cpu_percent, 1),
+                    "cores": cpu_count,
+                    "status": "healthy" if cpu_percent < 85 else "degraded"
+                })
+
+                memory_metrics.update({
+                    "total_gb": round(total_memory_gb, 2),
+                    "used_gb": round(used_memory_gb, 2),
+                    "available_gb": round(memory.available / (1024**3), 2),
+                    "percent_used": round(memory.percent, 1)
+                })
+
+                disk_metrics.update({
+                    "total_gb": round(total_disk_gb, 2),
+                    "used_gb": round(used_disk_gb, 2),
+                    "free_gb": round(disk.free / (1024**3), 2),
+                    "percent_used": round(disk.percent, 1)
+                })
             except Exception as e:
                 logger.error(f"Failed to get system metrics: {str(e)}")
-                system_metrics = {
-                    "disk_usage_percent": 0,
-                    "memory_usage_percent": 0,
-                    "cpu_usage_percent": 0,
-                    "error": "Unable to fetch system metrics"
-                }
+                cpu_metrics["status"] = "unavailable"
         else:
-            system_metrics = {
-                "error": "psutil not installed"
-            }
+            cpu_metrics["status"] = "psutil_not_installed"
 
         # ==================== ERROR MONITORING ====================
 
@@ -258,11 +287,19 @@ async def get_platform_metrics(
 
         # ==================== COMPILE RESPONSE ====================
 
+        generated_at = now.isoformat()
+
         return {
+            "generated_at": generated_at,
             "health": {
-                "database": db_status,
-                "db_latency_ms": round(db_latency, 2),
-                **system_metrics
+                "database": {
+                    "status": db_status,
+                    "latency_ms": round(db_latency, 2)
+                },
+                "cpu": cpu_metrics,
+                "memory": memory_metrics,
+                "disk": disk_metrics,
+                "psutil_available": PSUTIL_AVAILABLE
             },
             "errors": {
                 "total_24h": total_errors,
@@ -288,7 +325,7 @@ async def get_platform_metrics(
             "performance": {
                 "slow_endpoints": slow_endpoints
             },
-            "timestamp": now.isoformat()
+            "timestamp": generated_at
         }
 
     except Exception as e:
@@ -311,8 +348,17 @@ async def get_metrics_history(
 
     # Get stored metrics snapshots
     cursor = async_mongo.db["platform_metrics"].find({
-        "timestamp": {"$gte": start_date}
-    }).sort("timestamp", 1)
+        "$or": [
+            {"snapshot_time": {"$gte": start_date}},
+            {
+                "snapshot_time": {"$exists": False},
+                "timestamp": {"$gte": start_date.isoformat()}
+            }
+        ]
+    }).sort([
+        ("snapshot_time", 1),
+        ("timestamp", 1)
+    ])
 
     history = await cursor.to_list(length=None)
 
@@ -320,6 +366,8 @@ async def get_metrics_history(
     for record in history:
         if "_id" in record:
             record["_id"] = str(record["_id"])
+        if "snapshot_time" in record and isinstance(record["snapshot_time"], datetime):
+            record["snapshot_time"] = record["snapshot_time"].isoformat()
 
     return {
         "history": history,
@@ -354,15 +402,35 @@ async def save_metrics_snapshot(
     business_metrics = snapshot.get("business", {})
     performance_metrics = snapshot.get("performance", {})
 
+    database_metrics = health_metrics.get("database", {})
+    cpu_metrics = health_metrics.get("cpu", {})
+    memory_metrics = health_metrics.get("memory", {})
+    disk_metrics = health_metrics.get("disk", {})
+
     metrics_summary = {
         "health": {
-            "database": health_metrics.get("database"),
-            "db_latency_ms": health_metrics.get("db_latency_ms"),
-            "disk_usage_percent": health_metrics.get("disk_usage_percent"),
-            "disk_free_gb": health_metrics.get("disk_free_gb"),
-            "memory_usage_percent": health_metrics.get("memory_usage_percent"),
-            "memory_available_gb": health_metrics.get("memory_available_gb"),
-            "cpu_usage_percent": health_metrics.get("cpu_usage_percent"),
+            "database": {
+                "status": database_metrics.get("status"),
+                "latency_ms": database_metrics.get("latency_ms"),
+            },
+            "cpu": {
+                "percent": cpu_metrics.get("percent"),
+                "cores": cpu_metrics.get("cores"),
+                "status": cpu_metrics.get("status"),
+            },
+            "memory": {
+                "total_gb": memory_metrics.get("total_gb"),
+                "used_gb": memory_metrics.get("used_gb"),
+                "available_gb": memory_metrics.get("available_gb"),
+                "percent_used": memory_metrics.get("percent_used"),
+            },
+            "disk": {
+                "total_gb": disk_metrics.get("total_gb"),
+                "used_gb": disk_metrics.get("used_gb"),
+                "free_gb": disk_metrics.get("free_gb"),
+                "percent_used": disk_metrics.get("percent_used"),
+            },
+            "psutil_available": health_metrics.get("psutil_available", False),
         },
         "errors": {
             "total_24h": error_metrics.get("total_24h"),
