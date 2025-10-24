@@ -13,9 +13,13 @@
  *    - ADMIN_TOKEN: (JWT token for ROOT_ADMIN - get from login)
  *    - Optional: DEPLOYMENT_ENV (production, staging, development)
  *    - Optional: ANALYTICS_INDEX (sampling key for Analytics Engine)
- * 5. Bind Workers Analytics Engine dataset:
+ * 5. Bind Workers Analytics Engine dataset (Wrangler automatically provisions
+ *    the dataset on first write per Cloudflare docs):
  *    - Binding name: WEDDING_ANALYTICAL
  *    - Dataset name: special_wedding
+ *    - If you prefer an explicit setup run:
+ *        wrangler analyticsengine create special_wedding
+ *    - Docs: https://developers.cloudflare.com/analytics/analytics-engine/get-started/
  * 6. Add trigger: Cron Trigger → Schedule: 0 * * * * (every hour)
  * 7. Deploy
  *
@@ -51,13 +55,20 @@ export default {
 
       if (env.WEDDING_ANALYTICAL && result.metrics) {
         console.log('→ Writing metrics to Workers Analytics Engine dataset');
-        const writePromise = writeMetricsToAnalyticsEngine(env.WEDDING_ANALYTICAL, result.metrics, {
-          environment: env.DEPLOYMENT_ENV || inferEnvironment(env.API_URL),
-          index: env.ANALYTICS_INDEX || 'special-wedding',
-        });
+        const analyticsPromise = writeMetricsToAnalyticsEngine(
+          env.WEDDING_ANALYTICAL,
+          result.metrics,
+          {
+            environment: env.DEPLOYMENT_ENV || inferEnvironment(env.API_URL),
+            index: env.ANALYTICS_INDEX || 'special-wedding',
+          }
+        );
 
-        ctx.waitUntil(writePromise);
-        await writePromise;
+        ctx.waitUntil(
+          analyticsPromise.catch((error) => {
+            console.error('Analytics Engine write failed', error);
+          })
+        );
       } else {
         console.log('ℹ️ Analytics Engine binding missing or metrics payload unavailable; skipping dataset write');
       }
