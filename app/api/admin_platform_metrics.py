@@ -6,7 +6,7 @@ Provides comprehensive metrics for the ROOT_ADMIN dashboard.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Iterable
 from datetime import datetime, timedelta
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database_async import async_mongo
@@ -28,6 +28,21 @@ def _normalize_timestamp(value: Any) -> Optional[str]:
         return value.isoformat()
     if isinstance(value, str):
         return value
+    return None
+
+
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    """Convert string/datetime values into datetime objects when possible."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
     return None
 
 
@@ -246,6 +261,10 @@ async def get_platform_metrics(
 
         # ==================== ERROR MONITORING ====================
 
+        errors_collection_total = 0
+        errors_collection_critical = 0
+        self_hosted_errors = 0
+
         # Get errors from audit_logs (existing collection)
         error_pipeline = [
             {
@@ -274,25 +293,63 @@ async def get_platform_metrics(
         error_stats_list = await error_stats_cursor.to_list(length=1)
         error_stats = error_stats_list[0] if error_stats_list else {}
 
-        total_errors = error_stats.get("total", [{}])[0].get("count", 0)
-        critical_errors = error_stats.get("critical", [{}])[0].get("count", 0)
+        audit_total_errors = error_stats.get("total", [{}])[0].get("count", 0)
+        audit_critical_errors = error_stats.get("critical", [{}])[0].get("count", 0)
+        total_errors = audit_total_errors + errors_collection_total
+        critical_errors = audit_critical_errors + errors_collection_critical
         top_error_endpoints = error_stats.get("by_endpoint", [])
 
-        # Get recent errors for display
-        recent_errors_cursor = async_mongo.db["audit_logs"].find({
-            "response_status": {"$gte": 400}
-        }).sort("timestamp", -1).limit(10)
-        recent_errors = await recent_errors_cursor.to_list(length=10)
+        # Build consolidated recent error list from both error sources
+        recent_error_docs: List[Dict[str, Any]] = []
+        seen_error_ids = set()
 
-        # Convert to UI-friendly summaries
-        recent_errors = [_extract_error_summary(error) for error in recent_errors]
+        def extend_recent_errors(docs: Iterable[Dict[str, Any]]):
+            for doc in docs:
+                doc_identifier = doc.get("error_id") or doc.get("_id")
+                doc_identifier_str = str(doc_identifier) if doc_identifier is not None else None
+                if doc_identifier_str and doc_identifier_str in seen_error_ids:
+                    continue
+                if doc_identifier_str:
+                    seen_error_ids.add(doc_identifier_str)
+                recent_error_docs.append(doc)
+                if len(recent_error_docs) >= 10:
+                    break
+
+        try:
+            errors_collection_cursor = async_mongo.db["errors"].find({
+                "timestamp": {"$gte": day_ago}
+            }).sort("timestamp", -1).limit(10)
+            extend_recent_errors(await errors_collection_cursor.to_list(length=10))
+        except Exception as exc:
+            logger.warning("Failed to load recent errors from errors collection: %s", exc)
+
+        if len(recent_error_docs) < 10:
+            remaining = 10 - len(recent_error_docs)
+            if remaining > 0:
+                audit_recent_cursor = async_mongo.db["audit_logs"].find({
+                    "timestamp": {"$gte": day_ago},
+                    "response_status": {"$gte": 400}
+                }).sort("timestamp", -1).limit(remaining)
+                extend_recent_errors(await audit_recent_cursor.to_list(length=remaining))
+
+        recent_error_docs.sort(
+            key=lambda doc: _coerce_datetime(doc.get("timestamp")) or datetime.min,
+            reverse=True
+        )
+        recent_errors = [_extract_error_summary(error) for error in recent_error_docs]
 
         # Check if errors collection exists (self-hosted error tracking)
-        self_hosted_errors = 0
         try:
             self_hosted_errors = await async_mongo.db["errors"].count_documents({
                 "timestamp": {"$gte": day_ago},
                 "acknowledged": False
+            })
+            errors_collection_total = await async_mongo.db["errors"].count_documents({
+                "timestamp": {"$gte": day_ago}
+            })
+            errors_collection_critical = await async_mongo.db["errors"].count_documents({
+                "timestamp": {"$gte": day_ago},
+                "severity": "critical"
             })
         except Exception:
             # Collection might not exist yet
@@ -616,37 +673,63 @@ async def get_recent_errors(
     """
     Get recent errors with filtering options
     """
-    # Build query
-    query: Dict[str, Any] = {}
-    audit_query: Dict[str, Any] = {"response_status": {"$gte": 400}}
+    now = datetime.utcnow()
+    default_cutoff = now - timedelta(days=30)
 
-    if severity == "critical":
-        query["response_status"] = {"$gte": 500}
-        audit_query["response_status"] = {"$gte": 500}
-    elif severity == "warning":
-        query["response_status"] = {"$gte": 400, "$lt": 500}
-        audit_query["response_status"] = {"$gte": 400, "$lt": 500}
+    errors_docs: List[Dict[str, Any]] = []
+    seen_ids = set()
 
+    def extend_errors(docs: Iterable[Dict[str, Any]]):
+        for doc in docs:
+            doc_identifier = doc.get("error_id") or doc.get("_id")
+            doc_identifier_str = str(doc_identifier) if doc_identifier is not None else None
+            if doc_identifier_str and doc_identifier_str in seen_ids:
+                continue
+            if doc_identifier_str:
+                seen_ids.add(doc_identifier_str)
+            errors_docs.append(doc)
+            if len(errors_docs) >= limit:
+                break
+
+    errors_query: Dict[str, Any] = {"timestamp": {"$gte": default_cutoff}}
     if acknowledged is not None:
-        query["acknowledged"] = acknowledged
+        errors_query["acknowledged"] = acknowledged
+    if severity == "critical":
+        errors_query["severity"] = "critical"
+    elif severity == "warning":
+        errors_query["severity"] = {"$ne": "critical"}
 
-    # Get from errors collection (self-hosted) if it exists
-    errors = []
     try:
-        cursor = async_mongo.db["errors"].find(query).sort("timestamp", -1).limit(limit)
-        errors = await cursor.to_list(length=limit)
-    except Exception:
-        # Fallback to audit_logs
-        cursor = async_mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(limit)
-        errors = await cursor.to_list(length=limit)
+        cursor = async_mongo.db["errors"].find(errors_query).sort("timestamp", -1).limit(limit)
+        extend_errors(await cursor.to_list(length=limit))
+    except Exception as exc:
+        logger.warning("Failed to query self-hosted errors collection: %s", exc)
 
-    normalized_errors = []
-    for error in errors:
-        normalized_errors.append(_extract_error_summary(error))
+    include_audit_fallback = acknowledged is None and len(errors_docs) < limit
+    if include_audit_fallback:
+        remaining = limit - len(errors_docs)
+        if remaining > 0:
+            audit_query: Dict[str, Any] = {
+                "timestamp": {"$gte": default_cutoff},
+                "response_status": {"$gte": 400},
+            }
+            if severity == "critical":
+                audit_query["response_status"] = {"$gte": 500}
+            elif severity == "warning":
+                audit_query["response_status"] = {"$gte": 400, "$lt": 500}
+
+            cursor = async_mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(remaining)
+            extend_errors(await cursor.to_list(length=remaining))
+
+    errors_docs.sort(
+        key=lambda doc: _coerce_datetime(doc.get("timestamp")) or datetime.min,
+        reverse=True
+    )
+    normalized_errors = [_extract_error_summary(error) for error in errors_docs]
 
     return {
         "errors": normalized_errors,
-        "total": len(errors),
+        "total": len(normalized_errors),
         "filters": {
             "severity": severity,
             "acknowledged": acknowledged
@@ -665,11 +748,11 @@ async def get_error_details(
         # Try errors collection first
         error = await async_mongo.db["errors"].find_one({"error_id": error_id})
 
-        if not error:
+        if not error and ObjectId.is_valid(error_id):
             # Try by ObjectId
             error = await async_mongo.db["errors"].find_one({"_id": ObjectId(error_id)})
 
-        if not error:
+        if not error and ObjectId.is_valid(error_id):
             # Try audit_logs as fallback
             error = await async_mongo.db["audit_logs"].find_one({"_id": ObjectId(error_id)})
 
@@ -703,7 +786,7 @@ async def acknowledge_error(
             }
         )
 
-        if result.modified_count == 0:
+        if result.modified_count == 0 and ObjectId.is_valid(error_id):
             # Try by ObjectId
             result = await async_mongo.db["errors"].update_one(
                 {"_id": ObjectId(error_id)},
