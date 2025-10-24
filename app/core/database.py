@@ -33,9 +33,7 @@ class MongoConnector:
         return self.db["guests"]
 
     def get_platform_metrics_collection(self):
-        collection = self.db["platform_metrics"]
-        collection.create_index("snapshot_time")
-        return collection
+        return self.db["platform_metrics"]
 
     def get_collection(self, name: str):
         return self.db[name]

@@ -31,6 +31,9 @@ class FakeMongo:
     def get_subscription_plans_collection(self):
         return self.db["subscription_plans"]
 
+    def get_platform_metrics_collection(self):
+        return self.db["platform_metrics"]
+
     def get_guest_collection(self):
         return self.db["guests"]
 
