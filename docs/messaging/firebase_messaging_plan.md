@@ -145,7 +145,8 @@
 - [ ] Finalise operational runbooks for Firebase service account key rotation and failure recovery.
 
 #### Phase 1 – Messaging Services
-- [ ] Expose REST endpoints for conversation CRUD, message pagination, and read receipts that rely on the Firestore repository.
+- [x] Expose REST endpoints for conversation creation, retrieval, listing, and message pagination backed by the Firestore repository.
+- [ ] Add read-receipt mutation endpoints that update participant `lastReadAt` values through the repository.
 - [ ] Implement Firebase custom token issuance endpoints and plumb tokens into existing authentication flows.
 - [ ] Persist audit log entries and delivery receipts via background workers aligned with the repository contract.
 - [ ] Create conversation indexing strategy (e.g., `conversationIndex` collection) to satisfy planner dashboard queries.
@@ -158,4 +159,14 @@
 - [ ] Implement Gmail OAuth connect/disconnect endpoints and secure token storage.
 - [ ] Build Gmail sync pipeline that maps threads to Firestore conversations and updates delivery metadata.
 - [ ] Allow sending email via messaging endpoints with delivery status reconciliation.
+
+## Immediate Backend Next Steps
+
+With core conversation endpoints in place, keep execution aligned to the roadmap objective of a unified messaging workspace by focusing on:
+
+1. **Read receipts and unread accuracy** – implement participant read-receipt mutations that persist `lastReadAt` values via the Firestore repository, preserving planner dashboard fidelity.
+2. **Firebase authentication bridge** – deliver custom token issuance endpoints that the frontend can exchange post-login so Firestore access mirrors backend authorisation scopes.
+3. **Auditable messaging pipelines** – research compliance-oriented logging practices (e.g., FINRA/SEC archival standards for financial messaging) and prototype background workers that emit append-only audit records for conversation and message changes.
+
+Review and update this list after each milestone to ensure Phase 1 completion remains traceable to the overarching objective.
 
