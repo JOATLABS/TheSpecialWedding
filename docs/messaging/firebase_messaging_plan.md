@@ -123,3 +123,50 @@
 - [ ] Gmail OAuth app verified and consent screen approved.
 - [ ] Monitoring dashboards configured for Firestore and Gmail sync tasks.
 
+## Backend Implementation Status
+
+### Completed Foundations
+- [x] Centralised Firebase Admin helpers gate initialisation behind `Settings.is_firebase_configured()` and surface
+      consistent errors for downstream services (`app/services/firebase/client.py`).
+- [x] Firestore messaging repository persists conversations, participants, and messages while exposing pagination and
+      basic summary updates (`app/services/messaging/repository.py`).
+- [x] Messaging domain service wraps the repository with FastAPI-ready error handling and async bridges
+      (`app/services/messaging/service.py`).
+- [x] Send-message API endpoint enforces participant membership, normalises message bodies, and writes through the
+      Firestore-backed service (`app/api/messaging.py`, `app/models/messaging.py`).
+- [x] Unit coverage validates body normalisation, attachment defaults, and repository/service orchestration flows
+      (`tests/backend/test_messaging_service.py`).
+
+### Outstanding Backend Tasks
+
+#### Phase 0 – Foundations
+- [ ] Document and version Firestore security rules alongside automated tests using the emulator.
+- [ ] Extend CI to run Firestore-dependent integration tests and surface Firebase initialisation regressions.
+- [ ] Finalise operational runbooks for Firebase service account key rotation and failure recovery.
+
+#### Phase 1 – Messaging Services
+- [x] Expose REST endpoints for conversation creation, retrieval, listing, and message pagination backed by the Firestore repository.
+- [ ] Add read-receipt mutation endpoints that update participant `lastReadAt` values through the repository.
+- [ ] Implement Firebase custom token issuance endpoints and plumb tokens into existing authentication flows.
+- [ ] Persist audit log entries and delivery receipts via background workers aligned with the repository contract.
+- [ ] Create conversation indexing strategy (e.g., `conversationIndex` collection) to satisfy planner dashboard queries.
+
+#### Phase 3 – Workflow Integrations
+- [ ] Support structured attachments that coordinate with forms, budgets, and reminders prior to persistence.
+- [ ] Trigger downstream workflows (reminders, tasks) from message events with idempotent background jobs.
+
+#### Phase 4 – Gmail Connectivity
+- [ ] Implement Gmail OAuth connect/disconnect endpoints and secure token storage.
+- [ ] Build Gmail sync pipeline that maps threads to Firestore conversations and updates delivery metadata.
+- [ ] Allow sending email via messaging endpoints with delivery status reconciliation.
+
+## Immediate Backend Next Steps
+
+With core conversation endpoints in place, keep execution aligned to the roadmap objective of a unified messaging workspace by focusing on:
+
+1. **Read receipts and unread accuracy** – implement participant read-receipt mutations that persist `lastReadAt` values via the Firestore repository, preserving planner dashboard fidelity.
+2. **Firebase authentication bridge** – deliver custom token issuance endpoints that the frontend can exchange post-login so Firestore access mirrors backend authorisation scopes.
+3. **Auditable messaging pipelines** – research compliance-oriented logging practices (e.g., FINRA/SEC archival standards for financial messaging) and prototype background workers that emit append-only audit records for conversation and message changes.
+
+Review and update this list after each milestone to ensure Phase 1 completion remains traceable to the overarching objective.
+
