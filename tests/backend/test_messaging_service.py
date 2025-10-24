@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 import os
@@ -25,6 +26,20 @@ sys.modules.setdefault("google.cloud", cloud_module)
 sys.modules.setdefault("google.cloud.firestore", firestore_module)
 cloud_module.firestore = firestore_module
 
+pydantic_settings_module = types.ModuleType("pydantic_settings")
+
+
+class _BaseSettings:
+    model_config: dict = {}
+
+    def __init__(self, **kwargs):  # pragma: no cover - trivial stub initializer
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+pydantic_settings_module.BaseSettings = _BaseSettings
+sys.modules.setdefault("pydantic_settings", pydantic_settings_module)
+
 firebase_admin_module = types.ModuleType("firebase_admin")
 firebase_admin_module.initialize_app = MagicMock(return_value=MagicMock())
 credentials_module = types.ModuleType("firebase_admin.credentials")
@@ -46,21 +61,25 @@ sys.modules.setdefault("firebase_admin.firestore", firestore_admin_module)
 sys.modules.setdefault("firebase_admin.app", app_module)
 sys.modules.setdefault("firebase_admin.auth", auth_module)
 
+from pydantic import ValidationError
+
 from app.models.messaging import (
     ConversationChannel,
+    ConversationCreateRequest,
     ConversationListResponse,
     ConversationParticipant,
     ConversationResponse,
+    MessageCreateRequest,
     MessageAttachment,
     MessageListResponse,
     MessageResponse,
     ParticipantRole,
+    SendMessageRequest,
 )
 from app.services.messaging import MessagingRepositoryError, MessagingService
 
 
-@pytest.mark.asyncio
-async def test_list_conversations_returns_paginated_response():
+def test_list_conversations_returns_paginated_response():
     repository = MagicMock()
     participant = ConversationParticipant(user_id="user-1", role=ParticipantRole.PLANNER)
     conversation = ConversationResponse(
@@ -79,7 +98,9 @@ async def test_list_conversations_returns_paginated_response():
 
     service = MessagingService(repository=repository)
 
-    result = await service.list_conversations(wedding_id="wed-1", participant_id="user-1", limit=10)
+    result = asyncio.run(
+        service.list_conversations(wedding_id="wed-1", participant_id="user-1", limit=10)
+    )
 
     assert isinstance(result, ConversationListResponse)
     assert result.items == [conversation]
@@ -92,21 +113,19 @@ async def test_list_conversations_returns_paginated_response():
     )
 
 
-@pytest.mark.asyncio
-async def test_list_conversations_raises_on_repository_error():
+def test_list_conversations_raises_on_repository_error():
     repository = MagicMock()
     repository.list_conversations.side_effect = MessagingRepositoryError("boom")
 
     service = MessagingService(repository=repository)
 
     with pytest.raises(HTTPException) as exc:
-        await service.list_conversations(wedding_id="wed-1", participant_id="user-1")
+        asyncio.run(service.list_conversations(wedding_id="wed-1", participant_id="user-1"))
 
     assert exc.value.status_code == 502
 
 
-@pytest.mark.asyncio
-async def test_list_messages_returns_paginated_response():
+def test_list_messages_returns_paginated_response():
     repository = MagicMock()
     message = MessageResponse(
         message_id="msg-1",
@@ -123,7 +142,7 @@ async def test_list_messages_returns_paginated_response():
 
     service = MessagingService(repository=repository)
 
-    result = await service.list_messages("convo-1", limit=25)
+    result = asyncio.run(service.list_messages("convo-1", limit=25))
 
     assert isinstance(result, MessageListResponse)
     assert result.messages == [message]
@@ -131,14 +150,86 @@ async def test_list_messages_returns_paginated_response():
     repository.list_messages.assert_called_once_with("convo-1", limit=25, cursor=None)
 
 
-@pytest.mark.asyncio
-async def test_list_messages_raises_on_repository_error():
+def test_list_messages_raises_on_repository_error():
     repository = MagicMock()
     repository.list_messages.side_effect = MessagingRepositoryError("failure")
 
     service = MessagingService(repository=repository)
 
     with pytest.raises(HTTPException) as exc:
-        await service.list_messages("convo-1")
+        asyncio.run(service.list_messages("convo-1"))
 
     assert exc.value.status_code == 502
+
+
+def test_create_conversation_invokes_repository():
+    repository = MagicMock()
+    participant = ConversationParticipant(user_id="user-1", role=ParticipantRole.PLANNER)
+    payload = ConversationCreateRequest(
+        wedding_id="wed-1",
+        participants=[participant],
+        channel=ConversationChannel.CHAT,
+    )
+    conversation = ConversationResponse(
+        conversation_id="convo-1",
+        wedding_id="wed-1",
+        channel=ConversationChannel.CHAT,
+        subject="Subject",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        last_message_at=None,
+        last_message_summary=None,
+        metadata={},
+        participants=[participant],
+    )
+    repository.create_conversation.return_value = conversation
+
+    service = MessagingService(repository=repository)
+
+    result = asyncio.run(service.create_conversation(payload, created_by="user-1"))
+
+    assert result == conversation
+    repository.create_conversation.assert_called_once_with(payload, created_by="user-1")
+
+
+def test_create_conversation_raises_on_repository_error():
+    repository = MagicMock()
+    participant = ConversationParticipant(user_id="user-1", role=ParticipantRole.PLANNER)
+    payload = ConversationCreateRequest(
+        wedding_id="wed-1",
+        participants=[participant],
+        channel=ConversationChannel.CHAT,
+    )
+    repository.create_conversation.side_effect = MessagingRepositoryError("fail")
+
+    service = MessagingService(repository=repository)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(service.create_conversation(payload, created_by="user-1"))
+
+    assert exc.value.status_code == 502
+
+
+def test_send_message_request_strips_whitespace() -> None:
+    payload = SendMessageRequest(body="  Hello world  ")
+
+    assert payload.body == "Hello world"
+
+
+def test_send_message_request_rejects_blank_body() -> None:
+    with pytest.raises(ValidationError):
+        SendMessageRequest(body="   \n  ")
+
+
+def test_message_create_request_enforces_bounds() -> None:
+    payload = MessageCreateRequest(
+        sender_id="user-1",
+        body="  trimmed body  ",
+    )
+
+    assert payload.body == "trimmed body"
+
+
+def test_message_create_request_rejects_long_body() -> None:
+    with pytest.raises(ValidationError):
+        MessageCreateRequest(sender_id="user-1", body="x" * 6000)
