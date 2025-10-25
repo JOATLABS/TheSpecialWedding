@@ -696,9 +696,20 @@ async def get_recent_errors(
     if acknowledged is not None:
         errors_query["acknowledged"] = acknowledged
     if severity == "critical":
-        errors_query["severity"] = "critical"
+        errors_query["$or"] = [
+            {"severity": "critical"},
+            {"status_code": {"$gte": 500}},
+        ]
     elif severity == "warning":
-        errors_query["severity"] = {"$ne": "critical"}
+        errors_query["$or"] = [
+            {"severity": {"$exists": True, "$ne": "critical"}},
+            {
+                "$and": [
+                    {"severity": {"$exists": False}},
+                    {"status_code": {"$gte": 400, "$lt": 500}},
+                ]
+            },
+        ]
 
     try:
         cursor = async_mongo.db["errors"].find(errors_query).sort("timestamp", -1).limit(limit)
