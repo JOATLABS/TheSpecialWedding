@@ -139,17 +139,25 @@
 
 ### Outstanding Backend Tasks
 
-#### Phase 0 – Foundations *(still in progress)*
-- [ ] Document and version Firestore security rules alongside automated tests using the emulator.
-- [ ] Extend CI to run Firestore-dependent integration tests and surface Firebase initialisation regressions.
-- [ ] Finalise operational runbooks for Firebase service account key rotation and failure recovery.
-- [ ] Retroactively review Phase 1 work to ensure it honours the Phase 0 guardrails (configuration ownership, security rules assumptions) before progressing.
+#### Phase 0 – Foundations *(complete)*
+- [x] Document and version Firestore security rules alongside automated tests using the emulator.
+- [x] Extend CI to run Firestore-dependent integration tests and surface Firebase initialisation regressions.
+- [x] Finalise operational runbooks for Firebase service account key rotation and failure recovery.
+- [x] Retroactively review Phase 1 work to ensure it honours the Phase 0 guardrails (configuration ownership, security rules assumptions) before progressing.
 
-> **Note:** Phase 1 API work landed ahead of these Phase 0 governance tasks. Closing the above items is required before Phase 0 can be formally marked complete.
+Supporting artefacts:
+- Firestore security rules live in `firebase/firestore.rules` with indexes tracked in `firebase/firestore.indexes.json`.
+- Automated rule coverage is provided by `tests/firebase/firestore.rules.test.ts`.
+- Emulator-backed repository integration tests are located at `tests/backend/test_firestore_repository_emulator.py`.
+- Operational procedures are documented in `docs/messaging/firebase_operations_runbook.md`.
+
+Phase 0 guardrails are now in effect across the codebase. Emulator-backed tests and
+operations documentation land alongside the Firestore rules so new messaging features
+inherit the expected governance from the outset.
 
 #### Phase 1 – Messaging Services
 - [x] Expose REST endpoints for conversation creation, retrieval, listing, and message pagination backed by the Firestore repository.
-- [ ] Add read-receipt mutation endpoints that update participant `lastReadAt` values through the repository.
+- [x] Add read-receipt mutation endpoints that update participant `lastReadAt` values through the repository.
 - [ ] Implement Firebase custom token issuance endpoints and plumb tokens into existing authentication flows.
 - [ ] Persist audit log entries and delivery receipts via background workers aligned with the repository contract.
 - [ ] Create conversation indexing strategy (e.g., `conversationIndex` collection) to satisfy planner dashboard queries.
@@ -167,9 +175,9 @@
 
 With core conversation endpoints in place, keep execution aligned to the roadmap objective of a unified messaging workspace by focusing on:
 
-1. **Read receipts and unread accuracy** – implement participant read-receipt mutations that persist `lastReadAt` values via the Firestore repository, preserving planner dashboard fidelity.
-2. **Firebase authentication bridge** – deliver custom token issuance endpoints that the frontend can exchange post-login so Firestore access mirrors backend authorisation scopes.
-3. **Auditable messaging pipelines** – research compliance-oriented logging practices (e.g., FINRA/SEC archival standards for financial messaging) and prototype background workers that emit append-only audit records for conversation and message changes.
+1. **Firebase authentication bridge** – deliver custom token issuance endpoints that the frontend can exchange post-login so Firestore access mirrors backend authorisation scopes.
+2. **Auditable messaging pipelines** – research compliance-oriented logging practices (e.g., FINRA/SEC archival standards for financial messaging) and prototype background workers that emit append-only audit records for conversation and message changes.
+3. **Conversation indexing strategy** – design and implement the `conversationIndex` collection (or equivalent) to power planner dashboards without resorting to expensive query fan-out.
 
 Review and update this list after each milestone to ensure Phase 1 completion remains traceable to the overarching objective.
 

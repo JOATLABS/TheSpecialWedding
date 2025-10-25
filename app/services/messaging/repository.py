@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from google.cloud.firestore import Client
 from pydantic import ValidationError
@@ -207,7 +207,88 @@ class FirestoreMessagingRepository:
         next_cursor = snapshots[-1].id if len(snapshots) == limit else None
         return messages, next_cursor
 
+    def acknowledge_read(
+        self,
+        conversation_id: str,
+        participant_id: str,
+        *,
+        read_at: Optional[datetime] = None,
+    ) -> ConversationParticipant:
+        """Update the participant read receipt for a conversation."""
+
+        timestamp = read_at or datetime.now(timezone.utc)
+        participant_ref = (
+            self._client.collection("conversations")
+            .document(conversation_id)
+            .collection("participants")
+            .document(participant_id)
+        )
+
+        try:
+            snapshot = participant_ref.get()
+        except Exception as exc:  # pragma: no cover - Firestore client error surface
+            logger.error(
+                "Failed to load participant %s for conversation %s: %s",
+                participant_id,
+                conversation_id,
+                exc,
+            )
+            raise MessagingRepositoryError("Failed to load participant read state") from exc
+
+        if not snapshot.exists:
+            raise MessagingRepositoryError("Participant is not part of the conversation")
+
+        data = snapshot.to_dict() or {}
+        existing_last_read = data.get("lastReadAt")
+        if isinstance(existing_last_read, datetime):
+            if existing_last_read.tzinfo is None:
+                existing_last_read = existing_last_read.replace(tzinfo=timezone.utc)
+            timestamp = max(timestamp, existing_last_read)
+
+        try:
+            participant_ref.update({"lastReadAt": timestamp})
+        except Exception as exc:  # pragma: no cover
+            logger.error(
+                "Failed to update read receipt for %s in conversation %s: %s",
+                participant_id,
+                conversation_id,
+                exc,
+            )
+            raise MessagingRepositoryError("Failed to update read receipt") from exc
+
+        return self._document_to_participant(participant_id, {**data, "lastReadAt": timestamp})
+
     # ---- Internal helpers -------------------------------------------------------
+
+    def _document_to_participant(
+        self, participant_id: str, data: Dict[str, Any]
+    ) -> ConversationParticipant:
+        role_value = data.get("role", ParticipantRole.PLANNER.value)
+        try:
+            role = ParticipantRole(role_value)
+        except ValueError:
+            logger.warning(
+                "Unknown participant role '%s' in conversation participant %s; defaulting to planner",
+                role_value,
+                participant_id,
+            )
+            role = ParticipantRole.PLANNER
+
+        joined_at = data.get("joinedAt") or datetime.now(timezone.utc)
+        if isinstance(joined_at, datetime) and joined_at.tzinfo is None:
+            joined_at = joined_at.replace(tzinfo=timezone.utc)
+
+        last_read_at = data.get("lastReadAt")
+        if isinstance(last_read_at, datetime) and last_read_at.tzinfo is None:
+            last_read_at = last_read_at.replace(tzinfo=timezone.utc)
+
+        return ConversationParticipant(
+            user_id=data.get("userId") or data.get("user_id") or participant_id,
+            role=role,
+            joined_at=joined_at,
+            mute=data.get("mute", False),
+            last_read_at=last_read_at,
+        )
 
     def _participant_to_document(self, participant: ConversationParticipant) -> Dict:
         return {
@@ -245,29 +326,7 @@ class FirestoreMessagingRepository:
         participants: list[ConversationParticipant] = []
         for item in snapshots:
             data = item.to_dict() or {}
-            role_value = data.get("role", ParticipantRole.PLANNER.value)
-            try:
-                role = ParticipantRole(role_value)
-            except ValueError:
-                logger.warning(
-                    "Unknown participant role '%s' in conversation %s; defaulting to planner",
-                    role_value,
-                    doc_ref.id,
-                )
-                role = ParticipantRole.PLANNER
-
-            joined_at = data.get("joinedAt") or datetime.now(timezone.utc)
-            last_read_at = data.get("lastReadAt")
-
-            participants.append(
-                ConversationParticipant(
-                    user_id=data.get("userId") or data.get("user_id") or item.id,
-                    role=role,
-                    joined_at=joined_at,
-                    mute=data.get("mute", False),
-                    last_read_at=last_read_at,
-                )
-            )
+            participants.append(self._document_to_participant(item.id, data))
         return participants
 
     def _snapshot_to_conversation(self, snapshot) -> ConversationResponse:

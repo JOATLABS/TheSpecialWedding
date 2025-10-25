@@ -9,7 +9,7 @@ from typing import Optional
 
 import firebase_admin
 from firebase_admin import credentials, firestore
-from firebase_admin.app import App
+from firebase_admin import App
 from google.cloud.firestore import Client as FirestoreClient
 
 from app.core.settings import get_settings

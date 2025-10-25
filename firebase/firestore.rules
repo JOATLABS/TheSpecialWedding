@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function userId() {
+      return request.auth.token.userId != null
+        ? request.auth.token.userId
+        : request.auth.uid;
+    }
+
+    function hasWeddingAccess(weddingId) {
+      return request.auth.token.weddingIds != null
+        && weddingId in request.auth.token.weddingIds;
+    }
+
+    function participantDoc(conversationId) {
+      return get(
+        /databases/$(database)/documents/conversations/$(conversationId)/participants/$(userId())
+      );
+    }
+
+    function isParticipant(conversationId) {
+      return isAuthenticated()
+        && participantDoc(conversationId).data != null;
+    }
+
+    function participantRole(conversationId) {
+      return participantDoc(conversationId).data.role;
+    }
+
+    function conversationDoc(conversationId) {
+      return get(/databases/$(database)/documents/conversations/$(conversationId));
+    }
+
+    function participantCanAccessEmail(conversationId) {
+      return participantDoc(conversationId).data == null
+        ? false
+        : participantRole(conversationId) == 'planner';
+    }
+
+    function weddingIsAccessible(weddingId) {
+      return isAuthenticated() && hasWeddingAccess(weddingId);
+    }
+
+    match /conversations/{conversationId} {
+      allow create, update, delete: if false;
+
+      allow get, list: if isParticipant(conversationId)
+        && weddingIsAccessible(resource.data.weddingId)
+        && (
+          resource.data.channel != 'email'
+          || participantCanAccessEmail(conversationId)
+        );
+
+      match /participants/{participantId} {
+        allow create, update, delete: if false;
+        allow get, list: if
+          isParticipant(conversationId)
+          && weddingIsAccessible(conversationDoc(conversationId).data.weddingId);
+      }
+
+      match /messages/{messageId} {
+        allow get, list: if isParticipant(conversationId)
+          && weddingIsAccessible(conversationDoc(conversationId).data.weddingId)
+          && (
+            conversationDoc(conversationId).data.channel != 'email'
+            || participantCanAccessEmail(conversationId)
+          );
+
+        allow create: if isParticipant(conversationId)
+          && weddingIsAccessible(conversationDoc(conversationId).data.weddingId)
+          && request.resource.data.senderId == userId()
+          && request.resource.data.senderRole == participantRole(conversationId)
+          && (
+            conversationDoc(conversationId).data.channel != 'email'
+            || participantCanAccessEmail(conversationId)
+          );
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}
