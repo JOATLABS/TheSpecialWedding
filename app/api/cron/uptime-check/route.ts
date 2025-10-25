@@ -4,7 +4,7 @@
  * FREE Vercel Cron (runs every 5 minutes on Pro plan, or configure as needed)
  * Monitors backend API health and sends alerts if down
  *
- * Schedule: */5 * * * * (every 5 minutes)
+ * Schedule: every 5 minutes (cron pattern minute-step-of-five; see vercel.json)
  * Configured in: vercel.json
  */
 

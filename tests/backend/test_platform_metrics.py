@@ -31,6 +31,9 @@ class FakeMongo:
     def get_subscription_plans_collection(self):
         return self.db["subscription_plans"]
 
+    def get_platform_metrics_collection(self):
+        return self.db["platform_metrics"]
+
     def get_guest_collection(self):
         return self.db["guests"]
 
@@ -59,7 +62,14 @@ def mongo_fixture(monkeypatch):
     return fake, database
 
 
-def test_platform_metrics_compiles_expected_totals(mongo_fixture):
+@pytest.fixture
+def anyio_backend():
+    """Constrain anyio-backed tests to asyncio only."""
+    return "asyncio"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
     fake_mongo, db = mongo_fixture
     now = datetime.utcnow()
 
@@ -155,7 +165,9 @@ def test_platform_metrics_compiles_expected_totals(mongo_fixture):
         {"_id": "ai1", "created_at": now - timedelta(hours=4)}
     )
 
-    metrics = saas_config.get_platform_metrics(timeframe="7d", current_user=SimpleNamespace())
+    metrics = await saas_config.get_platform_metrics(
+        timeframe="7d", current_user=SimpleNamespace()
+    )
 
     assert metrics["users"]["total"] == 3
     assert metrics["users"]["new_in_period"] == 2
@@ -170,9 +182,12 @@ def test_platform_metrics_compiles_expected_totals(mongo_fixture):
     assert metrics["operations"]["communications"]["ai_events_in_period"] == 1
 
 
-def test_platform_metrics_rejects_invalid_timeframe(monkeypatch):
+@pytest.mark.anyio("asyncio")
+async def test_platform_metrics_rejects_invalid_timeframe(monkeypatch):
     fake = FakeMongo(mongomock.MongoClient()["test"])
     monkeypatch.setattr(saas_config, "mongo", fake)
 
     with pytest.raises(HTTPException):
-        saas_config.get_platform_metrics(timeframe="15d", current_user=SimpleNamespace())
+        await saas_config.get_platform_metrics(
+            timeframe="15d", current_user=SimpleNamespace()
+        )
