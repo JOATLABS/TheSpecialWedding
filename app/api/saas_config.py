@@ -1,19 +1,14 @@
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Dict, Any, List, Optional
+
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
 from app.utils.pydantic_objectid import PyObjectId
-from datetime import datetime, timedelta
+from app.services.platform_metrics_service import PlatformMetricsService
 
 router = APIRouter()
-
-VALID_TIMEFRAMES = {
-    "7d": 7,
-    "30d": 30,
-    "90d": 90,
-    "1y": 365,
-}
-
 
 def _normalize_datetime(value: Any) -> Optional[datetime]:
     """Convert supported datetime representations to datetime objects."""
@@ -556,6 +551,7 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
         raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")
 
 
+
 @router.get("/analytics/platform", tags=["ROOT_ADMIN"])
 async def get_platform_metrics(
     timeframe: str = Query(
@@ -565,190 +561,19 @@ async def get_platform_metrics(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Aggregate platform-level metrics for the admin analytics dashboard."""
-    key = timeframe.lower()
-    if key not in VALID_TIMEFRAMES:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid timeframe. Use one of: 7d, 30d, 90d, 1y.",
-        )
+    service = PlatformMetricsService(mongo)
 
     try:
-        period_days = VALID_TIMEFRAMES[key]
-        now = datetime.utcnow()
-        period_start = now - timedelta(days=period_days)
-
-        # User metrics
-        users_collection = mongo.get_users_collection()
-        total_users = await users_collection.count_documents({})
-        active_users = await users_collection.count_documents({"is_active": True})
-        new_users = await users_collection.count_documents({"created_at": {"$gte": period_start}})
-        role_breakdown = {
-            (doc.get("_id") or "unassigned"): doc.get("count", 0)
-            for doc in users_collection.aggregate([
-                {"$group": {"_id": "$role", "count": {"$sum": 1}}},
-                {"$sort": {"count": -1}},
-            ])
-        }
-
-        # Subscription metrics
-        subscriptions_collection = mongo.db.get_collection("user_subscriptions")
-        plans_collection = mongo.get_subscription_plans_collection()
-        plans = list(plans_collection.find({}))
-        plan_lookup = {str(plan.get("_id")): plan for plan in plans}
-
-        status_breakdown: Dict[str, int] = {}
-        for status in ["trial", "active", "cancelled", "expired"]:
-            status_breakdown[status] = await subscriptions_collection.count_documents({"status": status})
-        total_subscriptions = sum(status_breakdown.values())
-        active_plans = await plans_collection.count_documents({"is_active": True})
-
-        monthly_revenue = 0.0
-        yearly_revenue = 0.0
-        async for subscription in subscriptions_collection.find({"status": "active"}):
-            plan = plan_lookup.get(str(subscription.get("plan_id")))
-            if not plan:
-                continue
-
-            monthly_price = float(plan.get("price_monthly", 0) or 0)
-            yearly_price = float(plan.get("price_yearly", 0) or 0)
-            interval = subscription.get("billing_interval", "monthly")
-
-            if interval == "yearly" and yearly_price:
-                yearly_revenue += yearly_price
-                monthly_revenue += yearly_price / 12
-            else:
-                if monthly_price:
-                    monthly_revenue += monthly_price
-                    yearly_revenue += monthly_price * 12
-
-        projected_annual_revenue = monthly_revenue * 12
-
-        plan_breakdown = []
-        for plan in plans:
-            plan_identifier = str(plan.get("_id"))
-            identifier_variants = {plan_identifier}
-            if plan.get("id"):
-                identifier_variants.add(str(plan["id"]))
-
-            active_count = await subscriptions_collection.count_documents({
-                "plan_id": {"$in": list(identifier_variants)},
-                "status": "active",
-            })
-            trial_count = await subscriptions_collection.count_documents({
-                "plan_id": {"$in": list(identifier_variants)},
-                "status": "trial",
-            })
-
-            monthly_price = float(plan.get("price_monthly", 0) or 0)
-            yearly_price = float(plan.get("price_yearly", 0) or 0)
-
-            plan_breakdown.append({
-                "plan_id": plan_identifier,
-                "plan_name": plan.get("name"),
-                "active_users": active_count,
-                "trial_users": trial_count,
-                "monthly_revenue": active_count * monthly_price,
-                "yearly_revenue": active_count * yearly_price,
-                "price_monthly": monthly_price,
-                "price_yearly": yearly_price,
-            })
-
-        # Operational metrics
-        weddings_collection = mongo.get_weddings_collection()
-        wedding_docs = list(
-            weddings_collection.find({}, {"status": 1, "date": 1, "guest_count": 1, "created_at": 1})
-        )
-        total_weddings = len(wedding_docs)
-        active_weddings = sum(
-            1
-            for wedding in wedding_docs
-            if wedding.get("status", "active") not in {"cancelled", "deleted", "inactive"}
-        )
-        upcoming_weddings = sum(1 for wedding in wedding_docs if _is_upcoming(wedding.get("date"), now))
-        weddings_created_in_period = sum(
-            1 for wedding in wedding_docs if _is_within_period(wedding.get("created_at"), period_start)
-        )
-
-        guest_total = mongo.get_guest_collection().count_documents({})
-        rsvp_total = mongo.get_rsvps_collection().count_documents({})
-
-        forms_collection = mongo.get_forms_collection()
-        forms_total = await forms_collection.count_documents({"is_active": True})
-        forms_new_in_period = await forms_collection.count_documents({
-            "is_active": True,
-            "created_at": {"$gte": period_start},
-        })
-        responses_collection = mongo.get_form_responses_collection()
-        responses_total = await responses_collection.count_documents({})
-        responses_in_period = await responses_collection.count_documents({"submitted_at": {"$gte": period_start}})
-
-        notifications_collection = mongo.db.get_collection("notifications")
-        notifications_sent_total = await notifications_collection.count_documents({"status": "sent"})
-        notifications_sent_in_period = await notifications_collection.count_documents({
-            "status": "sent",
-            "sent_at": {"$gte": period_start},
-        })
-
-        email_logs_collection = mongo.db.get_collection("email_logs")
-        email_logs_total = await email_logs_collection.count_documents({})
-        email_logs_in_period = await email_logs_collection.count_documents({
-            "status": "success",
-            "sent_at": {"$gte": period_start},
-        })
-
-        ai_usage_collection = mongo.get_ai_usage_collection()
-        ai_events_total = await ai_usage_collection.count_documents({})
-        ai_events_in_period = await ai_usage_collection.count_documents({"created_at": {"$gte": period_start}})
-
-        return {
-            "generated_at": now.isoformat(),
-            "timeframe": key,
-            "users": {
-                "total": total_users,
-                "active": active_users,
-                "new_in_period": new_users,
-                "growth_rate": (new_users / total_users * 100) if total_users else 0.0,
-                "role_breakdown": role_breakdown,
-            },
-            "subscriptions": {
-                "total": total_subscriptions,
-                "status_breakdown": status_breakdown,
-                "active_plans": active_plans,
-                "monthly_recurring_revenue": monthly_revenue,
-                "yearly_recurring_revenue": yearly_revenue,
-                "projected_annual_revenue": projected_annual_revenue,
-                "plan_breakdown": plan_breakdown,
-            },
-            "operations": {
-                "weddings": {
-                    "total": total_weddings,
-                    "active": active_weddings,
-                    "upcoming": upcoming_weddings,
-                    "created_in_period": weddings_created_in_period,
-                    "guest_total": guest_total,
-                    "rsvp_total": rsvp_total,
-                },
-                "forms": {
-                    "total": forms_total,
-                    "new_in_period": forms_new_in_period,
-                    "responses_total": responses_total,
-                    "responses_in_period": responses_in_period,
-                },
-                "communications": {
-                    "notifications_sent": notifications_sent_total,
-                    "notifications_in_period": notifications_sent_in_period,
-                    "email_logs_total": email_logs_total,
-                    "emails_sent_in_period": email_logs_in_period,
-                    "ai_events_total": ai_events_total,
-                    "ai_events_in_period": ai_events_in_period,
-                },
-            },
-        }
-
+        return await service.compile_metrics(timeframe.lower())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error compiling platform metrics: {str(exc)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error compiling platform metrics: {str(exc)}",
+        )
 
 @router.get("/trial-settings", tags=["ROOT_ADMIN", "Public"])
 def get_trial_settings():
