@@ -12,13 +12,15 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
   const [selectedEventType, setSelectedEventType] = useState<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapUrl, setMapUrl] = useState<string>('');
-  
+
   // Get events with location details
   const eventsWithLocation = useMemo(() => {
-    return wedding.events?.filter(event => 
+    return wedding.events?.filter(event =>
       event.details?.location && event.details.location.trim() !== ''
     ) || [];
   }, [wedding.events]);
+
+  const hideSection = Boolean(wedding.event_location_private);
 
   // Set initial selected event
   useEffect(() => {
@@ -100,8 +102,8 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
     }
   };
 
-  // Don't render if no events with locations
-  if (eventsWithLocation.length === 0) {
+  // Don't render if section is private or there are no events with locations
+  if (hideSection || eventsWithLocation.length === 0) {
     return null;
   }
 

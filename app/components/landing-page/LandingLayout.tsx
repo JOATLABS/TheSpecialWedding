@@ -19,11 +19,22 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
   const theme = useTheme(wedding);
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
-  
+
   // Get featured image from wedding or use first gallery image
-  const featuredImage = wedding.featured_image 
+  const featuredImage = wedding.featured_image
     ? `https://media.thespecialwedding.com/${wedding.featured_image}`
     : images.length > 0 ? images[0].url : undefined;
+
+  const eventLocationSectionPrivate = Boolean(wedding.event_location_private);
+
+  const sections = [
+    'rsvp',
+    'story',
+    'gallery',
+    'registry',
+    ...(eventLocationSectionPrivate ? [] : ['venue']),
+    'faq'
+  ];
 
   return (
     <>
@@ -39,7 +50,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       <div className="relative z-10">
 
         {/* Nav */}
-        <AnchorNav sections={["rsvp", "story", "gallery", "registry", "venue", "faq"]} />
+        <AnchorNav sections={sections} />
 
         {/* Hero */}
         <ThemedHeroSection wedding={wedding} />
@@ -154,12 +165,14 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         </SectionWrapper>
 
         {/* Wedding Details */}
-        <SectionWrapper id="venue">
-          <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
-            <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Wedding Details</h2>
-            <EventLocationSection wedding={wedding} />
-          </GlassCard>
-        </SectionWrapper>
+        {!eventLocationSectionPrivate && (
+          <SectionWrapper id="venue">
+            <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
+              <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Wedding Details</h2>
+              <EventLocationSection wedding={wedding} />
+            </GlassCard>
+          </SectionWrapper>
+        )}
 
         {/* FAQ */}
         <SectionWrapper id="faq">
