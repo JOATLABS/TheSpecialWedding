@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Optional
 from datetime import datetime
 
 class EventDetailsModel(BaseModel):
@@ -18,9 +18,17 @@ class RegistryItemModel(BaseModel):
     url: str = Field(..., description="Registry URL")
     color: Optional[str] = Field(default="bg-gray-600", description="Button color class")
 
+class FAQLinkModel(BaseModel):
+    label: str = Field(..., description="Display text for the related link")
+    url: str = Field(..., description="URL for the related resource")
+
+
 class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
+    links: List[FAQLinkModel] = Field(default_factory=list, description="Supplementary links for the FAQ")
+    address: Optional[str] = Field(default=None, description="Optional address associated with the FAQ")
+    image_url: Optional[str] = Field(default=None, description="Optional image URL to display with the FAQ")
 
 class RSVPConfigModel(BaseModel):
     greeting: str = Field(default="Join us in celebrating our special day! Please let us know if you'll be attending.", 
@@ -123,8 +131,19 @@ class WeddingModel(BaseModel):
                     {"name": "Amazon", "url": "https://amazon.com/registry/456", "color": "bg-orange-500"}
                 ],
                 "faqs": [
-                    {"question": "What should I wear?", "answer": "Semi-formal attire"},
-                    {"question": "Is parking available?", "answer": "Yes, free parking at the venue"}
+                    {
+                        "question": "What should I wear?",
+                        "answer": "Semi-formal attire",
+                        "links": [
+                            {"label": "Dress code inspiration", "url": "https://example.com/dress-code"}
+                        ]
+                    },
+                    {
+                        "question": "Is parking available?",
+                        "answer": "Yes, free parking at the venue",
+                        "address": "789 Event Center, Lagos",
+                        "image_url": "https://example.com/parking-map.jpg"
+                    }
                 ]
             }
         }

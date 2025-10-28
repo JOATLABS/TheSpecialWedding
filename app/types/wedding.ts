@@ -19,9 +19,17 @@ export interface RegistryItem {
   color?: string;
 }
 
+export interface FAQLink {
+  label: string;
+  url: string;
+}
+
 export interface FAQItem {
   question: string;
   answer: string;
+  links?: FAQLink[];
+  address?: string;
+  image_url?: string;
 }
 
 export interface RSVPConfig {

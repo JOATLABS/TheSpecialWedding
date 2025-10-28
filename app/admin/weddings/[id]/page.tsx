@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '../../../contexts/AdminContext';
-import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember } from '@/types/wedding';
+import { Wedding, WeddingEvent, RegistryItem, FAQItem, FAQLink, OurStory, WeddingPartyMember } from '@/types/wedding';
 
 export default function WeddingDetailsPage() {
   const { token } = useAdmin();
@@ -42,7 +42,12 @@ export default function WeddingDetailsPage() {
             phone_numbers: ["(319) 529-6088", "(405) 708-1076"]
           },
           registries: wedding.registries || [],
-          faqs: wedding.faqs || [],
+          faqs: (wedding.faqs || []).map((faq: FAQItem) => ({
+            ...faq,
+            links: faq.links || [],
+            address: faq.address || '',
+            image_url: faq.image_url || ''
+          })),
           theme_config: wedding.theme_config || {
             primary_color: "#1e3a5f",
             secondary_color: "#d4af37",
@@ -75,13 +80,32 @@ export default function WeddingDetailsPage() {
     
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const sanitizedWedding: Wedding = {
+        ...wedding,
+        faqs: (wedding.faqs || []).map((faq) => {
+          const sanitizedLinks: FAQLink[] = (faq.links || [])
+            .map((link) => ({
+              label: link.label?.trim() || link.url.trim(),
+              url: link.url.trim(),
+            }))
+            .filter((link) => link.url.length > 0);
+
+          return {
+            ...faq,
+            links: sanitizedLinks,
+            address: faq.address && faq.address.trim().length > 0 ? faq.address : undefined,
+            image_url: faq.image_url && faq.image_url.trim().length > 0 ? faq.image_url : undefined,
+          };
+        }),
+      };
+
       const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(wedding),
+        body: JSON.stringify(sanitizedWedding),
       });
 
       if (!response.ok) {
@@ -89,6 +113,16 @@ export default function WeddingDetailsPage() {
       }
 
       // Show success message
+      const updatedWedding: Wedding = {
+        ...sanitizedWedding,
+        faqs: (sanitizedWedding.faqs || []).map((faq) => ({
+          ...faq,
+          links: faq.links || [],
+          address: faq.address || '',
+          image_url: faq.image_url || '',
+        })),
+      };
+      setWedding(updatedWedding);
       alert('Wedding details saved successfully!');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -150,7 +184,7 @@ export default function WeddingDetailsPage() {
     if (!wedding) return;
     setWedding({
       ...wedding,
-      faqs: [...(wedding.faqs || []), { question: '', answer: '' }]
+      faqs: [...(wedding.faqs || []), { question: '', answer: '', links: [], address: '', image_url: '' }]
     });
   };
 
@@ -167,6 +201,34 @@ export default function WeddingDetailsPage() {
       ...wedding,
       faqs: (wedding.faqs || []).filter((_, i) => i !== index)
     });
+  };
+
+  const addFAQLink = (faqIndex: number) => {
+    if (!wedding) return;
+    const faqs = [...(wedding.faqs || [])];
+    const faq = faqs[faqIndex];
+    const links = [...(faq.links || []), { label: '', url: '' }];
+    faqs[faqIndex] = { ...faq, links };
+    setWedding({ ...wedding, faqs });
+  };
+
+  const updateFAQLink = (faqIndex: number, linkIndex: number, link: FAQLink) => {
+    if (!wedding) return;
+    const faqs = [...(wedding.faqs || [])];
+    const faq = faqs[faqIndex];
+    const links = [...(faq.links || [])];
+    links[linkIndex] = link;
+    faqs[faqIndex] = { ...faq, links };
+    setWedding({ ...wedding, faqs });
+  };
+
+  const removeFAQLink = (faqIndex: number, linkIndex: number) => {
+    if (!wedding) return;
+    const faqs = [...(wedding.faqs || [])];
+    const faq = faqs[faqIndex];
+    const links = (faq.links || []).filter((_, idx) => idx !== linkIndex);
+    faqs[faqIndex] = { ...faq, links };
+    setWedding({ ...wedding, faqs });
   };
 
   if (loading) {
@@ -591,6 +653,95 @@ export default function WeddingDetailsPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         rows={2}
                         placeholder="e.g., We recommend semi-formal attire..."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Address (optional)
+                      </label>
+                      <textarea
+                        value={faq.address || ''}
+                        onChange={(e) => updateFAQ(index, { ...faq, address: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        rows={2}
+                        placeholder="e.g., 123 Celebration Ave, Lagos"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Links (optional)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => addFAQLink(index)}
+                          className="text-sm text-wedding-sage hover:text-wedding-navy font-semibold"
+                        >
+                          Add Link
+                        </button>
+                      </div>
+
+                      {(faq.links || []).length > 0 ? (
+                        <div className="space-y-3">
+                          {(faq.links || []).map((link, linkIndex) => (
+                            <div key={linkIndex} className="grid gap-3 md:grid-cols-2">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Link Label
+                                </label>
+                                <input
+                                  type="text"
+                                  value={link.label}
+                                  onChange={(e) =>
+                                    updateFAQLink(index, linkIndex, { ...link, label: e.target.value })
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                  placeholder="e.g., Book the hotel"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                                    Link URL
+                                  </label>
+                                  <input
+                                    type="url"
+                                    value={link.url}
+                                    onChange={(e) =>
+                                      updateFAQLink(index, linkIndex, { ...link, url: e.target.value })
+                                    }
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    placeholder="https://..."
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeFAQLink(index, linkIndex)}
+                                  className="text-xs text-red-600 hover:text-red-700"
+                                >
+                                  Remove Link
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">No links added yet.</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Image URL (optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={faq.image_url || ''}
+                        onChange={(e) => updateFAQ(index, { ...faq, image_url: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        placeholder="https://example.com/image.jpg"
                       />
                     </div>
 

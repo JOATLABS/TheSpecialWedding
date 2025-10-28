@@ -183,7 +183,43 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                 wedding.faqs.map((faq, index) => (
                   <div key={index} className="bg-gray-50 p-6 rounded-lg">
                     <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
-                    <p className="text-gray-700">{faq.answer}</p>
+                    {faq.answer && (
+                      <p className="text-gray-700 mb-3 whitespace-pre-line">{faq.answer}</p>
+                    )}
+                    {faq.address && (
+                      <div className="mb-3">
+                        <p className="text-sm font-medium text-gray-900 uppercase tracking-wide">Address</p>
+                        <p className="text-gray-700 whitespace-pre-line">{faq.address}</p>
+                      </div>
+                    )}
+                    {faq.links && faq.links.length > 0 && (
+                      <div className="mb-3 space-y-2">
+                        <p className="text-sm font-medium text-gray-900 uppercase tracking-wide">Helpful Links</p>
+                        <ul className="space-y-1">
+                          {faq.links.map((link, linkIndex) => (
+                            <li key={linkIndex}>
+                              <a
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-wedding-rose hover:text-wedding-navy underline"
+                              >
+                                {link.label || link.url}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {faq.image_url && (
+                      <div className="mt-4">
+                        <img
+                          src={faq.image_url}
+                          alt={`${faq.question} reference`}
+                          className="w-full rounded-lg object-cover max-h-64"
+                        />
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
