@@ -21,6 +21,11 @@ class RegistryItemModel(BaseModel):
 class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
+    link_text: Optional[str] = Field(default=None, description="Optional label for an associated link")
+    link_url: Optional[str] = Field(default=None, description="Optional URL for additional details")
+    address: Optional[str] = Field(default=None, description="Optional address details for the FAQ")
+    image_url: Optional[str] = Field(default=None, description="Optional image illustrating the answer")
+    is_public: bool = Field(default=True, description="Controls whether the FAQ appears on the public site")
 
 class RSVPConfigModel(BaseModel):
     greeting: str = Field(default="Join us in celebrating our special day! Please let us know if you'll be attending.", 
@@ -123,8 +128,20 @@ class WeddingModel(BaseModel):
                     {"name": "Amazon", "url": "https://amazon.com/registry/456", "color": "bg-orange-500"}
                 ],
                 "faqs": [
-                    {"question": "What should I wear?", "answer": "Semi-formal attire"},
-                    {"question": "Is parking available?", "answer": "Yes, free parking at the venue"}
+                    {
+                        "question": "Where should we stay?",
+                        "answer": "We've secured a room block at the Downtown Grand Hotel.",
+                        "link_text": "Book the hotel",
+                        "link_url": "https://example.com/hotel",
+                        "address": "Downtown Grand Hotel\n456 Celebration Ave, Lagos",
+                        "is_public": True
+                    },
+                    {
+                        "question": "Is parking available?",
+                        "answer": "Yes, complimentary parking is available at the venue.",
+                        "image_url": "media/parking-map.png",
+                        "is_public": True
+                    }
                 ]
             }
         }

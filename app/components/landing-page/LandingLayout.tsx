@@ -26,6 +26,11 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
     : images.length > 0 ? images[0].url : undefined;
 
   const eventLocationHidden = Boolean(wedding.event_location_private);
+  const visibleFaqs = (wedding.faqs || []).filter((faq) => faq.is_public ?? true);
+  const resolveMediaUrl = (url?: string) => {
+    if (!url) return undefined;
+    return url.startsWith('http') ? url : `https://media.thespecialwedding.com/${url}`;
+  };
 
   const sections = [
     'rsvp',
@@ -179,11 +184,49 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
           <GlassCard className="max-w-4xl mx-auto p-8" depth="mid" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Frequently Asked Questions</h2>
             <div className="space-y-8">
-              {wedding.faqs && wedding.faqs.length > 0 ? (
-                wedding.faqs.map((faq, index) => (
-                  <div key={index} className="bg-gray-50 p-6 rounded-lg">
-                    <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
-                    <p className="text-gray-700">{faq.answer}</p>
+              {visibleFaqs.length > 0 ? (
+                visibleFaqs.map((faq, index) => (
+                  <div key={index} className="bg-gray-50 p-6 rounded-lg space-y-4">
+                    <div>
+                      <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
+                      <p className="text-gray-700 whitespace-pre-line">{faq.answer}</p>
+                    </div>
+
+                    {faq.address && (
+                      <div className="text-gray-600">
+                        <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">Address</p>
+                        <p className="whitespace-pre-line">{faq.address}</p>
+                      </div>
+                    )}
+
+                    {faq.link_url && (
+                      <div>
+                        <a
+                          href={faq.link_url}
+                          className="inline-flex items-center gap-2 text-wedding-rose font-semibold hover:underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {faq.link_text || 'View details'}
+                          <span aria-hidden="true">↗</span>
+                        </a>
+                      </div>
+                    )}
+
+                    {!faq.link_url && faq.link_text && (
+                      <div className="text-wedding-rose font-semibold">{faq.link_text}</div>
+                    )}
+
+                    {faq.image_url && (
+                      <div className="relative w-full overflow-hidden rounded-lg border border-gray-200">
+                        <img
+                          src={resolveMediaUrl(faq.image_url)}
+                          alt={faq.question}
+                          className="w-full h-48 object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (

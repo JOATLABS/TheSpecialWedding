@@ -22,6 +22,11 @@ export interface RegistryItem {
 export interface FAQItem {
   question: string;
   answer: string;
+  link_text?: string;
+  link_url?: string;
+  address?: string;
+  image_url?: string;
+  is_public?: boolean;
 }
 
 export interface RSVPConfig {

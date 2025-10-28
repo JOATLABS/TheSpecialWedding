@@ -42,7 +42,10 @@ export default function WeddingDetailsPage() {
             phone_numbers: ["(319) 529-6088", "(405) 708-1076"]
           },
           registries: wedding.registries || [],
-          faqs: wedding.faqs || [],
+          faqs: (wedding.faqs || []).map((faq: FAQItem) => ({
+            ...faq,
+            is_public: faq.is_public ?? true,
+          })),
           theme_config: wedding.theme_config || {
             primary_color: "#1e3a5f",
             secondary_color: "#d4af37",
@@ -150,7 +153,18 @@ export default function WeddingDetailsPage() {
     if (!wedding) return;
     setWedding({
       ...wedding,
-      faqs: [...(wedding.faqs || []), { question: '', answer: '' }]
+      faqs: [
+        ...(wedding.faqs || []),
+        {
+          question: '',
+          answer: '',
+          link_text: '',
+          link_url: '',
+          address: '',
+          image_url: '',
+          is_public: true,
+        },
+      ]
     });
   };
 
@@ -592,6 +606,79 @@ export default function WeddingDetailsPage() {
                         rows={2}
                         placeholder="e.g., We recommend semi-formal attire..."
                       />
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Link Text
+                        </label>
+                        <input
+                          type="text"
+                          value={faq.link_text ?? ''}
+                          onChange={(e) => updateFAQ(index, { ...faq, link_text: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          placeholder="e.g., Book our hotel block"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Shown if a link URL is provided.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Link URL
+                        </label>
+                        <input
+                          type="url"
+                          value={faq.link_url ?? ''}
+                          onChange={(e) => updateFAQ(index, { ...faq, link_url: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          placeholder="https://example.com/hotel-block"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Address or Extra Details
+                        </label>
+                        <textarea
+                          value={faq.address ?? ''}
+                          onChange={(e) => updateFAQ(index, { ...faq, address: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          rows={2}
+                          placeholder={"e.g., Downtown Grand Hotel\n456 Celebration Ave"}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Use line breaks for multi-line addresses.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Image URL or Media Key
+                        </label>
+                        <input
+                          type="text"
+                          value={faq.image_url ?? ''}
+                          onChange={(e) => updateFAQ(index, { ...faq, image_url: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          placeholder="e.g., media/hotel-lobby.jpg"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Supports full URLs or media keys stored in our bucket.</p>
+                      </div>
+
+                      <div className="flex items-start gap-3 md:col-span-2">
+                        <input
+                          id={`faq-${index}-public`}
+                          type="checkbox"
+                          className="mt-1 h-5 w-5 text-wedding-rose border-gray-300 rounded"
+                          checked={faq.is_public ?? true}
+                          onChange={(e) => updateFAQ(index, { ...faq, is_public: e.target.checked })}
+                        />
+                        <div>
+                          <label htmlFor={`faq-${index}-public`} className="text-sm font-medium text-gray-700">
+                            Show on guest site
+                          </label>
+                          <p className="text-xs text-gray-500">Uncheck to keep this FAQ hidden from guests.</p>
+                        </div>
+                      </div>
                     </div>
 
                     <button
