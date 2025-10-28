@@ -30,13 +30,16 @@ platform teams.
 
 ## Emulator and Initialization Health Checks
 
-- **Local validation** – Run `npx firebase emulators:start --only firestore`
-  locally and execute `pytest tests/backend/test_firestore_repository_emulator.py`
-  to verify the repository interacts with the emulator and respects schema
-  expectations.
-- **CI validation** – The GitHub Actions workflow runs `firebase
-  emulators:exec` against the same test suite to surface initialisation issues
-  whenever messaging code changes.
+- **Local validation** – Run `npm install` once to ensure `firebase-tools`
+  is available locally, then execute `npx --no-install firebase-tools
+  emulators:start --only firestore` in one terminal while running
+  `pytest tests/backend/test_firestore_repository_emulator.py` in another. This
+  verifies the repository interacts with the emulator and respects schema
+  expectations without depending on fresh npm downloads.
+- **CI validation** – The GitHub Actions workflow runs
+  `npx --no-install firebase-tools emulators:exec --project <project-id> --only firestore -- "pytest tests/backend/test_firestore_repository_emulator.py -q"`
+  against the same test suite to surface initialisation issues whenever messaging
+  code changes.
 - **Troubleshooting** – If tests fail to connect, confirm that
   `FIRESTORE_EMULATOR_HOST` is present and that no stale background emulator
   process occupies port `8080`.
