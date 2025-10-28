@@ -14,6 +14,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+try:  # pragma: no cover - optional Motor runtime
+    from motor.motor_asyncio import AsyncIOMotorCollection
+except ImportError:  # pragma: no cover - Motor not installed in tests
+    AsyncIOMotorCollection = None  # type: ignore[assignment]
+
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
@@ -143,17 +148,19 @@ class PlatformMetricsService:
                 return
 
             collection = self._mongo.get_platform_metrics_collection()
-            create_index = getattr(collection, "create_index", None)
-
-            if create_index is None:
+            if not hasattr(collection, "create_index"):
                 logger.warning(
                     "Platform metrics collection lacks create_index; skipping index setup"
                 )
             else:
-                if inspect.iscoroutinefunction(create_index):
-                    await create_index("snapshot_time")
-                else:
-                    await asyncio.to_thread(create_index, "snapshot_time")
+                try:
+                    await self._call_collection_method(
+                        collection, "create_index", "snapshot_time"
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Unable to create snapshot_time index: %s", exc, exc_info=True
+                    )
 
             self._indexes_ready = True
 
@@ -727,13 +734,25 @@ class PlatformMetricsService:
         self, collection: Any, method_name: str, *args: Any, **kwargs: Any
     ) -> Any:
         method = getattr(collection, method_name)
+
         if inspect.iscoroutinefunction(method):
             return await method(*args, **kwargs)
+
+        if AsyncIOMotorCollection is not None and isinstance(
+            collection, AsyncIOMotorCollection
+        ):
+            result = method(*args, **kwargs)
+            if inspect.isawaitable(result):
+                return await result
+            return result
 
         def sync_call() -> Any:
             return method(*args, **kwargs)
 
-        return await asyncio.to_thread(sync_call)
+        result = await asyncio.to_thread(sync_call)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     async def _find_one(
         self,
