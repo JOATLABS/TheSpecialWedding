@@ -61,6 +61,7 @@ export interface Wedding {
   couple_names: string;
   date: string;
   events: WeddingEvent[];
+  event_location_private?: boolean;
   rsvp_config?: RSVPConfig;
   registries?: RegistryItem[];
   faqs?: FAQItem[];
