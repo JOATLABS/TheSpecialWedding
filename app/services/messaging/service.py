@@ -14,6 +14,8 @@ from app.models.messaging import (
     MessageCreateRequest,
     MessageListResponse,
     MessageResponse,
+    ReadReceiptResponse,
+    ReadReceiptUpdateRequest,
 )
 from app.services.messaging.repository import (
     FirestoreMessagingRepository,
@@ -105,3 +107,31 @@ class MessagingService:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
         return MessageListResponse(messages=messages, next_cursor=next_cursor)
+
+    async def acknowledge_read(
+        self,
+        conversation_id: str,
+        participant_id: str,
+        payload: ReadReceiptUpdateRequest,
+    ) -> ReadReceiptResponse:
+        try:
+            participant = await asyncio.to_thread(
+                self._repository.acknowledge_read,
+                conversation_id,
+                participant_id,
+                read_at=payload.last_read_at,
+            )
+        except MessagingRepositoryError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+        if participant.last_read_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update read receipt",
+            )
+
+        return ReadReceiptResponse(
+            conversation_id=conversation_id,
+            participant_id=participant.user_id,
+            last_read_at=participant.last_read_at,
+        )

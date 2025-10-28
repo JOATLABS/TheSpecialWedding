@@ -13,6 +13,8 @@ from app.models.messaging import (
     MessageCreateRequest,
     MessageListResponse,
     MessageResponse,
+    ReadReceiptResponse,
+    ReadReceiptUpdateRequest,
     SendMessageRequest,
 )
 from app.services.messaging import MessagingRepositoryError, MessagingService
@@ -160,6 +162,29 @@ async def list_messages(
         limit=limit,
         cursor=cursor,
     )
+
+
+@router.post(
+    "/weddings/{wedding_id}/conversations/{conversation_id}/read-receipts",
+    response_model=ReadReceiptResponse,
+)
+async def acknowledge_read_receipt(
+    wedding_id: str,
+    conversation_id: str,
+    payload: ReadReceiptUpdateRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    service: MessagingService = Depends(get_messaging_service),
+) -> ReadReceiptResponse:
+    """Update the authenticated participant's read receipt for a conversation."""
+
+    _, participant = await _get_authorized_conversation(
+        wedding_id,
+        conversation_id,
+        current_user,
+        service,
+    )
+
+    return await service.acknowledge_read(conversation_id, participant.user_id, payload)
 
 
 @router.post(
