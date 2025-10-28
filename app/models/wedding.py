@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -18,9 +18,17 @@ class RegistryItemModel(BaseModel):
     url: str = Field(..., description="Registry URL")
     color: Optional[str] = Field(default="bg-gray-600", description="Button color class")
 
+class FAQLinkModel(BaseModel):
+    label: str = Field(..., description="Text displayed for the FAQ link")
+    url: HttpUrl = Field(..., description="Destination URL for the FAQ link")
+
+
 class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
+    address: Optional[str] = Field(None, description="Optional address or location details related to the FAQ")
+    links: List[FAQLinkModel] = Field(default_factory=list, description="Helpful links for the FAQ answer")
+    image_urls: List[HttpUrl] = Field(default_factory=list, description="Supporting images for the FAQ answer")
 
 class RSVPConfigModel(BaseModel):
     greeting: str = Field(default="Join us in celebrating our special day! Please let us know if you'll be attending.", 
@@ -123,8 +131,24 @@ class WeddingModel(BaseModel):
                     {"name": "Amazon", "url": "https://amazon.com/registry/456", "color": "bg-orange-500"}
                 ],
                 "faqs": [
-                    {"question": "What should I wear?", "answer": "Semi-formal attire"},
-                    {"question": "Is parking available?", "answer": "Yes, free parking at the venue"}
+                    {
+                        "question": "Where should guests stay?",
+                        "answer": "We've reserved a block of rooms at The Grand Hotel.",
+                        "address": "123 Celebration Ave, Lagos",
+                        "links": [
+                            {
+                                "label": "Book your room",
+                                "url": "https://grandhotel.example.com/block/tolu-peace"
+                            }
+                        ],
+                        "image_urls": [
+                            "https://images.example.com/hotel-suite.jpg"
+                        ]
+                    },
+                    {
+                        "question": "Is parking available?",
+                        "answer": "Complimentary parking is available at the venue garage."
+                    }
                 ]
             }
         }
