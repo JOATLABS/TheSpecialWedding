@@ -35,6 +35,7 @@ export default function WeddingDetailsPage() {
         // Initialize default values if not present
         setWedding({
           ...wedding,
+          event_location_private: wedding.event_location_private ?? false,
           rsvp_config: wedding.rsvp_config || {
             greeting: "Join us in celebrating our special day! Please let us know if you'll be attending.",
             help_text: "Check your phone for your personal invitation link, or contact us directly.",
@@ -258,6 +259,25 @@ export default function WeddingDetailsPage() {
                   >
                     Add Event
                   </button>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!wedding.event_location_private}
+                      onChange={(e) => setWedding({ ...wedding, event_location_private: e.target.checked })}
+                      className="mt-1 h-4 w-4 rounded border-gray-300 text-wedding-navy focus:ring-wedding-rose"
+                    />
+                    <div>
+                      <span className="block text-sm font-semibold text-wedding-navy">
+                        Make Event & Location section private
+                      </span>
+                      <span className="block text-xs text-gray-600">
+                        When enabled, guests will not see the Event & Location section on the public wedding page.
+                      </span>
+                    </div>
+                  </label>
                 </div>
 
                 {wedding.events.map((event, index) => (

@@ -58,6 +58,10 @@ class WeddingModel(BaseModel):
     date: str = Field(..., description="Main wedding date in YYYY-MM-DD format")
     slug: str = Field(..., description="URL-friendly slug for the wedding")
     events: List[EventModel] = Field(default_factory=list)
+    event_location_private: bool = Field(
+        default=False,
+        description="Controls visibility of the public event & location section"
+    )
     rsvp_config: Optional[RSVPConfigModel] = Field(default_factory=RSVPConfigModel)
     registries: List[RegistryItemModel] = Field(default_factory=list)
     faqs: List[FAQItemModel] = Field(default_factory=list)
@@ -78,7 +82,7 @@ class WeddingModel(BaseModel):
                 "slug": "tolu-peace-wedding",
                 "events": [
                     {
-                        "type": "traditional", 
+                        "type": "traditional",
                         "date": "2026-05-29",
                         "details": {
                             "venue_name": "Family Home",
@@ -108,6 +112,7 @@ class WeddingModel(BaseModel):
                         }
                     }
                 ],
+                "event_location_private": False,
                 "rsvp_config": {
                     "greeting": "Join us in celebrating our special day!",
                     "help_text": "Contact us if you need help",
