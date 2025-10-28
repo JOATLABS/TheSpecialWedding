@@ -34,29 +34,29 @@ def _serialize_snapshot_response(document: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.get("/metrics/snapshot", tags=["Metrics"], dependencies=[Depends(_require_metrics_token)])
-def get_metrics_snapshot():
-    snapshot = metrics_service.get_latest_snapshot()
+async def get_metrics_snapshot():
+    snapshot = await metrics_service.get_latest_snapshot()
     if not snapshot:
         raise HTTPException(status_code=404, detail="No metrics snapshots available")
     return _serialize_snapshot_response(snapshot)
 
 
 @router.post("/metrics/snapshot", tags=["Metrics"], dependencies=[Depends(_require_metrics_token)])
-def ingest_metrics_snapshot(payload: Dict[str, Any]):
-    document = metrics_service.save_snapshot(payload)
+async def ingest_metrics_snapshot(payload: Dict[str, Any]):
+    document = await metrics_service.save_snapshot(payload)
     return _serialize_snapshot_response(document)
 
 
 @router.get("/admin/platform/metrics", tags=["Admin"], dependencies=[Depends(require_admin)])
-def get_admin_metrics_overview():
-    snapshot = metrics_service.get_latest_snapshot()
+async def get_admin_metrics_overview():
+    snapshot = await metrics_service.get_latest_snapshot()
     if not snapshot:
         raise HTTPException(status_code=404, detail="No metrics snapshots available")
     return _serialize_snapshot_response(snapshot)
 
 
 @router.get("/admin/platform/metrics/history", tags=["Admin"], dependencies=[Depends(require_admin)])
-def get_metrics_history(start_date: Optional[str] = Query(None, description="ISO-8601 timestamp inclusive")):
+async def get_metrics_history(start_date: Optional[str] = Query(None, description="ISO-8601 timestamp inclusive")):
     since: Optional[datetime] = None
     if start_date:
         try:
@@ -68,5 +68,5 @@ def get_metrics_history(start_date: Optional[str] = Query(None, description="ISO
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="start_date must be an ISO-8601 datetime") from exc
 
-    snapshots = metrics_service.get_history(since)
+    snapshots = await metrics_service.get_history(since)
     return [_serialize_snapshot_response(snapshot) for snapshot in snapshots]
