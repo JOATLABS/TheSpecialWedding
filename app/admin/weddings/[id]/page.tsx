@@ -4,7 +4,35 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '../../../contexts/AdminContext';
-import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember } from '@/types/wedding';
+import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, FAQLink } from '@/types/wedding';
+
+const normalizeFAQItem = (faq: Partial<FAQItem> = {}): FAQItem => {
+  const links: FAQLink[] = Array.isArray(faq.links)
+    ? faq.links.map((link) => ({
+        label: link?.label?.trim?.() ?? '',
+        url: link?.url?.trim?.() ?? '',
+      }))
+    : [];
+
+  const imageUrls = Array.isArray(faq.image_urls)
+    ? faq.image_urls.map((imageUrl) => imageUrl?.trim?.() ?? '')
+    : [];
+
+  const question = typeof faq.question === 'string' ? faq.question : '';
+  const answer = typeof faq.answer === 'string' ? faq.answer : '';
+  const address = typeof faq.address === 'string' ? faq.address : '';
+
+  return {
+    question,
+    answer,
+    address,
+    links,
+    image_urls: imageUrls,
+  };
+};
+
+const normalizeFAQs = (faqs: (Partial<FAQItem> | undefined)[] = []) =>
+  faqs.filter((faq): faq is Partial<FAQItem> => Boolean(faq)).map((faq) => normalizeFAQItem(faq));
 
 export default function WeddingDetailsPage() {
   const { token } = useAdmin();
@@ -42,7 +70,7 @@ export default function WeddingDetailsPage() {
             phone_numbers: ["(319) 529-6088", "(405) 708-1076"]
           },
           registries: wedding.registries || [],
-          faqs: wedding.faqs || [],
+          faqs: normalizeFAQs(wedding.faqs || []),
           theme_config: wedding.theme_config || {
             primary_color: "#1e3a5f",
             secondary_color: "#d4af37",
@@ -69,11 +97,36 @@ export default function WeddingDetailsPage() {
 
   const saveWedding = async () => {
     if (!wedding) return;
-    
+
     setSaving(true);
     setError('');
-    
+
     try {
+      const sanitizedWedding: Wedding = {
+        ...wedding,
+        faqs: (wedding.faqs || []).map((faq) => {
+          const sanitizedLinks = (faq.links || [])
+            .map((link) => ({
+              label: link.label.trim(),
+              url: link.url.trim(),
+            }))
+            .filter((link) => link.label && link.url);
+
+          const sanitizedImages = (faq.image_urls || [])
+            .map((imageUrl) => imageUrl.trim())
+            .filter((imageUrl) => imageUrl.length > 0);
+
+          const address = faq.address?.trim();
+
+          return {
+            ...faq,
+            address: address ? address : undefined,
+            links: sanitizedLinks,
+            image_urls: sanitizedImages,
+          };
+        }),
+      };
+
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
         method: 'PUT',
@@ -81,7 +134,7 @@ export default function WeddingDetailsPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(wedding),
+        body: JSON.stringify(sanitizedWedding),
       });
 
       if (!response.ok) {
@@ -90,6 +143,10 @@ export default function WeddingDetailsPage() {
 
       // Show success message
       alert('Wedding details saved successfully!');
+      setWedding({
+        ...sanitizedWedding,
+        faqs: normalizeFAQs(sanitizedWedding.faqs || []),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -150,22 +207,35 @@ export default function WeddingDetailsPage() {
     if (!wedding) return;
     setWedding({
       ...wedding,
-      faqs: [...(wedding.faqs || []), { question: '', answer: '' }]
+      faqs: [
+        ...(wedding.faqs || []).map((faq) => normalizeFAQItem(faq)),
+        normalizeFAQItem({
+          question: '',
+          answer: '',
+          address: '',
+          links: [{ label: '', url: '' }],
+          image_urls: [''],
+        })
+      ]
     });
   };
 
-  const updateFAQ = (index: number, faq: FAQItem) => {
+  const updateFAQ = (index: number, updates: Partial<FAQItem>) => {
     if (!wedding) return;
-    const newFAQs = [...(wedding.faqs || [])];
-    newFAQs[index] = faq;
-    setWedding({ ...wedding, faqs: newFAQs });
+    const currentFAQs = (wedding.faqs || []).map((faq) => normalizeFAQItem(faq));
+    const updatedFAQs = currentFAQs.map((faq, faqIndex) =>
+      faqIndex === index ? normalizeFAQItem({ ...faq, ...updates }) : faq
+    );
+    setWedding({ ...wedding, faqs: updatedFAQs });
   };
 
   const removeFAQ = (index: number) => {
     if (!wedding) return;
     setWedding({
       ...wedding,
-      faqs: (wedding.faqs || []).filter((_, i) => i !== index)
+      faqs: (wedding.faqs || [])
+        .filter((_, i) => i !== index)
+        .map((faq) => normalizeFAQItem(faq))
     });
   };
 
@@ -566,6 +636,14 @@ export default function WeddingDetailsPage() {
                   </button>
                 </div>
 
+                <div className="bg-blue-50 border border-blue-200 text-blue-900 rounded-lg p-4 text-sm leading-relaxed">
+                  <p className="font-semibold mb-1">Tip</p>
+                  <p>
+                    Enhance each answer with optional addresses, multiple booking links, or supporting image galleries.
+                    Leave any field blank to skip it—empty items are automatically cleaned up when you save.
+                  </p>
+                </div>
+
                 {(wedding.faqs || []).map((faq, index) => (
                   <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
                     <div>
@@ -575,7 +653,7 @@ export default function WeddingDetailsPage() {
                       <input
                         type="text"
                         value={faq.question}
-                        onChange={(e) => updateFAQ(index, { ...faq, question: e.target.value })}
+                        onChange={(e) => updateFAQ(index, { question: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         placeholder="e.g., What should I wear?"
                       />
@@ -587,11 +665,143 @@ export default function WeddingDetailsPage() {
                       </label>
                       <textarea
                         value={faq.answer}
-                        onChange={(e) => updateFAQ(index, { ...faq, answer: e.target.value })}
+                        onChange={(e) => updateFAQ(index, { answer: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         rows={2}
                         placeholder="e.g., We recommend semi-formal attire..."
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Address or Location Details (optional)
+                      </label>
+                      <textarea
+                        value={faq.address || ''}
+                        onChange={(e) => updateFAQ(index, { address: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        rows={2}
+                        placeholder="e.g., 123 Celebration Ave, Lagos"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Helpful Links
+                        </label>
+                        <button
+                          onClick={() => {
+                            const newLinks = [...(faq.links || []), { label: '', url: '' }];
+                            updateFAQ(index, { links: newLinks });
+                          }}
+                          className="text-sm text-wedding-sage hover:text-wedding-navy"
+                        >
+                          Add Link
+                        </button>
+                      </div>
+                      {(faq.links || []).length > 0 ? (
+                        <div className="space-y-3">
+                          {(faq.links || []).map((link, linkIndex) => (
+                            <div key={linkIndex} className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                              <div className="md:col-span-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Link Label
+                                </label>
+                                <input
+                                  type="text"
+                                  value={link.label}
+                                  onChange={(e) => {
+                                    const newLinks = [...(faq.links || [])];
+                                    newLinks[linkIndex] = { ...newLinks[linkIndex], label: e.target.value };
+                                    updateFAQ(index, { links: newLinks });
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                  placeholder="e.g., Book your stay"
+                                />
+                              </div>
+                              <div className="md:col-span-3">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  Link URL
+                                </label>
+                                <input
+                                  type="url"
+                                  value={link.url}
+                                  onChange={(e) => {
+                                    const newLinks = [...(faq.links || [])];
+                                    newLinks[linkIndex] = { ...newLinks[linkIndex], url: e.target.value };
+                                    updateFAQ(index, { links: newLinks });
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                  placeholder="https://..."
+                                />
+                              </div>
+                              <div className="md:col-span-5 flex justify-end">
+                                <button
+                                  onClick={() => {
+                                    const newLinks = (faq.links || []).filter((_, i) => i !== linkIndex);
+                                    updateFAQ(index, { links: newLinks });
+                                  }}
+                                  className="text-sm text-red-600 hover:bg-red-50 px-3 py-1 rounded"
+                                >
+                                  Remove Link
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">No links added yet.</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Image URLs
+                        </label>
+                        <button
+                          onClick={() => {
+                            const newImages = [...(faq.image_urls || []), ''];
+                            updateFAQ(index, { image_urls: newImages });
+                          }}
+                          className="text-sm text-wedding-sage hover:text-wedding-navy"
+                        >
+                          Add Image
+                        </button>
+                      </div>
+                      {(faq.image_urls || []).length > 0 ? (
+                        <div className="space-y-3">
+                          {(faq.image_urls || []).map((imageUrl, imageIndex) => (
+                            <div key={imageIndex} className="space-y-2">
+                              <input
+                                type="url"
+                                value={imageUrl}
+                                onChange={(e) => {
+                                  const newImages = [...(faq.image_urls || [])];
+                                  newImages[imageIndex] = e.target.value;
+                                  updateFAQ(index, { image_urls: newImages });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                placeholder="https://.../image.jpg"
+                              />
+                              <div className="flex justify-end">
+                                <button
+                                  onClick={() => {
+                                    const newImages = (faq.image_urls || []).filter((_, i) => i !== imageIndex);
+                                    updateFAQ(index, { image_urls: newImages });
+                                  }}
+                                  className="text-sm text-red-600 hover:bg-red-50 px-3 py-1 rounded"
+                                >
+                                  Remove Image
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">No images added yet.</p>
+                      )}
                     </div>
 
                     <button
