@@ -1,6 +1,10 @@
 "use client";
 import React from "react";
 
+type PetalStyle = React.CSSProperties & {
+  "--drift"?: string;
+};
+
 interface RosePetalsProps {
   count?: number;
 }
@@ -23,29 +27,28 @@ export function RosePetals({ count = 24 }: RosePetalsProps) {
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-      {petals.map(({ i, left, delay, duration, size, drift }) => (
-        <span
-          key={i}
-          className="petal"
-          style={{
-            left: `${left}%`,
-            animationDelay: `${delay}s`,
-            animationDuration: `${duration}s`,
-            // @ts-expect-error CSS custom property
-            "--drift": `${drift}px`,
-          } as React.CSSProperties}
-        >
-          <span
-            className="petal-inner"
-            style={{
-              width: size,
-              height: size * 1.4,
-              animationDelay: `${delay}s`,
-              animationDuration: `${duration}s`,
-            }}
-          />
-        </span>
-      ))}
+      {petals.map(({ i, left, delay, duration, size, drift }) => {
+        const style: PetalStyle = {
+          left: `${left}%`,
+          animationDelay: `${delay}s`,
+          animationDuration: `${duration}s`,
+        };
+        style["--drift"] = `${drift}px`;
+
+        return (
+          <span key={i} className="petal" style={style}>
+            <span
+              className="petal-inner"
+              style={{
+                width: size,
+                height: size * 1.4,
+                animationDelay: `${delay}s`,
+                animationDuration: `${duration}s`,
+              }}
+            />
+          </span>
+        );
+      })}
     </div>
   );
 }

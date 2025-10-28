@@ -98,8 +98,8 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const petals = useRef<Petal[]>([]);
   const sprites = useRef<HTMLCanvasElement[]>([]);
-  const rafRef = useRef<number>();
-  const resizeRef = useRef<number>();
+  const rafRef = useRef<number | null>(null);
+  const resizeRef = useRef<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -128,7 +128,7 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
     const scheduleResize = () => {
       if (resizeRef.current) cancelAnimationFrame(resizeRef.current);
       resizeRef.current = requestAnimationFrame(() => {
-        resizeRef.current = undefined;
+        resizeRef.current = null;
         setup();
       });
     };
@@ -210,7 +210,7 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
     const onVisibility = () => {
       if (document.hidden && rafRef.current) {
         cancelAnimationFrame(rafRef.current);
-        rafRef.current = undefined;
+        rafRef.current = null;
       } else if (!document.hidden && !reduce && !rafRef.current) {
         rafRef.current = requestAnimationFrame(render);
       }
@@ -220,7 +220,7 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
       setup();
       if (reduce && rafRef.current) {
         cancelAnimationFrame(rafRef.current);
-        rafRef.current = undefined;
+        rafRef.current = null;
       } else if (!reduce && !rafRef.current && !document.hidden) {
         rafRef.current = requestAnimationFrame(render);
       }
@@ -236,7 +236,7 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (resizeRef.current) cancelAnimationFrame(resizeRef.current);
     };
-  }, []);
+  }, [count]);
 
   return (
     <canvas ref={canvasRef} aria-hidden="true" className="petal-canvas pointer-events-none absolute inset-0 h-full w-full" />

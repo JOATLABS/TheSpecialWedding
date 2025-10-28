@@ -59,11 +59,7 @@ service cloud.firestore {
         allow create, update, delete: if false;
         allow get, list: if
           isParticipant(conversationId)
-          && weddingIsAccessible(conversationDoc(conversationId).data.weddingId)
-          && (
-            conversationDoc(conversationId).data.channel != 'email'
-            || participantCanAccessEmail(conversationId)
-          );
+          && weddingIsAccessible(conversationDoc(conversationId).data.weddingId);
       }
 
       match /messages/{messageId} {
