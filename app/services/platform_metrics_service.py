@@ -11,8 +11,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,82 @@ class PlatformMetricsService:
         self._mongo = mongo_connector
         self._index_lock = asyncio.Lock()
         self._indexes_ready = False
+
+    async def get_latest_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Return the most recent metrics snapshot or ``None`` when empty."""
+
+        await self._ensure_indexes()
+
+        collection = self._mongo.get_platform_metrics_collection()
+        document = await self._find_one(
+            collection,
+            {},
+            sort=[("snapshot_time", -1), ("_id", -1)],
+        )
+
+        if not document:
+            return None
+
+        return self._prepare_snapshot_document(document)
+
+    async def save_snapshot(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        """Persist a metrics snapshot payload and return the stored document."""
+
+        await self._ensure_indexes()
+
+        collection = self._mongo.get_platform_metrics_collection()
+
+        document: Dict[str, Any] = {
+            key: value for key, value in payload.items() if key != "id"
+        }
+
+        snapshot_time_candidate = document.get("snapshot_time") or document.get(
+            "timestamp"
+        )
+        snapshot_time = self._parse_datetime(snapshot_time_candidate)
+        if snapshot_time is None:
+            snapshot_time = datetime.utcnow()
+        snapshot_time = self._normalize_to_utc(snapshot_time)
+
+        document["snapshot_time"] = snapshot_time
+
+        ingested_at = datetime.utcnow()
+        document["ingested_at"] = ingested_at
+
+        document.setdefault(
+            "timestamp",
+            snapshot_time.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"),
+        )
+        document.setdefault("metrics", {})
+
+        insert_result = await self._call_collection_method(
+            collection, "insert_one", document
+        )
+        inserted_id = getattr(insert_result, "inserted_id", None)
+        if inserted_id is not None:
+            document["_id"] = inserted_id
+
+        return self._prepare_snapshot_document(document)
+
+    async def get_history(
+        self, since: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """Return ordered snapshots, optionally filtered by ``since``."""
+
+        await self._ensure_indexes()
+
+        collection = self._mongo.get_platform_metrics_collection()
+
+        query: Dict[str, Any] = {}
+        if since is not None:
+            query["snapshot_time"] = {"$gte": self._normalize_to_utc(since)}
+
+        cursor = collection.find(query).sort(
+            [("snapshot_time", -1), ("_id", -1)]
+        )
+        documents = await self._collect_cursor(cursor)
+
+        return [self._prepare_snapshot_document(doc) for doc in documents]
 
     async def compile_metrics(self, timeframe: str) -> Dict[str, Any]:
         """Return the payload consumed by `/admin/saas/analytics/platform`."""
@@ -645,13 +723,58 @@ class PlatformMetricsService:
             logger.debug("Aggregate pipeline failed: %s", exc)
             return []
 
+    async def _call_collection_method(
+        self, collection: Any, method_name: str, *args: Any, **kwargs: Any
+    ) -> Any:
+        method = getattr(collection, method_name)
+        if inspect.iscoroutinefunction(method):
+            return await method(*args, **kwargs)
+
+        def sync_call() -> Any:
+            return method(*args, **kwargs)
+
+        return await asyncio.to_thread(sync_call)
+
+    async def _find_one(
+        self,
+        collection: Any,
+        filter_query: Mapping[str, Any],
+        *,
+        sort: Optional[Sequence[Tuple[str, int]]] = None,
+    ) -> Optional[Mapping[str, Any]]:
+        if sort is None:
+            return await self._call_collection_method(
+                collection, "find_one", filter_query
+            )
+        return await self._call_collection_method(
+            collection, "find_one", filter_query, sort=list(sort)
+        )
+
+    async def _collect_cursor(self, cursor: Any) -> List[Mapping[str, Any]]:
+        if hasattr(cursor, "__aiter__"):
+            return [document async for document in cursor]
+
+        def sync_collect() -> List[Mapping[str, Any]]:
+            return list(cursor)
+
+        return await asyncio.to_thread(sync_collect)
+
     async def _count_documents(
         self, collection: Any, filter_query: Mapping[str, Any]
     ) -> int:
-        method = getattr(collection, "count_documents")
-        if inspect.iscoroutinefunction(method):
-            return int(await method(filter_query))
-        return int(await asyncio.to_thread(method, filter_query))
+        result = await self._call_collection_method(
+            collection, "count_documents", filter_query
+        )
+        return int(result)
+
+    def _prepare_snapshot_document(
+        self, document: Mapping[str, Any]
+    ) -> Dict[str, Any]:
+        prepared = dict(document)
+        identifier = prepared.get("_id")
+        if identifier is not None:
+            prepared["id"] = str(identifier)
+        return prepared
 
     @staticmethod
     def _parse_datetime(value: Any) -> Optional[datetime]:
@@ -660,13 +783,20 @@ class PlatformMetricsService:
         if isinstance(value, str) and value.strip():
             normalized = value.strip()
             try:
-                return datetime.fromisoformat(normalized)
+                iso_normalized = normalized.replace("Z", "+00:00")
+                return datetime.fromisoformat(iso_normalized)
             except ValueError:
                 try:
                     return datetime.strptime(normalized, "%Y-%m-%d")
                 except ValueError:
                     return None
         return None
+
+    @staticmethod
+    def _normalize_to_utc(value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
 
     @staticmethod
     def _calculate_monthly_value(
@@ -688,4 +818,7 @@ class PlatformMetricsService:
                 "Invalid timeframe. Use one of: 7d, 30d, 90d, 1y."
             )
         return mapping[normalized]
+
+
+service = PlatformMetricsService(mongo)
 
