@@ -14,6 +14,7 @@ import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
+import { FAQLocationMap } from '@/components/landing-page/FAQLocationMap';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   const theme = useTheme(wedding);
@@ -182,6 +183,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               {wedding.faqs && wedding.faqs.length > 0 ? (
                 wedding.faqs.map((faq, index) => {
                   const links = (faq.links || []).filter((link) => link.label && link.url);
+                  const hasAddress = typeof faq.address === 'string' && faq.address.trim().length > 0;
                   const imageUrls = (faq.image_urls || []).filter((imageUrl) => imageUrl);
 
                   return (
@@ -191,11 +193,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                         <p className="text-gray-700 whitespace-pre-line">{faq.answer}</p>
                       </div>
 
-                      {faq.address && (
-                        <div className="flex items-start gap-3 text-gray-700">
-                          <span className="mt-0.5 text-wedding-rose">📍</span>
-                          <p className="leading-relaxed whitespace-pre-line">{faq.address}</p>
-                        </div>
+                      {hasAddress && (
+                        <FAQLocationMap address={faq.address!} theme={wedding.theme_config} />
                       )}
 
                       {links.length > 0 && (
