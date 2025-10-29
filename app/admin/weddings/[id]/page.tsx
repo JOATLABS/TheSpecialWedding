@@ -6,28 +6,32 @@ import Link from 'next/link';
 import { useAdmin } from '../../../contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, FAQLink } from '@/types/wedding';
 
+const stripWrappingQuotes = (value: string) => value.replace(/^['"]+|['"]+$/g, '');
+
 const normalizeFAQItem = (faq: Partial<FAQItem> = {}): FAQItem => {
   const links: FAQLink[] = Array.isArray(faq.links)
     ? faq.links.map((link) => ({
-        label: link?.label?.trim?.() ?? '',
-        url: link?.url?.trim?.() ?? '',
+        label: link?.label?.toString?.().trim?.() ?? '',
+        url: stripWrappingQuotes(link?.url?.toString?.().trim?.() ?? ''),
       }))
     : [];
 
   const imageUrls = Array.isArray(faq.image_urls)
-    ? faq.image_urls.map((imageUrl) => imageUrl?.trim?.() ?? '')
+    ? faq.image_urls.map((imageUrl) => imageUrl?.toString?.().trim?.() ?? '')
     : [];
 
   const question = typeof faq.question === 'string' ? faq.question : '';
   const answer = typeof faq.answer === 'string' ? faq.answer : '';
-  const address = typeof faq.address === 'string' ? faq.address : '';
+
+  const hasAddress = Object.prototype.hasOwnProperty.call(faq, 'address');
+  const addressValue = typeof faq.address === 'string' ? faq.address : '';
 
   return {
     question,
     answer,
-    address,
     links,
     image_urls: imageUrls,
+    ...(hasAddress ? { address: addressValue } : {}),
   };
 };
 
@@ -106,24 +110,49 @@ export default function WeddingDetailsPage() {
         ...wedding,
         faqs: (wedding.faqs || []).map((faq) => {
           const sanitizedLinks = (faq.links || [])
-            .map((link) => ({
-              label: link.label.trim(),
-              url: link.url.trim(),
-            }))
-            .filter((link) => link.label && link.url);
+            .map((link) => {
+              const label = link?.label?.toString?.().trim?.() ?? '';
+              const rawUrl = link?.url?.toString?.().trim?.() ?? '';
+              const cleanedUrl = stripWrappingQuotes(rawUrl);
+
+              if (!label || !cleanedUrl) {
+                return null;
+              }
+
+              try {
+                const parsed = new URL(cleanedUrl);
+                if (!['http:', 'https:'].includes(parsed.protocol)) {
+                  return null;
+                }
+
+                return { label, url: parsed.toString() };
+              } catch (error) {
+                console.warn('Skipping invalid FAQ link URL', cleanedUrl, error);
+                return null;
+              }
+            })
+            .filter((link): link is FAQLink => Boolean(link));
 
           const sanitizedImages = (faq.image_urls || [])
-            .map((imageUrl) => imageUrl.trim())
+            .map((imageUrl) => stripWrappingQuotes(imageUrl?.toString?.().trim?.() ?? ''))
             .filter((imageUrl) => imageUrl.length > 0);
 
-          const address = faq.address?.trim();
+          const addressInput = typeof faq.address === 'string' ? faq.address.trim() : '';
+          const question = faq.question?.toString?.().trim?.() ?? '';
+          const answer = faq.answer?.toString?.().trim?.() ?? '';
 
-          return {
-            ...faq,
-            address: address ? address : undefined,
+          const sanitizedFaq: FAQItem = {
+            question,
+            answer,
             links: sanitizedLinks,
             image_urls: sanitizedImages,
           };
+
+          if (addressInput) {
+            sanitizedFaq.address = addressInput;
+          }
+
+          return sanitizedFaq;
         }),
       };
 
@@ -212,7 +241,6 @@ export default function WeddingDetailsPage() {
         normalizeFAQItem({
           question: '',
           answer: '',
-          address: '',
           links: [{ label: '', url: '' }],
           image_urls: [''],
         })
@@ -223,9 +251,18 @@ export default function WeddingDetailsPage() {
   const updateFAQ = (index: number, updates: Partial<FAQItem>) => {
     if (!wedding) return;
     const currentFAQs = (wedding.faqs || []).map((faq) => normalizeFAQItem(faq));
-    const updatedFAQs = currentFAQs.map((faq, faqIndex) =>
-      faqIndex === index ? normalizeFAQItem({ ...faq, ...updates }) : faq
-    );
+    const updatedFAQs = currentFAQs.map((faq, faqIndex) => {
+      if (faqIndex !== index) return faq;
+
+      const next: Partial<FAQItem> = { ...faq, ...updates };
+
+      if ('address' in updates && (updates.address === undefined || updates.address === null)) {
+        delete next.address;
+      }
+
+      return normalizeFAQItem(next);
+    });
+
     setWedding({ ...wedding, faqs: updatedFAQs });
   };
 
@@ -672,17 +709,43 @@ export default function WeddingDetailsPage() {
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Address or Location Details (optional)
-                      </label>
-                      <textarea
-                        value={faq.address || ''}
-                        onChange={(e) => updateFAQ(index, { address: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        rows={2}
-                        placeholder="e.g., 123 Celebration Ave, Lagos"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Location (optional)
+                        </label>
+                        {faq.address !== undefined && (
+                          <button
+                            type="button"
+                            onClick={() => updateFAQ(index, { address: undefined })}
+                            className="text-sm text-red-600 hover:bg-red-50 px-3 py-1 rounded"
+                          >
+                            Remove Location
+                          </button>
+                        )}
+                      </div>
+                      {faq.address !== undefined ? (
+                        <>
+                          <textarea
+                            value={faq.address ?? ''}
+                            onChange={(e) => updateFAQ(index, { address: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            rows={2}
+                            placeholder="e.g., 123 Celebration Ave, Lagos"
+                          />
+                          <p className="text-xs text-gray-500">
+                            Guests will see an interactive Google Map for this address on the public FAQ.
+                          </p>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => updateFAQ(index, { address: '' })}
+                          className="inline-flex items-center gap-2 text-sm text-wedding-sage hover:text-wedding-navy"
+                        >
+                          <span className="text-lg leading-none">＋</span> Add Location
+                        </button>
+                      )}
                     </div>
 
                     <div className="space-y-3">
