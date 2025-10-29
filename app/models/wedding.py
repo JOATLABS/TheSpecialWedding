@@ -45,8 +45,17 @@ class ThemeConfigModel(BaseModel):
     background_style: str = Field(default="gradient", description="Background style: gradient, solid, or image")
     font_style: str = Field(default="elegant", description="Font style: elegant, modern, classic, or playful")
 
+class StoryKeyDateModel(BaseModel):
+    date: str = Field(..., description="Milestone date in ISO format")
+    title: Optional[str] = Field(None, description="Title for the milestone (e.g., 'First Date')")
+    description: Optional[str] = Field(None, description="Supporting copy for the milestone")
+
+
 class OurStoryModel(BaseModel):
     text: str = Field(..., description="Our story text/paragraph")
+    title: Optional[str] = Field(None, description="Headline for the story section")
+    subtitle: Optional[str] = Field(None, description="Optional supporting subheading")
+    key_dates: List[StoryKeyDateModel] = Field(default_factory=list, description="Timeline of relationship milestones")
     image_url: Optional[str] = Field(None, description="S3 key for couple photo")
     image_shape: str = Field(default="circle", description="Image shape: circle, heart, square, or hexagon")
 

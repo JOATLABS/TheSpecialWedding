@@ -46,8 +46,17 @@ export interface ThemeConfig {
   font_style: 'elegant' | 'modern' | 'classic' | 'playful';
 }
 
+export interface StoryKeyDate {
+  date: string;
+  title?: string;
+  description?: string;
+}
+
 export interface OurStory {
   text: string;
+  title?: string;
+  subtitle?: string;
+  key_dates?: StoryKeyDate[];
   image_url?: string;
   image_shape?: 'circle' | 'heart' | 'square' | 'hexagon';
 }

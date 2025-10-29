@@ -4,7 +4,16 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '../../../contexts/AdminContext';
-import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, FAQLink } from '@/types/wedding';
+import type {
+  Wedding,
+  WeddingEvent,
+  RegistryItem,
+  FAQItem,
+  OurStory,
+  WeddingPartyMember,
+  FAQLink,
+  StoryKeyDate,
+} from '@/types/wedding';
 
 const normalizeFAQItem = (faq: Partial<FAQItem> = {}): FAQItem => {
   const links: FAQLink[] = Array.isArray(faq.links)
@@ -78,11 +87,29 @@ export default function WeddingDetailsPage() {
             background_style: "gradient",
             font_style: "elegant"
           },
-          our_story: wedding.our_story || {
-            text: "",
-            image_url: "",
-            image_shape: "circle"
-          },
+          our_story: wedding.our_story
+            ? {
+                ...wedding.our_story,
+                title: wedding.our_story.title || '',
+                subtitle: wedding.our_story.subtitle || '',
+                key_dates: Array.isArray(wedding.our_story.key_dates)
+                  ? wedding.our_story.key_dates
+                      .filter((item): item is StoryKeyDate => Boolean(item))
+                      .map((item) => ({
+                        date: item.date || '',
+                        title: item.title || '',
+                        description: item.description || '',
+                      }))
+                  : [],
+              }
+            : {
+                text: "",
+                title: "",
+                subtitle: "",
+                key_dates: [],
+                image_url: "",
+                image_shape: "circle",
+              },
           wedding_party: wedding.wedding_party || []
         });
       } else {
@@ -125,6 +152,34 @@ export default function WeddingDetailsPage() {
             image_urls: sanitizedImages,
           };
         }),
+        our_story: (() => {
+          if (!wedding.our_story) return undefined;
+
+          const sanitizedStory = {
+            ...wedding.our_story,
+            text: wedding.our_story.text?.trim?.() ?? '',
+            title: wedding.our_story.title?.trim?.() || undefined,
+            subtitle: wedding.our_story.subtitle?.trim?.() || undefined,
+            image_url: wedding.our_story.image_url?.trim?.() || undefined,
+            key_dates: (wedding.our_story.key_dates || [])
+              .map((date) => ({
+                date: date?.date?.trim?.() ?? '',
+                title: date?.title?.trim?.() || undefined,
+                description: date?.description?.trim?.() || undefined,
+              }))
+              .filter((date) => date.date),
+          };
+
+          const hasStoryContent = Boolean(
+            sanitizedStory.text ||
+              sanitizedStory.title ||
+              sanitizedStory.subtitle ||
+              sanitizedStory.image_url ||
+              (sanitizedStory.key_dates && sanitizedStory.key_dates.length > 0)
+          );
+
+          return hasStoryContent ? sanitizedStory : undefined;
+        })(),
       };
 
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -146,12 +201,81 @@ export default function WeddingDetailsPage() {
       setWedding({
         ...sanitizedWedding,
         faqs: normalizeFAQs(sanitizedWedding.faqs || []),
+        our_story: sanitizedWedding.our_story
+          ? {
+              ...sanitizedWedding.our_story,
+              title: sanitizedWedding.our_story.title || '',
+              subtitle: sanitizedWedding.our_story.subtitle || '',
+              key_dates: sanitizedWedding.our_story.key_dates || [],
+            }
+          : getDefaultStory(),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
       setSaving(false);
     }
+  };
+
+  const getDefaultStory = (): OurStory => ({
+    text: '',
+    title: '',
+    subtitle: '',
+    key_dates: [],
+    image_url: '',
+    image_shape: 'circle',
+  });
+
+  const updateStory = (story: OurStory) => {
+    if (!wedding) return;
+    setWedding({
+      ...wedding,
+      our_story: story,
+    });
+  };
+
+  const setStoryField = <K extends keyof OurStory>(field: K, value: OurStory[K]) => {
+    if (!wedding) return;
+    const currentStory = wedding.our_story ? { ...getDefaultStory(), ...wedding.our_story } : getDefaultStory();
+    updateStory({
+      ...currentStory,
+      [field]: value,
+    });
+  };
+
+  const updateKeyDate = (index: number, field: keyof StoryKeyDate, value: string) => {
+    if (!wedding) return;
+    const currentStory = wedding.our_story ? { ...getDefaultStory(), ...wedding.our_story } : getDefaultStory();
+    const keyDates = [...(currentStory.key_dates || [])];
+    const existing = keyDates[index] || { date: '', title: '', description: '' };
+    keyDates[index] = {
+      ...existing,
+      [field]: value,
+    } as StoryKeyDate;
+    updateStory({
+      ...currentStory,
+      key_dates: keyDates,
+    });
+  };
+
+  const addKeyDate = () => {
+    if (!wedding) return;
+    const currentStory = wedding.our_story ? { ...getDefaultStory(), ...wedding.our_story } : getDefaultStory();
+    updateStory({
+      ...currentStory,
+      key_dates: [...(currentStory.key_dates || []), { date: '', title: '', description: '' }],
+    });
+  };
+
+  const removeKeyDate = (index: number) => {
+    if (!wedding) return;
+    const currentStory = wedding.our_story ? { ...getDefaultStory(), ...wedding.our_story } : getDefaultStory();
+    const keyDates = [...(currentStory.key_dates || [])];
+    keyDates.splice(index, 1);
+    updateStory({
+      ...currentStory,
+      key_dates: keyDates,
+    });
   };
 
   // Event management functions
@@ -1051,34 +1175,51 @@ export default function WeddingDetailsPage() {
                 {/* Our Story Section */}
                 <div className="border border-gray-200 rounded-lg p-6">
                   <h3 className="text-lg font-semibold mb-4">Our Story</h3>
-                  
-                  <div className="space-y-4">
+
+                  <div className="space-y-6">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Story Title</label>
+                        <input
+                          type="text"
+                          value={wedding.our_story?.title || ''}
+                          onChange={(e) => setStoryField('title', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          placeholder="e.g., Our Journey to Forever"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Story Subtitle</label>
+                        <input
+                          type="text"
+                          value={wedding.our_story?.subtitle || ''}
+                          onChange={(e) => setStoryField('subtitle', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          placeholder="e.g., A tale of serendipity and devotion"
+                        />
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Story Text
                       </label>
                       <textarea
                         value={wedding.our_story?.text || ''}
-                        onChange={(e) => setWedding({
-                          ...wedding,
-                          our_story: { ...wedding.our_story!, text: e.target.value }
-                        })}
+                        onChange={(e) => setStoryField('text', e.target.value)}
                         rows={6}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
                         placeholder="Tell your love story..."
                       />
                     </div>
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Image Shape
                       </label>
                       <select
                         value={wedding.our_story?.image_shape || 'circle'}
-                        onChange={(e) => setWedding({
-                          ...wedding,
-                          our_story: { ...wedding.our_story!, image_shape: e.target.value as any }
-                        })}
+                        onChange={(e) => setStoryField('image_shape', e.target.value as OurStory['image_shape'])}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       >
                         <option value="circle">Circle</option>
@@ -1098,17 +1239,84 @@ export default function WeddingDetailsPage() {
                       <input
                         type="text"
                         value={wedding.our_story?.image_url || ''}
-                        onChange={(e) => setWedding({
-                          ...wedding,
-                          our_story: { ...wedding.our_story!, image_url: e.target.value }
-                        })}
+                        onChange={(e) => setStoryField('image_url', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         placeholder="our-story/wedding-slug/image.jpg"
                       />
                     </div>
+
+                    <div className="border-t border-gray-200 pt-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-base font-semibold text-gray-700">Key Dates Timeline</h4>
+                        <button
+                          type="button"
+                          onClick={addKeyDate}
+                          className="px-3 py-1.5 text-sm font-medium text-white bg-wedding-rose rounded-md hover:bg-wedding-navy transition"
+                        >
+                          Add Key Date
+                        </button>
+                      </div>
+
+                      {(!wedding.our_story?.key_dates || wedding.our_story.key_dates.length === 0) && (
+                        <p className="text-sm text-gray-500">
+                          Create milestone cards to celebrate everything from your first date to the proposal.
+                        </p>
+                      )}
+
+                      <div className="space-y-4">
+                        {wedding.our_story?.key_dates?.map((keyDate, index) => (
+                          <div key={index} className="grid gap-3 rounded-lg border border-gray-200 p-4 md:grid-cols-12 md:items-end">
+                            <div className="md:col-span-3">
+                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                                Date
+                              </label>
+                              <input
+                                type="date"
+                                value={keyDate.date || ''}
+                                onChange={(e) => updateKeyDate(index, 'date', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              />
+                            </div>
+                            <div className="md:col-span-4">
+                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                                Title
+                              </label>
+                              <input
+                                type="text"
+                                value={keyDate.title || ''}
+                                onChange={(e) => updateKeyDate(index, 'title', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                placeholder="e.g., First Date"
+                              />
+                            </div>
+                            <div className="md:col-span-5">
+                              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                                Description
+                              </label>
+                              <textarea
+                                value={keyDate.description || ''}
+                                onChange={(e) => updateKeyDate(index, 'description', e.target.value)}
+                                rows={2}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+                                placeholder="Add a note"
+                              />
+                            </div>
+                            <div className="md:col-span-12 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => removeKeyDate(index)}
+                                className="text-sm text-red-500 hover:text-red-600"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                
+
                 {/* Wedding Party Section */}
                 <div className="border border-gray-200 rounded-lg p-6">
                   <div className="flex justify-between items-center mb-4">
