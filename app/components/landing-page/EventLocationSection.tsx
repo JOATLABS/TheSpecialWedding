@@ -3,8 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wedding, WeddingEvent } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { useMapEmbed } from '@/hooks/useMapEmbed';
-import { openLocationInMaps } from '@/lib/maps';
+import { fetchMapEmbedUrl, openLocationInMaps } from '@/lib/maps';
 
 interface EventLocationSectionProps {
   wedding: Wedding;
@@ -13,6 +12,9 @@ interface EventLocationSectionProps {
 export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedding }) => {
   const [selectedEventType, setSelectedEventType] = useState<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapUrl, setMapUrl] = useState('');
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   // Get events with location details
   const eventsWithLocation = useMemo(() => {
@@ -34,7 +36,50 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
   const selectedEvent = eventsWithLocation.find(e => e.type === selectedEventType);
 
   const location = selectedEvent?.details?.location;
-  const { mapUrl, loading: mapLoading, error: mapError } = useMapEmbed(location);
+
+  useEffect(() => {
+    let ignore = false;
+
+    const loadMap = async () => {
+      const normalizedLocation = location?.trim();
+
+      if (!normalizedLocation) {
+        if (!ignore) {
+          setMapUrl('');
+          setMapError(null);
+          setMapLoading(false);
+        }
+        return;
+      }
+
+      setMapLoading(true);
+      setMapError(null);
+
+      try {
+        const embedUrl = await fetchMapEmbedUrl(normalizedLocation);
+        if (!ignore) {
+          setMapUrl(embedUrl);
+          setMapError(null);
+        }
+      } catch (error) {
+        console.error('Failed to load event map', error);
+        if (!ignore) {
+          setMapUrl('');
+          setMapError(error instanceof Error ? error.message : 'Failed to load map');
+        }
+      } finally {
+        if (!ignore) {
+          setMapLoading(false);
+        }
+      }
+    };
+
+    loadMap();
+
+    return () => {
+      ignore = true;
+    };
+  }, [location]);
 
   useEffect(() => {
     setMapLoaded(false);

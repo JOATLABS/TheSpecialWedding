@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ThemeConfig } from '@/types/wedding';
-import { useMapEmbed } from '@/hooks/useMapEmbed';
-import { openLocationInMaps } from '@/lib/maps';
+import { fetchMapEmbedUrl, openLocationInMaps } from '@/lib/maps';
 
 interface FAQLocationMapProps {
   address: string;
@@ -12,12 +11,56 @@ interface FAQLocationMapProps {
 
 export const FAQLocationMap: React.FC<FAQLocationMapProps> = ({ address, theme }) => {
   const trimmedAddress = address.trim();
-  const { mapUrl, loading, error } = useMapEmbed(trimmedAddress);
+  const [mapUrl, setMapUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
 
   useEffect(() => {
     setMapLoaded(false);
   }, [trimmedAddress, mapUrl]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    const loadMap = async () => {
+      if (!trimmedAddress) {
+        if (!ignore) {
+          setMapUrl('');
+          setError(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const embedUrl = await fetchMapEmbedUrl(trimmedAddress);
+        if (!ignore) {
+          setMapUrl(embedUrl);
+          setError(null);
+        }
+      } catch (err) {
+        console.error('Failed to load FAQ map', err);
+        if (!ignore) {
+          setMapUrl('');
+          setError(err instanceof Error ? err.message : 'Failed to load map');
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadMap();
+
+    return () => {
+      ignore = true;
+    };
+  }, [trimmedAddress]);
 
   if (!trimmedAddress) {
     return null;

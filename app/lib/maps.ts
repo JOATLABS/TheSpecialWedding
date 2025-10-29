@@ -1,5 +1,7 @@
 'use client';
 
+const normalizeLocation = (location: string) => location.trim();
+
 export const getGoogleMapsUrl = (location: string) => {
   const encoded = encodeURIComponent(location);
   return `https://www.google.com/maps/search/?api=1&query=${encoded}`;
@@ -20,4 +22,27 @@ export const openLocationInMaps = (location: string) => {
   } else {
     window.open(getGoogleMapsUrl(location), '_blank');
   }
+};
+
+export const fetchMapEmbedUrl = async (rawLocation: string): Promise<string> => {
+  const normalizedLocation = normalizeLocation(rawLocation);
+
+  if (!normalizedLocation) {
+    return '';
+  }
+
+  const response = await fetch(`/api/maps?location=${encodeURIComponent(normalizedLocation)}`);
+
+  if (!response.ok) {
+    throw new Error('Failed to load map');
+  }
+
+  const data = await response.json();
+  const embedUrl = typeof data.embedUrl === 'string' ? data.embedUrl : '';
+
+  if (!embedUrl) {
+    throw new Error('Map unavailable for this location');
+  }
+
+  return embedUrl;
 };
