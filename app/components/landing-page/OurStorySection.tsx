@@ -15,10 +15,14 @@ const getMemberInitials = (name?: string) => {
 
   if (words.length === 0) return '';
 
-  return words
-    .slice(0, 2)
-    .map((word) => word.charAt(0).toUpperCase())
-    .join('');
+  if (words.length === 1) {
+    return words[0].charAt(0).toUpperCase();
+  }
+
+  const [firstWord] = words;
+  const lastWord = words[words.length - 1];
+
+  return `${firstWord.charAt(0)}${lastWord.charAt(0)}`.toUpperCase();
 };
 
 interface OurStorySectionProps {
