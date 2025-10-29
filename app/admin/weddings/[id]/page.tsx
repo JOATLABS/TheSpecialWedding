@@ -5,19 +5,18 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '../../../contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, FAQLink } from '@/types/wedding';
-
-const stripWrappingQuotes = (value: string) => value.replace(/^['"]+|['"]+$/g, '');
+import { cleanUrlLikeInput, tryParseHttpUrl } from '@/lib/url';
 
 const normalizeFAQItem = (faq: Partial<FAQItem> = {}): FAQItem => {
   const links: FAQLink[] = Array.isArray(faq.links)
     ? faq.links.map((link) => ({
         label: link?.label?.toString?.().trim?.() ?? '',
-        url: stripWrappingQuotes(link?.url?.toString?.().trim?.() ?? ''),
+        url: cleanUrlLikeInput(link?.url),
       }))
     : [];
 
   const imageUrls = Array.isArray(faq.image_urls)
-    ? faq.image_urls.map((imageUrl) => imageUrl?.toString?.().trim?.() ?? '')
+    ? faq.image_urls.map((imageUrl) => cleanUrlLikeInput(imageUrl))
     : [];
 
   const question = typeof faq.question === 'string' ? faq.question : '';
@@ -112,30 +111,19 @@ export default function WeddingDetailsPage() {
           const sanitizedLinks = (faq.links || [])
             .map((link) => {
               const label = link?.label?.toString?.().trim?.() ?? '';
-              const rawUrl = link?.url?.toString?.().trim?.() ?? '';
-              const cleanedUrl = stripWrappingQuotes(rawUrl);
+              const parsedUrl = tryParseHttpUrl(link?.url);
 
-              if (!label || !cleanedUrl) {
+              if (!label || !parsedUrl) {
                 return null;
               }
 
-              try {
-                const parsed = new URL(cleanedUrl);
-                if (!['http:', 'https:'].includes(parsed.protocol)) {
-                  return null;
-                }
-
-                return { label, url: parsed.toString() };
-              } catch (error) {
-                console.warn('Skipping invalid FAQ link URL', cleanedUrl, error);
-                return null;
-              }
+              return { label, url: parsedUrl };
             })
             .filter((link): link is FAQLink => Boolean(link));
 
           const sanitizedImages = (faq.image_urls || [])
-            .map((imageUrl) => stripWrappingQuotes(imageUrl?.toString?.().trim?.() ?? ''))
-            .filter((imageUrl) => imageUrl.length > 0);
+            .map((imageUrl) => tryParseHttpUrl(imageUrl))
+            .filter((imageUrl): imageUrl is string => Boolean(imageUrl));
 
           const addressInput = typeof faq.address === 'string' ? faq.address.trim() : '';
           const question = faq.question?.toString?.().trim?.() ?? '';

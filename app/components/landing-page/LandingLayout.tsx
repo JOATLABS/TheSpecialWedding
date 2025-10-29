@@ -15,6 +15,7 @@ import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
 import { FAQLocationMap } from '@/components/landing-page/FAQLocationMap';
+import { tryParseHttpUrl } from '@/lib/url';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   const theme = useTheme(wedding);
@@ -182,9 +183,22 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <div className="space-y-8">
               {wedding.faqs && wedding.faqs.length > 0 ? (
                 wedding.faqs.map((faq, index) => {
-                  const links = (faq.links || []).filter((link) => link.label && link.url);
+                  const links = (faq.links || [])
+                    .map((link) => {
+                      const parsedUrl = tryParseHttpUrl(link.url);
+                      const label = link.label?.toString?.().trim?.() ?? '';
+
+                      if (!label || !parsedUrl) {
+                        return null;
+                      }
+
+                      return { label, url: parsedUrl };
+                    })
+                    .filter((link): link is { label: string; url: string } => Boolean(link));
                   const hasAddress = typeof faq.address === 'string' && faq.address.trim().length > 0;
-                  const imageUrls = (faq.image_urls || []).filter((imageUrl) => imageUrl);
+                  const imageUrls = (faq.image_urls || [])
+                    .map((imageUrl) => tryParseHttpUrl(imageUrl))
+                    .filter((imageUrl): imageUrl is string => Boolean(imageUrl));
 
                   return (
                     <div key={index} className="bg-gray-50 p-6 rounded-lg space-y-4">
