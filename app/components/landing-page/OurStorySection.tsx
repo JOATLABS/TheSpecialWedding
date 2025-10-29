@@ -1,9 +1,25 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { Wedding } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
-import Image from 'next/image';
+
+const getMemberInitials = (name?: string) => {
+  if (!name) return '';
+
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) return '';
+
+  return words
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join('');
+};
 
 interface OurStorySectionProps {
   wedding: Wedding;
@@ -11,7 +27,7 @@ interface OurStorySectionProps {
 
 export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => {
   const theme = wedding.theme_config;
-  
+
   if (!wedding.our_story && (!wedding.wedding_party || wedding.wedding_party.length === 0)) {
     return null;
   }
@@ -79,13 +95,22 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             
             <div className="flex flex-col items-center">
               {wedding.our_story.image_url && (
-                <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
-                  <img
-                    src={wedding.our_story.image_url.startsWith('http') 
-                      ? wedding.our_story.image_url 
-                      : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`}
+                <div
+                  className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(
+                    wedding.our_story.image_shape
+                  )}`}
+                >
+                  <Image
+                    src={
+                      wedding.our_story.image_url.startsWith('http')
+                        ? wedding.our_story.image_url
+                        : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`
+                    }
                     alt="Couple"
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="192px"
+                    className="object-cover"
+                    priority
                   />
                 </div>
               )}
@@ -114,17 +139,27 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                   <div className="flex flex-wrap justify-center gap-6">
                     {bridesSide.map((member) => (
                       <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
+                        <div className="relative w-24 h-24 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 sm:w-28 sm:h-28">
                           {member.image_url ? (
-                            <img
+                            <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
-                              className="w-full h-full object-cover"
+                              fill
+                              sizes="(min-width: 640px) 112px, 96px"
+                              className="object-cover"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
-                              <span className="text-3xl font-bold" style={{ color: theme?.accent_color || '#c8847e' }}>
-                                {member.name.charAt(0)}
+                            <div
+                              className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20"
+                              role="img"
+                              aria-label={`${member.name} initials`}
+                            >
+                              <span
+                                className="text-2xl font-bold sm:text-3xl"
+                                style={{ color: theme?.accent_color || '#c8847e' }}
+                                aria-hidden="true"
+                              >
+                                {getMemberInitials(member.name)}
                               </span>
                             </div>
                           )}
@@ -146,17 +181,27 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                   <div className="flex flex-wrap justify-center gap-6">
                     {groomsSide.map((member) => (
                       <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
+                        <div className="relative w-24 h-24 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 sm:w-28 sm:h-28">
                           {member.image_url ? (
-                            <img
+                            <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
-                              className="w-full h-full object-cover"
+                              fill
+                              sizes="(min-width: 640px) 112px, 96px"
+                              className="object-cover"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
-                              <span className="text-3xl font-bold" style={{ color: theme?.primary_color || '#1e3a5f' }}>
-                                {member.name.charAt(0)}
+                            <div
+                              className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20"
+                              role="img"
+                              aria-label={`${member.name} initials`}
+                            >
+                              <span
+                                className="text-2xl font-bold sm:text-3xl"
+                                style={{ color: theme?.primary_color || '#1e3a5f' }}
+                                aria-hidden="true"
+                              >
+                                {getMemberInitials(member.name)}
                               </span>
                             </div>
                           )}
