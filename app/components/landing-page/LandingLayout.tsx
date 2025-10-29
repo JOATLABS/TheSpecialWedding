@@ -14,6 +14,7 @@ import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
+import { FAQLocationMap } from '@/components/landing-page/FAQLocationMap';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   const theme = useTheme(wedding);
@@ -180,12 +181,61 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Frequently Asked Questions</h2>
             <div className="space-y-8">
               {wedding.faqs && wedding.faqs.length > 0 ? (
-                wedding.faqs.map((faq, index) => (
-                  <div key={index} className="bg-gray-50 p-6 rounded-lg">
-                    <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
-                    <p className="text-gray-700">{faq.answer}</p>
-                  </div>
-                ))
+                wedding.faqs.map((faq, index) => {
+                  const links = (faq.links || []).filter((link) => link.label && link.url);
+                  const hasAddress = typeof faq.address === 'string' && faq.address.trim().length > 0;
+                  const imageUrls = (faq.image_urls || []).filter((imageUrl) => imageUrl);
+
+                  return (
+                    <div key={index} className="bg-gray-50 p-6 rounded-lg space-y-4">
+                      <div>
+                        <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
+                        <p className="text-gray-700 whitespace-pre-line">{faq.answer}</p>
+                      </div>
+
+                      {hasAddress && (
+                        <FAQLocationMap address={faq.address!} theme={wedding.theme_config} />
+                      )}
+
+                      {links.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Helpful Links</p>
+                          <div className="flex flex-wrap gap-3">
+                            {links.map((link, linkIndex) => (
+                              <a
+                                key={`${link.url}-${linkIndex}`}
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90 transition-colors"
+                              >
+                                <span>{link.label}</span>
+                                <span aria-hidden="true">↗</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {imageUrls.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Gallery</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {imageUrls.map((imageUrl, imageIndex) => (
+                              <div key={`${imageUrl}-${imageIndex}`} className="overflow-hidden rounded-lg border border-gray-200">
+                                <img
+                                  src={imageUrl}
+                                  alt={`${faq.question} - supporting image ${imageIndex + 1}`}
+                                  className="w-full h-48 object-cover"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               ) : (
                 [
                   {
