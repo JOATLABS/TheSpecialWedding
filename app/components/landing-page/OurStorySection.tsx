@@ -141,9 +141,17 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                     Bride's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
-                    {bridesSide.map((member) => (
-                      <div key={member.id} className="text-center">
-                        <div className="relative w-24 h-24 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 sm:w-28 sm:h-28">
+                    {bridesSide.map((member) => {
+                      const hasImage = Boolean(member.image_url);
+                      return (
+                        <div key={member.id} className="text-center">
+                          <div
+                            className={`relative mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 ${
+                              hasImage
+                                ? 'w-24 h-24 sm:w-28 sm:h-28'
+                                : 'w-20 h-20 sm:w-24 sm:h-24'
+                            }`}
+                          >
                           {member.image_url ? (
                             <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
@@ -159,7 +167,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                               aria-label={`${member.name} initials`}
                             >
                               <span
-                                className="text-2xl font-bold sm:text-3xl"
+                                className="text-xl font-bold sm:text-2xl"
                                 style={{ color: theme?.accent_color || '#c8847e' }}
                                 aria-hidden="true"
                               >
@@ -170,8 +178,9 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                         </div>
                         <h4 className="font-semibold text-gray-800">{member.name}</h4>
                         <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -183,9 +192,17 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                     Groom's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
-                    {groomsSide.map((member) => (
-                      <div key={member.id} className="text-center">
-                        <div className="relative w-24 h-24 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 sm:w-28 sm:h-28">
+                    {groomsSide.map((member) => {
+                      const hasImage = Boolean(member.image_url);
+                      return (
+                        <div key={member.id} className="text-center">
+                          <div
+                            className={`relative mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 ${
+                              hasImage
+                                ? 'w-24 h-24 sm:w-28 sm:h-28'
+                                : 'w-20 h-20 sm:w-24 sm:h-24'
+                            }`}
+                          >
                           {member.image_url ? (
                             <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
@@ -201,7 +218,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                               aria-label={`${member.name} initials`}
                             >
                               <span
-                                className="text-2xl font-bold sm:text-3xl"
+                                className="text-xl font-bold sm:text-2xl"
                                 style={{ color: theme?.primary_color || '#1e3a5f' }}
                                 aria-hidden="true"
                               >
@@ -212,8 +229,9 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                         </div>
                         <h4 className="font-semibold text-gray-800">{member.name}</h4>
                         <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
