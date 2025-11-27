@@ -6,9 +6,9 @@ class GuestService:
     def __init__(self):
         self.collection = mongo.get_guest_collection()
 
-    def get_guest_by_token(self, token: str, wedding_id: str):
+    async def get_guest_by_token(self, token: str, wedding_id: str):
         try:
-            guest = self.collection.find_one({"token": token, "wedding_id": wedding_id})
+            guest = await self.collection.find_one({"token": token, "wedding_id": wedding_id})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
             guest["id"] = str(guest["_id"])
@@ -17,13 +17,13 @@ class GuestService:
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
     
-    def update_guest_timestamps(self, guest_id, created=False):
+    async def update_guest_timestamps(self, guest_id, created=False):
         """Update guest timestamps"""
         update_data = {"updated_at": datetime.utcnow()}
         if created:
             update_data["created_at"] = datetime.utcnow()
         
-        self.collection.update_one(
+        await self.collection.update_one(
             {"_id": guest_id},
             {"$set": update_data}
         )
@@ -38,7 +38,7 @@ class GuestService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")
     
-    def update_guest(self, guest_id: str, update_data: dict):
+    async def update_guest(self, guest_id: str, update_data: dict):
         try:
             from bson import ObjectId
             
@@ -51,7 +51,7 @@ class GuestService:
             # Add timestamp
             update_data["updated_at"] = datetime.utcnow()
             
-            result = self.collection.update_one(
+            result = await self.collection.update_one(
                 {"_id": ObjectId(guest_id)},
                 {"$set": update_data}
             )
@@ -60,7 +60,7 @@ class GuestService:
                 raise HTTPException(status_code=404, detail="Guest not found")
                 
             # Return updated guest
-            updated_guest = self.collection.find_one({"_id": ObjectId(guest_id)})
+            updated_guest = await self.collection.find_one({"_id": ObjectId(guest_id)})
             updated_guest["id"] = str(updated_guest["_id"])
             updated_guest.pop("_id", None)
             
@@ -68,7 +68,7 @@ class GuestService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating guest: {str(e)}")
     
-    def delete_guest(self, guest_id: str):
+    async def delete_guest(self, guest_id: str):
         try:
             from bson import ObjectId
             
@@ -77,7 +77,7 @@ class GuestService:
             guest_id_str = str(guest_obj_id)
             
             # Check if guest exists
-            guest = self.collection.find_one({"_id": guest_obj_id})
+            guest = await self.collection.find_one({"_id": guest_obj_id})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
             
@@ -86,7 +86,7 @@ class GuestService:
             plus_one_collection = mongo.db["plus_ones"]
             
             # Delete associated RSVPs (handle both ObjectId and string formats)
-            rsvp_result = rsvp_collection.delete_many({
+            rsvp_result = await rsvp_collection.delete_many({
                 "$or": [
                     {"guest_id": guest_obj_id},
                     {"guest_id": guest_id_str}
@@ -94,7 +94,7 @@ class GuestService:
             })
             
             # Delete associated plus-ones (typically stored with string guest_id)
-            plus_one_result = plus_one_collection.delete_many({
+            plus_one_result = await plus_one_collection.delete_many({
                 "$or": [
                     {"guest_id": guest_obj_id},
                     {"guest_id": guest_id_str}
@@ -102,7 +102,7 @@ class GuestService:
             })
             
             # Delete the guest
-            guest_result = self.collection.delete_one({"_id": guest_obj_id})
+            guest_result = await self.collection.delete_one({"_id": guest_obj_id})
             
             return {
                 "message": "Guest and associated data deleted successfully",
@@ -117,7 +117,7 @@ class GuestService:
 
     from typing import Optional
 
-    def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None):
+    async def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None):
         try:
             query = {}
             if phone:
@@ -127,7 +127,7 @@ class GuestService:
             if not query:
                 raise HTTPException(status_code=400, detail="Must provide phone or name to search")
 
-            guest = self.collection.find_one(query)
+            guest = await self.collection.find_one(query)
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
             guest["id"] = str(guest["_id"])
@@ -151,7 +151,7 @@ class GuestService:
 
 #     def get_guest_by_token(self, token: str):
 #         try:
-#             guest = self.collection.find_one({"token": token})
+#             guest = await self.collection.find_one({"token": token})
 #             if not guest:
 #                 raise HTTPException(status_code=404, detail="Guest not found")
 #             guest["id"] = str(guest["_id"])
@@ -170,7 +170,7 @@ class GuestService:
 #             if not query:
 #                 raise HTTPException(status_code=400, detail="Must provide phone or name to search")
 
-#             guest = self.collection.find_one(query)
+#             guest = await self.collection.find_one(query)
 #             if not guest:
 #                 raise HTTPException(status_code=404, detail="Guest not found")
 #             guest["id"] = str(guest["_id"])
@@ -185,7 +185,7 @@ class GuestService:
 #         """
 #         try:
 #             # Get the guest
-#             guest = self.collection.find_one({"token": token})
+#             guest = await self.collection.find_one({"token": token})
 #             if not guest:
 #                 raise HTTPException(status_code=404, detail="Guest not found")
 
@@ -207,7 +207,7 @@ class GuestService:
 #             plus_one_data = plus_one.model_dump()
 
 #             # Add the plus-one
-#             result = self.collection.update_one(
+#             result = await self.collection.update_one(
 #                 {"token": token},
 #                 {"$push": {"plus_ones": plus_one_data}}
 #             )
@@ -216,7 +216,7 @@ class GuestService:
 #                 raise HTTPException(status_code=500, detail="Failed to add plus one")
 
 #             # Return the updated guest
-#             updated_guest = self.collection.find_one({"token": token})
+#             updated_guest = await self.collection.find_one({"token": token})
 #             updated_guest["id"] = str(updated_guest["_id"])
 #             updated_guest.pop("_id", None)
 
@@ -233,7 +233,7 @@ class GuestService:
 #         """
 #         try:
 #             # Get the guest
-#             guest = self.collection.find_one({"token": token})
+#             guest = await self.collection.find_one({"token": token})
 #             if not guest:
 #                 raise HTTPException(status_code=404, detail="Guest not found")
 
@@ -247,7 +247,7 @@ class GuestService:
 #             update_filter = {f"plus_ones.{plus_one_index}": 1}
 
 #             # Remove the plus-one
-#             result = self.collection.update_one(
+#             result = await self.collection.update_one(
 #                 {"token": token},
 #                 {"$unset": update_filter}
 #             )
@@ -256,13 +256,13 @@ class GuestService:
 #                 raise HTTPException(status_code=500, detail="Failed to remove plus one")
 
 #             # Remove null elements from the array
-#             self.collection.update_one(
+#             await self.collection.update_one(
 #                 {"token": token},
 #                 {"$pull": {"plus_ones": None}}
 #             )
 
 #             # Return the updated guest
-#             updated_guest = self.collection.find_one({"token": token})
+#             updated_guest = await self.collection.find_one({"token": token})
 #             updated_guest["id"] = str(updated_guest["_id"])
 #             updated_guest.pop("_id", None)
 
@@ -279,7 +279,7 @@ class GuestService:
 #         """
 #         try:
 #             # Get the guest
-#             guest = self.collection.find_one({"token": token})
+#             guest = await self.collection.find_one({"token": token})
 #             if not guest:
 #                 raise HTTPException(status_code=404, detail="Guest not found")
 
@@ -295,7 +295,7 @@ class GuestService:
 #             update_filter = {f"plus_ones.{plus_one_index}": plus_one_data}
 
 #             # Update the plus-one
-#             result = self.collection.update_one(
+#             result = await self.collection.update_one(
 #                 {"token": token},
 #                 {"$set": update_filter}
 #             )
@@ -304,7 +304,7 @@ class GuestService:
 #                 raise HTTPException(status_code=500, detail="Failed to update plus one")
 
 #             # Return the updated guest
-#             updated_guest = self.collection.find_one({"token": token})
+#             updated_guest = await self.collection.find_one({"token": token})
 #             updated_guest["id"] = str(updated_guest["_id"])
 #             updated_guest.pop("_id", None)
 
