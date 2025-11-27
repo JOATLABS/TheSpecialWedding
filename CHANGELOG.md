@@ -65,7 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### How to Read This Changelog
 - **Added** for new features
+<<<<<<< HEAD
 - **Changed** for changes in existing functionality
+=======
+- **Changed** for changes in existing functionality  
+>>>>>>> development/saas-features
 - **Deprecated** for soon-to-be removed features
 - **Removed** for now removed features
 - **Fixed** for any bug fixes
@@ -74,5 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Versioning
 This project follows [Semantic Versioning](https://semver.org/):
 - MAJOR version for incompatible API changes
+<<<<<<< HEAD
 - MINOR version for backwards-compatible functionality additions
+=======
+- MINOR version for backwards-compatible functionality additions  
+>>>>>>> development/saas-features
 - PATCH version for backwards-compatible bug fixes

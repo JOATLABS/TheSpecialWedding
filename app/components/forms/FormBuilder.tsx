@@ -225,7 +225,6 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  </Draggable>
  ))}
  {provided.placeholder}
-
  {/* Empty State */}
  {form.fields.length === 0 && (
  <div className="text-center py-12 text-gray-500">
@@ -289,7 +288,6 @@ const SettingsPanel: React.FC<{
  return (
  <div className="space-y-6">
  <h3 className="text-sm font-medium text-gray-900">Form Settings</h3>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Form Title
@@ -402,7 +400,6 @@ const FieldRenderer: React.FC<{
  {field.description && (
  <p className="text-sm text-gray-500">{field.description}</p>
  )}
-
  {/* Simplified field preview */}
  <div className="mt-2">
  {field.type === 'textarea' && (

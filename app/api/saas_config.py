@@ -206,7 +206,6 @@ def update_saas_config(
         config_data["type"] = "main_config"
         config_data["updated_by"] = current_user.email
         config_data["updated_at"] = datetime.utcnow()
-
         # Update or insert configuration
         result = mongo.db["saas_config"].update_one(
             {"type": "main_config"},
@@ -277,7 +276,6 @@ def update_content_section(
         # Add metadata
         section_data["updated_by"] = current_user.email
         section_data["updated_at"] = datetime.utcnow()
-
         # Update section
         result = mongo.db["content_sections"].update_one(
             {"section": section_id},
@@ -298,17 +296,14 @@ def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_root_a
     try:
         # Get users with wedding_planner role
         planners = list(mongo.get_users_collection().find({"role": "wedding_planner"}))
-
         # Convert ObjectId to string and format data
         formatted_planners = []
         for planner in planners:
             planner["_id"] = str(planner["_id"])
-
             # Get assigned weddings count
             weddings_count = mongo.get_weddings_collection().count_documents({
                 "assigned_planner_email": planner["email"]
             })
-
             formatted_planner = {
                 "id": planner["_id"],
                 "email": planner["email"],
@@ -338,12 +333,10 @@ def create_wedding_planner(
         # Validate required fields
         if not planner_data.get("email"):
             raise HTTPException(status_code=400, detail="Email is required")
-
         # Check if user already exists
         existing_user = mongo.get_users_collection().find_one({"email": planner_data["email"]})
         if existing_user:
             raise HTTPException(status_code=400, detail="User with this email already exists")
-
         # Create user document
         user_doc = {
             "email": planner_data["email"],
@@ -363,7 +356,6 @@ def create_wedding_planner(
             "message": "Wedding planner created successfully",
             "user_id": str(result.inserted_id)
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -394,12 +386,10 @@ def toggle_planner_status(
                 }
             }
         )
-
         return {
             "message": f"Planner {'activated' if new_status else 'deactivated'} successfully",
             "new_status": new_status
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -454,12 +444,10 @@ def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root
             "subscription_status": {"$in": ["trial", "active"]},
             "is_active": True
         })
-
         for user in active_users:
             # Skip trial users for revenue calculation
             if user.get("subscription_status") == "trial":
                 continue
-
             plan_id = user.get("subscription_plan_id")
             if plan_id:
                 # Get the subscription plan
@@ -480,7 +468,6 @@ def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root
             "yearly_revenue": yearly_revenue,
             "projected_annual_revenue": projected_annual_revenue
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching overview analytics: {str(e)}")
 
@@ -501,7 +488,6 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
                 "subscription_status": "active",
                 "is_active": True
             })
-
             # Count trial users on this plan
             trial_users_count = mongo.get_users_collection().count_documents({
                 "subscription_plan_id": plan_id,
@@ -522,7 +508,6 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
                 "price_monthly": plan.get("price_monthly", 0),
                 "price_yearly": plan.get("price_yearly", 0)
             })
-
         # Calculate totals
         total_monthly_revenue = sum(plan["monthly_revenue"] for plan in plan_revenue)
         total_yearly_revenue = sum(plan["yearly_revenue"] for plan in plan_revenue)
@@ -546,7 +531,6 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
             "plan_breakdown": plan_revenue,
             "generated_at": datetime.utcnow().isoformat()
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")
 
@@ -591,7 +575,6 @@ def get_trial_settings():
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-
     except Exception as e:
         # Return defaults on error to prevent registration failures
         return {

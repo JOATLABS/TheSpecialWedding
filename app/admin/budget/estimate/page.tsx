@@ -47,7 +47,6 @@ export default function CostEstimationPage() {
   const { token } = useAdmin();
   const [loading, setLoading] = useState(false);
   const [estimation, setEstimation] = useState<CostEstimation | null>(null);
-
   // Form state
   const [formData, setFormData] = useState({
     wedding_type: 'traditional',
@@ -86,7 +85,6 @@ export default function CostEstimationPage() {
     } catch (err: any) {
       toast.error(err.message || 'Failed to generate cost estimation');
       console.error('Estimation error:', err);
-
       // Fallback estimation for demo purposes
       setEstimation({
         total_estimated_cost: formData.guest_count * 150 + Math.random() * 10000,
@@ -168,7 +166,6 @@ export default function CostEstimationPage() {
           <h2 className="text-xl font-semibold text-wedding-navy mb-4">
             Wedding Details
           </h2>
-
           <form onSubmit={handleEstimation} className="space-y-4">
             {/* Basic Details */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -188,7 +185,6 @@ export default function CostEstimationPage() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Guest Count
@@ -221,7 +217,6 @@ export default function CostEstimationPage() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Season
@@ -255,7 +250,6 @@ export default function CostEstimationPage() {
                   <option value="weekday">Weekday (Mon-Thu)</option>
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Venue Type
@@ -278,7 +272,6 @@ export default function CostEstimationPage() {
 
             {/* Service Details */}
             <h3 className="text-lg font-medium text-wedding-navy mt-6 mb-3">Service Preferences</h3>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -295,7 +288,6 @@ export default function CostEstimationPage() {
                   <option value="family_style">Family Style</option>
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Bar Service
@@ -330,7 +322,6 @@ export default function CostEstimationPage() {
                   <option value={12}>Full day (12+ hours)</option>
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Music/Entertainment
@@ -378,7 +369,6 @@ export default function CostEstimationPage() {
                   Ceremony and reception at same venue
                 </label>
               </div>
-
               <div className="flex items-center">
                 <input
                   type="checkbox"
@@ -391,7 +381,6 @@ export default function CostEstimationPage() {
                   Transportation needed for wedding party
                 </label>
               </div>
-
               <div className="flex items-center">
                 <input
                   type="checkbox"
@@ -434,7 +423,6 @@ export default function CostEstimationPage() {
                 <h2 className="text-xl font-semibold text-wedding-navy mb-4">
                   Estimated Wedding Cost
                 </h2>
-
                 <div className="text-center mb-4">
                   <div className="text-4xl font-bold text-wedding-rose mb-2">
                     {formatCurrency(estimation.total_estimated_cost)}
@@ -443,7 +431,6 @@ export default function CostEstimationPage() {
                     For {formData.guest_count} guests • {formData.wedding_type} wedding
                   </div>
                 </div>
-
                 <div className="flex items-center justify-center">
                   <span className={`px-3 py-1 rounded-full text-sm font-medium ${getConfidenceColor(estimation.confidence_level)}`}>
                     {estimation.confidence_level.charAt(0).toUpperCase() + estimation.confidence_level.slice(1)} Confidence
@@ -456,7 +443,6 @@ export default function CostEstimationPage() {
                 <h3 className="text-lg font-semibold text-wedding-navy mb-4">
                   Budget Breakdown by Category
                 </h3>
-
                 <div className="space-y-4">
                   {Object.entries(estimation.category_estimates).map(([category, details]) => (
                     <div key={category} className="border-b border-gray-100 pb-3 last:border-b-0">
@@ -474,7 +460,6 @@ export default function CostEstimationPage() {
                           </div>
                         </div>
                       </div>
-
                       {/* Progress bar */}
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
@@ -492,7 +477,6 @@ export default function CostEstimationPage() {
                 <h3 className="text-lg font-semibold text-wedding-navy mb-4">
                   Cost Saving Recommendations
                 </h3>
-
                 <div className="space-y-3">
                   {estimation.recommendations.map((recommendation, index) => (
                     <div key={index} className="flex items-start">
@@ -510,7 +494,6 @@ export default function CostEstimationPage() {
                 <h3 className="text-lg font-semibold text-wedding-navy mb-4">
                   Estimation Based On
                 </h3>
-
                 <div className="flex flex-wrap gap-2">
                   {estimation.factors_considered.map((factor, index) => (
                     <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">

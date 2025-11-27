@@ -41,7 +41,6 @@ export default function SupportPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-
       // Try to fetch from actual API endpoints, fall back to empty arrays
       try {
         // These endpoints would need to be created in the backend
@@ -71,7 +70,6 @@ export default function SupportPage() {
           satisfaction_score: 0
         });
       }
-
     } catch (error) {
       console.error('Error fetching support data:', error);
       setTickets([]);
@@ -232,7 +230,6 @@ export default function SupportPage() {
                 <option value="resolved">Resolved</option>
                 <option value="closed">Closed</option>
               </select>
-
               <select
                 value={priorityFilter}
                 onChange={(e) => setPriorityFilter(e.target.value)}
@@ -347,28 +344,23 @@ export default function SupportPage() {
       {activeTab === 'metrics' && metrics && (
         <div className="space-y-6">
           <h2 className="text-xl font-semibold text-wedding-navy">Support Performance</h2>
-
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <h3 className="text-sm font-medium text-gray-500">Total Tickets</h3>
               <p className="text-3xl font-bold text-wedding-navy">{metrics.total_tickets}</p>
             </div>
-
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <h3 className="text-sm font-medium text-gray-500">Open Tickets</h3>
               <p className="text-3xl font-bold text-blue-600">{metrics.open_tickets}</p>
             </div>
-
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <h3 className="text-sm font-medium text-gray-500">Resolved Today</h3>
               <p className="text-3xl font-bold text-green-600">{metrics.resolved_today}</p>
             </div>
-
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <h3 className="text-sm font-medium text-gray-500">Avg Response Time</h3>
               <p className="text-3xl font-bold text-yellow-600">{metrics.avg_response_time}h</p>
             </div>
-
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <h3 className="text-sm font-medium text-gray-500">Satisfaction Score</h3>
               <p className="text-3xl font-bold text-purple-600">{metrics.satisfaction_score}/5</p>
@@ -386,7 +378,6 @@ export default function SupportPage() {
               Create Article
             </button>
           </div>
-
           <div className="bg-white p-8 rounded-lg shadow-sm border text-center">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Knowledge Base Coming Soon</h3>
             <p className="text-gray-600">
@@ -403,7 +394,6 @@ export default function SupportPage() {
             <h2 className="text-xl font-semibold text-wedding-navy mb-4">
               Respond to Ticket: {selectedTicket.subject}
             </h2>
-
             <div className="mb-4 p-4 bg-gray-50 rounded-lg">
               <div className="flex justify-between items-start mb-2">
                 <span className="font-medium">{selectedTicket.user_name}</span>

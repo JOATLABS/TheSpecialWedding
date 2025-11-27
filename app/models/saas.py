@@ -15,7 +15,6 @@ class SubscriptionPlanModel(BaseModel):
     is_active: bool = Field(default=True, description="Whether plan is available for signup")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
     class Config:
         populate_by_name = True
 
@@ -28,7 +27,6 @@ class SaasContentModel(BaseModel):
     display_order: int = Field(default=0, description="Display order on page")
     updated_by: str = Field(..., description="Admin email who last updated")
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
     class Config:
         populate_by_name = True
 
@@ -41,7 +39,6 @@ class AIUsageModel(BaseModel):
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     request_data: Optional[Dict[str, Any]] = Field(None, description="Request metadata")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-
     class Config:
         populate_by_name = True
 
@@ -58,7 +55,6 @@ class VendorModel(BaseModel):
     is_active: bool = Field(default=True, description="Whether vendor account is active")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_login: Optional[datetime] = Field(None, description="Last login timestamp")
-
     class Config:
         populate_by_name = True
 
@@ -75,6 +71,5 @@ class WeddingChecklistModel(BaseModel):
     updated_by: Optional[str] = Field(None, description="Last updated by (email)")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
     class Config:
         populate_by_name = True

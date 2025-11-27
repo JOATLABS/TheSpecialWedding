@@ -10,7 +10,6 @@ class TrialExpirationService:
     def __init__(self):
         self.users_collection = mongo.db["users"]
         self.email_service = ResendEmailService()
-
     def get_trial_settings(self) -> dict:
         """Get trial settings from SAAS config"""
         try:
@@ -19,7 +18,6 @@ class TrialExpirationService:
                 return config["trial_settings"]
         except:
             pass
-
         # Return defaults if config not found
         return {
             "default_trial_days": 30,
@@ -27,7 +25,6 @@ class TrialExpirationService:
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-
     def check_and_expire_trials(self) -> dict:
         """Check for expired trials and deactivate accounts"""
         try:
@@ -45,7 +42,6 @@ class TrialExpirationService:
                 "trial_end_date": {"$lt": now},
                 "is_active": True
             }))
-
             for user in expired_users:
                 # Mark trial as expired
                 self.users_collection.update_one(
@@ -105,7 +101,6 @@ class TrialExpirationService:
                     )
                     warning_count += 1
                     logger.info(f"Sent trial warning to user: {user['email']}")
-
             return {
                 "message": f"Trial warning check completed",
                 "warnings_sent": warning_count,
@@ -207,7 +202,6 @@ class TrialExpirationService:
                 <div class="content">
                     <p>Hello{f' {first_name}' if first_name else ''}!</p>
                     <p>This is a friendly reminder that your Special Wedding trial will expire in <strong>{days_remaining} day{'s' if days_remaining != 1 else ''}</strong>.</p>
-
                     <div class="warning-card">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Trial Status:</h3>
                         <p style="margin: 8px 0;"><strong>Email:</strong> {email}</p>
@@ -232,7 +226,6 @@ class TrialExpirationService:
         </body>
         </html>
         """
-
     def _generate_trial_expired_email_html(self, email: str, first_name: str) -> str:
         """Generate trial expired email HTML"""
         return f"""
@@ -263,14 +256,12 @@ class TrialExpirationService:
                 <div class="content">
                     <p>Hello{f' {first_name}' if first_name else ''}!</p>
                     <p>Your Special Wedding trial has expired. To continue accessing your wedding planning tools and data, please upgrade to a paid plan.</p>
-
                     <div class="expired-card">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Account Status:</h3>
                         <p style="margin: 8px 0;"><strong>Email:</strong> {email}</p>
                         <p style="margin: 8px 0;"><strong>Status:</strong> Trial Expired</p>
                         <p style="margin: 8px 0;"><strong>Access:</strong> Currently Suspended</p>
                     </div>
-
                     <p><strong>What happens now?</strong></p>
                     <ul>
                         <li>Your account has been temporarily suspended</li>

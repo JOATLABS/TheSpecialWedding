@@ -70,7 +70,6 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
 
   const handleTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
-
     const distance = touchStart - touchEnd;
     const isLeftSwipe = distance > 50;
     const isRightSwipe = distance < -50;

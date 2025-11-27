@@ -27,14 +27,12 @@ export function useBudget({ token, weddingId }: UseBudgetOptions): UseBudgetRetu
 
   const refreshData = useCallback(async () => {
     if (!token || !weddingId) return;
-
     setLoading(true);
     try {
       const [summaryData, categoriesData] = await Promise.all([
         budgetApi.getBudgetSummary(token, weddingId),
         budgetApi.getBudgetCategories(token, weddingId)
       ]);
-
       setSummary(summaryData);
       setCategories(categoriesData);
       setError('');

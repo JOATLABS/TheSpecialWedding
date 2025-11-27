@@ -13,7 +13,6 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  ```bash
  # Backup database
  mongodump --host localhost --port 27017 --db wedding_app --out backup_$(date +%Y%m%d)
-
  # Backup application files
  cp -r /path/to/WeddingWebApp /path/to/backup/WeddingWebApp_backup_$(date +%Y%m%d)
  ```
@@ -54,13 +53,11 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  ```javascript
  // Run in MongoDB shell
  use wedding_app;
-
  // Create security audit logs collection
  db.createCollection("security_audit_logs");
  db.security_audit_logs.createIndex({"timestamp": 1}, {"expireAfterSeconds": 2592000}); // 30 days
  db.security_audit_logs.createIndex({"client_ip": 1});
  db.security_audit_logs.createIndex({"event_type": 1});
-
  // Create access logs collection with indexes
  db.access_logs.createIndex({"wedding_id": 1});
  db.access_logs.createIndex({"timestamp": 1});
@@ -70,7 +67,6 @@ This guide provides step-by-step instructions for deploying the comprehensive se
 ### Phase 4: Application Updates
 
 6. **Update Import Statements**
-
  **In `main_optimized.py` (or your main application file):**
  ```python
  # Add secure middleware imports
@@ -86,24 +82,20 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  ```
 
 7. **Update Router Imports**
-
  **In your main router configuration:**
  ```python
  # Replace guest verification routes
  from app.api.guest_verification_secure import router as secure_guest_router
-
  # Add secure routes
  app.include_router(secure_guest_router, prefix="/api")
  ```
 
 8. **Update Service Usage**
-
  **Replace existing guest verification service calls:**
  ```python
  # Replace this:
  from app.services.guest_verification_service import GuestVerificationService
  verification_service = GuestVerificationService()
-
  # With this:
  from app.services.guest_verification_service_secure import secure_guest_verification_service
  verification_service = secure_guest_verification_service
@@ -154,14 +146,12 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  },
  },
  }
-
  logging.config.dictConfig(LOGGING_CONFIG)
  ```
 
 10. **Update CORS Configuration**
  ```python
  from fastapi.middleware.cors import CORSMiddleware
-
  # Update CORS with secure defaults
  app.add_middleware(
  CORSMiddleware,
@@ -318,7 +308,6 @@ logrotate -f /etc/logrotate.d/wedding_security
  ```bash
  # Block suspicious IP
  iptables -A INPUT -s SUSPICIOUS_IP -j DROP
-
  # Review recent logs
  grep -i "SUSPICIOUS_IP" /var/log/wedding_security/security.log
  ```

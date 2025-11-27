@@ -35,7 +35,6 @@ function SetupAccountContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [formData, setFormData] = useState({
     password: '',
     confirmPassword: ''
@@ -93,7 +92,6 @@ function SetupAccountContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;

@@ -8,7 +8,6 @@ export default function VerifyEmailPage() {
   const params = useParams();
   const router = useRouter();
   const token = params.token as string;
-
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
 
@@ -33,7 +32,6 @@ export default function VerifyEmailPage() {
         if (response.ok) {
           setStatus('success');
           setMessage(data.message || 'Email verified successfully!');
-
           // Redirect to login after 3 seconds
           setTimeout(() => {
             router.push('/admin/login');

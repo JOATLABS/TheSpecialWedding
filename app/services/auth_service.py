@@ -18,7 +18,6 @@ class AuthService:
             if not verify_password(password, user["hashed_password"]):
                 raise HTTPException(status_code=401, detail="Invalid credentials")
             return user
-
         # Check new users collection (wedding planners, vendors, etc.)
         user = await self.users_collection.find_one({"email": email})
         if not user:
@@ -40,7 +39,6 @@ class AuthService:
 
     async def login_and_get_token(self, email: str, password: str):
         user = self.authenticate_user(email, password)
-
         # Update last_login timestamp
         login_time = datetime.utcnow()
         try:
@@ -62,7 +60,6 @@ class AuthService:
         except Exception as e:
             logger.error(f"Failed to update last_login for {email}: {str(e)}")
             # Don't fail the login if last_login update fails
-
         token_data = {"sub": user["email"], "role": user.get("role", "admin")}
         access_token_expires = timedelta(minutes=60)
         token = create_access_token(data=token_data, expires_delta=access_token_expires)

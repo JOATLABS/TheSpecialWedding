@@ -18,7 +18,6 @@ subscription_service = SubscriptionService()
 @router.post("/weddings", tags=["Admin"])
 def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new wedding - ROOT_ADMIN or wedding planners with subscription limits"""
-
     # Check subscription limits for non-ROOT_ADMIN users
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
@@ -71,7 +70,6 @@ def list_weddings_admin(current_user: ExtendedAuthUser = Depends(require_admin_o
 @router.post("/weddings", tags=["Admin"])
 def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new wedding via admin interface - ROOT_ADMIN or wedding planners with subscription limits"""
-
     # Check subscription limits for non-ROOT_ADMIN users
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")

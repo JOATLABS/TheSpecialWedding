@@ -33,7 +33,6 @@ class SubscriptionPlanModel(BaseModel):
     ai_credits_monthly: int = Field(10, description="AI credits per month")
     storage_gb: int = Field(1, description="Storage limit in GB")
     staff_seats: int = Field(0, description="Number of staff accounts allowed")
-
     # Feature flags
     features: Dict[str, bool] = Field(default_factory=dict, description="Feature availability flags")
     features_list: Optional[List[str]] = Field(None, description="Human-readable feature highlights for display")
@@ -45,7 +44,6 @@ class SubscriptionPlanModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this plan")
-
     class Config:
         populate_by_name = True
         schema_extra = {
@@ -105,7 +103,6 @@ class UserSubscriptionModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this subscription")
-
     class Config:
         populate_by_name = True
         schema_extra = {
@@ -130,7 +127,6 @@ class UsageTrackingModel(BaseModel):
     """Usage tracking for subscription limits"""
     user_id: str = Field(..., description="User ID")
     subscription_id: str = Field(..., description="Subscription ID")
-
     # Current usage
     weddings_count: int = Field(0, description="Current number of weddings")
     ai_credits_used_month: int = Field(0, description="AI credits used this month")

@@ -194,7 +194,6 @@ export default function BudgetTemplatesPage() {
             Pre-built budget templates for different wedding types and sizes
           </p>
         </div>
-
         <div className="flex gap-3">
           <Button
             className="bg-purple-600 hover:bg-purple-700"
@@ -239,7 +238,6 @@ export default function BudgetTemplatesPage() {
                     {template.wedding_type.charAt(0).toUpperCase() + template.wedding_type.slice(1)}
                   </span>
                 </div>
-
                 {template.is_public && (
                   <div className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
                     Public
@@ -329,7 +327,6 @@ export default function BudgetTemplatesPage() {
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               Apply Template: {selectedTemplate.name}
             </h2>
-
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -349,7 +346,6 @@ export default function BudgetTemplatesPage() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Total Budget Amount *
@@ -368,7 +364,6 @@ export default function BudgetTemplatesPage() {
                   Recommended: {formatCurrency(selectedTemplate.target_budget_min)} - {formatCurrency(selectedTemplate.target_budget_max)}
                 </div>
               </div>
-
               {/* Template Preview */}
               <div className="border border-gray-200 rounded-lg p-3">
                 <div className="text-sm font-medium text-gray-700 mb-2">Budget Breakdown Preview:</div>
@@ -383,7 +378,6 @@ export default function BudgetTemplatesPage() {
                   ))}
                 </div>
               </div>
-
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <div className="flex items-start">
                   <svg className="w-5 h-5 text-yellow-600 mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">

@@ -24,7 +24,6 @@ class CSVSecurityError(Exception):
 
 class CSVExportUtils:
     """Utility class for secure CSV export operations"""
-
     # Patterns that could indicate CSV injection attempts
     DANGEROUS_CSV_PATTERNS = [
         r'^[=@+\-]',  # Formulas starting with =, @, +, -
@@ -34,7 +33,6 @@ class CSVExportUtils:
         r'<script',  # Script tags
         r'javascript:',  # JavaScript URLs
     ]
-
     @classmethod
     def sanitize_csv_value(cls, value: Any) -> str:
         """
@@ -51,7 +49,6 @@ class CSVExportUtils:
         """
         if value is None:
             return ""
-
         # Convert to string
         if isinstance(value, bool):
             return "Yes" if value else "No"
@@ -103,12 +100,10 @@ class CSVExportUtils:
     ) -> str:
         """
         Generate CSV content with proper sanitization.
-
         Args:
             headers: List of column headers
             data_rows: List of data rows (each row is a list of values)
             include_bom: Whether to include BOM for Excel compatibility
-
         Returns:
             str: The CSV content as a string
         """
@@ -150,14 +145,12 @@ class CSVExportUtils:
     ) -> str:
         """
         Generate CSV content for form responses.
-
         Args:
             form_data: The form definition with fields
             responses: List of form responses
             include_metadata: Whether to include submission metadata
             date_from: Optional start date filter
             date_to: Optional end date filter
-
         Returns:
             str: The CSV content
         """
@@ -173,7 +166,6 @@ class CSVExportUtils:
                             submitted_at = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
                         except ValueError:
                             continue
-
                     if date_from and submitted_at < date_from:
                         continue
                     if date_to and submitted_at > date_to:
@@ -205,7 +197,6 @@ class CSVExportUtils:
     def _build_csv_headers(cls, form_data: Dict[str, Any], include_metadata: bool) -> List[str]:
         """Build CSV headers based on form structure"""
         headers = []
-
         if include_metadata:
             headers.extend([
                 "Response ID",
@@ -232,7 +223,6 @@ class CSVExportUtils:
     ) -> List[Any]:
         """Build a CSV row for a single response"""
         row = []
-
         if include_metadata:
             # Add metadata columns
             row.extend([
@@ -243,7 +233,6 @@ class CSVExportUtils:
                 response.get('ip_address', ''),
                 cls._calculate_completion_status(form_data, response)
             ])
-
         # Add field values
         responses_data = response.get('responses', {})
         for field in form_data.get('fields', []):
@@ -262,14 +251,12 @@ class CSVExportUtils:
         """Format a field value based on its type"""
         if value is None or value == '':
             return ''
-
         if field_type == 'rating':
             try:
                 rating = int(value)
                 return f"{rating}/5"
             except (ValueError, TypeError):
                 return value
-
         elif field_type == 'scale':
             try:
                 scale = int(value)
@@ -289,7 +276,6 @@ class CSVExportUtils:
                 except ValueError:
                     return value
             return value
-
         elif field_type == 'file_upload':
             if isinstance(value, list):
                 return '; '.join(str(v) for v in value)
@@ -342,7 +328,6 @@ class CSVExportUtils:
         """
         if timestamp is None:
             timestamp = datetime.utcnow()
-
         # Sanitize form name for filename
         safe_name = re.sub(r'[^\w\-_\. ]', '', form_name)
         safe_name = safe_name.strip()[:50]  # Limit length
@@ -371,12 +356,10 @@ class FormResponseCSVExporter:
     ) -> Dict[str, Any]:
         """
         Export form responses to CSV format.
-
         Args:
             form_data: The form definition
             responses: List of responses to export
             options: Export options (metadata, date filters, etc.)
-
         Returns:
             Dict containing CSV content and metadata
         """
@@ -394,13 +377,11 @@ class FormResponseCSVExporter:
                     date_from = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
                 except ValueError:
                     date_from = None
-
             if isinstance(date_to, str):
                 try:
                     date_to = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
                 except ValueError:
                     date_to = None
-
             # Generate CSV content
             csv_content = self.utils.generate_form_response_csv(
                 form_data=form_data,
@@ -453,12 +434,10 @@ class FormResponseCSVExporter:
                 submitted_at = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
             except ValueError:
                 return False
-
         if date_from and submitted_at < date_from:
             return False
         if date_to and submitted_at > date_to:
             return False
-
         return True
 
 
@@ -470,12 +449,10 @@ def export_form_responses_to_csv(
 ) -> Dict[str, Any]:
     """
     Convenience function to export form responses to CSV.
-
     Args:
         form_data: The form definition
         responses: List of responses to export
         **options: Export options
-
     Returns:
         Dict with CSV content and metadata
     """

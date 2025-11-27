@@ -75,12 +75,10 @@ class WeddingModel(BaseModel):
     our_story: Optional[OurStoryModel] = Field(None, description="Our story content and image")
     wedding_party: List[WeddingPartyMemberModel] = Field(default_factory=list, description="Wedding party members")
     reminder_from_email: Optional[str] = Field(None, description="Custom from email for reminders (e.g., couple@example.com)")
-
     # SAAS Multi-tenancy fields (backward compatible - won't break existing weddings)
     assigned_planner_email: Optional[str] = Field(None, description="Wedding planner responsible for this wedding")
     created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.com)")
     status: str = Field(default="active", description="Wedding status: active, inactive, deleted")
-
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:

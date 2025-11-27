@@ -78,7 +78,6 @@ export default function GuestVerificationModal({
 
     try {
       const verificationData: any = {};
-
       if (privacyInfo?.privacy_mode === 'password' && password) {
         verificationData.password = password;
       } else if (privacyInfo?.privacy_mode === 'private') {
@@ -112,13 +111,11 @@ export default function GuestVerificationModal({
       }
 
       const result = await response.json();
-
       // Check if OTP is required
       if (result.otp_required) {
         await sendOtp(result.contact, result.contact_type);
         return;
       }
-
       onVerified(result.wedding, result.guest);
 
     } catch (err: any) {
@@ -131,7 +128,6 @@ export default function GuestVerificationModal({
   const sendOtp = async (contact: string, contactType: string) => {
     setSendingOtp(true);
     setError('');
-
     try {
       const response = await fetch(`${API_URL}/api/otp/send`, {
         method: 'POST',
@@ -155,7 +151,6 @@ export default function GuestVerificationModal({
       setOtpContact(contact);
       setOtpContactType(contactType);
       setOtpCountdown(result.expires_in_minutes * 60); // Convert to seconds
-
       // Start countdown
       const countdown = setInterval(() => {
         setOtpCountdown((prev) => {
@@ -304,7 +299,6 @@ export default function GuestVerificationModal({
                     {sendingOtp ? 'Sending...' : 'Send new code'}
                   </button>
                 )}
-
                 <button
                   type="button"
                   onClick={goBackToContact}

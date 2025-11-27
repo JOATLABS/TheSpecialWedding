@@ -71,12 +71,12 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
-
+    
     try:
         # Initialize database connection
         await init_database()
         logger.info("Database initialized")
-
+        
         # Initialize cache if enabled
         if settings.redis_enabled:
             await init_cache()
@@ -191,9 +191,9 @@ app.add_middleware(
     allow_methods=settings.cors_methods,
     allow_headers=settings.cors_headers,
     expose_headers=[
-        "Content-Length",
-        "Content-Type",
-        "X-RateLimit-Remaining",
+        "Content-Length", 
+        "Content-Type", 
+        "X-RateLimit-Remaining", 
         "X-RateLimit-Reset",
         "X-Response-Time"
     ],
@@ -318,7 +318,6 @@ async def add_cache_headers(request: Request, call_next):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         else:
             response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes for other content
-
     return response
 
 
@@ -327,7 +326,6 @@ if settings.is_development():
     @app.get("/dev/cache-stats", tags=["Metrics"])
     async def cache_stats():
         """Get cache statistics (development only)"""
-        from app.core.cache import cache
         if cache.enabled and cache.redis_client:
             try:
                 # Get Redis info

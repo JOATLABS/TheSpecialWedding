@@ -22,7 +22,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             "assigned_planner_email": current_user.email,
             "status": {"$ne": "cancelled"}
         }))
-
         metrics = {
             "summary": {
                 "total_weddings": len(weddings),
@@ -41,7 +40,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "average_wedding_value": 0
             }
         }
-
         # Calculate upcoming weddings
         current_date = datetime.now()
         for wedding in weddings:
@@ -87,7 +85,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             progress_score = 0
             if guest_count > 0:
                 progress_score += min(40, (len(rsvps) / guest_count) * 40)  # 40% for RSVPs
-
             # Additional progress factors
             if wedding.get("events"):
                 progress_score += 20  # 20% for having events configured
@@ -95,7 +92,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 progress_score += 20  # 20% for having guests
             if wedding.get("details"):
                 progress_score += 20  # 20% for wedding details
-
             # Calculate days until wedding
             days_until_wedding = 0
             try:
@@ -103,7 +99,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 days_until_wedding = (wedding_date - current_date).days
             except:
                 pass
-
             wedding_metrics = {
                 "id": str(wedding_id),
                 "couple_names": wedding.get("couple_names", ""),

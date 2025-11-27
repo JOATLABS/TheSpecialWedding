@@ -18,7 +18,6 @@ security_logger = logging.getLogger("wedding_security_headers")
 class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
     Enhanced security headers middleware with comprehensive protection.
-
     Security Features:
     - Content Security Policy (CSP) with nonce support
     - HTTP Strict Transport Security (HSTS)
@@ -119,7 +118,6 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-
         # Cache Control for sensitive responses
         if self._is_sensitive_path(request.url.path):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
@@ -179,7 +177,6 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
             "frame-ancestors": ["'none'"],
             "upgrade-insecure-requests": []
         }
-
         # Additional sources for admin pages
         if is_admin:
             csp_directives["script-src"].extend([
@@ -190,7 +187,6 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "https://fonts.googleapis.com",
                 "https://cdn.jsdelivr.net"
             ])
-
         # API endpoints have stricter policy
         if is_api:
             csp_directives = {
@@ -199,7 +195,6 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "base-uri": ["'none'"],
                 "form-action": ["'none'"]
             }
-
         # Build CSP string
         csp_parts = []
         for directive, sources in csp_directives.items():
@@ -379,7 +374,6 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
             "X-Client-IP",
             "CF-Connecting-IP"
         ]
-
         for header in headers_to_check:
             ip = request.headers.get(header)
             if ip:
@@ -406,14 +400,12 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
                 f"path={request.url.path}, "
                 f"ip={self._get_client_ip(request)}"
             )
-
         # Log security header failures
         required_headers = [
             "Content-Security-Policy",
             "X-Frame-Options",
             "X-Content-Type-Options"
         ]
-
         missing_headers = [h for h in required_headers if h not in response.headers]
         if missing_headers:
             security_logger.error(

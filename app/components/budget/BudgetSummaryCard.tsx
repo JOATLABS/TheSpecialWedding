@@ -62,21 +62,18 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
           </div>
           <div className="text-sm text-gray-600">Total Budget</div>
         </div>
-
         <div className="text-center p-4 bg-gray-50 rounded-lg">
           <div className="text-2xl font-bold text-wedding-rose">
             {formatCurrency(summary.total_spent)}
           </div>
           <div className="text-sm text-gray-600">Total Spent</div>
         </div>
-
         <div className="text-center p-4 bg-gray-50 rounded-lg">
           <div className="text-2xl font-bold text-wedding-gold">
             {formatCurrency(summary.total_committed)}
           </div>
           <div className="text-sm text-gray-600">Committed</div>
         </div>
-
         <div className="text-center p-4 bg-gray-50 rounded-lg">
           <div className={`text-2xl font-bold ${
             summary.remaining_budget >= 0 ? 'text-green-600' : 'text-red-600'
@@ -115,14 +112,12 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
           </div>
           <div className="text-sm text-gray-600">Categories</div>
         </div>
-
         <div className="p-3 bg-green-50 rounded-lg">
           <div className="text-xl font-bold text-green-600">
             {summary.paid_categories}
           </div>
           <div className="text-sm text-gray-600">Paid Categories</div>
         </div>
-
         {summary.overdue_categories > 0 && (
           <div className="p-3 bg-red-50 rounded-lg">
             <div className="text-xl font-bold text-red-600">
@@ -131,7 +126,6 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
             <div className="text-sm text-gray-600">Overdue</div>
           </div>
         )}
-
         {summary.vendor_quotes_count > 0 && (
           <div className="p-3 bg-purple-50 rounded-lg">
             <div className="text-xl font-bold text-purple-600">

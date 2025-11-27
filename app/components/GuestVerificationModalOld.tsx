@@ -71,7 +71,6 @@ export default function GuestVerificationModal({
 
  try {
  const verificationData: any = {};
-
  if (privacyInfo?.privacy_mode === 'password' && password) {
  verificationData.password = password;
  } else if (privacyInfo?.privacy_mode === 'private') {
