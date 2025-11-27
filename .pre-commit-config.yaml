@@ -1,0 +1,88 @@
+# Pre-commit hooks for security and code quality
+repos:
+  # Python security scanning
+  - repo: https://github.com/PyCQA/bandit
+    rev: '1.7.5'
+    hooks:
+      - id: bandit
+        args: ['-r', 'app/', '-ll']
+        exclude: 'venv/|tests/'
+
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.2
+    hooks:
+      - id: python-safety-dependencies-check
+        files: requirements.*\.txt$
+
+  # General security checks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # Code quality and formatting
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: '.github/dependabot.yml'
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: debug-statements
+      - id: check-case-conflict
+
+  # Python formatting and linting
+  - repo: https://github.com/psf/black
+    rev: '23.12.1'
+    hooks:
+      - id: black
+        language_version: python3
+
+  - repo: https://github.com/pycqa/isort
+    rev: '5.13.2'
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
+  # JavaScript/TypeScript checks
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: 'v8.56.0'
+    hooks:
+      - id: eslint
+        files: \.(js|jsx|ts|tsx)$
+        types: [file]
+        additional_dependencies:
+          - eslint@8.56.0
+          - '@typescript-eslint/parser'
+          - '@typescript-eslint/eslint-plugin'
+        args: ['--fix']
+
+  # Security-focused checks for JS/TS
+  - repo: https://github.com/eslint/eslint
+    rev: 'v8.56.0'
+    hooks:
+      - id: eslint
+        name: eslint-security
+        files: \.(js|jsx|ts|tsx)$
+        additional_dependencies:
+          - eslint@8.56.0
+          - eslint-plugin-security
+        args: ['--config', '.eslintrc.security.js']
+
+# Configuration for CI
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: 'development/saas-features'
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false
