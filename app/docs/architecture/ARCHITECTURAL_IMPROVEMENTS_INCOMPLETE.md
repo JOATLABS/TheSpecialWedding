@@ -229,9 +229,9 @@ async def lifespan(app: FastAPI):
     await init_cache()
     await setup_event_handlers()
     setup_services()
-  
+
     yield
-  
+
     # Shutdown
     await close_database()
     await close_cache()

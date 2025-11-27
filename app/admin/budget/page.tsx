@@ -151,7 +151,6 @@ export default function BudgetDashboard() {
       setShowCategoryModal(false);
       resetCategoryForm();
       toast.success('Budget category created successfully');
-      
       // Refresh summary
       fetchBudgetData();
     } catch (err: any) {
@@ -173,11 +172,11 @@ export default function BudgetDashboard() {
       };
 
       const updatedCategory = await budgetApi.updateBudgetCategory(
-        token, 
-        editingCategory.id, 
+        token,
+        editingCategory.id,
         updateData
       );
-      
+
       setCategories((prev) =>
         prev.map((cat) => (cat.id === editingCategory.id ? updatedCategory : cat))
       );
@@ -185,7 +184,6 @@ export default function BudgetDashboard() {
       setEditingCategory(null);
       resetCategoryForm();
       toast.success('Budget category updated successfully');
-      
       // Refresh summary
       fetchBudgetData();
     } catch (err: any) {
@@ -200,7 +198,6 @@ export default function BudgetDashboard() {
       await budgetApi.deleteBudgetCategory(token, categoryId);
       setCategories((prev) => prev.filter((cat) => cat.id !== categoryId));
       toast.success('Budget category deleted successfully');
-      
       // Refresh summary
       fetchBudgetData();
     } catch (err: any) {
@@ -287,7 +284,7 @@ export default function BudgetDashboard() {
   };
 
   // Filter and sort categories (computed during render, not in effect)
-  const filteredCategories = useMemo(() => 
+  const filteredCategories = useMemo(() =>
     categories
       .filter(category => {
         const matchesSearch = category.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -328,7 +325,6 @@ export default function BudgetDashboard() {
             Manage wedding budgets, track expenses, and compare vendor quotes
           </p>
         </div>
-        
         <div className="flex gap-3">
           <Button onClick={() => exportBudgetReport('pdf')}>
             Export PDF
@@ -472,7 +468,6 @@ export default function BudgetDashboard() {
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               {editingCategory ? 'Edit Category' : 'Add New Category'}
             </h2>
-            
             <form onSubmit={editingCategory ? handleUpdateCategory : handleCreateCategory}>
               <div className="space-y-4">
                 <div>
@@ -487,7 +482,6 @@ export default function BudgetDashboard() {
                     required
                   />
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Description
@@ -499,7 +493,6 @@ export default function BudgetDashboard() {
                     rows={2}
                   />
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Budget Amount *
@@ -514,7 +507,6 @@ export default function BudgetDashboard() {
                     required
                   />
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Priority (1 = Highest, 5 = Lowest)
@@ -531,7 +523,6 @@ export default function BudgetDashboard() {
                     <option value={5}>5 - Lowest Priority</option>
                   </select>
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Percentage of Total Budget
@@ -547,14 +538,13 @@ export default function BudgetDashboard() {
                   />
                 </div>
               </div>
-              
               <div className="flex gap-3 mt-6">
                 <Button type="submit" className="flex-1">
                   {editingCategory ? 'Update' : 'Create'} Category
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="danger" 
+                <Button
+                  type="button"
+                  variant="danger"
                   onClick={() => {
                     setShowCategoryModal(false);
                     resetCategoryForm();

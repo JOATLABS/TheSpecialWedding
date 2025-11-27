@@ -61,10 +61,10 @@ class RSVPService:
                 # Count existing plus-ones
                 existing_count = self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
                 new_plus_ones_count = len(rsvp_data.plus_ones)
-                
+
                 if existing_count + new_plus_ones_count > max_plus_ones:
                     raise HTTPException(
-                        status_code=400, 
+                        status_code=400,
                         detail=f"Cannot add {new_plus_ones_count} plus-ones. Maximum allowed: {max_plus_ones}, already have: {existing_count}"
                     )
 
@@ -79,7 +79,6 @@ class RSVPService:
                         dietary=plus_one_data.dietary
                     )
                     plus_ones_to_insert.append(plus_one.dict())
-                
                 if plus_ones_to_insert:
                     self.plus_one_collection.insert_many(plus_ones_to_insert)
                 

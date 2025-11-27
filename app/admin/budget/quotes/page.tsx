@@ -40,7 +40,6 @@ export default function VendorQuotesPage() {
   const [quotes, setQuotes] = useState<VendorQuote[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -225,8 +224,8 @@ export default function VendorQuotesPage() {
   };
 
   const toggleQuoteComparison = (quoteId: string) => {
-    setSelectedQuotes(prev => 
-      prev.includes(quoteId) 
+    setSelectedQuotes(prev =>
+      prev.includes(quoteId)
         ? prev.filter(id => id !== quoteId)
         : [...prev, quoteId]
     );
@@ -248,7 +247,7 @@ export default function VendorQuotesPage() {
   };
 
   // Filter and sort quotes (memoized for performance)
-  const filteredQuotes = useMemo(() => 
+  const filteredQuotes = useMemo(() =>
     quotes
       .filter(quote => {
         const matchesSearch = quote.vendor_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -262,8 +261,8 @@ export default function VendorQuotesPage() {
           case 'amount': return b.quote_amount - a.quote_amount;
           case 'vendor': return a.vendor_name.localeCompare(b.vendor_name);
           case 'rating': return (b.rating || 0) - (a.rating || 0);
-          case 'date': 
-          default: 
+          case 'date':
+          default:
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
         }
       }), [quotes, searchTerm, statusFilter, categoryFilter, sortBy]);
@@ -291,9 +290,9 @@ export default function VendorQuotesPage() {
             Collect, compare and manage vendor quotes for your wedding
           </p>
         </div>
-        
+
         <div className="flex gap-3">
-          <Button 
+          <Button
             onClick={() => setComparisonMode(!comparisonMode)}
             className={comparisonMode ? 'bg-purple-600 hover:bg-purple-700' : ''}
           >
@@ -341,7 +340,6 @@ export default function VendorQuotesPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               />
-              
               {/* Category Filter */}
               <select
                 value={categoryFilter}
@@ -355,7 +353,6 @@ export default function VendorQuotesPage() {
                   </option>
                 ))}
               </select>
-              
               {/* Status Filter */}
               <select
                 value={statusFilter}
@@ -368,7 +365,6 @@ export default function VendorQuotesPage() {
                 <option value="rejected">Rejected</option>
                 <option value="expired">Expired</option>
               </select>
-              
               {/* Sort */}
               <select
                 value={sortBy}
@@ -381,8 +377,8 @@ export default function VendorQuotesPage() {
                 <option value="rating">Sort by Rating</option>
               </select>
             </div>
-            
-            <Button 
+
+            <Button
               onClick={() => setShowQuoteModal(true)}
               className="whitespace-nowrap"
             >
@@ -404,7 +400,7 @@ export default function VendorQuotesPage() {
           ) : filteredQuotes.length === 0 ? (
             <Card className="p-8 text-center">
               <p className="text-gray-600 mb-4">
-                {quotes.length === 0 
+                {quotes.length === 0
                   ? "No vendor quotes found. Add your first quote to get started."
                   : "No quotes match your search criteria."
                 }
@@ -450,7 +446,6 @@ export default function VendorQuotesPage() {
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               Add New Vendor Quote
             </h2>
-            
             <form onSubmit={handleCreateQuote}>
               <div className="space-y-4">
                 {/* Basic Info */}
@@ -467,7 +462,6 @@ export default function VendorQuotesPage() {
                       required
                     />
                   </div>
-                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Service Category *
@@ -500,7 +494,6 @@ export default function VendorQuotesPage() {
                       className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
-                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Phone
@@ -530,7 +523,6 @@ export default function VendorQuotesPage() {
                       required
                     />
                   </div>
-                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Valid Until
@@ -637,14 +629,13 @@ export default function VendorQuotesPage() {
                   />
                 </div>
               </div>
-              
               <div className="flex gap-3 mt-6">
                 <Button type="submit" className="flex-1">
                   Create Quote
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="danger" 
+                <Button
+                  type="button"
+                  variant="danger"
                   onClick={() => {
                     setShowQuoteModal(false);
                     resetQuoteForm();

@@ -51,10 +51,10 @@ async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAu
     wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
-    
+
     if not check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
+
     result = email_service.send_rsvp_invitations(
         wedding_slug=payload.wedding_slug,
         custom_html=payload.custom_html,
@@ -80,10 +80,10 @@ async def send_email_invites_with_attachment(
     wedding = wedding_service.get_wedding_by_slug(wedding_slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
-    
+
     if not check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
+
     # Handle attachment
     attachments = []
     try:
@@ -114,10 +114,10 @@ def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuth
     wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
-    
+
     if not check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
+
     result = email_service.send_reminders(
         wedding_slug=payload.wedding_slug,
         event_type=payload.event_type,

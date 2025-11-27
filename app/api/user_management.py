@@ -28,7 +28,6 @@ class AccountSetupModel(BaseModel):
     token: str
     password: str
     confirm_password: str
-    
     @validator('password')
     def validate_password(cls, v):
         if len(v) < 8:
@@ -42,7 +41,6 @@ class AccountSetupModel(BaseModel):
         if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in v):
             raise ValueError('Password must contain at least one special character')
         return v
-    
     @validator('confirm_password')
     def passwords_match(cls, v, values):
         if 'password' in values and v != values['password']:
@@ -57,7 +55,6 @@ class PublicRegistrationModel(BaseModel):
     company_name: str
     selected_plan_id: Optional[str] = None
     role: str = "wedding_planner"
-    
     @validator('password')
     def validate_password(cls, v):
         if len(v) < 8:
@@ -76,7 +73,6 @@ class ChangePasswordModel(BaseModel):
     current_password: str
     new_password: str
     confirm_password: str
-    
     @validator('new_password')
     def validate_new_password(cls, v):
         if len(v) < 8:
@@ -90,7 +86,6 @@ class ChangePasswordModel(BaseModel):
         if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in v):
             raise ValueError('Password must contain at least one special character')
         return v
-    
     @validator('confirm_password')
     def passwords_match(cls, v, values):
         if 'new_password' in values and v != values['new_password']:
@@ -185,8 +180,8 @@ async def verify_email_change(token: str):
 async def change_password(password_data: ChangePasswordModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Change user password - Authenticated users only"""
     return await user_service.change_password(
-        current_user.email, 
-        password_data.current_password, 
+        current_user.email,
+        password_data.current_password,
         password_data.new_password
     )
 
@@ -194,8 +189,8 @@ async def change_password(password_data: ChangePasswordModel, current_user: Exte
 async def change_email(email_data: ChangeEmailModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Change user email address - Authenticated users only"""
     return await user_service.change_email(
-        current_user.email, 
-        email_data.new_email, 
+        current_user.email,
+        email_data.new_email,
         email_data.password
     )
 

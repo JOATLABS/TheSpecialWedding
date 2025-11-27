@@ -50,7 +50,6 @@ export default function FormAnalyticsPage() {
     }
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      
       // Fetch form details and analytics in parallel
       const [formResponse, analyticsResponse] = await Promise.all([
         fetch(`${baseUrl}/admin/forms/${formId}`, {
@@ -94,17 +93,17 @@ export default function FormAnalyticsPage() {
     fetchFormAndAnalytics();
   }, [fetchFormAndAnalytics, formId, token]);
 
-  const AnalyticsCard = ({ 
-    title, 
-    value, 
-    subtitle, 
-    icon, 
-    color = 'blue' 
-  }: { 
-    title: string; 
-    value: string | number; 
-    subtitle?: string; 
-    icon: React.ReactNode; 
+  const AnalyticsCard = ({
+    title,
+    value,
+    subtitle,
+    icon,
+    color = 'blue'
+  }: {
+    title: string;
+    value: string | number;
+    subtitle?: string;
+    icon: React.ReactNode;
     color?: 'blue' | 'green' | 'purple' | 'orange' | 'red';
   }) => {
     const colorClasses = {
@@ -141,7 +140,7 @@ export default function FormAnalyticsPage() {
 
     return (
       <div className="w-full bg-gray-200 rounded-full h-2">
-        <div 
+        <div
           className={`h-2 rounded-full transition-all duration-300 ${colorClasses[color as keyof typeof colorClasses]}`}
           style={{ width: `${Math.min(percentage, 100)}%` }}
         ></div>
@@ -191,7 +190,6 @@ export default function FormAnalyticsPage() {
               </svg>
               Back to Forms
             </button>
-            
             <div className="flex space-x-3">
               <button
                 onClick={() => router.push(`/admin/forms/${formId}/responses`)}
@@ -207,7 +205,6 @@ export default function FormAnalyticsPage() {
               </button>
             </div>
           </div>
-          
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Form Analytics</h1>
             <div className="flex items-center text-gray-600">
@@ -233,7 +230,6 @@ export default function FormAnalyticsPage() {
             }
             color="green"
           />
-          
           <AnalyticsCard
             title="Forms Sent"
             value={analytics.distribution_stats.sent}
@@ -245,7 +241,6 @@ export default function FormAnalyticsPage() {
             }
             color="blue"
           />
-          
           <AnalyticsCard
             title="Completion Rate"
             value={`${analytics.distribution_stats.completion_rate}%`}
@@ -257,7 +252,6 @@ export default function FormAnalyticsPage() {
             }
             color="purple"
           />
-          
           <AnalyticsCard
             title="Open Rate"
             value={`${analytics.distribution_stats.open_rate}%`}
@@ -276,7 +270,6 @@ export default function FormAnalyticsPage() {
           {/* Email Performance */}
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Email Performance</h3>
-            
             <div className="space-y-6">
               <div>
                 <div className="flex justify-between items-center mb-2">
@@ -285,7 +278,6 @@ export default function FormAnalyticsPage() {
                 </div>
                 <ProgressBar percentage={100} color="blue" />
               </div>
-              
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">Emails Opened</span>
@@ -293,12 +285,12 @@ export default function FormAnalyticsPage() {
                     {analytics.distribution_stats.opened} ({analytics.distribution_stats.open_rate}%)
                   </span>
                 </div>
-                <ProgressBar 
-                  percentage={analytics.distribution_stats.open_rate} 
-                  color="orange" 
+                <ProgressBar
+                  percentage={analytics.distribution_stats.open_rate}
+                  color="orange"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">Form Link Clicked</span>
@@ -306,12 +298,12 @@ export default function FormAnalyticsPage() {
                     {analytics.distribution_stats.clicked} ({analytics.distribution_stats.click_rate}%)
                   </span>
                 </div>
-                <ProgressBar 
-                  percentage={analytics.distribution_stats.click_rate} 
-                  color="purple" 
+                <ProgressBar
+                  percentage={analytics.distribution_stats.click_rate}
+                  color="purple"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">Form Completed</span>
@@ -319,9 +311,9 @@ export default function FormAnalyticsPage() {
                     {analytics.distribution_stats.submitted} ({analytics.distribution_stats.completion_rate}%)
                   </span>
                 </div>
-                <ProgressBar 
-                  percentage={analytics.distribution_stats.completion_rate} 
-                  color="green" 
+                <ProgressBar
+                  percentage={analytics.distribution_stats.completion_rate}
+                  color="green"
                 />
               </div>
             </div>
@@ -330,7 +322,6 @@ export default function FormAnalyticsPage() {
           {/* Form Insights */}
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Form Insights</h3>
-            
             <div className="space-y-4">
               <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
                 <div>
@@ -341,7 +332,6 @@ export default function FormAnalyticsPage() {
                   {form.fields.length}
                 </div>
               </div>
-              
               <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
                 <div>
                   <p className="font-medium text-gray-900">Form Created</p>

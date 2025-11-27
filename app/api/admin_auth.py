@@ -29,7 +29,6 @@ def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_curren
         "is_vendor": current_user.is_vendor,
         "user_data": serialize_mongo_doc(current_user.user_data)
     }
-    
     # Add cache-busting headers to prevent browser caching of user profile data
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate, private",
@@ -38,5 +37,4 @@ def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_curren
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY"
     }
-    
     return JSONResponse(content=profile_data, headers=headers)

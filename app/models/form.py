@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class FieldType(str, Enum):
     TEXT = "text"
-    EMAIL = "email" 
+    EMAIL = "email"
     PHONE = "phone"
     NUMBER = "number"
     DATE = "date"
@@ -37,46 +37,45 @@ class FormField(BaseModel):
     validation_rules: List[ValidationRule] = Field(default_factory=list, description="Field validation rules")
     conditional_logic: Optional[Dict[str, Any]] = Field(None, description="Show/hide conditions")
     order: int = Field(default=0, description="Field display order")
-    
     @field_validator('id')
     @classmethod
     def validate_field_id(cls, v):
         """Validate field ID format for security"""
         if not v or not isinstance(v, str):
             raise ValueError('Field ID is required')
-        
+
         # Remove dangerous characters and validate format
         if not re.match(r'^[a-zA-Z0-9_-]+$', v):
             raise ValueError('Field ID can only contain letters, numbers, underscores, and hyphens')
-        
+
         if len(v) > 50:
             raise ValueError('Field ID too long (max 50 characters)')
-        
+
         return v
-    
+
     @field_validator('label')
     @classmethod
     def validate_label(cls, v):
         """Validate and sanitize field label"""
         if not v or not isinstance(v, str):
             raise ValueError('Field label is required')
-        
+
         # Basic length validation
         if len(v) > 100:
             raise ValueError('Field label too long (max 100 characters)')
-        
+
         return v.strip()
-    
+
     @field_validator('options')
     @classmethod
     def validate_options(cls, v):
         """Validate field options"""
         if not isinstance(v, list):
             return []
-        
+
         if len(v) > 50:
             raise ValueError('Too many options (max 50)')
-        
+
         # Validate each option
         validated_options = []
         for option in v:
@@ -84,23 +83,23 @@ class FormField(BaseModel):
                 if len(option) > 100:
                     raise ValueError('Option too long (max 100 characters)')
                 validated_options.append(option.strip())
-        
+
         return validated_options
-    
+
     @field_validator('placeholder', 'description')
     @classmethod
     def validate_text_fields(cls, v):
         """Validate text fields"""
         if v is None:
             return v
-        
+
         if not isinstance(v, str):
             return None
-        
+
         # Basic length validation
         if len(v) > 500:
             raise ValueError('Text field too long (max 500 characters)')
-        
+
         return v.strip()
 
 class FormSettings(BaseModel):
@@ -113,56 +112,55 @@ class FormSettings(BaseModel):
     collect_email: bool = Field(default=True, description="Require email from submitters")
     is_public: bool = Field(default=False, description="Whether form is publicly accessible")
     requires_auth: bool = Field(default=False, description="Whether form requires authentication")
-    
     @field_validator('title')
     @classmethod
     def validate_title(cls, v):
         """Validate form title"""
         if not v or not isinstance(v, str):
             raise ValueError('Form title is required')
-        
+
         if len(v) > 200:
             raise ValueError('Form title too long (max 200 characters)')
-        
+
         return v.strip()
-    
+
     @field_validator('description')
     @classmethod
     def validate_description(cls, v):
         """Validate form description"""
         if v is None:
             return v
-        
+
         if not isinstance(v, str):
             return None
-        
+
         if len(v) > 1000:
             raise ValueError('Form description too long (max 1000 characters)')
-        
+
         return v.strip()
-    
+
     @field_validator('submit_button_text', 'success_message')
     @classmethod
     def validate_text_fields(cls, v):
         """Validate text fields"""
         if not isinstance(v, str):
             raise ValueError('Text field must be a string')
-        
+
         if len(v) > 100:
             raise ValueError('Text field too long (max 100 characters)')
-        
+
         return v.strip()
-    
+
     @field_validator('redirect_url')
     @classmethod
     def validate_redirect_url(cls, v):
         """Validate redirect URL"""
         if v is None:
             return v
-        
+
         if not isinstance(v, str):
             return None
-        
+
         # Basic URL validation
         from urllib.parse import urlparse
         try:
@@ -173,7 +171,6 @@ class FormSettings(BaseModel):
                 raise ValueError('Invalid URL format')
         except Exception:
             raise ValueError('Invalid URL format')
-        
         return v
 
 class EmailDistributionSettings(BaseModel):
@@ -281,52 +278,50 @@ class CreateFormRequest(BaseModel):
     fields: List[FormField] = Field(..., description="Form fields")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     template_type: Optional[str] = Field(None, description="Template type")
-    
     @field_validator('name')
     @classmethod
     def validate_name(cls, v):
         """Validate form name"""
         if not v or not isinstance(v, str):
             raise ValueError('Form name is required')
-        
+
         if len(v) > 100:
             raise ValueError('Form name too long (max 100 characters)')
-        
+
         return v.strip()
-    
+
     @field_validator('fields')
     @classmethod
     def validate_fields(cls, v):
         """Validate form fields"""
         if not isinstance(v, list):
             raise ValueError('Fields must be a list')
-        
+
         if len(v) > 50:
             raise ValueError('Too many fields (max 50)')
-        
+
         # Check for duplicate field IDs
         field_ids = [field.id for field in v]
         if len(field_ids) != len(set(field_ids)):
             raise ValueError('Field IDs must be unique')
-        
+
         return v
-    
+
     @field_validator('template_type')
     @classmethod
     def validate_template_type(cls, v):
         """Validate template type"""
         if v is None:
             return v
-        
+
         if not isinstance(v, str):
             return None
-        
+
         # Restrict to known template types
         allowed_templates = [
             'wedding_feedback', 'guest_feedback', 'vendor_questionnaire',
             'contact_form', 'survey', 'registration'
         ]
-        
         if v not in allowed_templates:
             logger.warning(f'Unknown template type: {v}')
 
@@ -383,58 +378,57 @@ class SubmitFormRequest(BaseModel):
     responses: Dict[str, Any] = Field(..., description="Form field responses")
     submitted_by_email: Optional[str] = Field(None, description="Submitter email")
     submitted_by_name: Optional[str] = Field(None, description="Submitter name")
-    
     @field_validator('responses')
     @classmethod
     def validate_responses(cls, v):
         """Validate form responses"""
         if not isinstance(v, dict):
             raise ValueError('Responses must be a dictionary')
-        
+
         if len(v) > 100:  # Reasonable limit on response count
             raise ValueError('Too many response fields')
-        
+
         # Validate field IDs in responses
         for field_id in v.keys():
             if not isinstance(field_id, str):
                 raise ValueError('Response field IDs must be strings')
-            
+
             if not re.match(r'^[a-zA-Z0-9_-]+$', field_id):
                 raise ValueError(f'Invalid response field ID: {field_id}')
-        
+
         return v
-    
+
     @field_validator('submitted_by_email')
     @classmethod
     def validate_email(cls, v):
         """Validate submitter email"""
         if v is None:
             return v
-        
+
         if not isinstance(v, str):
             return None
-        
+
         # Basic email validation
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
             raise ValueError('Invalid email format')
-        
+
         if len(v) > 254:  # RFC 5321 limit
             raise ValueError('Email address too long')
-        
+
         return v.lower().strip()
-    
+
     @field_validator('submitted_by_name')
     @classmethod
     def validate_name(cls, v):
         """Validate submitter name"""
         if v is None:
             return v
-        
+
         if not isinstance(v, str):
             return None
-        
+
         if len(v) > 100:
             raise ValueError('Name too long (max 100 characters)')
-        
+
         return v.strip()

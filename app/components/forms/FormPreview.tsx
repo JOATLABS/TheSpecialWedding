@@ -48,7 +48,6 @@ export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
  const handleSubmit = (e: React.FormEvent) => {
  e.preventDefault();
  setIsSubmitting(true);
- 
  // Simulate form submission
  setTimeout(() => {
  setIsSubmitting(false);
@@ -183,7 +182,6 @@ export const FormPreview: React.FC<FormPreviewProps> = ({ form }) => {
  (responses[field.id] || 0) >= rating ? 'text-yellow-400' : 'text-gray-300'
  } hover:text-yellow-400 transition-colors`}
  >
- 
  </button>
  ))}
  <span className="ml-2 text-sm text-gray-600">

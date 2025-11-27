@@ -13,10 +13,10 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
   const [selectedEventType, setSelectedEventType] = useState<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapUrl, setMapUrl] = useState<string>('');
-  
+
   // Get events with location details
   const eventsWithLocation = useMemo(() => {
-    return wedding.events?.filter(event => 
+    return wedding.events?.filter(event =>
       event.details?.location && event.details.location.trim() !== ''
     ) || [];
   }, [wedding.events]);
@@ -75,10 +75,10 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
     if (!selectedEvent?.details?.location) return;
 
     const location = selectedEvent.details.location;
-    
+
     // Check if on iOS
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    
+
     if (isIOS) {
       // On iOS, prefer Apple Maps
       window.open(getAppleMapsUrl(location), '_blank');

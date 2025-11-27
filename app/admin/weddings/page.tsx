@@ -221,7 +221,7 @@ export default function AdminWeddingsPage() {
 
     // Search filter
     if (searchTerm) {
-      filtered = filtered.filter(w => 
+      filtered = filtered.filter(w =>
         w.couple_names.toLowerCase().includes(searchTerm.toLowerCase()) ||
         w.venue?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         w.assigned_planner_email?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -418,7 +418,7 @@ export default function AdminWeddingsPage() {
                   {userProfile?.is_root_admin ? 'All Weddings' : 'My Weddings'}
                 </h1>
                 <p className="text-wedding-ivory opacity-90">
-                  {userProfile?.is_root_admin 
+                  {userProfile?.is_root_admin
                     ? 'Manage all wedding events and assignments'
                     : 'Manage your wedding events and client details'
                   }
@@ -581,8 +581,8 @@ export default function AdminWeddingsPage() {
                         type="button"
                         onClick={() => setShowEventDetails(!showEventDetails)}
                         className={`px-3 py-1 text-sm rounded transition ${
-                          showEventDetails 
-                            ? 'bg-wedding-gold text-white' 
+                          showEventDetails
+                            ? 'bg-wedding-gold text-white'
                             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                         }`}
                       >
@@ -841,24 +841,22 @@ export default function AdminWeddingsPage() {
               {userProfile?.is_root_admin ? 'All Weddings' : 'Your Weddings'} ({weddings.length})
             </h2>
           </div>
-          
           {loading && (
             <div className="p-6 text-center">
               <p className="text-gray-600">Loading weddings...</p>
             </div>
           )}
-          
+
           {!loading && weddings.length === 0 && (
             <div className="p-6 text-center">
               <p className="text-gray-600">
-                {userProfile?.is_root_admin 
+                {userProfile?.is_root_admin
                   ? 'No weddings found.'
                   : 'No weddings found. Create your first wedding to get started.'
                 }
               </p>
             </div>
           )}
-          
           {!loading && weddings.length > 0 && (
             <div className="divide-y divide-gray-200">
               {weddings.map((wedding) => (
@@ -894,13 +892,13 @@ export default function AdminWeddingsPage() {
                       >
                         Configure
                       </Link>
-                      <button 
+                      <button
                         onClick={() => handleEdit(wedding)}
                         className="px-3 py-1 text-sm bg-wedding-gold text-white rounded hover:bg-wedding-rose transition"
                       >
                         Edit
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDelete(wedding._id)}
                         className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
                       >

@@ -20,41 +20,36 @@ class ExtendedAuthUser:
         self.email = email
         self.role = role
         self.user_data = user_data or {}
-        
         # Role-specific properties
         root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
         self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
-        
         # Legacy admin support
         self.is_legacy_admin = (role == "admin")
 
 async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = Depends(security)) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
     token = credentials.credentials
-    
     try:
         payload = verify_token(token)
         email = payload.get("sub")
         role = payload.get("role", "admin")  # Default to admin for backward compatibility
-        
         if email is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         user_data = {}
-        
+
         # Check if this is the ROOT_ADMIN
         root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
         if email == root_admin_email:
             # Check both legacy admin_users and new users collections
             legacy_user = mongo.get_admin_users_collection().find_one({"email": email})
             new_user = mongo.get_users_collection().find_one({"email": email})
-            
             if legacy_user or new_user:
                 # ROOT_ADMIN always has full access
                 role = "ROOT_ADMIN"
@@ -71,7 +66,6 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
         else:
             # For other users, check the new users collection first, then legacy
             user = mongo.get_users_collection().find_one({"email": email})
-            
             if not user:
                 # Fallback to legacy admin_users collection for backward compatibility
                 legacy_user = mongo.get_admin_users_collection().find_one({"email": email})
@@ -93,7 +87,6 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                 if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
                     user_data["_id"] = str(user_data["_id"])
                 role = user.get("role", "wedding_planner")
-                
                 # Check if account is active
                 if not user_data.get("is_active", True):
                     raise HTTPException(
@@ -101,7 +94,6 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                         detail="Account is deactivated",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
-                
                 # Check email verification for new accounts
                 if user_data.get("email_verified") is False:
                     raise HTTPException(
@@ -109,7 +101,6 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                         detail="Email address not verified. Please check your email and verify your account.",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
-                
                 # Check trial expiration for wedding planners
                 if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
                     trial_end_date = user_data.get("trial_end_date")
@@ -120,7 +111,6 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                                 trial_end_date = datetime.fromisoformat(trial_end_date.replace('Z', '+00:00'))
                             except:
                                 trial_end_date = datetime.fromisoformat(trial_end_date)
-                        
                         if datetime.utcnow() > trial_end_date:
                             # Auto-expire the trial
                             mongo.get_users_collection().update_one(
@@ -136,9 +126,9 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                                 detail="Free trial has expired. Please upgrade your subscription to continue using the platform.",
                                 headers={"WWW-Authenticate": "Bearer"},
                             )
-            
+
         return ExtendedAuthUser(email=email, role=role, user_data=user_data)
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions (including trial expiration 402) as-is
         raise
@@ -209,23 +199,23 @@ def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     # ROOT_ADMIN has full access to all weddings for platform management
     if user.is_root_admin:
         return True
-    
+
     if user.is_legacy_admin:
         return True  # Legacy admin has access to all weddings for backward compatibility
-    
+
     if user.is_wedding_planner:
         # Check if this wedding is assigned to this planner
         from bson import ObjectId
         import re
-        
+
         # Validate and sanitize wedding_id
         if not wedding_id or not isinstance(wedding_id, str):
             return False
-        
+
         # Prevent NoSQL injection by validating input
         if len(wedding_id) > 100:  # Reasonable limit
             return False
-        
+
         try:
             # Handle both string and ObjectId formats
             if isinstance(wedding_id, str):
@@ -237,18 +227,15 @@ def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
                     query_id = wedding_id.strip()
             else:
                 query_id = wedding_id
-                
             wedding = mongo.get_weddings_collection().find_one({"_id": query_id})
             if wedding:
                 return wedding.get("assigned_planner_email") == user.email
         except Exception:
             return False
-    
     if user.is_vendor:
         # Check if vendor has access to this wedding
         vendor = mongo.get_vendors_collection().find_one({"email": user.email, "wedding_id": wedding_id})
         return vendor is not None
-    
     return False
 
 async def require_wedding_access(wedding_id: str):

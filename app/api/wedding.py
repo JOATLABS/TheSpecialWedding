@@ -3,7 +3,7 @@ from typing import List
 from app.models.wedding import WeddingModel
 from app.services.wedding_service import WeddingService
 from app.dependencies.auth_extended import (
-    require_root_admin, 
+    require_root_admin,
     require_wedding_planner,
     require_admin_or_planner,
     ExtendedAuthUser,
@@ -16,9 +16,8 @@ wedding_service = WeddingService()
 subscription_service = SubscriptionService()
 
 @router.post("/weddings", tags=["Admin"])
-def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new wedding - ROOT_ADMIN or wedding planners with subscription limits"""
-    
     # Check subscription limits for non-ROOT_ADMIN users
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
@@ -30,21 +29,21 @@ def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depen
                     status_code=402,  # Payment Required
                     detail=limits_check.get("message", "Wedding creation limit exceeded")
                 )
-    
+
     # Add created_by and assigned_planner fields
     wedding_data = wedding.dict(by_alias=True)
     wedding_data["created_by"] = current_user.email
-    
+
     # If created by wedding planner, assign them as the planner
     if current_user.is_wedding_planner:
         wedding_data["assigned_planner_email"] = current_user.email
-    
+
     result = wedding_service.create_wedding(wedding_data)
-    
+
     # Increment usage for non-ROOT_ADMIN users
     if not current_user.is_root_admin and current_user.user_data.get("_id"):
-        subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
-    
+        await subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
+
     return result
 
 @router.get("/weddings", tags=["Wedding"])
@@ -69,9 +68,8 @@ def list_weddings_admin(current_user: ExtendedAuthUser = Depends(require_admin_o
         return wedding_service.list_weddings_for_planner(current_user.email)
 
 @router.post("/weddings", tags=["Admin"])
-def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new wedding via admin interface - ROOT_ADMIN or wedding planners with subscription limits"""
-    
     # Check subscription limits for non-ROOT_ADMIN users
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
@@ -83,21 +81,21 @@ def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends
                     status_code=402,  # Payment Required
                     detail=limits_check.get("message", "Wedding creation limit exceeded")
                 )
-    
+
     # Add metadata
     wedding["created_by"] = current_user.email
-    
+
     # If created by wedding planner and no planner assigned, assign them
     if current_user.is_wedding_planner and not wedding.get("assigned_planner_email"):
         wedding["assigned_planner_email"] = current_user.email
         wedding["assigned_planner_id"] = current_user.user_data.get("_id", "")
-    
+
     result = wedding_service.create_wedding(wedding)
-    
+
     # Increment usage for non-ROOT_ADMIN users
     if not current_user.is_root_admin and current_user.user_data.get("_id"):
-        subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
-    
+        await subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
+
     return result
 
 @router.put("/weddings/{wedding_id}", tags=["Admin"])
@@ -106,10 +104,10 @@ def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedA
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
+
     # Add update metadata
     wedding["updated_by"] = current_user.email
-    
+
     return wedding_service.update_wedding(wedding_id, wedding)
 
 @router.delete("/weddings/{wedding_id}", tags=["Admin"])
@@ -133,10 +131,10 @@ def get_wedding_by_slug(slug: str):
     Use guest verification endpoints for full wedding details.
     """
     from app.services.guest_verification_service import GuestVerificationService
-    
+
     verification_service = GuestVerificationService()
     privacy_info = verification_service.get_wedding_privacy_info(slug)
-    
+
     # Only return basic info to show what authentication is required
     return {
         "couple_names": privacy_info.get("couple_names"),

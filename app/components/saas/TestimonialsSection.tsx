@@ -56,7 +56,7 @@ export const TestimonialsSection: React.FC<TestimonialsSectionProps> = ({ testim
 
             {/* Author */}
             <div className="flex items-center">
-              <div 
+              <div
                 className="w-12 h-12 rounded-full flex items-center justify-center mr-4"
                 style={{
                   background: `linear-gradient(135deg, ${theme.primary_color}, ${theme.secondary_color})`
@@ -79,7 +79,7 @@ export const TestimonialsSection: React.FC<TestimonialsSectionProps> = ({ testim
               <div>
                 <h4 className="font-semibold text-gray-900">{testimonial.name}</h4>
                 <p className="text-sm text-gray-600">{testimonial.role}</p>
-                <p 
+                <p
                   className="text-sm font-medium"
                   style={{ color: theme.primary_color }}
                 >

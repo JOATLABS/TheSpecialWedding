@@ -10,17 +10,16 @@ interface BudgetProgressBarProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
-export default function BudgetProgressBar({ 
-  budgeted, 
-  spent, 
-  className = '', 
+export default function BudgetProgressBar({
+  budgeted,
+  spent,
+  className = '',
   showLabels = true,
-  size = 'md' 
+  size = 'md'
 }: BudgetProgressBarProps) {
   const percentage = budgeted > 0 ? Math.min((spent / budgeted) * 100, 100) : 0;
   const isOverBudget = spent > budgeted;
   const remaining = budgeted - spent;
-  
   // Color scheme based on percentage
   const getBarColor = () => {
     if (isOverBudget) return 'bg-red-500';
@@ -53,7 +52,6 @@ export default function BudgetProgressBar({
           <span>Budget: {formatCurrency(budgeted)}</span>
         </div>
       )}
-      
       <div className="relative">
         {/* Background bar */}
         <div className={`w-full ${sizeClasses[size]} bg-gray-200 rounded-full overflow-hidden`}>
@@ -62,7 +60,6 @@ export default function BudgetProgressBar({
             className={`${sizeClasses[size]} ${getBarColor()} transition-all duration-300 ease-in-out rounded-full`}
             style={{ width: `${Math.min(percentage, 100)}%` }}
           />
-          
           {/* Over-budget indicator */}
           {isOverBudget && (
             <div
@@ -71,7 +68,6 @@ export default function BudgetProgressBar({
             />
           )}
         </div>
-        
         {/* Percentage label */}
         {showLabels && (
           <div className="flex justify-between items-center mt-2 text-xs">
@@ -90,7 +86,6 @@ export default function BudgetProgressBar({
           </div>
         )}
       </div>
-      
       {/* Warning indicator for high usage */}
       {percentage > 90 && !isOverBudget && showLabels && (
         <div className="flex items-center mt-1 text-xs text-yellow-600">

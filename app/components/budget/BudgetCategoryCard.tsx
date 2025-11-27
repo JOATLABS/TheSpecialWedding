@@ -15,12 +15,12 @@ interface BudgetCategoryCardProps {
   className?: string;
 }
 
-export default function BudgetCategoryCard({ 
-  category, 
-  onEdit, 
-  onDelete, 
-  onAddPayment, 
-  className = '' 
+export default function BudgetCategoryCard({
+  category,
+  onEdit,
+  onDelete,
+  onAddPayment,
+  className = ''
 }: BudgetCategoryCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -45,7 +45,7 @@ export default function BudgetCategoryCard({
   const getPriorityIcon = (priority: number) => {
     const colors = {
       1: 'text-red-500',
-      2: 'text-orange-500', 
+      2: 'text-orange-500',
       3: 'text-yellow-500',
       4: 'text-blue-500',
       5: 'text-gray-500'
@@ -66,7 +66,6 @@ export default function BudgetCategoryCard({
             <h3 className="font-semibold text-wedding-navy text-lg">
               {category.name}
             </h3>
-            
             {/* Priority indicator */}
             <div className={`flex items-center ${getPriorityIcon(category.priority)}`}>
               {Array.from({ length: category.priority }, (_, i) => (
@@ -76,12 +75,10 @@ export default function BudgetCategoryCard({
               ))}
             </div>
           </div>
-          
           {category.description && (
             <p className="text-sm text-gray-600 mb-2">{category.description}</p>
           )}
         </div>
-        
         {/* Status badge */}
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(category.payment_status)}`}>
           {category.payment_status.charAt(0).toUpperCase() + category.payment_status.slice(1)}
@@ -128,11 +125,11 @@ export default function BudgetCategoryCard({
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center text-sm text-wedding-rose hover:text-wedding-gold transition-colors"
           >
-            <svg 
+            <svg
               className={`w-4 h-4 mr-1 transform transition-transform ${
                 isExpanded ? 'rotate-90' : ''
-              }`} 
-              fill="currentColor" 
+              }`}
+              fill="currentColor"
               viewBox="0 0 20 20"
             >
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
@@ -191,21 +188,20 @@ export default function BudgetCategoryCard({
 
       {/* Action buttons */}
       <div className="flex gap-2 pt-2 border-t border-gray-200">
-        <Button 
+        <Button
           onClick={() => onEdit(category)}
           className="flex-1 text-sm"
         >
           Edit
         </Button>
-        
         <Button
           onClick={() => onAddPayment(category)}
           className="flex-1 text-sm"
         >
           Add Payment
         </Button>
-        
-        <Button 
+
+        <Button
           variant="danger"
           onClick={() => onDelete(category.id)}
           className="text-sm px-3"

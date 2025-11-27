@@ -11,7 +11,7 @@ interface OurStorySectionProps {
 
 export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => {
   const theme = wedding.theme_config;
-  
+
   if (!wedding.our_story && (!wedding.wedding_party || wedding.wedding_party.length === 0)) {
     return null;
   }

@@ -11,7 +11,7 @@ export default function WeddingDetailsPage() {
  const params = useParams();
  const router = useRouter();
  const weddingId = params.id as string;
- 
+
  const [wedding, setWedding] = useState<Wedding | null>(null);
  const [loading, setLoading] = useState(true);
  const [saving, setSaving] = useState(false);
@@ -28,10 +28,10 @@ export default function WeddingDetailsPage() {
    }
  });
  if (!response.ok) throw new Error('Failed to fetch weddings');
- 
+
  const weddings = await response.json();
  const wedding = weddings.find((w: any) => (w.id || w._id) === weddingId);
- 
+
  if (wedding) {
  // Initialize default values if not present
  setWedding({
@@ -73,10 +73,10 @@ export default function WeddingDetailsPage() {
 
  const saveWedding = async () => {
  if (!wedding) return;
- 
+
  setSaving(true);
  setError('');
- 
+
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
@@ -625,15 +625,15 @@ export default function WeddingDetailsPage() {
  className="p-3 border border-gray-200 rounded-lg hover:border-wedding-rose transition-colors"
  >
  <div className="flex gap-2 mb-2">
- <div 
+ <div
  className="w-6 h-6 rounded"
  style={{ backgroundColor: preset.primary }}
  />
- <div 
+ <div
  className="w-6 h-6 rounded"
  style={{ backgroundColor: preset.secondary }}
  />
- <div 
+ <div
  className="w-6 h-6 rounded"
  style={{ backgroundColor: preset.accent }}
  />
@@ -774,27 +774,27 @@ export default function WeddingDetailsPage() {
  {/* Preview */}
  <div className="mt-6">
  <h3 className="text-lg font-semibold mb-3">Preview</h3>
- <div 
+ <div
  className="p-6 rounded-lg"
  style={{
- background: wedding.theme_config.background_style === 'gradient' 
+ background: wedding.theme_config.background_style === 'gradient'
  ? `linear-gradient(135deg, ${wedding.theme_config.primary_color}20, ${wedding.theme_config.secondary_color}20)`
  : `${wedding.theme_config.primary_color}10`
  }}
  >
- <h4 
+ <h4
  className="text-2xl font-bold mb-2"
  style={{ color: wedding.theme_config.primary_color }}
  >
  {wedding.couple_names}
  </h4>
- <p 
+ <p
  className="mb-4"
  style={{ color: wedding.theme_config.secondary_color }}
  >
  {wedding.date}
  </p>
- <button 
+ <button
  className="px-6 py-2 rounded-lg text-white"
  style={{ backgroundColor: wedding.theme_config.accent_color }}
  >
@@ -809,7 +809,6 @@ export default function WeddingDetailsPage() {
  {activeTab === 'story' && (
  <div className="space-y-6">
  <h2 className="text-2xl font-bold text-wedding-navy mb-4">Story & Wedding Party</h2>
- 
  {/* Info Box */}
  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
  <h4 className="font-semibold text-blue-900 mb-2"> Image Organization</h4>
@@ -822,11 +821,11 @@ export default function WeddingDetailsPage() {
  <li>• <code className="bg-blue-100 px-1 rounded">wedding-party/{wedding.slug}/</code> - Wedding party member photos</li>
  </ul>
  </div>
- 
+
  {/* Our Story Section */}
  <div className="border border-gray-200 rounded-lg p-6">
  <h3 className="text-lg font-semibold mb-4">Our Story</h3>
- 
+
  <div className="space-y-4">
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -843,7 +842,6 @@ export default function WeddingDetailsPage() {
  placeholder="Tell your love story..."
  />
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">
  Image Shape
@@ -862,7 +860,6 @@ export default function WeddingDetailsPage() {
  <option value="hexagon">Hexagon</option>
  </select>
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">
  Couple Photo
@@ -883,7 +880,6 @@ export default function WeddingDetailsPage() {
  </div>
  </div>
  </div>
- 
  {/* Wedding Party Section */}
  <div className="border border-gray-200 rounded-lg p-6">
  <div className="flex justify-between items-center mb-4">
@@ -907,7 +903,6 @@ export default function WeddingDetailsPage() {
  Add Member
  </button>
  </div>
- 
  <div className="space-y-4">
  {wedding.wedding_party?.map((member, index) => (
  <div key={member.id} className="border border-gray-200 rounded-lg p-4">
@@ -928,7 +923,6 @@ export default function WeddingDetailsPage() {
  placeholder="John Doe"
  />
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Side
@@ -946,7 +940,6 @@ export default function WeddingDetailsPage() {
  <option value="groom">Groom</option>
  </select>
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Role
@@ -970,7 +963,6 @@ export default function WeddingDetailsPage() {
  </optgroup>
  </select>
  </div>
- 
  <div className="md:col-span-2">
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Photo (optional) - Use format: wedding-party/{wedding.slug}/name.jpg
@@ -987,7 +979,6 @@ export default function WeddingDetailsPage() {
  placeholder="wedding-party/wedding-slug/member-photo.jpg"
  />
  </div>
- 
  <div className="flex items-end">
  <button
  onClick={() => {
@@ -1004,7 +995,6 @@ export default function WeddingDetailsPage() {
  </div>
  </div>
  ))}
- 
  {(!wedding.wedding_party || wedding.wedding_party.length === 0) && (
  <p className="text-gray-500 text-center py-8">
             No wedding party members added yet. Click “Add Member” to get started.

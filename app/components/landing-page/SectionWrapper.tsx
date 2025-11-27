@@ -21,7 +21,7 @@ export const SectionWrapper: React.FC<SectionWrapperProps> = ({
       }`}
     >
       {glassEffect && (
-        <div 
+        <div
           className="absolute inset-0 rounded-3xl mx-2 sm:mx-4 md:mx-8 lg:mx-12"
           style={{
             background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',

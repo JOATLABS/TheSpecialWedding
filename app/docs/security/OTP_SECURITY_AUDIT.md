@@ -50,7 +50,6 @@ class SendOTPRequest(BaseModel):
     wedding_id: str = Field(..., min_length=1, max_length=100)
     contact: str = Field(..., min_length=5, max_length=255)
     contact_type: str = Field(..., regex="^(phone|email)$")
-    
     @validator('contact')
     def validate_contact(cls, v, values):
         # Email validation
@@ -61,7 +60,7 @@ class SendOTPRequest(BaseModel):
 
 ### Critical Issues (Fixed ✅)
 
-1. **Plain Text OTP Storage** 
+1. **Plain Text OTP Storage**
    - **Risk**: Database compromise exposes all OTPs
    - **Fix**: PBKDF2-SHA256 hashing with salt
    - **Status**: ✅ FIXED
@@ -101,7 +100,7 @@ class SendOTPRequest(BaseModel):
   "cleanup_idx": ["verified", "created_at"]
 }
 
-// Audit Log Indexes  
+// Audit Log Indexes
 {
   "audit_wedding_idx": ["wedding_id", "timestamp"],
   "audit_ttl_idx": "timestamp", // 90-day retention
@@ -128,7 +127,7 @@ POST /api/otp/send
 }
 
 # 2. Verify OTP
-POST /api/otp/verify  
+POST /api/otp/verify
 {
   "wedding_id": "sanitized_id",
   "contact": "+1234567890",
@@ -305,6 +304,6 @@ The OTP verification system successfully replaces the vulnerable name+phone veri
 
 ---
 
-*Document Version: 1.0*  
-*Last Updated: 2024*  
+*Document Version: 1.0*
+*Last Updated: 2024*
 *Security Classification: Internal*

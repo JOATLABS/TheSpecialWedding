@@ -317,7 +317,6 @@ export default function PublicVendorFormPage() {
             <h1 className="text-2xl sm:text-3xl font-bold mb-2">Wedding Service Request</h1>
             <p className="text-blue-100">Please provide your service information</p>
           </div>
-          
           <div className="px-6 py-4 bg-blue-50 border-b">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
