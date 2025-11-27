@@ -20,7 +20,6 @@ class UserManagementService:
     def generate_invitation_token(self) -> str:
         """Generate a secure invitation token"""
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
-    
     def get_trial_settings(self) -> dict:
         """Get trial settings from SAAS config"""
         try:
@@ -31,7 +30,6 @@ class UserManagementService:
                 return response.json()
         except:
             pass
-        
         # Fallback to direct database query
         try:
             config = mongo.db["saas_config"].find_one({"type": "main_config"})
@@ -39,7 +37,6 @@ class UserManagementService:
                 return config["trial_settings"]
         except:
             pass
-        
         # Return defaults if all else fails
         return {
             "default_trial_days": 30,
@@ -47,7 +44,6 @@ class UserManagementService:
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-    
     def check_previous_trial_usage(self, email: str) -> bool:
         """Check if email has been used for a trial before"""
         try:
@@ -59,7 +55,6 @@ class UserManagementService:
                     {"previous_trial_used": True}
                 ]
             })
-            
             # Check deleted users collection if it exists
             deleted_users = mongo.db.get("deleted_users", None)
             if deleted_users:
@@ -72,7 +67,6 @@ class UserManagementService:
                 })
                 if deleted_trial:
                     return True
-            
             return existing_trial is not None
         except:
             return False
@@ -82,21 +76,19 @@ class UserManagementService:
         try:
             email = invite_data["email"]
             role = invite_data["role"]
-            
             # Check if user already exists
             existing_user = self.users_collection.find_one({"email": email})
             if existing_user:
                 raise HTTPException(status_code=400, detail="User with this email already exists")
-            
+
             # Check for pending invitation
             existing_invitation = self.invitations_collection.find_one({
-                "email": email, 
+                "email": email,
                 "status": "pending",
                 "expires_at": {"$gt": datetime.utcnow()}
             })
             if existing_invitation:
                 raise HTTPException(status_code=400, detail="Pending invitation already exists for this email")
-            
             # Create invitation record
             invitation_token = self.generate_invitation_token()
             invitation = {
@@ -109,18 +101,17 @@ class UserManagementService:
                 "expires_at": datetime.utcnow() + timedelta(days=7),
                 "status": "pending"
             }
-            
+
             self.invitations_collection.insert_one(invitation)
-            
+
             # Send invitation email
             self.send_invitation_email(email, invitation_token, role, invite_data.get("company_name"))
-            
+
             return {
                 "message": f"Invitation sent to {email}",
                 "invitation_id": str(invitation["_id"]),
                 "expires_at": invitation["expires_at"]
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -131,7 +122,6 @@ class UserManagementService:
         try:
             subject = "Invitation to Join Special Wedding Platform"
             setup_url = f"http://localhost:3003/setup-account?token={token}"
-            
             # Create email content based on role
             if role == "wedding_planner":
                 role_description = "Wedding Planner"
@@ -144,7 +134,6 @@ class UserManagementService:
             else:
                 role_description = role.replace("_", " ").title()
                 welcome_message = f"You've been invited to join Special Wedding as a {role_description}."
-            
             body = f"""
             <html>
             <body>
@@ -159,14 +148,12 @@ class UserManagementService:
             </body>
             </html>
             """
-            
             # Note: This would integrate with your email service
             # For now, we'll just log it or use a simple email service
             # Send invitation email using ResendEmailService
             if self.email_service.configured:
                 base_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000")
                 setup_url = f"{base_url}/setup-account?token={token}"
-                
                 # Create professional invitation email
                 html_content = self._generate_invitation_email_html(
                     email=email,
@@ -175,9 +162,9 @@ class UserManagementService:
                     setup_url=setup_url,
                     invited_by=invited_by
                 )
-                
+
                 subject = f"Welcome to Special Wedding - Complete Your Account Setup"
-                
+
                 result = self.email_service.send_email(
                     to_email=email,
                     subject=subject,
@@ -185,7 +172,6 @@ class UserManagementService:
                     from_name="Special Wedding Team",
                     email_type="user_invitation"
                 )
-                
                 return result["success"]
             else:
                 # Email service not configured - log for development
@@ -193,7 +179,6 @@ class UserManagementService:
                 logger = logging.getLogger(__name__)
                 logger.warning(f"Email service not configured. Invitation for {email} not sent.")
                 return False
-            
         except Exception as e:
             # Log error without exposing sensitive information
             return False
@@ -204,13 +189,13 @@ class UserManagementService:
             query = {}
             if role_filter:
                 query["role"] = role_filter
-            
+
             users = list(self.users_collection.find(query, {"password_hash": 0, "password": 0}))  # Exclude password fields
-            
+
             # Convert ObjectId to string for JSON serialization
             for user in users:
                 user["_id"] = str(user["_id"])
-            
+
             return users
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing users: {str(e)}")
@@ -234,20 +219,20 @@ class UserManagementService:
             protected_fields = ["_id", "email", "password_hash", "created_at"]
             for field in protected_fields:
                 update_data.pop(field, None)
-            
+
             # Add update timestamp
             update_data["updated_at"] = datetime.utcnow()
-            
+
             result = self.users_collection.update_one(
                 {"_id": user_id},
                 {"$set": update_data}
             )
-            
+
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             return {"message": "User updated successfully"}
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -260,20 +245,19 @@ class UserManagementService:
             user = self.users_collection.find_one({"_id": user_id})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            
             # Check if user has assigned weddings
             assigned_weddings = list(self.weddings_collection.find({"assigned_planner_email": user["email"]}))
             if assigned_weddings:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail=f"Cannot delete user: {len(assigned_weddings)} weddings are assigned to this user"
                 )
-            
+
             # Delete user
             result = self.users_collection.delete_one({"_id": user_id})
-            
+
             return {"message": "User deleted successfully"}
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -286,21 +270,21 @@ class UserManagementService:
             user = self.users_collection.find_one({"_id": user_id})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             if user["role"] != "wedding_planner":
                 raise HTTPException(status_code=400, detail="User is not a wedding planner")
-            
+
             # Update wedding with assigned planner
             result = self.weddings_collection.update_one(
                 {"_id": wedding_id},
                 {"$set": {"assigned_planner_email": user["email"]}}
             )
-            
+
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-            
+
             return {"message": f"Wedding {wedding_id} assigned to {user['email']}"}
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -314,12 +298,12 @@ class UserManagementService:
                 {"_id": wedding_id},
                 {"$unset": {"assigned_planner_email": ""}}
             )
-            
+
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-            
+
             return {"message": f"Wedding {wedding_id} unassigned"}
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -332,12 +316,12 @@ class UserManagementService:
                 {"_id": user_id},
                 {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
             )
-            
+
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             return {"message": "User suspended successfully"}
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -350,12 +334,12 @@ class UserManagementService:
                 {"_id": user_id},
                 {"$set": {"is_active": True, "updated_at": datetime.utcnow()}}
             )
-            
+
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             return {"message": "User activated successfully"}
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -369,17 +353,16 @@ class UserManagementService:
                 "status": "pending",
                 "expires_at": {"$gt": datetime.utcnow()}
             })
-            
+
             if not invitation:
                 raise HTTPException(status_code=404, detail="Invalid or expired invitation token")
-            
+
             return {
                 "email": invitation["email"],
                 "role": invitation["role"],
                 "company_name": invitation["invite_data"].get("company_name"),
                 "expires_at": invitation["expires_at"]
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -394,15 +377,14 @@ class UserManagementService:
                 "status": "pending",
                 "expires_at": {"$gt": datetime.utcnow()}
             })
-            
+
             if not invitation:
                 raise HTTPException(status_code=404, detail="Invalid or expired invitation token")
-            
+
             # Check if user already exists
             existing_user = self.users_collection.find_one({"email": invitation["email"]})
             if existing_user:
                 raise HTTPException(status_code=400, detail="User account already exists")
-            
             # Create user account
             password_hash = get_password_hash(password)
             user_data = {
@@ -416,22 +398,20 @@ class UserManagementService:
                 "created_at": datetime.utcnow(),
                 "setup_completed_at": datetime.utcnow()
             }
-            
+
             result = self.users_collection.insert_one(user_data)
-            
+
             # Mark invitation as completed
             self.invitations_collection.update_one(
                 {"token": token},
                 {"$set": {"status": "completed", "completed_at": datetime.utcnow()}}
             )
-            
             return {
                 "message": "Account setup completed successfully",
                 "user_id": str(result.inserted_id),
                 "email": invitation["email"],
                 "role": invitation["role"]
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -441,32 +421,30 @@ class UserManagementService:
         """Public registration for wedding planners with email verification"""
         try:
             email = registration_data["email"]
-            
+
             # Get trial settings from SAAS config
             trial_settings = self.get_trial_settings()
-            
+
             # Check if user already exists
             existing_user = self.users_collection.find_one({"email": email})
             if existing_user:
                 raise HTTPException(status_code=400, detail="User with this email already exists")
-            
             # Check for previous trial usage if not allowed
             if not trial_settings.get("allow_multiple_trials", False):
                 if self.check_previous_trial_usage(email):
                     raise HTTPException(
-                        status_code=400, 
+                        status_code=400,
                         detail="Free trial has already been used with this email address. Please contact support for assistance."
                     )
-            
+
             # Generate email verification token
             verification_token = self.generate_invitation_token()
             verification_expires = datetime.utcnow() + timedelta(hours=48)  # 48 hours to verify
-            
+
             # Create user account (inactive until email verification)
             password_hash = get_password_hash(registration_data["password"])
             trial_days = trial_settings.get("default_trial_days", 30)
             trial_end_date = datetime.utcnow() + timedelta(days=trial_days)
-            
             user_data = {
                 "email": email,
                 "password_hash": password_hash,
@@ -485,23 +463,22 @@ class UserManagementService:
                 "created_at": datetime.utcnow(),
                 "registration_source": "public_signup"
             }
-            
+
             result = self.users_collection.insert_one(user_data)
-            
+
             # Send email verification email
             if self.email_service.configured:
                 # Create verification URL
                 base_url = os.getenv("FRONTEND_URL", "http://localhost:3005")
                 verification_url = f"{base_url}/verify-email/{verification_token}"
-                
                 html_content = self._generate_verification_email_html(
                     email=email,
                     first_name=user_data.get("first_name", ""),
                     verification_url=verification_url
                 )
-                
+
                 subject = "Verify Your Email - Special Wedding"
-                
+
                 self.email_service.send_email(
                     to_email=email,
                     subject=subject,
@@ -509,7 +486,6 @@ class UserManagementService:
                     from_name="Special Wedding Team",
                     email_type="email_verification"
                 )
-            
             return {
                 "message": "Registration successful! Please check your email to verify your account before logging in.",
                 "user_id": str(result.inserted_id),
@@ -517,7 +493,6 @@ class UserManagementService:
                 "role": user_data["role"],
                 "verification_required": True
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -531,14 +506,14 @@ class UserManagementService:
                 "email_verification_token": token,
                 "email_verified": False
             })
-            
+
             if not user:
                 raise HTTPException(status_code=400, detail="Invalid or expired verification token")
-            
+
             # Check if token has expired
             if user.get("verification_token_expires") and user["verification_token_expires"] < datetime.utcnow():
                 raise HTTPException(status_code=400, detail="Verification token has expired. Please register again.")
-            
+
             # Update user to verified status
             self.users_collection.update_one(
                 {"_id": user["_id"]},
@@ -554,7 +529,6 @@ class UserManagementService:
                     }
                 }
             )
-            
             # Send welcome email after successful verification
             if self.email_service.configured:
                 html_content = self._generate_welcome_email_html(
@@ -563,9 +537,9 @@ class UserManagementService:
                     role=user.get("role", "wedding_planner"),
                     company_name=user.get("company_name", "")
                 )
-                
+
                 subject = "Welcome to Special Wedding - Your Account is Ready!"
-                
+
                 self.email_service.send_email(
                     to_email=user["email"],
                     subject=subject,
@@ -573,13 +547,11 @@ class UserManagementService:
                     from_name="Special Wedding Team",
                     email_type="welcome_email"
                 )
-            
             return {
                 "message": "Email verified successfully! Your account is now active. You can log in.",
                 "email": user["email"],
                 "verified_at": datetime.utcnow().isoformat()
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -588,7 +560,6 @@ class UserManagementService:
     def _generate_invitation_email_html(self, email: str, role: str, company_name: str, setup_url: str, invited_by: str) -> str:
         """Generate professional invitation email HTML"""
         role_display = role.replace("_", " ").title()
-        
         return f"""
         <!DOCTYPE html>
         <html>
@@ -619,26 +590,25 @@ class UserManagementService:
                 <div class="content">
                     <p>Hello!</p>
                     <p>You've been invited to join <strong>Special Wedding</strong> as a <strong>{role_display}</strong> by {invited_by}.</p>
-                    
                     <div class="welcome-card">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Your Account Details:</h3>
                         <p style="margin: 8px 0;"><strong>Email:</strong> {email}</p>
                         <p style="margin: 8px 0;"><strong>Role:</strong> {role_display}</p>
                         {f'<p style="margin: 8px 0;"><strong>Company:</strong> {company_name}</p>' if company_name else ''}
                     </div>
-                    
+
                     <p>To complete your account setup and create your password, please click the button below:</p>
-                    
+
                     <div class="button-container">
                         <a href="{setup_url}" class="button">Complete Account Setup</a>
                     </div>
-                    
+
                     <div class="security-note">
                         <strong>Security Note:</strong> This invitation link is unique to you and will expire in 7 days. If you didn't expect this invitation, please ignore this email.
                     </div>
-                    
+
                     <p>If you have any questions, feel free to contact our support team.</p>
-                    
+
                     <p>Best regards,<br>The Special Wedding Team</p>
                 </div>
                 <div class="footer">
@@ -651,7 +621,6 @@ class UserManagementService:
         </body>
         </html>
         """
-    
     def _generate_verification_email_html(self, email: str, first_name: str, verification_url: str) -> str:
         """Generate email verification email HTML"""
         return f"""
@@ -686,27 +655,26 @@ class UserManagementService:
                 <div class="content">
                     <p>Hello{f' {first_name}' if first_name else ''}!</p>
                     <p>Thank you for registering with <strong>Special Wedding</strong>! To complete your account setup and start planning amazing weddings, please verify your email address.</p>
-                    
                     <div class="verification-card">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Account Details:</h3>
                         <p style="margin: 8px 0;"><strong>Email:</strong> {email}</p>
                         <p style="margin: 8px 0;"><strong>Status:</strong> Pending Verification</p>
                     </div>
-                    
+
                     <p>Click the button below to verify your email address and activate your account:</p>
-                    
+
                     <div class="button-container">
                         <a href="{verification_url}" class="button">Verify Email Address</a>
                     </div>
-                    
+
                     <div class="expiry-warning">
                         <strong>Important:</strong> This verification link will expire in 48 hours. If you don't verify your email within this time, you'll need to register again.
                     </div>
-                    
+
                     <div class="security-note">
                         <strong>Security Note:</strong> If you didn't create an account with Special Wedding, please ignore this email. Your email address will not be used for any further communications.
                     </div>
-                    
+
                     <p>Once verified, you'll be able to:</p>
                     <ul>
                         <li>Create and manage wedding projects</li>
@@ -714,7 +682,6 @@ class UserManagementService:
                         <li>Send beautiful RSVP invitations</li>
                         <li>Track guest responses and analytics</li>
                     </ul>
-                    
                     <p>Best regards,<br>The Special Wedding Team</p>
                 </div>
                 <div class="footer">
@@ -727,12 +694,10 @@ class UserManagementService:
         </body>
         </html>
         """
-    
     def _generate_welcome_email_html(self, email: str, first_name: str, role: str, company_name: str) -> str:
         """Generate welcome email HTML for new users"""
         role_display = role.replace("_", " ").title()
         name_display = first_name if first_name else email.split('@')[0].title()
-        
         return f"""
         <!DOCTYPE html>
         <html>
@@ -763,7 +728,6 @@ class UserManagementService:
                 <div class="content">
                     <p>Hi {name_display},</p>
                     <p>Welcome to <strong>Special Wedding</strong>! Your account has been successfully created and you're ready to start planning amazing weddings.</p>
-                    
                     <div class="feature-list">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">What you can do now:</h3>
                         <ul>
@@ -775,15 +739,15 @@ class UserManagementService:
                             <li>Send SMS reminders to guests</li>
                         </ul>
                     </div>
-                    
+
                     <p>As a <strong>{role_display}</strong>{f' at {company_name}' if company_name else ''}, you have access to all the tools you need to create memorable wedding experiences.</p>
-                    
+
                     <div class="button-container">
                         <a href="{os.getenv('NEXT_PUBLIC_API_BASE_URL', 'http://localhost:3000')}/admin" class="button">Start Planning</a>
                     </div>
-                    
+
                     <p>If you have any questions or need help getting started, our support team is here to help.</p>
-                    
+
                     <p>Happy planning!<br>The Special Wedding Team</p>
                 </div>
                 <div class="footer">
@@ -795,7 +759,6 @@ class UserManagementService:
         </body>
         </html>
         """
-    
     def _generate_verification_email_html(self, email: str, first_name: str, verification_url: str) -> str:
         """Generate email verification email HTML"""
         return f"""
@@ -830,27 +793,26 @@ class UserManagementService:
                 <div class="content">
                     <p>Hello{f' {first_name}' if first_name else ''}!</p>
                     <p>Thank you for registering with <strong>Special Wedding</strong>! To complete your account setup and start planning amazing weddings, please verify your email address.</p>
-                    
                     <div class="verification-card">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Account Details:</h3>
                         <p style="margin: 8px 0;"><strong>Email:</strong> {email}</p>
                         <p style="margin: 8px 0;"><strong>Status:</strong> Pending Verification</p>
                     </div>
-                    
+
                     <p>Click the button below to verify your email address and activate your account:</p>
-                    
+
                     <div class="button-container">
                         <a href="{verification_url}" class="button">Verify Email Address</a>
                     </div>
-                    
+
                     <div class="expiry-warning">
                         <strong>Important:</strong> This verification link will expire in 48 hours. If you don't verify your email within this time, you'll need to register again.
                     </div>
-                    
+
                     <div class="security-note">
                         <strong>Security Note:</strong> If you didn't create an account with Special Wedding, please ignore this email. Your email address will not be used for any further communications.
                     </div>
-                    
+
                     <p>Once verified, you'll be able to:</p>
                     <ul>
                         <li>Create and manage wedding projects</li>
@@ -858,7 +820,6 @@ class UserManagementService:
                         <li>Send beautiful RSVP invitations</li>
                         <li>Track guest responses and analytics</li>
                     </ul>
-                    
                     <p>Best regards,<br>The Special Wedding Team</p>
                 </div>
                 <div class="footer">
@@ -878,14 +839,14 @@ class UserManagementService:
             user = self.users_collection.find_one({"email": user_email})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             # Verify current password
             if not verify_password(current_password, user["password_hash"]):
                 raise HTTPException(status_code=400, detail="Current password is incorrect")
-            
+
             # Hash new password
             new_password_hash = get_password_hash(new_password)
-            
+
             # Update password in database
             result = self.users_collection.update_one(
                 {"email": user_email},
@@ -896,10 +857,10 @@ class UserManagementService:
                     }
                 }
             )
-            
+
             if result.modified_count == 0:
                 raise HTTPException(status_code=500, detail="Failed to update password")
-            
+
             # Publish password changed event
             try:
                 event = EventFactory.password_changed(
@@ -910,12 +871,10 @@ class UserManagementService:
             except Exception as e:
                 # Log but don't fail the password change if event publishing fails
                 print(f"Failed to publish password change event: {e}")
-            
             return {
                 "message": "Password changed successfully",
                 "changed_at": datetime.utcnow().isoformat()
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -928,20 +887,20 @@ class UserManagementService:
             user = self.users_collection.find_one({"email": current_email})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             # Verify password
             if not verify_password(password, user["password_hash"]):
                 raise HTTPException(status_code=400, detail="Password is incorrect")
-            
+
             # Check if new email is already in use
             existing_user = self.users_collection.find_one({"email": new_email})
             if existing_user:
                 raise HTTPException(status_code=400, detail="Email address is already in use")
-            
+
             # Generate email verification token for new email
             verification_token = self.generate_invitation_token()
             verification_expires = datetime.utcnow() + timedelta(hours=24)  # 24 hours to verify
-            
+
             # Update user with new email (but keep it unverified until verification)
             result = self.users_collection.update_one(
                 {"email": current_email},
@@ -954,10 +913,10 @@ class UserManagementService:
                     }
                 }
             )
-            
+
             if result.modified_count == 0:
                 raise HTTPException(status_code=500, detail="Failed to initiate email change")
-            
+
             # Publish email change requested event
             try:
                 event = EventFactory.email_change_requested(
@@ -969,14 +928,12 @@ class UserManagementService:
             except Exception as e:
                 # Log but don't fail the email change if event publishing fails
                 print(f"Failed to publish email change requested event: {e}")
-            
             return {
                 "message": "Email change requested. Please check your new email address to verify the change.",
                 "pending_email": new_email,
                 "verification_required": True,
                 "expires_at": verification_expires.isoformat()
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -989,18 +946,18 @@ class UserManagementService:
             user = self.users_collection.find_one({
                 "email_change_token": token
             })
-            
+
             if not user:
                 raise HTTPException(status_code=400, detail="Invalid or expired verification token")
-            
+
             # Check if token has expired
             if user.get("email_change_token_expires") and user["email_change_token_expires"] < datetime.utcnow():
                 raise HTTPException(status_code=400, detail="Verification token has expired. Please request a new email change.")
-            
+
             # Update user email to the new email
             old_email = user["email"]
             new_email = user["pending_email"]
-            
+
             self.users_collection.update_one(
                 {"_id": user["_id"]},
                 {
@@ -1016,7 +973,6 @@ class UserManagementService:
                     }
                 }
             )
-            
             # Publish email changed event
             try:
                 event = EventFactory.email_changed(
@@ -1028,14 +984,12 @@ class UserManagementService:
             except Exception as e:
                 # Log but don't fail the email change if event publishing fails
                 print(f"Failed to publish email changed event: {e}")
-            
             return {
                 "message": "Email address changed successfully",
                 "old_email": old_email,
                 "new_email": new_email,
                 "changed_at": datetime.utcnow().isoformat()
             }
-            
         except HTTPException:
             raise
         except Exception as e:
@@ -1052,15 +1006,15 @@ class UserManagementService:
                     "email_change_token": 0
                 }
             )
-            
+
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             # Convert ObjectId to string
             user["_id"] = str(user["_id"])
-            
+
             return user
-            
+
         except HTTPException:
             raise
         except Exception as e:

@@ -144,7 +144,6 @@ export default function AdminGuestsPage() {
                   'Content-Type': 'application/json',
                 },
               });
-              
               if (response.ok) {
                 const guestPlusOnes = await response.json();
                 return guestPlusOnes.map((po: any) => ({
@@ -160,7 +159,6 @@ export default function AdminGuestsPage() {
             }
           })
         );
-        
         // Flatten the array of arrays
         const allPlusOnes = plusOnesResponse.flat();
         setPlusOnes(allPlusOnes);

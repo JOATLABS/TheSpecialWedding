@@ -840,4 +840,3 @@ class PlatformMetricsService:
 
 
 service = PlatformMetricsService(mongo)
-

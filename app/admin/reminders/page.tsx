@@ -184,7 +184,7 @@ export default function AdminRemindersPage() {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
- body: JSON.stringify({ 
+ body: JSON.stringify({
  slug: selectedWeddingData.slug,
  custom_message: inviteMessage.trim() || null
  }),
@@ -199,7 +199,7 @@ export default function AdminRemindersPage() {
  // Send Email invites
  if (channel === 'email' || channel === 'both') {
  let response;
- 
+
  if (emailAttachment) {
  // Use multipart/form-data endpoint when attachment is present
  const formData = new FormData();
@@ -207,7 +207,7 @@ export default function AdminRemindersPage() {
  if (emailSubject) formData.append('custom_subject', emailSubject);
  if (emailHtml) formData.append('custom_html', emailHtml);
  formData.append('attachment', emailAttachment);
- 
+
  response = await fetch(`${baseUrl}/admin/email/send-invites-with-attachment`, {
  method: 'POST',
  headers: {
@@ -223,7 +223,7 @@ export default function AdminRemindersPage() {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
- body: JSON.stringify({ 
+ body: JSON.stringify({
  wedding_slug: selectedWeddingData.slug,
  custom_subject: emailSubject || null,
  custom_html: emailHtml || null
@@ -379,7 +379,7 @@ export default function AdminRemindersPage() {
  const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
  const guestsWithPhone = guests.filter(g => g.phone && g.phone.trim() !== '');
  const guestsWithEmail = guests.filter(g => g.email && g.email.trim() !== '');
- const guestsWithPhoneOrEmail = guests.filter(g => 
+ const guestsWithPhoneOrEmail = guests.filter(g =>
  (g.phone && g.phone.trim() !== '') || (g.email && g.email.trim() !== '')
  );
  console.log('All guests:', guests);
@@ -419,7 +419,7 @@ export default function AdminRemindersPage() {
  ))}
  </select>
  </div>
- 
+
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">
  Communication Channel
@@ -520,7 +520,7 @@ export default function AdminRemindersPage() {
  {activeTab === 'invites' && (
  <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Wedding Invitations</h2>
- 
+
  {selectedWedding ? (
  <div className="space-y-6">
  <div className="p-6 bg-wedding-ivory rounded-lg">
@@ -679,11 +679,11 @@ export default function AdminRemindersPage() {
  onClick={() => setShowEmailPreview(false)}
  className="text-gray-500 hover:text-gray-700"
  >
- 
+
  </button>
  </div>
  <div className="p-4 overflow-y-auto max-h-[70vh]">
- <iframe 
+ <iframe
  srcDoc={emailPreviewHtml}
  className="w-full h-[600px] border rounded"
  />
@@ -714,7 +714,6 @@ export default function AdminRemindersPage() {
  {activeTab === 'reminders' && (
  <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Event Reminders</h2>
- 
  <div className="space-y-6">
  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
  <div>
@@ -729,7 +728,6 @@ export default function AdminRemindersPage() {
  <option value="reception">Reception</option>
  </select>
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
  <select
@@ -776,7 +774,6 @@ export default function AdminRemindersPage() {
  {activeTab === 'individual' && (
  <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Individual Messages</h2>
- 
  {selectedWedding ? (
  <div className="space-y-6">
  <div>
@@ -835,7 +832,6 @@ export default function AdminRemindersPage() {
  {activeTab === 'history' && (
  <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6">Message History</h2>
- 
  {messageHistory.length === 0 ? (
  <p className="text-gray-500">No messages sent yet.</p>
  ) : (

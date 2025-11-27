@@ -18,7 +18,6 @@ subscription_service = SubscriptionService()
 
 def create_default_plans():
  """Create default subscription plans"""
- 
  plans = [
  {
  "name": "Starter",
@@ -145,45 +144,44 @@ def create_default_plans():
  "display_order": 0
  }
  ]
- 
+
  created_plans = []
- 
+
  for plan_data in plans:
  try:
  # Check if plan already exists
  existing_plan = mongo.get_subscription_plans_collection().find_one({"name": plan_data["name"]})
- 
  if existing_plan:
  print(f"Plan '{plan_data['name']}' already exists, skipping...")
  created_plans.append(existing_plan)
  continue
- 
+
  # Create the plan using the subscription service
  result = subscription_service.create_plan(plan_data, "system@thespecialwedding.com")
  created_plans.append(result)
- 
+
  print(f" Created subscription plan: {plan_data['name']}")
- 
+
  except Exception as e:
  print(f" Error creating plan '{plan_data['name']}': {str(e)}")
- 
+
  return created_plans
 
 def main():
  """Main function to seed subscription plans"""
  print(" Starting subscription plans seeding...")
  print("-" * 50)
- 
+
  try:
  # Connect to database
  print("Connecting to MongoDB...")
- 
+
  # Create default plans
  plans = create_default_plans()
- 
+
  print("-" * 50)
  print(f" Successfully created {len(plans)} subscription plans!")
- 
+
  # Display created plans
  print("\nCreated Plans:")
  for plan in plans:
@@ -192,9 +190,9 @@ def main():
  plan_weddings = plan.get('max_weddings', 0)
  weddings_text = "Unlimited" if plan_weddings == -1 else str(plan_weddings)
  print(f" • {plan_name}: ${plan_price}/month ({weddings_text} weddings)")
- 
+
  print("\n Subscription plans seeding completed successfully!")
- 
+
  except Exception as e:
  print(f" Error during seeding: {str(e)}")
  sys.exit(1)

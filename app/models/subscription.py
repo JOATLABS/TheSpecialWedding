@@ -22,18 +22,17 @@ class SubscriptionPlanModel(BaseModel):
     id: str = Field(..., alias="_id", description="Unique plan identifier")
     name: str = Field(..., description="Plan name (e.g., 'Starter', 'Professional')")
     description: Optional[str] = Field(None, description="Plan description")
-    
+
     # Pricing
     price_monthly: float = Field(0, description="Monthly price in USD")
     price_yearly: Optional[float] = Field(None, description="Yearly price in USD (if different from 12x monthly)")
-    
+
     # Features and Limits
     max_weddings: int = Field(1, description="Maximum weddings allowed (-1 for unlimited)")
     max_guests_per_wedding: int = Field(100, description="Maximum guests per wedding (-1 for unlimited)")
     ai_credits_monthly: int = Field(10, description="AI credits per month")
     storage_gb: int = Field(1, description="Storage limit in GB")
     staff_seats: int = Field(0, description="Number of staff accounts allowed")
-    
     # Feature flags
     features: Dict[str, bool] = Field(default_factory=dict, description="Feature availability flags")
     features_list: Optional[List[str]] = Field(None, description="Human-readable feature highlights for display")
@@ -45,7 +44,6 @@ class SubscriptionPlanModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this plan")
-    
     class Config:
         populate_by_name = True
         schema_extra = {
@@ -82,30 +80,29 @@ class UserSubscriptionModel(BaseModel):
     user_id: str = Field(..., description="User ID this subscription belongs to")
     user_email: str = Field(..., description="User email for reference")
     plan_id: str = Field(..., description="Subscription plan ID")
-    
+
     # Subscription details
     status: SubscriptionStatus = Field(SubscriptionStatus.TRIAL, description="Current subscription status")
     billing_interval: BillingInterval = Field(BillingInterval.MONTHLY, description="Billing frequency")
-    
+
     # Dates
     start_date: datetime = Field(default_factory=datetime.utcnow, description="Subscription start date")
     trial_end_date: Optional[datetime] = Field(None, description="Trial expiration date")
     current_period_start: datetime = Field(default_factory=datetime.utcnow, description="Current billing period start")
     current_period_end: datetime = Field(..., description="Current billing period end")
     cancelled_at: Optional[datetime] = Field(None, description="Cancellation date")
-    
+
     # Usage tracking
     usage: Dict[str, Any] = Field(default_factory=dict, description="Current usage statistics")
-    
+
     # Payment integration
     stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
     stripe_subscription_id: Optional[str] = Field(None, description="Stripe subscription ID")
-    
+
     # System fields
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this subscription")
-    
     class Config:
         populate_by_name = True
         schema_extra = {
@@ -130,20 +127,19 @@ class UsageTrackingModel(BaseModel):
     """Usage tracking for subscription limits"""
     user_id: str = Field(..., description="User ID")
     subscription_id: str = Field(..., description="Subscription ID")
-    
     # Current usage
     weddings_count: int = Field(0, description="Current number of weddings")
     ai_credits_used_month: int = Field(0, description="AI credits used this month")
     storage_used_gb: float = Field(0, description="Storage used in GB")
     staff_seats_used: int = Field(0, description="Active staff accounts")
-    
+
     # Monthly tracking
     current_month: str = Field(..., description="Current tracking month (YYYY-MM)")
     credits_reset_date: datetime = Field(..., description="When AI credits reset")
-    
+
     # System fields
     last_updated: datetime = Field(default_factory=datetime.utcnow)
-    
+
     class Config:
         schema_extra = {
             "example": {

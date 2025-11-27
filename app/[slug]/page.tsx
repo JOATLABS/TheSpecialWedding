@@ -13,7 +13,7 @@ export default function WeddingLandingPage() {
  const contextWedding = useContext(WeddingContext);
  const params = useParams();
  const slug = params.slug as string;
- 
+
  const [wedding, setWedding] = useState<any>(null);
  const [guest, setGuest] = useState<any>(null);
  const [images, setImages] = useState<GalleryImage[]>([]);
@@ -38,7 +38,7 @@ export default function WeddingLandingPage() {
  setWedding(weddingData);
  setGuest(guestData);
  setAccessGranted(true);
- 
+
  // Fetch gallery for verified users
  fetchGallery(weddingData, guestData);
  };

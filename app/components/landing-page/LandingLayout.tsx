@@ -20,9 +20,9 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
   const theme = useTheme(wedding);
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
-  
+
   // Get featured image from wedding or use first gallery image
-  const featuredImage = wedding.featured_image 
+  const featuredImage = wedding.featured_image
     ? `https://media.thespecialwedding.com/${wedding.featured_image}`
     : images.length > 0 ? images[0].url : undefined;
 

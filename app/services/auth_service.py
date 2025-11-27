@@ -18,29 +18,27 @@ class AuthService:
             if not verify_password(password, user["hashed_password"]):
                 raise HTTPException(status_code=401, detail="Invalid credentials")
             return user
-        
         # Check new users collection (wedding planners, vendors, etc.)
         user = await self.users_collection.find_one({"email": email})
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        
+
         # Check password
         if not verify_password(password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        
+
         # Check if account is active
         if not user.get("is_active", False):
             raise HTTPException(status_code=401, detail="Account is not active. Please contact support.")
-        
+
         # Check if email is verified for public registrations
         if user.get("registration_source") == "public_signup" and not user.get("email_verified", False):
             raise HTTPException(status_code=401, detail="Please verify your email address before logging in. Check your email for the verification link.")
-        
+
         return user
 
     async def login_and_get_token(self, email: str, password: str):
         user = self.authenticate_user(email, password)
-        
         # Update last_login timestamp
         login_time = datetime.utcnow()
         try:
@@ -62,7 +60,6 @@ class AuthService:
         except Exception as e:
             logger.error(f"Failed to update last_login for {email}: {str(e)}")
             # Don't fail the login if last_login update fails
-        
         token_data = {"sub": user["email"], "role": user.get("role", "admin")}
         access_token_expires = timedelta(minutes=60)
         token = create_access_token(data=token_data, expires_delta=access_token_expires)

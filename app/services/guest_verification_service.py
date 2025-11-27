@@ -227,11 +227,11 @@ class GuestVerificationService:
                     except Exception as e:
                         security_logger.warning(f"OTP verification error: {str(e)}")
                         self._record_failed_attempt(rate_limit_key)
-                
+
                 # Method 3: Request OTP (when phone/email provided without code)
                 phone = verification_data.get("phone", "").strip()
                 email = verification_data.get("email", "").strip()
-                
+
                 if phone or email:
                     # Return special response indicating OTP should be sent
                     return {
@@ -276,10 +276,10 @@ class GuestVerificationService:
         """Normalize phone number for comparison"""
         if not phone:
             return ""
-        
+
         # Remove all non-digit characters
         digits_only = re.sub(r'\D', '', phone)
-        
+
         # Handle US phone numbers
         if len(digits_only) == 10:
             return f"+1{digits_only}"
@@ -287,11 +287,11 @@ class GuestVerificationService:
             return f"+{digits_only}"
         elif digits_only.startswith('1') and len(digits_only) > 11:
             return f"+{digits_only}"
-        
+
         # For other formats, just prepend + if not present
         if not phone.startswith('+'):
             return f"+{digits_only}"
-        
+
         return phone
 
     def _log_guest_verification(self, wedding_id: str, guest_id: str, method: str):
@@ -317,7 +317,6 @@ class GuestVerificationService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             privacy_settings = wedding.get("privacy_settings", {})
-            
             return {
                 "couple_names": wedding.get("couple_names"),
                 "privacy_mode": privacy_settings.get("privacy_mode", "private"),

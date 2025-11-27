@@ -93,7 +93,7 @@ export default function AdminImportPage() {
 
  const handleDeleteGuest = async (guestId: string) => {
  if (!confirm('Are you sure you want to delete this guest?')) return;
- 
+
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
@@ -102,7 +102,7 @@ export default function AdminImportPage() {
  'Authorization': `Bearer ${token}`,
  },
  });
- 
+
  if (response.ok) {
  fetchGuests(); // Refresh the list
  } else {
@@ -126,7 +126,7 @@ export default function AdminImportPage() {
 
  const handleImport = async (e: React.FormEvent) => {
  e.preventDefault();
- 
+
  if (!file || !selectedWedding) {
  setError('Please select both a CSV file and a wedding');
  return;
@@ -161,11 +161,11 @@ export default function AdminImportPage() {
  setResult(data);
  setFile(null);
  setSelectedWedding('');
- 
+
  // Reset file input
  const fileInput = document.getElementById('csvFile') as HTMLInputElement;
  if (fileInput) fileInput.value = '';
- 
+
  } catch (err) {
  setError(err instanceof Error ? err.message : 'Import failed');
  } finally {
@@ -247,10 +247,10 @@ export default function AdminImportPage() {
  accept=".csv"
  onChange={handleFileChange}
  className="
- w-full 
- px-4 py-3 
- border border-gray-300 
- rounded-lg 
+ w-full
+ px-4 py-3
+ border border-gray-300
+ rounded-lg
  focus:ring-2 focus:ring-wedding-sage focus:border-transparent
  file:mr-4 file:py-2 file:px-4 file:rounded-full
  file:border-0 file:text-sm file:font-semibold
@@ -281,13 +281,13 @@ export default function AdminImportPage() {
  type="submit"
  disabled={loading || !file || !selectedWedding}
  className="
- w-full 
- py-3 
- rounded-lg 
- bg-gradient-to-r from-wedding-sage to-wedding-gold 
- text-white font-semibold 
- hover:from-wedding-rose hover:to-wedding-gold 
- focus:outline-none focus:ring-2 focus:ring-wedding-sage 
+ w-full
+ py-3
+ rounded-lg
+ bg-gradient-to-r from-wedding-sage to-wedding-gold
+ text-white font-semibold
+ hover:from-wedding-rose hover:to-wedding-gold
+ focus:outline-none focus:ring-2 focus:ring-wedding-sage
  disabled:opacity-50 disabled:cursor-not-allowed
  transition-all duration-200
  "
@@ -335,12 +335,10 @@ export default function AdminImportPage() {
  {guest.role}
  </span>
  </div>
- 
  <div className="space-y-1 text-sm">
  {guest.email && <div className="text-gray-600"> {guest.email}</div>}
  {guest.phone && <div className="text-gray-600"> {guest.phone}</div>}
  </div>
- 
  <div className="flex justify-between items-center">
  <div className="text-sm">
  {guest.plus_one_allowed ? (
@@ -362,7 +360,6 @@ export default function AdminImportPage() {
  Delete
  </button>
  </div>
- 
  <div className="pt-2 border-t border-gray-200">
  <code className="text-xs bg-gray-200 px-2 py-1 rounded">
  {guest.token}

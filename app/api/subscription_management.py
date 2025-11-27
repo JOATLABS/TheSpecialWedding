@@ -17,7 +17,7 @@ subscription_service = SubscriptionService()
 
 @router.post("/subscription-plans", tags=["ROOT_ADMIN"])
 def create_subscription_plan(
-    plan_data: CreateSubscriptionPlanRequest, 
+    plan_data: CreateSubscriptionPlanRequest,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Create a new subscription plan - ROOT_ADMIN only"""
@@ -33,7 +33,7 @@ async def list_subscription_plans(
 
 @router.get("/subscription-plans/{plan_id}", tags=["ROOT_ADMIN"])
 def get_subscription_plan(
-    plan_id: str, 
+    plan_id: str,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Get subscription plan details - ROOT_ADMIN only"""
@@ -82,11 +82,11 @@ def get_user_subscription(
     # Users can only see their own subscription unless they're ROOT_ADMIN
     if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
         raise HTTPException(status_code=403, detail="Can only view your own subscription")
-    
+
     subscription = subscription_service.get_user_subscription(user_id)
     if not subscription:
         raise HTTPException(status_code=404, detail="No active subscription found")
-    
+
     return subscription
 
 @router.delete("/users/{user_id}/subscription", tags=["ROOT_ADMIN"])
@@ -109,7 +109,6 @@ def get_user_usage_stats(
     # Users can only see their own usage unless they're ROOT_ADMIN
     if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
         raise HTTPException(status_code=403, detail="Can only view your own usage")
-    
     return subscription_service.get_usage_stats(user_id)
 
 @router.post("/users/{user_id}/usage/check", tags=["ROOT_ADMIN", "User"])
@@ -123,7 +122,6 @@ def check_usage_limits(
     # Users can only check their own limits unless they're ROOT_ADMIN
     if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
         raise HTTPException(status_code=403, detail="Can only check your own limits")
-    
     return subscription_service.check_usage_limits(user_id, resource_type, amount)
 
 @router.post("/users/{user_id}/usage/increment", tags=["ROOT_ADMIN"])
@@ -161,20 +159,18 @@ def require_subscription_limit(resource_type: str, amount: int = 1):
         # ROOT_ADMIN bypasses all limits
         if current_user.is_root_admin:
             return current_user
-        
         # Check user's subscription limits
         user_id = current_user.user_data.get("_id")
         if not user_id:
             raise HTTPException(status_code=403, detail="User ID not found")
-        
+
         limits_check = subscription_service.check_usage_limits(user_id, resource_type, amount)
-        
+
         if not limits_check.get("allowed", False):
             raise HTTPException(
                 status_code=402,  # Payment Required
                 detail=limits_check.get("message", f"Subscription limit exceeded for {resource_type}")
             )
-        
         return current_user
     return limit_checker
 
@@ -183,7 +179,6 @@ def require_subscription_limit(resource_type: str, amount: int = 1):
 @router.post("/system/seed-default-plans", tags=["ROOT_ADMIN"])
 def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Seed default subscription plans - ROOT_ADMIN only"""
-    
     default_plans = [
         {
             "name": "Boutique",
@@ -310,25 +305,24 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
             "display_order": 3
         }
     ]
-    
+
     created_plans = []
     skipped_plans = []
-    
+
     for plan_data in default_plans:
         # Check if plan already exists
         existing_plans = subscription_service.list_plans(include_inactive=True)
         existing_plan = next((p for p in existing_plans if p["name"] == plan_data["name"]), None)
-        
+
         if existing_plan:
             skipped_plans.append(plan_data["name"])
             continue
-        
+
         try:
             result = subscription_service.create_plan(plan_data, current_user.email)
             created_plans.append(plan_data["name"])  # Store the plan name instead of the result
         except Exception as e:
             return {"error": f"Failed to create plan '{plan_data['name']}': {str(e)}"}
-    
     return {
         "message": "Default subscription plans seeding completed",
         "created_plans": len(created_plans),
@@ -350,7 +344,6 @@ async def get_public_subscription_plans():
 def get_public_subscription_plan(plan_id: str):
     """Get subscription plan details for public view"""
     plan = subscription_service.get_plan(plan_id)
-    
     # Remove sensitive fields for public view
     public_plan = {
         "id": plan["_id"],
@@ -366,5 +359,4 @@ def get_public_subscription_plan(plan_id: str):
         "features": plan.get("features", {}),
         "is_featured": plan.get("is_featured", False)
     }
-    
     return public_plan

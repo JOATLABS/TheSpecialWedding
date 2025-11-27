@@ -11,10 +11,10 @@ router = APIRouter()
 @router.get("/planner/metrics", tags=["Wedding Planner"])
 async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
     """Get comprehensive metrics for wedding planner dashboard"""
-    
+
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
-    
+
     try:
         # Get planner's assigned weddings
         weddings_collection = mongo.get_weddings_collection()
@@ -22,7 +22,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             "assigned_planner_email": current_user.email,
             "status": {"$ne": "cancelled"}
         }))
-        
         metrics = {
             "summary": {
                 "total_weddings": len(weddings),
@@ -41,7 +40,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "average_wedding_value": 0
             }
         }
-        
         # Calculate upcoming weddings
         current_date = datetime.now()
         for wedding in weddings:
@@ -51,25 +49,25 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                     metrics["summary"]["upcoming_weddings"] += 1
             except:
                 pass
-        
+
         # Get detailed metrics for each wedding
         guests_collection = mongo.get_guest_collection()
         rsvps_collection = mongo.get_rsvps_collection()
-        
+
         for wedding in weddings:
             wedding_id = wedding["_id"]
-            
+
             # Get guest count
             guest_count = await guests_collection.count_documents({"wedding_id": wedding_id})
             metrics["summary"]["total_guests"] += guest_count
-            
+
             # Get RSVP statistics
             rsvps = list(rsvps_collection.find({"wedding_id": wedding_id}))
-            
+
             confirmed = 0
             declined = 0
             pending = guest_count - len(rsvps)  # Guests who haven't RSVPed yet
-            
+
             for rsvp in rsvps:
                 attending = rsvp.get("attending", {})
                 if attending and any(attending.values()):
@@ -78,16 +76,15 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                     declined += 1
                 else:
                     pending += 1
-            
+
             metrics["summary"]["confirmed_rsvps"] += confirmed
             metrics["summary"]["declined_rsvps"] += declined
             metrics["summary"]["pending_rsvps"] += pending
-            
+
             # Calculate progress percentage
             progress_score = 0
             if guest_count > 0:
                 progress_score += min(40, (len(rsvps) / guest_count) * 40)  # 40% for RSVPs
-            
             # Additional progress factors
             if wedding.get("events"):
                 progress_score += 20  # 20% for having events configured
@@ -95,7 +92,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 progress_score += 20  # 20% for having guests
             if wedding.get("details"):
                 progress_score += 20  # 20% for wedding details
-            
             # Calculate days until wedding
             days_until_wedding = 0
             try:
@@ -103,7 +99,6 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 days_until_wedding = (wedding_date - current_date).days
             except:
                 pass
-            
             wedding_metrics = {
                 "id": str(wedding_id),
                 "couple_names": wedding.get("couple_names", ""),
@@ -121,12 +116,12 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "days_until_wedding": days_until_wedding,
                 "created_at": wedding.get("created_at").isoformat() if isinstance(wedding.get("created_at"), datetime) else wedding.get("created_at", "")
             }
-            
+
             metrics["weddings"].append(wedding_metrics)
-        
+
         # Sort weddings by date
         metrics["weddings"].sort(key=lambda x: x["date"])
-        
+
         # Generate recent activity (placeholder - would integrate with actual activity log)
         metrics["recent_activity"] = [
             {
@@ -148,11 +143,11 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "wedding_id": metrics["weddings"][1]["id"] if len(metrics["weddings"]) > 1 else None
             }
         ]
-        
+
         # Calculate revenue metrics (placeholder - would integrate with subscription data)
         if metrics["weddings"]:
             metrics["revenue_metrics"]["monthly_bookings"] = len([
-                w for w in metrics["weddings"] 
+                w for w in metrics["weddings"]
                 if w["created_at"] and (
                     isinstance(w["created_at"], datetime) and w["created_at"].month == current_date.month
                     or isinstance(w["created_at"], str) and datetime.fromisoformat(w["created_at"]).month == current_date.month
@@ -160,9 +155,9 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             ])
             metrics["revenue_metrics"]["total_revenue"] = len(metrics["weddings"]) * 500  # Placeholder
             metrics["revenue_metrics"]["average_wedding_value"] = 500  # Placeholder
-        
+
         return metrics
-        
+
     except Exception as e:
         logging.error(f"Error fetching planner metrics: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch planner metrics: {str(e)}")
@@ -170,10 +165,10 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
 @router.get("/planner/activity-log", tags=["Wedding Planner"])
 def get_activity_log(current_user: ExtendedAuthUser = Depends(get_current_user_extended), limit: int = 50):
     """Get detailed activity log for wedding planner"""
-    
+
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
-    
+
     try:
         # This would typically fetch from an activity log collection
         # For now, return placeholder data
@@ -188,7 +183,7 @@ def get_activity_log(current_user: ExtendedAuthUser = Depends(get_current_user_e
                 "metadata": {"guest_name": "John Smith", "response": "attending"}
             },
             {
-                "id": "activity_2", 
+                "id": "activity_2",
                 "type": "guest_added",
                 "message": "5 new guests added to guest list",
                 "wedding_id": "wedding_123",
@@ -200,15 +195,15 @@ def get_activity_log(current_user: ExtendedAuthUser = Depends(get_current_user_e
                 "id": "activity_3",
                 "type": "email_sent",
                 "message": "Invitation emails sent to 25 guests",
-                "wedding_id": "wedding_123", 
+                "wedding_id": "wedding_123",
                 "wedding_name": "Emmanuel & Peace",
                 "timestamp": (datetime.now() - timedelta(days=1)).isoformat(),
                 "metadata": {"email_count": 25, "email_type": "invitation"}
             }
         ]
-        
+
         return {"activities": activities[:limit], "total": len(activities)}
-        
+
     except Exception as e:
         logging.error(f"Error fetching activity log: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch activity log: {str(e)}")
@@ -216,21 +211,21 @@ def get_activity_log(current_user: ExtendedAuthUser = Depends(get_current_user_e
 @router.get("/planner/weddings", tags=["Wedding Planner"])
 def get_planner_weddings(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
     """Get all weddings assigned to the current planner"""
-    
+
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
-    
+
     try:
         weddings_collection = mongo.get_weddings_collection()
-        
+
         # Query for planner's assigned weddings
         query = {"assigned_planner_email": current_user.email}
         if current_user.is_root_admin:
             # ROOT_ADMIN can see all weddings, but this endpoint is for planner view
             query = {"assigned_planner_email": current_user.email}
-        
+
         weddings = list(weddings_collection.find(query))
-        
+
         # Convert ObjectId to string and format response
         wedding_list = []
         for wedding in weddings:
@@ -249,12 +244,12 @@ def get_planner_weddings(current_user: ExtendedAuthUser = Depends(get_current_us
                 "events": wedding.get("events", [])
             }
             wedding_list.append(wedding_data)
-        
+
         # Sort by date
         wedding_list.sort(key=lambda x: x["date"])
-        
+
         return wedding_list
-        
+
     except Exception as e:
         logging.error(f"Error fetching planner weddings: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch weddings: {str(e)}")

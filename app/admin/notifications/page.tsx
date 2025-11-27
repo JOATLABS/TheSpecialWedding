@@ -31,7 +31,6 @@ export default function NotificationsPage() {
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
   const [sentNotifications, setSentNotifications] = useState<SentNotification[]>([]);
   const [loading, setLoading] = useState(true);
-  
   // Send notification form
   const [customSubject, setCustomSubject] = useState('');
   const [customContent, setCustomContent] = useState('');
@@ -41,7 +40,6 @@ export default function NotificationsPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      
       // Try to fetch from actual API endpoints, fall back to empty arrays
       try {
         // These endpoints would need to be created in the backend
@@ -59,7 +57,6 @@ export default function NotificationsPage() {
         console.warn('Notification history endpoint not available, using empty array');
         setSentNotifications([]);
       }
-      
     } catch (error) {
       console.error('Error fetching notification data:', error);
       setTemplates([]);
@@ -85,7 +82,6 @@ export default function NotificationsPage() {
       // First get the users to send to based on filter
       const usersResponse = await apiRequest<any[]>('/api/admin/users', 'GET');
       const allUsers = usersResponse ?? [];
-      
       let targetUsers = [];
       switch (recipientFilter) {
         case 'all_users':
@@ -117,10 +113,10 @@ export default function NotificationsPage() {
       setCustomSubject('');
       setCustomContent('');
       setRecipientFilter('all_users');
-      
+
       // Refresh history
       fetchData();
-      
+
     } catch (error) {
       console.error('Error sending notification:', error);
       alert('Failed to send notification. Note: This feature requires backend implementation.');
@@ -172,7 +168,6 @@ export default function NotificationsPage() {
       {activeTab === 'send' && (
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <h2 className="text-xl font-semibold text-wedding-navy mb-4">Send New Notification</h2>
-          
           <div className="space-y-4">
             {/* Recipients */}
             <div>
@@ -237,7 +232,6 @@ export default function NotificationsPage() {
               Create Template
             </button>
           </div>
-          
           {templates.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {templates.map((template) => (
@@ -253,7 +247,7 @@ export default function NotificationsPage() {
               <div className="text-gray-400 text-4xl mb-4">📧</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No Templates Yet</h3>
               <p className="text-gray-600 mb-4">
-                Create reusable notification templates for common announcements like maintenance, 
+                Create reusable notification templates for common announcements like maintenance,
                 feature updates, or security notices.
               </p>
               <button className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80">
@@ -268,7 +262,6 @@ export default function NotificationsPage() {
       {activeTab === 'history' && (
         <div className="space-y-6">
           <h2 className="text-xl font-semibold text-wedding-navy">Notification History</h2>
-          
           {sentNotifications.length > 0 ? (
             <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
               <table className="w-full">

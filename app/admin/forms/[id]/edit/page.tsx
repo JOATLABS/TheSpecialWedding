@@ -101,7 +101,6 @@ export default function FormEditPage() {
         setSuccessMessage('Form saved successfully!');
         setLastSaved(new Date());
         setError('');
-        
         // Clear success message after 3 seconds
         setTimeout(() => setSuccessMessage(''), 3000);
       } else {
@@ -178,7 +177,6 @@ export default function FormEditPage() {
               <p className="text-gray-600">{form.name}</p>
             </div>
           </div>
-          
           <div className="flex items-center space-x-4">
             <div className="flex rounded-lg bg-gray-100 p-1">
               <button
@@ -202,14 +200,12 @@ export default function FormEditPage() {
                 Preview
               </button>
             </div>
-            
             <div className="flex items-center space-x-3">
               {lastSaved && (
                 <span className="text-sm text-gray-500">
                   Last saved: {lastSaved.toLocaleTimeString()}
                 </span>
               )}
-              
               <button
                 onClick={saveForm}
                 disabled={saving}
@@ -240,7 +236,6 @@ export default function FormEditPage() {
           </div>
         </div>
       )}
-      
       {successMessage && (
         <div className="mx-6 mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center">

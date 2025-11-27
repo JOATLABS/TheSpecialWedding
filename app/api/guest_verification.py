@@ -29,24 +29,23 @@ def verify_guest_access(slug: str, verification: GuestVerificationRequest):
     """
     try:
         result = verification_service.verify_guest_access(
-            slug=slug, 
+            slug=slug,
             verification_data=verification.dict()
         )
-        
+
         if not result.get("access"):
             raise HTTPException(
-                status_code=403, 
+                status_code=403,
                 detail="Guest verification failed",
                 headers={"X-Auth-Required": result.get("required_auth", "private")}
             )
-        
+
         return {
             "access": True,
             "wedding": result["wedding"],
             "guest": result.get("guest"),
             "auth_method": result.get("auth_method")
         }
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -76,15 +75,14 @@ def get_wedding_with_token_access(slug: str, token: str):
             slug=slug,
             verification_data={"token": token}
         )
-        
+
         if not result.get("access"):
             raise HTTPException(status_code=403, detail="Invalid guest token")
-        
+
         return {
             "wedding": result["wedding"],
             "guest": result.get("guest")
         }
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -92,7 +90,7 @@ def get_wedding_with_token_access(slug: str, token: str):
 
 @router.put("/weddings/{wedding_id}/privacy-settings", tags=["Admin"])
 def update_wedding_privacy_settings(
-    wedding_id: str, 
+    wedding_id: str,
     privacy_settings: PrivacySettingsUpdate,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -102,13 +100,11 @@ def update_wedding_privacy_settings(
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
     try:
         return verification_service.update_wedding_privacy_settings(
             wedding_id=wedding_id,
             privacy_settings=privacy_settings.dict()
         )
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -125,15 +121,14 @@ def get_wedding_access_logs(
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
     try:
         from app.core.database import mongo
         logs = list(mongo.db["access_logs"].find(
             {"wedding_id": wedding_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(100))
-        
+
         return {"logs": logs}
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting access logs: {str(e)}")

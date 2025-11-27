@@ -31,6 +31,7 @@ from app.api.admin_rsvp import router as admin_rsvp_router
 from app.api.admin_auth import router as auth_router
 from app.api.reminder import router as reminder_router
 from app.api.reminder_telnyx import router as reminder_telnyx_router
+from app.api.reminder_twilio import router as reminder_twilio_router
 from app.api.email_reminders import router as email_reminder_router
 from app.api.checkin import router as checkin_router
 from app.api.gallery_public import router as gallery_public_router
@@ -92,17 +93,17 @@ async def lifespan(app: FastAPI):
         logger.info("Database migrations completed")
 
         logger.info("Application startup complete")
-        
+
         yield  # Application runs here
-        
+
     finally:
         # Shutdown
         logger.info("Shutting down application")
-        
+
         # Close database connection
         await close_database()
         logger.info("Database connection closed")
-        
+
         # Close cache connection
         if settings.redis_enabled:
             await close_cache()
@@ -247,6 +248,7 @@ admin_routers = [
     (admin_rsvp_router, "RSVP"),
     (reminder_router, "Admin"),
     (reminder_telnyx_router, "Admin"),
+    (reminder_twilio_router, "Admin"),
     (email_reminder_router, "Admin"),
     (checkin_router, "Admin"),
     (gallery_admin_router, "Gallery"),
@@ -305,18 +307,17 @@ async def app_info():
 async def add_cache_headers(request: Request, call_next):
     """Add appropriate cache headers"""
     response = await call_next(request)
-    
+
     # Add cache headers for static content
     if settings.enable_cache_headers:
         path = request.url.path
-        
+
         if any(path.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2']):
             response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}"
         elif path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         else:
             response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes for other content
-    
     return response
 
 
@@ -325,7 +326,6 @@ if settings.is_development():
     @app.get("/dev/cache-stats", tags=["Metrics"])
     async def cache_stats():
         """Get cache statistics (development only)"""
-        from app.core.cache import cache
         if cache.enabled and cache.redis_client:
             try:
                 # Get Redis info
@@ -337,7 +337,7 @@ if settings.is_development():
                         "keyspace_hits": info.get("keyspace_hits", 0),
                         "keyspace_misses": info.get("keyspace_misses", 0),
                         "hit_rate": (
-                            info.get("keyspace_hits", 0) / 
+                            info.get("keyspace_hits", 0) /
                             (info.get("keyspace_hits", 0) + info.get("keyspace_misses", 1))
                         )
                     }

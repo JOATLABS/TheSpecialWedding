@@ -438,7 +438,6 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- 
  const response = await fetch(`${baseUrl}/admin/subscription-plans/${planId}`, {
  method: 'DELETE',
  headers: {
@@ -463,12 +462,12 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- 
+
  const isEditing = !!editingPlan;
- const url = isEditing 
+ const url = isEditing
  ? `${baseUrl}/admin/subscription-plans/${editingPlan._id}`
  : `${baseUrl}/admin/subscription-plans`;
- 
+
  const method = isEditing ? 'PUT' : 'POST';
 
  const response = await fetch(url, {
@@ -488,7 +487,6 @@ const SaasAdminDashboard = () => {
  'Content-Type': 'application/json'
  }
  });
- 
  if (plansResponse.ok) {
  const updatedPlans = await plansResponse.json();
  setPlans(updatedPlans);
@@ -509,7 +507,6 @@ const SaasAdminDashboard = () => {
  const handleSaveSaasConfig = async (configToSave?: SaasFullConfig | React.MouseEvent) => {
  // Handle both direct config object and mouse event from button clicks
  const configData = (configToSave && 'hero_title' in configToSave) ? configToSave : saasConfig;
- 
  if (!configData) {
  alert('No configuration data to save');
  return;
@@ -518,7 +515,6 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- 
  if (!token) {
  alert('Authentication token not found. Please log in again.');
  return;
@@ -549,7 +545,6 @@ const SaasAdminDashboard = () => {
  };
 
  console.log('Saving SAAS config:', cleanConfig);
- 
  const response = await fetch(`${baseUrl}/admin/saas-config`, {
  method: 'PUT',
  headers: {
@@ -585,9 +580,9 @@ const SaasAdminDashboard = () => {
 
  const handleEditContent = (sectionType: string) => {
  if (!saasConfig) return;
- 
+
  let sectionData = {};
- 
+
  switch (sectionType) {
  case 'hero':
  sectionData = {
@@ -612,7 +607,6 @@ const SaasAdminDashboard = () => {
  console.warn('Unknown section type:', sectionType);
  return;
  }
- 
  setEditingSectionType(sectionType);
  setEditingSectionData(sectionData);
  setEditModalOpen(true);
@@ -621,13 +615,11 @@ const SaasAdminDashboard = () => {
  const handleCreatePlanner = async () => {
  const email = prompt('Enter planner email:');
  const companyName = prompt('Enter company name:');
- 
  if (!email || !companyName) return;
 
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- 
  const response = await fetch(`${baseUrl}/saas/wedding-planners`, {
  method: 'POST',
  headers: {
@@ -658,16 +650,15 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- 
  // Find the planner to get current status
  const planner = planners.find(p => p.id === plannerId);
  if (!planner) {
  alert('Planner not found');
  return;
  }
- 
+
  const isActivating = !planner.is_active;
- 
+
  // First toggle the user status
  const statusResponse = await fetch(`${baseUrl}/saas/wedding-planners/${plannerId}/status`, {
  method: 'PUT',
@@ -682,14 +673,14 @@ const SaasAdminDashboard = () => {
  }
 
  const statusResult = await statusResponse.json();
- 
+
  // If activating and no subscription plan assigned, assign default plan
  if (isActivating) {
  // Find a default plan (preferably Free Trial or the first active plan)
- const defaultPlan = plans.find(p => p.name.toLowerCase().includes('trial')) || 
- plans.find(p => p.is_active) || 
+ const defaultPlan = plans.find(p => p.name.toLowerCase().includes('trial')) ||
+ plans.find(p => p.is_active) ||
  plans[0];
- 
+
  if (defaultPlan) {
  try {
  // Create subscription for the planner
@@ -730,19 +721,19 @@ const SaasAdminDashboard = () => {
  console.warn('Error cancelling subscription:', subError);
  }
  }
- 
+
  // Update local state
- setPlanners(prev => prev.map(p => 
- p.id === plannerId 
+ setPlanners(prev => prev.map(p =>
+ p.id === plannerId
  ? { ...p, is_active: statusResult.new_status }
  : p
  ));
- 
+
  alert(`Planner ${isActivating ? 'activated' : 'deactivated'} successfully`);
- 
+
  // Refresh data to get updated subscription info
  setTimeout(() => window.location.reload(), 1000);
- 
+
  } catch (error) {
  console.error('Error updating planner status:', error);
  alert('Failed to update planner status');
@@ -753,7 +744,6 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- 
  // First, cancel existing subscription if any
  try {
  await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
@@ -766,7 +756,6 @@ const SaasAdminDashboard = () => {
  } catch (error) {
  // Ignore if no existing subscription
  }
- 
  // Assign new subscription
  const response = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
  method: 'POST',
@@ -988,15 +977,15 @@ const SaasAdminDashboard = () => {
  {plan.is_active ? 'Active' : 'Inactive'}
  </span>
  </div>
- 
+
  {plan.description && (
  <p className="text-sm text-gray-600 mb-3">{plan.description}</p>
  )}
- 
+
  <div className="text-3xl font-bold text-blue-600 mb-4">
  {plan.price_monthly === 0 ? 'Free' : `$${plan.price_monthly}/month`}
  </div>
- 
+
  <ul className="space-y-2 mb-6">
  {featuresArray.slice(0, 4).map((feature, idx) => (
  <li key={idx} className="text-sm text-gray-600 flex items-center">
@@ -1010,21 +999,20 @@ const SaasAdminDashboard = () => {
  </li>
  )}
  </ul>
- 
  <div className="text-xs text-gray-500 space-y-1 mb-4">
  <p>Max Weddings: {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings}</p>
  <p>AI Credits: {plan.ai_credits_monthly}/month</p>
  <p>Storage: {plan.storage_gb}GB</p>
  </div>
- 
+
  <div className="space-y-2">
- <button 
+ <button
  onClick={() => handleEditPlan(plan)}
  className="w-full bg-blue-100 text-blue-800 py-2 px-4 rounded hover:bg-blue-200 transition-colors"
  >
  Edit Plan
  </button>
- <button 
+ <button
  onClick={() => handleDeletePlan(plan._id)}
  className="w-full bg-red-100 text-red-800 py-2 px-4 rounded hover:bg-red-200 transition-colors"
  >
@@ -1042,7 +1030,7 @@ const SaasAdminDashboard = () => {
  <div className="space-y-6">
  <div className="flex justify-between items-center">
  <h2 className="text-2xl font-bold text-gray-900">SAAS Landing Page Content</h2>
- <button 
+ <button
  onClick={handleSaveSaasConfig}
  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
  >
@@ -1502,7 +1490,7 @@ const SaasAdminDashboard = () => {
  <div className="space-y-6">
  <div className="flex justify-between items-center">
  <h2 className="text-2xl font-bold text-gray-900">Theme & Design</h2>
- <button 
+ <button
  onClick={handleSaveSaasConfig}
  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
  >
@@ -1573,21 +1561,21 @@ const SaasAdminDashboard = () => {
  <div className="mt-6 p-4 rounded-lg border-2 border-gray-200">
  <h4 className="text-sm font-medium text-gray-700 mb-3">Preview</h4>
  <div className="flex space-x-4">
- <div 
+ <div
  className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
  style={{ backgroundColor: saasConfig.theme.primary_color }}
  >
  Primary
  </div>
- <div 
+ <div
  className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
  style={{ backgroundColor: saasConfig.theme.secondary_color }}
  >
  Secondary
  </div>
- <div 
+ <div
  className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
- style={{ 
+ style={{
  background: `linear-gradient(135deg, ${saasConfig.theme.primary_color}, ${saasConfig.theme.secondary_color})`
  }}
  >
@@ -1656,9 +1644,9 @@ const SaasAdminDashboard = () => {
  <button
  onClick={() => setSaasConfig({
  ...saasConfig,
- theme: { 
- ...saasConfig.theme, 
- fallback_images: [...saasConfig.theme.fallback_images, ''] 
+ theme: {
+ ...saasConfig.theme,
+ fallback_images: [...saasConfig.theme.fallback_images, '']
  }
  })}
  className="text-blue-600 hover:text-blue-800 text-sm"
@@ -1804,7 +1792,6 @@ const SaasAdminDashboard = () => {
  }}
  />
  )}
- 
  {/* Content Edit Modal */}
  <ContentEditModal
  isOpen={editModalOpen}
@@ -1817,11 +1804,11 @@ const SaasAdminDashboard = () => {
  sectionData={editingSectionData}
  onSave={async (updatedData) => {
  if (!saasConfig) return;
- 
+
  try {
  // Update the saasConfig with the new data
  const updatedConfig = { ...saasConfig };
- 
+
  switch (editingSectionType) {
  case 'hero':
  Object.assign(updatedConfig, updatedData);
@@ -1833,10 +1820,10 @@ const SaasAdminDashboard = () => {
  updatedConfig.trust_indicators = updatedData.trust_indicators;
  break;
  }
- 
+
  // Save to backend with the updated config
  await handleSaveSaasConfig(updatedConfig);
- 
+
  // Only update state and close modal if save was successful
  setSaasConfig(updatedConfig);
  setEditModalOpen(false);
@@ -1896,7 +1883,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  <h2 className="text-2xl font-bold mb-4">
  {isEditing ? 'Edit Plan' : 'Create New Plan'}
  </h2>
- 
  <form onSubmit={handleSubmit} className="space-y-4">
  <div className="grid grid-cols-2 gap-4">
  <div>
@@ -1909,7 +1895,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Price ($)</label>
  <input
@@ -1945,7 +1930,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  placeholder="-1 for unlimited"
  />
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">AI Credits/Month</label>
  <input
@@ -1956,7 +1940,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">Storage (GB)</label>
  <input
@@ -1999,7 +1982,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  />
  <span className="text-sm">Active</span>
  </label>
- 
  <label className="flex items-center space-x-2">
  <input
  type="checkbox"

@@ -1,8 +1,8 @@
 # ADR-000: Template for Architecture Decision Records
 
-**Date**: YYYY-MM-DD  
-**Status**: [Proposed | Accepted | Rejected | Deprecated | Superseded]  
-**Deciders**: [List of people involved in the decision]  
+**Date**: YYYY-MM-DD
+**Status**: [Proposed | Accepted | Rejected | Deprecated | Superseded]
+**Deciders**: [List of people involved in the decision]
 **Technical Story**: [Link to issue or ticket if applicable]
 
 ## Context and Problem Statement

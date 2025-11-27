@@ -62,7 +62,6 @@ export default function SendFormPage() {
  if (response.ok) {
  const data = await response.json();
  setForm(data);
- 
  // Set default email settings
  setEmailSettings(prev => ({
  ...prev,
@@ -106,12 +105,11 @@ export default function SendFormPage() {
  wedding_party: ['bridesmaid1@example.com', 'bridesmaid2@example.com', 'groomsman1@example.com'],
  vendors: ['photographer@example.com', 'caterer@example.com', 'florist@example.com']
  };
- 
  setRecipients(predefined[category]);
  };
 
  const validateForm = () => {
- const validEmails = recipients.filter(email => 
+ const validEmails = recipients.filter(email =>
  email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
  );
 
@@ -147,8 +145,8 @@ export default function SendFormPage() {
 
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- 
- const validEmails = recipients.filter(email => 
+
+ const validEmails = recipients.filter(email =>
  email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
  );
 
@@ -167,7 +165,6 @@ export default function SendFormPage() {
  if (response.ok) {
  const data = await response.json();
  setSuccess(`Form sent successfully to ${data.sent} recipients! ${data.failed > 0 ? `(${data.failed} failed)` : ''}`);
- 
  // Show form URL for manual sharing
  if (data.form_url) {
  setSuccess(prev => prev + `\n\nForm URL for manual sharing: ${data.form_url}`);
@@ -226,7 +223,6 @@ export default function SendFormPage() {
  Back to Forms
  </button>
  </div>
- 
  <div className="bg-white rounded-lg shadow-sm border p-6">
  <h1 className="text-3xl font-bold text-gray-900 mb-2">Send Form</h1>
  <div className="flex items-center text-gray-600">
@@ -246,7 +242,6 @@ export default function SendFormPage() {
  {/* Recipients */}
  <div className="bg-white rounded-lg shadow-sm border p-6">
  <h2 className="text-xl font-semibold mb-4">Recipients</h2>
- 
  {/* Quick Categories */}
  <div className="mb-6">
  <p className="text-sm text-gray-600 mb-3">Quick add recipients:</p>
@@ -288,7 +283,6 @@ export default function SendFormPage() {
  onClick={() => removeRecipient(index)}
  className="px-3 py-2 text-red-600 hover:text-red-800"
  >
- 
  </button>
  )}
  </div>
@@ -306,7 +300,6 @@ export default function SendFormPage() {
  {/* Email Settings */}
  <div className="bg-white rounded-lg shadow-sm border p-6">
  <h2 className="text-xl font-semibold mb-4">Email Settings</h2>
- 
  <div className="space-y-4">
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -353,7 +346,6 @@ export default function SendFormPage() {
  {/* Advanced Options */}
  <div className="border-t pt-4">
  <h3 className="text-sm font-medium text-gray-700 mb-3">Advanced Options</h3>
- 
  <div className="space-y-3">
  <label className="flex items-center">
  <input
@@ -457,7 +449,6 @@ export default function SendFormPage() {
  <p><strong>Description:</strong> {form.settings.description}</p>
  )}
  <p><strong>Fields:</strong> {form.fields.length} questions</p>
- 
  <button
  onClick={() => window.open(`/forms/${form.id}`, '_blank')}
  className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"

@@ -20,10 +20,10 @@ interface PrivacyInfo {
  };
 }
 
-export default function GuestVerificationModal({ 
- slug, 
- onVerified, 
- onCancel 
+export default function GuestVerificationModal({
+ slug,
+ onVerified,
+ onCancel
 }: GuestVerificationModalProps) {
  const [privacyInfo, setPrivacyInfo] = useState<PrivacyInfo | null>(null);
  const [loading, setLoading] = useState(true);
@@ -71,7 +71,6 @@ export default function GuestVerificationModal({
 
  try {
  const verificationData: any = {};
- 
  if (privacyInfo?.privacy_mode === 'password' && password) {
  verificationData.password = password;
  } else if (privacyInfo?.privacy_mode === 'private') {
@@ -156,7 +155,7 @@ export default function GuestVerificationModal({
  </h2>
  <div className="w-16 h-1 bg-rose-400 mx-auto mb-4"></div>
  <p className="text-gray-600">
- {privacyInfo.privacy_mode === 'password' 
+ {privacyInfo.privacy_mode === 'password'
  ? 'This wedding is password protected'
  : 'Guest verification required'
  }

@@ -71,8 +71,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  type: fieldType,
  required: false,
  order: form.fields.length,
- ...(fieldType === 'select' || fieldType === 'radio' || fieldType === 'checkbox' 
- ? { options: ['Option 1', 'Option 2', 'Option 3'] } 
+ ...(fieldType === 'select' || fieldType === 'radio' || fieldType === 'checkbox'
+ ? { options: ['Option 1', 'Option 2', 'Option 3'] }
  : {}),
  ...(fieldType === 'text' || fieldType === 'email' || fieldType === 'textarea'
  ? { placeholder: `Enter ${fieldType}...` }
@@ -97,9 +97,9 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  const updatedFields = form.fields
  .filter(field => field.id !== fieldId)
  .map((field, index) => ({ ...field, order: index }));
- 
+
  onUpdateFields(updatedFields);
- 
+
  if (selectedField === fieldId) {
  setSelectedField(null);
  }
@@ -162,8 +162,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  {activePanel === 'fields' ? (
  <FieldsPanel onAddField={addField} />
  ) : (
- <SettingsPanel 
- settings={form.settings} 
+ <SettingsPanel
+ settings={form.settings}
  formName={form.name}
  onUpdateSettings={onUpdateSettings}
  />
@@ -208,8 +208,8 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  className={`relative group ${
  snapshot.isDragging ? 'z-10' : ''
  } ${
- selectedField === field.id 
- ? 'ring-2 ring-indigo-500 rounded-lg' 
+ selectedField === field.id
+ ? 'ring-2 ring-indigo-500 rounded-lg'
  : ''
  }`}
  >
@@ -225,7 +225,6 @@ export const FormBuilder: React.FC<FormBuilderProps> = ({
  </Draggable>
  ))}
  {provided.placeholder}
- 
  {/* Empty State */}
  {form.fields.length === 0 && (
  <div className="text-center py-12 text-gray-500">
@@ -289,7 +288,6 @@ const SettingsPanel: React.FC<{
  return (
  <div className="space-y-6">
  <h3 className="text-sm font-medium text-gray-900">Form Settings</h3>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Form Title
@@ -365,8 +363,8 @@ const FieldRenderer: React.FC<{
  <div
  onClick={onSelect}
  className={`relative p-4 border-2 border-dashed cursor-pointer transition-all ${
- isSelected 
- ? 'border-indigo-300 bg-indigo-50' 
+ isSelected
+ ? 'border-indigo-300 bg-indigo-50'
  : 'border-gray-200 hover:border-gray-300'
  }`}
  >
@@ -402,7 +400,6 @@ const FieldRenderer: React.FC<{
  {field.description && (
  <p className="text-sm text-gray-500">{field.description}</p>
  )}
- 
  {/* Simplified field preview */}
  <div className="mt-2">
  {field.type === 'textarea' && (

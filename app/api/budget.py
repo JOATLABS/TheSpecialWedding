@@ -118,10 +118,10 @@ def get_wedding_budget(
     try:
         # Check if user has access to this wedding
         check_wedding_access(current_user, wedding_id)
-        
+
         budget_data = budget_service.get_wedding_budget(wedding_id)
         return budget_data
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except PermissionError as e:
@@ -140,13 +140,13 @@ def create_budget_category(
     try:
         # Check if user has access to this wedding
         check_wedding_access(current_user, wedding_id)
-        
+
         category = budget_service.create_budget_category(
-            wedding_id, 
+            wedding_id,
             category_data.dict(exclude_unset=True)
         )
         return {"message": "Budget category created successfully", "category": category}
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except PermissionError as e:
@@ -165,11 +165,11 @@ def update_budget_category(
     try:
         # Note: Wedding access is checked within the service by looking up the category
         updated_category = budget_service.update_budget_category(
-            category_id, 
+            category_id,
             update_data.dict(exclude_unset=True)
         )
         return {"message": "Budget category updated successfully", "category": updated_category}
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -189,7 +189,6 @@ def delete_budget_category(
             return {"message": "Budget category deleted successfully"}
         else:
             raise HTTPException(status_code=400, detail="Failed to delete budget category")
-            
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -207,10 +206,10 @@ def get_vendor_quotes(
     """Get vendor quotes for a wedding, optionally filtered by service category"""
     try:
         check_wedding_access(current_user, wedding_id)
-        
+
         quotes = budget_service.get_vendor_quotes(wedding_id, service_category)
         return {"quotes": quotes, "count": len(quotes)}
-        
+
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -226,13 +225,11 @@ def create_vendor_quote(
     """Create a new vendor quote"""
     try:
         check_wedding_access(current_user, wedding_id)
-        
         quote = budget_service.create_vendor_quote(
             wedding_id,
             quote_data.dict(exclude_unset=True)
         )
         return {"message": "Vendor quote created successfully", "quote": quote}
-        
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -248,10 +245,10 @@ def compare_vendor_quotes(
     """Compare vendor quotes for a specific service category"""
     try:
         check_wedding_access(current_user, wedding_id)
-        
+
         comparison = budget_service.compare_vendor_quotes(wedding_id, service_category)
         return comparison
-        
+
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -269,10 +266,10 @@ def update_quote_status(
     try:
         if status not in ["pending", "accepted", "rejected", "expired"]:
             raise HTTPException(status_code=400, detail="Invalid status")
-        
+
         updated_quote = budget_service.update_quote_status(quote_id, status, notes)
         return {"message": f"Quote status updated to {status}", "quote": updated_quote}
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -325,14 +322,12 @@ def apply_budget_template(
     """Apply a budget template to a wedding"""
     try:
         check_wedding_access(current_user, wedding_id)
-        
         result = budget_service.apply_budget_template(
             wedding_id,
             request_data.template_id,
             request_data.total_budget
         )
         return {"message": "Budget template applied successfully", "result": result}
-        
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except PermissionError as e:
@@ -383,10 +378,10 @@ def get_payment_history(
     """Get payment history for a wedding"""
     try:
         check_wedding_access(current_user, wedding_id)
-        
+
         payments = budget_service.get_payment_history(wedding_id)
         return {"payments": payments, "count": len(payments)}
-        
+
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -403,10 +398,10 @@ def generate_financial_report(
     """Generate comprehensive financial report for a wedding"""
     try:
         check_wedding_access(current_user, wedding_id)
-        
+
         report = budget_service.generate_financial_report(wedding_id)
         return report
-        
+
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -428,7 +423,6 @@ def estimate_wedding_costs(
             region=estimation_request.region
         )
         return estimation
-        
     except Exception as e:
         logger.error(f"Failed to estimate costs: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to estimate wedding costs")
@@ -475,10 +469,10 @@ def get_category_suggestions(
                 {"name": "Special Touches", "percentage": 5.0, "priority": 4}
             ]
         }
-        
+
         suggestions = category_suggestions.get(wedding_type, category_suggestions["traditional"])
         return {"wedding_type": wedding_type, "suggestions": suggestions}
-        
+
     except Exception as e:
         logger.error(f"Failed to get category suggestions: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to get category suggestions")
@@ -492,11 +486,11 @@ def get_budget_alerts(
     """Get budget alerts for a wedding"""
     try:
         check_wedding_access(current_user, wedding_id)
-        
+
         # This would be implemented in the budget service
         # For now, return placeholder
         return {"alerts": [], "message": "Budget alerts feature coming soon"}
-        
+
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:

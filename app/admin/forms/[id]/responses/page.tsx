@@ -146,44 +146,41 @@ export default function FormResponsesPage() {
  <div className="flex">
  {[...Array(5)].map((_, i) => (
  <span key={i} className={i < value ? 'text-yellow-400' : 'text-gray-300'}>
- 
  </span>
  ))}
  <span className="ml-2 text-sm text-gray-600">({value}/5)</span>
  </div>
  );
- 
  case 'scale':
  return (
  <div className="flex items-center">
  <div className="w-20 bg-gray-200 rounded-full h-2 mr-2">
- <div 
- className="bg-blue-600 h-2 rounded-full" 
+ <div
+ className="bg-blue-600 h-2 rounded-full"
  style={{ width: `${(value / 10) * 100}%` }}
  ></div>
  </div>
  <span className="text-sm">{value}/10</span>
  </div>
  );
- 
  case 'checkbox':
  if (Array.isArray(value)) {
  return value.join(', ');
  }
  return value;
- 
+
  case 'email':
  return <a href={`mailto:${value}`} className="text-blue-600 hover:underline">{value}</a>;
- 
+
  case 'phone':
  return <a href={`tel:${value}`} className="text-blue-600 hover:underline">{value}</a>;
- 
+
  case 'textarea':
  return (
  <div className="max-w-xs">
  <p className="truncate">{value}</p>
  {value.length > 50 && (
- <button 
+ <button
  onClick={() => setSelectedResponse(responses.find(r => r.responses[field.id] === value) || null)}
  className="text-blue-600 text-sm hover:underline"
  >
@@ -192,15 +189,14 @@ export default function FormResponsesPage() {
  )}
  </div>
  );
- 
  default:
  return value;
  }
  };
 
  const filteredAndSortedResponses = responses
- .filter(response => 
- !filterEmail || 
+ .filter(response =>
+ !filterEmail ||
  (response.submitted_by_email && response.submitted_by_email.toLowerCase().includes(filterEmail.toLowerCase())) ||
  (response.submitted_by_name && response.submitted_by_name.toLowerCase().includes(filterEmail.toLowerCase()))
  )
@@ -259,7 +255,6 @@ export default function FormResponsesPage() {
  </svg>
  Back to Forms
  </button>
- 
  <button
  onClick={downloadCSV}
  disabled={exporting || responses.length === 0}
@@ -276,7 +271,6 @@ export default function FormResponsesPage() {
  {exporting ? 'Exporting…' : 'Export CSV'}
  </button>
  </div>
- 
  <div className="bg-white rounded-lg shadow-sm border p-6">
  <h1 className="text-3xl font-bold text-gray-900 mb-2">Form Responses</h1>
  <div className="flex items-center text-gray-600">
@@ -318,7 +312,6 @@ export default function FormResponsesPage() {
  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
- 
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">Sort by</label>
  <select
@@ -483,7 +476,6 @@ export default function FormResponsesPage() {
  </svg>
  </button>
  </div>
- 
  <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
  {/* Response Meta */}
  <div className="bg-gray-50 rounded-lg p-4 mb-6">

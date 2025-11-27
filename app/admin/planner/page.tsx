@@ -49,7 +49,6 @@ export default function WeddingPlannerDashboard() {
  const fetchMyWeddings = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- 
  // Use the new optimized metrics API
  const response = await fetch(`${baseUrl}/admin/planner/metrics`, {
  headers: {
@@ -325,19 +324,18 @@ export default function WeddingPlannerDashboard() {
  {weddings.slice(0, 3).map((wedding) => {
  const progressPercentage = wedding.progress_percentage || 0;
  const daysUntilWedding = wedding.days_until_wedding || 0;
- 
  return (
  <div key={wedding.id} className="border-b border-gray-100 pb-4 last:border-b-0">
  <div className="flex items-center justify-between mb-2">
  <h4 className="font-medium text-gray-900">{wedding.couple_names}</h4>
  <span className="text-sm text-gray-500">
- {daysUntilWedding > 0 ? `${daysUntilWedding} days left` : 
+ {daysUntilWedding > 0 ? `${daysUntilWedding} days left` :
  daysUntilWedding === 0 ? 'Today!' :
  'Wedding passed'}
  </span>
  </div>
  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
- <div 
+ <div
  className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
  style={{ width: `${progressPercentage}%` }}
  ></div>
@@ -383,7 +381,7 @@ export default function WeddingPlannerDashboard() {
  </div>
  )}
  </div>
- <button 
+ <button
  className="mt-4 text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
  onClick={() => router.push('/admin/activity-log')}
  >

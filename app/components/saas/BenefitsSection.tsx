@@ -42,7 +42,7 @@ export const BenefitsSection: React.FC<BenefitsSectionProps> = ({ benefits, them
         {sortedBenefits.map((benefit, index) => (
           <div key={index} className="text-center group">
             {/* Icon placeholder */}
-            <div 
+            <div
               className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
               style={{
                 background: `linear-gradient(135deg, ${theme.primary_color}20, ${theme.secondary_color}20)`,
@@ -52,7 +52,7 @@ export const BenefitsSection: React.FC<BenefitsSectionProps> = ({ benefits, them
               {benefit.icon ? (
                 <span className="text-2xl">{benefit.icon}</span>
               ) : (
-                <div 
+                <div
                   className="w-6 h-6 rounded-full"
                   style={{ backgroundColor: theme.primary_color }}
                 />
@@ -60,7 +60,7 @@ export const BenefitsSection: React.FC<BenefitsSectionProps> = ({ benefits, them
             </div>
 
             {/* Benefit Content */}
-            <h3 
+            <h3
               className="text-xl font-bold mb-3 group-hover:scale-105 transition-transform duration-300"
               style={{ color: theme.primary_color }}
             >

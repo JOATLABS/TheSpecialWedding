@@ -83,10 +83,10 @@ class BudgetApiService {
 
   // Vendor Quotes
   async getVendorQuotes(token: string, weddingId: string, category?: string): Promise<VendorQuote[]> {
-    const url = category 
+    const url = category
       ? `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes?category=${category}`
       : `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes`;
-    
+
     const response = await fetch(url, { headers: this.getHeaders(token) });
     if (!response.ok) throw new Error('Failed to fetch vendor quotes');
     return response.json();

@@ -90,7 +90,6 @@ export default function ProfilePage() {
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (passwordData.new_password !== passwordData.confirm_password) {
       toast.error('New passwords do not match');
       return;
@@ -212,7 +211,6 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-rose-100 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-heading text-wedding-rose mb-8">Account Settings</h1>
-        
         <div className="bg-white rounded-lg shadow-lg p-6">
           {/* Tab Navigation */}
           <div className="flex space-x-1 mb-6 border-b">

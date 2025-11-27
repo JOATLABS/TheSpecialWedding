@@ -2,20 +2,20 @@
 
 import React from 'react';
 import { notFound } from 'next/navigation';
-import RSVPForm from '@/components/RSVPForm';
+import OTPFlow from '@/components/OTPFlow';
 import { formatDate } from '@/utils/dateFormat';
 // Force dynamic rendering for this page
 export const dynamic = 'force-dynamic';
 
 export default async function InvitePage({ params }: { params: Promise<{ slug: string, token: string }> }) {
  const { slug, token } = await params;
- 
+
  try {
  // Fetch data inline to avoid any potential export detection issues
  const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  // Remove /admin if present since these are public endpoints
  const apiUrl = base.replace('/admin', '');
- 
+
  const weddingRes = await fetch(`${apiUrl}/weddings/slug/${slug}`, { cache: 'no-store' });
  if (!weddingRes.ok) {
  console.error(`Wedding not found: ${slug}`);
@@ -77,10 +77,10 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
  )}
  </div>
 
- {/* RSVP Form */}
+ {/* OTP Flow */}
  <div className="bg-white rounded-lg shadow-lg p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6 text-center">RSVP</h2>
- <RSVPForm guest={guest} token={token} />
+ <h2 className="text-2xl font-bold text-wedding-navy mb-6 text-center">RSVP Verification</h2>
+ <OTPFlow guest={guest} token={token} />
  </div>
 
  {/* Footer */}
