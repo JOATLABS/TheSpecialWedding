@@ -1,8 +1,9 @@
 'use client';
 
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import { formatDate } from '@/utils/dateFormat';
 
 interface TermsModalProps {
   isOpen: boolean;
@@ -10,7 +11,9 @@ interface TermsModalProps {
   weddingName?: string;
 }
 
-export default function TermsModal({ isOpen, onClose, weddingName = "The Special Wedding" }: TermsModalProps) {
+export default function TermsModal({ isOpen, onClose, weddingName = "JOAT Labs' The Special Wedding platform" }: TermsModalProps) {
+  const lastUpdated = useMemo(() => formatDate(new Date()), []);
+
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -49,7 +52,7 @@ export default function TermsModal({ isOpen, onClose, weddingName = "The Special
                 </Dialog.Title>
                 
                 <div className="mt-2 max-h-[60vh] overflow-y-auto prose prose-sm">
-                  <p className="text-sm text-gray-500 mb-4">Last updated: {new Date().toLocaleDateString()}</p>
+                  <p className="text-sm text-gray-500 mb-4">Last updated: {lastUpdated}</p>
                   
                   <h4 className="text-lg font-semibold mt-4">1. Acceptance of Terms</h4>
                   <p>
@@ -103,7 +106,7 @@ export default function TermsModal({ isOpen, onClose, weddingName = "The Special
 
                   <h4 className="text-lg font-semibold mt-4">7. Limitations of Liability</h4>
                   <p>
-                    This website is provided "as is" without warranties of any kind. We are not liable for any damages arising from your use of this website.
+                    This website is provided “as is” without warranties of any kind. We are not liable for any damages arising from your use of this website.
                   </p>
 
                   <h4 className="text-lg font-semibold mt-4">8. Changes to Terms</h4>

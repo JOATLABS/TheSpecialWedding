@@ -1,3 +1,5 @@
+"use client";
+
 import React from 'react';
 import { ThemeConfig } from '@/types/wedding';
 
@@ -9,56 +11,69 @@ interface GlassCardProps {
   theme?: ThemeConfig;
 }
 
-export const GlassCard: React.FC<GlassCardProps> = ({ 
-  children, 
-  className = '', 
+export const GlassCard: React.FC<GlassCardProps> = ({
+  children,
+  className = '',
   depth = 'mid',
   blur = 'lg',
   theme
 }) => {
-  // Depth-based styling
-  const depthStyles = {
+  const depthStyles: Record<NonNullable<GlassCardProps['depth']>, {
+    shadow: string;
+    scale: string;
+    blur: string;
+    bg: string;
+    zIndex: string;
+  }> = {
     near: {
       shadow: 'shadow-2xl',
       scale: 'scale-[1.02]',
       blur: 'backdrop-blur-xl',
-      bg: 'bg-white/80',
+      bg: 'bg-white/40',
       zIndex: 'z-30'
     },
     mid: {
       shadow: 'shadow-xl',
       scale: 'scale-100',
       blur: 'backdrop-blur-lg',
-      bg: 'bg-white/70',
+      bg: 'bg-white/30',
       zIndex: 'z-20'
     },
     far: {
       shadow: 'shadow-lg',
       scale: 'scale-[0.98]',
       blur: 'backdrop-blur-md',
-      bg: 'bg-white/60',
+      bg: 'bg-white/20',
       zIndex: 'z-10'
     }
   };
 
-  const blurMap = {
+  const blurMap: Record<NonNullable<GlassCardProps['blur']>, string> = {
     sm: 'backdrop-blur-sm',
     md: 'backdrop-blur-md',
     lg: 'backdrop-blur-lg',
     xl: 'backdrop-blur-xl'
   };
 
-  const style = depthStyles[depth];
+  const resolvedDepth = depthStyles[depth] ?? depthStyles.mid;
+  const resolvedBlur = blurMap[blur] ?? blurMap.lg;
+
+  const primary = theme?.primary_color?.trim();
+  const secondary = theme?.secondary_color?.trim();
+  const themedGradient =
+    primary && secondary
+      ? `linear-gradient(to right, ${primary}0D, ${secondary}0D)`
+      : 'linear-gradient(to right, rgba(200, 132, 126, 0.05), rgba(212, 175, 55, 0.05))';
 
   return (
-    <div 
+    <div
       className={`
         relative
-        ${style.bg}
-        ${style.shadow}
-        ${style.scale}
-        ${style.zIndex}
-        ${blurMap[blur]}
+        ${resolvedDepth.bg}
+        ${resolvedDepth.shadow}
+        ${resolvedDepth.scale}
+        ${resolvedDepth.zIndex}
+        ${resolvedBlur}
         border border-white/20
         rounded-2xl
         overflow-hidden
@@ -69,22 +84,17 @@ export const GlassCard: React.FC<GlassCardProps> = ({
         ${className}
       `}
     >
-      {/* Glass shine effect */}
       <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-transparent pointer-events-none" />
-      
-      {/* Content */}
+
       <div className="relative z-10">
         {children}
       </div>
-      
-      {/* Hover glow with theme colors */}
+
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-        <div 
+        <div
           className="absolute inset-0"
           style={{
-            background: theme 
-              ? `linear-gradient(to right, ${theme.primary_color}0D, ${theme.secondary_color}0D)`
-              : 'linear-gradient(to right, rgba(200, 132, 126, 0.05), rgba(212, 175, 55, 0.05))'
+            background: themedGradient
           }}
         />
       </div>

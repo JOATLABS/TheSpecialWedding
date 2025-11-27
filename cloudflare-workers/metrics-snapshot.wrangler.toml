@@ -1,0 +1,23 @@
+# Wrangler configuration for the metrics snapshot Worker
+# This file documents the bindings required to persist metrics in Workers Analytics Engine.
+# Replace placeholder values before deploying with
+# `wrangler deploy --config cloudflare-workers/metrics-snapshot.wrangler.toml`.
+
+name = "metrics-snapshot-cron"
+main = "metrics-snapshot-cron.js"
+compatibility_date = "2024-10-01"
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+# Base URL for the FastAPI backend
+API_URL = "https://api.thespecialwedding.com"
+# Optional: override environment label shown in Analytics Engine queries
+DEPLOYMENT_ENV = "production"
+# Optional: custom index value for sampling/partitioning in Analytics Engine
+ANALYTICS_INDEX = "special-wedding"
+
+[[analytics_engine_datasets]]
+binding = "WEDDING_ANALYTICAL"
+dataset = "special_wedding"

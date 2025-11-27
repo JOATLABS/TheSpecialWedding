@@ -19,17 +19,9 @@ export interface RegistryItem {
   color?: string;
 }
 
-export interface FAQLink {
-  label: string;
-  url: string;
-}
-
 export interface FAQItem {
   question: string;
   answer: string;
-  address?: string;
-  links?: FAQLink[];
-  image_urls?: string[];
 }
 
 export interface RSVPConfig {
@@ -69,7 +61,6 @@ export interface Wedding {
   couple_names: string;
   date: string;
   events: WeddingEvent[];
-  event_location_private?: boolean;
   rsvp_config?: RSVPConfig;
   registries?: RegistryItem[];
   faqs?: FAQItem[];
