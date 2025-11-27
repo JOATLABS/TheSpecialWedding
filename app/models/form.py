@@ -37,7 +37,6 @@ class FormField(BaseModel):
     validation_rules: List[ValidationRule] = Field(default_factory=list, description="Field validation rules")
     conditional_logic: Optional[Dict[str, Any]] = Field(None, description="Show/hide conditions")
     order: int = Field(default=0, description="Field display order")
-
     @field_validator('id')
     @classmethod
     def validate_field_id(cls, v):
@@ -113,7 +112,6 @@ class FormSettings(BaseModel):
     collect_email: bool = Field(default=True, description="Require email from submitters")
     is_public: bool = Field(default=False, description="Whether form is publicly accessible")
     requires_auth: bool = Field(default=False, description="Whether form requires authentication")
-
     @field_validator('title')
     @classmethod
     def validate_title(cls, v):
@@ -173,7 +171,6 @@ class FormSettings(BaseModel):
                 raise ValueError('Invalid URL format')
         except Exception:
             raise ValueError('Invalid URL format')
-
         return v
 
 class EmailDistributionSettings(BaseModel):
@@ -281,7 +278,6 @@ class CreateFormRequest(BaseModel):
     fields: List[FormField] = Field(..., description="Form fields")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     template_type: Optional[str] = Field(None, description="Template type")
-
     @field_validator('name')
     @classmethod
     def validate_name(cls, v):
@@ -326,7 +322,6 @@ class CreateFormRequest(BaseModel):
             'wedding_feedback', 'guest_feedback', 'vendor_questionnaire',
             'contact_form', 'survey', 'registration'
         ]
-
         if v not in allowed_templates:
             logger.warning(f'Unknown template type: {v}')
 
@@ -383,7 +378,6 @@ class SubmitFormRequest(BaseModel):
     responses: Dict[str, Any] = Field(..., description="Form field responses")
     submitted_by_email: Optional[str] = Field(None, description="Submitter email")
     submitted_by_name: Optional[str] = Field(None, description="Submitter name")
-
     @field_validator('responses')
     @classmethod
     def validate_responses(cls, v):

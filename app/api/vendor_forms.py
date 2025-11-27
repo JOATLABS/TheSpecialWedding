@@ -44,7 +44,6 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error creating vendor form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create vendor form: {str(e)}")
-
     def get_vendor_forms_for_planner(self, planner_email: str) -> List[dict]:
         """Get all vendor forms for a specific planner"""
         try:
@@ -54,7 +53,6 @@ class VendorFormService:
                 {"_id": 1}
             ))
             wedding_ids = [str(w["_id"]) for w in planner_weddings]
-
             # Get vendor forms for these weddings
             vendor_forms = list(self.vendor_forms_collection.find({
                 "wedding_id": {"$in": wedding_ids}
@@ -68,7 +66,6 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error fetching vendor forms: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
-
     def get_all_vendor_forms(self) -> List[dict]:
         """Get all vendor forms (ROOT_ADMIN only)"""
         try:
@@ -82,7 +79,6 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error fetching all vendor forms: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
-
     async def send_vendor_form(self, form_id: str, planner_email: str) -> dict:
         """Send vendor form via email"""
         try:
@@ -90,7 +86,6 @@ class VendorFormService:
             form = await self.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
             if not form:
                 raise HTTPException(status_code=404, detail="Vendor form not found")
-
             # Get wedding details
             wedding = await self.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
             if not wedding:
@@ -158,7 +153,6 @@ class VendorFormService:
                         Wedding Planning Team<br>
                         <a href="mailto:{planner_email}">{planner_email}</a></p>
                     </div>
-
                     <div class="footer">
                         <p>This form link is secure and unique to your request. Please do not share it with others.</p>
                         <p>If you're unable to access the form, please contact us directly.</p>
@@ -167,7 +161,6 @@ class VendorFormService:
             </body>
             </html>
             """
-
             # Send email
             email_result = email_service.send_email(
                 to_email=form["vendor_email"],
@@ -175,7 +168,6 @@ class VendorFormService:
                 html_content=email_html,
                 from_name="Wedding Planning Team"
             )
-
             if email_result.get("success"):
                 # Update form status
                 await self.vendor_forms_collection.update_one(
@@ -226,7 +218,6 @@ async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends
         form = await vendor_service.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
         if not form:
             raise HTTPException(status_code=404, detail="Vendor form not found")
-
         form["_id"] = str(form["_id"])
         return form
     except Exception as e:
@@ -306,12 +297,10 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                 }
             }
         )
-
         # Send notification email to planner
         try:
             wedding = await vendor_service.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
             planner_email = wedding.get("assigned_planner_email") if wedding else form.get("created_by")
-
             if planner_email:
                 notification_subject = f"Vendor Submission Received - {form['vendor_name']}"
                 notification_html = f"""
@@ -344,7 +333,6 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                 </body>
                 </html>
                 """
-
                 email_service.send_email(
                     to_email=planner_email,
                     subject=notification_subject,

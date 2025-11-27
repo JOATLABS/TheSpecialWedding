@@ -16,7 +16,6 @@ path_logger = logging.getLogger("wedding_path_security")
 class PathValidator:
     """
     Comprehensive path validation utility to prevent directory traversal attacks.
-
     Security Features:
     - Directory traversal prevention
     - Path canonicalization
@@ -26,7 +25,6 @@ class PathValidator:
     - File extension validation
     - Path length limits
     """
-
     def __init__(self):
         # Security configuration
         self.max_path_length = 260  # Windows MAX_PATH limit
@@ -36,7 +34,6 @@ class PathValidator:
             r'\.\./', r'\.\.\\', r'%2e%2e%2f', r'%2e%2e%5c',
             r'%252e%252e%252f', r'%252e%252e%255c', r'..%2f', r'..%5c',
             r'%2e%2e/', r'\.\./\.\./\.\./\.\./\.\./\.\./\.\.',
-
             # System file patterns
             r'/etc/passwd', r'/etc/shadow', r'/proc/', r'/sys/',
             r'C:\\Windows\\', r'C:\\Users\\', r'C:\\Program Files',
@@ -70,14 +67,12 @@ class PathValidator:
             'video': ['.mp4', '.avi', '.mov', '.mkv', '.webm'],
             'audio': ['.mp3', '.wav', '.ogg', '.m4a']
         }
-
         # Blocked file extensions
         self.blocked_extensions = [
             '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js',
             '.jar', '.jsp', '.php', '.asp', '.aspx', '.py', '.pl', '.rb',
             '.sh', '.bash', '.ps1', '.psm1', '.dll', '.so', '.dylib'
         ]
-
         # Safe base directories (must be absolute paths)
         self.safe_base_dirs = [
             '/app/uploads/',
@@ -96,7 +91,6 @@ class PathValidator:
             path: Path to validate
             base_dir: Base directory to restrict access to
             file_type: Expected file type (image, document, etc.)
-
         Returns:
             Tuple of (is_valid, sanitized_path, error_message)
         """
@@ -111,7 +105,6 @@ class PathValidator:
             if len(path) > self.max_path_length:
                 path_logger.warning(f"Path too long: {len(path)} chars")
                 return False, None, f"Path too long (max {self.max_path_length} characters)"
-
             # 2. Unicode normalization to prevent bypass attempts
             try:
                 normalized_path = unicodedata.normalize('NFKC', path)
@@ -125,34 +118,28 @@ class PathValidator:
             if self._contains_malicious_patterns(decoded_path):
                 path_logger.warning(f"Malicious pattern detected in path: {path}")
                 return False, None, "Path contains potentially dangerous patterns"
-
             # 5. Path canonicalization and normalization
             try:
                 canonical_path = self._canonicalize_path(decoded_path)
             except Exception as e:
                 path_logger.error(f"Path canonicalization failed: {str(e)}")
                 return False, None, "Path normalization failed"
-
             # 6. Directory traversal check
             if not self._check_directory_traversal(canonical_path, base_dir):
                 path_logger.warning(f"Directory traversal attempt: {path}")
                 return False, None, "Directory traversal detected"
-
             # 7. File extension validation
             if file_type:
                 if not self._validate_file_extension(canonical_path, file_type):
                     return False, None, f"Invalid file extension for type '{file_type}'"
-
             # 8. Filename validation
             filename = os.path.basename(canonical_path)
             if not self._validate_filename(filename):
                 return False, None, "Invalid filename"
-
             # 9. Symlink detection (if path exists)
             if os.path.exists(canonical_path) and os.path.islink(canonical_path):
                 path_logger.warning(f"Symlink detected: {canonical_path}")
                 return False, None, "Symbolic links are not allowed"
-
             # 10. Final security check
             if not self._final_security_check(canonical_path, base_dir):
                 path_logger.warning(f"Failed final security check: {canonical_path}")
@@ -273,7 +260,6 @@ class PathValidator:
         dangerous_chars = ['<', '>', ':', '"', '|', '?', '*', '\0', '\n', '\r', '\t']
         if any(char in filename for char in dangerous_chars):
             return False
-
         # Check for reserved names on Windows
         reserved_names = [
             'CON', 'PRN', 'AUX', 'NUL',
@@ -306,7 +292,6 @@ class PathValidator:
             '/etc/', '/proc/', '/sys/', '/dev/', '/boot/', '/root/',
             'C:\\Windows\\', 'C:\\Program Files\\', 'C:\\Users\\Administrator'
         ]
-
         canonical_lower = canonical_path.lower()
         for system_dir in system_dirs:
             if system_dir.lower() in canonical_lower:
@@ -376,7 +361,6 @@ class PathValidator:
             is_valid, canonical_path, error_msg = self.validate_path(
                 upload_path, base_upload_dir, None
             )
-
             if is_valid:
                 # Create directory if it doesn't exist
                 dir_path = os.path.dirname(canonical_path)

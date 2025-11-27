@@ -8,7 +8,6 @@ subscription_service = SubscriptionService()
 def enforce_subscription_limit(resource_type: str, amount: int = 1):
     """
     Decorator to enforce subscription limits on endpoints
-
     Args:
         resource_type: Type of resource (weddings, ai_credits, staff_seats)
         amount: Amount of resource being used (default: 1)
@@ -53,14 +52,12 @@ def enforce_subscription_limit(resource_type: str, amount: int = 1):
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error checking subscription limits: {str(e)}")
-
         return wrapper
     return decorator
 
 def check_feature_access(feature_name: str):
     """
     Decorator to check if user's subscription plan includes a specific feature
-
     Args:
         feature_name: Name of the feature to check
     """
@@ -81,7 +78,6 @@ def check_feature_access(feature_name: str):
             user_id = current_user.user_data.get("_id")
             if not user_id:
                 raise HTTPException(status_code=403, detail="User ID not found")
-
             try:
                 subscription = subscription_service.get_user_subscription(user_id)
                 if not subscription:
@@ -102,7 +98,6 @@ def check_feature_access(feature_name: str):
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error checking feature access: {str(e)}")
-
         return wrapper
     return decorator
 

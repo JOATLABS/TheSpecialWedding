@@ -841,7 +841,6 @@ export default function AdminWeddingsPage() {
               {userProfile?.is_root_admin ? 'All Weddings' : 'Your Weddings'} ({weddings.length})
             </h2>
           </div>
-
           {loading && (
             <div className="p-6 text-center">
               <p className="text-gray-600">Loading weddings...</p>
@@ -858,7 +857,6 @@ export default function AdminWeddingsPage() {
               </p>
             </div>
           )}
-
           {!loading && weddings.length > 0 && (
             <div className="divide-y divide-gray-200">
               {weddings.map((wedding) => (

@@ -150,7 +150,6 @@ class FormService:
                 query = {"is_active": True}
             else:
                 query = {"created_by": created_by, "is_active": True}
-
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
@@ -193,7 +192,6 @@ class FormService:
         """Get a specific form with security validation"""
         try:
             logger.info(f"get_form called: form_id={form_id}, created_by={created_by}")
-
             # Validate form_id format to prevent injection
             if not form_id or not isinstance(form_id, str):
                 raise HTTPException(status_code=400, detail="Invalid form ID")
@@ -212,7 +210,6 @@ class FormService:
                 if not InputSanitizer.validate_email(created_by):
                     raise HTTPException(status_code=400, detail="Invalid creator email")
                 query["created_by"] = created_by.lower().strip()
-
             logger.info(f"Database query: {query}")
             form = await self.forms_collection.find_one(query)
             logger.info(f"Form found: {form is not None}")
@@ -345,7 +342,6 @@ class FormService:
         """Soft delete a form"""
         try:
             logger.info(f"delete_form called: form_id={form_id}, created_by={created_by}, is_root_admin={is_root_admin}")
-
             # ROOT_ADMIN can delete any form, others can only delete their own
             if is_root_admin:
                 query = {"_id": form_id}
@@ -353,18 +349,15 @@ class FormService:
             else:
                 query = {"_id": form_id, "created_by": created_by}
                 logger.info(f"Using regular user query: {query}")
-
             # First, check if form exists
             existing_form = await self.forms_collection.find_one({"_id": form_id})
             logger.info(f"Form exists check: {existing_form is not None}")
             if existing_form:
                 logger.info(f"Form details: _id={existing_form.get('_id')}, created_by={existing_form.get('created_by')}, is_active={existing_form.get('is_active')}")
-
             result = await self.forms_collection.update_one(
                 query,
                 {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
             )
-
             logger.info(f"Update result: matched_count={result.matched_count}, modified_count={result.modified_count}")
 
             if result.matched_count == 0:

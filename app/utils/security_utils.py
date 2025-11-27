@@ -29,12 +29,10 @@ class SecurityConfig:
     MAX_OPTIONS_COUNT = 50
     MAX_OPTION_LENGTH = 100
     MAX_FIELDS_COUNT = 50
-
     # Pattern validation
     SAFE_ID_PATTERN = r'^[a-zA-Z0-9_-]+$'
     EMAIL_PATTERN = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     URL_PATTERN = r'^https?://[^\s/$.?#].[^\s]*$'
-
     # Rate limiting
     FORM_CREATION_RATE_LIMIT = 10  # forms per hour
     FORM_SUBMISSION_RATE_LIMIT = 100  # submissions per hour
@@ -42,7 +40,6 @@ class SecurityConfig:
 
 class InputSanitizer:
     """Input sanitization and validation utilities"""
-
     @staticmethod
     def sanitize_html(text: str, allow_basic_formatting: bool = False) -> str:
         """
@@ -57,7 +54,6 @@ class InputSanitizer:
         """
         if not text or not isinstance(text, str):
             return ""
-
         if allow_basic_formatting:
             # Allow basic formatting but strip dangerous elements
             return bleach.clean(
@@ -69,7 +65,6 @@ class InputSanitizer:
         else:
             # Escape all HTML entities
             return html.escape(text, quote=True)
-
     @staticmethod
     def sanitize_text(text: str, max_length: Optional[int] = None) -> str:
         """
@@ -113,7 +108,6 @@ class InputSanitizer:
         """
         if not field_id or not isinstance(field_id, str):
             raise ValueError("Field ID is required")
-
         # First check if it contains any dangerous patterns
         dangerous_patterns = [
             r'<[^>]*>',  # HTML tags
@@ -126,7 +120,6 @@ class InputSanitizer:
             r'INSERT\s+INTO',
             r'DELETE\s+FROM'
         ]
-
         original_field_id = field_id
         for pattern in dangerous_patterns:
             if re.search(pattern, field_id, re.IGNORECASE):
@@ -182,13 +175,11 @@ class InputSanitizer:
         """
         if not url or not isinstance(url, str):
             return False
-
         try:
             parsed = urlparse(url)
             return parsed.scheme in ['http', 'https'] and parsed.netloc
         except Exception:
             return False
-
     @staticmethod
     def generate_secure_token(length: int = 32) -> str:
         """
@@ -205,7 +196,6 @@ class InputSanitizer:
 
 class FormSecurityValidator:
     """Form-specific security validation"""
-
     @staticmethod
     def validate_form_data(form_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -261,14 +251,12 @@ class FormSecurityValidator:
         field_ids = [field['id'] for field in sanitized['fields']]
         if len(field_ids) != len(set(field_ids)):
             raise ValueError("Field IDs must be unique")
-
         # Optional fields
         if 'wedding_id' in form_data:
             wedding_id = form_data['wedding_id']
             if wedding_id and not isinstance(wedding_id, str):
                 raise ValueError("Wedding ID must be a string")
             sanitized['wedding_id'] = wedding_id
-
         if 'template_type' in form_data:
             template_type = form_data['template_type']
             if template_type and not isinstance(template_type, str):
@@ -289,7 +277,6 @@ class FormSecurityValidator:
             Sanitized settings data
         """
         sanitized = {}
-
         # Required fields
         title = settings.get('title', '')
         if not title:
@@ -306,7 +293,6 @@ class FormSecurityValidator:
                 sanitized['description'] = InputSanitizer.sanitize_html(
                     description, allow_basic_formatting=True
                 )[:SecurityConfig.MAX_FORM_DESCRIPTION_LENGTH]
-
         # Text fields
         text_fields = ['submit_button_text', 'success_message']
         for field in text_fields:
@@ -314,7 +300,6 @@ class FormSecurityValidator:
                 value = settings[field]
                 if value:
                     sanitized[field] = InputSanitizer.sanitize_text(value, 100)
-
         # URL validation
         if 'redirect_url' in settings:
             redirect_url = settings['redirect_url']
@@ -386,7 +371,6 @@ class FormSecurityValidator:
                 sanitized['placeholder'] = InputSanitizer.sanitize_text(
                     placeholder, SecurityConfig.MAX_FIELD_PLACEHOLDER_LENGTH
                 )
-
         if 'description' in field:
             description = field['description']
             if description:
@@ -404,7 +388,6 @@ class FormSecurityValidator:
             if isinstance(options, list):
                 if len(options) > SecurityConfig.MAX_OPTIONS_COUNT:
                     raise ValueError(f"Too many options (max {SecurityConfig.MAX_OPTIONS_COUNT})")
-
                 sanitized['options'] = [
                     InputSanitizer.sanitize_text(opt, SecurityConfig.MAX_OPTION_LENGTH)
                     for opt in options
@@ -469,7 +452,6 @@ class FormSecurityValidator:
                         ]
                     elif isinstance(value, bool):
                         sanitized[field_id] = value
-
                 elif field_type == 'date':
                     if isinstance(value, str):
                         # Basic date format validation
@@ -488,12 +470,10 @@ class FormSecurityValidator:
 
 class SecurityHeaders:
     """Security headers for form responses"""
-
     @staticmethod
     def get_form_security_headers() -> Dict[str, str]:
         """
         Get security headers for form responses
-
         Returns:
             Dictionary of security headers
         """
@@ -528,13 +508,11 @@ class RateLimitTracker:
             key: Unique identifier (IP, user email, etc.)
             limit: Maximum requests allowed
             window_seconds: Time window in seconds
-
         Returns:
             True if within limit, False otherwise
         """
         now = datetime.utcnow()
         cutoff = now - timedelta(seconds=window_seconds)
-
         # Clean old entries
         if key in self._requests:
             self._requests[key] = [

@@ -46,7 +46,6 @@ class AsyncMongoConnector:
         if self.client:
             self.client.close()
             logger.info("Disconnected from MongoDB")
-
     # Collection getters with async support
     @property
     def guests(self):
@@ -54,103 +53,83 @@ class AsyncMongoConnector:
         if self.db is None:
             raise RuntimeError("Database not connected. Call connect() first.")
         return self.db["guests"]
-
     def _get_collection(self, collection_name: str):
         """Helper method to get collection with proper error handling"""
         if self.db is None:
             raise RuntimeError("Database not connected. Call connect() first.")
         return self.db[collection_name]
-
     @property
     def users(self):
         """Get users collection"""
         return self._get_collection("users")
-
     @property
     def admin_users(self):
         """Get admin users collection"""
         return self._get_collection("admin_users")
-
     @property
     def weddings(self):
         """Get weddings collection"""
         return self._get_collection("weddings")
-
     @property
     def rsvps(self):
         """Get rsvps collection"""
         return self._get_collection("rsvps")
-
     @property
     def plus_ones(self):
         """Get plus ones collection"""
         return self._get_collection("plus_ones")
-
     @property
     def gallery(self):
         """Get gallery collection"""
         return self._get_collection("gallery")
-
     @property
     def forms(self):
         """Get forms collection"""
         return self._get_collection("forms")
-
     @property
     def form_responses(self):
         """Get form responses collection"""
         return self._get_collection("form_responses")
-
     @property
     def form_distributions(self):
         """Get form distributions collection"""
         return self._get_collection("form_distributions")
-
     @property
     def subscription_plans(self):
         """Get subscription plans collection"""
         return self._get_collection("subscription_plans")
-
     @property
     def ai_usage(self):
         """Get AI usage collection"""
         return self._get_collection("ai_usage")
-
     @property
     def vendors(self):
         """Get vendors collection"""
         return self._get_collection("vendors")
-
     @property
     def wedding_checklist(self):
         """Get wedding checklist collection"""
         return self._get_collection("wedding_checklist")
-
     @property
     def saas_content(self):
         """Get SAAS content collection"""
         return self._get_collection("saas_content")
-
     @property
     def audit_logs(self):
         """Get audit logs collection"""
         return self._get_collection("audit_logs")
-
     @property
     def otp_codes(self):
         """Get OTP codes collection"""
         return self._get_collection("otp_codes")
-
     @property
     def otp_audit_log(self):
         """Get OTP audit log collection"""
         return self._get_collection("otp_audit_log")
-
     @property
     def access_logs(self):
         """Get access logs collection"""
         return self._get_collection("access_logs")
-
     async def create_indexes(self):
         """Create database indexes for performance optimization"""
         try:
@@ -159,7 +138,6 @@ class AsyncMongoConnector:
             await self.guests.create_index("email")
             await self.guests.create_index("invitation_code")
             await self.guests.create_index([("wedding_id", 1), ("email", 1)], unique=True)
-
             # Users indexes
             await self.users.create_index("email", unique=True)
             await self.users.create_index("role")
@@ -174,17 +152,14 @@ class AsyncMongoConnector:
             await self.weddings.create_index("planner_id")
             await self.weddings.create_index("date")
             await self.weddings.create_index([("planner_id", 1), ("date", -1)])
-
             # RSVPs indexes
             await self.rsvps.create_index("wedding_id")
             await self.rsvps.create_index("guest_id")
             await self.rsvps.create_index([("wedding_id", 1), ("guest_id", 1)], unique=True)
-
             # Forms indexes
             await self.forms.create_index("wedding_id")
             await self.forms.create_index("is_active")
             await self.forms.create_index([("wedding_id", 1), ("is_active", 1)])
-
             # Form responses indexes
             await self.form_responses.create_index("form_id")
             await self.form_responses.create_index("wedding_id")
@@ -201,7 +176,6 @@ class AsyncMongoConnector:
             await self.audit_logs.create_index("user_id")
             await self.audit_logs.create_index("ip_address")
             await self.audit_logs.create_index([("timestamp", -1), ("event_type", 1)])
-
             # OTP codes indexes (Context7 best practices)
             await self.otp_codes.create_index(
                 "expires_at",
@@ -228,7 +202,6 @@ class AsyncMongoConnector:
                 name="cleanup_idx",
                 background=True
             )
-
             # OTP audit log indexes
             await self.otp_audit_log.create_index(
                 "timestamp",
@@ -246,7 +219,6 @@ class AsyncMongoConnector:
                 name="audit_event_idx",
                 background=True
             )
-
             # Access logs indexes
             await self.access_logs.create_index("timestamp")
             await self.access_logs.create_index("type")

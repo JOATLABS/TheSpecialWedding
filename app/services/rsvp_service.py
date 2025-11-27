@@ -79,7 +79,6 @@ class RSVPService:
                         dietary=plus_one_data.dietary
                     )
                     plus_ones_to_insert.append(plus_one.dict())
-
                 if plus_ones_to_insert:
                     self.plus_one_collection.insert_many(plus_ones_to_insert)
                 

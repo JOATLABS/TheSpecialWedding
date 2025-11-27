@@ -15,7 +15,6 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
     """
     CSRF Protection using Double Submit Cookie pattern
     """
-
     def __init__(
         self,
         app,
@@ -65,7 +64,6 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         ]
         for token in expired_tokens:
             del self.token_store[token]
-
     def _verify_csrf_token(self, cookie_token: str, header_token: str) -> bool:
         """Verify CSRF token"""
         # Check if tokens match
@@ -104,12 +102,10 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         if request.method in self.safe_methods:
             response = await call_next(request)
             return response
-
         # Skip CSRF check for excluded paths
         if self._is_excluded_path(request.url.path):
             response = await call_next(request)
             return response
-
         # Skip CSRF for GET requests to admin endpoints that don't modify state
         if request.method == "GET" and "/admin/" in request.url.path:
             # Allow GET requests for admin dashboard access
@@ -154,7 +150,6 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
                     status_code=403,
                     detail="CSRF token missing in request header"
                 )
-
         # Verify CSRF token
         if not self._verify_csrf_token(cookie_token, header_token):
             raise HTTPException(
@@ -185,13 +180,11 @@ class CSRFTokenGenerator:
         timestamp = str(int(time.time()))
         token_data = f"{user_id}:{timestamp}:{self.secret_key}"
         return hashlib.sha256(token_data.encode()).hexdigest()
-
     def verify_token(self, token: str, user_id: str, max_age: int = 3600) -> bool:
         """Verify a CSRF token"""
         # In production, this would check against stored tokens
         # For now, we'll regenerate and compare
         current_time = int(time.time())
-
         # Check tokens within the time window
         for time_offset in range(0, max_age, 60):  # Check every minute
             check_time = current_time - time_offset

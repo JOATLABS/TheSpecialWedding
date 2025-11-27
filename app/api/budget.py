@@ -189,7 +189,6 @@ def delete_budget_category(
             return {"message": "Budget category deleted successfully"}
         else:
             raise HTTPException(status_code=400, detail="Failed to delete budget category")
-
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -226,13 +225,11 @@ def create_vendor_quote(
     """Create a new vendor quote"""
     try:
         check_wedding_access(current_user, wedding_id)
-
         quote = budget_service.create_vendor_quote(
             wedding_id,
             quote_data.dict(exclude_unset=True)
         )
         return {"message": "Vendor quote created successfully", "quote": quote}
-
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -325,14 +322,12 @@ def apply_budget_template(
     """Apply a budget template to a wedding"""
     try:
         check_wedding_access(current_user, wedding_id)
-
         result = budget_service.apply_budget_template(
             wedding_id,
             request_data.template_id,
             request_data.total_budget
         )
         return {"message": "Budget template applied successfully", "result": result}
-
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except PermissionError as e:
@@ -428,7 +423,6 @@ def estimate_wedding_costs(
             region=estimation_request.region
         )
         return estimation
-
     except Exception as e:
         logger.error(f"Failed to estimate costs: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to estimate wedding costs")

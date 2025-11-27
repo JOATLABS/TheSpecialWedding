@@ -16,7 +16,6 @@ class SMSService:
             self._init_twilio()
         elif self.provider == SMSProvider.TELNYX:
             self._init_telnyx()
-
     def _init_twilio(self):
         """Initialize Twilio client"""
         try:
@@ -41,12 +40,10 @@ class SMSService:
             )
             self.configured = True
             logger.info("Twilio SMS service initialized successfully")
-
         except ImportError:
             logger.error("Twilio not installed. Install with: pip install twilio")
         except Exception as e:
             logger.error(f"Failed to initialize Twilio SMS service: {str(e)}")
-
     def _init_telnyx(self):
         """Initialize Telnyx client"""
         try:
@@ -63,7 +60,6 @@ class SMSService:
             self.client = telnyx
             self.configured = True
             logger.info("Telnyx SMS service initialized successfully")
-
         except ImportError:
             logger.error("Telnyx not installed. Install with: pip install telnyx")
         except Exception as e:
@@ -86,7 +82,6 @@ class SMSService:
                 "error": f"{self.provider.value} SMS service not configured",
                 "provider": self.provider.value
             }
-
         try:
             if self.provider == SMSProvider.TWILIO:
                 return self._send_twilio(to_phone, message)
@@ -98,7 +93,6 @@ class SMSService:
                     "error": f"Unknown SMS provider: {self.provider.value}",
                     "provider": self.provider.value
                 }
-
         except Exception as e:
             logger.error(f"SMS send failed via {self.provider.value}: {str(e)}")
             return {
@@ -106,7 +100,6 @@ class SMSService:
                 "error": str(e),
                 "provider": self.provider.value
             }
-
     def _send_twilio(self, to_phone: str, message: str) -> Dict[str, Any]:
         """Send SMS via Twilio"""
         try:

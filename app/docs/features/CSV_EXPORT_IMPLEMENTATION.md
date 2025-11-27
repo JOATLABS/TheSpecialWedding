@@ -276,7 +276,6 @@ const exportCSV = async () => {
  const response = await fetch(`/admin/forms/${formId}/export/csv?include_metadata=true`, {
  headers: { 'Authorization': `Bearer ${token}` }
  });
-
  if (response.ok) {
  const blob = await response.blob();
  const url = URL.createObjectURL(blob);

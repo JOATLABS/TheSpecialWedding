@@ -317,7 +317,6 @@ class GuestVerificationService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             privacy_settings = wedding.get("privacy_settings", {})
-
             return {
                 "couple_names": wedding.get("couple_names"),
                 "privacy_mode": privacy_settings.get("privacy_mode", "private"),

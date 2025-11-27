@@ -335,12 +335,10 @@ export default function AdminImportPage() {
  {guest.role}
  </span>
  </div>
-
  <div className="space-y-1 text-sm">
  {guest.email && <div className="text-gray-600"> {guest.email}</div>}
  {guest.phone && <div className="text-gray-600"> {guest.phone}</div>}
  </div>
-
  <div className="flex justify-between items-center">
  <div className="text-sm">
  {guest.plus_one_allowed ? (
@@ -362,7 +360,6 @@ export default function AdminImportPage() {
  Delete
  </button>
  </div>
-
  <div className="pt-2 border-t border-gray-200">
  <code className="text-xs bg-gray-200 px-2 py-1 rounded">
  {guest.token}

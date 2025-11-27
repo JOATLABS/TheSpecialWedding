@@ -438,7 +438,6 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
-
  const response = await fetch(`${baseUrl}/admin/subscription-plans/${planId}`, {
  method: 'DELETE',
  headers: {
@@ -488,7 +487,6 @@ const SaasAdminDashboard = () => {
  'Content-Type': 'application/json'
  }
  });
-
  if (plansResponse.ok) {
  const updatedPlans = await plansResponse.json();
  setPlans(updatedPlans);
@@ -509,7 +507,6 @@ const SaasAdminDashboard = () => {
  const handleSaveSaasConfig = async (configToSave?: SaasFullConfig | React.MouseEvent) => {
  // Handle both direct config object and mouse event from button clicks
  const configData = (configToSave && 'hero_title' in configToSave) ? configToSave : saasConfig;
-
  if (!configData) {
  alert('No configuration data to save');
  return;
@@ -518,7 +515,6 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
-
  if (!token) {
  alert('Authentication token not found. Please log in again.');
  return;
@@ -549,7 +545,6 @@ const SaasAdminDashboard = () => {
  };
 
  console.log('Saving SAAS config:', cleanConfig);
-
  const response = await fetch(`${baseUrl}/admin/saas-config`, {
  method: 'PUT',
  headers: {
@@ -612,7 +607,6 @@ const SaasAdminDashboard = () => {
  console.warn('Unknown section type:', sectionType);
  return;
  }
-
  setEditingSectionType(sectionType);
  setEditingSectionData(sectionData);
  setEditModalOpen(true);
@@ -621,13 +615,11 @@ const SaasAdminDashboard = () => {
  const handleCreatePlanner = async () => {
  const email = prompt('Enter planner email:');
  const companyName = prompt('Enter company name:');
-
  if (!email || !companyName) return;
 
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
-
  const response = await fetch(`${baseUrl}/saas/wedding-planners`, {
  method: 'POST',
  headers: {
@@ -658,7 +650,6 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
-
  // Find the planner to get current status
  const planner = planners.find(p => p.id === plannerId);
  if (!planner) {
@@ -753,7 +744,6 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
-
  // First, cancel existing subscription if any
  try {
  await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
@@ -766,7 +756,6 @@ const SaasAdminDashboard = () => {
  } catch (error) {
  // Ignore if no existing subscription
  }
-
  // Assign new subscription
  const response = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
  method: 'POST',
@@ -1010,7 +999,6 @@ const SaasAdminDashboard = () => {
  </li>
  )}
  </ul>
-
  <div className="text-xs text-gray-500 space-y-1 mb-4">
  <p>Max Weddings: {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings}</p>
  <p>AI Credits: {plan.ai_credits_monthly}/month</p>
@@ -1804,7 +1792,6 @@ const SaasAdminDashboard = () => {
  }}
  />
  )}
-
  {/* Content Edit Modal */}
  <ContentEditModal
  isOpen={editModalOpen}
@@ -1896,7 +1883,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  <h2 className="text-2xl font-bold mb-4">
  {isEditing ? 'Edit Plan' : 'Create New Plan'}
  </h2>
-
  <form onSubmit={handleSubmit} className="space-y-4">
  <div className="grid grid-cols-2 gap-4">
  <div>
@@ -1909,7 +1895,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Price ($)</label>
  <input
@@ -1945,7 +1930,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  placeholder="-1 for unlimited"
  />
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">AI Credits/Month</label>
  <input
@@ -1956,7 +1940,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">Storage (GB)</label>
  <input
@@ -1999,7 +1982,6 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  />
  <span className="text-sm">Active</span>
  </label>
-
  <label className="flex items-center space-x-2">
  <input
  type="checkbox"

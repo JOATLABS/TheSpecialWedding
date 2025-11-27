@@ -18,7 +18,6 @@ subscription_service = SubscriptionService()
 
 def create_default_plans():
  """Create default subscription plans"""
-
  plans = [
  {
  "name": "Starter",
@@ -152,7 +151,6 @@ def create_default_plans():
  try:
  # Check if plan already exists
  existing_plan = mongo.get_subscription_plans_collection().find_one({"name": plan_data["name"]})
-
  if existing_plan:
  print(f"Plan '{plan_data['name']}' already exists, skipping...")
  created_plans.append(existing_plan)

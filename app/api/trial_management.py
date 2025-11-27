@@ -30,7 +30,6 @@ def run_trial_maintenance(current_user: ExtendedAuthUser = Depends(require_root_
             "warning_results": warning_result,
             "expiration_results": expiration_result
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error running trial maintenance: {str(e)}")
 
@@ -61,14 +60,12 @@ async def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root
             "trial_end_date": {"$lte": now + timedelta(days=7), "$gt": now},
             "is_active": True
         })
-
         # Trials expiring today
         expiring_today = await users_collection.count_documents({
             "subscription_status": "trial",
             "trial_end_date": {"$lte": now + timedelta(days=1), "$gt": now},
             "is_active": True
         })
-
         return {
             "active_trials": active_trials,
             "expired_trials": expired_trials,
@@ -76,6 +73,5 @@ async def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root
             "expiring_today": expiring_today,
             "checked_at": now.isoformat()
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting trial status: {str(e)}")

@@ -46,7 +46,6 @@ def verify_guest_access(slug: str, verification: GuestVerificationRequest):
             "guest": result.get("guest"),
             "auth_method": result.get("auth_method")
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -84,7 +83,6 @@ def get_wedding_with_token_access(slug: str, token: str):
             "wedding": result["wedding"],
             "guest": result.get("guest")
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -102,13 +100,11 @@ def update_wedding_privacy_settings(
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-
     try:
         return verification_service.update_wedding_privacy_settings(
             wedding_id=wedding_id,
             privacy_settings=privacy_settings.dict()
         )
-
     except HTTPException:
         raise
     except Exception as e:
@@ -125,7 +121,6 @@ def get_wedding_access_logs(
     # Check if user has access to this wedding
     if not check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-
     try:
         from app.core.database import mongo
         logs = list(mongo.db["access_logs"].find(

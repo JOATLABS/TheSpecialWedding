@@ -57,7 +57,6 @@ async def create_form(
             success=False,
             error_message="Insufficient privileges"
         )
-
         logger.warning(
             f"Unauthorized form creation attempt by {current_user.email} "
             f"with role {current_user.role}"
@@ -94,7 +93,6 @@ async def create_form(
             f"Form created successfully: id={result.get('id')}, "
             f"user={current_user.email}"
         )
-
         # Security audit log
         security_audit.log_security_event(
             event_type=SecurityEventType.FORM_CREATION,
@@ -145,7 +143,6 @@ async def get_forms(
     if wedding_id:
         # Sanitize wedding_id
         wedding_id = InputSanitizer.sanitize_text(wedding_id, 100)
-
         # Check wedding access
         if not check_wedding_access(current_user, wedding_id):
             logger.warning(
@@ -305,7 +302,6 @@ async def delete_form(
 ):
     """Delete a form with enhanced security validation"""
     logger.info(f"DELETE /forms/{form_id} called by {current_user.email}, is_root_admin={current_user.is_root_admin}")
-
     # Enhanced authorization check
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         logger.warning(
@@ -320,7 +316,6 @@ async def delete_form(
     if not form_id or not isinstance(form_id, str):
         logger.error(f"Invalid form_id type: {type(form_id)}, value: {form_id}")
         raise HTTPException(status_code=400, detail="Invalid form ID")
-
     form_id = InputSanitizer.sanitize_text(form_id, 100)
     if not form_id:
         logger.error(f"Form ID sanitization failed")
@@ -338,7 +333,6 @@ async def delete_form(
         else:
             existing_form = await form_service.get_form(form_id, current_user.email)
             logger.info(f"Regular user form retrieval successful")
-
         # Check wedding access if form has wedding_id
         if existing_form.get('wedding_id'):
             logger.info(f"Checking wedding access for wedding_id: {existing_form['wedding_id']}")
@@ -389,7 +383,6 @@ async def send_form(
     """Send form to recipients via email"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
-
     return await form_service.send_form(form_id, send_data, current_user.email)
 
 @router.get("/forms/{form_id}/responses", tags=["Forms"])
@@ -430,7 +423,6 @@ async def get_form_analytics(
     """Get analytics for a form"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
-
     return await form_service.get_form_analytics(form_id, current_user.email)
 
 @router.get("/forms/{form_id}/export/csv", tags=["Forms"])
@@ -456,7 +448,6 @@ async def export_form_responses_csv(
     - Optional date range filtering
     - Configurable metadata inclusion
     - Audit logging for security monitoring
-
     Args:
         form_id: The ID of the form to export responses for
         date_from: Optional start date for filtering responses (ISO format)
@@ -494,7 +485,6 @@ async def export_form_responses_csv(
                 success=False,
                 error_message="Insufficient privileges for CSV export"
             )
-
             logger.warning(
                 f"Unauthorized CSV export attempt by {current_user.email} "
                 f"with role {current_user.role} for form {form_id}"
@@ -530,7 +520,6 @@ async def export_form_responses_csv(
             if e.status_code == 404:
                 logger.info(f"CSV export attempted for non-existent form {form_id} by {current_user.email}")
             raise
-
         # Log CSV export attempt for security audit
         client_ip = getattr(request.client, 'host', None) if request.client else None
         logger.info(
@@ -538,7 +527,6 @@ async def export_form_responses_csv(
             f"ip={client_ip}, date_from={date_from}, date_to={date_to}, "
             f"include_metadata={include_metadata}"
         )
-
         # Call the form service to generate CSV
         export_result = await form_service.export_form_responses_csv(
             form_id=form_id,
@@ -547,7 +535,6 @@ async def export_form_responses_csv(
             date_to=date_to,
             include_metadata=include_metadata
         )
-
         # Log successful export for audit
         security_audit.log_security_event(
             event_type=SecurityEventType.DATA_EXPORT,
@@ -572,13 +559,11 @@ async def export_form_responses_csv(
             form_id=form_id,
             wedding_id=form.get('wedding_id')
         )
-
         logger.info(
             f"CSV export successful: form_id={form_id}, user={current_user.email}, "
             f"exported_count={export_result.get('exported_count', 0)}, "
             f"file_size={export_result.get('size', 0)} bytes"
         )
-
         # Return CSV file as download
         return FastAPIResponse(
             content=export_result['content'],
@@ -591,7 +576,6 @@ async def export_form_responses_csv(
                 "Expires": "0"
             }
         )
-
     except HTTPException:
         raise
     except Exception as e:
@@ -640,7 +624,6 @@ async def get_public_form(form_id: str, request: Request, response: Response):
                 f"Attempt to access non-public form {form_id} from IP: {client_ip}"
             )
             raise HTTPException(status_code=403, detail="Form is not publicly accessible")
-
         # Only return necessary fields for public access with sanitization
         public_form = {
             "id": form["id"],
@@ -742,7 +725,6 @@ async def submit_form(
         except Exception:
             logger.error(f"Failed to validate form {form_id} for public submission")
             raise HTTPException(status_code=404, detail="Form not found")
-
         # Log submission attempt
         logger.info(
             f"Form submission attempt: id={form_id}, ip={client_ip}, "
@@ -785,7 +767,6 @@ def get_form_templates(
     """Get available form templates"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
-
     templates = [
         {
             "id": "wedding_feedback",
@@ -1039,7 +1020,6 @@ def get_form_templates(
             ]
         }
     ]
-
     return {"templates": templates}
 
 @router.post("/forms/from-template/{template_id}", tags=["Form Templates"])
@@ -1061,7 +1041,6 @@ async def create_form_from_template(
     template = next((t for t in templates if t["id"] == template_id), None)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-
     # Create form from template
     form_data = CreateFormRequest(
         name=form_name,

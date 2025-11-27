@@ -35,7 +35,6 @@ class BudgetService:
             wedding = await self.weddings.find_one({"_id": wedding_id})
             if not wedding:
                 raise ValueError("Wedding not found")
-
             # Create category
             category = BudgetCategory(
                 wedding_id=wedding_id,
@@ -72,7 +71,6 @@ class BudgetService:
             alerts = list(self.budget_alerts.find(
                 {"wedding_id": wedding_id, "is_resolved": False}
             ).sort("created_at", -1).limit(10))
-
             return {
                 "wedding_id": wedding_id,
                 "summary": summary.dict(),
@@ -218,7 +216,6 @@ class BudgetService:
                 "amount": lowest_quote["quote_amount"],
                 "message": f"Lowest price option"
             })
-
             if comparison["statistics"]["savings_potential"] > 1000:
                 comparison["recommendations"].append({
                     "type": "savings_alert",
@@ -241,7 +238,6 @@ class BudgetService:
             }
             if notes:
                 update_data["notes"] = notes
-
             result = await self.vendor_quotes.update_one(
                 {"_id": PyObjectId(quote_id)},
                 {"$set": update_data}
@@ -351,7 +347,6 @@ class BudgetService:
         except Exception as e:
             logger.error(f"Failed to create budget template: {str(e)}")
             raise
-
     async def apply_budget_template(self, wedding_id: str, template_id: str, total_budget: float) -> Dict:
         """Apply a budget template to a wedding"""
         try:
@@ -359,17 +354,14 @@ class BudgetService:
             template = await self.budget_templates.find_one({"_id": PyObjectId(template_id)})
             if not template:
                 raise ValueError("Budget template not found")
-
             # Clear existing categories (optional - could be made configurable)
             existing_categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
             if existing_categories:
                 logger.warning(f"Wedding {wedding_id} already has {len(existing_categories)} budget categories")
-
             # Create categories from template
             created_categories = []
             for category_template in template["categories"]:
                 category_amount = total_budget * (category_template["percentage"] / 100)
-
                 category_data = {
                     "name": category_template["name"],
                     "description": f"Generated from {template['name']} template",
@@ -386,7 +378,6 @@ class BudgetService:
                 {"_id": wedding_id},
                 {"$set": {"total_budget": total_budget, "budget_template_applied": template_id}}
             )
-
             logger.info(f"Applied budget template {template['name']} to wedding {wedding_id}")
             return {
                 "template_applied": template["name"],
@@ -508,19 +499,16 @@ class BudgetService:
         except Exception as e:
             logger.error(f"Failed to record payment: {str(e)}")
             raise
-
     def get_payment_history(self, wedding_id: str) -> List[Dict]:
         """Get payment history for a wedding"""
         try:
             # Get all categories for this wedding
             categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
             category_ids = [str(cat["_id"]) for cat in categories]
-
             # Get all payments for these categories
             payments = list(self.payment_records.find(
                 {"category_id": {"$in": category_ids}}
             ).sort("payment_date", -1))
-
             # Add category name to each payment
             category_names = {str(cat["_id"]): cat["name"] for cat in categories}
             for payment in payments:
@@ -581,7 +569,6 @@ class BudgetService:
                 "rural": 0.8,
                 "luxury": 1.8
             }
-
             base_cost_per_guest = {
                 "traditional": 180,
                 "modern": 220,
@@ -607,7 +594,6 @@ class BudgetService:
                 "Favors & Gifts": 2.0,
                 "Miscellaneous": 7.0
             }
-
             estimated_categories = {}
             for category, percentage in category_percentages.items():
                 estimated_categories[category] = {
@@ -615,7 +601,6 @@ class BudgetService:
                     "percentage": percentage,
                     "per_guest": (estimated_total * (percentage / 100)) / guest_count
                 }
-
             return {
                 "guest_count": guest_count,
                 "wedding_type": wedding_type,
@@ -672,12 +657,10 @@ class BudgetService:
             overdue_categories=overdue_categories,
             vendor_quotes_count=quotes_count
         )
-
     async def _update_wedding_budget_total(self, wedding_id: str):
         """Update the total budget amount in the wedding document"""
         categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
         total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
-
         await self.weddings.update_one(
             {"_id": wedding_id},
             {"$set": {"total_budget": total_budget}}
@@ -704,7 +687,6 @@ class BudgetService:
                     amount=overage,
                     threshold=budgeted
                 )
-
                 # Check if alert already exists
                 existing = await self.budget_alerts.find_one({
                     "wedding_id": wedding_id,
@@ -729,7 +711,6 @@ class BudgetService:
                     amount=remaining,
                     threshold=budgeted * 0.9
                 )
-
                 existing = await self.budget_alerts.find_one({
                     "wedding_id": wedding_id,
                     "category_id": str(category["_id"]),
@@ -772,7 +753,6 @@ class BudgetService:
             "total_value": sum(q.get("quote_amount", 0) for q in quotes),
             "accepted_value": sum(q.get("quote_amount", 0) for q in quotes if q.get("status") == "accepted")
         }
-
     def _calculate_budget_insights(self, wedding_id: str, categories: List[Dict], payments: List[Dict]) -> Dict:
         """Calculate insights and trends for the budget"""
         if not categories:
@@ -800,7 +780,6 @@ class BudgetService:
         for payment in payments[-30:]:  # Last 30 payments
             month = payment.get("payment_date", datetime.utcnow()).strftime("%Y-%m")
             payment_frequency[month] = payment_frequency.get(month, 0) + 1
-
         return {
             "budget_utilization": (total_spent / total_budgeted * 100) if total_budgeted > 0 else 0,
             "most_expensive_category": {
@@ -832,7 +811,6 @@ class BudgetService:
                 "message": f"You are ${summary.budget_variance:.2f} over budget ({summary.variance_percentage:.1f}%)",
                 "action": "Review spending in highest categories and consider adjustments"
             })
-
         # Under budget recommendation
         elif summary.budget_variance < -1000:  # More than $1000 under
             recommendations.append({
@@ -842,7 +820,6 @@ class BudgetService:
                 "message": f"You have ${abs(summary.budget_variance):.2f} remaining in your budget",
                 "action": "Consider upgrading services or adding special touches"
             })
-
         # Vendor quote recommendations
         if summary.vendor_quotes_count < 3:
             recommendations.append({
@@ -852,5 +829,4 @@ class BudgetService:
                 "message": "Consider getting more vendor quotes to ensure competitive pricing",
                 "action": "Aim for at least 3 quotes per major category"
             })
-
         return recommendations
