@@ -45,39 +45,45 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
   }, [images, loadedImages]);
 
   // Open lightbox
-  const openLightbox = (index: number) => {
+  const openLightbox = useCallback((index: number) => {
     setSelectedIndex(index);
     setIsLoading(true);
     preloadAdjacentImages(index);
     // Prevent body scroll when lightbox is open
     document.body.style.overflow = 'hidden';
-  };
+  }, [preloadAdjacentImages]);
 
   // Close lightbox
-  const closeLightbox = () => {
+  const closeLightbox = useCallback(() => {
     setSelectedIndex(null);
     document.body.style.overflow = 'unset';
-  };
+  }, []);
 
   // Navigate to previous image
-  const goToPrevious = () => {
-    if (selectedIndex !== null && selectedIndex > 0) {
-      const newIndex = selectedIndex - 1;
-      setSelectedIndex(newIndex);
+  const goToPrevious = useCallback(() => {
+    setSelectedIndex((current) => {
+      if (current === null || current <= 0) {
+        return current;
+      }
+      const newIndex = current - 1;
       setIsLoading(true);
       preloadAdjacentImages(newIndex);
-    }
-  };
+      return newIndex;
+    });
+  }, [preloadAdjacentImages]);
 
   // Navigate to next image
-  const goToNext = () => {
-    if (selectedIndex !== null && selectedIndex < images.length - 1) {
-      const newIndex = selectedIndex + 1;
-      setSelectedIndex(newIndex);
+  const goToNext = useCallback(() => {
+    setSelectedIndex((current) => {
+      if (current === null || current >= images.length - 1) {
+        return current;
+      }
+      const newIndex = current + 1;
       setIsLoading(true);
       preloadAdjacentImages(newIndex);
-    }
-  };
+      return newIndex;
+    });
+  }, [images.length, preloadAdjacentImages]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -99,7 +105,7 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex]);
+  }, [closeLightbox, goToNext, goToPrevious, selectedIndex]);
 
   // Touch gesture handling for mobile
   const [touchStart, setTouchStart] = useState<number | null>(null);
