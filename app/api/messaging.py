@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from typing import Optional, List, Dict
+from fastapi import APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect
 
 from app.dependencies.auth import AuthUser, get_current_user
 from app.models.messaging import (
@@ -21,6 +20,26 @@ from app.services.messaging import MessagingRepositoryError, MessagingService
 
 router = APIRouter(prefix="/messaging", tags=["Messaging"])
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, conversation_id: str):
+        await websocket.accept()
+        if conversation_id not in self.active_connections:
+            self.active_connections[conversation_id] = []
+        self.active_connections[conversation_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, conversation_id: str):
+        if conversation_id in self.active_connections:
+            self.active_connections[conversation_id].remove(websocket)
+
+    async def broadcast(self, message: str, conversation_id: str):
+        if conversation_id in self.active_connections:
+            for connection in self.active_connections[conversation_id]:
+                await connection.send_text(message)
+
+manager = ConnectionManager()
 
 def get_messaging_service() -> MessagingService:
     """Construct a messaging service instance backed by Firestore."""
@@ -47,6 +66,17 @@ def _get_participant(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Only conversation participants may send messages.",
     )
+
+@router.websocket("/ws/{conversation_id}")
+async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
+    await manager.connect(websocket, conversation_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await manager.broadcast(f"Client says: {data}", conversation_id)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, conversation_id)
+        await manager.broadcast(f"Client left the chat", conversation_id)
 
 
 @router.post(
@@ -79,7 +109,9 @@ async def send_message(
         delivery_status=payload.delivery_status,
     )
 
-    return await service.send_message(conversation_id, message_request)
+    message = await service.send_message(conversation_id, message_request)
+    await manager.broadcast(message.json(), conversation_id)
+    return message
 
 
 async def _get_authorized_conversation(
