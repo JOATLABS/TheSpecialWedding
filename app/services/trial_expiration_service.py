@@ -212,7 +212,7 @@ class TrialExpirationService:
                     <p>To continue managing your weddings and accessing all features, please upgrade to a paid plan:</p>
 
                     <div class="button-container">
-                        <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3005')}/admin/billing" class="button">Upgrade Now</a>
+                        <a href="{os.getenv('FRONTEND_URL')}/admin/billing" class="button">Upgrade Now</a>
                     </div>
 
                     <p>If you have any questions about our plans or need assistance, please don't hesitate to contact our support team.</p>
@@ -270,7 +270,7 @@ class TrialExpirationService:
                     </ul>
 
                     <div class="button-container">
-                        <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3005')}/admin/billing" class="button">Choose Your Plan</a>
+                        <a href="{os.getenv('FRONTEND_URL')}/admin/billing" class="button">Choose Your Plan</a>
                     </div>
 
                     <p>Thank you for trying Special Wedding! We'd love to have you continue as a paid customer.</p>

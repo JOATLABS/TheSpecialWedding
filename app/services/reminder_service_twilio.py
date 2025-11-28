@@ -141,7 +141,9 @@ class TwilioRSVPReminderHelper:
         self.log_collection = mongo.db["reminders_sent"]
         self.client = twilio_client
         self.messaging_service_sid = MESSAGING_SERVICE_SID
-        self.base_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.com")
+        self.base_url = os.getenv("FRONTEND_URL")
+        if not self.base_url:
+            raise ValueError("FRONTEND_URL environment variable is required")
 
     def send_personalized_rsvp_links(self, slug: str, custom_message: str = None):
         guests = self.guest_collection.find({})
