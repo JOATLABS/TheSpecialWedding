@@ -12,7 +12,10 @@ import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
   try {
-    const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.thespecialwedding.com';
+    const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (!API_URL) {
+      throw new Error('NEXT_PUBLIC_API_BASE_URL environment variable is required for uptime monitoring');
+    }
 
     // Check backend health
     const healthResponse = await fetch(`${API_URL}/health`, {
