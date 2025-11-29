@@ -14,7 +14,7 @@ Usage:
 from datetime import datetime
 from typing import Callable, List, Dict, Any, Optional
 import logging
-from app.core.database_async import async_mongo
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +67,10 @@ class MigrationManager:
 
                 try:
                     # Run migration
-                    await migration.up(async_mongo.db)
+                    await migration.up(mongo.db)
 
                     # Mark as applied
-                    await async_mongo.db[self.migrations_collection_name].insert_one({
+                    await mongo.db[self.migrations_collection_name].insert_one({
                         "version": migration.version,
                         "name": migration.name,
                         "description": migration.description,
@@ -84,7 +84,7 @@ class MigrationManager:
                     logger.error(f"✗ Migration {migration.version} failed: {str(e)}")
 
                     # Log failed migration
-                    await async_mongo.db[self.migrations_collection_name].insert_one({
+                    await mongo.db[self.migrations_collection_name].insert_one({
                         "version": migration.version,
                         "name": migration.name,
                         "description": migration.description,
@@ -121,10 +121,10 @@ class MigrationManager:
 
         try:
             # Run rollback
-            await migration.down(async_mongo.db)
+            await migration.down(mongo.db)
 
             # Remove from applied migrations
-            await async_mongo.db[self.migrations_collection_name].delete_one({
+            await mongo.db[self.migrations_collection_name].delete_one({
                 "version": version
             })
 
@@ -136,7 +136,7 @@ class MigrationManager:
 
     async def get_applied_migrations(self) -> List[Dict[str, Any]]:
         """Get list of all applied migrations"""
-        cursor = async_mongo.db[self.migrations_collection_name].find().sort("applied_at", 1)
+        cursor = mongo.db[self.migrations_collection_name].find().sort("applied_at", 1)
         return await cursor.to_list(length=None)
 
     async def get_pending_migrations(self, all_migrations: List[Migration]) -> List[Migration]:
@@ -149,7 +149,7 @@ class MigrationManager:
 
     async def _is_applied(self, version: str) -> bool:
         """Check if a migration has been applied"""
-        result = await async_mongo.db[self.migrations_collection_name].find_one({
+        result = await mongo.db[self.migrations_collection_name].find_one({
             "version": version,
             "status": "success"
         })

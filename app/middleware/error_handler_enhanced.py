@@ -330,7 +330,9 @@ class EnhancedErrorHandlerMiddleware(BaseHTTPMiddleware):
         color = severity_colors.get(severity, "#6B7280")
 
         # Get admin dashboard URL
-        dashboard_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000").replace("/api", "")
+        dashboard_url = os.getenv("FRONTEND_URL")
+        if not dashboard_url:
+            raise ValueError("FRONTEND_URL environment variable is required")
         error_url = f"{dashboard_url}/admin/errors/{error_doc['error_id']}"
 
         html = f"""

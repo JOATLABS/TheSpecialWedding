@@ -382,8 +382,10 @@ class FormService:
             form = await self.get_form(form_id, created_by)
 
             # Generate form URL
-            base_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000")
-            form_url = f"{base_url}/forms/{form_id}"
+            frontend_url = os.getenv("FRONTEND_URL")
+            if not frontend_url:
+                raise ValueError("FRONTEND_URL environment variable is required")
+            form_url = f"{frontend_url}/forms/{form_id}"
 
             sent_count = 0
             failed_count = 0

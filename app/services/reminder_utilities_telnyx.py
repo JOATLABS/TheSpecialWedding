@@ -22,7 +22,9 @@ class TelnyxRSVPReminderHelper:
         telnyx.api_key = os.getenv("TELNYX_API_KEY")
         self.from_phone = os.getenv("TELNYX_PHONE_NUMBER")
         self.profile_id = os.getenv("TELNYX_PROFILE_ID")
-        self.base_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.com")
+        self.base_url = os.getenv("FRONTEND_URL")
+        if not self.base_url:
+            raise ValueError("FRONTEND_URL environment variable is required")
     
     def send_personalized_rsvp_links(self, slug: str, custom_message: str = None, event_type: str = "traditional"):
         guests = self.guest_collection.find({})

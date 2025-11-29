@@ -24,8 +24,10 @@ class UserManagementService:
         """Get trial settings from SAAS config"""
         try:
             # Try to get from SAAS config API
-            base_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:8000")
-            response = requests.get(f"{base_url}/saas/trial-settings", timeout=5)
+            api_url = os.getenv("NEXT_PUBLIC_API_BASE_URL")
+            if not api_url:
+                raise ValueError("NEXT_PUBLIC_API_BASE_URL environment variable is required")
+            response = requests.get(f"{api_url}/saas/trial-settings", timeout=5)
             if response.status_code == 200:
                 return response.json()
         except:
@@ -121,7 +123,10 @@ class UserManagementService:
         """Send invitation email to user"""
         try:
             subject = "Invitation to Join Special Wedding Platform"
-            setup_url = f"http://localhost:3003/setup-account?token={token}"
+            frontend_url = os.getenv("FRONTEND_URL")
+            if not frontend_url:
+                raise ValueError("FRONTEND_URL environment variable is required")
+            setup_url = f"{frontend_url}/setup-account?token={token}"
             # Create email content based on role
             if role == "wedding_planner":
                 role_description = "Wedding Planner"
@@ -152,8 +157,10 @@ class UserManagementService:
             # For now, we'll just log it or use a simple email service
             # Send invitation email using ResendEmailService
             if self.email_service.configured:
-                base_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000")
-                setup_url = f"{base_url}/setup-account?token={token}"
+                frontend_url = os.getenv("FRONTEND_URL")
+                if not frontend_url:
+                    raise ValueError("FRONTEND_URL environment variable is required")
+                setup_url = f"{frontend_url}/setup-account?token={token}"
                 # Create professional invitation email
                 html_content = self._generate_invitation_email_html(
                     email=email,
@@ -469,8 +476,10 @@ class UserManagementService:
             # Send email verification email
             if self.email_service.configured:
                 # Create verification URL
-                base_url = os.getenv("FRONTEND_URL", "http://localhost:3005")
-                verification_url = f"{base_url}/verify-email/{verification_token}"
+                frontend_url = os.getenv("FRONTEND_URL")
+                if not frontend_url:
+                    raise ValueError("FRONTEND_URL environment variable is required")
+                verification_url = f"{frontend_url}/verify-email/{verification_token}"
                 html_content = self._generate_verification_email_html(
                     email=email,
                     first_name=user_data.get("first_name", ""),
@@ -743,7 +752,7 @@ class UserManagementService:
                     <p>As a <strong>{role_display}</strong>{f' at {company_name}' if company_name else ''}, you have access to all the tools you need to create memorable wedding experiences.</p>
 
                     <div class="button-container">
-                        <a href="{os.getenv('NEXT_PUBLIC_API_BASE_URL', 'http://localhost:3000')}/admin" class="button">Start Planning</a>
+                        <a href="{os.getenv('FRONTEND_URL')}/admin" class="button">Start Planning</a>
                     </div>
 
                     <p>If you have any questions or need help getting started, our support team is here to help.</p>
