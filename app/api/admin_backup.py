@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
-from app.core.database_async import async_mongo
+from app.core.database import mongo
 import subprocess
 import os
 import logging
@@ -171,7 +171,7 @@ async def trigger_backup(
             "retention_days": 30
         }
 
-        await async_mongo.db["backup_history"].insert_one(backup_record)
+        await mongo.db["backup_history"].insert_one(backup_record)
 
         # Clean up old backups (retention policy)
         await cleanup_old_backups(days=30, s3_client=s3_client, bucket_name=bucket_name)
@@ -190,7 +190,7 @@ async def trigger_backup(
 
         # Log failure to database
         try:
-            await async_mongo.db["backup_history"].insert_one({
+            await mongo.db["backup_history"].insert_one({
                 "backup_date": datetime.utcnow(),
                 "status": "failed",
                 "error": str(e)
@@ -250,7 +250,7 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
                         deleted_count += 1
 
                         # Update database record
-                        await async_mongo.db["backup_history"].update_one(
+                        await mongo.db["backup_history"].update_one(
                             {"storage_key": obj['Key']},
                             {"$set": {"deleted_at": datetime.utcnow(), "status": "deleted"}}
                         )
@@ -275,7 +275,7 @@ async def get_backup_history(
 
     Shows all backups, their status, and file sizes.
     """
-    cursor = async_mongo.db["backup_history"].find().sort("backup_date", -1).limit(limit)
+    cursor = mongo.db["backup_history"].find().sort("backup_date", -1).limit(limit)
     backups = await cursor.to_list(length=limit)
 
     # Convert ObjectId to string
@@ -305,7 +305,7 @@ async def get_latest_backup(
 ) -> Dict[str, Any]:
     """Get information about the most recent backup"""
 
-    backup = await async_mongo.db["backup_history"].find_one(
+    backup = await mongo.db["backup_history"].find_one(
         {"status": "success"},
         sort=[("backup_date", -1)]
     )
@@ -339,7 +339,7 @@ async def get_restore_info(
     This provides the commands to run.
     """
 
-    backup = await async_mongo.db["backup_history"].find_one({
+    backup = await mongo.db["backup_history"].find_one({
         "backup_id": backup_id,
         "status": "success"
     })
