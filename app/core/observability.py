@@ -13,7 +13,7 @@ import psutil
 import platform
 from app.core.settings import settings
 from app.core.cache import cache
-from app.core.database_async import async_mongo
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ class ObservabilityManager:
             """Check database connectivity"""
             try:
                 # Simple ping to database
-                await async_mongo.client.server_info()
+                await mongo.client.server_info()
                 return HealthCheck(
                     name="database",
                     status=HealthStatus.HEALTHY,

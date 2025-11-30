@@ -207,8 +207,8 @@ class EnhancedErrorHandlerMiddleware(BaseHTTPMiddleware):
 
         # Save to MongoDB "errors" collection (async)
         try:
-            from app.core.database_async import async_mongo
-            await async_mongo.db["errors"].insert_one(error_doc)
+            from app.core.database import mongo
+            await mongo.db["errors"].insert_one(error_doc)
             logger.info(f"Error {error_id} saved to database")
         except Exception as db_error:
             logger.error(f"Failed to save error to database: {str(db_error)}")
