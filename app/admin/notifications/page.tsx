@@ -36,6 +36,12 @@ export default function NotificationsPage() {
   const [customContent, setCustomContent] = useState('');
   const [recipientFilter, setRecipientFilter] = useState('all_users');
   const [sending, setSending] = useState(false);
+  // Template creation modal
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateSubject, setTemplateSubject] = useState('');
+  const [templateContent, setTemplateContent] = useState('');
+  const [templateType, setTemplateType] = useState<'system_update' | 'maintenance' | 'security' | 'marketing' | 'feature_announcement'>('system_update');
 
   const fetchData = useCallback(async () => {
     try {
@@ -70,6 +76,39 @@ export default function NotificationsPage() {
     fetchData();
   }, [fetchData]);
 
+
+  const handleCreateTemplate = async () => {
+    if (!templateName || !templateSubject || !templateContent) {
+      alert('Please fill in all template fields');
+      return;
+    }
+
+    try {
+      // For now, just add to local state - backend integration in Option B
+      const newTemplate: NotificationTemplate = {
+        _id: `temp_${Date.now()}`,
+        name: templateName,
+        subject: templateSubject,
+        content: templateContent,
+        type: templateType,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      setTemplates([...templates, newTemplate]);
+      setShowTemplateModal(false);
+      // Reset form
+      setTemplateName('');
+      setTemplateSubject('');
+      setTemplateContent('');
+      setTemplateType('system_update');
+
+      alert('Template created successfully! (Note: This will be saved to database in backend integration)');
+    } catch (error) {
+      console.error('Error creating template:', error);
+      alert('Failed to create template');
+    }
+  };
 
   const sendNotification = async () => {
     if (!customSubject || !customContent) {
@@ -228,7 +267,10 @@ export default function NotificationsPage() {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold text-wedding-navy">Notification Templates</h2>
-            <button className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80">
+            <button
+              onClick={() => setShowTemplateModal(true)}
+              className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80"
+            >
               Create Template
             </button>
           </div>
@@ -250,7 +292,10 @@ export default function NotificationsPage() {
                 Create reusable notification templates for common announcements like maintenance,
                 feature updates, or security notices.
               </p>
-              <button className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80">
+              <button
+                onClick={() => setShowTemplateModal(true)}
+                className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80"
+              >
                 Create Your First Template
               </button>
             </div>
@@ -304,6 +349,96 @@ export default function NotificationsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Template Creation Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-semibold text-wedding-navy">Create Notification Template</h2>
+                <button
+                  onClick={() => setShowTemplateModal(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Template Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Template Name *</label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="e.g., System Maintenance Notice"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                />
+              </div>
+
+              {/* Template Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Template Type *</label>
+                <select
+                  value={templateType}
+                  onChange={(e) => setTemplateType(e.target.value as any)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                >
+                  <option value="system_update">System Update</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="security">Security Notice</option>
+                  <option value="marketing">Marketing</option>
+                  <option value="feature_announcement">Feature Announcement</option>
+                </select>
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email Subject *</label>
+                <input
+                  type="text"
+                  value={templateSubject}
+                  onChange={(e) => setTemplateSubject(e.target.value)}
+                  placeholder="Enter email subject line..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                />
+              </div>
+
+              {/* Content */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message Content *</label>
+                <textarea
+                  value={templateContent}
+                  onChange={(e) => setTemplateContent(e.target.value)}
+                  placeholder="Enter your template message..."
+                  rows={8}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  onClick={() => setShowTemplateModal(false)}
+                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateTemplate}
+                  disabled={!templateName || !templateSubject || !templateContent}
+                  className="px-6 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create Template
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
