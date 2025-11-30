@@ -162,7 +162,7 @@ if PSUTIL_AVAILABLE:
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin/platform", tags=["ROOT_ADMIN", "Monitoring"])
+router = APIRouter(tags=["ROOT_ADMIN", "Monitoring"])
 
 
 @router.get("/metrics")

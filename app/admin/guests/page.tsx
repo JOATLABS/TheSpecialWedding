@@ -25,6 +25,7 @@ interface Guest {
   email?: string;
   role: string;
   group_id?: string;
+  table_id?: string;
   plus_one_allowed: boolean;
   number_of_plus_ones_allowed?: number;
   plus_one_submitted: boolean;
@@ -53,6 +54,7 @@ export default function AdminGuestsPage() {
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWedding, setSelectedWedding] = useState<string>('');
   const [guests, setGuests] = useState<Guest[]>([]);
+  const [tables, setTables] = useState<{ [key: string]: string }>({});
   const [rsvps, setRsvps] = useState<RSVP[]>([]);
   const [plusOnes, setPlusOnes] = useState<PlusOne[]>([]);
   const [loading, setLoading] = useState(false);
@@ -109,6 +111,23 @@ export default function AdminGuestsPage() {
       console.log('Guests data:', normalizedGuests); // Debug log
       console.log('Selected wedding ID:', selectedWedding); // Debug log
       setGuests(normalizedGuests);
+
+      // Fetch Tables to map names
+      try {
+          const tablesRes = await fetch(`${baseUrl}/admin/tables/${selectedWedding}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (tablesRes.ok) {
+              const tablesData = await tablesRes.json();
+              const tableMap: { [key: string]: string } = {};
+              tablesData.forEach((t: any) => {
+                  tableMap[t.id] = t.name;
+              });
+              setTables(tableMap);
+          }
+      } catch (tableErr) {
+          console.error("Failed to fetch tables", tableErr);
+      }
 
       // Fetch RSVPs
       try {
@@ -452,6 +471,11 @@ export default function AdminGuestsPage() {
                                 }`}>
                                   {guest.role}
                                 </span>
+                                {guest.table_id && tables[guest.table_id] && (
+                                   <span className="px-3 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800">
+                                      {tables[guest.table_id]}
+                                   </span>
+                                )}
                                 {rsvp && (
                                   <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
                                     RSVP’d
@@ -535,6 +559,12 @@ export default function AdminGuestsPage() {
                                     <div>
                                       <dt className="inline font-medium text-gray-700">Group:</dt>
                                       <dd className="inline ml-2">{guest.group_id}</dd>
+                                    </div>
+                                  )}
+                                  {guest.table_id && (
+                                    <div>
+                                      <dt className="inline font-medium text-gray-700">Table:</dt>
+                                      <dd className="inline ml-2">{tables[guest.table_id] || 'Unknown Table'}</dd>
                                     </div>
                                   )}
                                   <div>

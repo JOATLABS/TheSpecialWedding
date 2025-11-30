@@ -62,7 +62,7 @@ async def require_admin(current_user: AuthUser = Depends(get_current_user)) -> A
         )
     return current_user
 
-async def require_role(required_role: str):
+def require_role(required_role: str):
     """Factory function to create role-based dependencies"""
     async def role_checker(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
         if current_user.role != required_role:

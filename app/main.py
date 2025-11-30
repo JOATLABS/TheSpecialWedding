@@ -56,6 +56,7 @@ from app.api.public_contact import router as public_contact_router
 from app.api.stripe_payment import router as stripe_router
 from app.api.admin_platform_metrics import router as platform_metrics_router
 from app.api.admin_backup import router as backup_router
+from app.api.tables import router as tables_router
 
 # Setup logging
 logging.basicConfig(
@@ -263,7 +264,8 @@ admin_routers = [
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (platform_metrics_router, "ROOT_ADMIN"),
-    (backup_router, "ROOT_ADMIN")
+    (backup_router, "ROOT_ADMIN"),
+    (tables_router, "Seating")
 ]
 
 for router, tag in admin_routers:

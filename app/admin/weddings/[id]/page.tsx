@@ -248,6 +248,13 @@ export default function WeddingDetailsPage() {
  {tab === 'rsvp' ? 'RSVP' : tab === 'faq' ? 'FAQ' : tab === 'story' ? 'Story' : tab}
  </button>
  ))}
+  <button
+    onClick={() => router.push(`/admin/weddings/${weddingId}/seating`)}
+    className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium capitalize whitespace-nowrap text-gray-600 hover:text-wedding-navy flex items-center gap-1"
+  >
+    <span>Seating</span>
+    <span className="text-[10px] bg-wedding-gold text-white px-1 rounded ml-1">New</span>
+  </button>
  </nav>
  </div>
 

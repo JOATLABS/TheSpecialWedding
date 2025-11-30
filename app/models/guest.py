@@ -11,6 +11,7 @@ class GuestModel(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     group_id: Optional[str] = None
+    table_id: Optional[str] = None
     role: Optional[str] = Field("guest")
     plus_one_allowed: Optional[bool] = Field(default=False)
     number_of_plus_ones_allowed: Optional[int] = Field(default=0, ge=0, le=10)
