@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
+import Checklist from '@/components/Checklist';
 
 interface Wedding {
  id: string;
@@ -258,6 +259,9 @@ export default function WeddingPlannerDashboard() {
  View Site
  </a>
  </div>
+ </div>
+ <div className="mt-4">
+    <Checklist weddingId={wedding.id} token={token || ''} />
  </div>
  </div>
  ))

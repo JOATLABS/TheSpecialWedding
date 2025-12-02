@@ -1,7 +1,11 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { IntegratedHeroSection } from './IntegratedHeroSection';
+import ModernHeroSection from './ModernHeroSection';
+import ImpactMetricsSection from './ImpactMetricsSection';
+import CustomerLogosSection from './CustomerLogosSection';
 import { PlannerAuthModal } from './PlannerAuthModal';
 import ContactSalesModal from './ContactSalesModal';
 import { SubscriptionPlan } from './PlannerAuthSection';
@@ -63,6 +67,21 @@ interface SaasConfig {
   hero_problem_statement?: string;
   hero_solution_statement?: string;
   hero_screenshot_primary?: string;
+  // Impact Metrics
+  impact_metrics?: Array<{
+    metric: string;
+    label: string;
+    icon?: string;
+  }>;
+  show_impact_metrics?: boolean;
+  // Customer Logos
+  customer_logos?: Array<{
+    name: string;
+    logo_url: string;
+  }>;
+  show_customer_logos?: boolean;
+  demo_video_url?: string;
+  show_product_demo?: boolean;
 }
 
 export const SaasLandingPage: React.FC = () => {
@@ -252,7 +271,7 @@ export const SaasLandingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [fetchWithTimeout, resolveApiUrl]);
+  }, [resolveApiUrl]);
 
   const fetchSubscriptionPlans = useCallback(async () => {
     let resolvedPlans: SubscriptionPlan[] | null = null;
@@ -293,7 +312,7 @@ export const SaasLandingPage: React.FC = () => {
       }
       setPlanLoading(false);
     }
-  }, [defaultPlans, fetchWithTimeout, resolveApiUrl]);
+  }, [defaultPlans, resolveApiUrl]);
 
   useEffect(() => {
     fetchSaasConfig();
@@ -401,13 +420,29 @@ export const SaasLandingPage: React.FC = () => {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <IntegratedHeroSection
-        config={config}
-        plans={plans}
-        onAuthModalOpen={() => {
-          setAuthMode('signup');
-          setIsAuthModalOpen(true);
-        }}
+      {config.show_decorative_logo === false ? (
+        <ModernHeroSection
+          config={config}
+          onAuthModeChange={setAuthMode}
+        />
+      ) : (
+        <IntegratedHeroSection
+          config={config}
+          plans={plans}
+          onAuthModalOpen={() => {
+            setAuthMode('signup');
+            setIsAuthModalOpen(true);
+          }}
+        />
+      )}
+
+      <ImpactMetricsSection
+        impact_metrics={config.impact_metrics}
+        show_impact_metrics={config.show_impact_metrics}
+      />
+      <CustomerLogosSection
+        customer_logos={config.customer_logos}
+        show_customer_logos={config.show_customer_logos}
       />
 
       <div className="relative -mt-24 rounded-t-[3rem] bg-gradient-to-b from-white via-slate-50 to-slate-100 text-slate-900 shadow-[0_-60px_120px_-80px_rgba(15,23,42,0.7)]">

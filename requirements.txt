@@ -24,3 +24,4 @@ pillow>=11.3.0
 protobuf>=6.31.1
 stripe>=13.0.1
 firebase-admin>=6.6.0
+boto3
