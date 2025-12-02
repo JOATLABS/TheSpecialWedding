@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wedding, WeddingEvent } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { fetchMapEmbedUrl, openLocationInMaps } from '@/lib/maps';
+import { formatDate as formatDisplayDate } from '@/utils/dateFormat';
 
 interface EventLocationSectionProps {
   wedding: Wedding;
@@ -12,9 +12,7 @@ interface EventLocationSectionProps {
 export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedding }) => {
   const [selectedEventType, setSelectedEventType] = useState<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapUrl, setMapUrl] = useState('');
-  const [mapLoading, setMapLoading] = useState(false);
-  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapUrl, setMapUrl] = useState<string>('');
 
   // Get events with location details
   const eventsWithLocation = useMemo(() => {
@@ -22,8 +20,6 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
       event.details?.location && event.details.location.trim() !== ''
     ) || [];
   }, [wedding.events]);
-
-  const hideSection = Boolean(wedding.event_location_private);
 
   // Set initial selected event
   useEffect(() => {
@@ -35,55 +31,24 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
   // Get selected event details
   const selectedEvent = eventsWithLocation.find(e => e.type === selectedEventType);
 
-  const location = selectedEvent?.details?.location;
-
+  // Fetch secure map URL when location changes
   useEffect(() => {
-    let ignore = false;
-
-    const loadMap = async () => {
-      const normalizedLocation = location?.trim();
-
-      if (!normalizedLocation) {
-        if (!ignore) {
-          setMapUrl('');
-          setMapError(null);
-          setMapLoading(false);
-        }
-        return;
-      }
-
-      setMapLoading(true);
-      setMapError(null);
-
-      try {
-        const embedUrl = await fetchMapEmbedUrl(normalizedLocation);
-        if (!ignore) {
-          setMapUrl(embedUrl);
-          setMapError(null);
-        }
-      } catch (error) {
-        console.error('Failed to load event map', error);
-        if (!ignore) {
-          setMapUrl('');
-          setMapError(error instanceof Error ? error.message : 'Failed to load map');
-        }
-      } finally {
-        if (!ignore) {
-          setMapLoading(false);
+    const fetchMapUrl = async () => {
+      if (selectedEvent?.details?.location) {
+        try {
+          const response = await fetch(`/api/maps?location=${encodeURIComponent(selectedEvent.details.location)}`);
+          if (response.ok) {
+            const data = await response.json();
+            setMapUrl(data.embedUrl);
+          }
+        } catch (error) {
+          console.error('Failed to load map:', error);
         }
       }
     };
 
-    loadMap();
-
-    return () => {
-      ignore = true;
-    };
-  }, [location]);
-
-  useEffect(() => {
-    setMapLoaded(false);
-  }, [mapUrl, location]);
+    fetchMapUrl();
+  }, [selectedEvent?.details?.location]);
 
   // Format event type for display
   const formatEventType = (type: string) => {
@@ -93,28 +58,38 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
       .join(' ');
   };
 
-  // Format date
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    });
+  // Generate Google Maps URL
+  const getGoogleMapsUrl = (location: string) => {
+    const encoded = encodeURIComponent(location);
+    return `https://www.google.com/maps/search/?api=1&query=${encoded}`;
+  };
+
+  // Generate Apple Maps URL
+  const getAppleMapsUrl = (location: string) => {
+    const encoded = encodeURIComponent(location);
+    return `https://maps.apple.com/?q=${encoded}`;
   };
 
   // Handle map click
   const handleMapClick = () => {
-    if (!location) return;
+    if (!selectedEvent?.details?.location) return;
 
-    openLocationInMaps(location);
+    const location = selectedEvent.details.location;
+
+    // Check if on iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    if (isIOS) {
+      // On iOS, prefer Apple Maps
+      window.open(getAppleMapsUrl(location), '_blank');
+    } else {
+      // On Android and desktop, use Google Maps
+      window.open(getGoogleMapsUrl(location), '_blank');
+    }
   };
 
-  // Don't render if section is private or there are no events with locations
-  if (hideSection || eventsWithLocation.length === 0) {
+  // Don't render if no events with locations
+  if (eventsWithLocation.length === 0) {
     return null;
   }
 
@@ -173,7 +148,12 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                         <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                        {formatDate(selectedEvent.date)}
+                        {formatDisplayDate(selectedEvent.date, {
+                          weekday: 'long',
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
                       </p>
                     </div>
                     {selectedEvent.details?.location && (
@@ -232,19 +212,15 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                   </div>
 
                   {/* Loading spinner */}
-                  {!mapLoaded && !mapLoading && (
+                  {!mapLoaded && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
                       <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-transparent"></div>
                     </div>
                   )}
                 </>
-              ) : selectedEvent?.details?.location && mapLoading ? (
+              ) : selectedEvent?.details?.location && !mapUrl ? (
                 <div className="h-full flex items-center justify-center bg-gray-100">
                   <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-transparent"></div>
-                </div>
-              ) : selectedEvent?.details?.location && mapError ? (
-                <div className="h-full flex items-center justify-center bg-gray-100">
-                  <p className="text-gray-500">Map unavailable</p>
                 </div>
               ) : (
                 <div className="h-full flex items-center justify-center bg-gray-100">

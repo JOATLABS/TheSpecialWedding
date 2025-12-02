@@ -2,6 +2,7 @@
 
 import { Metadata } from 'next';
 import { GalleryGrid } from '@/components/GalleryGrid';
+import { formatDate } from '@/utils/dateFormat';
 
 type GalleryImage = {
   key: string;
@@ -55,26 +56,12 @@ export default async function GalleryPage({
           </h1>
           {wedding?.date && (
             <p className="text-xl text-blue-100">
-              {(() => {
-                // Fix timezone issues by parsing date components directly
-                if (wedding.date.includes('-')) {
-                  const [year, month, day] = wedding.date.split('-');
-                  const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                  return dateObj.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  });
-                } else {
-                  return new Date(wedding.date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  });
-                }
-              })()}
+              {formatDate(wedding.date, {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
             </p>
           )}
           {wedding?.venue && (

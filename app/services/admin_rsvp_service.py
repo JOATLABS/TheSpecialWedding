@@ -10,7 +10,7 @@ class AdminRSVPService:
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
 
-    def get_all_rsvps(self, wedding_id=None):
+    async def get_all_rsvps(self, wedding_id=None):
         try:
             # Filter by wedding_id if provided
             query = {"wedding_id": wedding_id} if wedding_id else {}
@@ -22,7 +22,7 @@ class AdminRSVPService:
                 guest_id_str = str(guest_id)
                 
                 # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
-                rsvp = self.rsvp_collection.find_one({
+                rsvp = await self.rsvp_collection.find_one({
                     "$or": [
                         {"guest_id": guest_id},      # Old format: ObjectId
                         {"guest_id": guest_id_str}   # New format: string
@@ -31,7 +31,7 @@ class AdminRSVPService:
                 
                 # Only include guests who have actually RSVP'd
                 if rsvp:
-                    plus_one = self.plus_one_collection.find_one({"guest_id": guest_id_str})
+                    plus_one = await self.plus_one_collection.find_one({"guest_id": guest_id_str})
                     
                     # Convert plus_one _id to string if it exists
                     if plus_one and "_id" in plus_one:
@@ -78,20 +78,20 @@ class AdminRSVPService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to export RSVPs: {str(e)}")
     
-    def get_rsvp_by_guest_id(self, guest_id: str):
+    async def get_rsvp_by_guest_id(self, guest_id: str):
         try:
-            guest = self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+            guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
-            rsvp = self.rsvp_collection.find_one({
+            rsvp = await self.rsvp_collection.find_one({
                 "$or": [
                     {"guest_id": ObjectId(guest_id)},  # Old format: ObjectId
                     {"guest_id": guest_id}             # New format: string
                 ]
             })
-            plus_one = self.plus_one_collection.find_one({"guest_id": guest_id})
+            plus_one = await self.plus_one_collection.find_one({"guest_id": guest_id})
             
             # Convert plus_one _id to string if it exists
             if plus_one and "_id" in plus_one:
@@ -109,14 +109,14 @@ class AdminRSVPService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve RSVP: {str(e)}")
     
-    def update_rsvp(self, guest_id: str, rsvp_data: dict):
+    async def update_rsvp(self, guest_id: str, rsvp_data: dict):
         try:
-            guest = self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+            guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             # Update RSVP - handle both old ObjectId and new string format
-            self.rsvp_collection.update_one(
+            await self.rsvp_collection.update_one(
                 {
                     "$or": [
                         {"guest_id": ObjectId(guest_id)},  # Old format
@@ -130,14 +130,14 @@ class AdminRSVPService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to update RSVP: {str(e)}")
     
-    def delete_rsvp(self, guest_id: str):
+    async def delete_rsvp(self, guest_id: str):
         try:
-            guest = self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+            guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             # Delete RSVP - handle both old ObjectId and new string format
-            self.rsvp_collection.delete_one({
+            await self.rsvp_collection.delete_one({
                 "$or": [
                     {"guest_id": ObjectId(guest_id)},  # Old format
                     {"guest_id": guest_id}             # New format
