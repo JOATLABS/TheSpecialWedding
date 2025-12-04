@@ -134,9 +134,7 @@ class ResendEmailService:
         if not custom_subject:
             custom_subject = f"You're Invited - {from_name}"
         
-        base_url = os.getenv("FRONTEND_URL")
-        if not base_url:
-            raise ValueError("FRONTEND_URL environment variable is required")
+        base_url = os.getenv("FRONTEND_URL", "https://www.thespecialwedding.com")
         sent = 0
         failed = 0
         
@@ -284,6 +282,7 @@ class ResendEmailService:
         
         # Add plus-ones support
         plus_ones_collection = mongo.db["plus_ones"]
+
         for recipient in recipients:
             guest_id = recipient.get("guest_id")
             if guest_id:
@@ -379,6 +378,7 @@ class ResendEmailService:
         """Generate HTML section for plus-ones information"""
         if not plus_ones:
             return ""
+
         plus_ones_html = "<br><p style='margin: 10px 0 0;'><strong>Your Plus-Ones:</strong></p>"
         for plus_one in plus_ones:
             plus_one_name = plus_one.get("name", "Plus One")

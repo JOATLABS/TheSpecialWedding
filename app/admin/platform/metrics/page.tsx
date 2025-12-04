@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
 
@@ -396,21 +397,21 @@ export default function PlatformMonitoringDashboard() {
                           {error.user_id && ` · User: ${error.user_id}`}
                         </p>
                       </div>
-                      <a
+                      <Link
                         href={`/admin/platform/errors/${error.error_id}`}
                         className="ml-4 text-blue-600 hover:text-blue-800 text-sm font-medium"
                       >
                         View Details →
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 ))}
               </div>
               {metrics.errors.recent_errors.length > 10 && (
                 <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-center">
-                  <a href="/admin/platform/errors" className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                  <Link href="/admin/platform/errors" className="text-sm text-blue-600 hover:text-blue-800 font-medium">
                     View All Errors ({metrics.errors.recent_errors.length})
-                  </a>
+                  </Link>
                 </div>
               )}
             </Card>
@@ -537,7 +538,7 @@ export default function PlatformMonitoringDashboard() {
         <section>
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a
+            <Link
               href="/admin/platform/errors"
               className="block p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
@@ -552,9 +553,9 @@ export default function PlatformMonitoringDashboard() {
                   <p className="text-sm text-gray-500">Browse error logs</p>
                 </div>
               </div>
-            </a>
+            </Link>
 
-            <a
+            <Link
               href="/admin/metrics"
               className="block p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
@@ -569,9 +570,9 @@ export default function PlatformMonitoringDashboard() {
                   <p className="text-sm text-gray-500">View detailed metrics</p>
                 </div>
               </div>
-            </a>
+            </Link>
 
-            <a
+            <Link
               href="/admin/saas"
               className="block p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
@@ -587,7 +588,7 @@ export default function PlatformMonitoringDashboard() {
                   <p className="text-sm text-gray-500">Manage plans & content</p>
                 </div>
               </div>
-            </a>
+            </Link>
           </div>
         </section>
       </div>
