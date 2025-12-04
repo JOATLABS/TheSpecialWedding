@@ -54,6 +54,8 @@ from app.api.support_management import router as support_router
 from app.api.messaging import router as messaging_router
 from app.api.public_contact import router as public_contact_router
 from app.api.stripe_payment import router as stripe_router
+from app.api.plus_ones_route import router as plus_ones_admin_router
+from app.api.checklist_route import router as checklist_admin_router
 
 
 # Setup logging
@@ -246,6 +248,8 @@ admin_routers = [
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (messaging_router, "Messaging"),
+    (plus_ones_admin_router, "Admin"),
+    (checklist_admin_router, "Admin"),
 ]
 
 for router, tag in admin_routers:

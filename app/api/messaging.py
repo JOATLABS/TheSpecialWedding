@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, List, Dict
+from fastapi import APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect, Form, UploadFile, File
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-
-from app.dependencies.auth import AuthUser, get_current_user
+from app.dependencies.auth import AuthUser, get_current_user, get_user_from_token
 from app.models.messaging import (
     ConversationCreateRequest,
     ConversationListResponse,
@@ -16,11 +15,34 @@ from app.models.messaging import (
     ReadReceiptResponse,
     ReadReceiptUpdateRequest,
     SendMessageRequest,
+    MessageAttachment,
 )
 from app.services.messaging import MessagingRepositoryError, MessagingService
+from app.core.r2 import upload_to_r2
+
 
 router = APIRouter(prefix="/messaging", tags=["Messaging"])
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, conversation_id: str):
+        await websocket.accept()
+        if conversation_id not in self.active_connections:
+            self.active_connections[conversation_id] = []
+        self.active_connections[conversation_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, conversation_id: str):
+        if conversation_id in self.active_connections:
+            self.active_connections[conversation_id].remove(websocket)
+
+    async def broadcast(self, message: str, conversation_id: str):
+        if conversation_id in self.active_connections:
+            for connection in self.active_connections[conversation_id]:
+                await connection.send_text(message)
+
+manager = ConnectionManager()
 
 def get_messaging_service() -> MessagingService:
     """Construct a messaging service instance backed by Firestore."""
@@ -48,6 +70,31 @@ def _get_participant(
         detail="Only conversation participants may send messages.",
     )
 
+@router.websocket("/ws/{conversation_id}")
+async def websocket_endpoint(websocket: WebSocket, conversation_id: str, token: str = Query(...)):
+    user = await get_user_from_token(token)
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    service: MessagingService = get_messaging_service()
+    conversation = await service.get_conversation(conversation_id)
+    participant = _get_participant(conversation, user.email)
+
+    await manager.connect(websocket, conversation_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message_request = MessageCreateRequest(
+                sender_id=user.email,
+                sender_role=participant.role,
+                body=data,
+            )
+            message = await service.send_message(conversation_id, message_request)
+            await manager.broadcast(message.json(), conversation_id)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, conversation_id)
+
 
 @router.post(
     "/weddings/{wedding_id}/conversations/{conversation_id}/messages",
@@ -57,7 +104,8 @@ def _get_participant(
 async def send_message(
     wedding_id: str,
     conversation_id: str,
-    payload: SendMessageRequest,
+    body: str = Form(...),
+    file: Optional[UploadFile] = File(None),
     current_user: AuthUser = Depends(get_current_user),
     service: MessagingService = Depends(get_messaging_service),
 ) -> MessageResponse:
@@ -70,16 +118,21 @@ async def send_message(
         service,
     )
 
+    attachments = []
+    if file:
+        file_url = upload_to_r2(file, current_user.email)
+        attachments.append(MessageAttachment(type="file", url=file_url, title=file.filename))
+
     message_request = MessageCreateRequest(
         sender_id=current_user.email,
         sender_role=participant.role,
-        body=payload.body,
-        attachments=payload.attachments,
-        linked_resource=payload.linked_resource,
-        delivery_status=payload.delivery_status,
+        body=body,
+        attachments=attachments,
     )
 
-    return await service.send_message(conversation_id, message_request)
+    message = await service.send_message(conversation_id, message_request)
+    await manager.broadcast(message.json(), conversation_id)
+    return message
 
 
 async def _get_authorized_conversation(

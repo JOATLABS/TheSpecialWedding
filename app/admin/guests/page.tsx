@@ -133,40 +133,26 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // Fetch plus ones for all guests
+      // Fetch plus ones for the wedding
       try {
-        const plusOnesResponse = await Promise.all(
-          normalizedGuests.map(async (guest: any) => {
-            try {
-              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-              });
-              
-              if (response.ok) {
-                const guestPlusOnes = await response.json();
-                return guestPlusOnes.map((po: any) => ({
-                  ...po,
-                  guest_id: guest.id,
-                  guest_name: guest.name
-                }));
-              }
-              return [];
-            } catch (error) {
-              console.log(`Plus-ones fetch error for guest ${guest.id}:`, error);
-              return [];
-            }
-          })
+        const plusOnesResponse = await fetch(
+          `${baseUrl}/admin/plus_ones?wedding_id=${selectedWedding}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
         );
-        
-        // Flatten the array of arrays
-        const allPlusOnes = plusOnesResponse.flat();
-        setPlusOnes(allPlusOnes);
-        console.log('Plus-ones loaded:', allPlusOnes.length);
-      } catch (error) {
-        console.log('Plus-ones fetch error:', error);
+        if (plusOnesResponse.ok) {
+          const plusOnesData = await plusOnesResponse.json();
+          console.log('Plus-ones data:', plusOnesData); // Debug log
+          setPlusOnes(Array.isArray(plusOnesData) ? plusOnesData : []);
+        } else {
+          console.log('Plus-ones endpoint failed:', plusOnesResponse.status);
+          setPlusOnes([]);
+        }
+      } catch (plusOneError) {
+        console.log('Plus-ones fetch error:', plusOneError);
         setPlusOnes([]);
       }
       
