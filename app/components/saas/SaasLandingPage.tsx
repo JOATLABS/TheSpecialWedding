@@ -47,6 +47,15 @@ interface SaasConfig {
   features: Feature[];
   benefits: Benefit[];
   testimonials: Testimonial[];
+  impact_metrics?: Array<{
+    metric: string;
+    label: string;
+    icon?: string;
+  }>;
+  customer_logos?: Array<{
+    name: string;
+    logo_url?: string;
+  }>;
   background_image?: string;
   fallback_images: string[];
   features_enabled: boolean;
@@ -63,7 +72,62 @@ interface SaasConfig {
   hero_problem_statement?: string;
   hero_solution_statement?: string;
   hero_screenshot_primary?: string;
+  animation_speed?: 'fast' | 'medium' | 'slow';
+  animations_enabled?: boolean;
+  scroll_animations?: boolean;
+  show_impact_metrics?: boolean;
+  show_customer_logos?: boolean;
+  workflow_steps?: Array<{
+    title: string;
+    description: string;
+    badge?: string;
+  }>;
+  faqs?: Array<{
+    question: string;
+    answer: string;
+  }>;
 }
+
+const DEFAULT_WORKFLOW_STEPS = [
+  {
+    title: 'Discovery & onboarding',
+    description: 'Collect couple questionnaires, import spreadsheets, and set expectations in minutes.',
+    badge: 'Week 1',
+  },
+  {
+    title: 'Vendor alignment',
+    description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
+    badge: 'Week 2',
+  },
+  {
+    title: 'Guest communication',
+    description: 'Centralize RSVPs, table assignments, and messaging without endless email threads.',
+    badge: 'Week 3',
+  },
+  {
+    title: 'Event execution',
+    description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
+    badge: 'Wedding week',
+  },
+];
+
+const DEFAULT_FAQS = [
+  {
+    question: 'How quickly can I onboard my team?',
+    answer:
+      'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
+  },
+  {
+    question: 'Do you support client-facing wedding websites?',
+    answer:
+      'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
+  },
+  {
+    question: 'Can vendors access only their assigned tasks?',
+    answer:
+      'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
+  },
+];
 
 export const SaasLandingPage: React.FC = () => {
   const [authMode, setAuthMode] = useState<'signup' | 'login'>('signup');
@@ -84,6 +148,84 @@ export const SaasLandingPage: React.FC = () => {
     hero_subheadline: "For Professional Wedding Planners",
     hero_problem_statement: "Stop juggling spreadsheets, email chains, and vendor chaos",
     hero_solution_statement: "One platform to manage guests, vendors, timelines, and budgets—all in sync",
+    workflow_steps: [
+      {
+        title: 'Discovery & onboarding',
+        description: 'Collect couple questionnaires, import spreadsheets, and set expectations in minutes.',
+        badge: 'Week 1',
+      },
+      {
+        title: 'Vendor alignment',
+        description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
+        badge: 'Week 2',
+      },
+      {
+        title: 'Guest communication',
+        description: 'Centralize RSVPs, table assignments, and messaging without endless email threads.',
+        badge: 'Week 3',
+      },
+      {
+        title: 'Event execution',
+        description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
+        badge: 'Wedding week',
+      },
+    ],
+    faqs: [
+      {
+        question: 'How quickly can I onboard my team?',
+        answer:
+          'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
+      },
+      {
+        question: 'Do you support client-facing wedding websites?',
+        answer:
+          'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
+      },
+      {
+        question: 'Can vendors access only their assigned tasks?',
+        answer:
+          'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
+      },
+    ],
+    workflow_steps: [
+      {
+        title: 'Discovery & onboarding',
+        description: 'Collect couple questionnaires, import spreadsheets, and set expectations in minutes.',
+        badge: 'Week 1',
+      },
+      {
+        title: 'Vendor alignment',
+        description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
+        badge: 'Week 2',
+      },
+      {
+        title: 'Guest communication',
+        description: 'Centralize RSVPs, table assignments, and messaging without endless email threads.',
+        badge: 'Week 3',
+      },
+      {
+        title: 'Event execution',
+        description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
+        badge: 'Wedding week',
+      },
+    ],
+    faqs: [
+      {
+        question: 'How quickly can I onboard my team?',
+        answer:
+          'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
+      },
+      {
+        question: 'Do you support client-facing wedding websites?',
+        answer:
+          'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
+      },
+      {
+        question: 'Can vendors access only their assigned tasks?',
+        answer:
+          'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
+      },
+    ],
     statistics: [
       { label: "Wedding Planners Trust Us", value: "500+" },
       { label: "Weddings Managed", value: "10K+" },
@@ -351,59 +493,38 @@ export const SaasLandingPage: React.FC = () => {
   }
 
   const theme = {
-    primary_color: config.primary_color,
-    secondary_color: config.secondary_color,
+    primary_color: config.primary_color || config.theme?.primary_color || "#1e3a5f",
+    secondary_color: config.secondary_color || config.theme?.secondary_color || "#d4af37",
     accent_color: config.secondary_color,
     background_style: 'gradient' as const,
     font_style: 'elegant' as const,
   };
 
+  const animationsEnabled = config.animations_enabled !== false && config.scroll_animations !== false;
+  const themingEnabled = Boolean(
+    config.primary_color ||
+    config.secondary_color ||
+    config.theme?.primary_color ||
+    config.theme?.secondary_color ||
+    config.hero_layout ||
+    config.hero_image_position
+  );
   const animationSpeedMs =
+    !animationsEnabled ? 0 :
     config.animation_speed === 'fast' ? 200 :
     config.animation_speed === 'slow' ? 600 :
     400;
-  const transitionStyle: React.CSSProperties = { transitionDuration: `${animationSpeedMs}ms` };
+  const transitionStyle: React.CSSProperties | undefined = animationsEnabled
+    ? { transitionDuration: `${animationSpeedMs}ms` }
+    : undefined;
 
-  const faqs = [
-    {
-      question: 'How quickly can I onboard my team?',
-      answer:
-        'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
-    },
-    {
-      question: 'Do you support client-facing wedding websites?',
-      answer:
-        'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
-    },
-    {
-      question: 'Can vendors access only their assigned tasks?',
-      answer:
-        'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
-    },
-  ];
+  const workflow = (config.workflow_steps && config.workflow_steps.length > 0)
+    ? config.workflow_steps
+    : DEFAULT_WORKFLOW_STEPS;
 
-  const workflow = [
-    {
-      title: 'Discovery & onboarding',
-      description: 'Collect couple questionnaires, import spreadsheets, and set expectations in minutes.',
-      badge: 'Week 1',
-    },
-    {
-      title: 'Vendor alignment',
-      description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
-      badge: 'Week 2',
-    },
-    {
-      title: 'Guest communication',
-      description: 'Centralize RSVPs, table assignments, and messaging without endless email threads.',
-      badge: 'Week 3',
-    },
-    {
-      title: 'Event execution',
-      description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
-      badge: 'Wedding week',
-    },
-  ];
+  const faqs = (config.faqs && config.faqs.length > 0)
+    ? config.faqs
+    : DEFAULT_FAQS;
 
   return (
     <div
@@ -418,10 +539,51 @@ export const SaasLandingPage: React.FC = () => {
           setIsAuthModalOpen(true);
         }}
         animationSpeedMs={animationSpeedMs}
+        themeColors={{ primary: theme.primary_color, secondary: theme.secondary_color }}
+        useTheming={themingEnabled}
       />
 
       <div className="relative -mt-24 rounded-t-[3rem] bg-gradient-to-b from-white via-slate-50 to-slate-100 text-slate-900 shadow-[0_-60px_120px_-80px_rgba(15,23,42,0.7)]">
         <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-24 px-4 pb-28 pt-28 sm:px-6 lg:px-8">
+          {config.show_impact_metrics && (config.impact_metrics?.length ?? 0) > 0 && (
+            <section className="grid gap-4 rounded-[2rem] border border-slate-200/80 bg-white p-8 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.35)]" style={transitionStyle}>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Impact metrics</p>
+                  <h2 className="text-2xl font-semibold text-slate-900">Measurable outcomes your team can feel</h2>
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {config.impact_metrics?.map((metric, idx) => (
+                  <article key={`${metric.metric}-${idx}`} className="rounded-2xl border border-slate-200/70 bg-slate-50/80 p-5 transition hover:border-blue-200/80 hover:bg-white" style={transitionStyle}>
+                    <p className="text-3xl font-bold text-slate-900">{metric.metric}</p>
+                    <p className="mt-2 text-sm text-slate-600">{metric.label}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {config.show_customer_logos && (config.customer_logos?.length ?? 0) > 0 && (
+            <section className="space-y-6 rounded-[2rem] border border-slate-200/80 bg-white p-8 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.35)]" style={transitionStyle}>
+              <div className="text-center space-y-2">
+                <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Trusted partners</p>
+                <h2 className="text-2xl font-semibold text-slate-900">Planners and partners who rely on us</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {config.customer_logos?.map((logo, idx) => (
+                  <div key={`${logo.name}-${idx}`} className="flex items-center justify-center rounded-xl border border-slate-200/70 bg-slate-50/80 p-4 transition hover:border-blue-200/80" style={transitionStyle}>
+                    {logo.logo_url ? (
+                      <img src={logo.logo_url} alt={logo.name || 'Customer logo'} className="max-h-10 object-contain" loading="lazy" />
+                    ) : (
+                      <span className="text-sm font-medium text-slate-600">{logo.name}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {config.features_enabled && orderedFeatures.length > 0 && (
             <section id="features" className="space-y-12">
               <div className="space-y-4 text-center">

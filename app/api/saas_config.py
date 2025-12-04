@@ -143,6 +143,44 @@ def _get_default_saas_config():
             }
         ],
 
+        # Guided workflow & FAQs
+        "workflow_steps": [
+            {
+                "title": "Discovery & onboarding",
+                "description": "Collect couple questionnaires, import spreadsheets, and set expectations in minutes.",
+                "badge": "Week 1"
+            },
+            {
+                "title": "Vendor alignment",
+                "description": "Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.",
+                "badge": "Week 2"
+            },
+            {
+                "title": "Guest communication",
+                "description": "Centralize RSVPs, table assignments, and messaging without endless email threads.",
+                "badge": "Week 3"
+            },
+            {
+                "title": "Event execution",
+                "description": "Run the wedding from live dashboards that surface contingencies before they become fire drills.",
+                "badge": "Wedding week"
+            }
+        ],
+        "faqs": [
+            {
+                "question": "How quickly can I onboard my team?",
+                "answer": "Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets."
+            },
+            {
+                "question": "Do you support client-facing wedding websites?",
+                "answer": "Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection."
+            },
+            {
+                "question": "Can vendors access only their assigned tasks?",
+                "answer": "Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs."
+            }
+        ],
+
         # Section toggles
         "features_enabled": True,
         "benefits_enabled": True,
