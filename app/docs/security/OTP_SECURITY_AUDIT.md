@@ -50,6 +50,7 @@ class SendOTPRequest(BaseModel):
     wedding_id: str = Field(..., min_length=1, max_length=100)
     contact: str = Field(..., min_length=5, max_length=255)
     contact_type: str = Field(..., regex="^(phone|email)$")
+
     @validator('contact')
     def validate_contact(cls, v, values):
         # Email validation
