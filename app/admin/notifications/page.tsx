@@ -9,9 +9,13 @@ interface NotificationTemplate {
   name: string;
   subject: string;
   content: string;
-  type: 'system_update' | 'maintenance' | 'security' | 'marketing' | 'feature_announcement';
+  type: 'email' | 'sms';
+  category?: 'system_update' | 'maintenance' | 'security' | 'marketing' | 'feature_announcement' | 'general';
+  variables?: string[];
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
+  created_by?: string;
 }
 
 interface SentNotification {
@@ -32,6 +36,8 @@ export default function NotificationsPage() {
   const [sentNotifications, setSentNotifications] = useState<SentNotification[]>([]);
   const [loading, setLoading] = useState(true);
   // Send notification form
+  const [useTemplate, setUseTemplate] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [customSubject, setCustomSubject] = useState('');
   const [customContent, setCustomContent] = useState('');
   const [recipientFilter, setRecipientFilter] = useState('all_users');
@@ -41,15 +47,16 @@ export default function NotificationsPage() {
   const [templateName, setTemplateName] = useState('');
   const [templateSubject, setTemplateSubject] = useState('');
   const [templateContent, setTemplateContent] = useState('');
-  const [templateType, setTemplateType] = useState<'system_update' | 'maintenance' | 'security' | 'marketing' | 'feature_announcement'>('system_update');
+  const [templateType, setTemplateType] = useState<'email' | 'sms'>('email');
+  const [templateCategory, setTemplateCategory] = useState<'system_update' | 'maintenance' | 'security' | 'marketing' | 'feature_announcement'>('system_update');
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       // Try to fetch from actual API endpoints, fall back to empty arrays
       try {
-        // These endpoints would need to be created in the backend
-        const templatesResponse = await apiRequest<{ templates: NotificationTemplate[] }>('/api/admin/notification-templates', 'GET');
+        // Fetch templates from backend
+        const templatesResponse = await apiRequest<{ templates: NotificationTemplate[] }>('/admin/notification-templates', 'GET');
         setTemplates(templatesResponse?.templates ?? []);
       } catch (error) {
         console.warn('Notification templates endpoint not available, using empty array');
@@ -57,7 +64,7 @@ export default function NotificationsPage() {
       }
 
       try {
-        const historyResponse = await apiRequest<{ notifications: SentNotification[] }>('/api/admin/notifications/history', 'GET');
+        const historyResponse = await apiRequest<{ notifications: SentNotification[] }>('/admin/notifications', 'GET');
         setSentNotifications(historyResponse?.notifications ?? []);
       } catch (error) {
         console.warn('Notification history endpoint not available, using empty array');
@@ -84,29 +91,34 @@ export default function NotificationsPage() {
     }
 
     try {
-      // For now, just add to local state - backend integration in Option B
-      const newTemplate: NotificationTemplate = {
-        _id: `temp_${Date.now()}`,
+      // Call backend API to create template
+      const response = await apiRequest('/admin/notification-templates', 'POST', {
         name: templateName,
         subject: templateSubject,
         content: templateContent,
         type: templateType,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+        category: templateCategory,
+        variables: [], // Can be extracted from content in future
+        is_active: true
+      });
 
-      setTemplates([...templates, newTemplate]);
-      setShowTemplateModal(false);
-      // Reset form
-      setTemplateName('');
-      setTemplateSubject('');
-      setTemplateContent('');
-      setTemplateType('system_update');
+      if (response) {
+        setShowTemplateModal(false);
+        // Reset form
+        setTemplateName('');
+        setTemplateSubject('');
+        setTemplateContent('');
+        setTemplateType('email');
+        setTemplateCategory('system_update');
 
-      alert('Template created successfully! (Note: This will be saved to database in backend integration)');
+        // Refresh templates list
+        await fetchData();
+
+        alert('Template created successfully!');
+      }
     } catch (error) {
       console.error('Error creating template:', error);
-      alert('Failed to create template');
+      alert('Failed to create template. Please try again.');
     }
   };
 
@@ -140,21 +152,34 @@ export default function NotificationsPage() {
           break;
       }
 
-      // Send notification (this endpoint would need to be created)
-      const response = await apiRequest('/api/admin/notifications/send', 'POST', {
-        subject: customSubject,
-        content: customContent,
-        recipient_filter: recipientFilter,
-        target_emails: targetUsers.map((u: any) => u.email)
+      // Step 1: Create notification
+      const createResponse = await apiRequest<{id: string}>('/admin/notifications', 'POST', {
+        title: customSubject,
+        message: customContent,
+        type: 'info',
+        target_audience: targetAudience,
+        is_dismissible: true,
+        priority: 'medium'
       });
 
-      alert(`Notification queued for ${targetUsers.length} users!`);
-      setCustomSubject('');
-      setCustomContent('');
-      setRecipientFilter('all_users');
+      if (!createResponse || !createResponse.id) {
+        throw new Error('Failed to create notification');
+      }
 
-      // Refresh history
-      fetchData();
+      // Step 2: Send the notification
+      const sendResponse = await apiRequest(`/admin/notifications/${createResponse.id}/send`, 'POST', {});
+
+      if (sendResponse) {
+        alert(`Notification sent successfully! Delivered to ${sendResponse.sent || 0} users.`);
+        setCustomSubject('');
+        setCustomContent('');
+        setRecipientFilter('all_users');
+        setUseTemplate(false);
+        setSelectedTemplateId('');
+
+        // Refresh history
+        fetchData();
+      }
 
     } catch (error) {
       console.error('Error sending notification:', error);
@@ -208,9 +233,64 @@ export default function NotificationsPage() {
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <h2 className="text-xl font-semibold text-wedding-navy mb-4">Send New Notification</h2>
           <div className="space-y-4">
+            {/* Template Toggle */}
+            <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
+              <input
+                type="checkbox"
+                id="use-template"
+                checked={useTemplate}
+                onChange={(e) => {
+                  setUseTemplate(e.target.checked);
+                  if (e.target.checked && templates.length > 0) {
+                    const template = templates[0];
+                    setSelectedTemplateId(template._id);
+                    setCustomSubject(template.subject);
+                    setCustomContent(template.content);
+                  } else {
+                    setSelectedTemplateId('');
+                    setCustomSubject('');
+                    setCustomContent('');
+                  }
+                }}
+                className="h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
+              />
+              <label htmlFor="use-template" className="text-sm font-medium text-gray-700 cursor-pointer">
+                Use a template
+              </label>
+            </div>
+
+            {/* Template Selection */}
+            {useTemplate && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Template *</label>
+                <select
+                  value={selectedTemplateId}
+                  onChange={(e) => {
+                    setSelectedTemplateId(e.target.value);
+                    const template = templates.find(t => t._id === e.target.value);
+                    if (template) {
+                      setCustomSubject(template.subject);
+                      setCustomContent(template.content);
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                >
+                  <option value="">-- Select a template --</option>
+                  {templates.filter(t => t.is_active !== false).map(template => (
+                    <option key={template._id} value={template._id}>
+                      {template.name} ({template.type.toUpperCase()}) - {template.subject}
+                    </option>
+                  ))}
+                </select>
+                {templates.length === 0 && (
+                  <p className="mt-2 text-sm text-gray-500">No templates available. Create one in the Templates tab.</p>
+                )}
+              </div>
+            )}
+
             {/* Recipients */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Recipients</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Recipients *</label>
               <select
                 value={recipientFilter}
                 onChange={(e) => setRecipientFilter(e.target.value)}
@@ -232,8 +312,12 @@ export default function NotificationsPage() {
                 value={customSubject}
                 onChange={(e) => setCustomSubject(e.target.value)}
                 placeholder="Enter email subject..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                disabled={useTemplate && selectedTemplateId !== ''}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
+              {useTemplate && selectedTemplateId && (
+                <p className="mt-1 text-xs text-gray-500">Subject is loaded from template (read-only)</p>
+              )}
             </div>
 
             {/* Content */}
@@ -244,8 +328,12 @@ export default function NotificationsPage() {
                 onChange={(e) => setCustomContent(e.target.value)}
                 placeholder="Enter your message content..."
                 rows={8}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                disabled={useTemplate && selectedTemplateId !== ''}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
+              {useTemplate && selectedTemplateId && (
+                <p className="mt-1 text-xs text-gray-500">Content is loaded from template (read-only)</p>
+              )}
             </div>
 
             {/* Send Button */}
@@ -277,10 +365,34 @@ export default function NotificationsPage() {
           {templates.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {templates.map((template) => (
-                <div key={template._id} className="bg-white rounded-lg shadow-sm border p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">{template.name}</h3>
-                  <p className="text-sm text-gray-600 mb-4">{template.subject}</p>
-                  <p className="text-sm text-gray-500">{template.content.substring(0, 100)}...</p>
+                <div key={template._id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6 hover:shadow-md transition-shadow">
+                  <div className="flex justify-between items-start mb-3">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">{template.name}</h3>
+                    <div className="flex gap-2">
+                      <span className={`px-2 py-1 text-xs font-medium rounded ${
+                        template.type === 'email'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                          : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      }`}>
+                        {template.type?.toUpperCase() || 'EMAIL'}
+                      </span>
+                      {template.category && (
+                        <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                          {template.category.replace('_', ' ').toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-medium">{template.subject}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500 line-clamp-2">{template.content}</p>
+                  <div className="mt-4 pt-4 border-t dark:border-gray-700 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                    <span>Created: {new Date(template.created_at).toLocaleDateString()}</span>
+                    {template.is_active !== undefined && (
+                      <span className={template.is_active ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
+                        {template.is_active ? '● Active' : '○ Inactive'}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -381,12 +493,25 @@ export default function NotificationsPage() {
                 />
               </div>
 
-              {/* Template Type */}
+              {/* Delivery Method */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Template Type *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Method *</label>
                 <select
                   value={templateType}
                   onChange={(e) => setTemplateType(e.target.value as any)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                >
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                </select>
+              </div>
+
+              {/* Template Category */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+                <select
+                  value={templateCategory}
+                  onChange={(e) => setTemplateCategory(e.target.value as any)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 >
                   <option value="system_update">System Update</option>
@@ -399,12 +524,14 @@ export default function NotificationsPage() {
 
               {/* Subject */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email Subject *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {templateType === 'email' ? 'Email Subject' : 'SMS Preview Text'} *
+                </label>
                 <input
                   type="text"
                   value={templateSubject}
                   onChange={(e) => setTemplateSubject(e.target.value)}
-                  placeholder="Enter email subject line..."
+                  placeholder={templateType === 'email' ? 'Enter email subject line...' : 'Enter SMS preview text...'}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 />
               </div>
