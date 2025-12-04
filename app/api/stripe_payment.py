@@ -344,9 +344,8 @@ async def create_payment_intent(
     """
     try:
         destination_account_id = None
-
         # Ensure planner is authorized for the wedding if wedding_id provided
-        if request.wedding_id:
+        if request.wedding_id and not current_user.is_root_admin:
             from app.core.database import mongo
             wedding = mongo.db["weddings"].find_one({"_id": request.wedding_id})
             if not wedding:
