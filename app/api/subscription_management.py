@@ -337,7 +337,7 @@ async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depen
 
     for plan_data in default_plans:
         # Check if plan already exists
-        existing_plans = subscription_service.list_plans(include_inactive=True)
+        existing_plans = await subscription_service.list_plans(include_inactive=True)
         existing_plan = next((p for p in existing_plans if p["name"] == plan_data["name"]), None)
 
         if existing_plan:
@@ -346,7 +346,7 @@ async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depen
 
         try:
             # Note: create_plan will internally call stripe_service.sync_plan_to_stripe
-            result = subscription_service.create_plan(plan_data, current_user.email)
+            await subscription_service.create_plan(plan_data, current_user.email)
             created_plans.append(plan_data["name"])  # Store the plan name instead of the result
         except Exception as e:
             # If seeding fails (e.g. stripe config missing), we might want to log it but continue?
