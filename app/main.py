@@ -252,6 +252,7 @@ admin_routers = [
     (user_management_router, "Admin"),
     (subscription_router, "Subscription"),
     (saas_config_router, "Subscription"),
+    (budget_router, "Budget"),
     (planner_metrics_router, "Metrics"),
     (forms_router, "Forms"),
     (trial_management_router, "Admin"),
