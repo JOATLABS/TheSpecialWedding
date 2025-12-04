@@ -64,3 +64,4 @@ docs/SUBSCRIPTION_STRIPE_ALIGNMENT.md
 docs/STRIPE_QUICK_START.md
 SAAS_REDESIGN_IMPLEMENTATION.md
 localhost:8000
+scripts/sync_landing_page_content.py
