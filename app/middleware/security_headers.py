@@ -5,7 +5,7 @@ Unified Security Headers Middleware with CSP nonce support and threat logging.
 import logging
 import secrets
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -43,7 +43,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         self.csp_directives = csp_directives  # Optional override
 
         # Track suspicious requests (lightweight; not a full rate limiter)
-        self.suspicious_requests: Dict[str, Dict[str, any]] = {}
+        self.suspicious_requests: Dict[str, Dict[str, Any]] = {}
 
     async def dispatch(self, request: Request, call_next) -> Response:
         nonce = self._generate_nonce()
@@ -91,7 +91,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers["Expires"] = "0"
 
         # Hide default server header
-        response.headers.pop("Server", None)
+        if "Server" in response.headers:
+            del response.headers["Server"]
         response.headers["Server"] = "WeddingApp-Secure"
 
         request_id = getattr(request.state, "request_id", None)
