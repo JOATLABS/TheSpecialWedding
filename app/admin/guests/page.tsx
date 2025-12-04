@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useAdmin } from '@/contexts/AdminContext';
 
 interface Wedding {
   id?: string;
@@ -70,28 +70,22 @@ export default function AdminGuestsPage() {
     number_of_plus_ones_allowed: 0
   });
 
-  useEffect(() => {
-    fetchWeddings();
-  }, []);
-
-  useEffect(() => {
-    if (selectedWedding) {
-      fetchGuestData();
-    }
-  }, [selectedWedding]);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/weddings`);
+      const response = await fetch(`${baseUrl}/admin/weddings`);
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
       setError('Failed to load weddings');
     }
-  };
+  }, []);
 
-  const fetchGuestData = async () => {
+  const fetchGuestData = useCallback(async () => {
+    if (!selectedWedding) {
+      return;
+    }
+
     setLoading(true);
     try {
       // Fetch guests
@@ -111,9 +105,10 @@ export default function AdminGuestsPage() {
       }
       
       const guestsData = await guestsResponse.json();
-      console.log('Guests data:', guestsData); // Debug log
+      const normalizedGuests: Guest[] = Array.isArray(guestsData) ? guestsData : [];
+      console.log('Guests data:', normalizedGuests); // Debug log
       console.log('Selected wedding ID:', selectedWedding); // Debug log
-      setGuests(Array.isArray(guestsData) ? guestsData : []);
+      setGuests(normalizedGuests);
 
       // Fetch RSVPs
       try {
@@ -138,8 +133,42 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // TODO: Fetch plus ones when endpoint is available
-      setPlusOnes([]);
+      // Fetch plus ones for all guests
+      try {
+        const plusOnesResponse = await Promise.all(
+          normalizedGuests.map(async (guest: any) => {
+            try {
+              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+
+              if (response.ok) {
+                const guestPlusOnes = await response.json();
+                return guestPlusOnes.map((po: any) => ({
+                  ...po,
+                  guest_id: guest.id,
+                  guest_name: guest.name
+                }));
+              }
+              return [];
+            } catch (error) {
+              console.log(`Plus-ones fetch error for guest ${guest.id}:`, error);
+              return [];
+            }
+          })
+        );
+
+        // Flatten the array of arrays
+        const allPlusOnes = plusOnesResponse.flat();
+        setPlusOnes(allPlusOnes);
+        console.log('Plus-ones loaded:', allPlusOnes.length);
+      } catch (error) {
+        console.log('Plus-ones fetch error:', error);
+        setPlusOnes([]);
+      }
       
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -147,7 +176,17 @@ export default function AdminGuestsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedWedding, token]);
+
+  useEffect(() => {
+    fetchWeddings();
+  }, [fetchWeddings]);
+
+  useEffect(() => {
+    if (selectedWedding) {
+      fetchGuestData();
+    }
+  }, [fetchGuestData, selectedWedding]);
 
   const handleSendReminder = async (guestId: string) => {
     try {
@@ -352,7 +391,7 @@ export default function AdminGuestsPage() {
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
-                    RSVP'd ({rsvps.length})
+                    RSVP’d ({rsvps.length})
                   </button>
                   <button
                     onClick={() => setActiveTab('pending')}
@@ -417,7 +456,7 @@ export default function AdminGuestsPage() {
                                 </span>
                                 {rsvp && (
                                   <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                    RSVP'd
+                                    RSVP’d
                                   </span>
                                 )}
                               </div>

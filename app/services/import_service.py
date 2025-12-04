@@ -10,7 +10,7 @@ class GuestImportService:
     def __init__(self):
         self.collection = mongo.get_guest_collection()
 
-    def import_csv(self, file: UploadFile, wedding_id: str):
+    async def import_csv(self, file: UploadFile, wedding_id: str):
         if not file.filename or not file.filename.endswith('.csv'):
             raise HTTPException(status_code=400, detail="File must be a CSV")
 
@@ -58,7 +58,7 @@ class GuestImportService:
             }
 
             try:
-                self.collection.insert_one(doc)
+                await self.collection.insert_one(doc)
                 success += 1
                 tokens.append(token)
             except Exception:
@@ -113,7 +113,7 @@ class GuestImportService:
 #             }
 
 #             try:
-#                 self.collection.insert_one(doc)
+#                 await self.collection.insert_one(doc)
 #                 success += 1
 #                 tokens.append(token)
 #             except Exception:

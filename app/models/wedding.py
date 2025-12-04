@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -18,17 +18,17 @@ class RegistryItemModel(BaseModel):
     url: str = Field(..., description="Registry URL")
     color: Optional[str] = Field(default="bg-gray-600", description="Button color class")
 
-class FAQLinkModel(BaseModel):
-    label: str = Field(..., description="Text displayed for the FAQ link")
-    url: HttpUrl = Field(..., description="Destination URL for the FAQ link")
-
-
 class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
-    address: Optional[str] = Field(None, description="Optional address or location details related to the FAQ")
-    links: List[FAQLinkModel] = Field(default_factory=list, description="Helpful links for the FAQ answer")
-    image_urls: List[HttpUrl] = Field(default_factory=list, description="Supporting images for the FAQ answer")
+
+class PrivacySettingsModel(BaseModel):
+    privacy_mode: str = Field(default="private", description="Privacy mode: private, password, public")
+    guest_auth_required: bool = Field(default=True, description="Whether guest authentication is required")
+    password_protection: Optional[str] = Field(None, description="Password for password-protected weddings")
+    allow_guest_sharing: bool = Field(default=False, description="Whether guests can share wedding links")
+    require_phone_verification: bool = Field(default=True, description="Require phone number for guest verification")
+    require_name_verification: bool = Field(default=True, description="Require name for guest verification")
 
 class RSVPConfigModel(BaseModel):
     greeting: str = Field(default="Join us in celebrating our special day! Please let us know if you'll be attending.", 
@@ -66,11 +66,8 @@ class WeddingModel(BaseModel):
     date: str = Field(..., description="Main wedding date in YYYY-MM-DD format")
     slug: str = Field(..., description="URL-friendly slug for the wedding")
     events: List[EventModel] = Field(default_factory=list)
-    event_location_private: bool = Field(
-        default=False,
-        description="Controls visibility of the public event & location section"
-    )
     rsvp_config: Optional[RSVPConfigModel] = Field(default_factory=RSVPConfigModel)
+    privacy_settings: Optional[PrivacySettingsModel] = Field(default_factory=PrivacySettingsModel)
     registries: List[RegistryItemModel] = Field(default_factory=list)
     faqs: List[FAQItemModel] = Field(default_factory=list)
     theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)
@@ -78,6 +75,16 @@ class WeddingModel(BaseModel):
     our_story: Optional[OurStoryModel] = Field(None, description="Our story content and image")
     wedding_party: List[WeddingPartyMemberModel] = Field(default_factory=list, description="Wedding party members")
     reminder_from_email: Optional[str] = Field(None, description="Custom from email for reminders (e.g., couple@example.com)")
+
+    # SAAS Multi-tenancy fields (backward compatible - won't break existing weddings)
+    assigned_planner_email: Optional[str] = Field(None, description="Wedding planner responsible for this wedding")
+    created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.com)")
+    status: str = Field(default="active", description="Wedding status: active, inactive, deleted")
+
+    # AI Credits
+    ai_credits_balance: int = Field(0, description="Remaining AI credits for this tenant/wedding")
+    last_credit_reset_date: Optional[datetime] = Field(None, description="When credits were last reset")
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:
@@ -88,6 +95,7 @@ class WeddingModel(BaseModel):
                 "couple_names": "Tolu & Peace",
                 "date": "2026-05-29",
                 "slug": "tolu-peace-wedding",
+                "ai_credits_balance": 50,
                 "events": [
                     {
                         "type": "traditional",
@@ -120,7 +128,6 @@ class WeddingModel(BaseModel):
                         }
                     }
                 ],
-                "event_location_private": False,
                 "rsvp_config": {
                     "greeting": "Join us in celebrating our special day!",
                     "help_text": "Contact us if you need help",
@@ -131,24 +138,8 @@ class WeddingModel(BaseModel):
                     {"name": "Amazon", "url": "https://amazon.com/registry/456", "color": "bg-orange-500"}
                 ],
                 "faqs": [
-                    {
-                        "question": "Where should guests stay?",
-                        "answer": "We've reserved a block of rooms at The Grand Hotel.",
-                        "address": "123 Celebration Ave, Lagos",
-                        "links": [
-                            {
-                                "label": "Book your room",
-                                "url": "https://grandhotel.example.com/block/tolu-peace"
-                            }
-                        ],
-                        "image_urls": [
-                            "https://images.example.com/hotel-suite.jpg"
-                        ]
-                    },
-                    {
-                        "question": "Is parking available?",
-                        "answer": "Complimentary parking is available at the venue garage."
-                    }
+                    {"question": "What should I wear?", "answer": "Semi-formal attire"},
+                    {"question": "Is parking available?", "answer": "Yes, free parking at the venue"}
                 ]
             }
         }
