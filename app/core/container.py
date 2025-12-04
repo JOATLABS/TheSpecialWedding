@@ -23,8 +23,8 @@ class ServiceDescriptor:
     def __init__(
         self,
         service_type: Type,
-        implementation: Type = None,
-        factory: Callable = None,
+        implementation: Optional[Type] = None,
+        factory: Optional[Callable] = None,
         instance: Any = None,
         lifetime: Lifetime = Lifetime.TRANSIENT
     ):
@@ -43,7 +43,7 @@ class DependencyContainer:
         self._scoped_services: Dict[str, Dict[Type, Any]] = {}
         self._current_scope: Optional[str] = None
         
-    def register_singleton(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
+    def register_singleton(self, service_type: Type[T], implementation: Optional[Type[T]] = None) -> 'DependencyContainer':
         """Register a singleton service"""
         self._services[service_type] = ServiceDescriptor(
             service_type=service_type,
@@ -52,7 +52,7 @@ class DependencyContainer:
         )
         return self
     
-    def register_scoped(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
+    def register_scoped(self, service_type: Type[T], implementation: Optional[Type[T]] = None) -> 'DependencyContainer':
         """Register a scoped service"""
         self._services[service_type] = ServiceDescriptor(
             service_type=service_type,
@@ -61,7 +61,7 @@ class DependencyContainer:
         )
         return self
     
-    def register_transient(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
+    def register_transient(self, service_type: Type[T], implementation: Optional[Type[T]] = None) -> 'DependencyContainer':
         """Register a transient service"""
         self._services[service_type] = ServiceDescriptor(
             service_type=service_type,
@@ -168,7 +168,7 @@ class DependencyContainer:
             # Fallback to parameterless constructor
             return implementation_type()
         
-    def create_scope(self, scope_id: str = None) -> 'ServiceScope':
+    def create_scope(self, scope_id: Optional[str] = None) -> 'ServiceScope':
         """Create a new service scope"""
         if scope_id is None:
             scope_id = f"scope_{id(object())}"
