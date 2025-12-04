@@ -6,6 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class AuthService:
     def __init__(self):
         self.admin_collection = mongo.db["admin_users"]
@@ -37,8 +38,9 @@ class AuthService:
 
         return user
 
+
     async def login_and_get_token(self, email: str, password: str):
-        user = self.authenticate_user(email, password)
+        user = await self.authenticate_user(email, password)
         # Update last_login timestamp
         login_time = datetime.utcnow()
         try:

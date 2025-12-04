@@ -76,7 +76,7 @@ export default function AdminMetricsDashboard() {
       const payload = await response.json();
       setLatestSnapshot({
         ...payload,
-        metrics: isRecord(payload.metrics) ? payload.metrics : {},
+        metrics: payload, // The entire payload IS the metrics object
       });
     } catch (err) {
       console.error('Error loading latest metrics snapshot', err);

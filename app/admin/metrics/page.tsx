@@ -33,16 +33,13 @@ interface PlatformMetricsResponse {
     monthly_recurring_revenue: number;
     yearly_recurring_revenue: number;
     projected_annual_revenue: number;
-    plan_breakdown: Array<{
-      plan_id: string;
-      plan_name?: string;
-      active_users: number;
-      trial_users: number;
-      monthly_revenue: number;
-      yearly_revenue: number;
-      price_monthly: number;
-      price_yearly: number;
-    }>;
+    plan_breakdown: {
+      [planId: string]: {
+        name: string;
+        monthly_revenue: number;
+        annual_revenue: number;
+      };
+    };
   };
   operations: {
     weddings: {
@@ -134,7 +131,7 @@ export default function PlatformMetricsPage(): ReactElement {
     setError(null);
 
     try {
-      const data = await fetchWithAuth(`/admin/saas/analytics/platform?timeframe=${timeframe}`);
+      const data = await fetchWithAuth(`/admin/analytics/platform?timeframe=${timeframe}`);
       setMetrics(data);
     } catch (err) {
       console.error('Failed to load platform metrics', err);
@@ -318,22 +315,22 @@ export default function PlatformMetricsPage(): ReactElement {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/40 bg-white/30 text-gray-700">
-                {metrics.subscriptions.plan_breakdown.length === 0 && (
+                {Object.keys(metrics.subscriptions.plan_breakdown).length === 0 && (
                   <tr>
                     <td className="px-6 py-4" colSpan={5}>
                       No subscription plan activity recorded yet.
                     </td>
                   </tr>
                 )}
-                {metrics.subscriptions.plan_breakdown.map((plan) => (
-                  <tr key={plan.plan_id}>
+                {Object.entries(metrics.subscriptions.plan_breakdown).map(([planId, plan]) => (
+                  <tr key={planId}>
                     <td className="px-6 py-4 font-medium text-wedding-navy">
-                      {plan.plan_name || plan.plan_id}
+                      {plan.name || planId}
                     </td>
-                    <td className="px-6 py-4">{formatNumber(plan.active_users)}</td>
-                    <td className="px-6 py-4">{formatNumber(plan.trial_users)}</td>
+                    <td className="px-6 py-4">N/A</td>
+                    <td className="px-6 py-4">N/A</td>
                     <td className="px-6 py-4">{formatCurrency(plan.monthly_revenue)}</td>
-                    <td className="px-6 py-4">{formatCurrency(plan.yearly_revenue)}</td>
+                    <td className="px-6 py-4">{formatCurrency(plan.annual_revenue)}</td>
                   </tr>
                 ))}
               </tbody>

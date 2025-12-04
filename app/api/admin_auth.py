@@ -15,8 +15,8 @@ def login_options():
     return {"message": "OK"}
 
 @router.post("/token", tags=["Auth"])
-def login_for_access_token(credentials: AdminLoginModel):
-    return auth_service.login_and_get_token(credentials.email, credentials.password)
+async def login_for_access_token(credentials: AdminLoginModel):
+    return await auth_service.login_and_get_token(credentials.email, credentials.password)
 
 @router.get("/profile", tags=["Auth"])
 def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):

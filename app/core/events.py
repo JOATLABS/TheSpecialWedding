@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from enum import Enum
 import json
 import asyncio
-from app.core.database_async import async_mongo
+from app.core.database import mongo
 from app.core.cache import cache
 import logging
 
@@ -70,17 +70,17 @@ class EventStore:
     """Event store for persisting and retrieving domain events"""
 
     def __init__(self):
-        self._async_mongo = async_mongo
+        self._mongo = mongo
 
     @property
     def events_collection(self):
         """Get events collection with proper error handling"""
-        return self._async_mongo._get_collection("domain_events")
+        return self._mongo._get_collection("domain_events")
 
     @property
     def snapshots_collection(self):
         """Get snapshots collection with proper error handling"""
-        return self._async_mongo._get_collection("aggregate_snapshots")
+        return self._mongo._get_collection("aggregate_snapshots")
 
     async def append_event(self, event: DomainEvent) -> bool:
         """Append event to the event store"""
