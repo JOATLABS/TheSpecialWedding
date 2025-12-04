@@ -358,6 +358,12 @@ export const SaasLandingPage: React.FC = () => {
     font_style: 'elegant' as const,
   };
 
+  const animationSpeedMs =
+    config.animation_speed === 'fast' ? 200 :
+    config.animation_speed === 'slow' ? 600 :
+    400;
+  const transitionStyle: React.CSSProperties = { transitionDuration: `${animationSpeedMs}ms` };
+
   const faqs = [
     {
       question: 'How quickly can I onboard my team?',
@@ -400,7 +406,10 @@ export const SaasLandingPage: React.FC = () => {
   ];
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div
+      className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100"
+      style={transitionStyle}
+    >
       <IntegratedHeroSection
         config={config}
         plans={plans}
@@ -408,6 +417,7 @@ export const SaasLandingPage: React.FC = () => {
           setAuthMode('signup');
           setIsAuthModalOpen(true);
         }}
+        animationSpeedMs={animationSpeedMs}
       />
 
       <div className="relative -mt-24 rounded-t-[3rem] bg-gradient-to-b from-white via-slate-50 to-slate-100 text-slate-900 shadow-[0_-60px_120px_-80px_rgba(15,23,42,0.7)]">
@@ -428,6 +438,7 @@ export const SaasLandingPage: React.FC = () => {
                   <article
                     key={feature.title}
                     className="group flex h-full flex-col justify-between rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_24px_90px_-60px_rgba(15,23,42,0.35)] transition hover:-translate-y-1 hover:border-blue-300/80 hover:shadow-[0_40px_120px_-70px_rgba(59,130,246,0.55)]"
+                    style={transitionStyle}
                   >
                     <div className="space-y-3 text-left">
                       <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-lg text-blue-600">
@@ -476,6 +487,7 @@ export const SaasLandingPage: React.FC = () => {
                 <div
                   key={step.title}
                   className="flex flex-col gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-5 transition hover:border-blue-200/80 hover:bg-white"
+                  style={transitionStyle}
                 >
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">Step {index + 1}</p>
