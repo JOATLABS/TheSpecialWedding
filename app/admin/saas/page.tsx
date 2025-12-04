@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '../../components/ui/Card';
 import { ContentEditModal } from '../components/ContentEditModal';
 import { formatDate } from '@/utils/dateFormat';
@@ -255,6 +257,8 @@ const DEFAULT_SAAS_CONFIG: SaasFullConfig = {
 };
 
 const SaasAdminDashboard = () => {
+ const router = useRouter();
+ const { userProfile } = useAdmin();
  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'content' | 'theme' | 'planners'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
  const [contentSections, setContentSections] = useState<SaasContentSection[]>([]);
@@ -267,6 +271,13 @@ const SaasAdminDashboard = () => {
  const [editModalOpen, setEditModalOpen] = useState(false);
  const [editingSectionType, setEditingSectionType] = useState<string>('');
  const [editingSectionData, setEditingSectionData] = useState<any>(null);
+
+  // ROOT_ADMIN access control - redirect non-root admins
+  useEffect(() => {
+    if (userProfile && !userProfile.is_root_admin) {
+      router.push('/admin');
+    }
+  }, [userProfile, router]);
   const fetchData = useCallback(async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
