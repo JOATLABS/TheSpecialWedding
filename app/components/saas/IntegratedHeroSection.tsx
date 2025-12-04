@@ -45,6 +45,7 @@ interface IntegratedHeroSectionProps {
   plans: SubscriptionPlan[];
   onAuthModalOpen: () => void;
   className?: string;
+  animationSpeedMs?: number;
 }
 
 const primaryLinks = [
@@ -59,6 +60,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   plans,
   onAuthModalOpen,
   className,
+  animationSpeedMs = 400,
 }) => {
   const statistics = config.statistics_enabled === false ? [] : config.statistics?.slice(0, 3) ?? [];
   const trustIndicators = config.trust_indicators?.slice(0, 3) ?? [
@@ -82,6 +84,8 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
     return plans.find((plan) => plan.is_featured) ?? plans[0];
   }, [plans]);
 
+  const transitionStyle: React.CSSProperties = { transitionDuration: `${animationSpeedMs}ms` };
+
   return (
     <section
       className={`relative overflow-hidden bg-slate-950 text-slate-100 ${className ?? ''}`}
@@ -100,7 +104,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
           </div>
           <nav className="hidden items-center gap-6 text-sm text-slate-200 md:flex">
             {primaryLinks.map((link) => (
-              <a key={link.href} href={link.href} className="transition hover:text-white">
+              <a key={link.href} href={link.href} className="transition hover:text-white" style={transitionStyle}>
                 {link.label}
               </a>
             ))}
@@ -110,6 +114,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
               type="button"
               onClick={() => config.demo_url && window.open(config.demo_url, '_blank')}
               className="hidden rounded-full border border-white/25 px-5 py-2 text-sm font-semibold text-white/80 transition hover:border-white hover:text-white lg:inline-flex"
+              style={transitionStyle}
             >
               Watch product tour
             </button>
@@ -117,6 +122,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
               type="button"
               onClick={onAuthModalOpen}
               className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 transition hover:shadow-lg"
+              style={transitionStyle}
             >
               Book a demo
             </button>
@@ -149,6 +155,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
                 type="button"
                 onClick={onAuthModalOpen}
                 className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-blue-500 via-sky-400 to-purple-500 px-8 py-3 text-base font-semibold text-white shadow-[0_20px_45px_-20px_rgba(59,130,246,0.8)] transition hover:translate-y-[-1px] hover:shadow-[0_30px_60px_-30px_rgba(56,189,248,0.9)] sm:w-auto"
+                style={transitionStyle}
               >
                 {config.hero_cta_primary}
               </button>
@@ -156,6 +163,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
                 type="button"
                 onClick={() => config.demo_url && window.open(config.demo_url, '_blank')}
                 className="inline-flex w-full items-center justify-center rounded-full border border-white/25 bg-white/5 px-8 py-3 text-base font-semibold text-white/90 transition hover:bg-white/10 hover:text-white sm:w-auto"
+                style={transitionStyle}
               >
                 {config.hero_cta_secondary}
               </button>
@@ -179,7 +187,11 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             {statistics.length > 0 && (
               <div className="grid w-full gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur lg:max-w-xl">
                 {statistics.map((stat) => (
-                  <div key={stat.label} className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3 text-left">
+                  <div
+                    key={stat.label}
+                    className="flex items-center justify-between rounded-xl bg-white/[0.02] px-4 py-3 text-left transition"
+                    style={transitionStyle}
+                  >
                     <div>
                       <p className="text-2xl font-semibold text-white">{stat.value}</p>
                       <p className="text-xs uppercase tracking-[0.35em] text-blue-100/80">{stat.label}</p>
