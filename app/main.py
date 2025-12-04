@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
             logger.info("Cache initialized")
 
         # Create database indexes
-        create_all_indexes()
+        await create_all_indexes()
         logger.info("Database indexes created/verified")
 
         # Run database migrations
@@ -235,6 +235,7 @@ app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dash
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
 app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
+app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
 app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
 
 # Admin routes (authentication required)

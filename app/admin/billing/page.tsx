@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -46,26 +46,12 @@ export default function BillingPage() {
   const [currentPlan, setCurrentPlan] = useState<SubscriptionPlan | null>(null);
   const [preSelectedPlanId, setPreSelectedPlanId] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Check for pre-selected plan from URL
-    const planParam = searchParams.get('plan');
-    const intervalParam = searchParams.get('interval');
-
-    if (planParam) {
-      setPreSelectedPlanId(planParam);
-    }
-    if (intervalParam && (intervalParam === 'monthly' || intervalParam === 'yearly')) {
-      setSelectedBillingInterval(intervalParam);
-    }
-
-    loadData();
-  }, [searchParams]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
 
       // Load available plans
+      let fetchedPlans: SubscriptionPlan[] = [];
       const plansResponse = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}/public/subscription-plans`,
         {
@@ -74,8 +60,8 @@ export default function BillingPage() {
       );
 
       if (plansResponse.ok) {
-        const plansData = await plansResponse.json();
-        setPlans(plansData);
+        fetchedPlans = await plansResponse.json();
+        setPlans(fetchedPlans);
       }
 
       // Load current subscription
@@ -99,7 +85,8 @@ export default function BillingPage() {
           setCurrentSubscription(subData);
 
           // Find the current plan details
-          const planDetail = plans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
+          const planSource = fetchedPlans;
+          const planDetail = planSource.find((p: SubscriptionPlan) => p._id === subData.plan_id);
           setCurrentPlan(planDetail || null);
           setSelectedBillingInterval(subData.billing_interval || 'monthly');
         }
@@ -110,7 +97,22 @@ export default function BillingPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchParams]);
+
+  useEffect(() => {
+    // Check for pre-selected plan from URL
+    const planParam = searchParams.get('plan');
+    const intervalParam = searchParams.get('interval');
+
+    if (planParam) {
+      setPreSelectedPlanId(planParam);
+    }
+    if (intervalParam && (intervalParam === 'monthly' || intervalParam === 'yearly')) {
+      setSelectedBillingInterval(intervalParam);
+    }
+
+    loadData();
+  }, [searchParams, loadData]);
 
   const handleSubscribe = async (planId: string) => {
     try {
