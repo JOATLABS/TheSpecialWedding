@@ -77,6 +77,8 @@ interface SaasConfig {
   scroll_animations?: boolean;
   show_impact_metrics?: boolean;
   show_customer_logos?: boolean;
+  hero_image_position?: 'left' | 'right';
+  hero_layout?: string;
   workflow_steps?: Array<{
     title: string;
     description: string;
@@ -86,6 +88,13 @@ interface SaasConfig {
     question: string;
     answer: string;
   }>;
+  theme?: {
+    primary_color: string;
+    secondary_color: string;
+    fallback_images?: string[];
+    background_style?: 'gradient' | 'solid' | 'image';
+    font_style?: 'elegant' | 'modern' | 'classic' | 'playful';
+  };
 }
 
 const DEFAULT_WORKFLOW_STEPS = [
@@ -164,56 +173,17 @@ export const SaasLandingPage: React.FC = () => {
         description: 'Centralize RSVPs, table assignments, and messaging without endless email threads.',
         badge: 'Week 3',
       },
-      {
-        title: 'Event execution',
-        description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
-        badge: 'Wedding week',
-      },
-    ],
-    faqs: [
-      {
-        question: 'How quickly can I onboard my team?',
-        answer:
-          'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
-      },
-      {
-        question: 'Do you support client-facing wedding websites?',
-        answer:
-          'Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection.',
-      },
-      {
-        question: 'Can vendors access only their assigned tasks?',
-        answer:
-          'Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs.',
-      },
-    ],
-    workflow_steps: [
-      {
-        title: 'Discovery & onboarding',
-        description: 'Collect couple questionnaires, import spreadsheets, and set expectations in minutes.',
-        badge: 'Week 1',
-      },
-      {
-        title: 'Vendor alignment',
-        description: 'Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.',
-        badge: 'Week 2',
-      },
-      {
-        title: 'Guest communication',
-        description: 'Centralize RSVPs, table assignments, and messaging without endless email threads.',
-        badge: 'Week 3',
-      },
-      {
-        title: 'Event execution',
-        description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
-        badge: 'Wedding week',
-      },
-    ],
-    faqs: [
-      {
-        question: 'How quickly can I onboard my team?',
-        answer:
-          'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
+    {
+      title: 'Event execution',
+      description: 'Run the wedding from live dashboards that surface contingencies before they become fire drills.',
+      badge: 'Wedding week',
+    },
+  ],
+  faqs: [
+    {
+      question: 'How quickly can I onboard my team?',
+      answer:
+        'Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets.',
       },
       {
         question: 'Do you support client-facing wedding websites?',

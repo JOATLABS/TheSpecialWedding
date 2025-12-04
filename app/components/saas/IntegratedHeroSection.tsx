@@ -44,6 +44,7 @@ interface IntegratedHeroSectionProps {
     show_product_demo?: boolean;
     demo_video_url?: string;
     hero_screenshot_primary?: string;
+    show_decorative_logo?: boolean;
   };
   plans: SubscriptionPlan[];
   onAuthModalOpen: () => void;
@@ -54,6 +55,7 @@ interface IntegratedHeroSectionProps {
     secondary: string;
   };
   useTheming?: boolean;
+  hero_image_position?: 'left' | 'right';
 }
 
 const primaryLinks = [
@@ -71,6 +73,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   animationSpeedMs = 400,
   themeColors = { primary: "#1e3a5f", secondary: "#d4af37" },
   useTheming = false,
+  hero_image_position,
 }) => {
   const statistics = config.statistics_enabled === false ? [] : config.statistics?.slice(0, 3) ?? [];
   const trustIndicators = config.trust_indicators?.slice(0, 3) ?? [
@@ -98,7 +101,7 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   const hasMedia =
     (config.show_product_demo && config.demo_url) ||
     (!!config.hero_screenshot_primary);
-  const mediaFirst = config.hero_image_position === 'left';
+  const mediaFirst = (hero_image_position ?? (config as any).hero_image_position) === 'left';
   const showDecorative = config.show_decorative_logo !== false;
   const gradientStyle: React.CSSProperties = useTheming
     ? { background: `linear-gradient(135deg, ${themeColors.primary} 0%, ${themeColors.secondary} 80%)` }
