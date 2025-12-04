@@ -66,6 +66,7 @@ export default function BillingPage() {
       setLoading(true);
 
       // Load available plans
+      let fetchedPlans: SubscriptionPlan[] = [];
       const plansResponse = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}/public/subscription-plans`,
         {
@@ -74,8 +75,8 @@ export default function BillingPage() {
       );
 
       if (plansResponse.ok) {
-        const plansData = await plansResponse.json();
-        setPlans(plansData);
+        fetchedPlans = await plansResponse.json();
+        setPlans(fetchedPlans);
       }
 
       // Load current subscription
@@ -99,7 +100,8 @@ export default function BillingPage() {
           setCurrentSubscription(subData);
 
           // Find the current plan details
-          const planDetail = plans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
+          const planSource = fetchedPlans.length ? fetchedPlans : plans;
+          const planDetail = planSource.find((p: SubscriptionPlan) => p._id === subData.plan_id);
           setCurrentPlan(planDetail || null);
           setSelectedBillingInterval(subData.billing_interval || 'monthly');
         }

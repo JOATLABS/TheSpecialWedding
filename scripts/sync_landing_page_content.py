@@ -12,6 +12,7 @@ import os
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB = os.getenv("MONGO_DB", "wedding")
 
+
 async def sync_content():
     """Populate database with landing page content"""
     client = AsyncIOMotorClient(MONGO_URI)
@@ -20,39 +21,49 @@ async def sync_content():
     # Complete SAAS configuration matching the landing page
     saas_config = {
         "type": "main_config",
-
         # Hero Section
         "hero_title": "A stage-set platform where every wedding feels like a cinematic premiere.",
         "hero_subtitle": "The Special Wedding",
         "hero_description": "Sculpt invitations, RSVP journeys, wedding websites, seating, timelines, and on-site orchestration—woven together with romantic motion and intelligent automation.",
         "hero_cta_primary": "Explore pricing",
         "hero_cta_secondary": "Launch console",
-
         # Modern Hero Fields
         "hero_headline": "A stage-set platform where every wedding feels like a cinematic premiere",
         "hero_subheadline": "The Special Wedding",
         "hero_problem_statement": "Managing multiple weddings with spreadsheets and disconnected tools creates chaos",
         "hero_solution_statement": "One unified platform for guest lists, timelines, seating, and vendor coordination",
-
         # Trust indicators
         "trust_indicators": [
             "Multi-tenant architecture",
             "99.9% uptime",
-            "SOC 2 aligned infrastructure"
+            "SOC 2 aligned infrastructure",
         ],
-
         # Partner logos
         "partners": ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"],
-
         # Metrics
         "statistics": [
-            {"label": "Guest records", "value": "48k", "subtext": "managed across active weddings"},
-            {"label": "Average RSVP window", "value": "5 days", "subtext": "to reach 90% response"},
-            {"label": "Check-in speed", "value": "2.8s", "subtext": "median scan-to-confirm time"},
-            {"label": "Automation reliability", "value": "99.9%", "subtext": "delivery across reminders"}
+            {
+                "label": "Guest records",
+                "value": "48k",
+                "subtext": "managed across active weddings",
+            },
+            {
+                "label": "Average RSVP window",
+                "value": "5 days",
+                "subtext": "to reach 90% response",
+            },
+            {
+                "label": "Check-in speed",
+                "value": "2.8s",
+                "subtext": "median scan-to-confirm time",
+            },
+            {
+                "label": "Automation reliability",
+                "value": "99.9%",
+                "subtext": "delivery across reminders",
+            },
         ],
         "statistics_enabled": True,
-
         # Features (10 core features)
         "features": [
             {
@@ -61,7 +72,7 @@ async def sync_content():
                 "icon": "UserGroupIcon",
                 "category": "Planning",
                 "status": "available",
-                "order": 1
+                "order": 1,
             },
             {
                 "title": "Signature invitations",
@@ -69,7 +80,7 @@ async def sync_content():
                 "icon": "EnvelopeIcon",
                 "category": "Engagement",
                 "status": "available",
-                "order": 2
+                "order": 2,
             },
             {
                 "title": "Wedding websites",
@@ -77,7 +88,7 @@ async def sync_content():
                 "icon": "SparklesIcon",
                 "category": "Experience",
                 "status": "available",
-                "order": 3
+                "order": 3,
             },
             {
                 "title": "RSVP & meal selections",
@@ -85,7 +96,7 @@ async def sync_content():
                 "icon": "CheckBadgeIcon",
                 "category": "Engagement",
                 "status": "available",
-                "order": 4
+                "order": 4,
             },
             {
                 "title": "Seating orchestration",
@@ -93,7 +104,7 @@ async def sync_content():
                 "icon": "RectangleGroupIcon",
                 "category": "Planning",
                 "status": "available",
-                "order": 5
+                "order": 5,
             },
             {
                 "title": "Ceremony & reception timeline",
@@ -101,7 +112,7 @@ async def sync_content():
                 "icon": "CalendarDaysIcon",
                 "category": "Execution",
                 "status": "available",
-                "order": 6
+                "order": 6,
             },
             {
                 "title": "Moments gallery",
@@ -109,7 +120,7 @@ async def sync_content():
                 "icon": "PhotoIcon",
                 "category": "Celebration",
                 "status": "available",
-                "order": 7
+                "order": 7,
             },
             {
                 "title": "Smart reminders",
@@ -117,7 +128,7 @@ async def sync_content():
                 "icon": "BellAlertIcon",
                 "category": "Communication",
                 "status": "available",
-                "order": 8
+                "order": 8,
             },
             {
                 "title": "Touchless check-in",
@@ -125,7 +136,7 @@ async def sync_content():
                 "icon": "QrCodeIcon",
                 "category": "Execution",
                 "status": "available",
-                "order": 9
+                "order": 9,
             },
             {
                 "title": "Maps & travel",
@@ -133,33 +144,31 @@ async def sync_content():
                 "icon": "MapPinIcon",
                 "category": "Communication",
                 "status": "available",
-                "order": 10
-            }
+                "order": 10,
+            },
         ],
         "features_enabled": True,
-
         # Suites (enterprise features)
         "suites": [
             {
                 "title": "Multi-tenant oversight",
                 "description": "Serve every planner, partner, or franchise in isolated workspaces with shared brand standards.",
                 "stat": "Scale to 100+ concurrent weddings with centralized governance.",
-                "order": 1
+                "order": 1,
             },
             {
                 "title": "Vendor collaboration",
                 "description": "Loop photographers, caterers, and venues into dedicated timelines and file exchanges.",
                 "stat": "Reduce coordination rounds by 68% through unified updates.",
-                "order": 2
+                "order": 2,
             },
             {
                 "title": "Insights & compliance",
                 "description": "Audit-ready exports cover guest consent, messaging logs, and accessibility notes.",
                 "stat": "SOC 2 aligned infrastructure keeps client data secure.",
-                "order": 3
-            }
+                "order": 3,
+            },
         ],
-
         # Workflow stages
         "workflow": [
             {
@@ -168,9 +177,9 @@ async def sync_content():
                 "bullets": [
                     "Launch weddings in minutes with reusable templates",
                     "Assign visibility by planner, couple, or vendor team",
-                    "Model budgets, seating, and timelines side by side"
+                    "Model budgets, seating, and timelines side by side",
                 ],
-                "order": 1
+                "order": 1,
             },
             {
                 "title": "Invite & delight",
@@ -178,9 +187,9 @@ async def sync_content():
                 "bullets": [
                     "Personalized wedding websites with per-wedding slugs",
                     "Automated reminders that adapt to RSVP behavior",
-                    "Guest portal with travel guidance and gallery teasers"
+                    "Guest portal with travel guidance and gallery teasers",
                 ],
-                "order": 2
+                "order": 2,
             },
             {
                 "title": "Execute flawlessly",
@@ -188,12 +197,11 @@ async def sync_content():
                 "bullets": [
                     "Touchless check-in with live headcounts and alerts",
                     "Role-based run of show for coordinators and crew",
-                    "Instant galleries and thank-you follow ups post event"
+                    "Instant galleries and thank-you follow ups post event",
                 ],
-                "order": 3
-            }
+                "order": 3,
+            },
         ],
-
         # Testimonials
         "testimonials": [
             {
@@ -201,18 +209,17 @@ async def sync_content():
                 "name": "Maya Glenn",
                 "role": "Director of Events, Aurora Collective",
                 "company": "Aurora Collective",
-                "order": 1
+                "order": 1,
             },
             {
                 "quote": "Check-in lines disappeared. The live dashboards let us choreograph the day like a performance instead of fighting fires.",
                 "name": "Elias Romero",
                 "role": "Lead Coordinator, Harbor & Bloom",
                 "company": "Harbor & Bloom",
-                "order": 2
-            }
+                "order": 2,
+            },
         ],
         "testimonials_enabled": True,
-
         # Pricing tiers (will be replaced by subscription_plans collection)
         "pricing_tiers": [
             {
@@ -223,11 +230,11 @@ async def sync_content():
                     "Guest & RSVP manager",
                     "Email invitations",
                     "Wedding website",
-                    "Timeline builder"
+                    "Timeline builder",
                 ],
                 "cta": "Start planning",
                 "emphasized": False,
-                "order": 1
+                "order": 1,
             },
             {
                 "name": "Signature",
@@ -238,11 +245,11 @@ async def sync_content():
                     "Seating orchestration",
                     "QR check-in & live counts",
                     "Automated reminders",
-                    "Vendor collaboration"
+                    "Vendor collaboration",
                 ],
                 "cta": "Upgrade to Signature",
                 "emphasized": True,
-                "order": 2
+                "order": 2,
             },
             {
                 "name": "Agency",
@@ -252,38 +259,36 @@ async def sync_content():
                     "Dedicated success architect",
                     "Custom domains & branding",
                     "SSO + role provisioning",
-                    "Compliance reporting"
+                    "Compliance reporting",
                 ],
                 "cta": "Talk with sales",
                 "emphasized": False,
-                "order": 3
-            }
+                "order": 3,
+            },
         ],
-
         # FAQs
         "faqs": [
             {
                 "question": "Can I manage multiple weddings at once?",
                 "answer": "Yes. Workspaces let you run simultaneous weddings, each with their own permissions, branding, and analytics while maintaining agency-wide oversight.",
-                "order": 1
+                "order": 1,
             },
             {
                 "question": "How do couples collaborate with planners?",
                 "answer": "Invite couples to a curated dashboard where they approve guest lists, monitor RSVPs, and review timelines without seeing internal notes.",
-                "order": 2
+                "order": 2,
             },
             {
                 "question": "Is there support on the wedding day?",
                 "answer": "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
-                "order": 3
+                "order": 3,
             },
             {
                 "question": "What's next for messaging?",
                 "answer": "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon.",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
-
         # Theme configuration
         "theme": {
             "primary_color": "#d4a5a5",  # wedding-rose
@@ -291,36 +296,33 @@ async def sync_content():
             "background_color": "#0f172a",  # slate-900
             "text_color": "#ffffff",
             "accent_color": "#1e3a5f",  # wedding-navy
-            "fallback_images": []
+            "fallback_images": [],
         },
-
         # Section toggles
         "benefits_enabled": True,
-
         # CTA section
         "cta_title": "Create memories that feel effortless from the first hello.",
         "cta_description": "Give every planner, partner, and couple a stage worthy of their story with The Special Wedding.",
         "cta_primary": "Launch console",
         "cta_secondary": "Request a guided tour",
         "cta_email": "hello@weddingwebapp.ai",
-
         # Metadata
         "updated_by": "system_migration",
         "updated_at": datetime.utcnow(),
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
     }
 
     # Upsert the configuration
     result = await db["saas_config"].update_one(
-        {"type": "main_config"},
-        {"$set": saas_config},
-        upsert=True
+        {"type": "main_config"}, {"$set": saas_config}, upsert=True
     )
 
     if result.upserted_id:
         print(f"✅ Created new SAAS config with ID: {result.upserted_id}")
     else:
-        print(f"✅ Updated existing SAAS config (matched: {result.matched_count}, modified: {result.modified_count})")
+        print(
+            f"✅ Updated existing SAAS config (matched: {result.matched_count}, modified: {result.modified_count})"
+        )
 
     print("\n📊 Content Summary:")
     print(f"  - Features: {len(saas_config['features'])}")
@@ -335,6 +337,7 @@ async def sync_content():
     print("   You can now edit all landing page content from /admin/saas")
 
     client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(sync_content())
