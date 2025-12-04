@@ -17,6 +17,7 @@ class UserModel(BaseModel):
     # Billing information
     stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
     stripe_subscription_id: Optional[str] = Field(None, description="Stripe subscription ID")
+    stripe_connect_id: Optional[str] = Field(None, description="Stripe Connect Account ID for receiving payments")
 
     # Wedding planner permissions and limits
     max_weddings: int = Field(default=1, description="Maximum weddings allowed")

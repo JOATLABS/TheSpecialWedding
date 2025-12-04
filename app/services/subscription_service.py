@@ -7,6 +7,7 @@ from app.models.subscription import (
     SubscriptionStatus,
     BillingInterval
 )
+from app.services.stripe_service import stripe_service
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import calendar
@@ -32,6 +33,15 @@ class SubscriptionService:
             existing = await self.plans_collection.find_one({"_id": plan_data["_id"]})
             if existing:
                 raise HTTPException(status_code=400, detail="Plan with this name already exists")
+
+            # Sync to Stripe first
+            try:
+                stripe_data = stripe_service.sync_plan_to_stripe(plan_data)
+                plan_data.update(stripe_data)
+            except Exception as e:
+                # Log but don't block creation if stripe fails?
+                # Better to fail so we don't have inconsistent state
+                raise HTTPException(status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}")
 
             result = await self.plans_collection.insert_one(plan_data)
             return {"message": "Subscription plan created successfully", "plan_id": plan_data["_id"]}
@@ -73,13 +83,24 @@ class SubscriptionService:
 
             update_data["updated_at"] = datetime.utcnow()
 
+            # Retrieve existing plan to merge with update data for Stripe sync
+            existing_plan = await self.plans_collection.find_one({"_id": plan_id})
+            if not existing_plan:
+                raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+            merged_plan = {**existing_plan, **update_data}
+
+            # Sync to Stripe
+            try:
+                stripe_data = stripe_service.sync_plan_to_stripe(merged_plan)
+                update_data.update(stripe_data)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}")
+
             result = await self.plans_collection.update_one(
                 {"_id": plan_id},
                 {"$set": update_data}
             )
-
-            if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="Subscription plan not found")
 
             return {"message": "Subscription plan updated successfully"}
 
