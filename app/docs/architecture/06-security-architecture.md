@@ -57,7 +57,6 @@ graph TB
  VAL --> ENC
  VAL --> TLS
  VAL --> DB_AUTH
-
  MW --> LOG
  AUTH --> LOG
  LOG --> MON
@@ -382,7 +381,6 @@ class WeddingCreate(BaseModel):
  title: str = Field(..., min_length=1, max_length=200, regex=r'^[a-zA-Z0-9\s\-\'.,!]+$')
  date: date = Field(..., gt=datetime.now().date())
  email: EmailStr
-
  @validator('title')
  def validate_title(cls, v):
  # Additional business logic validation
@@ -573,12 +571,10 @@ security_scan:
  - bandit (Python security linter)
  - semgrep (Multi-language analysis)
  - npm audit (Dependency vulnerabilities)
-
  dependency_scanning:
  - safety (Python dependencies)
  - audit-ci (Node.js dependencies)
  - container_scanning (Docker images)
-
  secrets_detection:
  - truffleHog (Git history scanning)
  - detect-secrets (Baseline scanning)

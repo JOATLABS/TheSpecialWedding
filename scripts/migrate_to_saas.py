@@ -19,12 +19,10 @@ from app.models.user_extended import UserModel
 def create_default_subscription_plans():
     """Create default subscription plans"""
     plans_collection = mongo.get_subscription_plans_collection()
-
     # Check if plans already exist
     if plans_collection.count_documents({}) > 0:
         print("Subscription plans already exist, skipping...")
         return
-
     default_plans = [
         {
             "_id": "plan_starter",
@@ -90,19 +88,16 @@ def create_default_subscription_plans():
             "updated_at": datetime.utcnow()
         }
     ]
-
     plans_collection.insert_many(default_plans)
     print(f"Created {len(default_plans)} default subscription plans")
 
 def create_default_saas_content():
     """Create default SAAS landing page content"""
     content_collection = mongo.get_saas_content_collection()
-
     # Check if content already exists
     if content_collection.count_documents({}) > 0:
         print("SAAS content already exists, skipping...")
         return
-
     default_content = [
         {
             "_id": "hero_section",
@@ -206,7 +201,6 @@ def create_default_saas_content():
             "updated_at": datetime.utcnow()
         }
     ]
-
     content_collection.insert_many(default_content)
     print(f"Created {len(default_content)} default SAAS content sections")
 
@@ -214,13 +208,11 @@ def migrate_existing_admin_to_root_admin():
     """Migrate the existing admin user to ROOT_ADMIN in the new users collection"""
     users_collection = mongo.get_users_collection()
     admin_users_collection = mongo.get_admin_users_collection()
-
     # Check if ROOT_ADMIN already exists in users collection
     root_admin = users_collection.find_one({"email": "thedeveloper@thespecialwedding.com"})
     if root_admin:
         print("ROOT_ADMIN already exists in users collection, skipping...")
         return
-
     # Find the existing admin user
     existing_admin = admin_users_collection.find_one({"email": "thedeveloper@thespecialwedding.com"})
     if not existing_admin:
@@ -247,14 +239,12 @@ def migrate_existing_admin_to_root_admin():
         "updated_at": datetime.utcnow(),
         "last_login": None
     }
-
     users_collection.insert_one(root_admin_user)
     print("Migrated existing admin to ROOT_ADMIN in users collection")
 
 def update_existing_weddings():
     """Update existing weddings to include SAAS fields"""
     weddings_collection = mongo.get_weddings_collection()
-
     # Update all existing weddings to include SAAS fields
     result = weddings_collection.update_many(
         {"created_by": {"$exists": False}},  # Only update weddings that don't have SAAS fields
@@ -266,48 +256,40 @@ def update_existing_weddings():
             }
         }
     )
-
     print(f"Updated {result.modified_count} existing weddings with SAAS fields")
 
 def create_indexes():
     """Create database indexes for better performance"""
-
     # Users collection indexes
     users_collection = mongo.get_users_collection()
     users_collection.create_index("email", unique=True)
     users_collection.create_index("role")
     users_collection.create_index("subscription_plan_id")
     users_collection.create_index("created_by")
-
     # Vendors collection indexes
     vendors_collection = mongo.get_vendors_collection()
     vendors_collection.create_index("email", unique=True)
     vendors_collection.create_index("wedding_id")
     vendors_collection.create_index("created_by")
-
     # Wedding checklist indexes
     checklist_collection = mongo.get_wedding_checklist_collection()
     checklist_collection.create_index("wedding_id")
     checklist_collection.create_index("assigned_vendor_id")
     checklist_collection.create_index("status")
-
     # AI usage indexes
     ai_usage_collection = mongo.get_ai_usage_collection()
     ai_usage_collection.create_index("user_email")
     ai_usage_collection.create_index("created_at")
     ai_usage_collection.create_index("wedding_id")
-
     # SAAS content indexes
     content_collection = mongo.get_saas_content_collection()
     content_collection.create_index("section", unique=True)
     content_collection.create_index("display_order")
-
     # Weddings collection indexes (add to existing)
     weddings_collection = mongo.get_weddings_collection()
     weddings_collection.create_index("assigned_planner_email")
     weddings_collection.create_index("created_by")
     weddings_collection.create_index("status")
-
     print("Created database indexes for SAAS collections")
 
 def main():
@@ -337,7 +319,6 @@ def main():
         print("1. The ROOT_ADMIN (thedeveloper@thespecialwedding.com) can now access the SAAS admin panel")
         print("2. Create wedding planners and assign existing weddings to them")
         print("3. Configure the SAAS landing page content as needed")
-
     except Exception as e:
         print(f"Migration failed: {str(e)}")
         sys.exit(1)

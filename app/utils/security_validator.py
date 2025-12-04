@@ -24,7 +24,6 @@ class SecurityValidator:
     Comprehensive security validation utility for the wedding application.
     Implements defense-in-depth security controls.
     """
-
     # Security patterns for injection detection
     NOSQL_INJECTION_PATTERNS = [
         r'\$where\s*:', r'\$regex\s*:', r'\$ne\s*:', r'\$nin\s*:', r'\$or\s*:',
@@ -34,7 +33,6 @@ class SecurityValidator:
         r'\$\w+\s*:', r'\{\s*\$\w+', r'ObjectId\s*\(', r'ISODate\s*\(',
         r'new\s+Date\s*\(', r'new\s+ObjectId\s*\('
     ]
-
     SQL_INJECTION_PATTERNS = [
         r'union\s+select', r'or\s+1\s*=\s*1', r'and\s+1\s*=\s*1',
         r'drop\s+table', r'delete\s+from', r'insert\s+into',
@@ -42,7 +40,6 @@ class SecurityValidator:
         r'exec\s*\(', r'sp_\w+', r'xp_\w+', r'--', r'/\*', r'\*/',
         r'char\s*\(', r'cast\s*\(', r'convert\s*\('
     ]
-
     XSS_PATTERNS = [
         r'<script[^>]*>', r'</script>', r'javascript:', r'vbscript:',
         r'onload\s*=', r'onerror\s*=', r'onclick\s*=', r'onmouseover\s*=',
@@ -50,14 +47,12 @@ class SecurityValidator:
         r'<embed[^>]*>', r'<form[^>]*>', r'<input[^>]*>', r'expression\s*\(',
         r'url\s*\(', r'@import', r'<meta[^>]*>'
     ]
-
     PATH_TRAVERSAL_PATTERNS = [
         r'\.\./', r'\.\.\\', r'%2e%2e%2f', r'%2e%2e%5c',
         r'%252e%252e%252f', r'%252e%252e%255c', r'..%2f', r'..%5c',
         r'%2e%2e/', r'\.\./\.\./\.\./\.\./\.\./\.\./\.\.',
         r'/etc/passwd', r'/etc/shadow', r'C:\\Windows\\', r'C:\\Users\\'
     ]
-
     COMMAND_INJECTION_PATTERNS = [
         r';.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
         r'\|.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
@@ -66,7 +61,6 @@ class SecurityValidator:
         r'\$\(.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
         r'exec\s*\(', r'eval\s*\(', r'system\s*\(', r'shell_exec\s*\('
     ]
-
     def __init__(self):
         self.failed_attempts = {}
         self.blocked_ips = {}
@@ -83,7 +77,6 @@ class SecurityValidator:
             value: Input value to validate
             field_name: Name of the field being validated
             context: Context for logging
-
         Returns:
             Tuple of (is_valid, sanitized_value or error_message)
         """
@@ -114,35 +107,30 @@ class SecurityValidator:
                     f"NoSQL injection attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
-
             # Check for SQL injection patterns
             if self._contains_injection_patterns(normalized_value, self.SQL_INJECTION_PATTERNS):
                 security_logger.warning(
                     f"SQL injection attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
-
             # Check for XSS patterns
             if self._contains_injection_patterns(normalized_value, self.XSS_PATTERNS):
                 security_logger.warning(
                     f"XSS attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
-
             # Check for path traversal patterns
             if self._contains_injection_patterns(normalized_value, self.PATH_TRAVERSAL_PATTERNS):
                 security_logger.warning(
                     f"Path traversal attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
-
             # Check for command injection patterns
             if self._contains_injection_patterns(normalized_value, self.COMMAND_INJECTION_PATTERNS):
                 security_logger.warning(
                     f"Command injection attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
-
             # Field-specific validation
             sanitized_value = self._field_specific_validation(normalized_value, field_name)
             if sanitized_value is False:
@@ -181,7 +169,6 @@ class SecurityValidator:
         else:
             # Generic sanitization
             return html.escape(value, quote=True)
-
     def _validate_name(self, value: str) -> Union[str, bool]:
         """Validate and sanitize name fields"""
         # Allow letters, spaces, hyphens, apostrophes, and common unicode characters
@@ -321,7 +308,6 @@ class SecurityValidator:
         if len(recent_attempts) > 0:
             delay_index = min(len(recent_attempts) - 1, len(self.progressive_delays) - 1)
             delay = self.progressive_delays[delay_index]
-
             # If too many attempts, block the identifier
             if len(recent_attempts) >= self.max_attempts:
                 self.blocked_ips[identifier] = (current_time, self.lockout_duration)
@@ -369,7 +355,6 @@ class SecurityValidator:
                 self.failed_attempts[identifier] = recent_attempts
             else:
                 del self.failed_attempts[identifier]
-
         # Clean expired blocks
         for identifier in list(self.blocked_ips.keys()):
             block_time, block_duration = self.blocked_ips[identifier]
@@ -427,7 +412,6 @@ class SecurityValidator:
             "severity": severity,
             "details": details
         }
-
         if severity == "WARNING":
             security_logger.warning(f"Security Event: {event_type} - {details}")
         elif severity == "ERROR":

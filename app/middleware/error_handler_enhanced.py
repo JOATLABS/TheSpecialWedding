@@ -207,8 +207,8 @@ class EnhancedErrorHandlerMiddleware(BaseHTTPMiddleware):
 
         # Save to MongoDB "errors" collection (async)
         try:
-            from app.core.database_async import async_mongo
-            await async_mongo.db["errors"].insert_one(error_doc)
+            from app.core.database import mongo
+            await mongo.db["errors"].insert_one(error_doc)
             logger.info(f"Error {error_id} saved to database")
         except Exception as db_error:
             logger.error(f"Failed to save error to database: {str(db_error)}")
@@ -330,7 +330,9 @@ class EnhancedErrorHandlerMiddleware(BaseHTTPMiddleware):
         color = severity_colors.get(severity, "#6B7280")
 
         # Get admin dashboard URL
-        dashboard_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000").replace("/api", "")
+        dashboard_url = os.getenv("FRONTEND_URL")
+        if not dashboard_url:
+            raise ValueError("FRONTEND_URL environment variable is required")
         error_url = f"{dashboard_url}/admin/errors/{error_doc['error_id']}"
 
         html = f"""

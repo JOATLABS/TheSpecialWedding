@@ -13,7 +13,7 @@ import psutil
 import platform
 from app.core.settings import settings
 from app.core.cache import cache
-from app.core.database_async import async_mongo
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +48,12 @@ class MetricData:
 
 class MetricsCollector:
     """Collect and manage application metrics"""
-
     def __init__(self):
         self.metrics: Dict[str, List[MetricData]] = {}
         self.counters: Dict[str, float] = {}
         self.gauges: Dict[str, float] = {}
         self.histograms: Dict[str, List[float]] = {}
         self.max_data_points = 1000
-
     def increment_counter(self, name: str, value: float = 1.0, tags: Dict[str, str] = None):
         """Increment a counter metric"""
         if name not in self.counters:
@@ -141,7 +139,6 @@ class MetricsCollector:
             "p95": values[int(len(values) * 0.95)],
             "p99": values[int(len(values) * 0.99)]
         }
-
     async def export_metrics(self) -> Dict[str, Any]:
         """Export all metrics"""
         return {
@@ -166,7 +163,6 @@ class HealthMonitor:
         """Register a health check function"""
         self.health_checks[name] = check_func
         logger.info(f"Registered health check: {name}")
-
     async def run_health_check(self, name: str) -> HealthCheck:
         """Run a specific health check"""
         if name not in self.health_checks:
@@ -205,7 +201,6 @@ class HealthMonitor:
                     message=str(result),
                     response_time_ms=response_time
                 )
-
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
             return HealthCheck(
@@ -322,7 +317,6 @@ class SystemMonitor:
                     "python_version": platform.python_version()
                 }
             }
-
         except Exception as e:
             logger.error(f"Failed to collect system metrics: {str(e)}")
             return {"error": str(e)}
@@ -330,7 +324,6 @@ class SystemMonitor:
 
 class ObservabilityManager:
     """Main observability manager"""
-
     def __init__(self):
         self.metrics = MetricsCollector()
         self.health_monitor = HealthMonitor()
@@ -345,7 +338,7 @@ class ObservabilityManager:
             """Check database connectivity"""
             try:
                 # Simple ping to database
-                await async_mongo.client.server_info()
+                await mongo.client.server_info()
                 return HealthCheck(
                     name="database",
                     status=HealthStatus.HEALTHY,
@@ -357,7 +350,6 @@ class ObservabilityManager:
                     status=HealthStatus.UNHEALTHY,
                     message=f"Database connection failed: {str(e)}"
                 )
-
         async def cache_health():
             """Check cache connectivity"""
             if not cache.enabled:
@@ -366,7 +358,6 @@ class ObservabilityManager:
                     status=HealthStatus.HEALTHY,
                     message="Cache disabled"
                 )
-
             try:
                 await cache.redis_client.ping()
                 return HealthCheck(
@@ -380,7 +371,6 @@ class ObservabilityManager:
                     status=HealthStatus.DEGRADED,
                     message=f"Cache connection failed: {str(e)}"
                 )
-
         def memory_health():
             """Check memory usage"""
             memory = psutil.virtual_memory()
@@ -405,12 +395,10 @@ class ObservabilityManager:
                     message=f"Memory usage OK: {memory.percent}%",
                     details={"memory_percent": memory.percent}
                 )
-
         def disk_health():
             """Check disk usage"""
             disk = psutil.disk_usage('/')
             percent = (disk.used / disk.total) * 100
-
             if percent > 95:
                 return HealthCheck(
                     name="disk",
@@ -432,13 +420,11 @@ class ObservabilityManager:
                     message=f"Disk usage OK: {percent:.1f}%",
                     details={"disk_percent": percent}
                 )
-
         # Register health checks
         self.health_monitor.register_health_check("database", database_health)
         self.health_monitor.register_health_check("cache", cache_health)
         self.health_monitor.register_health_check("memory", memory_health)
         self.health_monitor.register_health_check("disk", disk_health)
-
     def _start_background_tasks(self):
         """Start background monitoring tasks"""
         async def collect_system_metrics():
@@ -476,7 +462,6 @@ class ObservabilityManager:
         overall_status = self.health_monitor.get_overall_health()
         system_metrics = await self.system_monitor.get_system_metrics()
         app_metrics = await self.metrics.export_metrics()
-
         return {
             "status": overall_status.value,
             "timestamp": datetime.utcnow().isoformat(),
@@ -533,6 +518,5 @@ def timed(metric_name: str):
                 record_histogram(f"{metric_name}.duration", duration * 1000)
                 increment_counter(f"{metric_name}.error")
                 raise
-
         return wrapper
     return decorator

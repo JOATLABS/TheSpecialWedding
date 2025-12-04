@@ -33,7 +33,6 @@ export default function PublicFormPage() {
  const params = useParams();
  const router = useRouter();
  const formId = params.id as string;
-
  const [form, setForm] = useState<Form | null>(null);
  const [responses, setResponses] = useState<{ [key: string]: any }>({});
  const [loading, setLoading] = useState(true);
@@ -50,7 +49,6 @@ export default function PublicFormPage() {
  if (response.ok) {
  const data = await response.json();
  setForm(data);
-
  if (!data.is_active) {
  setError('This form is no longer accepting responses.');
  }
@@ -98,7 +96,6 @@ export default function PublicFormPage() {
 
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-
  // Prepare submission data
  const submissionData = {
  responses,
@@ -118,7 +115,6 @@ export default function PublicFormPage() {
  const data = await response.json();
  setSuccessMessage(data.message || form?.settings.success_message || 'Thank you for your submission!');
  setSubmitted(true);
-
  // Redirect if URL is provided
  if (data.redirect_url) {
  setTimeout(() => {
@@ -253,7 +249,6 @@ export default function PublicFormPage() {
  responses[field.id] >= rating ? 'text-yellow-400' : 'text-gray-300'
  } hover:text-yellow-400 transition-colors`}
  >
-
  </button>
  ))}
  <span className="ml-2 text-sm text-gray-600">

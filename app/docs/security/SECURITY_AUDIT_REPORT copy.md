@@ -290,7 +290,6 @@ Total Tests Run: 109
  ```python
  # Replace this:
  from app.services.guest_verification_service import GuestVerificationService
-
  # With this:
  from app.services.guest_verification_service_secure import secure_guest_verification_service
  ```
@@ -299,7 +298,6 @@ Total Tests Run: 109
  ```python
  from app.middleware.error_handler_secure import SecureErrorHandlerMiddleware
  from app.middleware.security_headers_enhanced import EnhancedSecurityHeadersMiddleware
-
  app.add_middleware(SecureErrorHandlerMiddleware)
  app.add_middleware(EnhancedSecurityHeadersMiddleware)
  ```

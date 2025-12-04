@@ -18,7 +18,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     """
     Middleware to handle all exceptions and return standardized error responses
     """
-
     async def dispatch(self, request: Request, call_next):
         try:
             response = await call_next(request)
@@ -91,7 +90,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                     "message": error.get("msg", "Validation error"),
                     "type": error.get("type", "value_error")
                 })
-
             return JSONResponse(
                 status_code=422,
                 content={
@@ -104,7 +102,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                     }
                 }
             )
-
         error_response = {
             "error": {
                 "code": error_code,
@@ -113,7 +110,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "path": str(request.url.path)
             }
         }
-
         return JSONResponse(
             status_code=exc.status_code,
             content=error_response
@@ -135,7 +131,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "path": str(request.url.path)
             }
         }
-
         return JSONResponse(
             status_code=500,
             content=error_response

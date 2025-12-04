@@ -44,7 +44,6 @@ def migrate_emmanuel_to_planner():
             user_id = str(existing_user["_id"])
             print(f"Found existing user")
             print(f"   Current role: {existing_user.get('role', 'N/A')}")
-
             # Update to wedding planner role
             update_data = {
                 "role": "wedding_planner",
@@ -53,7 +52,6 @@ def migrate_emmanuel_to_planner():
                 "subscription_status": "active",
                 "updated_at": datetime.utcnow()
             }
-
             # Update password if needed
             current_hash = existing_user.get("password_hash") or existing_user.get("password")
             if not current_hash or not bcrypt.checkpw(password.encode('utf-8'), current_hash.encode('utf-8')):
@@ -120,7 +118,6 @@ def migrate_emmanuel_to_planner():
                 "updated_at": datetime.utcnow(),
                 "created_by": "migration_script"
             }
-
             plans_collection.insert_one(enterprise_plan)
             print("Created Enterprise plan")
         else:
@@ -134,7 +131,6 @@ def migrate_emmanuel_to_planner():
             "user_id": user_id,
             "status": {"$in": ["active", "trial"]}
         })
-
         if existing_sub and existing_sub.get("plan_id") == plan_id:
             print("User already has Enterprise subscription")
         else:
@@ -145,7 +141,6 @@ def migrate_emmanuel_to_planner():
                     {"$set": {"status": "cancelled", "cancelled_at": datetime.utcnow()}}
                 )
                 print("Cancelled existing subscription")
-
             # Create new enterprise subscription
             now = datetime.utcnow()
             subscription_data = {
@@ -202,7 +197,6 @@ def migrate_emmanuel_to_planner():
                     "migration_notes": "Migrated by script - Emmanuel as wedding planner"
                 }}
             )
-
             if result.modified_count > 0:
                 print(f"Migrated wedding: {wedding.get('couple_names', 'Unknown')}")
                 print(f"   Wedding ID: {wedding['_id']}")
@@ -224,7 +218,6 @@ def migrate_emmanuel_to_planner():
             print(f"   Role: {final_user['role']}")
             print(f"   Status: {final_user.get('subscription_status', 'N/A')}")
             print(f"   Plan: {final_user.get('subscription_plan_id', 'N/A')}")
-
         # Check weddings
         user_weddings = list(weddings_collection.find({"assigned_planner_email": email}))
         print(f"\nAssigned Weddings: {len(user_weddings)}")
@@ -247,7 +240,6 @@ def migrate_emmanuel_to_planner():
         import traceback
         traceback.print_exc()
         return False
-
     return True
 
 if __name__ == "__main__":

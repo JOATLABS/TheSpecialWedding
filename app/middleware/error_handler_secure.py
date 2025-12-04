@@ -22,7 +22,6 @@ DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
     """
     Secure middleware to handle all exceptions without information disclosure.
-
     Security Features:
     - Prevents stack trace exposure
     - Sanitizes error messages
@@ -32,24 +31,20 @@ class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
     - Rate limits error responses
     - Generates unique error IDs for tracking
     """
-
     def __init__(self, app):
         super().__init__(app)
         # Initialize secure error handler with debug mode setting
         self.secure_handler = secure_error_handler
         self.secure_handler.debug_mode = DEBUG_MODE
-
         # Security configuration
         self.max_error_rate = 100  # Max errors per minute per IP
         self.error_tracking = {}  # Track error rates per IP
         self.blocked_ips = set()   # Temporarily blocked IPs
-
     async def dispatch(self, request: Request, call_next):
         """
         Main dispatch method that handles all requests and exceptions securely.
         """
         client_ip = self._get_client_ip(request)
-
         try:
             # Check if IP is blocked due to excessive errors
             if self._is_ip_blocked(client_ip):
@@ -92,7 +87,6 @@ class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
             "CF-Connecting-IP",
             "True-Client-IP"
         ]
-
         for header in headers_to_check:
             ip = request.headers.get(header)
             if ip:
@@ -115,7 +109,6 @@ class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
         if re.match(ipv4_pattern, ip):
             parts = ip.split('.')
             return all(0 <= int(part) <= 255 for part in parts)
-
         # IPv6 pattern (basic)
         ipv6_pattern = r'^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$'
         if re.match(ipv6_pattern, ip):
@@ -187,29 +180,24 @@ class SecureErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "X-Rate-Limit": "Blocked"
             }
         )
-
     def _cleanup_old_tracking(self):
         """Clean up old error tracking data"""
         current_time = datetime.utcnow()
         cutoff_time = current_time - datetime.timedelta(hours=1)
-
         # Remove old tracking data
         expired_ips = []
         for ip, data in self.error_tracking.items():
             if data["first_error"] < cutoff_time:
                 expired_ips.append(ip)
-
         for ip in expired_ips:
             del self.error_tracking[ip]
             # Also unblock if blocked
             self.blocked_ips.discard(ip)
-
     def get_error_stats(self) -> dict:
         """Get current error statistics (for monitoring)"""
         total_tracked_ips = len(self.error_tracking)
         total_blocked_ips = len(self.blocked_ips)
         total_errors = sum(data["error_count"] for data in self.error_tracking.values())
-
         return {
             "tracked_ips": total_tracked_ips,
             "blocked_ips": total_blocked_ips,

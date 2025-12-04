@@ -10,7 +10,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Rate limiting middleware using sliding window algorithm
     """
-
     def __init__(
         self,
         app,
@@ -50,7 +49,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """Check if the endpoint is authentication-related"""
         auth_paths = ["/admin/token", "/admin/login", "/public/register", "/setup/complete"]
         return any(auth_path in path for auth_path in auth_paths)
-
     async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
         """Remove old requests outside the time window"""
         current_time = time.time()

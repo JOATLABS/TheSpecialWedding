@@ -17,7 +17,6 @@ sys.path.insert(0, str(project_root / 'app'))
 
 class PydanticMigrationValidator:
     """Validates the Pydantic v2 migration status."""
-
     def __init__(self):
         self.results = {
             'passed': [],
@@ -72,12 +71,10 @@ class PydanticMigrationValidator:
             if not test_id:
                 self.results['failed'].append("❌ ObjectId generation failed")
                 return False
-
             # Test validation
             if not is_valid_object_id(str(test_id)):
                 self.results['failed'].append("❌ ObjectId validation failed")
                 return False
-
             # Test string conversion
             str_id = str(test_id)
             if len(str_id) != 24:
@@ -110,7 +107,6 @@ class PydanticMigrationValidator:
             try:
                 module = importlib.import_module(module_name)
                 model_class = getattr(module, class_name)
-
                 # Check for model_config
                 if not hasattr(model_class, 'model_config'):
                     self.results['failed'].append(f"❌ {class_name} missing model_config")
@@ -184,7 +180,6 @@ class PydanticMigrationValidator:
                     self.results['failed'].append(f"❌ {test_case['class']} creation failed")
                     all_passed = False
                     continue
-
                 # Test serialization
                 try:
                     json_str = instance.model_dump_json()
@@ -225,7 +220,6 @@ class PydanticMigrationValidator:
                     self.results['failed'].append(f"❌ {class_name} schema not a dict")
                     all_passed = False
                     continue
-
                 if 'properties' not in schema:
                     self.results['failed'].append(f"❌ {class_name} schema missing properties")
                     all_passed = False
@@ -279,24 +273,20 @@ class PydanticMigrationValidator:
 📈 Success Rate: {success_rate:.1f}%
 
 """
-
         if self.results['passed']:
             report += "\n✅ PASSED TESTS:\n"
             for item in self.results['passed'][:10]:  # Show first 10
                 report += f"   {item}\n"
             if len(self.results['passed']) > 10:
                 report += f"   ... and {len(self.results['passed']) - 10} more\n"
-
         if self.results['failed']:
             report += "\n❌ FAILED TESTS:\n"
             for item in self.results['failed']:
                 report += f"   {item}\n"
-
         if self.results['warnings']:
             report += "\n⚠️  WARNINGS:\n"
             for item in self.results['warnings']:
                 report += f"   {item}\n"
-
         # Status assessment
         if failed_count == 0:
             report += "\n🎉 MIGRATION STATUS: COMPLETE ✅"
@@ -314,7 +304,6 @@ class PydanticMigrationValidator:
         """Run all validation tests."""
         print("🚀 Starting Pydantic v2 Migration Validation")
         print("=" * 50)
-
         tests = [
             self.check_pydantic_version,
             self.validate_imports,
@@ -334,7 +323,6 @@ class PydanticMigrationValidator:
                 self.results['failed'].append(f"❌ Test {test.__name__} crashed: {e}")
                 all_passed = False
             print("-" * 30)
-
         return all_passed
 
 

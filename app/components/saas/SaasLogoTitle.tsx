@@ -38,7 +38,6 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
           />
         </div>
       </div>
-
       {/* Title Text with Enhanced Glass Glow for Visibility */}
       <div className="text-center">
         {/* Welcome - Sans Serif, Bigger with stronger glow */}

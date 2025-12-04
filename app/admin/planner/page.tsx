@@ -49,7 +49,6 @@ export default function WeddingPlannerDashboard() {
  const fetchMyWeddings = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-
  // Use the new optimized metrics API
  const response = await fetch(`${baseUrl}/admin/planner/metrics`, {
  headers: {
@@ -325,7 +324,6 @@ export default function WeddingPlannerDashboard() {
  {weddings.slice(0, 3).map((wedding) => {
  const progressPercentage = wedding.progress_percentage || 0;
  const daysUntilWedding = wedding.days_until_wedding || 0;
-
  return (
  <div key={wedding.id} className="border-b border-gray-100 pb-4 last:border-b-0">
  <div className="flex items-center justify-between mb-2">

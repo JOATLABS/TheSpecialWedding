@@ -95,7 +95,6 @@ export default function VendorQuoteCard({
               {quote.service_category.charAt(0).toUpperCase() + quote.service_category.slice(1)}
             </div>
           </div>
-
           <div className="text-right">
             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(quote.status)}`}>
               {quote.status.charAt(0).toUpperCase() + quote.status.slice(1)}
@@ -249,7 +248,6 @@ export default function VendorQuoteCard({
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               Rate Quote from {quote.vendor_name}
             </h2>
-
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -259,7 +257,6 @@ export default function VendorQuoteCard({
                   {renderStars(rating, true, setRating)}
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes (Optional)
@@ -273,7 +270,6 @@ export default function VendorQuoteCard({
                 />
               </div>
             </div>
-
             <div className="flex gap-3 mt-6">
               <Button onClick={handleSubmitRating} className="flex-1">
                 Submit Rating

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, Any, List, Optional, Iterable
 from datetime import datetime, timedelta
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
-from app.core.database_async import async_mongo
+from app.core.database import mongo
 from bson import ObjectId
 import logging
 
@@ -188,7 +188,7 @@ async def get_platform_metrics(
         # Database health check
         try:
             db_start = datetime.utcnow()
-            await async_mongo.db.command('ping')
+            await mongo.db.command('ping')
             db_latency = (datetime.utcnow() - db_start).total_seconds() * 1000
             db_status = "healthy" if db_latency < 100 else "degraded"
         except Exception as e:
@@ -289,24 +289,24 @@ async def get_platform_metrics(
             }
         ]
 
-        error_stats_cursor = async_mongo.db["audit_logs"].aggregate(error_pipeline)
+        error_stats_cursor = mongo.db["audit_logs"].aggregate(error_pipeline)
         error_stats_list = await error_stats_cursor.to_list(length=1)
         error_stats = error_stats_list[0] if error_stats_list else {}
 
-        audit_total_errors = error_stats.get("total", [{}])[0].get("count", 0)
-        audit_critical_errors = error_stats.get("critical", [{}])[0].get("count", 0)
+        audit_total_errors = error_stats.get("total", [{}])[0].get("count", 0) if error_stats.get("total") else 0
+        audit_critical_errors = error_stats.get("critical", [{}])[0].get("count", 0) if error_stats.get("critical") else 0
         top_error_endpoints = error_stats.get("by_endpoint", [])
 
         # Check if errors collection exists (self-hosted error tracking)
         try:
-            self_hosted_errors = await async_mongo.db["errors"].count_documents({
+            self_hosted_errors = await mongo.db["errors"].count_documents({
                 "timestamp": {"$gte": day_ago},
                 "acknowledged": False
             })
-            errors_collection_total = await async_mongo.db["errors"].count_documents({
+            errors_collection_total = await mongo.db["errors"].count_documents({
                 "timestamp": {"$gte": day_ago}
             })
-            errors_collection_critical = await async_mongo.db["errors"].count_documents({
+            errors_collection_critical = await mongo.db["errors"].count_documents({
                 "timestamp": {"$gte": day_ago},
                 "severity": "critical"
             })
@@ -334,7 +334,7 @@ async def get_platform_metrics(
                     break
 
         try:
-            errors_collection_cursor = async_mongo.db["errors"].find({
+            errors_collection_cursor = mongo.db["errors"].find({
                 "timestamp": {"$gte": day_ago}
             }).sort("timestamp", -1).limit(10)
             extend_recent_errors(await errors_collection_cursor.to_list(length=10))
@@ -344,7 +344,7 @@ async def get_platform_metrics(
         if len(recent_error_docs) < 10:
             remaining = 10 - len(recent_error_docs)
             if remaining > 0:
-                audit_recent_cursor = async_mongo.db["audit_logs"].find({
+                audit_recent_cursor = mongo.db["audit_logs"].find({
                     "timestamp": {"$gte": day_ago},
                     "response_status": {"$gte": 400}
                 }).sort("timestamp", -1).limit(remaining)
@@ -359,11 +359,11 @@ async def get_platform_metrics(
         # ==================== BUSINESS METRICS ====================
 
         # User statistics
-        total_users = await async_mongo.db["users"].count_documents({})
-        active_users_week = await async_mongo.db["users"].count_documents({
+        total_users = await mongo.db["users"].count_documents({})
+        active_users_week = await mongo.db["users"].count_documents({
             "last_login": {"$gte": week_ago}
         })
-        new_users_week = await async_mongo.db["users"].count_documents({
+        new_users_week = await mongo.db["users"].count_documents({
             "created_at": {"$gte": week_ago}
         })
 
@@ -392,17 +392,17 @@ async def get_platform_metrics(
             }
         ]
 
-        sub_cursor = async_mongo.db["subscriptions"].aggregate(subscription_pipeline)
+        sub_cursor = mongo.db["subscriptions"].aggregate(subscription_pipeline)
         sub_stats_list = await sub_cursor.to_list(length=1)
         sub_stats = sub_stats_list[0] if sub_stats_list else {}
 
-        active_subscriptions = sub_stats.get("active", [{}])[0].get("count", 0)
-        trial_subscriptions = sub_stats.get("trialing", [{}])[0].get("count", 0)
-        canceled_subscriptions = sub_stats.get("canceled", [{}])[0].get("count", 0)
+        active_subscriptions = sub_stats.get("active", [{}])[0].get("count", 0) if sub_stats.get("active") else 0
+        trial_subscriptions = sub_stats.get("trialing", [{}])[0].get("count", 0) if sub_stats.get("trialing") else 0
+        canceled_subscriptions = sub_stats.get("canceled", [{}])[0].get("count", 0) if sub_stats.get("canceled") else 0
 
         # Calculate MRR/ARR
         # Get all active subscriptions with amounts
-        active_subs_cursor = async_mongo.db["subscriptions"].find({
+        active_subs_cursor = mongo.db["subscriptions"].find({
             "status": "active"
         })
         active_subs = await active_subs_cursor.to_list(length=None)
@@ -420,10 +420,10 @@ async def get_platform_metrics(
         arr = mrr * 12
 
         # Trial conversion rate
-        total_trials = await async_mongo.db["subscriptions"].count_documents({
+        total_trials = await mongo.db["subscriptions"].count_documents({
             "trial_end": {"$exists": True}
         })
-        converted_trials = await async_mongo.db["subscriptions"].count_documents({
+        converted_trials = await mongo.db["subscriptions"].count_documents({
             "trial_end": {"$exists": True},
             "status": "active"
         })
@@ -455,7 +455,7 @@ async def get_platform_metrics(
             }
         ]
 
-        slow_cursor = async_mongo.db["audit_logs"].aggregate(slow_endpoint_pipeline)
+        slow_cursor = mongo.db["audit_logs"].aggregate(slow_endpoint_pipeline)
         slow_endpoints_raw = await slow_cursor.to_list(length=10)
 
         slow_endpoints: List[Dict[str, Any]] = []
@@ -469,8 +469,8 @@ async def get_platform_metrics(
 
         # ==================== WEDDING METRICS ====================
 
-        total_weddings = await async_mongo.db["weddings"].count_documents({})
-        active_weddings = await async_mongo.db["weddings"].count_documents({
+        total_weddings = await mongo.db["weddings"].count_documents({})
+        active_weddings = await mongo.db["weddings"].count_documents({
             "status": {"$ne": "archived"}
         })
 
@@ -539,7 +539,7 @@ async def get_metrics_history(
     start_date = datetime.utcnow() - timedelta(days=days)
 
     # Get stored metrics snapshots
-    cursor = async_mongo.db["platform_metrics"].find({
+    cursor = mongo.db["platform_metrics"].find({
         "$or": [
             {"snapshot_time": {"$gte": start_date}},
             {
@@ -587,7 +587,7 @@ async def save_metrics_snapshot(
         "snapshot_time": datetime.utcnow()
     }
 
-    result = await async_mongo.db["platform_metrics"].insert_one(snapshot)
+    result = await mongo.db["platform_metrics"].insert_one(snapshot)
 
     health_metrics = snapshot.get("health", {})
     error_metrics = snapshot.get("errors", {})
@@ -712,7 +712,7 @@ async def get_recent_errors(
         ]
 
     try:
-        cursor = async_mongo.db["errors"].find(errors_query).sort("timestamp", -1).limit(limit)
+        cursor = mongo.db["errors"].find(errors_query).sort("timestamp", -1).limit(limit)
         extend_errors(await cursor.to_list(length=limit))
     except Exception as exc:
         logger.warning("Failed to query self-hosted errors collection: %s", exc)
@@ -730,7 +730,7 @@ async def get_recent_errors(
             elif severity == "warning":
                 audit_query["response_status"] = {"$gte": 400, "$lt": 500}
 
-            cursor = async_mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(remaining)
+            cursor = mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(remaining)
             extend_errors(await cursor.to_list(length=remaining))
 
     errors_docs.sort(
@@ -758,15 +758,15 @@ async def get_error_details(
 
     try:
         # Try errors collection first
-        error = await async_mongo.db["errors"].find_one({"error_id": error_id})
+        error = await mongo.db["errors"].find_one({"error_id": error_id})
 
         if not error and ObjectId.is_valid(error_id):
             # Try by ObjectId
-            error = await async_mongo.db["errors"].find_one({"_id": ObjectId(error_id)})
+            error = await mongo.db["errors"].find_one({"_id": ObjectId(error_id)})
 
         if not error and ObjectId.is_valid(error_id):
             # Try audit_logs as fallback
-            error = await async_mongo.db["audit_logs"].find_one({"_id": ObjectId(error_id)})
+            error = await mongo.db["audit_logs"].find_one({"_id": ObjectId(error_id)})
 
         if not error:
             raise HTTPException(status_code=404, detail="Error not found")
@@ -787,7 +787,7 @@ async def acknowledge_error(
 
     try:
         # Update in errors collection
-        result = await async_mongo.db["errors"].update_one(
+        result = await mongo.db["errors"].update_one(
             {"error_id": error_id},
             {
                 "$set": {
@@ -800,7 +800,7 @@ async def acknowledge_error(
 
         if result.modified_count == 0 and ObjectId.is_valid(error_id):
             # Try by ObjectId
-            result = await async_mongo.db["errors"].update_one(
+            result = await mongo.db["errors"].update_one(
                 {"_id": ObjectId(error_id)},
                 {
                     "$set": {
@@ -839,7 +839,7 @@ async def cleanup_old_errors(
     cutoff_date = datetime.utcnow() - timedelta(days=days)
 
     # Delete from errors collection
-    result = await async_mongo.db["errors"].delete_many({
+    result = await mongo.db["errors"].delete_many({
         "timestamp": {"$lt": cutoff_date},
         "acknowledged": True
     })
