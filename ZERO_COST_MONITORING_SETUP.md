@@ -25,7 +25,7 @@ No Sentry, no Datadog, no New Relic - just smart use of free tiers and self-buil
 ### Backend (FastAPI)
 - `app/api/admin_platform_metrics.py` - Metrics API endpoint
 - `app/api/admin_backup.py` - Backup trigger endpoint
-- `app/middleware/error_handler_enhanced.py` - MongoDB error logging + email alerts
+- `app/middleware/error_handler.py` - MongoDB error logging + email alerts with secure responses
 - `app/utils/migrations.py` - Async database migrations
 
 ### Frontend (Next.js)

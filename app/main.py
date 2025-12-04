@@ -10,11 +10,11 @@ import logging
 # Import settings and core components
 from app.core.settings import settings
 from app.core.database import init_database, close_database
-from app.core.cache import init_cache, close_cache
+from app.core.cache import init_cache, close_cache, cache
 from app.core.database_indexes import create_all_indexes
 
 # Import middleware
-from app.middleware.error_handler_enhanced import EnhancedErrorHandlerMiddleware
+from app.middleware.error_handler import ErrorHandlerMiddleware
 from app.middleware.rate_limiting import RateLimitMiddleware
 from app.middleware.csrf_protection import CSRFProtectionMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -54,8 +54,9 @@ from app.api.notification_management import router as notification_router
 from app.api.support_management import router as support_router
 from app.api.public_contact import router as public_contact_router
 from app.api.stripe_payment import router as stripe_router
-from app.api.admin_platform_metrics import router as platform_metrics_router
+from app.api.admin_platform_metrics import router as admin_platform_metrics_router
 from app.api.admin_backup import router as backup_router
+from app.api.email_webhooks import router as email_webhooks_router
 
 # Setup logging
 logging.basicConfig(
@@ -83,7 +84,7 @@ async def lifespan(app: FastAPI):
             logger.info("Cache initialized")
 
         # Create database indexes
-        create_all_indexes()
+        await create_all_indexes()
         logger.info("Database indexes created/verified")
 
         # Run database migrations
@@ -136,7 +137,7 @@ app = FastAPI(
 
 # 1. Error handling (outermost) - Enhanced with MongoDB logging and email alerts
 app.add_middleware(
-    EnhancedErrorHandlerMiddleware,
+    ErrorHandlerMiddleware,
     enable_email_alerts=settings.is_production()  # Only send emails in production
 )
 
@@ -200,13 +201,6 @@ app.add_middleware(
     max_age=3600,
 )
 
-app.include_router(health_router, prefix="/health")
-app.include_router(guest_router, prefix="/guest")  # Public guest endpoints (search, invite)
-app.include_router(rsvp_router, prefix="/rsvp")
-app.include_router(plus_one_router, prefix="/plus_one")
-app.include_router(wedding_router)  # Public wedding endpoints (list, get by slug)
-app.include_router(gallery_public_router)  # Public gallery endpoints (view, QR)
-app.include_router(platform_metrics_router)
 # 8. Compression (innermost)
 if settings.enable_compression:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -240,6 +234,9 @@ app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor For
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
+app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
+app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
+app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
 
 # Admin routes (authentication required)
 admin_routers = [
@@ -256,13 +253,14 @@ admin_routers = [
     (user_management_router, "Admin"),
     (subscription_router, "Subscription"),
     (saas_config_router, "Subscription"),
+    (budget_router, "Budget"),
     (planner_metrics_router, "Metrics"),
     (forms_router, "Forms"),
     (trial_management_router, "Admin"),
     (vendor_forms_router, "Vendor Management"),
     (notification_router, "Notifications"),
     (support_router, "Support"),
-    (platform_metrics_router, "ROOT_ADMIN"),
+    (admin_platform_metrics_router, "ROOT_ADMIN"),
     (backup_router, "ROOT_ADMIN")
 ]
 
@@ -351,10 +349,9 @@ if settings.is_development():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "app.main_optimized:app",
+        "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=settings.is_development(),
         log_level="info"
     )
-
