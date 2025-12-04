@@ -112,6 +112,87 @@ class StripeService:
 
     # ==================== CHECKOUT SESSION ====================
 
+    # ==================== PRODUCT & PRICE MANAGEMENT ====================
+
+    def sync_plan_to_stripe(self, plan: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Ensure a local subscription plan exists in Stripe as a Product and Price.
+        Returns a dictionary with 'stripe_product_id', 'stripe_price_id_monthly', 'stripe_price_id_yearly'.
+        """
+        self._ensure_stripe_enabled()
+
+        try:
+            product_id = plan.get("stripe_product_id")
+            price_id_monthly = plan.get("stripe_price_id_monthly")
+            price_id_yearly = plan.get("stripe_price_id_yearly")
+
+            # 1. Create or Update Product
+            if not product_id:
+                product = stripe.Product.create(
+                    name=plan["name"],
+                    description=plan.get("description", ""),
+                    metadata={"plan_id": plan["_id"]}
+                )
+                product_id = product.id
+            else:
+                try:
+                    stripe.Product.retrieve(product_id)
+                    stripe.Product.modify(
+                        product_id,
+                        name=plan["name"],
+                        description=plan.get("description", ""),
+                        metadata={"plan_id": plan["_id"]}
+                    )
+                except stripe.error.InvalidRequestError:
+                    # Product might have been deleted in Stripe
+                    product = stripe.Product.create(
+                        name=plan["name"],
+                        description=plan.get("description", ""),
+                        metadata={"plan_id": plan["_id"]}
+                    )
+                    product_id = product.id
+
+            # 2. Create Prices if missing or if amounts changed (Stripe prices are immutable, create new one)
+            # Logic: If we have a price ID, check if it matches current amount. If not, create new.
+
+            # Helper to check/create price
+            def ensure_price(current_price_id, amount, interval):
+                if amount is None:
+                    return None
+
+                amount_cents = int(amount * 100)
+
+                if current_price_id:
+                    try:
+                        price = stripe.Price.retrieve(current_price_id)
+                        if price.unit_amount == amount_cents and price.currency == "usd" and price.recurring.interval == interval:
+                            return current_price_id
+                    except stripe.error.InvalidRequestError:
+                        pass # Price not found, create new
+
+                new_price = stripe.Price.create(
+                    product=product_id,
+                    unit_amount=amount_cents,
+                    currency="usd",
+                    recurring={"interval": interval},
+                    nickname=f"{plan['name']} {interval.title()}"
+                )
+                return new_price.id
+
+            new_price_id_monthly = ensure_price(price_id_monthly, plan.get("price_monthly"), "month")
+            new_price_id_yearly = ensure_price(price_id_yearly, plan.get("price_yearly"), "year")
+
+            return {
+                "stripe_product_id": product_id,
+                "stripe_price_id_monthly": new_price_id_monthly,
+                "stripe_price_id_yearly": new_price_id_yearly
+            }
+
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error syncing plan: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Stripe Sync Error: {str(e)}")
+
+
     def create_checkout_session(
         self,
         user_id: str,
@@ -165,26 +246,24 @@ class StripeService:
             )
 
             # Determine price based on billing interval
-            price_key = f"price_{billing_interval}"
-            price_amount = plan.get(price_key, plan.get("price_monthly", 0))
+            price_id_field = f"stripe_price_id_{billing_interval}"
+            stripe_price_id = plan.get(price_id_field)
 
-            if price_amount is None:
-                raise HTTPException(status_code=400, detail=f"Plan is missing pricing for {billing_interval} billing")
+            # If Stripe IDs are missing, sync them now
+            if not stripe_price_id:
+                logger.info(f"Stripe price ID missing for plan {plan_id}, syncing now...")
+                sync_result = self.sync_plan_to_stripe(plan)
 
-            # Create Stripe price object if not exists
-            # Note: In production, you should create prices in Stripe Dashboard
-            # and store price IDs in your database
-            stripe_price = stripe.Price.create(
-                unit_amount=int(price_amount * 100),  # Convert to cents
-                currency="usd",
-                recurring={
-                    "interval": "month" if billing_interval == "monthly" else "year"
-                },
-                product_data={
-                    "name": f"{plan['name']} Plan",
-                    "description": plan.get("description", ""),
-                },
-            )
+                # Update plan in DB with new IDs
+                self.plans_collection.update_one(
+                    {"_id": plan_id},
+                    {"$set": sync_result}
+                )
+
+                stripe_price_id = sync_result.get(price_id_field)
+
+            if not stripe_price_id:
+                raise HTTPException(status_code=500, detail=f"Failed to resolve Stripe price for {billing_interval} billing")
 
             # Default URLs if not provided
             if not success_url:
@@ -216,7 +295,7 @@ class StripeService:
                 customer=customer_id,
                 payment_method_types=["card"],
                 line_items=[{
-                    "price": stripe_price.id,
+                    "price": stripe_price_id,
                     "quantity": 1,
                 }],
                 mode="subscription",
@@ -711,6 +790,86 @@ class StripeService:
             logger.error(f"Error handling invoice payment failed: {str(e)}")
             return {"status": "error", "message": str(e)}
 
+    # ==================== CONNECT / MARKETPLACE ====================
+
+    def create_connected_account(self, user_id: str, email: str, country: str = "US") -> str:
+        """
+        Create a Stripe Express connected account for a user (Planner or Vendor).
+
+        Args:
+            user_id: The internal user ID.
+            email: The user's email.
+            country: The user's country code.
+
+        Returns:
+            The new connected account ID.
+        """
+        self._ensure_stripe_enabled()
+
+        try:
+            # Check if user already has a connect account
+            user = self.users_collection.find_one({"_id": ObjectId(user_id)})
+            if user and user.get("stripe_connect_id"):
+                return user["stripe_connect_id"]
+
+            account = stripe.Account.create(
+                type="express",
+                country=country,
+                email=email,
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
+                metadata={"user_id": user_id}
+            )
+
+            # Save account ID to user record
+            self.users_collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": {"stripe_connect_id": account.id, "updated_at": datetime.utcnow()}}
+            )
+
+            logger.info(f"Created Stripe connected account {account.id} for user {user_id}")
+            return account.id
+
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error creating connected account: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
+
+    def create_account_link(self, account_id: str, refresh_url: str, return_url: str) -> str:
+        """
+        Create an onboarding link for a connected account.
+        """
+        self._ensure_stripe_enabled()
+
+        try:
+            account_link = stripe.AccountLink.create(
+                account=account_id,
+                refresh_url=refresh_url,
+                return_url=return_url,
+                type="account_onboarding",
+            )
+            return account_link.url
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error creating account link: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
+
+    def get_account_status(self, account_id: str) -> Dict[str, Any]:
+        """Check if a connected account is fully onboarded."""
+        self._ensure_stripe_enabled()
+
+        try:
+            account = stripe.Account.retrieve(account_id)
+            return {
+                "id": account.id,
+                "charges_enabled": account.charges_enabled,
+                "payouts_enabled": account.payouts_enabled,
+                "details_submitted": account.details_submitted,
+            }
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error retrieving account: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
+
     # ==================== PAYMENT COLLECTION FOR COUPLES ====================
 
     def create_payment_intent_for_couple(
@@ -719,21 +878,12 @@ class StripeService:
         currency: str = "usd",
         wedding_id: str = None,
         description: str = None,
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
+        destination_account_id: str = None
     ) -> Dict[str, Any]:
         """
-        Create a payment intent for collecting payment from couples
-        This allows wedding planners to collect payments from their clients
-
-        Args:
-            amount: Amount in dollars
-            currency: Currency code (default USD)
-            wedding_id: Associated wedding ID
-            description: Payment description
-            metadata: Additional metadata
-
-        Returns:
-            Payment intent details including client_secret for frontend
+        Create a payment intent for collecting payment from couples.
+        If destination_account_id is provided, funds are routed to that connected account.
         """
         self._ensure_stripe_enabled()
 
@@ -742,13 +892,24 @@ class StripeService:
             if wedding_id:
                 payment_metadata["wedding_id"] = wedding_id
 
-            payment_intent = stripe.PaymentIntent.create(
-                amount=int(amount * 100),  # Convert to cents
-                currency=currency.lower(),
-                description=description or "Wedding service payment",
-                metadata=payment_metadata,
-                automatic_payment_methods={"enabled": True},
-            )
+            create_kwargs = {
+                "amount": int(amount * 100),
+                "currency": currency.lower(),
+                "description": description or "Wedding service payment",
+                "metadata": payment_metadata,
+                "automatic_payment_methods": {"enabled": True},
+            }
+
+            # If destination provided, use transfer_data to route funds
+            # The platform acts as the merchant of record but funds go to the destination
+            if destination_account_id:
+                create_kwargs["transfer_data"] = {
+                    "destination": destination_account_id
+                }
+                # Optional: Add application_fee_amount here if the platform takes a cut
+                # create_kwargs["application_fee_amount"] = int(amount * 100 * 0.01) # 1% fee
+
+            payment_intent = stripe.PaymentIntent.create(**create_kwargs)
 
             logger.info(f"Created payment intent {payment_intent.id} for amount {amount}")
 
@@ -766,6 +927,52 @@ class StripeService:
         except Exception as e:
             logger.error(f"Error creating payment intent: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error creating payment intent: {str(e)}")
+
+    def create_vendor_payment_intent(
+        self,
+        sender_user_id: str,
+        vendor_connect_id: str,
+        amount: float,
+        currency: str = "usd",
+        description: str = None
+    ) -> Dict[str, Any]:
+        """
+        Create a payment intent for a Planner to pay a Vendor.
+        The Planner pays (as a customer) and funds go to Vendor (connected account).
+        """
+        self._ensure_stripe_enabled()
+
+        try:
+            # Ensure sender has a customer ID
+            user = self.users_collection.find_one({"_id": ObjectId(sender_user_id)})
+            customer_id = self.get_or_create_customer(sender_user_id, user["email"], user.get("full_name"))
+
+            payment_intent = stripe.PaymentIntent.create(
+                amount=int(amount * 100),
+                currency=currency.lower(),
+                customer=customer_id,
+                description=description or f"Payment to vendor",
+                transfer_data={
+                    "destination": vendor_connect_id
+                },
+                metadata={
+                    "sender_user_id": sender_user_id,
+                    "vendor_connect_id": vendor_connect_id
+                },
+                automatic_payment_methods={"enabled": True},
+            )
+
+            return {
+                "payment_intent_id": payment_intent.id,
+                "client_secret": payment_intent.client_secret,
+                "amount": amount,
+                "currency": currency,
+                "status": payment_intent.status
+            }
+
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error creating vendor payment: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
 
 
 # Create singleton instance

@@ -34,7 +34,7 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
-            )       
+            )
         # Verify user still exists in database
         user = mongo.db["admin_users"].find_one({"email": email})
         if not user:

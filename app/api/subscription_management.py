@@ -176,8 +176,34 @@ def require_subscription_limit(resource_type: str, amount: int = 1):
 
 # ==================== SYSTEM ADMINISTRATION ====================
 
+@router.post("/system/sync-plans-to-stripe", tags=["ROOT_ADMIN"])
+async def sync_plans_to_stripe(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+    """
+    Manually sync all existing subscription plans to Stripe Products/Prices.
+    Useful if you added Stripe credentials after creating plans.
+    """
+    from app.services.stripe_service import stripe_service
+
+    plans = await subscription_service.list_plans(include_inactive=True)
+    synced_count = 0
+    errors = []
+
+    for plan in plans:
+        try:
+            stripe_data = stripe_service.sync_plan_to_stripe(plan)
+            # Update local DB with new IDs
+            await subscription_service.update_plan(plan["_id"], stripe_data)
+            synced_count += 1
+        except Exception as e:
+            errors.append(f"Plan {plan.get('name', 'Unknown')}: {str(e)}")
+
+    return {
+        "message": f"Synced {synced_count} plans to Stripe",
+        "errors": errors
+    }
+
 @router.post("/system/seed-default-plans", tags=["ROOT_ADMIN"])
-def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Seed default subscription plans - ROOT_ADMIN only"""
     default_plans = [
         {
@@ -319,9 +345,12 @@ def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depends(req
             continue
 
         try:
+            # Note: create_plan will internally call stripe_service.sync_plan_to_stripe
             result = subscription_service.create_plan(plan_data, current_user.email)
             created_plans.append(plan_data["name"])  # Store the plan name instead of the result
         except Exception as e:
+            # If seeding fails (e.g. stripe config missing), we might want to log it but continue?
+            # For now, let's return error so admin knows.
             return {"error": f"Failed to create plan '{plan_data['name']}': {str(e)}"}
     return {
         "message": "Default subscription plans seeding completed",

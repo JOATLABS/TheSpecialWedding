@@ -12,7 +12,7 @@ class NotificationService:
     def __init__(self):
         self.notifications_collection = mongo.db["notifications"]
         self.templates_collection = mongo.db["notification_templates"]
-        self.users_collection = mongo.db["admin_users"]  # Fixed: use admin_users collection
+        self.users_collection = mongo.db["users"]  # Fixed: use admin_users collection
         self.email_service = ResendEmailService()
 
     async def create_notification(self, notification_data: dict, created_by: str) -> dict:
@@ -500,12 +500,8 @@ class NotificationService:
                 return recipients
 
         base_query = {
+            "is_active": True,
             "email": {"$exists": True, "$ne": None, "$ne": ""},
-            # Include users where is_active is either True or not set (undefined)
-            "$or": [
-                {"is_active": True},
-                {"is_active": {"$exists": False}}
-            ]
         }
 
         if target == "all":

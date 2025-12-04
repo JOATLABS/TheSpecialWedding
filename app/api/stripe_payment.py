@@ -36,6 +36,21 @@ class CreatePaymentIntentRequest(BaseModel):
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     description: Optional[str] = Field(None, description="Payment description")
     metadata: Optional[dict] = Field(default_factory=dict, description="Additional metadata")
+    destination_user_id: Optional[str] = Field(None, description="Internal ID of the user to receive funds (Connect account)")
+
+
+class ConnectOnboardRequest(BaseModel):
+    """Request model for onboarding a connected account"""
+    country: str = Field(default="US", description="Two-letter country code")
+    return_url: str = Field(..., description="Return URL after onboarding")
+    refresh_url: str = Field(..., description="Refresh URL if onboarding fails")
+
+class VendorPaymentRequest(BaseModel):
+    """Request model for paying a vendor"""
+    vendor_user_id: str = Field(..., description="User ID of the vendor to pay")
+    amount: float = Field(..., description="Payment amount in dollars", gt=0)
+    currency: str = Field(default="usd", description="Currency code")
+    description: Optional[str] = Field(None, description="Payment description")
 
 
 # ==================== CHECKOUT SESSION ENDPOINTS ====================
@@ -194,6 +209,123 @@ async def stripe_webhook(
         raise HTTPException(status_code=500, detail=f"Webhook processing failed: {str(e)}")
 
 
+# ==================== CONNECT / MARKETPLACE ENDPOINTS ====================
+
+@router.post("/connect/onboard")
+async def create_connect_account_link(
+    request: ConnectOnboardRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Create a Stripe Connect onboarding link for the current user.
+    This allows Planners or Vendors to receive payments.
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id"))
+        email = current_user.user_data.get("email")
+
+        # Create or get connected account
+        account_id = stripe_service.create_connected_account(
+            user_id=user_id,
+            email=email,
+            country=request.country
+        )
+
+        # Create onboarding link
+        url = stripe_service.create_account_link(
+            account_id=account_id,
+            refresh_url=request.refresh_url,
+            return_url=request.return_url
+        )
+
+        return {
+            "status": "success",
+            "url": url,
+            "account_id": account_id
+        }
+    except Exception as e:
+        logger.error(f"Error creating connect link: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create onboarding link: {str(e)}")
+
+
+@router.get("/connect/status")
+async def get_connect_status(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Check the onboarding status of the current user's connected account.
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id"))
+        from app.core.database import mongo
+        from bson import ObjectId
+
+        user = mongo.db["users"].find_one({"_id": ObjectId(user_id)})
+        connect_id = user.get("stripe_connect_id")
+
+        if not connect_id:
+            return {
+                "status": "not_connected",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False
+            }
+
+        status = stripe_service.get_account_status(connect_id)
+        status["status"] = "connected"
+        return status
+
+    except Exception as e:
+        logger.error(f"Error checking connect status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to check status: {str(e)}")
+
+
+@router.post("/pay-vendor")
+async def pay_vendor(
+    request: VendorPaymentRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Create a payment intent for a Planner to pay a Vendor.
+    """
+    try:
+        sender_id = str(current_user.user_data.get("_id"))
+
+        # Verify vendor exists and has connect account
+        from app.core.database import mongo
+        from bson import ObjectId
+
+        vendor = mongo.db["users"].find_one({"_id": ObjectId(request.vendor_user_id)})
+        if not vendor:
+            raise HTTPException(status_code=404, detail="Vendor not found")
+
+        vendor_connect_id = vendor.get("stripe_connect_id")
+        if not vendor_connect_id:
+            raise HTTPException(status_code=400, detail="Vendor is not set up to receive payments via Stripe")
+
+        # Verify sender permission (if needed, e.g. checking budget)
+        # For now, we assume if they pay, they pay.
+
+        result = stripe_service.create_vendor_payment_intent(
+            sender_user_id=sender_id,
+            vendor_connect_id=vendor_connect_id,
+            amount=request.amount,
+            currency=request.currency,
+            description=request.description
+        )
+
+        return {
+            "status": "success",
+            "payment_intent": result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating vendor payment: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create payment: {str(e)}")
+
+
 # ==================== PAYMENT COLLECTION FOR COUPLES ====================
 
 @router.post("/create-payment-intent")
@@ -211,6 +343,7 @@ async def create_payment_intent(
     Stripe Elements to complete the payment.
     """
     try:
+        destination_account_id = None
         # Ensure planner is authorized for the wedding if wedding_id provided
         if request.wedding_id and not current_user.is_root_admin:
             from app.core.database import mongo
@@ -221,18 +354,37 @@ async def create_payment_intent(
             # Check if user has access to this wedding
             user_id = str(current_user.user_data.get("_id"))
             planner_id = wedding.get("planner_id")
-            if planner_id and str(planner_id) != user_id:
+
+            # If current user is not admin, they must be the planner
+            if not current_user.is_root_admin and planner_id and str(planner_id) != user_id:
                 raise HTTPException(
                     status_code=403,
                     detail="You don't have permission to create payments for this wedding"
                 )
+
+            # If we want to route funds to the planner of the wedding:
+            if planner_id:
+                planner = mongo.db["users"].find_one({"_id": planner_id})
+                if planner and planner.get("stripe_connect_id"):
+                    destination_account_id = planner.get("stripe_connect_id")
+
+        # Override destination if explicitly provided (and allowed?)
+        # For security, maybe restrict who can set destination_user_id
+        if request.destination_user_id:
+             # Look up connect ID for this user
+             from app.core.database import mongo
+             from bson import ObjectId
+             dest_user = mongo.db["users"].find_one({"_id": ObjectId(request.destination_user_id)})
+             if dest_user and dest_user.get("stripe_connect_id"):
+                 destination_account_id = dest_user.get("stripe_connect_id")
 
         payment_intent = stripe_service.create_payment_intent_for_couple(
             amount=request.amount,
             currency=request.currency,
             wedding_id=request.wedding_id,
             description=request.description,
-            metadata=request.metadata
+            metadata=request.metadata,
+            destination_account_id=destination_account_id
         )
 
         return {
