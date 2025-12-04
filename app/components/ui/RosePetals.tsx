@@ -31,8 +31,7 @@ export function RosePetals({ count = 24 }: RosePetalsProps) {
             left: `${left}%`,
             animationDelay: `${delay}s`,
             animationDuration: `${duration}s`,
-            // @ts-expect-error CSS custom property
-            "--drift": `${drift}px`,
+            ["--drift" as string]: `${drift}px`,
           } as React.CSSProperties}
         >
           <span
