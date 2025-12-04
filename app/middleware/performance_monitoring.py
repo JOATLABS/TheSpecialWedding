@@ -19,7 +19,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
     """
     Monitor API performance and track metrics
     """
-
     def __init__(
         self,
         app,
@@ -31,7 +30,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         self.slow_request_threshold = slow_request_threshold
         self.metrics_window_size = metrics_window_size
         self.enable_detailed_logging = enable_detailed_logging
-
         # In-memory metrics storage
         self.request_times: Dict[str, deque] = defaultdict(lambda: deque(maxlen=metrics_window_size))
         self.request_counts: Dict[str, int] = defaultdict(int)
@@ -44,7 +42,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         """Generate endpoint key for metrics"""
         # Normalize path to remove IDs and dynamic segments
         normalized_path = path
-
         # Replace common ID patterns
         import re
         normalized_path = re.sub(r'/\d+', '/{id}', normalized_path)
@@ -75,17 +72,14 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             "p95": sorted_times[int(n * 0.95)],
             "p99": sorted_times[int(n * 0.99)]
         }
-
     async def _cache_metrics(self):
         """Cache current metrics to Redis"""
         try:
             metrics = {}
-
             for endpoint_key, times in self.request_times.items():
                 if times:
                     percentiles = self._calculate_percentiles(list(times))
                     avg_time = sum(times) / len(times)
-
                     metrics[endpoint_key] = {
                         "request_count": self.request_counts[endpoint_key],
                         "error_count": self.error_counts[endpoint_key],
@@ -107,7 +101,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         """Start background metrics aggregation task"""
         if self._metrics_task is None:
             self._metrics_task = asyncio.create_task(self._metrics_loop())
-
     async def _metrics_loop(self):
         """Background loop for metrics aggregation"""
         while True:
@@ -167,7 +160,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             duration = time.time() - start_time
             self._record_request_time(endpoint_key, duration)
             self._record_error(endpoint_key)
-
             logger.error(
                 f"Request error: {request.method} {request.url.path} "
                 f"after {duration:.3f}s - {str(e)}"
@@ -190,7 +182,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             if times:
                 percentiles = self._calculate_percentiles(list(times))
                 avg_time = sum(times) / len(times)
-
                 metrics[endpoint_key] = {
                     "request_count": self.request_counts[endpoint_key],
                     "error_count": self.error_counts[endpoint_key],
@@ -201,7 +192,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
                         if self.request_counts[endpoint_key] > 0 else 0
                     )
                 }
-
         return metrics
 
 
@@ -230,7 +220,6 @@ class DatabaseQueryMonitor:
                 logger.warning(
                     f"Slow database query: {query_key} took {duration:.3f}s"
                 )
-
             # Cache metrics
             await cache.set(
                 f"db_query_time:{query_key}",

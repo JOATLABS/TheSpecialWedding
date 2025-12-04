@@ -53,7 +53,6 @@ class ErrorBoundary extends Component<Props, State> {
               <pre className="mt-2 whitespace-pre-wrap">{this.state.error.message}</pre>
             </details>
           )}
-
           <Button
             onClick={() => {
               this.setState({ hasError: false, error: undefined });

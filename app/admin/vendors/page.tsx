@@ -116,7 +116,6 @@ export default function VendorManagementPage() {
       const endpoint = userProfile?.is_root_admin
         ? `${baseUrl}/admin/weddings`
         : `${baseUrl}/admin/planner/weddings`;
-
       const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -218,7 +217,6 @@ export default function VendorManagementPage() {
     try {
       setLoading(true);
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-
       const response = await fetch(`${baseUrl}/admin/vendor-forms/${vendorId}/send`, {
         method: 'POST',
         headers: {
@@ -307,7 +305,6 @@ export default function VendorManagementPage() {
               <h2 className="text-xl sm:text-2xl font-bold text-wedding-navy mb-4 sm:mb-6">
                 {editingId ? 'Edit Vendor Form' : 'Create New Vendor Form'}
               </h2>
-
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Wedding Selection */}
                 <div>
@@ -438,7 +435,6 @@ export default function VendorManagementPage() {
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
           <div className="p-4 sm:p-8">
             <h2 className="text-xl font-bold text-wedding-navy mb-6">Vendor Forms</h2>
-
             {vendors.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <p className="text-lg">No vendor forms created yet.</p>

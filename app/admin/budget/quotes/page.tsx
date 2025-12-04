@@ -40,7 +40,6 @@ export default function VendorQuotesPage() {
   const [quotes, setQuotes] = useState<VendorQuote[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -341,7 +340,6 @@ export default function VendorQuotesPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               />
-
               {/* Category Filter */}
               <select
                 value={categoryFilter}
@@ -355,7 +353,6 @@ export default function VendorQuotesPage() {
                   </option>
                 ))}
               </select>
-
               {/* Status Filter */}
               <select
                 value={statusFilter}
@@ -368,7 +365,6 @@ export default function VendorQuotesPage() {
                 <option value="rejected">Rejected</option>
                 <option value="expired">Expired</option>
               </select>
-
               {/* Sort */}
               <select
                 value={sortBy}
@@ -450,7 +446,6 @@ export default function VendorQuotesPage() {
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               Add New Vendor Quote
             </h2>
-
             <form onSubmit={handleCreateQuote}>
               <div className="space-y-4">
                 {/* Basic Info */}
@@ -467,7 +462,6 @@ export default function VendorQuotesPage() {
                       required
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Service Category *
@@ -500,7 +494,6 @@ export default function VendorQuotesPage() {
                       className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Phone
@@ -530,7 +523,6 @@ export default function VendorQuotesPage() {
                       required
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Valid Until
@@ -637,7 +629,6 @@ export default function VendorQuotesPage() {
                   />
                 </div>
               </div>
-
               <div className="flex gap-3 mt-6">
                 <Button type="submit" className="flex-1">
                   Create Quote

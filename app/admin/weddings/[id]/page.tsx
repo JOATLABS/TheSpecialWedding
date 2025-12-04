@@ -809,7 +809,6 @@ export default function WeddingDetailsPage() {
  {activeTab === 'story' && (
  <div className="space-y-6">
  <h2 className="text-2xl font-bold text-wedding-navy mb-4">Story & Wedding Party</h2>
-
  {/* Info Box */}
  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
  <h4 className="font-semibold text-blue-900 mb-2"> Image Organization</h4>
@@ -843,7 +842,6 @@ export default function WeddingDetailsPage() {
  placeholder="Tell your love story..."
  />
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">
  Image Shape
@@ -862,7 +860,6 @@ export default function WeddingDetailsPage() {
  <option value="hexagon">Hexagon</option>
  </select>
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">
  Couple Photo
@@ -883,7 +880,6 @@ export default function WeddingDetailsPage() {
  </div>
  </div>
  </div>
-
  {/* Wedding Party Section */}
  <div className="border border-gray-200 rounded-lg p-6">
  <div className="flex justify-between items-center mb-4">
@@ -907,7 +903,6 @@ export default function WeddingDetailsPage() {
  Add Member
  </button>
  </div>
-
  <div className="space-y-4">
  {wedding.wedding_party?.map((member, index) => (
  <div key={member.id} className="border border-gray-200 rounded-lg p-4">
@@ -928,7 +923,6 @@ export default function WeddingDetailsPage() {
  placeholder="John Doe"
  />
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Side
@@ -946,7 +940,6 @@ export default function WeddingDetailsPage() {
  <option value="groom">Groom</option>
  </select>
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Role
@@ -970,7 +963,6 @@ export default function WeddingDetailsPage() {
  </optgroup>
  </select>
  </div>
-
  <div className="md:col-span-2">
  <label className="block text-sm font-medium text-gray-700 mb-1">
  Photo (optional) - Use format: wedding-party/{wedding.slug}/name.jpg
@@ -987,7 +979,6 @@ export default function WeddingDetailsPage() {
  placeholder="wedding-party/wedding-slug/member-photo.jpg"
  />
  </div>
-
  <div className="flex items-end">
  <button
  onClick={() => {
@@ -1004,7 +995,6 @@ export default function WeddingDetailsPage() {
  </div>
  </div>
  ))}
-
  {(!wedding.wedding_party || wedding.wedding_party.length === 0) && (
  <p className="text-gray-500 text-center py-8">
             No wedding party members added yet. Click “Add Member” to get started.

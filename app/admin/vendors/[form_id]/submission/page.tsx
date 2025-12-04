@@ -52,7 +52,6 @@ export default function VendorSubmissionPage() {
  }
 
  const data = await response.json();
-
  // Get wedding details
  const weddingResponse = await fetch(`${baseUrl}/admin/weddings`, {
  headers: {
@@ -64,7 +63,6 @@ export default function VendorSubmissionPage() {
  if (weddingResponse.ok) {
  const weddings = await weddingResponse.json();
  const wedding = weddings.find((w: any) => w._id === data.wedding_id);
-
  setSubmission({
  ...data,
  wedding: {

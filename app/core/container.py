@@ -21,7 +21,6 @@ class Lifetime(Enum):
 
 class ServiceDescriptor:
     """Describes how a service should be created and managed"""
-
     def __init__(
         self,
         service_type: Type,
@@ -40,12 +39,10 @@ class ServiceDescriptor:
 
 class DependencyContainer:
     """Dependency injection container"""
-
     def __init__(self):
         self._services: Dict[Type, ServiceDescriptor] = {}
         self._scoped_services: Dict[str, Dict[Type, Any]] = {}
         self._current_scope: Optional[str] = None
-
     def register_singleton(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
         """Register a singleton service"""
         self._services[service_type] = ServiceDescriptor(
@@ -54,7 +51,6 @@ class DependencyContainer:
             lifetime=Lifetime.SINGLETON
         )
         return self
-
     def register_scoped(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
         """Register a scoped service"""
         self._services[service_type] = ServiceDescriptor(
@@ -63,7 +59,6 @@ class DependencyContainer:
             lifetime=Lifetime.SCOPED
         )
         return self
-
     def register_transient(self, service_type: Type[T], implementation: Type[T] = None) -> 'DependencyContainer':
         """Register a transient service"""
         self._services[service_type] = ServiceDescriptor(
@@ -72,7 +67,6 @@ class DependencyContainer:
             lifetime=Lifetime.TRANSIENT
         )
         return self
-
     def register_instance(self, service_type: Type[T], instance: T) -> 'DependencyContainer':
         """Register a service instance"""
         self._services[service_type] = ServiceDescriptor(
@@ -95,7 +89,6 @@ class DependencyContainer:
             lifetime=lifetime
         )
         return self
-
     def resolve(self, service_type: Type[T]) -> T:
         """Resolve a service instance"""
         if service_type not in self._services:
@@ -110,13 +103,11 @@ class DependencyContainer:
             return self._get_scoped(descriptor)
         else:  # TRANSIENT
             return self._create_instance(descriptor)
-
     def _get_singleton(self, descriptor: ServiceDescriptor):
         """Get singleton instance"""
         if descriptor.created_instance is None:
             descriptor.created_instance = self._create_instance(descriptor)
         return descriptor.created_instance
-
     def _get_scoped(self, descriptor: ServiceDescriptor):
         """Get scoped instance"""
         if self._current_scope is None:
@@ -170,7 +161,6 @@ class DependencyContainer:
             logger.error(f"Failed to create instance of {implementation_type}: {str(e)}")
             # Fallback to parameterless constructor
             return implementation_type()
-
     def create_scope(self, scope_id: str = None) -> 'ServiceScope':
         """Create a new service scope"""
         if scope_id is None:
@@ -183,7 +173,6 @@ class DependencyContainer:
         self._current_scope = scope_id
         if scope_id not in self._scoped_services:
             self._scoped_services[scope_id] = {}
-
     def _exit_scope(self, scope_id: str):
         """Exit a service scope"""
         if scope_id in self._scoped_services:
@@ -227,7 +216,6 @@ class ServiceScope:
 # Service interfaces
 class IEmailService(ABC):
     """Email service interface"""
-
     @abstractmethod
     async def send_email(self, to: str, subject: str, body: str) -> bool:
         pass
@@ -235,7 +223,6 @@ class IEmailService(ABC):
 
 class ISMSService(ABC):
     """SMS service interface"""
-
     @abstractmethod
     async def send_sms(self, to: str, message: str) -> bool:
         pass
@@ -243,7 +230,6 @@ class ISMSService(ABC):
 
 class ISubscriptionService(ABC):
     """Subscription service interface"""
-
     @abstractmethod
     async def check_usage_limits(self, user_id: str, resource_type: str, amount: int) -> Dict[str, Any]:
         pass
@@ -251,7 +237,6 @@ class ISubscriptionService(ABC):
 
 class INotificationService(ABC):
     """Notification service interface"""
-
     @abstractmethod
     async def send_notification(self, user_id: str, message: str, notification_type: str) -> bool:
         pass
@@ -268,7 +253,6 @@ def setup_services():
     from app.core.settings import settings
     from app.core.cache import cache
     from app.core.events import event_bus
-
     # Register singleton services
     container.register_singleton(settings.__class__, lambda: settings)
     container.register_singleton(cache.__class__, lambda: cache)
@@ -312,5 +296,4 @@ def get_service(service_type: Type[T]) -> Callable[[], T]:
     """Create FastAPI dependency provider"""
     def provider() -> T:
         return container.resolve(service_type)
-
     return provider

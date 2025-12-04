@@ -294,7 +294,6 @@ class Wedding(BaseModel):
  privacy_mode: PrivacyMode = PrivacyMode.private
  created_by: str
  created_at: datetime = Field(default_factory=datetime.utcnow)
-
  class Config:
  populate_by_name = True
  json_encoders = {ObjectId: str}
@@ -324,12 +323,10 @@ class Settings(BaseSettings):
  secret_key: str
  database_url: str
  redis_url: Optional[str] = None
-
  # Feature flags
  csrf_enabled: bool = True
  rate_limit_enabled: bool = True
  audit_logging_enabled: bool = True
-
  class Config:
  env_file = ".env"
 ```
@@ -465,12 +462,10 @@ class WeddingService:
 const useWeddingManagement = () => {
  const { currentWedding, updateWedding } = useWedding()
  const { sendNotification } = useNotification()
-
  const handleWeddingUpdate = async (data: WeddingUpdate) => {
  await updateWedding(data)
  sendNotification('Wedding updated successfully', 'success')
  }
-
  return { handleWeddingUpdate }
 }
 ```
@@ -483,7 +478,6 @@ const useWeddingManagement = () => {
 class WeddingService:
  async def create_wedding(self, wedding_data: WeddingCreate) -> Wedding:
  wedding = await self.repository.create(wedding_data)
-
  # Publish domain event
  await self.event_publisher.publish(
  WeddingCreatedEvent(
@@ -492,7 +486,6 @@ class WeddingService:
  timestamp=datetime.utcnow()
  )
  )
-
  return wedding
 ```
 
@@ -502,12 +495,10 @@ class WeddingService:
 const useRealTimeUpdates = (weddingId: string) => {
  useEffect(() => {
  const eventSource = new EventSource(`/api/weddings/${weddingId}/events`)
-
  eventSource.onmessage = (event) => {
  const update = JSON.parse(event.data)
  // Update local state based on real-time events
  }
-
  return () => eventSource.close()
  }, [weddingId])
 }

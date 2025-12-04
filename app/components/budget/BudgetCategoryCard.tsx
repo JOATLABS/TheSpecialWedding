@@ -66,7 +66,6 @@ export default function BudgetCategoryCard({
             <h3 className="font-semibold text-wedding-navy text-lg">
               {category.name}
             </h3>
-
             {/* Priority indicator */}
             <div className={`flex items-center ${getPriorityIcon(category.priority)}`}>
               {Array.from({ length: category.priority }, (_, i) => (
@@ -76,12 +75,10 @@ export default function BudgetCategoryCard({
               ))}
             </div>
           </div>
-
           {category.description && (
             <p className="text-sm text-gray-600 mb-2">{category.description}</p>
           )}
         </div>
-
         {/* Status badge */}
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(category.payment_status)}`}>
           {category.payment_status.charAt(0).toUpperCase() + category.payment_status.slice(1)}
@@ -197,7 +194,6 @@ export default function BudgetCategoryCard({
         >
           Edit
         </Button>
-
         <Button
           onClick={() => onAddPayment(category)}
           className="flex-1 text-sm"

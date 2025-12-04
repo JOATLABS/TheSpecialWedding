@@ -14,19 +14,16 @@ logger = logging.getLogger(__name__)
 
 class SecurityEventType(str, Enum):
     """Security event types for audit logging"""
-
     # Authentication events
     LOGIN_ATTEMPT = "login_attempt"
     LOGIN_SUCCESS = "login_success"
     LOGIN_FAILURE = "login_failure"
     LOGOUT = "logout"
     TOKEN_VALIDATION_FAILURE = "token_validation_failure"
-
     # Authorization events
     UNAUTHORIZED_ACCESS = "unauthorized_access"
     PERMISSION_DENIED = "permission_denied"
     PRIVILEGE_ESCALATION_ATTEMPT = "privilege_escalation_attempt"
-
     # Form security events
     FORM_CREATION = "form_creation"
     FORM_ACCESS = "form_access"
@@ -35,7 +32,6 @@ class SecurityEventType(str, Enum):
     FORM_SUBMISSION = "form_submission"
     INVALID_FORM_DATA = "invalid_form_data"
     PUBLIC_FORM_ACCESS = "public_form_access"
-
     # Input validation events
     XSS_ATTEMPT = "xss_attempt"
     SQL_INJECTION_ATTEMPT = "sql_injection_attempt"
@@ -81,7 +77,6 @@ class SecurityEvent:
 
 class SecurityAuditService:
     """Service for security audit logging and monitoring"""
-
     def __init__(self):
         self.audit_collection = mongo.db["security_audit_logs"]
         self.enable_db_logging = True
@@ -134,7 +129,6 @@ class SecurityAuditService:
     ):
         """
         Log a security event
-
         Args:
             event_type: Type of security event
             severity: Severity level
@@ -201,7 +195,6 @@ class SecurityAuditService:
         """Log security event to file"""
         try:
             security_logger = logging.getLogger("security_audit")
-
             log_message = (
                 f"EVENT={event.event_type.value} "
                 f"SEVERITY={event.severity.value} "
@@ -241,7 +234,6 @@ class SecurityAuditService:
     ) -> List[Dict[str, Any]]:
         """
         Retrieve security events based on filters
-
         Args:
             start_date: Start date for filtering
             end_date: End date for filtering
@@ -250,13 +242,11 @@ class SecurityAuditService:
             user_email: User email to filter
             ip_address: IP address to filter
             limit: Maximum number of results
-
         Returns:
             List of security events
         """
         try:
             query = {}
-
             # Date range filter
             if start_date or end_date:
                 query['timestamp'] = {}
@@ -288,7 +278,6 @@ class SecurityAuditService:
                 .sort('timestamp', -1)
                 .limit(limit)
             )
-
             # Convert ObjectId to string
             for event in events:
                 if '_id' in event:
@@ -317,7 +306,6 @@ class SecurityAuditService:
         """
         try:
             query = {}
-
             # Date range filter
             if start_date or end_date:
                 query['timestamp'] = {}
@@ -325,7 +313,6 @@ class SecurityAuditService:
                     query['timestamp']['$gte'] = start_date
                 if end_date:
                     query['timestamp']['$lte'] = end_date
-
             # Aggregate statistics
             pipeline = [
                 {'$match': query},
@@ -354,7 +341,6 @@ class SecurityAuditService:
                 'by_event_type': {},
                 'failed_events': 0
             }
-
             for result in results:
                 count = result['count']
                 event_type = result['_id']['event_type']
@@ -395,7 +381,6 @@ class SecurityAuditService:
         """
         try:
             cutoff_time = datetime.utcnow() - timedelta(minutes=time_window_minutes)
-
             query = {
                 'ip_address': ip_address,
                 'timestamp': {'$gte': cutoff_time}
@@ -412,7 +397,6 @@ class SecurityAuditService:
                 'severity_levels': {},
                 'suspicious_indicators': []
             }
-
             # Analyze event patterns
             for event in events:
                 event_type = event.get('event_type', 'unknown')

@@ -16,9 +16,8 @@ wedding_service = WeddingService()
 subscription_service = SubscriptionService()
 
 @router.post("/weddings", tags=["Admin"])
-def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new wedding - ROOT_ADMIN or wedding planners with subscription limits"""
-
     # Check subscription limits for non-ROOT_ADMIN users
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
@@ -43,7 +42,7 @@ def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depen
 
     # Increment usage for non-ROOT_ADMIN users
     if not current_user.is_root_admin and current_user.user_data.get("_id"):
-        subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
+        await subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
 
     return result
 
@@ -69,9 +68,8 @@ def list_weddings_admin(current_user: ExtendedAuthUser = Depends(require_admin_o
         return wedding_service.list_weddings_for_planner(current_user.email)
 
 @router.post("/weddings", tags=["Admin"])
-def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new wedding via admin interface - ROOT_ADMIN or wedding planners with subscription limits"""
-
     # Check subscription limits for non-ROOT_ADMIN users
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
@@ -96,7 +94,7 @@ def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = Depends
 
     # Increment usage for non-ROOT_ADMIN users
     if not current_user.is_root_admin and current_user.user_data.get("_id"):
-        subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
+        await subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
 
     return result
 

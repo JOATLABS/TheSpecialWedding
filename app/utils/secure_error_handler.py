@@ -115,7 +115,6 @@ class SecureErrorHandler:
                 "error_id": error_id
             }
         }
-
         return JSONResponse(
             status_code=status_code,
             content=error_response
@@ -143,7 +142,6 @@ class SecureErrorHandler:
                 "message": message,
                 "type": error_type
             })
-
         error_response = {
             "error": {
                 "code": "VALIDATION_ERROR",
@@ -153,7 +151,6 @@ class SecureErrorHandler:
                 "details": sanitized_errors
             }
         }
-
         return JSONResponse(
             status_code=422,
             content=error_response
@@ -169,7 +166,6 @@ class SecureErrorHandler:
             "path": str(request.url.path),
             "method": request.method
         })
-
         error_response = {
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
@@ -178,17 +174,14 @@ class SecureErrorHandler:
                 "error_id": error_id
             }
         }
-
         return JSONResponse(
             status_code=500,
             content=error_response
         )
-
     def _sanitize_error_message(self, message: str) -> str:
         """Sanitize error message to prevent information disclosure"""
         if not message:
             return "An error occurred"
-
         # Remove file paths, stack traces, and system information
         sensitive_patterns = [
             r'/[\w/]+\.py',  # File paths
@@ -346,7 +339,6 @@ class SecureErrorHandler:
             if ip:
                 # Take first IP if comma-separated
                 return ip.split(",")[0].strip()
-
         # Fallback to request client
         return getattr(request.client, 'host', 'unknown')
 

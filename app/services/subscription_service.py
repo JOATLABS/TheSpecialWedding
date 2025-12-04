@@ -28,7 +28,6 @@ class SubscriptionService:
             plan_data["created_by"] = creator_email
             plan_data["created_at"] = datetime.utcnow()
             plan_data["updated_at"] = datetime.utcnow()
-
             # Check if plan ID already exists
             existing = await self.plans_collection.find_one({"_id": plan_data["_id"]})
             if existing:
@@ -150,7 +149,6 @@ class SubscriptionService:
                     period_end = now.replace(year=now.year + 1, month=1)
                 else:
                     period_end = now.replace(month=now.month + 1)
-
             subscription_data = {
                 "_id": f"sub_{user_id}_{plan_id}_{int(now.timestamp())}",
                 "user_id": user_id,
@@ -187,14 +185,12 @@ class SubscriptionService:
                     "updated_at": now
                 }}
             )
-
             return {
                 "message": "Subscription assigned successfully",
                 "subscription_id": subscription_data["_id"],
                 "status": subscription_data["status"],
                 "trial_end_date": subscription_data.get("trial_end_date")
             }
-
         except HTTPException:
             raise
         except Exception as e:
@@ -215,7 +211,6 @@ class SubscriptionService:
         """Cancel user subscription"""
         try:
             now = datetime.utcnow()
-
             result = await self.subscriptions_collection.update_one(
                 {"user_id": user_id, "status": {"$in": ["active", "trial"]}},
                 {"$set": {
@@ -251,13 +246,11 @@ class SubscriptionService:
         try:
             now = datetime.utcnow()
             current_month = now.strftime("%Y-%m")
-
             # Calculate next month for credits reset
             if now.month == 12:
                 credits_reset = datetime(now.year + 1, 1, 1)
             else:
                 credits_reset = datetime(now.year, now.month + 1, 1)
-
             usage_data = {
                 "_id": f"usage_{user_id}_{current_month}",
                 "user_id": user_id,
@@ -270,7 +263,6 @@ class SubscriptionService:
                 "credits_reset_date": credits_reset,
                 "last_updated": now
             }
-
             # Use upsert to avoid duplicates
             await self.usage_collection.update_one(
                 {"_id": usage_data["_id"]},
@@ -287,12 +279,10 @@ class SubscriptionService:
         """Get current usage statistics for user"""
         try:
             current_month = datetime.utcnow().strftime("%Y-%m")
-
             usage = await self.usage_collection.find_one({
                 "user_id": user_id,
                 "current_month": current_month
             })
-
             if not usage:
                 # Initialize if doesn't exist
                 subscription = self.get_user_subscription(user_id)
@@ -327,7 +317,6 @@ class SubscriptionService:
                         "limit": limit,
                         "message": f"Wedding limit exceeded. Plan allows {limit} weddings, you have {current}"
                     }
-
             elif resource_type == "ai_credits":
                 current = usage.get("ai_credits_used_month", 0)
                 limit = plan.get("ai_credits_monthly", 10)
@@ -362,7 +351,6 @@ class SubscriptionService:
         """Increment usage for a specific resource"""
         try:
             current_month = datetime.utcnow().strftime("%Y-%m")
-
             # Map resource types to database fields
             field_mapping = {
                 "weddings": "weddings_count",
@@ -398,7 +386,6 @@ class SubscriptionService:
         try:
             now = datetime.utcnow()
             current_month = now.strftime("%Y-%m")
-
             # Calculate next reset date
             if now.month == 12:
                 next_reset = datetime(now.year + 1, 1, 1)
@@ -424,7 +411,6 @@ class SubscriptionService:
                 "credits_reset_date": next_reset,
                 "last_updated": now
             }
-
             await self.usage_collection.update_one(
                 {"_id": new_usage_id},
                 {"$set": usage_data},
@@ -447,25 +433,21 @@ class SubscriptionService:
             for status in ["trial", "active", "cancelled", "expired"]:
                 count = await self.subscriptions_collection.count_documents({"status": status})
                 status_counts[status] = count
-
             # Total subscriptions by plan
             plan_pipeline = [
                 {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
                 {"$sort": {"count": -1}}
             ]
             plan_counts = list(self.subscriptions_collection.aggregate(plan_pipeline))
-
             # Monthly recurring revenue (MRR) calculation
             active_subs = list(self.subscriptions_collection.find({
                 "status": "active",
                 "billing_interval": "monthly"
             }))
-
             mrr = 0
             for sub in active_subs:
                 plan = self.get_plan(sub["plan_id"])
                 mrr += plan.get("price_monthly", 0)
-
             return {
                 "total_subscriptions": sum(status_counts.values()),
                 "status_breakdown": status_counts,
@@ -473,6 +455,5 @@ class SubscriptionService:
                 "monthly_recurring_revenue": mrr,
                 "generated_at": datetime.utcnow()
             }
-
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error generating analytics: {str(e)}")

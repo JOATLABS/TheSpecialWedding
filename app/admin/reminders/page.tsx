@@ -714,7 +714,6 @@ export default function AdminRemindersPage() {
  {activeTab === 'reminders' && (
  <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Event Reminders</h2>
-
  <div className="space-y-6">
  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
  <div>
@@ -729,7 +728,6 @@ export default function AdminRemindersPage() {
  <option value="reception">Reception</option>
  </select>
  </div>
-
  <div>
  <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
  <select
@@ -776,7 +774,6 @@ export default function AdminRemindersPage() {
  {activeTab === 'individual' && (
  <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Individual Messages</h2>
-
  {selectedWedding ? (
  <div className="space-y-6">
  <div>
@@ -835,7 +832,6 @@ export default function AdminRemindersPage() {
  {activeTab === 'history' && (
  <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6">Message History</h2>
-
  {messageHistory.length === 0 ? (
  <p className="text-gray-500">No messages sent yet.</p>
  ) : (

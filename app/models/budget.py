@@ -34,7 +34,6 @@ class BudgetCategory(BaseModel):
         arbitrary_types_allowed=True,
         str_strip_whitespace=True
     )
-
     @field_serializer('id', when_used='json')
     def serialize_id(self, value) -> str:
         """Serialize ObjectId to string for JSON output."""
@@ -90,7 +89,6 @@ class VendorQuote(BaseModel):
         arbitrary_types_allowed=True,
         str_strip_whitespace=True
     )
-
     @field_serializer('id', when_used='json')
     def serialize_id(self, value) -> str:
         """Serialize ObjectId to string for JSON output."""
@@ -138,7 +136,6 @@ class BudgetTemplate(BaseModel):
         arbitrary_types_allowed=True,
         str_strip_whitespace=True
     )
-
     @field_serializer('id', when_used='json')
     def serialize_id(self, value) -> str:
         """Serialize ObjectId to string for JSON output."""

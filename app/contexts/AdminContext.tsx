@@ -92,7 +92,6 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         try {
         // SECURITY: Clear any existing sessions first to prevent session mixing
         clearAdminAuthStorage();
-
             const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
             const loginUrl = `${baseUrl}/admin/token`;
             const res = await fetch(loginUrl, {
@@ -130,7 +129,6 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         // Clear React state
         setToken(null);
         setUserProfile(null);
-
         // Clear any cached API responses by making a dummy request
         try {
             fetch('/api/clear-cache', { method: 'POST' }).catch(() => {});

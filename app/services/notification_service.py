@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 class NotificationService:
     def __init__(self):
         self.notifications_collection = mongo.db["notifications"]
-        self.users_collection = mongo.db["users"]
+        self.templates_collection = mongo.db["notification_templates"]
+        self.users_collection = mongo.db["admin_users"]  # Fixed: use admin_users collection
         self.email_service = ResendEmailService()
 
     async def create_notification(self, notification_data: dict, created_by: str) -> dict:
@@ -205,7 +206,7 @@ class NotificationService:
             for recipient in recipients:
                 try:
                     html_content = self._render_notification_email(notification, recipient)
-                    result = self.email_service.send_email(
+                    result = await self.email_service.send_email(
                         to_email=recipient["email"],
                         subject=notification["title"],
                         html_content=html_content,
@@ -499,8 +500,12 @@ class NotificationService:
                 return recipients
 
         base_query = {
-            "is_active": True,
             "email": {"$exists": True, "$ne": None, "$ne": ""},
+            # Include users where is_active is either True or not set (undefined)
+            "$or": [
+                {"is_active": True},
+                {"is_active": {"$exists": False}}
+            ]
         }
 
         if target == "all":
@@ -607,3 +612,150 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error counting target audience: {str(e)}")
             return 0
+
+    # ==================== NOTIFICATION TEMPLATE METHODS ====================
+
+    async def create_template(self, template_data: dict, created_by: str) -> dict:
+        """Create a new notification template"""
+        try:
+            template = {
+                "_id": ObjectId(),
+                "name": template_data["name"],
+                "subject": template_data["subject"],
+                "content": template_data["content"],
+                "type": template_data["type"],
+                "category": template_data.get("category", "general"),
+                "variables": template_data.get("variables", []),
+                "is_active": template_data.get("is_active", True),
+                "created_by": created_by,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            }
+
+            result = await self.templates_collection.insert_one(template)
+
+            if not result.inserted_id:
+                raise HTTPException(status_code=500, detail="Failed to create template")
+
+            return {
+                "id": str(result.inserted_id),
+                "message": "Template created successfully",
+                "created_at": template["created_at"]
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error creating template: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error creating template: {str(e)}")
+
+    async def get_templates(self, page: int = 1, limit: int = 50, filters: dict = None) -> dict:
+        """Get notification templates with filtering and pagination"""
+        try:
+            query = {}
+            if filters:
+                if filters.get("type"):
+                    query["type"] = filters["type"]
+                if filters.get("category"):
+                    query["category"] = filters["category"]
+
+            total = await self.templates_collection.count_documents(query)
+            skip = (page - 1) * limit
+            pages = (total + limit - 1) // limit
+
+            cursor = self.templates_collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            templates = []
+
+            async for template in cursor:
+                template["id"] = str(template["_id"])
+                template["_id"] = str(template["_id"])
+                templates.append(template)
+
+            return {
+                "templates": templates,
+                "total": total,
+                "page": page,
+                "pages": pages
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting templates: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error retrieving templates: {str(e)}")
+
+    async def get_template(self, template_id: str) -> dict:
+        """Get specific template by ID"""
+        try:
+            try:
+                obj_id = ObjectId(template_id)
+            except:
+                raise HTTPException(status_code=400, detail="Invalid template ID")
+
+            template = await self.templates_collection.find_one({"_id": obj_id})
+            if not template:
+                raise HTTPException(status_code=404, detail="Template not found")
+
+            template["id"] = str(template["_id"])
+            template["_id"] = str(template["_id"])
+
+            return template
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting template: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error retrieving template: {str(e)}")
+
+    async def update_template(self, template_id: str, update_data: dict, updated_by: str) -> dict:
+        """Update a notification template"""
+        try:
+            try:
+                obj_id = ObjectId(template_id)
+            except:
+                raise HTTPException(status_code=400, detail="Invalid template ID")
+
+            existing = await self.templates_collection.find_one({"_id": obj_id})
+            if not existing:
+                raise HTTPException(status_code=404, detail="Template not found")
+
+            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_by"] = updated_by
+
+            result = await self.templates_collection.update_one(
+                {"_id": obj_id},
+                {"$set": update_data}
+            )
+
+            if result.modified_count == 0:
+                raise HTTPException(status_code=400, detail="Template update failed")
+
+            return {
+                "message": "Template updated successfully",
+                "updated_fields": list(update_data.keys())
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating template: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error updating template: {str(e)}")
+
+    async def delete_template(self, template_id: str) -> dict:
+        """Delete a notification template"""
+        try:
+            try:
+                obj_id = ObjectId(template_id)
+            except:
+                raise HTTPException(status_code=400, detail="Invalid template ID")
+
+            result = await self.templates_collection.delete_one({"_id": obj_id})
+
+            if result.deleted_count == 0:
+                raise HTTPException(status_code=404, detail="Template not found")
+
+            return {"message": "Template deleted successfully"}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error deleting template: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error deleting template: {str(e)}")

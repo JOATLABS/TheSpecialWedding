@@ -206,7 +206,6 @@ def update_saas_config(
         config_data["type"] = "main_config"
         config_data["updated_by"] = current_user.email
         config_data["updated_at"] = datetime.utcnow()
-
         # Update or insert configuration
         result = mongo.db["saas_config"].update_one(
             {"type": "main_config"},
@@ -222,10 +221,11 @@ def update_saas_config(
 # ==================== CONTENT SECTIONS MANAGEMENT ====================
 
 @router.get("/content-sections", tags=["ROOT_ADMIN"])
-def get_content_sections(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get all content sections - ROOT_ADMIN only"""
     try:
-        sections = list(mongo.db["content_sections"].find({}))
+        sections_cursor = mongo.db["content_sections"].find({})
+        sections = await sections_cursor.to_list(length=None)
 
         # Convert ObjectId to string for JSON serialization
         for section in sections:
@@ -277,7 +277,6 @@ def update_content_section(
         # Add metadata
         section_data["updated_by"] = current_user.email
         section_data["updated_at"] = datetime.utcnow()
-
         # Update section
         result = mongo.db["content_sections"].update_one(
             {"section": section_id},
@@ -293,22 +292,20 @@ def update_content_section(
 # ==================== WEDDING PLANNERS MANAGEMENT ====================
 
 @router.get("/wedding-planners", tags=["ROOT_ADMIN"])
-def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get all wedding planners - ROOT_ADMIN only"""
     try:
-        # Get users with wedding_planner role
-        planners = list(mongo.get_users_collection().find({"role": "wedding_planner"}))
-
+        # Get users with wedding_planner role (async Motor query)
+        planners_cursor = mongo.get_users_collection().find({"role": "wedding_planner"})
+        planners = await planners_cursor.to_list(length=None)
         # Convert ObjectId to string and format data
         formatted_planners = []
         for planner in planners:
             planner["_id"] = str(planner["_id"])
-
-            # Get assigned weddings count
-            weddings_count = mongo.get_weddings_collection().count_documents({
+            # Get assigned weddings count (async count)
+            weddings_count = await mongo.get_weddings_collection().count_documents({
                 "assigned_planner_email": planner["email"]
             })
-
             formatted_planner = {
                 "id": planner["_id"],
                 "email": planner["email"],
@@ -338,12 +335,10 @@ def create_wedding_planner(
         # Validate required fields
         if not planner_data.get("email"):
             raise HTTPException(status_code=400, detail="Email is required")
-
         # Check if user already exists
         existing_user = mongo.get_users_collection().find_one({"email": planner_data["email"]})
         if existing_user:
             raise HTTPException(status_code=400, detail="User with this email already exists")
-
         # Create user document
         user_doc = {
             "email": planner_data["email"],
@@ -363,7 +358,6 @@ def create_wedding_planner(
             "message": "Wedding planner created successfully",
             "user_id": str(result.inserted_id)
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -394,12 +388,10 @@ def toggle_planner_status(
                 }
             }
         )
-
         return {
             "message": f"Planner {'activated' if new_status else 'deactivated'} successfully",
             "new_status": new_status
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -433,37 +425,36 @@ async def get_public_saas_config():
         raise HTTPException(status_code=500, detail=f"Error fetching public SAAS config: {str(e)}")
 
 @router.get("/analytics/overview", tags=["ROOT_ADMIN"])
-def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get overview analytics for dashboard - ROOT_ADMIN only"""
     try:
-        # Get counts
-        total_planners = mongo.get_users_collection().count_documents({"role": "wedding_planner"})
-        active_planners = mongo.get_users_collection().count_documents({
+        # Get counts (all async operations)
+        total_planners = await mongo.get_users_collection().count_documents({"role": "wedding_planner"})
+        active_planners = await mongo.get_users_collection().count_documents({
             "role": "wedding_planner",
             "is_active": True
         })
-        total_weddings = mongo.get_weddings_collection().count_documents({})
-        active_plans = mongo.get_subscription_plans_collection().count_documents({"is_active": True})
+        total_weddings = await mongo.get_weddings_collection().count_documents({})
+        active_plans = await mongo.get_subscription_plans_collection().count_documents({"is_active": True})
 
         # Calculate revenue based on active subscriptions
         monthly_revenue = 0
         yearly_revenue = 0
 
-        # Get all users with active subscriptions
-        active_users = mongo.get_users_collection().find({
+        # Get all users with active subscriptions (async cursor)
+        active_users_cursor = mongo.get_users_collection().find({
             "subscription_status": {"$in": ["trial", "active"]},
             "is_active": True
         })
-
+        active_users = await active_users_cursor.to_list(length=None)
         for user in active_users:
             # Skip trial users for revenue calculation
             if user.get("subscription_status") == "trial":
                 continue
-
             plan_id = user.get("subscription_plan_id")
             if plan_id:
-                # Get the subscription plan
-                plan = mongo.get_subscription_plans_collection().find_one({"_id": plan_id})
+                # Get the subscription plan (async find_one)
+                plan = await mongo.get_subscription_plans_collection().find_one({"_id": plan_id})
                 if plan:
                     monthly_revenue += plan.get("price_monthly", 0)
                     yearly_revenue += plan.get("price_yearly", 0)
@@ -480,7 +471,6 @@ def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root
             "yearly_revenue": yearly_revenue,
             "projected_annual_revenue": projected_annual_revenue
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching overview analytics: {str(e)}")
 
@@ -501,7 +491,6 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
                 "subscription_status": "active",
                 "is_active": True
             })
-
             # Count trial users on this plan
             trial_users_count = mongo.get_users_collection().count_documents({
                 "subscription_plan_id": plan_id,
@@ -522,7 +511,6 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
                 "price_monthly": plan.get("price_monthly", 0),
                 "price_yearly": plan.get("price_yearly", 0)
             })
-
         # Calculate totals
         total_monthly_revenue = sum(plan["monthly_revenue"] for plan in plan_revenue)
         total_yearly_revenue = sum(plan["yearly_revenue"] for plan in plan_revenue)
@@ -546,7 +534,6 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
             "plan_breakdown": plan_revenue,
             "generated_at": datetime.utcnow().isoformat()
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")
 
@@ -591,7 +578,6 @@ def get_trial_settings():
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-
     except Exception as e:
         # Return defaults on error to prevent registration failures
         return {

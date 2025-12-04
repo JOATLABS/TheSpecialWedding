@@ -26,7 +26,6 @@ class CacheManager:
         if not self.enabled:
             logger.info("Redis caching is disabled")
             return
-
         try:
             # Create connection pool
             pool = redis.ConnectionPool(
@@ -51,20 +50,17 @@ class CacheManager:
             logger.error(f"Failed to connect to Redis: {str(e)}")
             self.enabled = False
             self.redis_client = None
-
     async def disconnect(self):
         """Disconnect from Redis"""
         if self.redis_client:
             await self.redis_client.close()
             logger.info("Disconnected from Redis")
-
     def _serialize_value(self, value: Any) -> bytes:
         """Serialize value for storage"""
         if isinstance(value, (str, int, float, bool)):
             return json.dumps(value).encode('utf-8')
         else:
             return pickle.dumps(value)
-
     def _deserialize_value(self, value: bytes) -> Any:
         """Deserialize value from storage"""
         try:
@@ -113,12 +109,10 @@ class CacheManager:
     ) -> bool:
         """
         Set value in cache
-
         Args:
             key: Cache key
             value: Value to cache
             expire: Expiration time in seconds or timedelta
-
         Returns:
             True if successful, False otherwise
         """
@@ -154,7 +148,6 @@ class CacheManager:
         """
         if not self.enabled or not self.redis_client:
             return False
-
         try:
             prefixed_key = self._get_key_with_prefix(key)
             result = await self.redis_client.delete(prefixed_key)
@@ -176,7 +169,6 @@ class CacheManager:
         """
         if not self.enabled or not self.redis_client:
             return False
-
         try:
             prefixed_key = self._get_key_with_prefix(key)
             result = await self.redis_client.exists(prefixed_key)
@@ -250,14 +242,12 @@ class CacheManager:
     ) -> Any:
         """
         Get value from cache or set it by calling the function
-
         Args:
             key: Cache key
             func: Function to call if cache miss (can be async)
             expire: Expiration time in seconds or timedelta
             *args: Arguments for the function
             **kwargs: Keyword arguments for the function
-
         Returns:
             Cached or computed value
         """
@@ -309,7 +299,6 @@ async def cached(
 ):
     """
     Decorator for caching function results
-
     Args:
         key: Cache key template (can use {arg_name} for formatting)
         expire: Cache expiration time
@@ -322,7 +311,6 @@ async def cached(
             except (KeyError, IndexError):
                 # If formatting fails, use base key with function name
                 formatted_key = f"{func.__name__}:{key}"
-
             return await cache.get_or_set(
                 formatted_key,
                 func,
@@ -330,7 +318,6 @@ async def cached(
                 *args,
                 **kwargs
             )
-
         return wrapper
     return decorator
 
