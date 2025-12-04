@@ -3,9 +3,11 @@
 import os
 from enum import Enum
 
+
 class SMSProvider(Enum):
     TWILIO = "twilio"
     TELNYX = "telnyx"
+
 
 def get_active_sms_provider() -> SMSProvider:
     """
@@ -21,9 +23,11 @@ def get_active_sms_provider() -> SMSProvider:
     else:
         return SMSProvider.TWILIO
 
+
 def is_telnyx_active() -> bool:
     """Check if Telnyx is the active SMS provider"""
     return get_active_sms_provider() == SMSProvider.TELNYX
+
 
 def is_twilio_active() -> bool:
     """Check if Twilio is the active SMS provider"""

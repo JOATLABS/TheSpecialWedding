@@ -10,7 +10,7 @@ import logging
 # Import settings and core components
 from app.core.settings import settings
 from app.core.database import init_database, close_database
-from app.core.cache import init_cache, close_cache
+from app.core.cache import init_cache, close_cache, cache
 from app.core.database_indexes import create_all_indexes
 
 # Import middleware
@@ -72,12 +72,12 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
-
+    
     try:
         # Initialize database connection
         await init_database()
         logger.info("Database initialized")
-
+        
         # Initialize cache if enabled
         if settings.redis_enabled:
             await init_cache()
@@ -137,8 +137,7 @@ app = FastAPI(
 
 # 1. Error handling (outermost) - Enhanced with MongoDB logging and email alerts
 app.add_middleware(
-    EErrorHandlerMiddleware
-,
+    ErrorHandlerMiddleware,
     enable_email_alerts=settings.is_production()  # Only send emails in production
 )
 
@@ -193,9 +192,9 @@ app.add_middleware(
     allow_methods=settings.cors_methods,
     allow_headers=settings.cors_headers,
     expose_headers=[
-        "Content-Length",
-        "Content-Type",
-        "X-RateLimit-Remaining",
+        "Content-Length", 
+        "Content-Type", 
+        "X-RateLimit-Remaining", 
         "X-RateLimit-Reset",
         "X-Response-Time"
     ],

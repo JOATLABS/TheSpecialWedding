@@ -1,14 +1,13 @@
 """
 CSRF Protection Middleware
 """
-from fastapi import Request, HTTPException, Header
+from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 import secrets
 import hashlib
 import time
-from typing import Optional, Dict
-from collections import defaultdict
+from typing import Dict, Optional
 
 
 class CSRFProtectionMiddleware(BaseHTTPMiddleware):
@@ -21,8 +20,8 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         secret_key: str,
         cookie_name: str = "csrf_token",
         header_name: str = "X-CSRF-Token",
-        safe_methods: list = None,
-        exclude_paths: list = None
+        safe_methods: Optional[list] = None,
+        exclude_paths: Optional[list] = None
     ):
         super().__init__(app)
         self.secret_key = secret_key
@@ -64,6 +63,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         ]
         for token in expired_tokens:
             del self.token_store[token]
+            
     def _verify_csrf_token(self, cookie_token: str, header_token: str) -> bool:
         """Verify CSRF token"""
         # Check if tokens match
@@ -180,6 +180,7 @@ class CSRFTokenGenerator:
         timestamp = str(int(time.time()))
         token_data = f"{user_id}:{timestamp}:{self.secret_key}"
         return hashlib.sha256(token_data.encode()).hexdigest()
+    
     def verify_token(self, token: str, user_id: str, max_age: int = 3600) -> bool:
         """Verify a CSRF token"""
         # In production, this would check against stored tokens
