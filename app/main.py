@@ -56,6 +56,7 @@ from app.api.public_contact import router as public_contact_router
 from app.api.stripe_payment import router as stripe_router
 from app.api.admin_platform_metrics import router as platform_metrics_router
 from app.api.admin_backup import router as backup_router
+from app.api.email_webhooks import router as email_webhooks_router
 
 # Setup logging
 logging.basicConfig(
@@ -240,6 +241,7 @@ app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor For
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
+app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
 
 # Admin routes (authentication required)
 admin_routers = [

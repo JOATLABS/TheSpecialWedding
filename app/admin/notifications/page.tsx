@@ -20,13 +20,19 @@ interface NotificationTemplate {
 
 interface SentNotification {
   _id: string;
-  template_name: string;
-  subject: string;
-  recipients_count: number;
+  title: string;  // Backend uses "title" not "subject"
+  message?: string;
+  total_recipients: number;  // Backend uses "total_recipients" not "recipients_count"
   sent_at: string;
-  delivery_status: 'sent' | 'delivered' | 'failed';
-  open_rate?: number;
-  click_rate?: number;
+  status: 'active' | 'sent' | 'delivered' | 'failed';  // Backend uses "status" not "delivery_status"
+  delivery_summary?: {
+    attempted: number;
+    sent: number;
+    failed: number;
+    delivered_count?: number;
+    opened_count?: number;
+    clicked_count?: number;
+  };
 }
 
 export default function NotificationsPage() {
@@ -404,27 +410,37 @@ export default function NotificationsPage() {
       {/* History Tab */}
       {activeTab === 'history' && (
         <div className="space-y-6">
-          <h2 className="text-xl font-semibold text-wedding-navy">Notification History</h2>
+          <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Notification History</h2>
           {sentNotifications.length > 0 ? (
-            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 overflow-hidden">
               <table className="w-full">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 dark:bg-gray-800">
                   <tr>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Subject</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Recipients</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Sent Date</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Subject</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Recipients</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Sent Date</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sentNotifications.map((notification) => (
-                    <tr key={notification._id} className="border-t">
-                      <td className="px-6 py-4 text-sm">{notification.subject}</td>
-                      <td className="px-6 py-4 text-sm">{notification.recipients_count}</td>
-                      <td className="px-6 py-4 text-sm">{formatDate(notification.sent_at)}</td>
+                    <tr key={notification._id} className="border-t hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700">
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 font-medium">{notification.title}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
+                        {notification.delivery_summary ?
+                          `${notification.delivery_summary.sent}/${notification.total_recipients}` :
+                          notification.total_recipients
+                        }
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(notification.sent_at)}</td>
                       <td className="px-6 py-4 text-sm">
-                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">
-                          {notification.delivery_status}
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          notification.status === 'sent' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                          notification.status === 'delivered' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                          notification.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                          'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                        }`}>
+                          {notification.status.toUpperCase()}
                         </span>
                       </td>
                     </tr>
@@ -433,14 +449,14 @@ export default function NotificationsPage() {
               </table>
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
-              <div className="text-gray-400 text-4xl mb-4">📊</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Notifications Sent Yet</h3>
-              <p className="text-gray-600 mb-4">
-                Once you start sending platform notifications, you’ll see delivery statistics,
+            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 p-8 text-center">
+              <div className="text-gray-400 dark:text-gray-600 text-4xl mb-4">📊</div>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Notifications Sent Yet</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Once you start sending platform notifications, you'll see delivery statistics,
                 open rates, and performance metrics here.
               </p>
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
                 <p>• View delivery status and recipient counts</p>
                 <p>• Track open and click rates</p>
                 <p>• Monitor notification performance over time</p>

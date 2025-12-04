@@ -41,10 +41,15 @@ class MongoConnector:
 
     # SAAS collections (backward compatible additions)
     def get_users_collection(self):
-        """Extended users collection for wedding planners and vendors"""
+        """Extended users collection for wedding planners and vendors
+
+        Note: Currently returns admin_users collection as all users (planners, vendors, admins)
+        are stored there. This maintains backward compatibility while we transition to
+        a dedicated users collection in the future.
+        """
         if self.db is None:
             raise RuntimeError("Database not connected")
-        return self.db["users"]
+        return self.db["admin_users"]  # Using admin_users as the unified user collection
 
     def get_subscription_plans_collection(self):
         """Subscription plans configurable by ROOT_ADMIN"""
