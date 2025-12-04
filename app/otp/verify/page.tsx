@@ -16,7 +16,7 @@ export default function VerifyOTPPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const guest_id = searchParams.get('guest_id');
-  const token = searchParams.get('token');
+  const token = searchParams.get('token') ?? '';
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -30,6 +30,10 @@ export default function VerifyOTPPage() {
     setError('');
 
     try {
+      if (!token) {
+        throw new Error('Missing RSVP token');
+      }
+
       const response = await fetch('/api/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
