@@ -27,6 +27,11 @@ class SubscriptionPlanModel(BaseModel):
     price_monthly: float = Field(0, description="Monthly price in USD")
     price_yearly: Optional[float] = Field(None, description="Yearly price in USD (if different from 12x monthly)")
 
+    # Metered Billing Support
+    is_metered: bool = Field(False, description="Whether this plan uses metered billing")
+    meter_event_name: Optional[str] = Field(None, description="Stripe Meter Event Name for usage reporting")
+    meter_id: Optional[str] = Field(None, description="Stripe Meter ID")
+
     # Features and Limits
     max_weddings: int = Field(1, description="Maximum weddings allowed (-1 for unlimited)")
     max_guests_per_wedding: int = Field(100, description="Maximum guests per wedding (-1 for unlimited)")
@@ -53,6 +58,7 @@ class SubscriptionPlanModel(BaseModel):
                 "description": "Perfect for getting started with wedding planning",
                 "price_monthly": 0,
                 "price_yearly": 0,
+                "is_metered": False,
                 "max_weddings": 1,
                 "max_guests_per_wedding": 100,
                 "ai_credits_monthly": 10,
@@ -161,6 +167,9 @@ class CreateSubscriptionPlanRequest(BaseModel):
     description: Optional[str] = None
     price_monthly: float
     price_yearly: Optional[float] = None
+    is_metered: bool = False
+    meter_event_name: Optional[str] = None
+    meter_id: Optional[str] = None
     max_weddings: int = 1
     max_guests_per_wedding: int = 100
     ai_credits_monthly: int = 10
@@ -176,6 +185,9 @@ class UpdateSubscriptionPlanRequest(BaseModel):
     description: Optional[str] = None
     price_monthly: Optional[float] = None
     price_yearly: Optional[float] = None
+    is_metered: Optional[bool] = None
+    meter_event_name: Optional[str] = None
+    meter_id: Optional[str] = None
     max_weddings: Optional[int] = None
     max_guests_per_wedding: Optional[int] = None
     ai_credits_monthly: Optional[int] = None
