@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class SupportService:
     def __init__(self):
         self.tickets_collection = mongo.db["support_tickets"]
-        self.users_collection = mongo.db["users"]
+        self.users_collection = mongo.get_users_collection()
 
     def generate_ticket_number(self) -> str:
         """Generate a unique ticket number"""
