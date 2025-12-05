@@ -1,5 +1,3 @@
-const path = require('path');
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
@@ -19,6 +17,10 @@ const nextConfig = {
     ],
   },
   transpilePackages: ['@hello-pangea/dnd'],
+
+  // Configure build behavior
+  staticPageGenerationTimeout: 180,
+
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
