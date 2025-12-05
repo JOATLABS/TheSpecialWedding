@@ -347,3 +347,46 @@ async def migration_004_backup_tracking(db):
     await db["backup_history"].create_index("status")
 
     logger.info("Created backup_history collection")
+
+
+@migration_registry.register(
+    "005",
+    "Add production indexes for users collection",
+    "Creates critical indexes for user queries, authentication, and subscription management"
+)
+async def migration_005_users_indexes(db):
+    """Add production-critical indexes to users collection for performance"""
+
+    # Email index - CRITICAL for authentication (unique constraint)
+    await db["users"].create_index("email", unique=True)
+    logger.info("Created unique index on users.email")
+
+    # Role and status compound index - for listing users by type
+    await db["users"].create_index([("role", 1), ("is_active", 1)])
+    logger.info("Created compound index on users.(role, is_active)")
+
+    # Subscription status index - for subscription management queries
+    await db["users"].create_index("subscription_status")
+    logger.info("Created index on users.subscription_status")
+
+    # Trial end date index - for trial expiration checks
+    await db["users"].create_index("trial_end_date")
+    logger.info("Created index on users.trial_end_date")
+
+    # Stripe customer ID index - for webhook processing
+    await db["users"].create_index("stripe_customer_id", sparse=True)
+    logger.info("Created sparse index on users.stripe_customer_id")
+
+    # Created at index - for analytics and reporting
+    await db["users"].create_index([("created_at", -1)])
+    logger.info("Created descending index on users.created_at")
+
+    # Compound index for trial expiration queries
+    await db["users"].create_index([
+        ("subscription_status", 1),
+        ("trial_end_date", 1),
+        ("is_active", 1)
+    ])
+    logger.info("Created compound index for trial expiration queries")
+
+    logger.info("All users collection indexes created successfully")
