@@ -126,6 +126,26 @@ class StripeService:
             price_id_monthly = plan.get("stripe_price_id_monthly")
             price_id_yearly = plan.get("stripe_price_id_yearly")
 
+            # Metered Billing Config
+            is_metered = plan.get("is_metered", False)
+            meter_event_name = plan.get("meter_event_name")
+            meter_id = plan.get("meter_id")
+
+            # Try to resolve meter_id from event_name if missing
+            if is_metered and meter_event_name and not meter_id:
+                try:
+                    # List meters to find matching event name
+                    # Note: stripe.billing.Meter.list is available in recent versions
+                    meters = stripe.billing.Meter.list(status='active')
+                    for meter in meters.data:
+                        if meter.event_name == meter_event_name:
+                            meter_id = meter.id
+                            break
+                    if not meter_id:
+                        logger.warning(f"Could not find active Stripe meter for event '{meter_event_name}'. Creating prices without explicit meter link (legacy metered).")
+                except Exception as e:
+                    logger.warning(f"Failed to list Stripe meters: {e}")
+
             # 1. Create or Update Product
             if not product_id:
                 product = stripe.Product.create(
@@ -162,35 +182,88 @@ class StripeService:
 
                 amount_cents = int(amount * 100)
 
+                # Determine expected recurring config
+                expected_recurring = {"interval": interval}
+                if is_metered:
+                    expected_recurring["usage_type"] = "metered"
+                    if meter_id:
+                        expected_recurring["meter"] = meter_id
+
                 if current_price_id:
                     try:
                         price = stripe.Price.retrieve(current_price_id)
-                        if price.unit_amount == amount_cents and price.currency == "usd" and price.recurring.interval == interval:
+
+                        # Check basic fields
+                        matches = (
+                            price.unit_amount == amount_cents and
+                            price.currency == "usd" and
+                            price.recurring.interval == interval
+                        )
+
+                        # Check metered config
+                        if matches and is_metered:
+                            matches = (price.recurring.usage_type == "metered")
+                            if meter_id:
+                                matches = matches and (getattr(price.recurring, "meter", None) == meter_id)
+                        elif matches and not is_metered:
+                            matches = (price.recurring.usage_type != "metered")
+
+                        if matches:
                             return current_price_id
                     except stripe.error.InvalidRequestError:
                         pass # Price not found, create new
 
-                new_price = stripe.Price.create(
-                    product=product_id,
-                    unit_amount=amount_cents,
-                    currency="usd",
-                    recurring={"interval": interval},
-                    nickname=f"{plan['name']} {interval.title()}"
-                )
+                price_kwargs = {
+                    "product": product_id,
+                    "unit_amount": amount_cents,
+                    "currency": "usd",
+                    "recurring": expected_recurring,
+                    "nickname": f"{plan['name']} {interval.title()}"
+                }
+
+                new_price = stripe.Price.create(**price_kwargs)
                 return new_price.id
 
             new_price_id_monthly = ensure_price(price_id_monthly, plan.get("price_monthly"), "month")
             new_price_id_yearly = ensure_price(price_id_yearly, plan.get("price_yearly"), "year")
 
-            return {
+            result = {
                 "stripe_product_id": product_id,
                 "stripe_price_id_monthly": new_price_id_monthly,
                 "stripe_price_id_yearly": new_price_id_yearly
             }
 
+            # If we found a meter_id and it wasn't in the plan, return it so we can update the DB
+            if meter_id and not plan.get("meter_id"):
+                result["meter_id"] = meter_id
+
+            return result
+
         except stripe.error.StripeError as e:
             logger.error(f"Stripe error syncing plan: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Sync Error: {str(e)}")
+
+    def report_meter_event(self, event_name: str, payload: Dict[str, Any], timestamp: Optional[datetime] = None) -> Dict[str, Any]:
+        """
+        Send a usage event to Stripe Billing Meter.
+        """
+        self._ensure_stripe_enabled()
+
+        try:
+            # Current timestamp if not provided
+            if not timestamp:
+                timestamp = datetime.utcnow()
+
+            event = stripe.billing.MeterEvent.create(
+                event_name=event_name,
+                payload=payload,
+                timestamp=int(timestamp.timestamp())
+            )
+            return {"status": "success", "event_id": event.id}
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error reporting usage: {str(e)}")
+            # Don't crash the app for metrics, but log it
+            return {"status": "error", "message": str(e)}
 
 
     def create_checkout_session(
