@@ -18,7 +18,7 @@ class SubscriptionService:
         self.plans_collection = mongo.db["subscription_plans"]
         self.subscriptions_collection = mongo.db["user_subscriptions"]
         self.usage_collection = mongo.db["usage_tracking"]
-        self.users_collection = mongo.db["users"]
+        self.users_collection = mongo.get_users_collection()
         self.weddings_collection = mongo.db["weddings"]
 
     # Subscription Plan Management (ROOT_ADMIN only)

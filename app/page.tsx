@@ -12,12 +12,14 @@ import {
   SparklesIcon,
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 
 import HeroAurora from "./components/ui/HeroAurora";
 import HeroCanvas from "./components/ui/HeroCanvas";
 import PetalCanvas from "./components/ui/PetalCanvas";
+import { SignupModal } from "./components/saas/SignupModal";
+import { ThemeConfig } from "./types/wedding";
 
 type Feature = {
   title: string;
@@ -264,7 +266,24 @@ const faqs: FAQ[] = [
 
 const partners = ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"];
 
+// Default theme for the signup modal
+const defaultTheme: ThemeConfig = {
+  primary_color: "#D4A5A5",
+  secondary_color: "#E8C46A",
+  accent_color: "#FFE4D6",
+  background_style: "gradient",
+  font_style: "elegant",
+};
+
 export default function HomePage() {
+  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
+
+  const handlePricingCTAClick = (planId: string) => {
+    setSelectedPlanId(planId);
+    setIsSignupModalOpen(true);
+  };
+
   return (
     <main className="bg-slate-950 text-white">
       {/* HERO */}
@@ -525,8 +544,9 @@ export default function HomePage() {
                     </li>
                   ))}
                 </ul>
-                <Link
-                  href="/admin/login"
+                <button
+                  type="button"
+                  onClick={() => handlePricingCTAClick(tier.name.toLowerCase())}
                   className={`mt-9 flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold uppercase tracking-[0.3em] transition ${
                     tier.emphasized
                       ? "bg-wedding-rose text-slate-900 shadow-lg hover:bg-wedding-blush"
@@ -534,7 +554,7 @@ export default function HomePage() {
                   }`}
                 >
                   {tier.cta}
-                </Link>
+                </button>
               </div>
             ))}
           </div>
@@ -594,6 +614,14 @@ export default function HomePage() {
           </nav>
         </div>
       </footer>
+
+      {/* Signup Modal */}
+      <SignupModal
+        isOpen={isSignupModalOpen}
+        onClose={() => setIsSignupModalOpen(false)}
+        selectedPlanId={selectedPlanId}
+        theme={defaultTheme}
+      />
     </main>
   );
 }
