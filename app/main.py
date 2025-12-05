@@ -57,6 +57,7 @@ from app.api.stripe_payment import router as stripe_router
 from app.api.admin_platform_metrics import router as admin_platform_metrics_router
 from app.api.admin_backup import router as backup_router
 from app.api.email_webhooks import router as email_webhooks_router
+from app.api.billing_jobs import router as billing_jobs_router
 
 # Setup logging
 logging.basicConfig(
@@ -261,7 +262,8 @@ admin_routers = [
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (admin_platform_metrics_router, "ROOT_ADMIN"),
-    (backup_router, "ROOT_ADMIN")
+    (backup_router, "ROOT_ADMIN"),
+    (billing_jobs_router, "Admin")
 ]
 
 for router, tag in admin_routers:
