@@ -10,11 +10,11 @@ import logging
 # Import settings and core components
 from app.core.settings import settings
 from app.core.database import init_database, close_database
-from app.core.cache import init_cache, close_cache, cache
+from app.core.cache import init_cache, close_cache
 from app.core.database_indexes import create_all_indexes
 
 # Import middleware
-from app.middleware.error_handler import ErrorHandlerMiddleware
+from app.middleware.error_handler_enhanced import EnhancedErrorHandlerMiddleware
 from app.middleware.rate_limiting import RateLimitMiddleware
 from app.middleware.csrf_protection import CSRFProtectionMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
             logger.info("Cache initialized")
 
         # Create database indexes
-        await create_all_indexes()
+        create_all_indexes()
         logger.info("Database indexes created/verified")
 
         # Run database migrations
@@ -137,7 +137,7 @@ app = FastAPI(
 
 # 1. Error handling (outermost) - Enhanced with MongoDB logging and email alerts
 app.add_middleware(
-    ErrorHandlerMiddleware,
+    EnhancedErrorHandlerMiddleware,
     enable_email_alerts=settings.is_production()  # Only send emails in production
 )
 
@@ -235,7 +235,6 @@ app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dash
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
 app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
-app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
 app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
 
 # Admin routes (authentication required)
@@ -253,7 +252,6 @@ admin_routers = [
     (user_management_router, "Admin"),
     (subscription_router, "Subscription"),
     (saas_config_router, "Subscription"),
-    (budget_router, "Budget"),
     (planner_metrics_router, "Metrics"),
     (forms_router, "Forms"),
     (trial_management_router, "Admin"),

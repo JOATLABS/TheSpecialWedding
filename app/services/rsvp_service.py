@@ -79,12 +79,11 @@ class RSVPService:
                         dietary=plus_one_data.dietary
                     )
                     plus_ones_to_insert.append(plus_one.dict())
-
                 if plus_ones_to_insert:
                     self.plus_one_collection.insert_many(plus_ones_to_insert)
                 
-                # Update guest to mark plus_one_submitted as True if at least one plus-one is submitted
-                if new_plus_ones_count > 0:
+                # Update guest to mark plus_one_submitted as True only if all slots are filled
+                if existing_count + new_plus_ones_count >= max_plus_ones:
                     self.guest_collection.update_one(
                         {"_id": guest_id},
                         {"$set": {"plus_one_submitted": True}}

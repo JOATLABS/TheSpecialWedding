@@ -22,8 +22,8 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  - [ ] `app/utils/secure_error_handler.py` - Secure error handling
  - [ ] `app/services/guest_verification_service_secure.py` - Secure guest verification
  - [ ] `app/api/guest_verification_secure.py` - Secure API endpoints
- - [ ] `app/middleware/error_handler.py` - Unified secure error middleware
- - [ ] `app/middleware/security_headers.py` - Security headers
+ - [ ] `app/middleware/error_handler_secure.py` - Secure error middleware
+ - [ ] `app/middleware/security_headers_enhanced.py` - Security headers
  - [ ] `app/utils/path_validator.py` - Path traversal prevention
 
 ### Phase 2: Environment Configuration
@@ -68,18 +68,18 @@ This guide provides step-by-step instructions for deploying the comprehensive se
 
 6. **Update Import Statements**
  **In `main_optimized.py` (or your main application file):**
-```python
-# Add secure middleware imports
-from app.middleware.error_handler import ErrorHandlerMiddleware
-from app.middleware.security_headers import SecurityHeadersMiddleware
+ ```python
+ # Add secure middleware imports
+ from app.middleware.error_handler_secure import SecureErrorHandlerMiddleware
+ from app.middleware.security_headers_enhanced import EnhancedSecurityHeadersMiddleware
 
-# Replace existing middleware
-app.add_middleware(ErrorHandlerMiddleware)
-app.add_middleware(SecurityHeadersMiddleware,
-hsts_max_age=31536000,
-enable_csp_reporting=True,
-debug_mode=os.getenv("DEBUG", "false").lower() == "true")
-```
+ # Replace existing middleware
+ app.add_middleware(SecureErrorHandlerMiddleware)
+ app.add_middleware(EnhancedSecurityHeadersMiddleware,
+ hsts_max_age=31536000,
+ enable_csp_reporting=True,
+ debug_mode=os.getenv("DEBUG", "false").lower() == "true")
+ ```
 
 7. **Update Router Imports**
  **In your main router configuration:**
@@ -361,7 +361,7 @@ Your deployment is successful when:
 ```python
 # Solution: Check middleware order in main_optimized.py
 # SecurityHeaders must be before ErrorHandler
-app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(EnhancedSecurityHeadersMiddleware)
 app.add_middleware(SecureErrorHandlerMiddleware)
 ```
 

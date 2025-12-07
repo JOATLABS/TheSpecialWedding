@@ -252,7 +252,7 @@ export const SaasLandingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchWithTimeout, resolveApiUrl]);
 
   const fetchSubscriptionPlans = useCallback(async () => {
     let resolvedPlans: SubscriptionPlan[] | null = null;
@@ -293,7 +293,7 @@ export const SaasLandingPage: React.FC = () => {
       }
       setPlanLoading(false);
     }
-  }, [defaultPlans]);
+  }, [defaultPlans, fetchWithTimeout, resolveApiUrl]);
 
   useEffect(() => {
     fetchSaasConfig();

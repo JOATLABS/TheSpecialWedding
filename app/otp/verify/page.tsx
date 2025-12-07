@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
 
 export default function VerifyOTPPage() {
-  const [otp, setOtp] = useState('');
+  const [otp, setOtp]_useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isVerified, setIsVerified] = useState(false);

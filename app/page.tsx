@@ -13,7 +13,6 @@ import {
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
 import React from "react";
-import Link from "next/link";
 
 import HeroAurora from "./components/ui/HeroAurora";
 import HeroCanvas from "./components/ui/HeroCanvas";
@@ -300,12 +299,12 @@ export default function HomePage() {
                 >
                   Explore pricing
                 </a>
-                <Link
+                <a
                   href="/admin/login"
                   className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/60"
                 >
                   Launch console
-                </Link>
+                </a>
               </div>
               <div className="mt-14 flex flex-wrap items-center gap-x-8 gap-y-4 text-sm text-slate-300/90">
                 <span className="text-xs uppercase tracking-[0.3em] text-slate-300/60">Trusted partners</span>
@@ -525,7 +524,7 @@ export default function HomePage() {
                     </li>
                   ))}
                 </ul>
-                <Link
+                <a
                   href="/admin/login"
                   className={`mt-9 flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold uppercase tracking-[0.3em] transition ${
                     tier.emphasized
@@ -534,7 +533,7 @@ export default function HomePage() {
                   }`}
                 >
                   {tier.cta}
-                </Link>
+                </a>
               </div>
             ))}
           </div>
@@ -568,12 +567,12 @@ export default function HomePage() {
             Give every planner, partner, and couple a stage worthy of their story with The Special Wedding.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
+            <a
               href="/admin/login"
               className="flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
             >
               Launch console
-            </Link>
+            </a>
             <a
               href="mailto:hello@weddingwebapp.ai"
               className="flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/40"
@@ -590,7 +589,7 @@ export default function HomePage() {
           <nav className="flex flex-wrap items-center gap-6 text-xs uppercase tracking-[0.3em]">
             <a href="#platform" className="hover:text-white">Platform</a>
             <a href="#pricing" className="hover:text-white">Pricing</a>
-            <Link href="/admin/login" className="hover:text-white">Admin login</Link>
+            <a href="/admin/login" className="hover:text-white">Admin login</a>
           </nav>
         </div>
       </footer>

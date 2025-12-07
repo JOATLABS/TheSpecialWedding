@@ -103,21 +103,21 @@ module.exports = {
     'security/detect-disable-mustache-escape': 'error',
     'security/detect-new-buffer': 'error',
     'security/detect-no-csrf-before-method-override': 'error',
-
+    
     // Additional security-related rules
     'no-eval': 'error',
     'no-implied-eval': 'error',
     'no-new-func': 'error',
     'no-script-url': 'error',
     'no-unescaped-entities': 'off', // Allow for React JSX
-
+    
     // Prevent dangerous patterns
     'no-caller': 'error',
     'no-delete-var': 'error',
     'no-label-var': 'error',
     'no-shadow-restricted-names': 'error',
     'no-undef-init': 'error',
-
+    
     // TypeScript security rules
     '@typescript-eslint/no-explicit-any': 'warn',
     '@typescript-eslint/no-unsafe-assignment': 'warn',

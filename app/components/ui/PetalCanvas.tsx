@@ -236,7 +236,7 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (resizeRef.current) cancelAnimationFrame(resizeRef.current);
     };
-  }, [count]);
+  }, []);
 
   return (
     <canvas ref={canvasRef} aria-hidden="true" className="petal-canvas pointer-events-none absolute inset-0 h-full w-full" />
