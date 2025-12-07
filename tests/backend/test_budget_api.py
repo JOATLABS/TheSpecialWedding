@@ -22,9 +22,76 @@ os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
 
 
-class FakeMongo:
+# --- Async Wrappers for mongomock ---
+
+class AsyncMockCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def sort(self, *args, **kwargs):
+        self.cursor.sort(*args, **kwargs)
+        return self
+
+    def limit(self, *args, **kwargs):
+        self.cursor.limit(*args, **kwargs)
+        return self
+
+    def skip(self, *args, **kwargs):
+        self.cursor.skip(*args, **kwargs)
+        return self
+
+    async def to_list(self, length=None):
+        return list(self.cursor)
+
+    def __aiter__(self):
+        self._iterator = iter(self.cursor)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iterator)
+        except StopIteration:
+            raise StopAsyncIteration
+
+class AsyncMockCollection:
+    def __init__(self, collection):
+        self.collection = collection
+
+    def find(self, *args, **kwargs):
+        cursor = self.collection.find(*args, **kwargs)
+        return AsyncMockCursor(cursor)
+
+    async def find_one(self, *args, **kwargs):
+        return self.collection.find_one(*args, **kwargs)
+
+    async def insert_one(self, *args, **kwargs):
+        return self.collection.insert_one(*args, **kwargs)
+
+    async def update_one(self, *args, **kwargs):
+        return self.collection.update_one(*args, **kwargs)
+
+    async def delete_one(self, *args, **kwargs):
+        return self.collection.delete_one(*args, **kwargs)
+
+    async def delete_many(self, *args, **kwargs):
+        return self.collection.delete_many(*args, **kwargs)
+
+    async def count_documents(self, *args, **kwargs):
+        return self.collection.count_documents(*args, **kwargs)
+
+class AsyncMockDatabase:
     def __init__(self, database):
         self.db = database
+        self.collections = {}
+
+    def __getitem__(self, name):
+        if name not in self.collections:
+            self.collections[name] = AsyncMockCollection(self.db[name])
+        return self.collections[name]
+
+class FakeMongo:
+    def __init__(self, database):
+        self.db = AsyncMockDatabase(database)
 
     def get_weddings_collection(self):
         return self.db["weddings"]

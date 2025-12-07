@@ -10,6 +10,10 @@ from app.dependencies.auth_extended import (
     check_wedding_access
 )
 from app.services.subscription_service import SubscriptionService
+from app.services.stripe_service import stripe_service
+from app.models.subscription import SubscriptionStatus
+from app.core.database import mongo
+from datetime import datetime
 
 router = APIRouter()
 wedding_service = WeddingService()
@@ -43,6 +47,60 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
     # Increment usage for non-ROOT_ADMIN users
     if not current_user.is_root_admin and current_user.user_data.get("_id"):
         await subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
+
+        # Immediate metering check for Stripe
+        try:
+            user_id = current_user.user_data["_id"]
+            # Find active subscription
+            sub = await mongo.db["user_subscriptions"].find_one({
+                "user_id": user_id,
+                "status": SubscriptionStatus.ACTIVE.value
+            })
+
+            if sub and sub.get("stripe_customer_id") and sub.get("plan_id"):
+                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
+
+                # If plan is metered and we have an event name
+                if plan and plan.get("is_metered") and plan.get("meter_event_name"):
+                    # Check if we should report usage (e.g. if not billed yet this period)
+                    # For a newly created wedding, it's definitely not billed yet.
+                    # But we need to be careful if the user just reactivated a wedding (though this is create endpoint)
+
+                    current_period_start = sub.get("current_period_start")
+
+                    # Ensure timezone awareness for period start
+                    if current_period_start:
+                        if isinstance(current_period_start, str):
+                            try:
+                                current_period_start = datetime.fromisoformat(current_period_start.replace('Z', '+00:00'))
+                            except:
+                                pass
+                        if isinstance(current_period_start, datetime) and current_period_start.tzinfo is None:
+                            current_period_start = current_period_start.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
+
+                    # For a brand new wedding, last_billed_at is None.
+                    # Report usage immediately.
+                    meter_result = stripe_service.report_meter_event(
+                        event_name=plan["meter_event_name"],
+                        payload={
+                            "stripe_customer_id": sub["stripe_customer_id"],
+                            "value": "1"
+                        }
+                    )
+
+                    if meter_result.get("status") == "success":
+                        # Update the wedding with last_billed_at
+                        # result["id"] should be the wedding ID
+                        wedding_id = result.get("id") or result.get("_id")
+                        if wedding_id:
+                            await mongo.db["weddings"].update_one(
+                                {"_id": wedding_id},
+                                {"$set": {"last_billed_at": datetime.utcnow()}}
+                            )
+        except Exception as e:
+            # Don't fail the request if metering fails, but log it
+            # Logger not defined in this file, maybe print or ignore
+            print(f"Error reporting meter event on creation: {e}")
 
     return result
 
@@ -95,6 +153,39 @@ async def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = D
     # Increment usage for non-ROOT_ADMIN users
     if not current_user.is_root_admin and current_user.user_data.get("_id"):
         await subscription_service.increment_usage(current_user.user_data["_id"], "weddings", 1)
+
+        # Immediate metering check for Stripe
+        try:
+            user_id = current_user.user_data["_id"]
+            # Find active subscription
+            sub = await mongo.db["user_subscriptions"].find_one({
+                "user_id": user_id,
+                "status": SubscriptionStatus.ACTIVE.value
+            })
+
+            if sub and sub.get("stripe_customer_id") and sub.get("plan_id"):
+                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
+
+                # If plan is metered and we have an event name
+                if plan and plan.get("is_metered") and plan.get("meter_event_name"):
+                    meter_result = stripe_service.report_meter_event(
+                        event_name=plan["meter_event_name"],
+                        payload={
+                            "stripe_customer_id": sub["stripe_customer_id"],
+                            "value": "1"
+                        }
+                    )
+
+                    if meter_result.get("status") == "success":
+                         # result is from create_wedding which returns dict with _id
+                        wedding_id = result.get("_id")
+                        if wedding_id:
+                            await mongo.db["weddings"].update_one(
+                                {"_id": wedding_id},
+                                {"$set": {"last_billed_at": datetime.utcnow()}}
+                            )
+        except Exception as e:
+             print(f"Error reporting meter event on admin creation: {e}")
 
     return result
 
