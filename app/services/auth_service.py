@@ -25,8 +25,8 @@ class AuthService:
         if not verify_password(password, password_field):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        # Check if account is active
-        if not user.get("is_active", False):
+        # Check if account is active (default to True for backward compatibility with legacy users)
+        if user.get("is_active") == False:  # Explicitly check for False, not just falsy
             raise HTTPException(status_code=401, detail="Account is not active. Please contact support.")
 
         # Check if email is verified for public registrations
