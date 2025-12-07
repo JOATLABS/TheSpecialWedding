@@ -158,15 +158,6 @@ export default function NotificationsPage() {
           break;
       }
 
-      // Derive target audience label for audit/logging
-      const targetAudience =
-        recipientFilter === 'all_users' ? 'all_users' :
-        recipientFilter === 'active_users' ? 'active_users' :
-        recipientFilter === 'wedding_planners' ? 'wedding_planners' :
-        recipientFilter === 'trial_users' ? 'trial_users' :
-        recipientFilter === 'premium_users' ? 'premium_users' :
-        'custom';
-
       // Step 1: Create notification
       const createResponse = await apiRequest<{id: string}>('/admin/notifications', 'POST', {
         title: customSubject,
