@@ -18,55 +18,29 @@ interface SubscriptionPlan {
   is_featured: boolean;
 }
 
-// Plans matching the homepage pricing section
-const HOMEPAGE_PLANS: SubscriptionPlan[] = [
+// Fallback plans if API fails (matching database structure)
+const FALLBACK_PLANS: SubscriptionPlan[] = [
   {
-    _id: 'boutique',
+    _id: 'plan_boutique',
     name: 'Boutique',
     description: 'For new planners onboarding their first weddings',
     price_monthly: 29,
-    price_yearly: 29 * 12,
+    price_yearly: 348,
     max_weddings: 3,
     max_guests_per_wedding: 150,
-    features: [
-      'Guest & RSVP manager',
-      'Email invitations',
-      'Wedding website',
-      'Timeline builder'
-    ],
+    features: ['Guest & RSVP manager', 'Email invitations', 'Wedding website', 'Timeline builder'],
     is_featured: false
   },
   {
-    _id: 'signature',
+    _id: 'plan_signature',
     name: 'Signature',
     description: 'Most popular plan with automation',
     price_monthly: 59,
-    price_yearly: 59 * 12,
+    price_yearly: 708,
     max_weddings: 10,
     max_guests_per_wedding: 350,
-    features: [
-      'Seating orchestration',
-      'QR check-in & live counts',
-      'Automated reminders',
-      'Vendor collaboration'
-    ],
+    features: ['Seating orchestration', 'QR check-in & live counts', 'Automated reminders', 'Vendor collaboration'],
     is_featured: true
-  },
-  {
-    _id: 'agency',
-    name: 'Agency',
-    description: 'Multi-tenant deployments',
-    price_monthly: 289,
-    price_yearly: 289 * 12,
-    max_weddings: -1,
-    max_guests_per_wedding: -1,
-    features: [
-      'Dedicated success architect',
-      'Custom domains & branding',
-      'SSO + role provisioning',
-      'Compliance reporting'
-    ],
-    is_featured: false
   }
 ];
 
@@ -112,16 +86,30 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
           const activePlans = data.filter((p: SubscriptionPlan) => p).sort((a: SubscriptionPlan, b: SubscriptionPlan) =>
             (a.price_monthly || 0) - (b.price_monthly || 0)
           );
-          setPlans(activePlans);
+          setPlans(activePlans.length > 0 ? activePlans : FALLBACK_PLANS);
 
           // Set initially selected plan
+          const plansToUse = activePlans.length > 0 ? activePlans : FALLBACK_PLANS;
           const initialPlan = selectedPlanId
-            ? activePlans.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
-            : activePlans.find((p: SubscriptionPlan) => p.is_featured) || activePlans[1];
+            ? plansToUse.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
+            : plansToUse.find((p: SubscriptionPlan) => p.is_featured) || plansToUse[1] || plansToUse[0];
           setSelectedPlan(initialPlan);
+        } else {
+          // API call failed, use fallback
+          setPlans(FALLBACK_PLANS);
+          const initialPlan = selectedPlanId
+            ? FALLBACK_PLANS.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
+            : FALLBACK_PLANS.find((p: SubscriptionPlan) => p.is_featured) || FALLBACK_PLANS[1] || FALLBACK_PLANS[0];
+          setSelectedPlan(initialPlan || null);
         }
       } catch (error) {
         console.error('Failed to fetch plans:', error);
+        // Use fallback on error
+        setPlans(FALLBACK_PLANS);
+        const initialPlan = selectedPlanId
+          ? FALLBACK_PLANS.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
+          : FALLBACK_PLANS.find((p: SubscriptionPlan) => p.is_featured) || FALLBACK_PLANS[1] || FALLBACK_PLANS[0];
+        setSelectedPlan(initialPlan || null);
       } finally {
         setLoading(false);
       }

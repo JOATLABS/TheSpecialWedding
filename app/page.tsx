@@ -12,7 +12,7 @@ import {
   SparklesIcon,
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 
 import HeroAurora from "./components/ui/HeroAurora";
@@ -200,7 +200,8 @@ const testimonials: Testimonial[] = [
   },
 ];
 
-const pricing: PricingTier[] = [
+// Fallback pricing if API fails
+const fallbackPricing: PricingTier[] = [
   {
     name: "Boutique",
     price: "$29",
@@ -241,6 +242,20 @@ const pricing: PricingTier[] = [
   },
 ];
 
+// Agency tier (always hardcoded - contact sales only)
+const agencyTier: PricingTier = {
+  name: "Agency",
+  price: "Custom",
+  cadence: "multi-tenant deployments",
+  features: [
+    "Dedicated success architect",
+    "Custom domains & branding",
+    "SSO + role provisioning",
+    "Compliance reporting",
+  ],
+  cta: "Talk with sales",
+};
+
 const faqs: FAQ[] = [
   {
     question: "Can I manage multiple weddings at once?",
@@ -275,14 +290,70 @@ const defaultTheme: ThemeConfig = {
   font_style: "elegant",
 };
 
+interface ApiPlan {
+  _id: string;
+  name: string;
+  description: string;
+  price_monthly: number;
+  price_yearly: number;
+  features_list?: string[];
+  is_featured: boolean;
+  sort_order: number;
+}
+
 export default function HomePage() {
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
+  const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+
+  // Fetch subscription plans from API
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/public/subscription-plans`);
+        if (response.ok) {
+          const data = await response.json();
+          setApiPlans(data.sort((a: ApiPlan, b: ApiPlan) => a.sort_order - b.sort_order));
+        }
+      } catch (error) {
+        console.error('Failed to fetch subscription plans:', error);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+    fetchPlans();
+  }, []);
 
   const handlePricingCTAClick = (planId: string) => {
+    // Handle Agency plan - open mailto instead of signup modal
+    if (planId === 'agency') {
+      window.location.href = 'mailto:sales@thespecialwedding.com?subject=Agency Plan Inquiry';
+      return;
+    }
     setSelectedPlanId(planId);
     setIsSignupModalOpen(true);
   };
+
+  // Map API plans to PricingTier format and add Agency tier
+  const pricing: PricingTier[] = React.useMemo(() => {
+    if (plansLoading || apiPlans.length === 0) {
+      return fallbackPricing;
+    }
+
+    const apiTiers: PricingTier[] = apiPlans.map((plan) => ({
+      name: plan.name,
+      price: `$${plan.price_monthly}`,
+      cadence: "per wedding / month",
+      features: plan.features_list || [],
+      cta: plan.name === "Boutique" ? "Start planning" : `Upgrade to ${plan.name}`,
+      badge: plan.is_featured ? "Popular" : undefined,
+      emphasized: plan.is_featured,
+    }));
+
+    // Add Agency tier at the end
+    return [...apiTiers, agencyTier];
+  }, [apiPlans, plansLoading]);
 
   return (
     <main className="bg-slate-950 text-white">
