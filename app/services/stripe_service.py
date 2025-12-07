@@ -32,7 +32,7 @@ class StripeService:
 
     def __init__(self):
         self.subscriptions_collection = mongo.db["user_subscriptions"]
-        self.users_collection = mongo.db["users"]
+        self.users_collection = mongo.get_users_collection()
         self.plans_collection = mongo.db["subscription_plans"]
         self.stripe_customers_collection = mongo.db["stripe_customers"]
 

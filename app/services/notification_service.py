@@ -12,7 +12,7 @@ class NotificationService:
     def __init__(self):
         self.notifications_collection = mongo.db["notifications"]
         self.templates_collection = mongo.db["notification_templates"]
-        self.users_collection = mongo.db["users"]  # Fixed: use admin_users collection
+        self.users_collection = mongo.get_users_collection()
         self.email_service = ResendEmailService()
 
     async def create_notification(self, notification_data: dict, created_by: str) -> dict:
