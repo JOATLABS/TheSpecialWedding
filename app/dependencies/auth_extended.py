@@ -194,7 +194,7 @@ async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(
         )
     return current_user
 
-def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
+async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     """Check if user has access to a specific wedding"""
     # ROOT_ADMIN has full access to all weddings for platform management
     if user.is_root_admin:
@@ -227,14 +227,17 @@ def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
                     query_id = wedding_id.strip()
             else:
                 query_id = wedding_id
-            wedding = mongo.get_weddings_collection().find_one({"_id": query_id})
+
+            # Use await for find_one since db is async
+            wedding = await mongo.get_weddings_collection().find_one({"_id": query_id})
+
             if wedding:
                 return wedding.get("assigned_planner_email") == user.email
         except Exception:
             return False
     if user.is_vendor:
         # Check if vendor has access to this wedding
-        vendor = mongo.get_vendors_collection().find_one({"email": user.email, "wedding_id": wedding_id})
+        vendor = await mongo.get_vendors_collection().find_one({"email": user.email, "wedding_id": wedding_id})
         return vendor is not None
     return False
 

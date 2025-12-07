@@ -28,7 +28,7 @@ async def sync_usage_to_stripe(
 
     return {"status": "accepted", "message": "Usage sync started in background"}
 
-def process_daily_usage_check():
+async def process_daily_usage_check():
     """
     Iterate over active subscriptions and report active weddings usage.
     """
@@ -43,7 +43,7 @@ def process_daily_usage_check():
     count_processed = 0
     count_reported = 0
 
-    for sub in subscriptions:
+    async for sub in subscriptions:
         try:
             user_id = sub["user_id"]
             plan_id = sub["plan_id"]
@@ -53,7 +53,7 @@ def process_daily_usage_check():
                 continue
 
             # Get Plan to check if metered
-            plan = mongo.db["subscription_plans"].find_one({"_id": plan_id})
+            plan = await mongo.db["subscription_plans"].find_one({"_id": plan_id})
             if not plan or not plan.get("is_metered"):
                 continue
 
@@ -85,7 +85,7 @@ def process_daily_usage_check():
             if current_period_start.tzinfo is None:
                 current_period_start = current_period_start.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
 
-            for wedding in weddings:
+            async for wedding in weddings:
                 last_billed = wedding.get("last_billed_at")
 
                 # If never billed, or billed before current period start -> Bill it!
@@ -118,7 +118,7 @@ def process_daily_usage_check():
 
                     if result.get("status") == "success":
                         # Update last_billed_at
-                        mongo.db["weddings"].update_one(
+                        await mongo.db["weddings"].update_one(
                             {"_id": wedding["_id"]},
                             {"$set": {"last_billed_at": datetime.utcnow()}}
                         )

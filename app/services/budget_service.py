@@ -49,7 +49,7 @@ class BudgetService:
             self._update_wedding_budget_total(wedding_id)
 
             # Check for budget alerts
-            self._check_budget_alerts(wedding_id)
+            await self._check_budget_alerts(wedding_id)
 
             logger.info(f"Created budget category {category.name} for wedding {wedding_id}")
             return category.dict()
@@ -58,19 +58,22 @@ class BudgetService:
             logger.error(f"Failed to create budget category: {str(e)}")
             raise
 
-    def get_wedding_budget(self, wedding_id: str) -> Dict:
+    async def get_wedding_budget(self, wedding_id: str) -> Dict:
         """Get complete budget for a wedding"""
         try:
             # Get all categories for this wedding
-            categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+            cursor = self.budget_categories.find({"wedding_id": wedding_id})
+            categories = await cursor.to_list(length=None)
 
             # Get budget summary
-            summary = self._calculate_budget_summary(wedding_id)
+            summary = await self._calculate_budget_summary(wedding_id)
 
             # Get recent alerts
-            alerts = list(self.budget_alerts.find(
+            alerts_cursor = self.budget_alerts.find(
                 {"wedding_id": wedding_id, "is_resolved": False}
-            ).sort("created_at", -1).limit(10))
+            ).sort("created_at", -1).limit(10)
+            alerts = await alerts_cursor.to_list(length=None)
+
             return {
                 "wedding_id": wedding_id,
                 "summary": summary.dict(),
@@ -110,7 +113,7 @@ class BudgetService:
             self._update_wedding_budget_total(category["wedding_id"])
 
             # Check for alerts
-            self._check_budget_alerts(category["wedding_id"])
+            await self._check_budget_alerts(category["wedding_id"])
 
             logger.info(f"Updated budget category {category_id}")
             return updated_category
@@ -169,24 +172,25 @@ class BudgetService:
             logger.error(f"Failed to create vendor quote: {str(e)}")
             raise
 
-    def get_vendor_quotes(self, wedding_id: str, service_category: Optional[str] = None) -> List[Dict]:
+    async def get_vendor_quotes(self, wedding_id: str, service_category: Optional[str] = None) -> List[Dict]:
         """Get vendor quotes for a wedding, optionally filtered by category"""
         try:
             query = {"wedding_id": wedding_id}
             if service_category:
                 query["service_category"] = service_category
 
-            quotes = list(self.vendor_quotes.find(query).sort("created_at", -1))
+            cursor = self.vendor_quotes.find(query).sort("created_at", -1)
+            quotes = await cursor.to_list(length=None)
             return quotes
 
         except Exception as e:
             logger.error(f"Failed to get vendor quotes: {str(e)}")
             raise
 
-    def compare_vendor_quotes(self, wedding_id: str, service_category: str) -> Dict:
+    async def compare_vendor_quotes(self, wedding_id: str, service_category: str) -> Dict:
         """Compare vendor quotes for a specific service category"""
         try:
-            quotes = self.get_vendor_quotes(wedding_id, service_category)
+            quotes = await self.get_vendor_quotes(wedding_id, service_category)
 
             if len(quotes) < 2:
                 return {"error": "Need at least 2 quotes to compare", "quotes": quotes}
@@ -262,14 +266,15 @@ class BudgetService:
 
     # ===== BUDGET TEMPLATES =====
 
-    def get_budget_templates(self, wedding_type: Optional[str] = None) -> List[Dict]:
+    async def get_budget_templates(self, wedding_type: Optional[str] = None) -> List[Dict]:
         """Get available budget templates"""
         try:
             query = {"is_public": True}
             if wedding_type:
                 query["wedding_type"] = wedding_type
 
-            templates = list(self.budget_templates.find(query).sort("name", 1))
+            cursor = self.budget_templates.find(query).sort("name", 1)
+            templates = await cursor.to_list(length=None)
             return [self._serialize_template(template) for template in templates]
 
         except Exception as e:
@@ -355,7 +360,8 @@ class BudgetService:
             if not template:
                 raise ValueError("Budget template not found")
             # Clear existing categories (optional - could be made configurable)
-            existing_categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+            cursor = self.budget_categories.find({"wedding_id": wedding_id})
+            existing_categories = await cursor.to_list(length=None)
             if existing_categories:
                 logger.warning(f"Wedding {wedding_id} already has {len(existing_categories)} budget categories")
             # Create categories from template
@@ -491,7 +497,7 @@ class BudgetService:
             )
 
             # Check for over-budget alerts
-            self._check_budget_alerts(category["wedding_id"])
+            await self._check_budget_alerts(category["wedding_id"])
 
             logger.info(f"Recorded payment of ${payment.amount} for category {category_id}")
             return payment.dict()
@@ -499,16 +505,19 @@ class BudgetService:
         except Exception as e:
             logger.error(f"Failed to record payment: {str(e)}")
             raise
-    def get_payment_history(self, wedding_id: str) -> List[Dict]:
+    async def get_payment_history(self, wedding_id: str) -> List[Dict]:
         """Get payment history for a wedding"""
         try:
             # Get all categories for this wedding
-            categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+            cursor = self.budget_categories.find({"wedding_id": wedding_id})
+            categories = await cursor.to_list(length=None)
             category_ids = [str(cat["_id"]) for cat in categories]
             # Get all payments for these categories
-            payments = list(self.payment_records.find(
+            payments_cursor = self.payment_records.find(
                 {"category_id": {"$in": category_ids}}
-            ).sort("payment_date", -1))
+            ).sort("payment_date", -1)
+            payments = await payments_cursor.to_list(length=None)
+
             # Add category name to each payment
             category_names = {str(cat["_id"]): cat["name"] for cat in categories}
             for payment in payments:
@@ -522,20 +531,21 @@ class BudgetService:
 
     # ===== FINANCIAL REPORTING =====
 
-    def generate_financial_report(self, wedding_id: str) -> Dict:
+    async def generate_financial_report(self, wedding_id: str) -> Dict:
         """Generate comprehensive financial report"""
         try:
             # Get budget summary
-            summary = self._calculate_budget_summary(wedding_id)
+            summary = await self._calculate_budget_summary(wedding_id)
 
             # Get categories with details
-            categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+            cursor = self.budget_categories.find({"wedding_id": wedding_id})
+            categories = await cursor.to_list(length=None)
 
             # Get payment history
-            payments = self.get_payment_history(wedding_id)
+            payments = await self.get_payment_history(wedding_id)
 
             # Get vendor quotes summary
-            quotes_summary = self._get_quotes_summary(wedding_id)
+            quotes_summary = await self._get_quotes_summary(wedding_id)
 
             # Calculate trends and insights
             insights = self._calculate_budget_insights(wedding_id, categories, payments)
@@ -623,16 +633,18 @@ class BudgetService:
 
     async def _calculate_budget_summary(self, wedding_id: str) -> BudgetSummary:
         """Calculate budget summary for a wedding"""
-        categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+        cursor = self.budget_categories.find({"wedding_id": wedding_id})
+        categories = await cursor.to_list(length=None)
 
         total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
         total_spent = sum(cat.get("actual_spent", 0) for cat in categories)
 
         # Calculate committed amounts (accepted quotes)
-        accepted_quotes = list(self.vendor_quotes.find({
+        quotes_cursor = self.vendor_quotes.find({
             "wedding_id": wedding_id,
             "status": "accepted"
-        }))
+        })
+        accepted_quotes = await quotes_cursor.to_list(length=None)
         total_committed = sum(quote.get("quote_amount", 0) for quote in accepted_quotes)
 
         remaining_budget = total_budget - total_spent
@@ -659,7 +671,8 @@ class BudgetService:
         )
     async def _update_wedding_budget_total(self, wedding_id: str):
         """Update the total budget amount in the wedding document"""
-        categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+        cursor = self.budget_categories.find({"wedding_id": wedding_id})
+        categories = await cursor.to_list(length=None)
         total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
         await self.weddings.update_one(
             {"_id": wedding_id},
@@ -668,7 +681,8 @@ class BudgetService:
 
     async def _check_budget_alerts(self, wedding_id: str):
         """Check for budget alerts and create notifications"""
-        categories = list(self.budget_categories.find({"wedding_id": wedding_id}))
+        cursor = self.budget_categories.find({"wedding_id": wedding_id})
+        categories = await cursor.to_list(length=None)
 
         for category in categories:
             budgeted = category.get("budgeted_amount", 0)
@@ -729,9 +743,10 @@ class BudgetService:
                 {"$inc": {"actual_spent": quote["quote_amount"]}}
             )
 
-    def _get_quotes_summary(self, wedding_id: str) -> Dict:
+    async def _get_quotes_summary(self, wedding_id: str) -> Dict:
         """Get summary of vendor quotes for a wedding"""
-        quotes = list(self.vendor_quotes.find({"wedding_id": wedding_id}))
+        cursor = self.vendor_quotes.find({"wedding_id": wedding_id})
+        quotes = await cursor.to_list(length=None)
 
         if not quotes:
             return {"total_quotes": 0}
