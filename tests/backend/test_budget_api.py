@@ -53,6 +53,7 @@ class AsyncMockCursor:
         except StopIteration:
             raise StopAsyncIteration
 
+
 class AsyncMockCollection:
     def __init__(self, collection):
         self.collection = collection
@@ -79,6 +80,7 @@ class AsyncMockCollection:
     async def count_documents(self, *args, **kwargs):
         return self.collection.count_documents(*args, **kwargs)
 
+
 class AsyncMockDatabase:
     def __init__(self, database):
         self.db = database
@@ -88,6 +90,7 @@ class AsyncMockDatabase:
         if name not in self.collections:
             self.collections[name] = AsyncMockCollection(self.db[name])
         return self.collections[name]
+
 
 class FakeMongo:
     def __init__(self, database):
