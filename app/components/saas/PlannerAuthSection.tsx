@@ -365,7 +365,9 @@ export function PlannerAuthSection({
         const message =
           error instanceof Error && error.message.includes('NEXT_PUBLIC_API_BASE_URL')
             ? 'Registration is unavailable because the platform URL is not configured. Please contact support.'
-            : 'Registration failed. Please try again.';
+            : error instanceof Error && error.message
+              ? `Registration failed: ${error.message}`
+              : 'Registration failed. Please try again.';
         setError('root', { message });
       }
     });

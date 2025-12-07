@@ -52,13 +52,13 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
         try:
             user_id = current_user.user_data["_id"]
             # Find active subscription
-            sub = mongo.db["user_subscriptions"].find_one({
+            sub = await mongo.db["user_subscriptions"].find_one({
                 "user_id": user_id,
                 "status": SubscriptionStatus.ACTIVE.value
             })
 
             if sub and sub.get("stripe_customer_id") and sub.get("plan_id"):
-                plan = mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
+                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
 
                 # If plan is metered and we have an event name
                 if plan and plan.get("is_metered") and plan.get("meter_event_name"):
@@ -93,7 +93,7 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                         # result["id"] should be the wedding ID
                         wedding_id = result.get("id") or result.get("_id")
                         if wedding_id:
-                            mongo.db["weddings"].update_one(
+                            await mongo.db["weddings"].update_one(
                                 {"_id": wedding_id},
                                 {"$set": {"last_billed_at": datetime.utcnow()}}
                             )
@@ -158,13 +158,13 @@ async def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = D
         try:
             user_id = current_user.user_data["_id"]
             # Find active subscription
-            sub = mongo.db["user_subscriptions"].find_one({
+            sub = await mongo.db["user_subscriptions"].find_one({
                 "user_id": user_id,
                 "status": SubscriptionStatus.ACTIVE.value
             })
 
             if sub and sub.get("stripe_customer_id") and sub.get("plan_id"):
-                plan = mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
+                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
 
                 # If plan is metered and we have an event name
                 if plan and plan.get("is_metered") and plan.get("meter_event_name"):
@@ -180,7 +180,7 @@ async def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = D
                          # result is from create_wedding which returns dict with _id
                         wedding_id = result.get("_id")
                         if wedding_id:
-                            mongo.db["weddings"].update_one(
+                            await mongo.db["weddings"].update_one(
                                 {"_id": wedding_id},
                                 {"$set": {"last_billed_at": datetime.utcnow()}}
                             )
