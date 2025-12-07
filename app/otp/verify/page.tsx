@@ -2,21 +2,20 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
 
-export default function VerifyOTPPage() {
+function VerifyOTPContent() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isVerified, setIsVerified] = useState(false);
   const [guestData, setGuestData] = useState(null);
   const [resendCooldown, setResendCooldown] = useState(60);
-  const router = useRouter();
   const searchParams = useSearchParams();
   const guest_id = searchParams.get('guest_id');
-  const token = searchParams.get('token');
+  const token = searchParams.get('token') ?? '';
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -30,6 +29,10 @@ export default function VerifyOTPPage() {
     setError('');
 
     try {
+      if (!token) {
+        throw new Error('Missing RSVP token');
+      }
+
       const response = await fetch('/api/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -119,5 +122,22 @@ export default function VerifyOTPPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VerifyOTPPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-wedding-ivory flex items-center justify-center">
+        <div className="max-w-md w-full bg-white p-8 rounded-lg shadow-lg">
+          <div className="text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-wedding-rose border-r-transparent"></div>
+            <p className="mt-4 text-gray-600">Loading...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <VerifyOTPContent />
+    </Suspense>
   );
 }

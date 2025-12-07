@@ -39,17 +39,20 @@ class MongoConnector:
     def get_collection(self, name: str):
         return self.db[name]
 
-    # SAAS collections (backward compatible additions)
+    # SAAS collections - User management abstraction layer
     def get_users_collection(self):
-        """Extended users collection for wedding planners and vendors
+        """Unified users collection for all user types (ROOT_ADMIN, wedding_planner, vendor)
 
-        Note: Currently returns admin_users collection as all users (planners, vendors, admins)
-        are stored there. This maintains backward compatibility while we transition to
-        a dedicated users collection in the future.
+        This is the single source of truth for user data access. All services should use
+        this method instead of directly accessing mongo.db["users"] to maintain abstraction
+        and enable future optimizations (caching, read replicas, monitoring).
+
+        Returns:
+            AsyncIOMotorCollection: The users collection
         """
         if self.db is None:
             raise RuntimeError("Database not connected")
-        return self.db["admin_users"]  # Using admin_users as the unified user collection
+        return self.db["users"]  # Unified collection for all user types
 
     def get_subscription_plans_collection(self):
         """Subscription plans configurable by ROOT_ADMIN"""
@@ -81,13 +84,7 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["wedding_checklist"]
 
-    # Existing collections (keeping for backward compatibility)
-    def get_admin_users_collection(self):
-        """Legacy admin users collection - keeping existing functionality"""
-        if self.db is None:
-            raise RuntimeError("Database not connected")
-        return self.db["admin_users"]
-
+    # Existing collections
     def get_weddings_collection(self):
         """Weddings collection - existing functionality"""
         if self.db is None:
@@ -145,7 +142,7 @@ class MongoConnector:
         if self.client:
             self.client.close()
             logger.info("MongoDB connection closed")
-            
+
 
 mongo = MongoConnector(settings.MONGO_URI, settings.MONGO_DB)
 

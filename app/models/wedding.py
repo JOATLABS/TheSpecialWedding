@@ -79,6 +79,7 @@ class WeddingModel(BaseModel):
     assigned_planner_email: Optional[str] = Field(None, description="Wedding planner responsible for this wedding")
     created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.com)")
     status: str = Field(default="active", description="Wedding status: active, inactive, deleted")
+    last_billed_at: Optional[datetime] = Field(None, description="Timestamp of last metered usage report")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:

@@ -6,26 +6,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class AuthService:
     def __init__(self):
-        self.admin_collection = mongo.db["admin_users"]
-        self.users_collection = mongo.db["users"]
+        self.users_collection = mongo.get_users_collection()
 
     async def authenticate_user(self, email: str, password: str):
-        # Check admin users first (legacy)
-        user = await self.admin_collection.find_one({"email": email})
-        if user:
-            if not verify_password(password, user["hashed_password"]):
-                raise HTTPException(status_code=401, detail="Invalid credentials")
-            return user
-
-        # Check new users collection (wedding planners, vendors, etc.)
+        # Find user in unified collection
         user = await self.users_collection.find_one({"email": email})
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        # Check password
-        if not verify_password(password, user["password_hash"]):
+        # Check password - support both password_hash (new) and hashed_password (legacy)
+        password_field = user.get("password_hash") or user.get("hashed_password")
+        if not password_field:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        if not verify_password(password, password_field):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         # Check if account is active
@@ -39,26 +36,16 @@ class AuthService:
         return user
 
     async def login_and_get_token(self, email: str, password: str):
-        user = self.authenticate_user(email, password)
+        user = await self.authenticate_user(email, password)
 
         # Update last_login timestamp
         login_time = datetime.utcnow()
         try:
-            # Check if user is from legacy admin_users collection
-            if user.get("_id") and await self.admin_collection.find_one({"_id": user["_id"]}):
-                # Update in admin_users collection
-                await self.admin_collection.update_one(
-                    {"_id": user["_id"]},
-                    {"$set": {"last_login": login_time}}
-                )
-                logger.info(f"Updated last_login for legacy admin user: {email}")
-            else:
-                # Update in users collection
-                await self.users_collection.update_one(
-                    {"_id": user["_id"]},
-                    {"$set": {"last_login": login_time}}
-                )
-                logger.info(f"Updated last_login for user: {email}")
+            await self.users_collection.update_one(
+                {"_id": user["_id"]},
+                {"$set": {"last_login": login_time}}
+            )
+            logger.info(f"Updated last_login for user: {email}")
         except Exception as e:
             logger.error(f"Failed to update last_login for {email}: {str(e)}")
             # Don't fail the login if last_login update fails

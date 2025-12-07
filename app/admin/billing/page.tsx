@@ -97,7 +97,7 @@ export default function BillingPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     // Check for pre-selected plan from URL

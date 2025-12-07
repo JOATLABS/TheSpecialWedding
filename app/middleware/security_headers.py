@@ -64,13 +64,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     # ==================== HEADER BUILDERS ====================
 
     def _add_security_headers(self, response: Response, request: Request, nonce: str) -> None:
+        path = request.url.path
+        is_api = self._is_api_path(path)
+
         if self.enable_hsts and not self.debug_mode and request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = (
                 f"max-age={self.hsts_max_age}; includeSubDomains; preload"
             )
 
         if self.enable_csp:
-            csp_policy = self._build_csp_policy(nonce, request)
+            csp_policy = self._build_csp_policy(nonce, request, is_api=is_api)
             if csp_policy:
                 response.headers["Content-Security-Policy"] = csp_policy
 
@@ -79,13 +82,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = self._build_permissions_policy()
-        response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
-        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        if is_api:
+            response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+            response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+            response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         response.headers["X-Security-Policy"] = "strict"
 
-        if self._is_sensitive_path(request.url.path):
+        if self._is_sensitive_path(path):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
@@ -99,9 +103,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if request_id:
             response.headers["X-Request-ID"] = request_id
 
-    def _build_csp_policy(self, nonce: str, request: Request) -> str:
-        is_admin = "/admin/" in request.url.path
-        is_api = "/api/" in request.url.path
+    def _build_csp_policy(self, nonce: str, request: Request, is_api: bool) -> str:
+        path = request.url.path
+        is_admin = "/admin/" in path
 
         # Allow overrides if explicitly provided
         base_directives = self.csp_directives or {
@@ -303,3 +307,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def _generate_nonce() -> str:
         return secrets.token_urlsafe(16)
+
+    @staticmethod
+    def _is_api_path(path: str) -> bool:
+        return path.startswith("/api/")

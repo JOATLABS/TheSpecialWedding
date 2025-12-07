@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class TrialExpirationService:
     def __init__(self):
-        self.users_collection = mongo.db["users"]
+        self.users_collection = mongo.get_users_collection()
         self.email_service = ResendEmailService()
     def get_trial_settings(self) -> dict:
         """Get trial settings from SAAS config"""
