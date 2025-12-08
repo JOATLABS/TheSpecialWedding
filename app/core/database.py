@@ -84,6 +84,17 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["wedding_checklist"]
 
+    def get_admin_users_collection(self):
+        """Legacy admin_users collection - returns users collection for backward compatibility
+
+        Note: The admin_users collection no longer exists. All users (ROOT_ADMIN, wedding_planner, vendor)
+        are now stored in the unified 'users' collection. This method is kept for backward compatibility
+        with authentication code that still references it.
+        """
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["users"]  # Redirect to unified users collection
+
     # Existing collections
     def get_weddings_collection(self):
         """Weddings collection - existing functionality"""

@@ -136,27 +136,13 @@ export default function NotificationsPage() {
 
     setSending(true);
     try {
-      // First get the users to send to based on filter
-      const usersResponse = await apiRequest<any[]>('/api/admin/users', 'GET');
-      const allUsers = usersResponse ?? [];
-      let targetUsers = [];
-      switch (recipientFilter) {
-        case 'all_users':
-          targetUsers = allUsers;
-          break;
-        case 'active_users':
-          targetUsers = allUsers.filter((u: any) => u.is_active);
-          break;
-        case 'wedding_planners':
-          targetUsers = allUsers.filter((u: any) => u.is_wedding_planner && u.is_active);
-          break;
-        case 'trial_users':
-          targetUsers = allUsers.filter((u: any) => u.subscription_status === 'trialing');
-          break;
-        case 'premium_users':
-          targetUsers = allUsers.filter((u: any) => u.subscription_status === 'active');
-          break;
+      // Map frontend filter to backend target_audience
+      let targetAudience = 'all';
+      if (recipientFilter === 'wedding_planners') {
+        targetAudience = 'wedding_planners';
       }
+      // Note: backend doesn't currently support trial/premium filtering,
+      // so they map to 'all' for now
 
       // Step 1: Create notification
       const createResponse = await apiRequest<{id: string}>('/admin/notifications', 'POST', {
@@ -467,7 +453,7 @@ export default function NotificationsPage() {
               <div className="text-gray-400 dark:text-gray-600 text-4xl mb-4">📊</div>
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Notifications Sent Yet</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Once you start sending platform notifications, you will see delivery statistics,
+                Once you start sending platform notifications, you'll see delivery statistics,
                 open rates, and performance metrics here.
               </p>
               <div className="text-sm text-gray-500 dark:text-gray-400">

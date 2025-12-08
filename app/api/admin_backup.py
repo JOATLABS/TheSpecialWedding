@@ -23,7 +23,7 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin/backup", tags=["ROOT_ADMIN", "Backup"])
+router = APIRouter(prefix="/backup", tags=["ROOT_ADMIN", "Backup"])
 
 # Backup secret for Cloudflare Workers authentication
 BACKUP_SECRET = os.getenv("BACKUP_SECRET")

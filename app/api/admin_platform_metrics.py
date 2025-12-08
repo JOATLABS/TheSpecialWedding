@@ -65,16 +65,12 @@ def _extract_error_summary(error: Dict[str, Any]) -> Dict[str, Any]:
     request_info = error.get("request", {})
 
     endpoint = (
-        request_info.get("path")
-        or request_info.get("endpoint")
-        or error.get("path")
+        request_info.get("path") or request_info.get("endpoint") or error.get("path")
     )
     method = request_info.get("method") or error.get("method")
 
     message = (
-        error.get("error_message")
-        or error.get("message")
-        or error.get("detail")
+        error.get("error_message") or error.get("message") or error.get("detail")
     )
     if not message and method and endpoint and status_code:
         message = f"{method} {endpoint} returned {status_code}"
@@ -107,12 +103,12 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
     if request_info:
         normalized_request = {
             "method": request_info.get("method"),
-            "endpoint": request_info.get("path")
-            or request_info.get("endpoint")
-            or summary.get("endpoint"),
-            "ip": request_info.get("client_ip")
-            or request_info.get("ip")
-            or error.get("ip_address"),
+            "endpoint": (
+                request_info.get("path") or request_info.get("endpoint") or summary.get("endpoint")
+            ),
+            "ip": (
+                request_info.get("client_ip") or request_info.get("ip") or error.get("ip_address")
+            ),
             "user_agent": request_info.get("user_agent") or error.get("user_agent"),
             "user_id": request_info.get("user_id") or summary.get("user_id"),
             "body": request_info.get("body"),
