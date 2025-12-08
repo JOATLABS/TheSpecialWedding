@@ -117,7 +117,8 @@ async def get_wedding_budget(
     """Get complete budget information for a wedding"""
     try:
         # Check if user has access to this wedding
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         budget_data = await budget_service.get_wedding_budget(wedding_id)
         return budget_data
@@ -139,7 +140,8 @@ async def create_budget_category(
     """Create a new budget category for a wedding"""
     try:
         # Check if user has access to this wedding
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         category = await budget_service.create_budget_category(
             wedding_id,
@@ -205,7 +207,8 @@ async def get_vendor_quotes(
 ):
     """Get vendor quotes for a wedding, optionally filtered by service category"""
     try:
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         quotes = await budget_service.get_vendor_quotes(wedding_id, service_category)
         return {"quotes": quotes, "count": len(quotes)}
@@ -224,7 +227,8 @@ async def create_vendor_quote(
 ):
     """Create a new vendor quote"""
     try:
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
         quote = await budget_service.create_vendor_quote(
             wedding_id,
             quote_data.dict(exclude_unset=True)
@@ -244,7 +248,8 @@ async def compare_vendor_quotes(
 ):
     """Compare vendor quotes for a specific service category"""
     try:
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         comparison = await budget_service.compare_vendor_quotes(wedding_id, service_category)
         return comparison
@@ -321,7 +326,8 @@ async def apply_budget_template(
 ):
     """Apply a budget template to a wedding"""
     try:
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
         result = await budget_service.apply_budget_template(
             wedding_id,
             request_data.template_id,
@@ -377,7 +383,8 @@ async def get_payment_history(
 ):
     """Get payment history for a wedding"""
     try:
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         payments = await budget_service.get_payment_history(wedding_id)
         return {"payments": payments, "count": len(payments)}
@@ -397,7 +404,8 @@ async def generate_financial_report(
 ):
     """Generate comprehensive financial report for a wedding"""
     try:
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         report = await budget_service.generate_financial_report(wedding_id)
         return report
@@ -485,7 +493,8 @@ async def get_budget_alerts(
 ):
     """Get budget alerts for a wedding"""
     try:
-        await check_wedding_access(current_user, wedding_id)
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         # This would be implemented in the budget service
         # For now, return placeholder
