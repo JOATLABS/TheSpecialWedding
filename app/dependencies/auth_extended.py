@@ -45,13 +45,12 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
         # Check if this is the ROOT_ADMIN
         root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
         if email == root_admin_email:
-            # Check both legacy admin_users and new users collections
-            legacy_user = await mongo.get_admin_users_collection().find_one({"email": email})
-            new_user = await mongo.get_users_collection().find_one({"email": email})
-            if legacy_user or new_user:
+            # ROOT_ADMIN must exist in the users collection
+            user = await mongo.get_users_collection().find_one({"email": email})
+            if user:
                 # ROOT_ADMIN always has full access
                 role = "ROOT_ADMIN"
-                user_data = (new_user or legacy_user or {}).copy()
+                user_data = user.copy()
                 # Convert ObjectId to string for consistent data types
                 if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
                     user_data["_id"] = str(user_data["_id"])

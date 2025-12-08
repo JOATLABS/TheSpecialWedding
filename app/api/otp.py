@@ -7,12 +7,15 @@ from app.services.otp_service import OTPService
 router = APIRouter()
 otp_service = OTPService()
 
+
 class OTPRequest(BaseModel):
     guest_id: str
+
 
 class OTPVerify(BaseModel):
     guest_id: str
     otp: str
+
 
 @router.post("/otp/request", tags=["OTP"])
 def request_otp(payload: OTPRequest):
@@ -21,6 +24,7 @@ def request_otp(payload: OTPRequest):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to send OTP")
     return {"message": "OTP sent successfully"}
+
 
 @router.post("/otp/verify", tags=["OTP"])
 def verify_otp(payload: OTPVerify):
