@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.services.reminder_utilities import RSVPReminderHelper
-from app.dependencies.auth import require_admin
+from app.dependencies.auth_extended import require_admin_or_planner
 
 router = APIRouter()
 
@@ -21,11 +21,11 @@ class SlugModel(BaseModel):
     slug: str
     custom_message: Optional[str] = None
 
-@router.post("/admin/reminders/send-personalized-links", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.post("/admin/reminders/send-personalized-links", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def send_invite_links(payload: SlugModel):
     return reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
 
-@router.post("/admin/reminders/simulate-rsvp", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.post("/admin/reminders/simulate-rsvp", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def simulate_rsvp(payload: RSVPRequestModel):
     return reminder_helper.simulate_rsvp_for_guest(
         token=payload.token,

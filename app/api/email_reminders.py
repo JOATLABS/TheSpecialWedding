@@ -52,7 +52,7 @@ async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAu
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    if not check_wedding_access(current_user, wedding["_id"]):
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     result = email_service.send_rsvp_invitations(
@@ -81,7 +81,7 @@ async def send_email_invites_with_attachment(
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    if not check_wedding_access(current_user, wedding["_id"]):
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     # Handle attachment
@@ -105,7 +105,7 @@ async def send_email_invites_with_attachment(
     return result
 
 @router.post("/email/send-reminders", tags=["Admin"])
-def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Send event reminder emails"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
@@ -115,7 +115,7 @@ def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuth
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    if not check_wedding_access(current_user, wedding["_id"]):
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     result = email_service.send_reminders(

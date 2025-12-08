@@ -89,7 +89,7 @@ def get_wedding_with_token_access(slug: str, token: str):
         raise HTTPException(status_code=500, detail=f"Token verification error: {str(e)}")
 
 @router.put("/weddings/{wedding_id}/privacy-settings", tags=["Admin"])
-def update_wedding_privacy_settings(
+async def update_wedding_privacy_settings(
     wedding_id: str,
     privacy_settings: PrivacySettingsUpdate,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
@@ -98,7 +98,7 @@ def update_wedding_privacy_settings(
     Update privacy settings for a wedding - Admin only
     """
     # Check if user has access to this wedding
-    if not check_wedding_access(current_user, wedding_id):
+    if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
         return verification_service.update_wedding_privacy_settings(
@@ -111,7 +111,7 @@ def update_wedding_privacy_settings(
         raise HTTPException(status_code=500, detail=f"Error updating privacy settings: {str(e)}")
 
 @router.get("/weddings/{wedding_id}/access-logs", tags=["Admin"])
-def get_wedding_access_logs(
+async def get_wedding_access_logs(
     wedding_id: str,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -119,7 +119,7 @@ def get_wedding_access_logs(
     Get access logs for a wedding - Admin only
     """
     # Check if user has access to this wedding
-    if not check_wedding_access(current_user, wedding_id):
+    if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
         from app.core.database import mongo

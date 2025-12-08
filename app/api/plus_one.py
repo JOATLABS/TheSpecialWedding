@@ -16,7 +16,7 @@ async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = 
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 
-    if not check_wedding_access(current_user, guest.get("wedding_id")):
+    if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     return await plus_one_service.add_plus_one(plus_one)
@@ -28,7 +28,7 @@ async def get_plus_ones(guest_id: str, current_user: ExtendedAuthUser = Depends(
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 
-    if not check_wedding_access(current_user, guest.get("wedding_id")):
+    if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     return await plus_one_service.get_plus_ones_by_guest(guest_id)
@@ -44,7 +44,7 @@ async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), 
     if not guest:
         raise HTTPException(status_code=404, detail="Associated guest not found")
 
-    if not check_wedding_access(current_user, guest.get("wedding_id")):
+    if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     return await plus_one_service.update_plus_one(plus_one_id, data)
@@ -60,7 +60,7 @@ async def delete_plus_one(plus_one_id: str, current_user: ExtendedAuthUser = Dep
     if not guest:
         raise HTTPException(status_code=404, detail="Associated guest not found")
 
-    if not check_wedding_access(current_user, guest.get("wedding_id")):
+    if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     return await plus_one_service.delete_plus_one(plus_one_id)

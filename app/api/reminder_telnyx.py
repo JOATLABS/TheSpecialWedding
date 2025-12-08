@@ -41,7 +41,7 @@ def get_telnyx_status():
     }
 
 @router.post("/reminders/telnyx/send", tags=["Admin"])
-def send_reminder_telnyx(payload: TelnyxReminderModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def send_reminder_telnyx(payload: TelnyxReminderModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send SMS reminders using Telnyx"""
     if not telnyx_available:
         raise HTTPException(status_code=503, detail="Telnyx service not configured")
@@ -51,13 +51,13 @@ def send_reminder_telnyx(payload: TelnyxReminderModel, current_user: ExtendedAut
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    if not check_wedding_access(current_user, wedding["_id"]):
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     return telnyx_reminder_service.send_reminders(payload.event_type, payload.message, payload.target_group)
 
 @router.post("/reminders/telnyx/send-invites", tags=["Admin"])
-def send_invites_telnyx(payload: SlugModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def send_invites_telnyx(payload: SlugModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send RSVP invite links using Telnyx"""
     if not telnyx_available:
         raise HTTPException(status_code=503, detail="Telnyx service not configured")
@@ -67,7 +67,7 @@ def send_invites_telnyx(payload: SlugModel, current_user: ExtendedAuthUser = Dep
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    if not check_wedding_access(current_user, wedding["_id"]):
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     return telnyx_helper.send_personalized_rsvp_links(
@@ -76,7 +76,7 @@ def send_invites_telnyx(payload: SlugModel, current_user: ExtendedAuthUser = Dep
     )
 
 @router.get("/reminders/telnyx/logs", tags=["Admin"])
-def get_telnyx_logs(current_user: ExtendedAuthUser = Depends(require_wedding_planner_only), wedding_slug: Optional[str] = Query(None)):
+async def get_telnyx_logs(current_user: ExtendedAuthUser = Depends(require_wedding_planner_only), wedding_slug: Optional[str] = Query(None)):
     """Get SMS logs for messages sent via Telnyx"""
     if not telnyx_available:
         raise HTTPException(status_code=503, detail="Telnyx service not configured")
@@ -87,7 +87,7 @@ def get_telnyx_logs(current_user: ExtendedAuthUser = Depends(require_wedding_pla
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 
-        if not check_wedding_access(current_user, wedding["_id"]):
+        if not await check_wedding_access(current_user, wedding["_id"]):
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     # For non-root admin users, they should only see logs for their weddings

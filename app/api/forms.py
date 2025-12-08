@@ -68,7 +68,7 @@ async def create_form(
 
     # Validate wedding access if wedding_id is provided
     if form_data.wedding_id:
-        if not check_wedding_access(current_user, form_data.wedding_id):
+        if not await check_wedding_access(current_user, form_data.wedding_id):
             logger.warning(
                 f"User {current_user.email} attempted to create form for "
                 f"wedding {form_data.wedding_id} without access"
@@ -144,7 +144,7 @@ async def get_forms(
         # Sanitize wedding_id
         wedding_id = InputSanitizer.sanitize_text(wedding_id, 100)
         # Check wedding access
-        if not check_wedding_access(current_user, wedding_id):
+        if not await check_wedding_access(current_user, wedding_id):
             logger.warning(
                 f"User {current_user.email} attempted to access forms for "
                 f"wedding {wedding_id} without access"
@@ -201,7 +201,7 @@ async def get_form(
         form = await form_service.get_form(form_id, current_user.email)
 
         # Additional wedding access check if form has wedding_id
-        if form.get('wedding_id') and not check_wedding_access(current_user, form['wedding_id']):
+        if form.get('wedding_id') and not await check_wedding_access(current_user, form['wedding_id']):
             logger.warning(
                 f"User {current_user.email} attempted to access form {form_id} "
                 f"for wedding {form['wedding_id']} without access"
@@ -259,7 +259,7 @@ async def update_form(
 
         # Check wedding access if form has wedding_id
         if existing_form.get('wedding_id'):
-            if not check_wedding_access(current_user, existing_form['wedding_id']):
+            if not await check_wedding_access(current_user, existing_form['wedding_id']):
                 logger.warning(
                     f"User {current_user.email} attempted to update form {form_id} "
                     f"for wedding {existing_form['wedding_id']} without access"
@@ -336,7 +336,7 @@ async def delete_form(
         # Check wedding access if form has wedding_id
         if existing_form.get('wedding_id'):
             logger.info(f"Checking wedding access for wedding_id: {existing_form['wedding_id']}")
-            if not check_wedding_access(current_user, existing_form['wedding_id']):
+            if not await check_wedding_access(current_user, existing_form['wedding_id']):
                 logger.warning(
                     f"User {current_user.email} attempted to delete form {form_id} "
                     f"for wedding {existing_form['wedding_id']} without access"
@@ -507,7 +507,7 @@ async def export_form_responses_csv(
             form = await form_service.get_form(form_id, current_user.email)
 
             # Additional wedding access check if form has wedding_id
-            if form.get('wedding_id') and not check_wedding_access(current_user, form['wedding_id']):
+            if form.get('wedding_id') and not await check_wedding_access(current_user, form['wedding_id']):
                 logger.warning(
                     f"User {current_user.email} attempted to export CSV for form {form_id} "
                     f"for wedding {form['wedding_id']} without access"
