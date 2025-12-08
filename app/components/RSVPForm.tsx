@@ -62,7 +62,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
   const onSubmit = async (data: any) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const apiUrl = baseUrl.replace('/admin', '');
       
       const filledPlusOnes = plusOnes.filter(p => p.name.trim());

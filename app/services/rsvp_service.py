@@ -5,15 +5,16 @@ from app.models.plus_one import PlusOneModel
 from bson import ObjectId
 from datetime import datetime
 
+
 class RSVPService:
     def __init__(self):
         self.guest_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
 
-    def submit_rsvp(self, token: str, rsvp_data: RSVPModel):
+    async def submit_rsvp(self, token: str, rsvp_data: RSVPModel):
         try:
-            guest = self.guest_collection.find_one({"token": token})
+            guest = await self.guest_collection.find_one({"token": token})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
@@ -21,7 +22,7 @@ class RSVPService:
             guest_id_str = str(guest_id)
             wedding_id_str = str(guest.get("wedding_id", ""))
 
-            self.rsvp_collection.update_one(
+            await self.rsvp_collection.update_one(
                 {"guest_id": guest_id_str},
                 {"$set": {
                     "guest_id": guest_id_str,
@@ -33,7 +34,7 @@ class RSVPService:
                 upsert=True
             )
 
-            update_data = {
+            update_data: dict[str, object] = {
                 "phone": rsvp_data.phone, 
                 "updated_at": datetime.utcnow()
             }
@@ -44,7 +45,7 @@ class RSVPService:
                 if rsvp_data.sms_opt_in:
                     update_data["sms_opt_in_date"] = datetime.utcnow()
             
-            self.guest_collection.update_one(
+            await self.guest_collection.update_one(
                 {"_id": guest_id},
                 {"$set": update_data}
             )
@@ -59,7 +60,7 @@ class RSVPService:
                     raise HTTPException(status_code=403, detail="No plus-ones allowed for this guest")
                 
                 # Count existing plus-ones
-                existing_count = self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
+                existing_count = await self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
                 new_plus_ones_count = len(rsvp_data.plus_ones)
 
                 if existing_count + new_plus_ones_count > max_plus_ones:
@@ -81,11 +82,11 @@ class RSVPService:
                     plus_ones_to_insert.append(plus_one.dict())
 
                 if plus_ones_to_insert:
-                    self.plus_one_collection.insert_many(plus_ones_to_insert)
+                    await self.plus_one_collection.insert_many(plus_ones_to_insert)
                 
                 # Update guest to mark plus_one_submitted as True if at least one plus-one is submitted
                 if new_plus_ones_count > 0:
-                    self.guest_collection.update_one(
+                    await self.guest_collection.update_one(
                         {"_id": guest_id},
                         {"$set": {"plus_one_submitted": True}}
                     )
