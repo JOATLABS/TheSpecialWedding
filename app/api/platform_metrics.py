@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.core.config import settings
-from app.dependencies.auth import require_admin
+from app.dependencies.auth_extended import require_root_admin
 from app.services.platform_metrics_service import service as metrics_service
 
 router = APIRouter()
@@ -47,7 +47,7 @@ async def ingest_metrics_snapshot(payload: Dict[str, Any]):
     return _serialize_snapshot_response(document)
 
 
-@router.get("/admin/platform/metrics", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.get("/admin/platform/metrics", tags=["Admin"], dependencies=[Depends(require_root_admin)])
 async def get_admin_metrics_overview():
     snapshot = await metrics_service.get_latest_snapshot()
     if not snapshot:
@@ -55,7 +55,7 @@ async def get_admin_metrics_overview():
     return _serialize_snapshot_response(snapshot)
 
 
-@router.get("/admin/platform/metrics/history", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.get("/admin/platform/metrics/history", tags=["Admin"], dependencies=[Depends(require_root_admin)])
 async def get_metrics_history(start_date: Optional[str] = Query(None, description="ISO-8601 timestamp inclusive")):
     since: Optional[datetime] = None
     if start_date:

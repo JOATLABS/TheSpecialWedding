@@ -8,16 +8,16 @@ router = APIRouter()
 admin_service = AdminRSVPService()
 
 @router.get("/rsvps", tags=["Admin"])
-def get_rsvps(wedding_id: Optional[str] = Query(None), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def get_rsvps(wedding_id: Optional[str] = Query(None), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Check wedding access if wedding_id is provided
-    if wedding_id and not check_wedding_access(current_user, wedding_id):
+    if wedding_id and not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     return admin_service.get_all_rsvps(wedding_id)
 
 @router.get("/rsvps/export", tags=["Admin"])
-def export_rsvps(wedding_id: Optional[str] = Query(None), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def export_rsvps(wedding_id: Optional[str] = Query(None), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Check wedding access if wedding_id is provided
-    if wedding_id and not check_wedding_access(current_user, wedding_id):
+    if wedding_id and not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     csv_data = admin_service.export_rsvps_to_csv()
     return Response(content=csv_data, media_type="text/csv", headers={

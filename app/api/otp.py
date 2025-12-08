@@ -1,9 +1,8 @@
 # app/api/otp.py
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services.otp_service import OTPService
-from app.dependencies.auth import get_current_user, AuthUser
 
 router = APIRouter()
 otp_service = OTPService()

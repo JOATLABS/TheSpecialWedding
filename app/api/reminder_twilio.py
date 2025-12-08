@@ -6,7 +6,7 @@ from app.services.reminder_service_twilio import (
     TwilioRSVPReminderHelper,
     twilio_configured
 )
-from app.dependencies.auth import require_admin, require_role
+from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner
 from pydantic import BaseModel
 from typing import Optional
 
@@ -32,7 +32,7 @@ def get_twilio_status():
         "message": "Twilio configured and ready" if twilio_configured else "Twilio not configured"
     }
 
-@router.post("/reminders/twilio/send", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.post("/reminders/twilio/send", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def send_reminder_twilio(
     event_type: str = Query(..., description="Event type: traditional, white_wedding, or reception"),
     message: str = Query(..., description="Message to send"),
@@ -44,7 +44,7 @@ def send_reminder_twilio(
 
     return twilio_reminder_service.send_reminders(event_type, message, target_group)
 
-@router.post("/reminders/twilio/send-invites", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.post("/reminders/twilio/send-invites", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def send_invites_twilio(payload: SlugModel):
     """Send RSVP invite links using Twilio"""
     if not twilio_configured or not twilio_helper:
@@ -55,7 +55,7 @@ def send_invites_twilio(payload: SlugModel):
         custom_message=payload.custom_message
     )
 
-@router.get("/reminders/twilio/logs", tags=["Admin"], dependencies=[Depends(require_role('root_admin'))])
+@router.get("/reminders/twilio/logs", tags=["Admin"], dependencies=[Depends(require_root_admin)])
 def get_twilio_logs():
     """Get SMS logs for messages sent via Twilio (Root Admin only)"""
     if not twilio_configured or not twilio_reminder_service:
@@ -63,7 +63,7 @@ def get_twilio_logs():
 
     return twilio_reminder_service.get_logs()
 
-@router.get("/reminders/logs", tags=["Admin"], dependencies=[Depends(require_admin)])
+@router.get("/reminders/logs", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def get_all_logs():
     """Get all SMS logs (for planners)"""
     # This endpoint will return all logs for planners. Since we only have Twilio logs,

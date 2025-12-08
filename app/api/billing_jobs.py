@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import List, Optional
 from datetime import datetime, timedelta
-# require_role comes from dependencies.auth, not services.auth_service
-from app.dependencies.auth import require_role
+from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.stripe_service import stripe_service
 from app.core.database import mongo
 from app.models.subscription import SubscriptionStatus
@@ -16,7 +15,7 @@ router = APIRouter()
 @router.post("/billing/sync-usage")
 async def sync_usage_to_stripe(
     background_tasks: BackgroundTasks,
-    token: dict = Depends(require_role("ADMIN")) # require_role returns a dependency
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """
     Manually trigger synchronization of active wedding usage to Stripe Meters.

@@ -109,7 +109,7 @@ def list_weddings_public(current_user: ExtendedAuthUser = Depends(require_admin_
     """List weddings - PROTECTED endpoint requiring authentication"""
     # This endpoint now requires authentication for security
     # Use the admin endpoint for authenticated access
-    if current_user.is_root_admin or current_user.is_legacy_admin:
+    if current_user.is_root_admin:
         return wedding_service.list_weddings_with_planner_info()
     else:
         # Wedding planners see only their assigned weddings
@@ -118,7 +118,7 @@ def list_weddings_public(current_user: ExtendedAuthUser = Depends(require_admin_
 @router.get("/weddings", tags=["Admin"])
 def list_weddings_admin(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """List weddings - ROOT_ADMIN sees all, planners see only assigned"""
-    if current_user.is_root_admin or current_user.is_legacy_admin:
+    if current_user.is_root_admin:
         # ROOT_ADMIN and legacy admin see all weddings
         return wedding_service.list_weddings_with_planner_info()
     else:
@@ -190,10 +190,10 @@ async def create_wedding_admin(wedding: dict, current_user: ExtendedAuthUser = D
     return result
 
 @router.put("/weddings/{wedding_id}", tags=["Admin"])
-def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Update a wedding via admin interface - with access control"""
     # Check if user has access to this wedding
-    if not check_wedding_access(current_user, wedding_id):
+    if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     # Add update metadata
@@ -207,10 +207,10 @@ def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser = Depen
     return wedding_service.delete_wedding(wedding_id)
 
 @router.get("/weddings/{wedding_id}", tags=["Wedding"])
-def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get a wedding by ID - with access control"""
     # Check if user has access to this wedding
-    if not check_wedding_access(current_user, wedding_id):
+    if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     return wedding_service.get_wedding(wedding_id)
 
@@ -236,10 +236,10 @@ def get_wedding_by_slug(slug: str):
     }
 
 @router.put("/weddings/{wedding_id}", tags=["Admin"])
-def update_wedding(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def update_wedding(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Update a wedding - with access control"""
     # Check if user has access to this wedding
-    if not check_wedding_access(current_user, wedding_id):
+    if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     return wedding_service.update_wedding(wedding_id, wedding)
 

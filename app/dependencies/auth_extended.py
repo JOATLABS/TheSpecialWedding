@@ -25,8 +25,6 @@ class ExtendedAuthUser:
         self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
-        # Legacy admin support
-        self.is_legacy_admin = (role == "admin")
 
 async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = Depends(security)) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
@@ -67,65 +65,55 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
             # For other users, check the new users collection first, then legacy
             user = await mongo.get_users_collection().find_one({"email": email})
             if not user:
-                # Fallback to legacy admin_users collection for backward compatibility
-                legacy_user = await mongo.get_admin_users_collection().find_one({"email": email})
-                if legacy_user:
-                    user_data = legacy_user.copy()
-                    # Convert ObjectId to string for consistent data types
-                    if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
-                        user_data["_id"] = str(user_data["_id"])
-                    role = "admin"  # Keep legacy role
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="User not found",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-            else:
-                user_data = user.copy()  # Make a copy to avoid modifying the original
-                # Convert ObjectId to string for consistent data types
-                if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
-                    user_data["_id"] = str(user_data["_id"])
-                role = user.get("role", "wedding_planner")
-                # Check if account is active
-                if not user_data.get("is_active", True):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Account is deactivated",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                # Check email verification for new accounts
-                if user_data.get("email_verified") is False:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Email address not verified. Please check your email and verify your account.",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                # Check trial expiration for wedding planners
-                if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
-                    trial_end_date = user_data.get("trial_end_date")
-                    if trial_end_date:
-                        # Handle both datetime objects and ISO strings
-                        if isinstance(trial_end_date, str):
-                            try:
-                                trial_end_date = datetime.fromisoformat(trial_end_date.replace('Z', '+00:00'))
-                            except:
-                                trial_end_date = datetime.fromisoformat(trial_end_date)
-                        if datetime.utcnow() > trial_end_date:
-                            # Auto-expire the trial
-                            mongo.get_users_collection().update_one(
-                                {"email": email},
-                                {"$set": {
-                                    "subscription_status": "expired",
-                                    "is_active": False,
-                                    "trial_expired_at": datetime.utcnow()
-                                }}
-                            )
-                            raise HTTPException(
-                                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                                detail="Free trial has expired. Please upgrade your subscription to continue using the platform.",
-                                headers={"WWW-Authenticate": "Bearer"},
-                            )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            user_data = user.copy()  # Make a copy to avoid modifying the original
+            # Convert ObjectId to string for consistent data types
+            if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
+                user_data["_id"] = str(user_data["_id"])
+            role = user.get("role", "wedding_planner")
+            # Check if account is active
+            if not user_data.get("is_active", True):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Account is deactivated",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            # Check email verification for new accounts
+            if user_data.get("email_verified") is False:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Email address not verified. Please check your email and verify your account.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            # Check trial expiration for wedding planners
+            if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
+                trial_end_date = user_data.get("trial_end_date")
+                if trial_end_date:
+                    # Handle both datetime objects and ISO strings
+                    if isinstance(trial_end_date, str):
+                        try:
+                            trial_end_date = datetime.fromisoformat(trial_end_date.replace('Z', '+00:00'))
+                        except:
+                            trial_end_date = datetime.fromisoformat(trial_end_date)
+                    if datetime.utcnow() > trial_end_date:
+                        # Auto-expire the trial
+                        mongo.get_users_collection().update_one(
+                            {"email": email},
+                            {"$set": {
+                                "subscription_status": "expired",
+                                "is_active": False,
+                                "trial_expired_at": datetime.utcnow()
+                            }}
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                            detail="Free trial has expired. Please upgrade your subscription to continue using the platform.",
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
 
         return ExtendedAuthUser(email=email, role=role, user_data=user_data)
 
@@ -168,8 +156,8 @@ async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_us
     return current_user
 
 async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require admin or wedding planner access (covers legacy admin too)"""
-    if not (current_user.is_root_admin or current_user.is_wedding_planner or current_user.is_legacy_admin):
+    """Require root admin or wedding planner access"""
+    if not (current_user.is_root_admin or current_user.is_wedding_planner):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin or wedding planner access required"
@@ -177,8 +165,8 @@ async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_
     return current_user
 
 async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require any admin access (backward compatible with existing admin endpoints)"""
-    if not (current_user.is_root_admin or current_user.is_legacy_admin):
+    """Require root admin access"""
+    if not current_user.is_root_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -187,7 +175,7 @@ async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current
 
 async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require wedding planner access only (excludes root admin)"""
-    if not (current_user.is_wedding_planner or current_user.is_legacy_admin):
+    if not current_user.is_wedding_planner:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Wedding planner access required"
@@ -199,9 +187,6 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     # ROOT_ADMIN has full access to all weddings for platform management
     if user.is_root_admin:
         return True
-
-    if user.is_legacy_admin:
-        return True  # Legacy admin has access to all weddings for backward compatibility
 
     if user.is_wedding_planner:
         # Check if this wedding is assigned to this planner
@@ -244,7 +229,7 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
 async def require_wedding_access(wedding_id: str):
     """Factory function to require access to a specific wedding"""
     async def wedding_access_checker(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-        if not check_wedding_access(current_user, wedding_id):
+        if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access to this wedding denied"
