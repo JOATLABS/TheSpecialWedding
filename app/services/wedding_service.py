@@ -1,23 +1,19 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.wedding import WeddingModel
-from typing import List, Any
-from bson import ObjectId
+from typing import List
+from datetime import datetime
 
 
 class WeddingService:
     def __init__(self):
         self.collection = mongo.db["weddings"]
-    
-    async def create_wedding(self, wedding_data: dict):
+
+    async def create_wedding(self, wedding: WeddingModel):
         """Create a new wedding"""
         try:
-            # Handle both WeddingModel instances and raw dicts
-            if hasattr(wedding_data, 'dict'):
-                wedding_dict = wedding_data.dict(by_alias=True)
-            else:
-                wedding_dict = wedding_data
-            
+            wedding_dict = wedding.model_dump(by_alias=True)
+
             # Normalize _id to string for storage consistency
             if "_id" in wedding_dict and not isinstance(wedding_dict["_id"], str):
                 wedding_dict["_id"] = str(wedding_dict["_id"])
@@ -26,19 +22,19 @@ class WeddingService:
                 current_month = datetime.utcnow().strftime("%Y-%m")
                 wedding_dict["billed_period"] = current_month
             wedding_dict.setdefault("meter_pending", False)
-            
+
             # Check if wedding ID already exists
             existing = await self.collection.find_one({"_id": wedding_dict["_id"]})
             if existing:
                 raise HTTPException(status_code=400, detail="Wedding ID already exists")
-            
-            result = await self.collection.insert_one(wedding_dict)
+
+            await self.collection.insert_one(wedding_dict)
             return {"message": "Wedding created successfully", "id": wedding_dict["_id"]}
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error creating wedding: {str(e)}")
-    
+
     async def get_wedding(self, wedding_id: str):
         """Get a wedding by ID"""
         try:
@@ -50,7 +46,7 @@ class WeddingService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving wedding: {str(e)}")
-    
+
     async def get_wedding_by_slug(self, slug: str):
         """Get a wedding by slug"""
         try:
@@ -62,7 +58,7 @@ class WeddingService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving wedding: {str(e)}")
-    
+
     async def list_weddings(self) -> List[dict]:
         """List all weddings"""
         try:
@@ -70,7 +66,7 @@ class WeddingService:
             return weddings
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing weddings: {str(e)}")
-    
+
     async def list_weddings_for_planner(self, planner_email: str) -> List[dict]:
         """List weddings assigned to a specific planner"""
         try:
@@ -78,6 +74,7 @@ class WeddingService:
             return weddings
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing weddings for planner: {str(e)}")
+
     async def list_weddings_with_planner_info(self) -> List[dict]:
         """List all weddings with enhanced planner information for admin interface"""
         try:
@@ -109,29 +106,29 @@ class WeddingService:
         try:
             # Remove _id from update data if present
             wedding_data.pop("_id", None)
-            
+
             result = await self.collection.update_one(
                 {"_id": wedding_id},
                 {"$set": wedding_data}
             )
-            
+
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-            
+
             return {"message": "Wedding updated successfully"}
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating wedding: {str(e)}")
-    
+
     async def delete_wedding(self, wedding_id: str):
         """Delete a wedding"""
         try:
             result = await self.collection.delete_one({"_id": wedding_id})
-            
+
             if result.deleted_count == 0:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-            
+
             return {"message": "Wedding deleted successfully"}
         except HTTPException:
             raise
