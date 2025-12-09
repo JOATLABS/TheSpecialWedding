@@ -159,7 +159,7 @@ export default function NotificationsPage() {
       }
 
       // Step 2: Send the notification
-      const sendResponse = await apiRequest(`/admin/notifications/${createResponse.id}/send`, 'POST', {});
+      const sendResponse = await apiRequest(`/notifications/${createResponse.id}/send`, 'POST', {});
 
       if (sendResponse) {
         alert(`Notification sent successfully! Delivered to ${sendResponse.sent || 0} users.`);

@@ -70,7 +70,7 @@ export default function BillingPage() {
 
       if (token && userId) {
         const subResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/users/${userId}/subscription`,
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/users/${userId}/subscription`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,

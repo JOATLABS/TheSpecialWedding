@@ -1,11 +1,10 @@
 """
 Event Sourcing and Domain Events System
 """
-from typing import Dict, List, Any, Optional, Type, Callable, Awaitable, Union
+from typing import Dict, List, Any, Optional, Callable, Awaitable, Union
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from enum import Enum
-import json
 import asyncio
 from app.core.database import mongo
 from app.core.cache import cache
@@ -75,12 +74,12 @@ class EventStore:
     @property
     def events_collection(self):
         """Get events collection with proper error handling"""
-        return self._mongo._get_collection("domain_events")
+        return self._mongo.db["domain_events"]
 
     @property
     def snapshots_collection(self):
         """Get snapshots collection with proper error handling"""
-        return self._mongo._get_collection("aggregate_snapshots")
+        return self._mongo.db["aggregate_snapshots"]
 
     async def append_event(self, event: DomainEvent) -> bool:
         """Append event to the event store"""
@@ -216,7 +215,7 @@ class EventBus:
         await self.event_store.append_event(event)
         # Notify subscribers
         if event.event_type in self.subscribers:
-            tasks = []
+            tasks: List[Awaitable[Any]] = []
             for handler in self.subscribers[event.event_type]:
                 if asyncio.iscoroutinefunction(handler):
                     tasks.append(handler(event))
@@ -251,6 +250,7 @@ class EventFactory:
                 "registration_timestamp": datetime.now(timezone.utc).isoformat()
             }
         )
+
     @staticmethod
     def wedding_created(wedding_id: str, planner_id: str, title: str) -> DomainEvent:
         return DomainEvent(
@@ -264,6 +264,7 @@ class EventFactory:
             },
             user_id=planner_id
         )
+
     @staticmethod
     def guest_rsvp_submitted(guest_id: str, wedding_id: str, response: str) -> DomainEvent:
         return DomainEvent(
@@ -276,6 +277,7 @@ class EventFactory:
                 "submission_timestamp": datetime.now(timezone.utc).isoformat()
             }
         )
+
     @staticmethod
     def subscription_limit_exceeded(user_id: str, resource_type: str, limit: int) -> DomainEvent:
         return DomainEvent(
@@ -289,6 +291,7 @@ class EventFactory:
             },
             user_id=user_id
         )
+
     @staticmethod
     def login_failed(email: str, ip_address: str, reason: str) -> DomainEvent:
         return DomainEvent(
@@ -305,8 +308,9 @@ class EventFactory:
                 "severity": "medium"
             }
         )
+
     @staticmethod
-    def password_changed(user_id: str, email: str, ip_address: str = None) -> DomainEvent:
+    def password_changed(user_id: str, email: str, ip_address: Optional[str] = None) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.PASSWORD_CHANGED,
             aggregate_id=user_id,
@@ -322,8 +326,9 @@ class EventFactory:
             },
             user_id=user_id
         )
+
     @staticmethod
-    def email_change_requested(user_id: str, old_email: str, new_email: str, ip_address: str = None) -> DomainEvent:
+    def email_change_requested(user_id: str, old_email: str, new_email: str, ip_address: Optional[str] = None) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.EMAIL_CHANGE_REQUESTED,
             aggregate_id=user_id,
@@ -340,6 +345,7 @@ class EventFactory:
             },
             user_id=user_id
         )
+
     @staticmethod
     def email_changed(user_id: str, old_email: str, new_email: str) -> DomainEvent:
         return DomainEvent(
@@ -385,6 +391,7 @@ async def setup_event_handlers():
         """Log security-related events"""
         if event.metadata.get("security_event"):
             logger.warning(f"Security event: {event.event_type} - {event.event_data}")
+
     async def update_subscription_usage(event: DomainEvent):
         """Update subscription usage counters"""
         if event.event_type in [
@@ -398,9 +405,11 @@ async def setup_event_handlers():
             if event.user_id:
                 # Increment appropriate usage counter
                 if event.event_type == EventType.WEDDING_CREATED:
-                    subscription_service.increment_usage(event.user_id, "weddings", 1)
+                    # Wedding usage is metered in /api/wedding.py; avoid double counting here
+                    return
                 elif event.event_type == EventType.EMAIL_SENT:
-                    subscription_service.increment_usage(event.user_id, "emails", 1)
+                    await subscription_service.increment_usage(event.user_id, "emails", 1)
+
     async def send_notifications(event: DomainEvent):
         """Send notifications for important events"""
         if event.event_type == EventType.GUEST_RSVP_SUBMITTED:

@@ -18,6 +18,10 @@ interface Wedding {
   guest_count?: number;
   total_budget?: number;
   created_at?: string;
+  billed_period?: string;
+  last_billed_at?: string;
+  meter_pending?: boolean;
+  meter_pending_reason?: string;
   events?: Array<{
     type: string;
     date: string;
@@ -870,7 +874,7 @@ export default function AdminWeddingsPage() {
                         {formatDate(wedding.date)}
                         {wedding.venue && ` • ${wedding.venue}`}
                       </p>
-                      <div className="flex gap-4 mt-2 text-sm text-gray-500">
+                      <div className="flex gap-4 mt-2 text-sm text-gray-500 flex-wrap">
                         {wedding.guest_count && (
                           <span>{wedding.guest_count} guests</span>
                         )}
@@ -878,6 +882,21 @@ export default function AdminWeddingsPage() {
                           <span>${wedding.total_budget.toLocaleString()} budget</span>
                         )}
                         <span className="capitalize">{wedding.status || 'active'}</span>
+                        {wedding.billed_period && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                            Billed: {wedding.billed_period}
+                          </span>
+                        )}
+                        {wedding.last_billed_at && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-green-50 text-green-700">
+                            Last billed: {new Date(wedding.last_billed_at).toLocaleString()}
+                          </span>
+                        )}
+                        {wedding.meter_pending && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-800">
+                            Meter pending{wedding.meter_pending_reason ? `: ${wedding.meter_pending_reason}` : ''}
+                          </span>
+                        )}
                       </div>
                       {userProfile?.is_root_admin && wedding.assigned_planner_email && (
                         <p className="text-sm text-blue-600 mt-1">

@@ -31,7 +31,7 @@ def enforce_subscription_limit(resource_type: str, amount: int = 1):
                 raise HTTPException(status_code=403, detail="User ID not found")
 
             try:
-                limits_check = subscription_service.check_usage_limits(user_id, resource_type, amount)
+                limits_check = await subscription_service.check_usage_limits(user_id, resource_type, amount)
 
                 if not limits_check.get("allowed", False):
                     raise HTTPException(
@@ -44,7 +44,7 @@ def enforce_subscription_limit(resource_type: str, amount: int = 1):
 
                 # If successful, increment usage (for create operations)
                 if hasattr(func, '__name__') and 'create' in func.__name__.lower():
-                    subscription_service.increment_usage(user_id, resource_type, amount)
+                    await subscription_service.increment_usage(user_id, resource_type, amount)
 
                 return result
 
@@ -79,11 +79,11 @@ def check_feature_access(feature_name: str):
             if not user_id:
                 raise HTTPException(status_code=403, detail="User ID not found")
             try:
-                subscription = subscription_service.get_user_subscription(user_id)
+                subscription = await subscription_service.get_user_subscription(user_id)
                 if not subscription:
                     raise HTTPException(status_code=403, detail="No active subscription found")
 
-                plan = subscription_service.get_plan(subscription["plan_id"])
+                plan = await subscription_service.get_plan(subscription["plan_id"])
                 features = plan.get("features", {})
 
                 if not features.get(feature_name, False):

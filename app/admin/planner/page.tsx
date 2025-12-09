@@ -383,7 +383,7 @@ export default function WeddingPlannerDashboard() {
  </div>
  <button
  className="mt-4 text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
- onClick={() => router.push('/admin/activity-log')}
+ onClick={() => router.push('/admin/planner/activity-log')}
  >
  View all activity →
  </button>

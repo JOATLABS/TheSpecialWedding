@@ -147,7 +147,7 @@ class SubscriptionService:
                 raise HTTPException(status_code=404, detail="User not found")
 
             # Verify plan exists
-            plan = self.get_plan(plan_id)
+            plan = await self.get_plan(plan_id)
 
             # Check if user already has an active subscription
             existing_sub = await self.subscriptions_collection.find_one({
@@ -195,7 +195,7 @@ class SubscriptionService:
             result = await self.subscriptions_collection.insert_one(subscription_data)
 
             # Initialize usage tracking
-            self.initialize_usage_tracking(user_id, subscription_data["_id"])
+            await self.initialize_usage_tracking(user_id, subscription_data["_id"])
 
             # Update user subscription info
             await self.users_collection.update_one(
@@ -306,9 +306,9 @@ class SubscriptionService:
             })
             if not usage:
                 # Initialize if doesn't exist
-                subscription = self.get_user_subscription(user_id)
+                subscription = await self.get_user_subscription(user_id)
                 if subscription:
-                    usage = self.initialize_usage_tracking(user_id, subscription["_id"])
+                    usage = await self.initialize_usage_tracking(user_id, subscription["_id"])
                 else:
                     return {"error": "No active subscription found"}
 
@@ -317,15 +317,15 @@ class SubscriptionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving usage stats: {str(e)}")
 
-    def check_usage_limits(self, user_id: str, resource_type: str, requested_amount: int = 1) -> dict:
+    async def check_usage_limits(self, user_id: str, resource_type: str, requested_amount: int = 1) -> dict:
         """Check if user can use more of a resource without exceeding limits"""
         try:
-            subscription = self.get_user_subscription(user_id)
+            subscription = await self.get_user_subscription(user_id)
             if not subscription:
                 raise HTTPException(status_code=403, detail="No active subscription found")
 
-            plan = self.get_plan(subscription["plan_id"])
-            usage = self.get_usage_stats(user_id)
+            plan = await self.get_plan(subscription["plan_id"])
+            usage = await self.get_usage_stats(user_id)
 
             # Check limits based on resource type
             if resource_type == "weddings":
@@ -413,7 +413,7 @@ class SubscriptionService:
             else:
                 next_reset = datetime(now.year, now.month + 1, 1)
 
-            subscription = self.get_user_subscription(user_id)
+            subscription = await self.get_user_subscription(user_id)
             if not subscription:
                 raise HTTPException(status_code=404, detail="No active subscription found")
 
@@ -459,15 +459,16 @@ class SubscriptionService:
                 {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
                 {"$sort": {"count": -1}}
             ]
-            plan_counts = list(self.subscriptions_collection.aggregate(plan_pipeline))
+            plan_counts_cursor = self.subscriptions_collection.aggregate(plan_pipeline)
+            plan_counts = await plan_counts_cursor.to_list(length=None)
             # Monthly recurring revenue (MRR) calculation
-            active_subs = list(self.subscriptions_collection.find({
+            active_subs = await self.subscriptions_collection.find({
                 "status": "active",
                 "billing_interval": "monthly"
-            }))
+            }).to_list(length=None)
             mrr = 0
             for sub in active_subs:
-                plan = self.get_plan(sub["plan_id"])
+                plan = await self.get_plan(sub["plan_id"])
                 mrr += plan.get("price_monthly", 0)
             return {
                 "total_subscriptions": sum(status_counts.values()),
