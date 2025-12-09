@@ -74,10 +74,7 @@ export default function AdminMetricsDashboard() {
       }
 
       const payload = await response.json();
-      setLatestSnapshot({
-        ...payload,
-        metrics: payload, // The entire payload IS the metrics object
-      });
+      setLatestSnapshot(payload);
     } catch (err) {
       console.error('Error loading latest metrics snapshot', err);
       setError(err instanceof Error ? err.message : 'Failed to load platform metrics');

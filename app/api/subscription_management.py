@@ -16,12 +16,12 @@ subscription_service = SubscriptionService()
 # ==================== SUBSCRIPTION PLAN MANAGEMENT (ROOT_ADMIN ONLY) ====================
 
 @router.post("/subscription-plans", tags=["ROOT_ADMIN"])
-def create_subscription_plan(
+async def create_subscription_plan(
     plan_data: CreateSubscriptionPlanRequest,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Create a new subscription plan - ROOT_ADMIN only"""
-    return subscription_service.create_plan(plan_data.dict(), current_user.email)
+    return await subscription_service.create_plan(plan_data.dict(), current_user.email)
 
 @router.get("/subscription-plans", tags=["ROOT_ADMIN"])
 async def list_subscription_plans(
@@ -32,40 +32,40 @@ async def list_subscription_plans(
     return await subscription_service.list_plans(include_inactive)
 
 @router.get("/subscription-plans/{plan_id}", tags=["ROOT_ADMIN"])
-def get_subscription_plan(
+async def get_subscription_plan(
     plan_id: str,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Get subscription plan details - ROOT_ADMIN only"""
-    return subscription_service.get_plan(plan_id)
+    return await subscription_service.get_plan(plan_id)
 
 @router.put("/subscription-plans/{plan_id}", tags=["ROOT_ADMIN"])
-def update_subscription_plan(
+async def update_subscription_plan(
     plan_id: str,
     update_data: UpdateSubscriptionPlanRequest,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Update subscription plan - ROOT_ADMIN only"""
-    return subscription_service.update_plan(plan_id, update_data.dict(exclude_unset=True))
+    return await subscription_service.update_plan(plan_id, update_data.dict(exclude_unset=True))
 
 @router.delete("/subscription-plans/{plan_id}", tags=["ROOT_ADMIN"])
-def delete_subscription_plan(
+async def delete_subscription_plan(
     plan_id: str,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Delete subscription plan - ROOT_ADMIN only"""
-    return subscription_service.delete_plan(plan_id)
+    return await subscription_service.delete_plan(plan_id)
 
 # ==================== USER SUBSCRIPTION MANAGEMENT ====================
 
 @router.post("/users/{user_id}/subscription", tags=["ROOT_ADMIN"])
-def assign_subscription_to_user(
+async def assign_subscription_to_user(
     user_id: str,
     subscription_data: AssignSubscriptionRequest,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Assign subscription plan to user - ROOT_ADMIN only"""
-    return subscription_service.assign_subscription(
+    return await subscription_service.assign_subscription(
         user_id=user_id,
         plan_id=subscription_data.plan_id,
         billing_interval=subscription_data.billing_interval,
@@ -74,7 +74,7 @@ def assign_subscription_to_user(
     )
 
 @router.get("/users/{user_id}/subscription", tags=["ROOT_ADMIN", "User"])
-def get_user_subscription(
+async def get_user_subscription(
     user_id: str,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -83,25 +83,25 @@ def get_user_subscription(
     if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
         raise HTTPException(status_code=403, detail="Can only view your own subscription")
 
-    subscription = subscription_service.get_user_subscription(user_id)
+    subscription = await subscription_service.get_user_subscription(user_id)
     if not subscription:
         raise HTTPException(status_code=404, detail="No active subscription found")
 
     return subscription
 
 @router.delete("/users/{user_id}/subscription", tags=["ROOT_ADMIN"])
-def cancel_user_subscription(
+async def cancel_user_subscription(
     user_id: str,
     reason: str = Query("", description="Cancellation reason"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Cancel user subscription - ROOT_ADMIN only"""
-    return subscription_service.cancel_subscription(user_id, reason)
+    return await subscription_service.cancel_subscription(user_id, reason)
 
 # ==================== USAGE TRACKING & LIMITS ====================
 
 @router.get("/users/{user_id}/usage", tags=["ROOT_ADMIN", "User"])
-def get_user_usage_stats(
+async def get_user_usage_stats(
     user_id: str,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -109,10 +109,10 @@ def get_user_usage_stats(
     # Users can only see their own usage unless they're ROOT_ADMIN
     if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
         raise HTTPException(status_code=403, detail="Can only view your own usage")
-    return subscription_service.get_usage_stats(user_id)
+    return await subscription_service.get_usage_stats(user_id)
 
 @router.post("/users/{user_id}/usage/check", tags=["ROOT_ADMIN", "User"])
-def check_usage_limits(
+async def check_usage_limits(
     user_id: str,
     resource_type: str = Query(..., description="Resource type: weddings, ai_credits, staff_seats"),
     amount: int = Query(1, description="Amount to check"),
@@ -122,25 +122,25 @@ def check_usage_limits(
     # Users can only check their own limits unless they're ROOT_ADMIN
     if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
         raise HTTPException(status_code=403, detail="Can only check your own limits")
-    return subscription_service.check_usage_limits(user_id, resource_type, amount)
+    return await subscription_service.check_usage_limits(user_id, resource_type, amount)
 
 @router.post("/users/{user_id}/usage/increment", tags=["ROOT_ADMIN"])
-def increment_user_usage(
+async def increment_user_usage(
     user_id: str,
     resource_type: str = Query(..., description="Resource type: weddings, ai_credits, staff_seats"),
     amount: int = Query(1, description="Amount to increment"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Increment usage for a specific resource - ROOT_ADMIN only"""
-    return subscription_service.increment_usage(user_id, resource_type, amount)
+    return await subscription_service.increment_usage(user_id, resource_type, amount)
 
 @router.post("/users/{user_id}/usage/reset", tags=["ROOT_ADMIN"])
-def reset_monthly_usage(
+async def reset_monthly_usage(
     user_id: str,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Reset monthly usage counters - ROOT_ADMIN only"""
-    return subscription_service.reset_monthly_usage(user_id)
+    return await subscription_service.reset_monthly_usage(user_id)
 
 # ==================== ANALYTICS & REPORTING ====================
 
@@ -164,7 +164,7 @@ def require_subscription_limit(resource_type: str, amount: int = 1):
         if not user_id:
             raise HTTPException(status_code=403, detail="User ID not found")
 
-        limits_check = subscription_service.check_usage_limits(user_id, resource_type, amount)
+        limits_check = await subscription_service.check_usage_limits(user_id, resource_type, amount)
 
         if not limits_check.get("allowed", False):
             raise HTTPException(
@@ -370,9 +370,9 @@ async def get_public_subscription_plans():
     return await subscription_service.list_plans(include_inactive=False)
 
 @router.get("/public/subscription-plans/{plan_id}", tags=["Public"])
-def get_public_subscription_plan(plan_id: str):
+async def get_public_subscription_plan(plan_id: str):
     """Get subscription plan details for public view"""
-    plan = subscription_service.get_plan(plan_id)
+    plan = await subscription_service.get_plan(plan_id)
     # Remove sensitive fields for public view
     public_plan = {
         "id": plan["_id"],

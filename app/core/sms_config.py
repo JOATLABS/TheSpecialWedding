@@ -13,11 +13,11 @@ def get_active_sms_provider() -> SMSProvider:
     """
     Get the active SMS provider from environment variable.
     Defaults to TWILIO for backward compatibility.
-    
+
     Set SMS_PROVIDER=telnyx in .env to switch to Telnyx
     """
     provider = os.getenv("SMS_PROVIDER", "twilio").lower()
-    
+
     if provider == "telnyx":
         return SMSProvider.TELNYX
     else:

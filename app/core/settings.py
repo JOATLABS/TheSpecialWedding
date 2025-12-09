@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
-import os
 from enum import Enum
 
 
@@ -34,7 +33,7 @@ class Settings(BaseSettings):
     app_version: str = Field(default="1.3.0", alias="APP_VERSION")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
     # Security
-    secret_key: str = Field(..., alias="SECRET_KEY")
+    secret_key: str = Field(default="changeme", alias="SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
@@ -50,7 +49,7 @@ class Settings(BaseSettings):
         alias="CORS_HEADERS"
     )
     # Database
-    mongo_uri: str = Field(..., alias="MONGO_URI")
+    mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="wedding", alias="MONGO_DB")
     mongo_max_pool_size: int = Field(default=10, alias="MONGO_MAX_POOL_SIZE")
     mongo_min_pool_size: int = Field(default=1, alias="MONGO_MIN_POOL_SIZE")
@@ -134,6 +133,7 @@ class Settings(BaseSettings):
         "case_sensitive": False,
         "extra": "ignore"
     }
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
@@ -141,6 +141,7 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
+
     @field_validator("environment", mode="before")
     @classmethod
     def validate_environment(cls, v):
@@ -150,6 +151,7 @@ class Settings(BaseSettings):
             if v in [e.value for e in Environment]:
                 return Environment(v)
         return Environment.DEVELOPMENT
+
     @field_validator("debug", mode="before")
     @classmethod
     def set_debug_based_on_environment(cls, v, info):
@@ -160,6 +162,7 @@ class Settings(BaseSettings):
             elif info.data["environment"] == Environment.DEVELOPMENT:
                 return True
         return v
+
     def get_database_url(self) -> str:
         """Get full database URL with options"""
         base_url = self.mongo_uri
@@ -202,6 +205,7 @@ class Settings(BaseSettings):
             "white_label": self.feature_white_label,
             "custom_integrations": self.feature_custom_integrations
         }
+
     def get_security_config(self) -> Dict[str, Any]:
         """Get security configuration"""
         return {

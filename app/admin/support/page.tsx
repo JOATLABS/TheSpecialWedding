@@ -43,8 +43,8 @@ export default function SupportPage() {
       setLoading(true);
       // Try to fetch from actual API endpoints, fall back to empty arrays
       try {
-        // These endpoints would need to be created in the backend
-        const ticketsResponse = await apiRequest<{ tickets: SupportTicket[] }>('/api/admin/support/tickets', 'GET');
+        // Fetch support tickets from backend
+        const ticketsResponse = await apiRequest<{ tickets: SupportTicket[] }>('/admin/tickets', 'GET');
         setTickets(ticketsResponse?.tickets ?? []);
       } catch (error) {
         console.warn('Support tickets endpoint not available, using empty array');
@@ -52,7 +52,7 @@ export default function SupportPage() {
       }
 
       try {
-        const metricsResponse = await apiRequest<SupportMetrics>('/api/admin/support/metrics', 'GET');
+        const metricsResponse = await apiRequest<SupportMetrics>('/admin/analytics', 'GET');
         setMetrics(metricsResponse ?? {
           total_tickets: 0,
           open_tickets: 0,
@@ -92,9 +92,7 @@ export default function SupportPage() {
 
   const updateTicketStatus = async (ticketId: string, newStatus: SupportTicket['status']) => {
     try {
-      await apiRequest(`/api/admin/support/tickets/${ticketId}/status`, 'PATCH', {
-        status: newStatus
-      });
+      await apiRequest(`/tickets/${ticketId}`, 'PUT', { status: newStatus });
 
       setTickets(tickets.map(ticket =>
         ticket._id === ticketId ? { ...ticket, status: newStatus, updated_at: new Date().toISOString() } : ticket
@@ -112,8 +110,9 @@ export default function SupportPage() {
     }
 
     try {
-      await apiRequest(`/api/admin/support/tickets/${selectedTicket._id}/respond`, 'POST', {
-        message: responseMessage
+      await apiRequest(`/tickets/${selectedTicket._id}/comments`, 'POST', {
+        message: responseMessage,
+        is_internal: false
       });
 
       // Update ticket in local state

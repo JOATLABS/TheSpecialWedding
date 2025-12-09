@@ -23,7 +23,7 @@ export default {
 
 		try {
 			// Trigger backup endpoint on your VPS
-			const response = await fetch(`${env.API_URL}/admin/backup/trigger`, {
+			const response = await fetch(`${env.API_URL}/backup/trigger`, {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${env.BACKUP_SECRET}`,

@@ -51,7 +51,7 @@ class StripeService:
 
     # ==================== CUSTOMER MANAGEMENT ====================
 
-    def get_or_create_customer(self, user_id: str, email: str, name: Optional[str] = None) -> str:
+    async def get_or_create_customer(self, user_id: str, email: str, name: Optional[str] = None) -> str:
         """
         Get existing Stripe customer ID or create a new customer
 
@@ -67,7 +67,7 @@ class StripeService:
 
         try:
             # Check if customer already exists in our database
-            customer_record = self.stripe_customers_collection.find_one({"user_id": user_id})
+            customer_record = await self.stripe_customers_collection.find_one({"user_id": user_id})
 
             if customer_record and customer_record.get("stripe_customer_id"):
                 # Verify customer exists in Stripe
@@ -86,7 +86,7 @@ class StripeService:
             )
 
             # Save customer ID to database
-            self.stripe_customers_collection.update_one(
+            await self.stripe_customers_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$set": {
@@ -267,7 +267,7 @@ class StripeService:
             return {"status": "error", "message": str(e)}
 
 
-    def create_checkout_session(
+    async def create_checkout_session(
         self,
         user_id: str,
         plan_id: str,
@@ -294,12 +294,12 @@ class StripeService:
 
         try:
             # Get user details
-            user = self.users_collection.find_one({"_id": ObjectId(user_id)})
+            user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
             # Get subscription plan
-            plan = self.plans_collection.find_one({"_id": plan_id})
+            plan = await self.plans_collection.find_one({"_id": plan_id})
             if not plan:
                 raise HTTPException(status_code=404, detail="Subscription plan not found")
 
@@ -313,7 +313,7 @@ class StripeService:
             trial_days = max(trial_days, 0)
 
             # Get or create Stripe customer
-            customer_id = self.get_or_create_customer(
+            customer_id = await self.get_or_create_customer(
                 user_id=user_id,
                 email=user["email"],
                 name=user.get("full_name") or user.get("email")
@@ -329,7 +329,7 @@ class StripeService:
                 sync_result = self.sync_plan_to_stripe(plan)
 
                 # Update plan in DB with new IDs
-                self.plans_collection.update_one(
+                await self.plans_collection.update_one(
                     {"_id": plan_id},
                     {"$set": sync_result}
                 )
@@ -389,7 +389,7 @@ class StripeService:
             )
 
             # Save session reference
-            self.subscriptions_collection.update_one(
+            await self.subscriptions_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$set": {
@@ -444,7 +444,7 @@ class StripeService:
         }
         return mapping.get(stripe_status, SubscriptionStatus.ACTIVE.value)
 
-    def _sync_subscription_state(
+    async def _sync_subscription_state(
         self,
         user_id: Optional[str],
         subscription: Optional[Dict[str, Any]],
@@ -512,7 +512,7 @@ class StripeService:
         if set_on_insert:
             update_document["$setOnInsert"] = set_on_insert
 
-        self.subscriptions_collection.update_one(query, update_document, upsert=True)
+        await self.subscriptions_collection.update_one(query, update_document, upsert=True)
 
         if user_id:
             user_updates: Dict[str, Any] = {
@@ -534,7 +534,7 @@ class StripeService:
                 user_updates["trial_end_date"] = None
                 user_updates["trial_warning_sent"] = False
 
-            self.users_collection.update_one(
+            await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
                 {"$set": user_updates}
             )
@@ -549,7 +549,7 @@ class StripeService:
 
     # ==================== CUSTOMER PORTAL ====================
 
-    def create_portal_session(self, user_id: str, return_url: str = None) -> Dict[str, str]:
+    async def create_portal_session(self, user_id: str, return_url: str = None) -> Dict[str, str]:
         """
         Create a Stripe Customer Portal session for subscription management
 
@@ -564,7 +564,7 @@ class StripeService:
 
         try:
             # Get Stripe customer ID
-            customer_record = self.stripe_customers_collection.find_one({"user_id": user_id})
+            customer_record = await self.stripe_customers_collection.find_one({"user_id": user_id})
             if not customer_record or not customer_record.get("stripe_customer_id"):
                 raise HTTPException(status_code=404, detail="Stripe customer not found")
 
@@ -595,7 +595,7 @@ class StripeService:
 
     # ==================== WEBHOOK HANDLING ====================
 
-    def handle_webhook_event(self, payload: bytes, signature: str) -> Dict[str, Any]:
+    async def handle_webhook_event(self, payload: bytes, signature: str) -> Dict[str, Any]:
         """
         Handle Stripe webhook events
 
@@ -625,19 +625,19 @@ class StripeService:
 
             # Handle different event types
             if event_type == "checkout.session.completed":
-                return self._handle_checkout_completed(data)
+                return await self._handle_checkout_completed(data)
             elif event_type == "customer.subscription.created":
-                return self._handle_subscription_created(data)
+                return await self._handle_subscription_created(data)
             elif event_type == "customer.subscription.updated":
-                return self._handle_subscription_updated(data)
+                return await self._handle_subscription_updated(data)
             elif event_type == "customer.subscription.deleted":
-                return self._handle_subscription_deleted(data)
+                return await self._handle_subscription_deleted(data)
             elif event_type == "customer.subscription.trial_will_end":
-                return self._handle_subscription_trial_will_end(data)
+                return await self._handle_subscription_trial_will_end(data)
             elif event_type == "invoice.paid":
-                return self._handle_invoice_paid(data)
+                return await self._handle_invoice_paid(data)
             elif event_type == "invoice.payment_failed":
-                return self._handle_invoice_payment_failed(data)
+                return await self._handle_invoice_payment_failed(data)
             else:
                 logger.info(f"Unhandled event type: {event_type}")
                 return {"status": "ignored", "event_type": event_type}
@@ -649,7 +649,7 @@ class StripeService:
             logger.error(f"Error processing webhook: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Webhook processing error: {str(e)}")
 
-    def _handle_checkout_completed(self, session: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_checkout_completed(self, session: Dict[str, Any]) -> Dict[str, Any]:
         """Handle successful checkout session completion"""
         try:
             user_id = session["metadata"].get("user_id")
@@ -668,7 +668,7 @@ class StripeService:
                 except stripe.error.StripeError as e:
                     logger.error(f"Unable to retrieve subscription {subscription_id}: {str(e)}")
 
-            sync_result = self._sync_subscription_state(
+            sync_result = await self._sync_subscription_state(
                 user_id=user_id,
                 subscription=subscription,
                 customer_id=session.get("customer"),
@@ -693,10 +693,10 @@ class StripeService:
             logger.error(f"Error handling checkout completed: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def _handle_subscription_created(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_created(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
         """Handle new subscription creation"""
         try:
-            result = self._sync_subscription_state(
+            result = await self._sync_subscription_state(
                 user_id=subscription.get("metadata", {}).get("user_id"),
                 subscription=subscription,
                 customer_id=subscription.get("customer")
@@ -714,10 +714,10 @@ class StripeService:
             logger.error(f"Error handling subscription created: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def _handle_subscription_updated(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_updated(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
         """Handle subscription updates"""
         try:
-            result = self._sync_subscription_state(
+            result = await self._sync_subscription_state(
                 user_id=subscription.get("metadata", {}).get("user_id"),
                 subscription=subscription,
                 customer_id=subscription.get("customer")
@@ -734,12 +734,12 @@ class StripeService:
             logger.error(f"Error handling subscription updated: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def _handle_subscription_deleted(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_deleted(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
         """Handle subscription cancellation/deletion"""
         try:
             stripe_sub_id = subscription["id"]
 
-            result = self._sync_subscription_state(
+            result = await self._sync_subscription_state(
                 user_id=subscription.get("metadata", {}).get("user_id"),
                 subscription=subscription,
                 customer_id=subscription.get("customer"),
@@ -760,11 +760,11 @@ class StripeService:
             logger.error(f"Error handling subscription deleted: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def _handle_subscription_trial_will_end(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_trial_will_end(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
         """Record trial end reminders for alignment with internal notifications."""
 
         try:
-            result = self._sync_subscription_state(
+            result = await self._sync_subscription_state(
                 user_id=subscription.get("metadata", {}).get("user_id"),
                 subscription=subscription,
                 customer_id=subscription.get("customer"),
@@ -784,7 +784,7 @@ class StripeService:
             logger.error(f"Error handling subscription trial end notice: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle successful invoice payment"""
         try:
             subscription_id = invoice.get("subscription")
@@ -798,7 +798,7 @@ class StripeService:
                 logger.error(f"Unable to refresh subscription {subscription_id} during invoice.paid: {str(e)}")
 
             if subscription:
-                self._sync_subscription_state(
+                await self._sync_subscription_state(
                     user_id=subscription.get("metadata", {}).get("user_id"),
                     subscription=subscription,
                     customer_id=subscription.get("customer"),
@@ -808,7 +808,7 @@ class StripeService:
                     }
                 )
             else:
-                self.subscriptions_collection.update_one(
+                await self.subscriptions_collection.update_one(
                     {"stripe_subscription_id": subscription_id},
                     {"$set": {
                         "payment_status": "paid",
@@ -824,7 +824,7 @@ class StripeService:
             logger.error(f"Error handling invoice paid: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def _handle_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle failed invoice payment"""
         try:
             subscription_id = invoice.get("subscription")
@@ -838,7 +838,7 @@ class StripeService:
                 logger.error(f"Unable to refresh subscription {subscription_id} during invoice.payment_failed: {str(e)}")
 
             if subscription:
-                self._sync_subscription_state(
+                await self._sync_subscription_state(
                     user_id=subscription.get("metadata", {}).get("user_id"),
                     subscription=subscription,
                     customer_id=subscription.get("customer"),
@@ -848,7 +848,7 @@ class StripeService:
                     }
                 )
             else:
-                self.subscriptions_collection.update_one(
+                await self.subscriptions_collection.update_one(
                     {"stripe_subscription_id": subscription_id},
                     {"$set": {
                         "payment_status": "past_due",
@@ -866,7 +866,7 @@ class StripeService:
 
     # ==================== CONNECT / MARKETPLACE ====================
 
-    def create_connected_account(self, user_id: str, email: str, country: str = "US") -> str:
+    async def create_connected_account(self, user_id: str, email: str, country: str = "US") -> str:
         """
         Create a Stripe Express connected account for a user (Planner or Vendor).
 
@@ -882,7 +882,7 @@ class StripeService:
 
         try:
             # Check if user already has a connect account
-            user = self.users_collection.find_one({"_id": ObjectId(user_id)})
+            user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
             if user and user.get("stripe_connect_id"):
                 return user["stripe_connect_id"]
 
@@ -898,7 +898,7 @@ class StripeService:
             )
 
             # Save account ID to user record
-            self.users_collection.update_one(
+            await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
                 {"$set": {"stripe_connect_id": account.id, "updated_at": datetime.utcnow()}}
             )
@@ -1002,7 +1002,7 @@ class StripeService:
             logger.error(f"Error creating payment intent: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error creating payment intent: {str(e)}")
 
-    def create_vendor_payment_intent(
+    async def create_vendor_payment_intent(
         self,
         sender_user_id: str,
         vendor_connect_id: str,
@@ -1018,8 +1018,8 @@ class StripeService:
 
         try:
             # Ensure sender has a customer ID
-            user = self.users_collection.find_one({"_id": ObjectId(sender_user_id)})
-            customer_id = self.get_or_create_customer(sender_user_id, user["email"], user.get("full_name"))
+            user = await self.users_collection.find_one({"_id": ObjectId(sender_user_id)})
+            customer_id = await self.get_or_create_customer(sender_user_id, user["email"], user.get("full_name"))
 
             payment_intent = stripe.PaymentIntent.create(
                 amount=int(amount * 100),

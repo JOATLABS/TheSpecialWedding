@@ -69,7 +69,7 @@ async def create_checkout_session(
     try:
         user_id = str(current_user.user_data.get("_id"))
 
-        session = stripe_service.create_checkout_session(
+        session = await stripe_service.create_checkout_session(
             user_id=user_id,
             plan_id=request.plan_id,
             billing_interval=request.billing_interval,
@@ -143,7 +143,7 @@ async def create_portal_session(
     try:
         user_id = str(current_user.user_data.get("_id"))
 
-        portal_session = stripe_service.create_portal_session(
+        portal_session = await stripe_service.create_portal_session(
             user_id=user_id,
             return_url=request.return_url
         )
@@ -198,7 +198,7 @@ async def stripe_webhook(
         payload = await request.body()
 
         # Process webhook
-        result = stripe_service.handle_webhook_event(payload, stripe_signature)
+        result = await stripe_service.handle_webhook_event(payload, stripe_signature)
 
         return {"status": "success", "result": result}
 
@@ -225,7 +225,7 @@ async def create_connect_account_link(
         email = current_user.user_data.get("email")
 
         # Create or get connected account
-        account_id = stripe_service.create_connected_account(
+        account_id = await stripe_service.create_connected_account(
             user_id=user_id,
             email=email,
             country=request.country
@@ -260,7 +260,7 @@ async def get_connect_status(
         from app.core.database import mongo
         from bson import ObjectId
 
-        user = mongo.db["users"].find_one({"_id": ObjectId(user_id)})
+        user = await mongo.db["users"].find_one({"_id": ObjectId(user_id)})
         connect_id = user.get("stripe_connect_id")
 
         if not connect_id:
@@ -295,7 +295,7 @@ async def pay_vendor(
         from app.core.database import mongo
         from bson import ObjectId
 
-        vendor = mongo.db["users"].find_one({"_id": ObjectId(request.vendor_user_id)})
+        vendor = await mongo.db["users"].find_one({"_id": ObjectId(request.vendor_user_id)})
         if not vendor:
             raise HTTPException(status_code=404, detail="Vendor not found")
 
@@ -306,7 +306,7 @@ async def pay_vendor(
         # Verify sender permission (if needed, e.g. checking budget)
         # For now, we assume if they pay, they pay.
 
-        result = stripe_service.create_vendor_payment_intent(
+        result = await stripe_service.create_vendor_payment_intent(
             sender_user_id=sender_id,
             vendor_connect_id=vendor_connect_id,
             amount=request.amount,
@@ -347,7 +347,7 @@ async def create_payment_intent(
         # Ensure planner is authorized for the wedding if wedding_id provided
         if request.wedding_id and not current_user.is_root_admin:
             from app.core.database import mongo
-            wedding = mongo.db["weddings"].find_one({"_id": request.wedding_id})
+            wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(request.wedding_id)})
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
