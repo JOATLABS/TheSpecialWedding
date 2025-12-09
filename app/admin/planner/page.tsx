@@ -88,6 +88,7 @@ export default function WeddingPlannerDashboard() {
  return;
  }
 
+ // Only wedding planners can access this dashboard (strict role separation)
  if (userProfile && !userProfile.is_wedding_planner) {
  router.push('/admin');
  return;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 
 interface MetricsSnapshot {
@@ -49,7 +50,8 @@ const formatTimestamp = (value?: string | null) => {
 };
 
 export default function AdminMetricsDashboard() {
-  const { token } = useAdmin();
+  const router = useRouter();
+  const { token, userProfile, fetchUserProfile } = useAdmin();
   const [latestSnapshot, setLatestSnapshot] = useState<MetricsSnapshot | null>(null);
   const [history, setHistory] = useState<MetricsSnapshot[]>([]);
   const [historyHours, setHistoryHours] = useState<number>(HISTORY_OPTIONS[0].hours);
@@ -122,16 +124,41 @@ export default function AdminMetricsDashboard() {
     }
   }, []);
 
+  // Redirect wedding planners to their dashboard
   useEffect(() => {
-    if (!token) return;
-    setError('');
-    fetchLatestSnapshot(token);
-  }, [token, fetchLatestSnapshot]);
+    if (!token) {
+      router.push('/admin/login');
+      return;
+    }
+
+    if (!userProfile) {
+      fetchUserProfile();
+      return;
+    }
+
+    // Only ROOT_ADMIN can access Platform Health Overview
+    if (userProfile && userProfile.is_wedding_planner) {
+      router.push('/admin/planner');
+      return;
+    }
+  }, [token, userProfile, fetchUserProfile, router]);
 
   useEffect(() => {
-    if (!token) return;
+    // Only fetch metrics if user is ROOT_ADMIN (after profile is loaded)
+    if (!token || !userProfile) return;
+    if (!userProfile.is_root_admin) return;
+
+    setError('');
+    fetchLatestSnapshot(token);
+  }, [token, userProfile, fetchLatestSnapshot]);
+
+  useEffect(() => {
+    // Only fetch history if user is ROOT_ADMIN (after profile is loaded)
+    if (!token || !userProfile) return;
+    if (!userProfile.is_root_admin) return;
+
     fetchHistorySnapshots(token, historyHours);
-  }, [token, historyHours, fetchHistorySnapshots]);
+  }, [token, userProfile, historyHours, fetchHistorySnapshots]);
 
   const metrics = useMemo(
     () => ((latestSnapshot?.metrics ?? {}) as Record<string, unknown>),

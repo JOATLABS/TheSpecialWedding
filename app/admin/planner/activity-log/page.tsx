@@ -63,7 +63,8 @@ export default function PlannerActivityLogPage() {
       return;
     }
 
-    if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
+    // Only wedding planners can access activity log (strict role separation)
+    if (userProfile && !userProfile.is_wedding_planner) {
       router.push('/admin');
       return;
     }

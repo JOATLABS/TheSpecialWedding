@@ -108,11 +108,33 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             const { access_token } = await res.json();
 
             persistAdminAuthToken(access_token, rememberMe);
-            
+
             setToken(access_token);
 
-            toast.success('Login successful');
-            router.push('/admin');
+            // Fetch user profile to determine redirect location
+            const profileResponse = await fetch(`${baseUrl}/admin/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${access_token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (profileResponse.ok) {
+                const profile = await profileResponse.json();
+                setUserProfile(profile);
+
+                toast.success('Login successful');
+
+                // Redirect based on user role
+                if (profile.is_wedding_planner) {
+                    router.push('/admin/planner');
+                } else {
+                    router.push('/admin');
+                }
+            } else {
+                toast.success('Login successful');
+                router.push('/admin');
+            }
         } catch (err: any) {
             toast.error(err.message);
             throw err;
