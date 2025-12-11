@@ -8,7 +8,7 @@ Used by:
 """
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
-from app.models.wedding import EventModel
+from app.models.wedding import EventModel, PrivacySettingsModel
 
 
 class RSVPStatsModel(BaseModel):
@@ -80,7 +80,7 @@ class ActivityLogResponse(BaseModel):
 
 class PlannerWeddingModel(BaseModel):
     """Wedding data for GET /planner/weddings."""
-    id: str
+    id: str = Field(..., serialization_alias="_id")
     couple_names: str = ""
     date: str = ""
     slug: str = ""
@@ -92,6 +92,18 @@ class PlannerWeddingModel(BaseModel):
     created_at: str = ""
     updated_at: str = ""
     events: List[Any] = Field(default_factory=list)
+    privacy_settings: Optional[PrivacySettingsModel] = None
+    rsvp_config: Optional[Dict[str, Any]] = None
+    theme_config: Optional[Dict[str, Any]] = None
+    registries: List[Any] = Field(default_factory=list)
+    faqs: List[Any] = Field(default_factory=list)
+    our_story: Optional[Dict[str, Any]] = None
+    wedding_party: List[Any] = Field(default_factory=list)
 
     class Config:
         populate_by_name = True
+
+    def model_dump(self, **kwargs):
+        """Override to use _id in output."""
+        kwargs.setdefault('by_alias', True)
+        return super().model_dump(**kwargs)

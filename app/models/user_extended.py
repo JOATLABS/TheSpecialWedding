@@ -27,6 +27,11 @@ class UserModel(BaseModel):
     assigned_wedding_ids: List[str] = Field(default_factory=list, description="Weddings this vendor has access to")
     service_type: Optional[str] = Field(None, description="Type of service for vendors")
     created_by: Optional[str] = Field(None, description="Wedding planner who created this vendor")
+    # Profile
+    first_name: Optional[str] = Field(None, description="User's first name")
+    last_name: Optional[str] = Field(None, description="User's last name")
+    profile_image_url: Optional[str] = Field(None, description="S3/R2 URL for profile image")
+
     # System fields
     is_active: bool = Field(default=True, description="Whether account is active")
     email_verified: bool = Field(default=False, description="Whether email is verified")

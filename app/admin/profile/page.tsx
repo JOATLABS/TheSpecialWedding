@@ -10,6 +10,7 @@ interface UserProfile {
   last_name?: string;
   company_name?: string;
   role: string;
+  profile_image_url?: string;
 }
 
 interface ChangePasswordData {
@@ -50,6 +51,10 @@ export default function ProfilePage() {
     last_name: '',
     company_name: ''
   });
+
+  // Image upload states
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const fetchUserProfile = useCallback(async () => {
     if (!token) return;
@@ -188,6 +193,97 @@ export default function ProfilePage() {
     }
   };
 
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Please select a valid image file (JPEG, PNG, GIF, or WebP)');
+      return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setImagePreview(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload image
+    setImageUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/profile/image`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast.success('Profile image updated!');
+        fetchUserProfile(); // Refresh to get new image URL
+        setImagePreview(null);
+      } else {
+        const error = await response.json();
+        toast.error(error.detail || 'Failed to upload image');
+        setImagePreview(null);
+      }
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      toast.error('Failed to upload image');
+      setImagePreview(null);
+    } finally {
+      setImageUploading(false);
+      // Reset file input
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteImage = async () => {
+    if (!confirm('Are you sure you want to remove your profile image?')) return;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/profile/image`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        toast.success('Profile image removed');
+        fetchUserProfile();
+      } else {
+        toast.error('Failed to remove image');
+      }
+    } catch (error) {
+      toast.error('Failed to remove image');
+    }
+  };
+
+  // Generate initials for avatar fallback
+  const getInitials = () => {
+    const first = userProfile?.first_name?.charAt(0) || '';
+    const last = userProfile?.last_name?.charAt(0) || '';
+    if (first || last) return (first + last).toUpperCase();
+    return userProfile?.email?.charAt(0).toUpperCase() || '?';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -249,6 +345,62 @@ export default function ProfilePage() {
           {/* Profile Info Tab */}
           {activeTab === 'profile' && (
             <div>
+              {/* Profile Image Section */}
+              <div className="flex items-center gap-6 mb-8 pb-6 border-b">
+                <div className="relative">
+                  {/* Avatar Display */}
+                  <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-wedding-rose to-wedding-gold flex items-center justify-center shadow-lg">
+                    {imagePreview ? (
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : userProfile.profile_image_url ? (
+                      <img
+                        src={userProfile.profile_image_url}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-3xl font-bold text-white">{getInitials()}</span>
+                    )}
+                  </div>
+                  {imageUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full">
+                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent"></div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-1">Profile Photo</h3>
+                  <p className="text-sm text-gray-500 mb-3">
+                    Upload a photo to personalize your account. Max size: 5MB
+                  </p>
+                  <div className="flex gap-2">
+                    <label className="cursor-pointer bg-wedding-rose text-white px-4 py-2 rounded-md hover:bg-wedding-gold transition text-sm font-medium">
+                      {imageUploading ? 'Uploading...' : 'Upload Photo'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        onChange={handleImageChange}
+                        disabled={imageUploading}
+                        className="hidden"
+                      />
+                    </label>
+                    {userProfile.profile_image_url && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteImage}
+                        className="text-red-600 px-4 py-2 rounded-md border border-red-300 hover:bg-red-50 transition text-sm font-medium"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <h2 className="text-xl font-semibold text-gray-800 mb-4">Profile Information</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>

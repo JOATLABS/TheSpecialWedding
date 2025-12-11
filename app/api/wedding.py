@@ -204,7 +204,7 @@ async def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(
     return await wedding_service.get_wedding(wedding_id)
 
 @router.get("/weddings/slug/{slug}", tags=["Wedding"])
-def get_wedding_by_slug(slug: str):
+async def get_wedding_by_slug(slug: str):
     """
     Get a wedding by slug - DEPRECATED for security reasons.
     This endpoint now returns minimal public information only.
@@ -213,7 +213,7 @@ def get_wedding_by_slug(slug: str):
     from app.services.guest_verification_service import GuestVerificationService
 
     verification_service = GuestVerificationService()
-    privacy_info = verification_service.get_wedding_privacy_info(slug)
+    privacy_info = await verification_service.get_wedding_privacy_info(slug)
 
     # Only return basic info to show what authentication is required
     return {

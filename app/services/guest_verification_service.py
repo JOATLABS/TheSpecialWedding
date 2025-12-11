@@ -94,7 +94,7 @@ class GuestVerificationService:
             # Don't fail the main flow if logging fails
             security_logger.error(f"Failed to log security event: {str(e)}")
 
-    def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Verify guest access to a wedding based on different authentication methods.
         Returns wedding data and guest info if access is granted.
@@ -118,8 +118,11 @@ class GuestVerificationService:
             )
 
         try:
+            # Debug logging
+            security_logger.info(f"Verification attempt for slug: {slug}, data: {verification_data}")
+
             # Get wedding by slug
-            wedding = self.wedding_service.get_wedding_by_slug(slug)
+            wedding = await self.wedding_service.get_wedding_by_slug(slug)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -170,7 +173,7 @@ class GuestVerificationService:
                     # Sanitize token
                     token = self._sanitize_input(token, "token", max_length=255)
                     try:
-                        guest = self.guest_service.get_guest_by_token(token, wedding["_id"])
+                        guest = await self.guest_service.get_guest_by_token(token, wedding["_id"])
                         if guest:
                             self._reset_failed_attempts(rate_limit_key)
                             self._log_security_event("TOKEN_AUTH_SUCCESS", {
@@ -203,7 +206,7 @@ class GuestVerificationService:
 
                     # Verify OTP
                     try:
-                        otp_result = self.otp_service.verify_otp(
+                        otp_result = await self.otp_service.verify_otp(
                             wedding_id=wedding["_id"],
                             contact=contact,
                             otp_code=otp_code
@@ -236,6 +239,7 @@ class GuestVerificationService:
                     # Return special response indicating OTP should be sent
                     return {
                         "access": False,
+                        "wedding_id": str(wedding.get("_id")),
                         "wedding": None,
                         "guest": None,
                         "otp_required": True,
@@ -243,6 +247,9 @@ class GuestVerificationService:
                         "contact_type": "phone" if phone else "email",
                         "message": "Verification code will be sent to your contact"
                     }
+
+            # Access denied - log why
+            security_logger.warning(f"Access denied for slug: {slug}, privacy_mode: {privacy_mode}, provided: {list(verification_data.keys())}")
 
             # Access denied
             return {

@@ -118,5 +118,6 @@ class ReminderService:
             "sent_at":      timestamp,
         }
 
-    def get_logs(self):
-        return list(self.log_collection.find({}, {"_id": 0}))
+    async def get_logs(self):
+        cursor = self.log_collection.find({}, {"_id": 0})
+        return await cursor.to_list(length=500)

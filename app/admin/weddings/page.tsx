@@ -6,7 +6,6 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 
 interface Wedding {
-  id: string;
   _id: string;
   couple_names: string;
   date: string;

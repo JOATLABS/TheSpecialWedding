@@ -1,6 +1,6 @@
 # Module 11: RSVP Reminder Utilities (SMS Link Template + RSVP Tester)
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
@@ -14,14 +14,24 @@ class RSVPReminderHelper:
         self.guest_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
+        self.log_collection = mongo.db["reminders_sent"]  # Add logging collection
         self.twilio_client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
         self.from_phone = os.getenv("TWILIO_PHONE_NUMBER")
         self.base_url = os.getenv("FRONTEND_URL")
         if not self.base_url:
             raise ValueError("FRONTEND_URL environment variable is required")
 
-    def send_personalized_rsvp_links(self, slug: str, custom_message: str = None, event_type: str = "traditional"):
-        guests = self.guest_collection.find({})
+    async def send_personalized_rsvp_links(self, slug: str, custom_message: str = None, event_type: str = "traditional"):
+        # First, get the wedding by slug to find its ID
+        wedding = await mongo.db["weddings"].find_one({"slug": slug})
+        if not wedding:
+            raise HTTPException(status_code=404, detail=f"Wedding with slug '{slug}' not found")
+
+        wedding_id = wedding.get("_id")
+
+        # Get guests for this specific wedding
+        guests_cursor = self.guest_collection.find({"wedding_id": wedding_id})
+        guests = await guests_cursor.to_list(length=None)
         sent = 0
         for guest in guests:
             token = guest.get("token")
@@ -29,7 +39,7 @@ class RSVPReminderHelper:
             if not token or not phone:
                 continue
             url = f"{self.base_url}/{slug}/invite/{token}"
-            
+
             # Use custom message if provided, otherwise use default
             if custom_message:
                 # Replace {url} placeholder with actual URL
@@ -38,12 +48,39 @@ class RSVPReminderHelper:
                 message = message.replace("{name}", guest.get("name", ""))
             else:
                 message = f"You're invited! RSVP here: {url}"
-                
+
             try:
                 self.twilio_client.messages.create(to=phone, from_=self.from_phone, body=message)
                 sent += 1
+                # Log successful send
+                await self.log_collection.insert_one({
+                    "wedding_id": wedding_id,
+                    "wedding_slug": slug,
+                    "guest_id": str(guest.get("_id")),
+                    "guest_name": guest.get("name"),
+                    "recipient": phone,
+                    "message": message,
+                    "status": "sent",
+                    "provider": "twilio",
+                    "type": "sms",
+                    "sent_at": datetime.now(timezone.utc)
+                })
             except Exception as e:
                 print(f"Failed to send to {phone}: {e}")
+                # Log failed send
+                await self.log_collection.insert_one({
+                    "wedding_id": wedding_id,
+                    "wedding_slug": slug,
+                    "guest_id": str(guest.get("_id")),
+                    "guest_name": guest.get("name"),
+                    "recipient": phone,
+                    "message": message,
+                    "status": "failed",
+                    "error": str(e),
+                    "provider": "twilio",
+                    "type": "sms",
+                    "sent_at": datetime.now(timezone.utc)
+                })
         return {"sent": sent}
 
     def simulate_rsvp_for_guest(self, token: str, attending=None, dietary=None, phone=None, plus_one=None):

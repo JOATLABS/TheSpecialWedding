@@ -21,11 +21,11 @@ class SlugModel(BaseModel):
     slug: str
     custom_message: Optional[str] = None
 
-@router.post("/admin/reminders/send-personalized-links", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
-def send_invite_links(payload: SlugModel):
-    return reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
+@router.post("/reminders/send-personalized-links", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
+async def send_invite_links(payload: SlugModel):
+    return await reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
 
-@router.post("/admin/reminders/simulate-rsvp", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
+@router.post("/reminders/simulate-rsvp", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def simulate_rsvp(payload: RSVPRequestModel):
     return reminder_helper.simulate_rsvp_for_guest(
         token=payload.token,

@@ -87,8 +87,15 @@ class WeddingModel(BaseModel):
     reminder_from_email: Optional[str] = Field(None, description="Custom from email for reminders (e.g., couple@example.com)")
     # SAAS Multi-tenancy fields (backward compatible - won't break existing weddings)
     assigned_planner_email: Optional[str] = Field(None, description="Wedding planner responsible for this wedding")
+    assigned_planner_id: Optional[str] = Field(None, description="Wedding planner ID (MongoDB ObjectId)")
     created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.com)")
+    updated_by: Optional[str] = Field(None, description="Email of last user to update this wedding")
     status: str = Field(default="active", description="Wedding status: active, inactive, deleted")
+    # Budget and guest tracking
+    guest_count: Optional[int] = Field(None, description="Total number of guests invited", ge=0)
+    total_budget: Optional[float] = Field(None, description="Total wedding budget amount", ge=0)
+    venue: Optional[str] = Field(None, description="Main venue name or location")
+    # Billing fields
     last_billed_at: Optional[datetime] = Field(None, description="Timestamp of last metered usage report")
     billed_period: Optional[str] = Field(None, description="YYYY-MM period when last metered")
     meter_pending: bool = Field(default=False, description="Meter event pending retry")

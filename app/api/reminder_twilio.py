@@ -6,7 +6,8 @@ from app.services.reminder_service_twilio import (
     TwilioRSVPReminderHelper,
     twilio_configured
 )
-from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner
+from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
+from app.core.database import mongo
 from pydantic import BaseModel
 from typing import Optional
 
@@ -56,21 +57,41 @@ def send_invites_twilio(payload: SlugModel):
     )
 
 @router.get("/reminders/twilio/logs", tags=["Admin"], dependencies=[Depends(require_root_admin)])
-def get_twilio_logs():
+async def get_twilio_logs():
     """Get SMS logs for messages sent via Twilio (Root Admin only)"""
     if not twilio_configured or not twilio_reminder_service:
         raise HTTPException(status_code=503, detail="Twilio service not configured")
 
-    return twilio_reminder_service.get_logs()
+    return await twilio_reminder_service.get_logs()
 
-@router.get("/reminders/logs", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
-def get_all_logs():
-    """Get all SMS logs (for planners)"""
-    # This endpoint will return all logs for planners. Since we only have Twilio logs,
-    # we can return them for now. In the future, this can be expanded to include other providers.
+@router.get("/reminders/logs", tags=["Admin"])
+async def get_all_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Get SMS logs - filtered by wedding for planners"""
     if not twilio_configured or not twilio_reminder_service:
         return []
 
-    # For now, we return the same logs as the root admin.
-    # The frontend will differentiate based on the user's role.
-    return twilio_reminder_service.get_logs()
+    # Root admin can see all logs
+    if current_user.is_root_admin:
+        return await twilio_reminder_service.get_logs()
+
+    # Wedding planners can only see logs for their assigned weddings
+    if current_user.is_wedding_planner:
+        # Get weddings assigned to this planner
+        weddings_cursor = mongo.db["weddings"].find(
+            {"assigned_planner_email": current_user.email},
+            {"_id": 1}
+        )
+        weddings = await weddings_cursor.to_list(length=None)
+        wedding_ids = [w["_id"] for w in weddings]
+
+        if not wedding_ids:
+            return []
+
+        # Get logs only for those weddings
+        logs_cursor = mongo.db["reminders_sent"].find(
+            {"wedding_id": {"$in": wedding_ids}},
+            {"_id": 0}
+        ).sort("sent_at", -1).limit(500)
+        return await logs_cursor.to_list(length=500)
+
+    return []

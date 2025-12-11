@@ -296,17 +296,31 @@ class ResendEmailService:
         
         return {"sent": sent, "failed": failed}
     
-    def get_email_logs(self, wedding_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
+    async def get_email_logs(self, wedding_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """Get email logs, optionally filtered by wedding"""
         query = {}
         if wedding_id:
             query["wedding_id"] = wedding_id
-        
-        logs = list(self.email_log_collection.find(
-            query, 
+
+        cursor = self.email_log_collection.find(
+            query,
             {"_id": 0}
-        ).sort("sent_at", -1).limit(limit))
-        
+        ).sort("sent_at", -1).limit(limit)
+
+        logs = await cursor.to_list(length=limit)
+        return logs
+
+    async def get_email_logs_for_weddings(self, wedding_ids: List[str], limit: int = 100) -> List[Dict]:
+        """Get email logs for multiple weddings (for planners)"""
+        if not wedding_ids:
+            return []
+
+        cursor = self.email_log_collection.find(
+            {"wedding_id": {"$in": wedding_ids}},
+            {"_id": 0}
+        ).sort("sent_at", -1).limit(limit)
+
+        logs = await cursor.to_list(length=limit)
         return logs
     
     def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str, plus_ones: list = None) -> str:

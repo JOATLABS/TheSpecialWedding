@@ -11,7 +11,10 @@ class GuestVerificationRequest(BaseModel):
     token: Optional[str] = Field(None, description="Guest invitation token")
     name: Optional[str] = Field(None, description="Guest name for verification")
     phone: Optional[str] = Field(None, description="Guest phone number for verification")
+    email: Optional[str] = Field(None, description="Guest email for verification")
     password: Optional[str] = Field(None, description="Password for password-protected weddings")
+    otp_code: Optional[str] = Field(None, description="OTP verification code")
+    contact: Optional[str] = Field(None, description="Contact (phone/email) for OTP verification")
 
 class PrivacySettingsUpdate(BaseModel):
     privacy_mode: str = Field(..., description="Privacy mode: public, password, private")
@@ -22,18 +25,23 @@ class PrivacySettingsUpdate(BaseModel):
     require_name_verification: bool = Field(default=True)
 
 @router.post("/weddings/verify-guest-access/{slug}", tags=["Guest"])
-def verify_guest_access(slug: str, verification: GuestVerificationRequest):
+async def verify_guest_access(slug: str, verification: GuestVerificationRequest):
     """
     Verify guest access to a wedding using various authentication methods.
     Returns wedding data if access is granted.
     """
     try:
-        result = verification_service.verify_guest_access(
+        result = await verification_service.verify_guest_access(
             slug=slug,
             verification_data=verification.dict()
         )
 
         if not result.get("access"):
+            # Check if OTP is required - if so, return the response (not an error)
+            if result.get("otp_required"):
+                return result
+
+            # Otherwise, access is denied
             raise HTTPException(
                 status_code=403,
                 detail="Guest verification failed",
@@ -65,13 +73,13 @@ async def get_wedding_privacy_info(slug: str):
         raise HTTPException(status_code=500, detail=f"Error getting privacy info: {str(e)}")
 
 @router.get("/weddings/guest-access/{slug}/{token}", tags=["Guest"])
-def get_wedding_with_token_access(slug: str, token: str):
+async def get_wedding_with_token_access(slug: str, token: str):
     """
     Get wedding details using token-based authentication.
     This is for direct token-based access (legacy support).
     """
     try:
-        result = verification_service.verify_guest_access(
+        result = await verification_service.verify_guest_access(
             slug=slug,
             verification_data={"token": token}
         )
@@ -101,7 +109,7 @@ async def update_wedding_privacy_settings(
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
-        return verification_service.update_wedding_privacy_settings(
+        return await verification_service.update_wedding_privacy_settings(
             wedding_id=wedding_id,
             privacy_settings=privacy_settings.dict()
         )
