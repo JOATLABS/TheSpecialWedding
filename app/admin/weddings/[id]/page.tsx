@@ -21,7 +21,8 @@ export default function WeddingDetailsPage() {
  const fetchWedding = useCallback(async () => {
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- const response = await fetch(`${baseUrl}/admin/weddings`, {
+ // Use authenticated planner endpoint to get assigned weddings
+ const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
    headers: {
      'Authorization': `Bearer ${token}`,
      'Content-Type': 'application/json'

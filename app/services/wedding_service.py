@@ -12,7 +12,10 @@ class WeddingService:
     async def create_wedding(self, wedding: WeddingModel):
         """Create a new wedding"""
         try:
-            wedding_dict = wedding.model_dump(by_alias=True)
+            if isinstance(wedding, dict):
+                wedding_dict = wedding
+            else:
+                wedding_dict = wedding.model_dump(by_alias=True)
 
             # Normalize _id to string for storage consistency
             if "_id" in wedding_dict and not isinstance(wedding_dict["_id"], str):

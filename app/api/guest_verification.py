@@ -52,13 +52,13 @@ def verify_guest_access(slug: str, verification: GuestVerificationRequest):
         raise HTTPException(status_code=500, detail=f"Verification error: {str(e)}")
 
 @router.get("/weddings/privacy-info/{slug}", tags=["Guest"])
-def get_wedding_privacy_info(slug: str):
+async def get_wedding_privacy_info(slug: str):
     """
     Get privacy information about a wedding without granting access.
     Used to show appropriate authentication form to guests.
     """
     try:
-        return verification_service.get_wedding_privacy_info(slug)
+        return await verification_service.get_wedding_privacy_info(slug)
     except HTTPException:
         raise
     except Exception as e:
