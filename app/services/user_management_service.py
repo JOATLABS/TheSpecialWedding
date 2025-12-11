@@ -951,8 +951,8 @@ class UserManagementService:
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Profile update failed")
 
-            # Emit profile updated event
-            await event_bus.emit(EventFactory.create_user_profile_updated_event(
+            # Publish profile updated event
+            await event_bus.publish(EventFactory.user_profile_updated(
                 user_id=str(user["_id"]),
                 email=user_email,
                 updated_fields=list(update_data.keys())

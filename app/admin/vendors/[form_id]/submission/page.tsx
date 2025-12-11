@@ -52,8 +52,8 @@ export default function VendorSubmissionPage() {
  }
 
  const data = await response.json();
- // Get wedding details
- const weddingResponse = await fetch(`${baseUrl}/admin/weddings`, {
+ // Get wedding details - use planner endpoint for assigned weddings
+ const weddingResponse = await fetch(`${baseUrl}/admin/planner/weddings`, {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',

@@ -309,10 +309,10 @@ class GuestVerificationService:
             # Silently fail - logging shouldn't break the main flow
             pass
 
-    def get_wedding_privacy_info(self, slug: str) -> Dict[str, Any]:
+    async def get_wedding_privacy_info(self, slug: str) -> Dict[str, Any]:
         """Get privacy information about a wedding without granting access"""
         try:
-            wedding = self.wedding_service.get_wedding_by_slug(slug)
+            wedding = await self.wedding_service.get_wedding_by_slug(slug)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 

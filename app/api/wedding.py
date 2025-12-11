@@ -44,8 +44,11 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
     wedding_data = wedding.dict(by_alias=True)
     wedding_data["created_by"] = current_user.email
     if current_user.is_wedding_planner:
-        wedding_data.setdefault("assigned_planner_email", current_user.email)
-        wedding_data.setdefault("assigned_planner_id", current_user.user_data.get("_id", ""))
+        # Use direct assignment if None, since setdefault won't override existing None values
+        if not wedding_data.get("assigned_planner_email"):
+            wedding_data["assigned_planner_email"] = current_user.email
+        if not wedding_data.get("assigned_planner_id"):
+            wedding_data["assigned_planner_id"] = current_user.user_data.get("_id", "")
 
     result = await wedding_service.create_wedding(wedding_data)
 
@@ -133,7 +136,7 @@ async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: Ext
     # Add update metadata
     wedding["updated_by"] = current_user.email
 
-    return wedding_service.update_wedding(wedding_id, wedding)
+    return await wedding_service.update_wedding(wedding_id, wedding)
 
 @router.delete("/weddings/{wedding_id}", tags=["Admin"])
 async def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
@@ -220,14 +223,6 @@ def get_wedding_by_slug(slug: str):
         "requires_authentication": privacy_info.get("privacy_mode") != "public",
         "message": "Use /weddings/verify-guest-access/{slug} with proper authentication to access full wedding details"
     }
-
-@router.put("/weddings/{wedding_id}", tags=["Admin"])
-async def update_wedding(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    """Update a wedding - with access control"""
-    # Check if user has access to this wedding
-    if not await check_wedding_access(current_user, wedding_id):
-        raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    return await wedding_service.update_wedding(wedding_id, wedding)
 
 @router.delete("/weddings/{wedding_id}", tags=["Admin"])
 async def delete_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):

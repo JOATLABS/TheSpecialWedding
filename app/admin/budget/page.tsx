@@ -69,7 +69,8 @@ export default function BudgetDashboard() {
 
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/weddings`, {
+      // Use authenticated planner endpoint to get assigned weddings
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -226,6 +227,27 @@ export default function BudgetDashboard() {
       percentage_of_total: 0
     });
     setEditingCategory(null);
+  };
+
+  // Bidirectional calculation handlers
+  const handleBudgetAmountChange = (amount: number) => {
+    const totalBudget = budgetSummary?.total_budget || 0;
+    const percentage = totalBudget > 0 ? (amount / totalBudget) * 100 : 0;
+    setCategoryForm({
+      ...categoryForm,
+      budgeted_amount: amount,
+      percentage_of_total: parseFloat(percentage.toFixed(2))
+    });
+  };
+
+  const handlePercentageChange = (percentage: number) => {
+    const totalBudget = budgetSummary?.total_budget || 0;
+    const amount = (percentage / 100) * totalBudget;
+    setCategoryForm({
+      ...categoryForm,
+      percentage_of_total: percentage,
+      budgeted_amount: parseFloat(amount.toFixed(2))
+    });
   };
 
   const handleAddPayment = (category: BudgetCategory) => {
@@ -502,10 +524,15 @@ export default function BudgetDashboard() {
                     min="0"
                     step="0.01"
                     value={categoryForm.budgeted_amount}
-                    onChange={(e) => setCategoryForm({...categoryForm, budgeted_amount: parseFloat(e.target.value) || 0})}
+                    onChange={(e) => handleBudgetAmountChange(parseFloat(e.target.value) || 0)}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   />
+                  {budgetSummary && budgetSummary.total_budget > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Total budget: ${budgetSummary.total_budget.toLocaleString()}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -533,9 +560,12 @@ export default function BudgetDashboard() {
                     max="100"
                     step="0.1"
                     value={categoryForm.percentage_of_total}
-                    onChange={(e) => setCategoryForm({...categoryForm, percentage_of_total: parseFloat(e.target.value) || 0})}
+                    onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Auto-calculated based on budget amount
+                  </p>
                 </div>
               </div>
               <div className="flex gap-3 mt-6">

@@ -150,7 +150,8 @@ export default function AdminWeddingsPage() {
     setLoading(true);
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const endpoint = `${baseUrl}/admin/weddings`;
+      // Use authenticated planner endpoint to get assigned weddings
+      const endpoint = `${baseUrl}/admin/planner/weddings`;
       const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`,

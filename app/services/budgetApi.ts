@@ -44,7 +44,9 @@ class BudgetApiService {
       }
     );
     if (!response.ok) throw new Error('Failed to create budget category');
-    return response.json();
+    const payload = await response.json();
+    // Backend returns {message, category}, extract just the category
+    return payload.category || payload;
   }
 
   async updateBudgetCategory(token: string, categoryId: string, data: UpdateBudgetCategoryRequest): Promise<BudgetCategory> {
@@ -57,7 +59,9 @@ class BudgetApiService {
       }
     );
     if (!response.ok) throw new Error('Failed to update budget category');
-    return response.json();
+    const payload = await response.json();
+    // Backend returns {message, category}, extract just the category
+    return payload.category || payload;
   }
 
   async deleteBudgetCategory(token: string, categoryId: string): Promise<void> {
@@ -74,11 +78,12 @@ class BudgetApiService {
   // Budget Summary
   async getBudgetSummary(token: string, weddingId: string): Promise<BudgetSummary> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/summary`,
+      `${BASE_URL}/admin/weddings/${weddingId}/budget`,
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget summary');
-    return response.json();
+    const budgetData = await response.json();
+    return budgetData.summary || budgetData;
   }
 
   // Vendor Quotes

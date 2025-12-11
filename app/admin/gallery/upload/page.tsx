@@ -38,15 +38,24 @@ export default function AdminGalleryUploadPage() {
     if (!token) router.push('/admin/login');
   }, [token, router]);
 
-  // fetch weddings
+  // fetch weddings when token is available
   useEffect(() => {
-    fetchWeddings();
-  }, []);
+    if (token) {
+      fetchWeddings();
+    }
+  }, [token]);
 
   const fetchWeddings = async () => {
+    if (!token) return;
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/weddings`);
+      // Use the authenticated planner endpoint to get assigned weddings
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {

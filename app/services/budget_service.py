@@ -35,6 +35,27 @@ class BudgetService:
             wedding = await self.weddings.find_one({"_id": wedding_id})
             if not wedding:
                 raise ValueError("Wedding not found")
+
+            # Check if adding this category would exceed the wedding's total budget
+            wedding_total_budget = wedding.get("total_budget", 0)
+            if wedding_total_budget > 0:
+                # Get existing categories
+                cursor = self.budget_categories.find({"wedding_id": wedding_id})
+                existing_categories = await cursor.to_list(length=None)
+                existing_total = sum(cat.get("budgeted_amount", 0) for cat in existing_categories)
+                new_category_amount = category_data.get("budgeted_amount", 0)
+
+                if existing_total + new_category_amount > wedding_total_budget:
+                    overage = (existing_total + new_category_amount) - wedding_total_budget
+                    logger.warning(
+                        f"Creating category would exceed wedding budget: "
+                        f"Wedding {wedding_id} total: ${wedding_total_budget:,.2f}, "
+                        f"Existing categories: ${existing_total:,.2f}, "
+                        f"New category: ${new_category_amount:,.2f}, "
+                        f"Overage: ${overage:,.2f}"
+                    )
+                    # Still allow creation but alert will be triggered
+
             # Create category
             category = BudgetCategory(
                 wedding_id=wedding_id,
@@ -93,6 +114,33 @@ class BudgetService:
             category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
             if not category:
                 raise ValueError("Budget category not found")
+
+            # Check if updating the budget amount would exceed wedding's total budget
+            if "budgeted_amount" in update_data:
+                wedding_id = category["wedding_id"]
+                wedding = await self.weddings.find_one({"_id": wedding_id})
+                wedding_total_budget = wedding.get("total_budget", 0) if wedding else 0
+
+                if wedding_total_budget > 0:
+                    # Get all categories except this one
+                    cursor = self.budget_categories.find({
+                        "wedding_id": wedding_id,
+                        "_id": {"$ne": PyObjectId(category_id)}
+                    })
+                    other_categories = await cursor.to_list(length=None)
+                    other_total = sum(cat.get("budgeted_amount", 0) for cat in other_categories)
+                    new_amount = update_data["budgeted_amount"]
+
+                    if other_total + new_amount > wedding_total_budget:
+                        overage = (other_total + new_amount) - wedding_total_budget
+                        logger.warning(
+                            f"Updating category would exceed wedding budget: "
+                            f"Wedding {wedding_id} total: ${wedding_total_budget:,.2f}, "
+                            f"Other categories: ${other_total:,.2f}, "
+                            f"Updated category: ${new_amount:,.2f}, "
+                            f"Overage: ${overage:,.2f}"
+                        )
+                        # Still allow update but alert will be triggered
 
             # Update timestamp
             update_data["updated_at"] = datetime.utcnow()
@@ -636,7 +684,14 @@ class BudgetService:
         cursor = self.budget_categories.find({"wedding_id": wedding_id})
         categories = await cursor.to_list(length=None)
 
-        total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
+        # Get the wedding's total budget from the wedding document
+        wedding = await self.weddings.find_one({"_id": wedding_id})
+        wedding_total_budget = wedding.get("total_budget", 0) if wedding else 0
+
+        # Use wedding's total_budget if set, otherwise sum category budgets
+        categories_total = sum(cat.get("budgeted_amount", 0) for cat in categories)
+        total_budget = wedding_total_budget if wedding_total_budget > 0 else categories_total
+
         total_spent = sum(cat.get("actual_spent", 0) for cat in categories)
 
         # Calculate committed amounts (accepted quotes)
@@ -683,6 +738,43 @@ class BudgetService:
         """Check for budget alerts and create notifications"""
         cursor = self.budget_categories.find({"wedding_id": wedding_id})
         categories = await cursor.to_list(length=None)
+
+        # Check if total category budgets exceed wedding's total budget
+        wedding = await self.weddings.find_one({"_id": wedding_id})
+        wedding_total_budget = wedding.get("total_budget", 0) if wedding else 0
+        categories_total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
+
+        if wedding_total_budget > 0 and categories_total_budget > wedding_total_budget:
+            overage = categories_total_budget - wedding_total_budget
+            alert = BudgetAlert(
+                wedding_id=wedding_id,
+                alert_type="categories_exceed_total",
+                severity="critical",
+                title="Category Budgets Exceed Total Wedding Budget",
+                message=f"Your category budgets total ${categories_total_budget:,.2f}, which is ${overage:,.2f} over your total wedding budget of ${wedding_total_budget:,.2f}",
+                amount=overage,
+                threshold=wedding_total_budget
+            )
+            # Check if alert already exists
+            existing = await self.budget_alerts.find_one({
+                "wedding_id": wedding_id,
+                "alert_type": "categories_exceed_total",
+                "is_resolved": False
+            })
+
+            if not existing:
+                await self.budget_alerts.insert_one(alert.dict())
+                logger.warning(f"Wedding {wedding_id}: Category budgets (${categories_total_budget:,.2f}) exceed total budget (${wedding_total_budget:,.2f})")
+        else:
+            # If categories are now within budget, resolve any existing alerts
+            await self.budget_alerts.update_many(
+                {
+                    "wedding_id": wedding_id,
+                    "alert_type": "categories_exceed_total",
+                    "is_resolved": False
+                },
+                {"$set": {"is_resolved": True, "resolved_at": datetime.utcnow()}}
+            )
 
         for category in categories:
             budgeted = category.get("budgeted_amount", 0)
