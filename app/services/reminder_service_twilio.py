@@ -1,7 +1,8 @@
 # app/services/reminder_service_twilio.py
 
 import os
-from twilio.rest import Client
+from typing import Optional
+from twilio.rest import Client  # type: ignore
 from fastapi import HTTPException
 from datetime import datetime
 from app.core.database import mongo
@@ -46,7 +47,7 @@ class TwilioReminderService:
         self.plus_one_collection = mongo.db["plus_ones"]
         self.log_collection = mongo.db["reminders_sent"]
 
-    def send_reminders(self, event_type: str, message: str, target_group: str):
+    async def send_reminders(self, event_type: str, message: str, target_group: str):
         if event_type not in {"traditional", "white_wedding", "reception"}:
             raise HTTPException(status_code=400, detail="Invalid event type")
         if target_group not in {"guests", "plus-ones", "all"}:
@@ -57,8 +58,8 @@ class TwilioReminderService:
 
         # Guests
         if target_group in {"guests", "all"}:
-            for guest in self.guest_collection.find({}):
-                rsvp = self.rsvp_collection.find_one({"guest_id": guest["_id"]})
+            async for guest in self.guest_collection.find({}):
+                rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
                 if rsvp and event_type in rsvp.get("attending", []):
                     phone = guest.get("phone")
                     # Check if guest has opted in for SMS reminders
@@ -77,7 +78,7 @@ class TwilioReminderService:
 
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
-            for po in self.plus_one_collection.find({}):
+            async for po in self.plus_one_collection.find({}):
                 if event_type in po.get("attending", []):
                     phone = po.get("phone")
                     if phone:
@@ -93,22 +94,38 @@ class TwilioReminderService:
                         ))
 
         if logs:
-            self.log_collection.insert_many(logs)
+            await self.log_collection.insert_many(logs)
 
         return {"sent": len(logs), "provider": "twilio"}
 
     def _send_sms(self, to: str, body: str) -> str:
         try:
+            if not self.client:
+                raise RuntimeError("Twilio client is not initialized")
+
             # Ensure phone number is in E.164 format
             if not to.startswith('+'):
                 to = f"+1{to}"  # Assume US number if no country code
 
-            # Create message with Twilio
-            message = self.client.messages.create(
-                messaging_service_sid=self.messaging_service_sid,
-                body=body,
-                to=to
-            )
+            # Get from number from env
+            from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
+
+            # Create message with Twilio using direct phone number
+            # Try messaging service first, fallback to direct number if it fails
+            try:
+                message = self.client.messages.create(
+                    messaging_service_sid=self.messaging_service_sid,
+                    body=body,
+                    to=to
+                )
+            except Exception as msg_service_error:
+                logger.warning(f"Messaging service failed, trying direct number: {str(msg_service_error)}")
+                # Fallback to direct phone number
+                message = self.client.messages.create(
+                    from_=from_number,
+                    body=body,
+                    to=to
+                )
 
             logger.info(f"Twilio SMS sent to {to}, SID: {message.sid}")
             return "success"
@@ -129,8 +146,9 @@ class TwilioReminderService:
             "provider": "twilio"
         }
 
-    def get_logs(self):
-        return list(self.log_collection.find({"provider": "twilio"}, {"_id": 0}))
+    async def get_logs(self):
+        return await self.log_collection.find({"provider": "twilio"}, {"_id": 0}).to_list(length=None)
+
 
 class TwilioRSVPReminderHelper:
     def __init__(self):
@@ -138,20 +156,30 @@ class TwilioRSVPReminderHelper:
             raise RuntimeError("Twilio is not configured.")
 
         self.guest_collection = mongo.get_guest_collection()
+        self.wedding_collection = mongo.get_weddings_collection()
         self.log_collection = mongo.db["reminders_sent"]
         self.client = twilio_client
         self.messaging_service_sid = MESSAGING_SERVICE_SID
         self.base_url = os.getenv("FRONTEND_URL")
         if not self.base_url:
             raise ValueError("FRONTEND_URL environment variable is required")
+        
+    async def send_personalized_rsvp_links(self, slug: str, custom_message: Optional[str] = None):
+        # Get wedding by slug first
+        wedding = await self.wedding_collection.find_one({"slug": slug})
+        wedding = await self.wedding_collection.find_one({"slug": slug})
+        if not wedding:
+            logger.error(f"Wedding not found with slug: {slug}")
+            return {"sent": 0, "failed": 0, "error": "Wedding not found", "provider": "twilio"}
 
-    def send_personalized_rsvp_links(self, slug: str, custom_message: str = None):
-        guests = self.guest_collection.find({})
+        wedding_id = wedding.get("_id")
+
+        # Get guests for this specific wedding only
         sent_count = 0
         failed_count = 0
         logs = []
 
-        for guest in guests:
+        async for guest in self.guest_collection.find({"wedding_id": wedding_id}):
             token = guest.get("token")
             phone = guest.get("phone")
             guest_id = guest.get("_id")
@@ -177,6 +205,9 @@ class TwilioRSVPReminderHelper:
                 phone = f"+1{phone}"
 
             try:
+                if not self.client:
+                    raise RuntimeError("Twilio client is not initialized")
+
                 twilio_message = self.client.messages.create(
                     messaging_service_sid=self.messaging_service_sid,
                     body=message,
@@ -202,7 +233,7 @@ class TwilioRSVPReminderHelper:
             })
 
         if logs:
-            self.log_collection.insert_many(logs)
+            await self.log_collection.insert_many(logs)
 
         return {
             "sent": sent_count,

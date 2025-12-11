@@ -543,7 +543,14 @@ async def get_planner_weddings(
                 guest_count=wedding.get("guest_count", 0),
                 created_at=_safe_isoformat(wedding.get("created_at")),
                 updated_at=_safe_isoformat(wedding.get("updated_at")),
-                events=wedding.get("events", [])
+                events=wedding.get("events", []),
+                privacy_settings=wedding.get("privacy_settings"),
+                rsvp_config=wedding.get("rsvp_config"),
+                theme_config=wedding.get("theme_config"),
+                registries=wedding.get("registries", []),
+                faqs=wedding.get("faqs", []),
+                our_story=wedding.get("our_story"),
+                wedding_party=wedding.get("wedding_party", [])
             ))
 
         # Sort by date (upcoming first)

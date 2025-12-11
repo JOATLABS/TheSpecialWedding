@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 import inspect
 from app.services.guest_service import GuestService
+from app.models.guest import UpdateGuestRequest
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
 
 router = APIRouter()
@@ -41,30 +42,35 @@ async def list_guests(wedding_id: str = Query(...), current_user: ExtendedAuthUs
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 
-async def update_guest(guest_id: str, update_data: dict, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+@router.put("/guests/{guest_id}", tags=["Admin"])
+async def update_guest(
+    guest_id: str,
+    update_data: UpdateGuestRequest,
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+):
+    """Update guest information. Only updateable fields: name, phone, email, group_id, role, plus_one settings."""
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if inspect.isawaitable(guest):
         guest = await guest
     if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-        raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
-        return await guest_service.update_guest(guest_id, update_data)
+        # Convert Pydantic model to dict, excluding unset fields
+        update_dict = update_data.model_dump(exclude_unset=True)
+        return await guest_service.update_guest(guest_id, update_dict)
     except HTTPException as e:
         raise e
-    except Exception:
-        raise HTTPException(status_code=500, detail="Unexpected error occurred")
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to update guest: {str(err)}")
 
 
+@router.delete("/guests/{guest_id}", tags=["Admin"])
 async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if inspect.isawaitable(guest):
         guest = await guest
-    if not await check_wedding_access(current_user, guest.get("wedding_id")):
-        raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    guest = await guest_service.get_guest(guest_id)
     if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:

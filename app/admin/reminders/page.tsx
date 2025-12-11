@@ -76,15 +76,22 @@ export default function AdminRemindersPage() {
    });
 
  const fetchWeddings = useCallback(async () => {
+ if (!token) return;
+
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- const response = await fetch(`${baseUrl}/weddings`);
+ const response = await fetch(`${baseUrl}/admin/weddings`, {
+   headers: {
+     'Authorization': `Bearer ${token}`,
+     'Content-Type': 'application/json',
+   },
+ });
  const data = await response.json();
  setWeddings(Array.isArray(data) ? data : []);
  } catch (err) {
  setError('Failed to load weddings');
  }
- }, []);
+ }, [token]);
 
  const fetchGuests = useCallback(async () => {
  if (!selectedWedding || !token) return;
@@ -178,7 +185,7 @@ export default function AdminRemindersPage() {
 
  // Send SMS invites
  if (channel === 'sms' || channel === 'both') {
- const response = await fetch(`${baseUrl}/admin/admin/reminders/send-personalized-links`, {
+ const response = await fetch(`${baseUrl}/admin/reminders/send-personalized-links`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,

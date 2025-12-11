@@ -45,6 +45,15 @@ export interface OurStory {
   image_shape?: 'circle' | 'heart' | 'square' | 'hexagon';
 }
 
+export interface PrivacySettings {
+  privacy_mode: 'private' | 'password' | 'public';
+  guest_auth_required: boolean;
+  password_protection?: string;
+  allow_guest_sharing: boolean;
+  require_phone_verification: boolean;
+  require_name_verification: boolean;
+}
+
 export interface WeddingPartyMember {
   id: string;
   name: string;
@@ -63,6 +72,7 @@ export interface Wedding {
   date: string;
   events: WeddingEvent[];
   rsvp_config?: RSVPConfig;
+  privacy_settings?: PrivacySettings;
   registries?: RegistryItem[];
   faqs?: FAQItem[];
   theme_config?: ThemeConfig;

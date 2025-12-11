@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
-import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember } from '@/types/wedding';
+import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings } from '@/types/wedding';
 
 export default function WeddingDetailsPage() {
  const { token } = useAdmin();
@@ -16,7 +16,7 @@ export default function WeddingDetailsPage() {
  const [loading, setLoading] = useState(true);
  const [saving, setSaving] = useState(false);
  const [error, setError] = useState<string>('');
- const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'registry' | 'faq' | 'theme' | 'story'>('events');
+ const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story'>('events');
 
  const fetchWedding = useCallback(async () => {
  try {
@@ -41,6 +41,14 @@ export default function WeddingDetailsPage() {
  greeting: "Join us in celebrating our special day! Please let us know if you'll be attending.",
  help_text: "Check your phone for your personal invitation link, or contact us directly.",
  phone_numbers: ["(319) 529-6088", "(405) 708-1076"]
+ },
+ privacy_settings: wedding.privacy_settings || {
+ privacy_mode: "private",
+ guest_auth_required: true,
+ password_protection: "",
+ allow_guest_sharing: false,
+ require_phone_verification: true,
+ require_name_verification: true
  },
  registries: wedding.registries || [],
  faqs: wedding.faqs || [],
@@ -236,7 +244,7 @@ export default function WeddingDetailsPage() {
  <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="border-b border-gray-200">
  <nav className="flex overflow-x-auto scrollbar-hide">
- {(['events', 'rsvp', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
+ {(['events', 'rsvp', 'privacy', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
  <button
  key={tab}
  onClick={() => setActiveTab(tab)}
@@ -463,6 +471,170 @@ export default function WeddingDetailsPage() {
  Add Phone Number
  </button>
  </div>
+ </div>
+ </div>
+ )}
+
+ {/* Privacy Tab */}
+ {activeTab === 'privacy' && wedding.privacy_settings && (
+ <div className="space-y-6">
+ <h2 className="text-2xl font-bold text-wedding-navy mb-4">Privacy & Access Settings</h2>
+
+ {/* Privacy Mode */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Privacy Mode
+ </label>
+ <select
+ value={wedding.privacy_settings.privacy_mode}
+ onChange={(e) => setWedding({
+ ...wedding,
+ privacy_settings: { ...wedding.privacy_settings!, privacy_mode: e.target.value as any }
+ })}
+ className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+ >
+ <option value="private">Private - Only invited guests can access</option>
+ <option value="password">Password Protected - Anyone with password can view</option>
+ <option value="public">Public - Anyone with link can view</option>
+ </select>
+ <p className="text-sm text-gray-500 mt-1">
+ {wedding.privacy_settings.privacy_mode === 'private' && 'Guests must verify their identity to access the wedding page.'}
+ {wedding.privacy_settings.privacy_mode === 'password' && 'Anyone with the password can view the wedding page without verification.'}
+ {wedding.privacy_settings.privacy_mode === 'public' && 'The wedding page is publicly accessible to anyone with the link.'}
+ </p>
+ </div>
+
+ {/* Password Protection (only shown for password mode) */}
+ {wedding.privacy_settings.privacy_mode === 'password' && (
+ <div>
+ <label className="block text-sm font-medium text-gray-700 mb-2">
+ Access Password
+ </label>
+ <input
+ type="text"
+ value={wedding.privacy_settings.password_protection || ''}
+ onChange={(e) => setWedding({
+ ...wedding,
+ privacy_settings: { ...wedding.privacy_settings!, password_protection: e.target.value }
+ })}
+ className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+ placeholder="Enter access password"
+ />
+ <p className="text-sm text-gray-500 mt-1">
+ Share this password with guests who should be able to view the wedding page.
+ </p>
+ </div>
+ )}
+
+ {/* Guest Authentication Required */}
+ <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div>
+ <label className="block text-sm font-medium text-gray-700">
+ Require Guest Authentication
+ </label>
+ <p className="text-sm text-gray-500">
+ Guests must verify their identity before accessing the RSVP form
+ </p>
+ </div>
+ <label className="relative inline-flex items-center cursor-pointer">
+ <input
+ type="checkbox"
+ checked={wedding.privacy_settings.guest_auth_required}
+ onChange={(e) => setWedding({
+ ...wedding,
+ privacy_settings: { ...wedding.privacy_settings!, guest_auth_required: e.target.checked }
+ })}
+ className="sr-only peer"
+ />
+ <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-wedding-gold/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-wedding-gold"></div>
+ </label>
+ </div>
+
+ {/* Verification Methods */}
+ <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+ <h3 className="text-lg font-semibold text-gray-800">Verification Methods</h3>
+ <p className="text-sm text-gray-500">Choose how guests can verify their identity</p>
+
+ <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+ <div>
+ <label className="block text-sm font-medium text-gray-700">
+ Phone Number Verification
+ </label>
+ <p className="text-xs text-gray-500">
+ Guests verify via phone number lookup
+ </p>
+ </div>
+ <label className="relative inline-flex items-center cursor-pointer">
+ <input
+ type="checkbox"
+ checked={wedding.privacy_settings.require_phone_verification}
+ onChange={(e) => setWedding({
+ ...wedding,
+ privacy_settings: { ...wedding.privacy_settings!, require_phone_verification: e.target.checked }
+ })}
+ className="sr-only peer"
+ />
+ <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-wedding-gold/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-wedding-gold"></div>
+ </label>
+ </div>
+
+ <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+ <div>
+ <label className="block text-sm font-medium text-gray-700">
+ Name Verification
+ </label>
+ <p className="text-xs text-gray-500">
+ Guests verify via name lookup
+ </p>
+ </div>
+ <label className="relative inline-flex items-center cursor-pointer">
+ <input
+ type="checkbox"
+ checked={wedding.privacy_settings.require_name_verification}
+ onChange={(e) => setWedding({
+ ...wedding,
+ privacy_settings: { ...wedding.privacy_settings!, require_name_verification: e.target.checked }
+ })}
+ className="sr-only peer"
+ />
+ <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-wedding-gold/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-wedding-gold"></div>
+ </label>
+ </div>
+ </div>
+
+ {/* Allow Guest Sharing */}
+ <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div>
+ <label className="block text-sm font-medium text-gray-700">
+ Allow Guest Sharing
+ </label>
+ <p className="text-sm text-gray-500">
+ Enable guests to share their RSVP links with others
+ </p>
+ </div>
+ <label className="relative inline-flex items-center cursor-pointer">
+ <input
+ type="checkbox"
+ checked={wedding.privacy_settings.allow_guest_sharing}
+ onChange={(e) => setWedding({
+ ...wedding,
+ privacy_settings: { ...wedding.privacy_settings!, allow_guest_sharing: e.target.checked }
+ })}
+ className="sr-only peer"
+ />
+ <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-wedding-gold/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-wedding-gold"></div>
+ </label>
+ </div>
+
+ {/* Info Box */}
+ <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+ <h4 className="font-semibold text-blue-900 mb-2">💡 Privacy Tips</h4>
+ <ul className="text-sm text-blue-800 space-y-1">
+ <li>• <strong>Private mode</strong> is recommended for most weddings to ensure only invited guests can RSVP</li>
+ <li>• <strong>Password mode</strong> is useful for sharing with a wider circle while maintaining some access control</li>
+ <li>• <strong>Public mode</strong> makes your wedding page visible to anyone with the link</li>
+ <li>• Enable both phone and name verification for maximum security</li>
+ </ul>
  </div>
  </div>
  )}

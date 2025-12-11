@@ -129,16 +129,45 @@ async def send_email_reminders(payload: EmailReminderModel, current_user: Extend
     return result
 
 @router.get("/email/logs", tags=["Admin"])
-def get_email_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+async def get_email_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     limit: int = Query(100, description="Number of logs to return")
 ):
-    """Get email send logs"""
+    """Get email send logs - filtered by wedding for planners"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
-    
-    logs = email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
-    return {"logs": logs, "count": len(logs)}
+
+    # Root admin can see all logs or filter by specific wedding
+    if current_user.is_root_admin:
+        logs = await email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
+        return {"logs": logs, "count": len(logs)}
+
+    # Wedding planners can only see logs for their assigned weddings
+    if current_user.is_wedding_planner:
+        from app.core.database import mongo
+        # Get weddings assigned to this planner
+        weddings_cursor = mongo.db["weddings"].find(
+            {"assigned_planner_email": current_user.email},
+            {"_id": 1}
+        )
+        weddings = await weddings_cursor.to_list(length=None)
+        wedding_ids = [w["_id"] for w in weddings]
+
+        if not wedding_ids:
+            return {"logs": [], "count": 0}
+
+        # Filter by wedding_id if provided, but ensure it's one of planner's weddings
+        if wedding_id:
+            if wedding_id not in wedding_ids:
+                return {"logs": [], "count": 0}
+            logs = await email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
+        else:
+            # Get logs for all planner's weddings
+            logs = await email_service.get_email_logs_for_weddings(wedding_ids=wedding_ids, limit=limit)
+
+        return {"logs": logs, "count": len(logs)}
+
+    return {"logs": [], "count": 0}
 
 @router.get("/email/preview-invitation", tags=["Admin"])
 def preview_invitation_email(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),

@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from typing import List, Optional
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.user_management_service import UserManagementService
+from app.services.gallery_upload_service import GalleryUploadService
 from app.models.user_extended import UserModel
 from pydantic import BaseModel, validator, EmailStr
 
 router = APIRouter()
 user_service = UserManagementService()
+gallery_service = GalleryUploadService()
 
 class UserInviteModel(BaseModel):
     email: str
@@ -206,3 +208,97 @@ async def update_profile_info(profile_data: ProfileInfoModel, current_user: Exte
         current_user.email,
         profile_data.dict(exclude_unset=True)
     )
+
+@router.post("/profile/image", tags=["Profile"])
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Upload a profile image for the current user"""
+    import os
+    from datetime import datetime
+
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed types: {', '.join(allowed_types)}"
+        )
+
+    # Validate file size (max 5MB)
+    file_size = 0
+    chunk_size = 1024 * 1024  # 1MB chunks
+    content = b""
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        file_size += len(chunk)
+        content += chunk
+        if file_size > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(status_code=400, detail="File size exceeds 5MB limit")
+
+    # Reset file position for upload
+    from io import BytesIO
+    file.file = BytesIO(content)
+
+    # Generate unique filename using user ID
+    user_id = current_user.user_data.get("_id", current_user.email.replace("@", "_at_"))
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
+    key = f"profile-images/{user_id}/{timestamp}{ext}"
+
+    # Upload to S3/R2
+    try:
+        gallery_service.s3.upload_fileobj(
+            file.file,
+            gallery_service.bucket_name,
+            key,
+            ExtraArgs={"ContentType": file.content_type}
+        )
+
+        # Generate the public URL
+        custom_domain = "https://media.thespecialwedding.com"
+        image_url = f"{custom_domain}/{key}"
+
+        # Update user profile with new image URL
+        await user_service.update_profile_info(
+            current_user.email,
+            {"profile_image_url": image_url}
+        )
+
+        return {
+            "message": "Profile image uploaded successfully",
+            "profile_image_url": image_url
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
+
+@router.delete("/profile/image", tags=["Profile"])
+async def delete_profile_image(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Delete the current user's profile image"""
+    # Get current profile image URL
+    user_profile = user_service.get_user_profile(current_user.email)
+    current_image = user_profile.get("profile_image_url") if user_profile else None
+
+    if current_image:
+        # Extract key from URL
+        custom_domain = "https://media.thespecialwedding.com/"
+        if current_image.startswith(custom_domain):
+            key = current_image.replace(custom_domain, "")
+            try:
+                gallery_service.s3.delete_object(
+                    Bucket=gallery_service.bucket_name,
+                    Key=key
+                )
+            except Exception:
+                pass  # Ignore deletion errors
+
+    # Update user profile to remove image URL
+    await user_service.update_profile_info(
+        current_user.email,
+        {"profile_image_url": None}
+    )
+
+    return {"message": "Profile image deleted successfully"}

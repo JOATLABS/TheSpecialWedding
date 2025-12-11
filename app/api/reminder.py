@@ -15,8 +15,8 @@ def send_reminder(event_type: str, message: str, target_group: str, current_user
     return reminder_service.send_reminders(event_type, message, target_group)
 
 @router.get("/reminders/logs", tags=["Admin"])
-def get_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    return reminder_service.get_logs()
+async def get_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    return await reminder_service.get_logs()
 
 @router.get("/reminders/sms-callback", tags=["Webhooks"])
 async def verify_sms_callback():
