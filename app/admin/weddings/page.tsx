@@ -411,7 +411,7 @@ export default function AdminWeddingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
+    <div className="space-y-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
@@ -864,7 +864,7 @@ export default function AdminWeddingsPage() {
           {!loading && weddings.length > 0 && (
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {weddings.map((wedding) => (
-                <div key={wedding._id} className="p-6 hover:bg-gray-50 transition">
+                <div key={wedding._id} className="p-6 hover:bg-gray-50 dark:hover:bg-slate-700 transition">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">

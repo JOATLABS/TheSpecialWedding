@@ -59,6 +59,7 @@ from app.api.admin_backup import router as backup_router
 from app.api.email_webhooks import router as email_webhooks_router
 from app.api.billing_jobs import router as billing_jobs_router
 from app.api.metering import router as metering_router
+from app.api.planner_calendar import router as planner_calendar_router
 
 # Setup logging
 logging.basicConfig(
@@ -265,7 +266,8 @@ admin_routers = [
     (admin_platform_metrics_router, "ROOT_ADMIN"),
     (backup_router, "ROOT_ADMIN"),
     (billing_jobs_router, "Admin"),
-    (metering_router, "ROOT_ADMIN")
+    (metering_router, "ROOT_ADMIN"),
+    (planner_calendar_router, "Planner Calendar"),
 ]
 
 for router, tag in admin_routers:

@@ -84,6 +84,18 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["wedding_checklist"]
 
+    def get_calendar_tokens_collection(self):
+        """Google Calendar OAuth tokens for planners"""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["calendar_tokens"]
+
+    def get_planner_tasks_collection(self):
+        """Planner-specific tasks and calendar events"""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["planner_tasks"]
+
     def get_admin_users_collection(self):
         """Legacy admin_users collection - returns users collection for backward compatibility
 

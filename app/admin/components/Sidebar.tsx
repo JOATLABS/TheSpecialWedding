@@ -8,7 +8,6 @@ import { useAdmin } from '@/contexts/AdminContext';
 import {
   LayoutDashboard,
   Users,
-  Calendar,
   Wallet,
   Settings,
   LogOut,
@@ -18,12 +17,12 @@ import {
   FileText,
   Store,
   HelpCircle,
-  BarChart3,
   X,
   CreditCard,
   AlertTriangle,
-  Activity,
-  Layers
+  Layers,
+  TrendingUp,
+  Server
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -42,8 +41,9 @@ interface NavItem {
 
 // Navigation items for Root Admin/Developer (platform-level management only)
 const adminNavItems: NavItem[] = [
-  { name: 'Platform Metrics', href: '/admin', icon: BarChart3 },
-  { name: 'Platform Health', href: '/admin/platform/metrics', icon: Activity },
+  { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  { name: 'Business Analytics', href: '/admin/metrics', icon: TrendingUp },
+  { name: 'System Health', href: '/admin/platform/metrics', icon: Server },
   { name: 'Error Logs', href: '/admin/platform/errors', icon: AlertTriangle },
   { name: 'SaaS Management', href: '/admin/saas', icon: Layers },
   { name: 'Planners', href: '/admin/users', icon: Users },
@@ -62,6 +62,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Forms', href: '/admin/forms', icon: FileText },
   { name: 'Vendors', href: '/admin/vendors', icon: Store },
   { name: 'Reminders', href: '/admin/reminders', icon: Bell },
+  { name: 'Billing', href: '/admin/planner/billing', icon: CreditCard },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Settings', href: '/admin/profile', icon: Settings },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },

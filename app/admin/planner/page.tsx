@@ -224,7 +224,7 @@ export default function WeddingPlannerDashboard() {
  </div>
  ) : (
  weddings.map((wedding) => (
- <div key={wedding.id} className="p-6 hover:bg-gray-50 transition-colors">
+ <div key={wedding.id} className="p-6 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
  <div className="flex items-center justify-between">
  <div className="flex-1">
  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
@@ -271,7 +271,7 @@ export default function WeddingPlannerDashboard() {
  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
  <button
  onClick={() => router.push('/admin/guests')}
- className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+ className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
  >
  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
  <svg className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -286,7 +286,7 @@ export default function WeddingPlannerDashboard() {
 
  <button
  onClick={() => router.push('/admin/reminders')}
- className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+ className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
  >
  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,7 +301,7 @@ export default function WeddingPlannerDashboard() {
 
  <button
  onClick={() => router.push('/admin/gallery/upload')}
- className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+ className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
  >
  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

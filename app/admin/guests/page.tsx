@@ -401,7 +401,7 @@ export default function AdminGuestsPage() {
   const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-6">
+    <div className="space-y-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
@@ -620,7 +620,7 @@ export default function AdminGuestsPage() {
                     const isExpanded = expandedGuest === guestId;
 
                     return (
-                      <div key={guestId} className="hover:bg-gray-50 transition-colors">
+                      <div key={guestId} className="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
                         {/* Guest Row */}
                         <div className="p-6">
                           <div className="flex items-center justify-between">

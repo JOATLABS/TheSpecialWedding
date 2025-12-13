@@ -266,7 +266,7 @@ export default function VendorManagementPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
+    <div className="space-y-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
@@ -464,7 +464,7 @@ export default function VendorManagementPage() {
                   </thead>
                   <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {vendors.map((vendor) => (
-                      <tr key={vendor._id} className="hover:bg-gray-50 dark:bg-slate-700">
+                      <tr key={vendor._id} className="hover:bg-gray-50 dark:hover:bg-slate-700">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
                             <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{vendor.form_name}</div>
