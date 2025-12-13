@@ -343,7 +343,7 @@ export default function BudgetDashboard() {
           <h1 className="text-3xl font-heading font-bold text-wedding-navy">
             Budget Management
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
             Manage wedding budgets, track expenses, and compare vendor quotes
           </p>
         </div>
@@ -366,7 +366,7 @@ export default function BudgetDashboard() {
           <select
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
@@ -437,16 +437,16 @@ export default function BudgetDashboard() {
             {loading ? (
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
-                <p className="mt-2 text-gray-600">Loading budget data...</p>
+                <p className="mt-2 text-gray-600 dark:text-gray-400">Loading budget data...</p>
               </div>
             ) : error ? (
               <Card className="p-8 text-center">
-                <p className="text-red-600 mb-4">{error}</p>
+                <p className="text-red-600 dark:text-red-300 mb-4">{error}</p>
                 <Button onClick={fetchBudgetData}>Retry</Button>
               </Card>
             ) : filteredCategories.length === 0 ? (
               <Card className="p-8 text-center">
-                <p className="text-gray-600 mb-4">
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
                   {categories.length === 0
                     ? "No budget categories found. Create your first category to get started."
                     : "No categories match your search criteria."
@@ -486,37 +486,37 @@ export default function BudgetDashboard() {
       {/* Category Modal */}
       {showCategoryModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full">
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               {editingCategory ? 'Edit Category' : 'Add New Category'}
             </h2>
             <form onSubmit={editingCategory ? handleUpdateCategory : handleCreateCategory}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Category Name *
                   </label>
                   <input
                     type="text"
                     value={categoryForm.name}
                     onChange={(e) => setCategoryForm({...categoryForm, name: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Description
                   </label>
                   <textarea
                     value={categoryForm.description}
                     onChange={(e) => setCategoryForm({...categoryForm, description: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     rows={2}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Budget Amount *
                   </label>
                   <input
@@ -525,23 +525,23 @@ export default function BudgetDashboard() {
                     step="0.01"
                     value={categoryForm.budgeted_amount}
                     onChange={(e) => handleBudgetAmountChange(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   />
                   {budgetSummary && budgetSummary.total_budget > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Total budget: ${budgetSummary.total_budget.toLocaleString()}
                     </p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Priority (1 = Highest, 5 = Lowest)
                   </label>
                   <select
                     value={categoryForm.priority}
                     onChange={(e) => setCategoryForm({...categoryForm, priority: parseInt(e.target.value) as 1|2|3|4|5})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   >
                     <option value={1}>1 - Highest Priority</option>
                     <option value={2}>2 - High Priority</option>
@@ -551,7 +551,7 @@ export default function BudgetDashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Percentage of Total Budget
                   </label>
                   <input
@@ -561,9 +561,9 @@ export default function BudgetDashboard() {
                     step="0.1"
                     value={categoryForm.percentage_of_total}
                     onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Auto-calculated based on budget amount
                   </p>
                 </div>

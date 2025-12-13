@@ -286,7 +286,7 @@ export default function VendorQuotesPage() {
           <h1 className="text-3xl font-heading font-bold text-wedding-navy">
             Vendor Quotes
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
             Collect, compare and manage vendor quotes for your wedding
           </p>
         </div>
@@ -315,7 +315,7 @@ export default function VendorQuotesPage() {
           <select
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
@@ -338,13 +338,13 @@ export default function VendorQuotesPage() {
                 placeholder="Search vendors..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               />
               {/* Category Filter */}
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="all">All Categories</option>
                 {SERVICE_CATEGORIES.map(category => (
@@ -357,7 +357,7 @@ export default function VendorQuotesPage() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="all">All Status</option>
                 <option value="pending">Pending</option>
@@ -369,7 +369,7 @@ export default function VendorQuotesPage() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="date">Sort by Date</option>
                 <option value="amount">Sort by Amount</option>
@@ -390,16 +390,16 @@ export default function VendorQuotesPage() {
           {loading ? (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
-              <p className="mt-2 text-gray-600">Loading quotes...</p>
+              <p className="mt-2 text-gray-600 dark:text-gray-400">Loading quotes...</p>
             </div>
           ) : error ? (
             <Card className="p-8 text-center">
-              <p className="text-red-600 mb-4">{error}</p>
+              <p className="text-red-600 dark:text-red-300 mb-4">{error}</p>
               <Button onClick={fetchQuotes}>Retry</Button>
             </Card>
           ) : filteredQuotes.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-600 mb-4">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
                 {quotes.length === 0
                   ? "No vendor quotes found. Add your first quote to get started."
                   : "No quotes match your search criteria."
@@ -442,7 +442,7 @@ export default function VendorQuotesPage() {
       {/* Quote Modal */}
       {showQuoteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-screen overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-2xl w-full max-h-screen overflow-y-auto">
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               Add New Vendor Quote
             </h2>
@@ -451,25 +451,25 @@ export default function VendorQuotesPage() {
                 {/* Basic Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Vendor Name *
                     </label>
                     <input
                       type="text"
                       value={quoteForm.vendor_name}
                       onChange={(e) => setQuoteForm({...quoteForm, vendor_name: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Service Category *
                     </label>
                     <select
                       value={quoteForm.service_category}
                       onChange={(e) => setQuoteForm({...quoteForm, service_category: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                       required
                     >
                       {SERVICE_CATEGORIES.map(category => (
@@ -484,25 +484,25 @@ export default function VendorQuotesPage() {
                 {/* Contact Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Email
                     </label>
                     <input
                       type="email"
                       value={quoteForm.vendor_email}
                       onChange={(e) => setQuoteForm({...quoteForm, vendor_email: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Phone
                     </label>
                     <input
                       type="tel"
                       value={quoteForm.vendor_phone}
                       onChange={(e) => setQuoteForm({...quoteForm, vendor_phone: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -510,7 +510,7 @@ export default function VendorQuotesPage() {
                 {/* Quote Amount */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Quote Amount *
                     </label>
                     <input
@@ -519,26 +519,26 @@ export default function VendorQuotesPage() {
                       step="0.01"
                       value={quoteForm.quote_amount}
                       onChange={(e) => setQuoteForm({...quoteForm, quote_amount: parseFloat(e.target.value) || 0})}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Valid Until
                     </label>
                     <input
                       type="date"
                       value={quoteForm.valid_until}
                       onChange={(e) => setQuoteForm({...quoteForm, valid_until: e.target.value})}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
                 </div>
 
                 {/* What’s Included */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                     What’s Included
                   </label>
                   {quoteForm.includes.map((item, index) => (
@@ -548,7 +548,7 @@ export default function VendorQuotesPage() {
                         value={item}
                         onChange={(e) => updateIncludeItem(index, e.target.value)}
                         placeholder="Enter included item..."
-                        className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                       />
                       <Button
                         type="button"
@@ -571,7 +571,7 @@ export default function VendorQuotesPage() {
 
                 {/* What’s Excluded */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                     What’s Excluded
                   </label>
                   {quoteForm.excludes.map((item, index) => (
@@ -581,7 +581,7 @@ export default function VendorQuotesPage() {
                         value={item}
                         onChange={(e) => updateExcludeItem(index, e.target.value)}
                         placeholder="Enter excluded item..."
-                        className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                       />
                       <Button
                         type="button"
@@ -604,26 +604,26 @@ export default function VendorQuotesPage() {
 
                 {/* Terms & Notes */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Terms & Conditions
                   </label>
                   <textarea
                     value={quoteForm.terms_conditions}
                     onChange={(e) => setQuoteForm({...quoteForm, terms_conditions: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     rows={3}
                     placeholder="Any terms, conditions, or payment requirements..."
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Notes
                   </label>
                   <textarea
                     value={quoteForm.notes}
                     onChange={(e) => setQuoteForm({...quoteForm, notes: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     rows={2}
                     placeholder="Additional notes about this quote..."
                   />

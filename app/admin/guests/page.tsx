@@ -404,7 +404,7 @@ export default function AdminGuestsPage() {
     <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
           <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
             <h1 className="text-3xl font-bold text-white">Guest Management</h1>
             <p className="text-blue-100 mt-2">View and manage all wedding guests, RSVPs, and plus-ones</p>
@@ -412,15 +412,15 @@ export default function AdminGuestsPage() {
         </div>
 
         {/* Wedding Selection */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 mb-2">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
+          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
             Select Wedding
           </label>
           <select
             id="wedding"
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
@@ -435,26 +435,26 @@ export default function AdminGuestsPage() {
           <>
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">Total Guests</h3>
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</h3>
                 <p className="text-3xl font-bold text-wedding-navy mt-2">{guests.length}</p>
               </div>
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">RSVPs Received</h3>
-                <p className="text-3xl font-bold text-green-600 mt-2">{rsvps.length}</p>
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs Received</h3>
+                <p className="text-3xl font-bold text-green-600 dark:text-green-300 mt-2">{rsvps.length}</p>
               </div>
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">Pending RSVPs</h3>
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending RSVPs</h3>
                 <p className="text-3xl font-bold text-orange-600 mt-2">{guests.length - rsvps.length}</p>
               </div>
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500">Plus Ones</h3>
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Plus Ones</h3>
                 <p className="text-3xl font-bold text-wedding-sage mt-2">{plusOnes.length}</p>
               </div>
             </div>
 
             {/* Controls */}
-            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-8">
               <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                 {/* Tabs */}
                 <div className="flex gap-2">
@@ -506,14 +506,14 @@ export default function AdminGuestsPage() {
                   placeholder="Search guests..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 />
               </div>
             </div>
 
             {/* Import Form - shown when Import tab is active */}
             {activeTab === 'import' && (
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden mb-8">
                 <div className="bg-gradient-to-r from-wedding-sage to-wedding-gold px-8 py-6">
                   <h2 className="text-2xl font-bold text-white">Import Guests from CSV</h2>
                   <p className="text-white/80 mt-1">Upload a CSV file to bulk import guests</p>
@@ -545,7 +545,7 @@ export default function AdminGuestsPage() {
                   {/* Import Form */}
                   <form onSubmit={handleImport} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                         CSV File
                       </label>
                       <input
@@ -553,28 +553,28 @@ export default function AdminGuestsPage() {
                         type="file"
                         accept=".csv"
                         onChange={handleImportFileChange}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-wedding-sage file:text-white hover:file:bg-wedding-gold"
+                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-wedding-sage file:text-white hover:file:bg-wedding-gold"
                         required
                       />
                       {importFile && (
-                        <p className="mt-2 text-sm text-green-600">Selected: {importFile.name}</p>
+                        <p className="mt-2 text-sm text-green-600 dark:text-green-300">Selected: {importFile.name}</p>
                       )}
                     </div>
 
                     {/* Error Message */}
                     {importError && (
-                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-red-700">{importError}</p>
+                      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <p className="text-red-700 dark:text-red-300">{importError}</p>
                       </div>
                     )}
 
                     {/* Success Message */}
                     {importResult && (
-                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-green-700 font-semibold">
+                      <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                        <p className="text-green-700 dark:text-green-300 font-semibold">
                           Successfully imported {importResult.imported} guests!
                         </p>
-                        <p className="text-green-600 text-sm mt-1">
+                        <p className="text-green-600 dark:text-green-300 text-sm mt-1">
                           Switching to guest list...
                         </p>
                       </div>
@@ -595,14 +595,14 @@ export default function AdminGuestsPage() {
 
             {/* Guest List - hidden when Import tab is active */}
             {activeTab !== 'import' && (
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
-                  <span className="ml-3 text-gray-600">Loading guests...</span>
+                  <span className="ml-3 text-gray-600 dark:text-gray-400">Loading guests...</span>
                 </div>
               ) : filteredGuests.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                   <p>No guests found.</p>
                   <button
                     onClick={() => setActiveTab('import')}
@@ -612,7 +612,7 @@ export default function AdminGuestsPage() {
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
                   {filteredGuests.map((guest) => {
                     const guestId = guest.id || guest._id || '';
                     const rsvp = getRSVPForGuest(guestId);
@@ -627,8 +627,8 @@ export default function AdminGuestsPage() {
                             <div className="flex-1">
                               <div className="flex items-center gap-4">
                                 <div>
-                                  <h3 className="text-lg font-semibold text-gray-900">{guest.name}</h3>
-                                  <div className="flex gap-4 text-sm text-gray-600 mt-1">
+                                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{guest.name}</h3>
+                                  <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 mt-1">
                                     {guest.email && <span>{guest.email}</span>}
                                     {guest.phone && <span>{guest.phone}</span>}
                                   </div>
@@ -647,15 +647,15 @@ export default function AdminGuestsPage() {
 
                               {/* RSVP Details */}
                               {rsvp && (
-                                <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                <div className="mt-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
                                   <div className="flex gap-6 text-sm">
                                     <div>
-                                      <span className="font-medium text-gray-700">Attending:</span>
+                                      <span className="font-medium text-gray-700 dark:text-gray-300">Attending:</span>
                                       <span className="ml-2">{rsvp.attending.join(', ')}</span>
                                     </div>
                                     {rsvp.dietary && (
                                       <div>
-                                        <span className="font-medium text-gray-700">Dietary:</span>
+                                        <span className="font-medium text-gray-700 dark:text-gray-300">Dietary:</span>
                                         <span className="ml-2">{rsvp.dietary}</span>
                                       </div>
                                     )}
@@ -665,7 +665,7 @@ export default function AdminGuestsPage() {
 
                               {/* Plus One Status */}
                               {guest.plus_one_allowed && (
-                                <div className="mt-2 text-sm text-gray-600">
+                                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                                   Plus Ones: {guestPlusOnes.length} / {guest.number_of_plus_ones_allowed || 0}
                                 </div>
                               )}
@@ -675,7 +675,7 @@ export default function AdminGuestsPage() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => setExpandedGuest(isExpanded ? null : guestId)}
-                                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 transition-colors"
                               >
                                 {isExpanded ? 'Hide' : 'Details'}
                               </button>
@@ -709,22 +709,22 @@ export default function AdminGuestsPage() {
                             <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
                               {/* Guest Info */}
                               <div>
-                                <h4 className="font-medium text-gray-900 mb-2">Guest Information</h4>
+                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Guest Information</h4>
                                 <dl className="space-y-1 text-sm">
                                   <div>
-                                    <dt className="inline font-medium text-gray-700">Token:</dt>
-                                    <dd className="inline ml-2 font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                                    <dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt>
+                                    <dd className="inline ml-2 font-mono text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">
                                       {guest.token}
                                     </dd>
                                   </div>
                                   {guest.group_id && (
                                     <div>
-                                      <dt className="inline font-medium text-gray-700">Group:</dt>
+                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt>
                                       <dd className="inline ml-2">{guest.group_id}</dd>
                                     </div>
                                   )}
                                   <div>
-                                    <dt className="inline font-medium text-gray-700">Plus Ones Allowed:</dt>
+                                    <dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt>
                                     <dd className="inline ml-2">
                                       {guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed || 0})` : 'No'}
                                     </dd>
@@ -735,12 +735,12 @@ export default function AdminGuestsPage() {
                               {/* Plus Ones List */}
                               {guest.plus_one_allowed && guestPlusOnes.length > 0 && (
                                 <div>
-                                  <h4 className="font-medium text-gray-900 mb-2">Plus Ones</h4>
+                                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Plus Ones</h4>
                                   <ul className="space-y-2">
                                     {guestPlusOnes.map((plusOne, idx) => (
-                                      <li key={plusOne._id || idx} className="text-sm bg-gray-50 p-2 rounded">
+                                      <li key={plusOne._id || idx} className="text-sm bg-gray-50 dark:bg-slate-700 p-2 rounded">
                                         <div className="font-medium">{plusOne.name}</div>
-                                        <div className="text-gray-600">
+                                        <div className="text-gray-600 dark:text-gray-400">
                                           Attending: {plusOne.attending.join(', ')}
                                           {plusOne.dietary && ` • Dietary: ${plusOne.dietary}`}
                                         </div>
@@ -754,7 +754,7 @@ export default function AdminGuestsPage() {
                             {/* Wedding Events for this guest */}
                             {selectedWeddingData?.events && (
                               <div className="mt-4">
-                                <h4 className="font-medium text-gray-900 mb-2">Wedding Events</h4>
+                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Wedding Events</h4>
                                 <div className="flex gap-2">
                                   {selectedWeddingData.events.map((event, idx) => (
                                     <span
@@ -786,46 +786,46 @@ export default function AdminGuestsPage() {
         {/* Edit Guest Modal */}
         {editingGuest && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6">
               <h2 className="text-2xl font-bold text-wedding-navy mb-4">Edit Guest</h2>
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Name</label>
                   <input
                     type="text"
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Email</label>
                   <input
                     type="email"
                     value={editForm.email}
                     onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Phone</label>
                   <input
                     type="tel"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Role</label>
                   <select
                     value={editForm.role}
                     onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   >
                     <option value="guest">Guest</option>
                     <option value="admin">Admin</option>
@@ -842,20 +842,20 @@ export default function AdminGuestsPage() {
                       onChange={(e) => setEditForm({ ...editForm, plus_one_allowed: e.target.checked })}
                       className="rounded text-wedding-rose focus:ring-wedding-rose"
                     />
-                    <span className="text-sm font-medium text-gray-700">Allow Plus Ones</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">Allow Plus Ones</span>
                   </label>
                 </div>
                 
                 {editForm.plus_one_allowed && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Number of Plus Ones Allowed</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Number of Plus Ones Allowed</label>
                     <input
                       type="number"
                       min="0"
                       max="10"
                       value={editForm.number_of_plus_ones_allowed}
                       onChange={(e) => setEditForm({ ...editForm, number_of_plus_ones_allowed: parseInt(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
                 )}
@@ -870,7 +870,7 @@ export default function AdminGuestsPage() {
                 </button>
                 <button
                   onClick={() => setEditingGuest(null)}
-                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                  className="flex-1 bg-gray-200 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
                 >
                   Cancel
                 </button>

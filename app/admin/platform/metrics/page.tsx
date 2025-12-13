@@ -128,10 +128,10 @@ export default function PlatformMonitoringDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading platform monitoring data...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading platform monitoring data...</p>
         </div>
       </div>
     );
@@ -139,11 +139,11 @@ export default function PlatformMonitoringDashboard() {
 
   if (error && !metrics) {
     return (
-      <div className="min-h-screen bg-gray-50 p-8">
+      <div className="min-h-screen dark:bg-slate-700 p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
             <h2 className="text-red-800 font-semibold mb-2">Error Loading Metrics</h2>
-            <p className="text-red-600">{error}</p>
+            <p className="text-red-600 dark:text-red-300">{error}</p>
             <button
               onClick={fetchMetrics}
               className="mt-4 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
@@ -182,14 +182,14 @@ export default function PlatformMonitoringDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen dark:bg-slate-700">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b sticky top-0 z-10">
+      <div className="bg-white dark:bg-slate-800 shadow-sm border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Platform Monitoring</h1>
-              <p className="text-gray-600 text-sm mt-1">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Platform Monitoring</h1>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
                 System health, errors, and operational metrics
               </p>
             </div>
@@ -202,7 +202,7 @@ export default function PlatformMonitoringDashboard() {
                     onChange={(e) => setAutoRefresh(e.target.checked)}
                     className="mr-2"
                   />
-                  <span className="text-sm text-gray-600">Auto-refresh (30s)</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Auto-refresh (30s)</span>
                 </label>
               </div>
               <button
@@ -218,7 +218,7 @@ export default function PlatformMonitoringDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Last Updated */}
-        <div className="mb-6 text-sm text-gray-500">
+        <div className="mb-6 text-sm text-gray-500 dark:text-gray-400">
           Last updated: {formatDateTime(metrics.generated_at, {
             month: 'short',
             day: 'numeric',
@@ -230,29 +230,29 @@ export default function PlatformMonitoringDashboard() {
 
         {/* System Health */}
         <section className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">System Health</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">System Health</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
             {/* Database Health */}
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-500">Database</h3>
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Database</h3>
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getHealthStatusColor(metrics.health.database.status)}`}>
                   {metrics.health.database.status}
                 </span>
               </div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">
+              <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {metrics.health.database.latency_ms.toFixed(1)}ms
               </div>
-              <p className="text-sm text-gray-500">Response time</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Response time</p>
             </Card>
 
             {/* CPU Usage */}
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-500">CPU</h3>
-                <span className="text-xs text-gray-500">{metrics.health.cpu.cores} cores</span>
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">CPU</h3>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{metrics.health.cpu.cores} cores</span>
               </div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">
+              <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {metrics.health.cpu.percent.toFixed(1)}%
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
@@ -266,12 +266,12 @@ export default function PlatformMonitoringDashboard() {
             {/* Memory Usage */}
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-500">Memory</h3>
-                <span className="text-xs text-gray-500">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Memory</h3>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {metrics.health.memory.used_gb.toFixed(1)} / {metrics.health.memory.total_gb.toFixed(1)} GB
                 </span>
               </div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">
+              <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {metrics.health.memory.percent_used.toFixed(1)}%
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
@@ -285,12 +285,12 @@ export default function PlatformMonitoringDashboard() {
             {/* Disk Usage */}
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-500">Disk</h3>
-                <span className="text-xs text-gray-500">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Disk</h3>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {metrics.health.disk.free_gb.toFixed(1)} GB free
                 </span>
               </div>
-              <div className="text-3xl font-bold text-gray-900 mb-2">
+              <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {metrics.health.disk.percent_used.toFixed(1)}%
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
@@ -302,7 +302,7 @@ export default function PlatformMonitoringDashboard() {
             </Card>
             {!metrics.health.psutil_available && (
               <div className="md:col-span-2 xl:col-span-4">
-                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-800">
                   System resource metrics are unavailable. Install the optional <code className="font-mono">psutil</code>
                   {' '}package on the API server to enable CPU, memory, and disk insights.
                 </div>
@@ -313,20 +313,20 @@ export default function PlatformMonitoringDashboard() {
 
         {/* Error Monitoring */}
         <section className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Error Monitoring</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Error Monitoring</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <Card className="p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-6 h-6 text-red-600 dark:text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                   </div>
                 </div>
                 <div className="ml-5">
-                  <p className="text-sm font-medium text-gray-500">Total Errors (24h)</p>
-                  <p className="text-2xl font-bold text-gray-900">{metrics.errors.total_24h}</p>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Errors (24h)</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors.total_24h}</p>
                 </div>
               </div>
             </Card>
@@ -341,8 +341,8 @@ export default function PlatformMonitoringDashboard() {
                   </div>
                 </div>
                 <div className="ml-5">
-                  <p className="text-sm font-medium text-gray-500">Critical Errors (24h)</p>
-                  <p className="text-2xl font-bold text-gray-900">{metrics.errors.critical_24h}</p>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical Errors (24h)</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors.critical_24h}</p>
                 </div>
               </div>
             </Card>
@@ -357,8 +357,8 @@ export default function PlatformMonitoringDashboard() {
                   </div>
                 </div>
                 <div className="ml-5">
-                  <p className="text-sm font-medium text-gray-500">Recent Errors</p>
-                  <p className="text-2xl font-bold text-gray-900">{metrics.errors.recent_errors.length}</p>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Recent Errors</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors.recent_errors.length}</p>
                 </div>
               </div>
             </Card>
@@ -367,10 +367,10 @@ export default function PlatformMonitoringDashboard() {
           {/* Recent Errors List */}
           {metrics.errors.recent_errors.length > 0 && (
             <Card className="overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-sm font-semibold text-gray-900">Recent Errors</h3>
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-700">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Recent Errors</h3>
               </div>
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
                 {metrics.errors.recent_errors.slice(0, 10).map((error) => (
                   <div key={error.error_id} className="p-4 hover:bg-gray-50 transition-colors">
                     <div className="flex items-start justify-between">
@@ -381,13 +381,13 @@ export default function PlatformMonitoringDashboard() {
                           }`}>
                             {error.severity}
                           </span>
-                          <span className="text-sm font-medium text-gray-900">{error.error_type}</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{error.error_type}</span>
                           {error.endpoint && (
-                            <span className="text-xs text-gray-500">{error.endpoint}</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">{error.endpoint}</span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-700 mb-1">{error.message}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-sm text-gray-700 dark:text-gray-300 mb-1">{error.message}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {formatDateTime(error.timestamp, {
                             month: 'short',
                             day: 'numeric',
@@ -408,7 +408,7 @@ export default function PlatformMonitoringDashboard() {
                 ))}
               </div>
               {metrics.errors.recent_errors.length > 10 && (
-                <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-center">
+                <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 dark:border-gray-700 text-center">
                   <Link href="/admin/platform/errors" className="text-sm text-blue-600 hover:text-blue-800 font-medium">
                     View All Errors ({metrics.errors.recent_errors.length})
                   </Link>
@@ -419,12 +419,12 @@ export default function PlatformMonitoringDashboard() {
 
           {metrics.errors.recent_errors.length === 0 && (
             <Card className="p-8 text-center">
-              <div className="text-green-600 mb-2">
+              <div className="text-green-600 dark:text-green-300 mb-2">
                 <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-gray-600">No errors in the last 24 hours!</p>
+              <p className="text-gray-600 dark:text-gray-400">No errors in the last 24 hours!</p>
             </Card>
           )}
         </section>
@@ -432,30 +432,30 @@ export default function PlatformMonitoringDashboard() {
         {/* Performance Metrics */}
         {metrics.performance.slow_endpoints.length > 0 && (
           <section className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Performance Issues</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Performance Issues</h2>
             <Card className="overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-sm font-semibold text-gray-900">Slow Endpoints (&gt;1s avg)</h3>
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-700">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Slow Endpoints (&gt;1s avg)</h3>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-slate-700">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Endpoint</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Duration (s)</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Max Duration (s)</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Calls</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Avg Duration (s)</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Max Duration (s)</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Calls</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {metrics.performance.slow_endpoints.map((endpoint, idx) => (
                       <tr key={endpoint.endpoint ?? idx}>
-                        <td className="px-6 py-4 text-sm font-mono text-gray-900">{endpoint.endpoint}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100">{endpoint.endpoint}</td>
                         <td className="px-6 py-4 text-sm">
                           <span className="font-semibold text-orange-600">{endpoint.avg_response_time.toFixed(3)}s</span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{endpoint.max_response_time.toFixed(3)}s</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{endpoint.request_count}</td>
+                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{endpoint.max_response_time.toFixed(3)}s</td>
+                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{endpoint.request_count}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -467,31 +467,31 @@ export default function PlatformMonitoringDashboard() {
 
         {/* Business Overview */}
         <section className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Business Overview</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Business Overview</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
             <Card className="p-6">
-              <p className="text-sm font-medium text-gray-500 mb-2">Total Users</p>
-              <p className="text-3xl font-bold text-gray-900">{metrics.business.total_users}</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Users</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business.total_users}</p>
             </Card>
 
             <Card className="p-6">
-              <p className="text-sm font-medium text-gray-500 mb-2">Active Subscriptions</p>
-              <p className="text-3xl font-bold text-gray-900">{metrics.business.active_subscriptions}</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Active Subscriptions</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business.active_subscriptions}</p>
             </Card>
 
             <Card className="p-6">
-              <p className="text-sm font-medium text-gray-500 mb-2">Total Weddings</p>
-              <p className="text-3xl font-bold text-gray-900">{metrics.business.total_weddings}</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Weddings</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business.total_weddings}</p>
             </Card>
 
             <Card className="p-6">
-              <p className="text-sm font-medium text-gray-500 mb-2">MRR</p>
-              <p className="text-3xl font-bold text-gray-900">${metrics.business.mrr.toFixed(0)}</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">MRR</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">${metrics.business.mrr.toFixed(0)}</p>
             </Card>
 
             <Card className="p-6">
-              <p className="text-sm font-medium text-gray-500 mb-2">ARR</p>
-              <p className="text-3xl font-bold text-gray-900">${metrics.business.arr.toFixed(0)}</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">ARR</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">${metrics.business.arr.toFixed(0)}</p>
             </Card>
           </div>
         </section>
@@ -499,13 +499,13 @@ export default function PlatformMonitoringDashboard() {
         {/* Backup Status */}
         {metrics.backups && (
           <section className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Backup Status</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Backup Status</h2>
             <Card className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <p className="text-sm font-medium text-gray-500 mb-2">Last Backup</p>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Last Backup</p>
                   {metrics.backups.last_backup_date ? (
-                    <p className="text-lg font-semibold text-gray-900">
+                    <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                       {formatDateTime(metrics.backups.last_backup_date, {
                         month: 'short',
                         day: 'numeric',
@@ -514,18 +514,18 @@ export default function PlatformMonitoringDashboard() {
                       })}
                     </p>
                   ) : (
-                    <p className="text-lg text-gray-500">No backups yet</p>
+                    <p className="text-lg text-gray-500 dark:text-gray-400">No backups yet</p>
                   )}
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500 mb-2">Backup Size</p>
-                  <p className="text-lg font-semibold text-gray-900">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Backup Size</p>
+                  <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                     {metrics.backups.last_backup_size_mb ? `${metrics.backups.last_backup_size_mb.toFixed(1)} MB` : 'N/A'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500 mb-2">Backups (30 days)</p>
-                  <p className="text-lg font-semibold text-gray-900">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Backups (30 days)</p>
+                  <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                     {metrics.backups.backup_count_30d || 0}
                   </p>
                 </div>
@@ -536,11 +536,11 @@ export default function PlatformMonitoringDashboard() {
 
         {/* Quick Actions */}
         <section>
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Quick Actions</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Link
               href="/admin/platform/errors"
-              className="block p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
+              className="block p-4 bg-white border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -549,32 +549,32 @@ export default function PlatformMonitoringDashboard() {
                   </svg>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">View All Errors</p>
-                  <p className="text-sm text-gray-500">Browse error logs</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">View All Errors</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Browse error logs</p>
                 </div>
               </div>
             </Link>
 
             <Link
               href="/admin/metrics"
-              className="block p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
+              className="block p-4 bg-white border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">Business Analytics</p>
-                  <p className="text-sm text-gray-500">View detailed metrics</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">Business Analytics</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">View detailed metrics</p>
                 </div>
               </div>
             </Link>
 
             <Link
               href="/admin/saas"
-              className="block p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
+              className="block p-4 bg-white border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -584,8 +584,8 @@ export default function PlatformMonitoringDashboard() {
                   </svg>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900">SaaS Management</p>
-                  <p className="text-sm text-gray-500">Manage plans & content</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">SaaS Management</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Manage plans & content</p>
                 </div>
               </div>
             </Link>

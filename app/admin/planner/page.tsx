@@ -110,7 +110,7 @@ export default function WeddingPlannerDashboard() {
  <div className="min-h-screen flex items-center justify-center">
  <div className="text-center">
  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
- <p className="text-gray-600">Loading your weddings...</p>
+ <p className="text-gray-600 dark:text-gray-400">Loading your weddings...</p>
  </div>
  </div>
  );
@@ -119,16 +119,16 @@ export default function WeddingPlannerDashboard() {
  return (
  <div className="space-y-6">
  {/* Welcome Header */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
- <h1 className="text-2xl font-bold text-gray-900 mb-2">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+ <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
  Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
  </h1>
-        <p className="text-gray-600">Here’s what’s happening with your weddings today.</p>
+        <p className="text-gray-600 dark:text-gray-400">Here’s what’s happening with your weddings today.</p>
  </div>
 
  {/* Stats Cards */}
  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
  <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
@@ -138,13 +138,13 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
  <div className="ml-4">
- <p className="text-sm font-medium text-gray-500">Active Weddings</p>
- <p className="text-2xl font-semibold text-gray-900">{weddings.length}</p>
+ <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Weddings</p>
+ <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{weddings.length}</p>
  </div>
  </div>
  </div>
 
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
  <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
@@ -154,13 +154,13 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
  <div className="ml-4">
- <p className="text-sm font-medium text-gray-500">RSVPs Confirmed</p>
- <p className="text-2xl font-semibold text-gray-900">{stats.confirmed}</p>
+ <p className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs Confirmed</p>
+ <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{stats.confirmed}</p>
  </div>
  </div>
  </div>
 
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
  <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center">
@@ -170,13 +170,13 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
  <div className="ml-4">
- <p className="text-sm font-medium text-gray-500">Pending RSVPs</p>
- <p className="text-2xl font-semibold text-gray-900">{stats.pending}</p>
+ <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending RSVPs</p>
+ <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{stats.pending}</p>
  </div>
  </div>
  </div>
 
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
  <div className="flex items-center">
  <div className="flex-shrink-0">
  <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
@@ -186,18 +186,18 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
  <div className="ml-4">
- <p className="text-sm font-medium text-gray-500">Total Guests</p>
- <p className="text-2xl font-semibold text-gray-900">{stats.total_guests}</p>
+ <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</p>
+ <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{stats.total_guests}</p>
  </div>
  </div>
  </div>
  </div>
 
  {/* Weddings List */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200">
- <div className="px-6 py-4 border-b border-gray-200">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+ <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
  <div className="flex items-center justify-between">
- <h2 className="text-lg font-semibold text-gray-900">Your Weddings</h2>
+ <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Your Weddings</h2>
  <button
  onClick={() => router.push('/admin/weddings')}
  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 transition-colors"
@@ -208,29 +208,29 @@ export default function WeddingPlannerDashboard() {
  </div>
 
  {error && (
- <div className="p-6 text-red-600 bg-red-50 border-b border-red-200">
+ <div className="p-6 text-red-600 dark:text-red-300 bg-red-50 border-b border-red-200">
  {error}
  </div>
  )}
 
- <div className="divide-y divide-gray-200">
+ <div className="divide-y divide-gray-200 dark:divide-gray-700">
  {weddings.length === 0 ? (
- <div className="p-6 text-center text-gray-500">
+ <div className="p-6 text-center text-gray-500 dark:text-gray-400">
  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
  </svg>
- <h3 className="text-lg font-medium text-gray-900 mb-2">No weddings assigned</h3>
- <p className="text-gray-500">Contact your administrator to get weddings assigned to you.</p>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No weddings assigned</h3>
+ <p className="text-gray-500 dark:text-gray-400">Contact your administrator to get weddings assigned to you.</p>
  </div>
  ) : (
  weddings.map((wedding) => (
  <div key={wedding.id} className="p-6 hover:bg-gray-50 transition-colors">
  <div className="flex items-center justify-between">
  <div className="flex-1">
- <h3 className="text-lg font-semibold text-gray-900 mb-1">
+ <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
  {wedding.couple_names}
  </h3>
- <div className="flex items-center space-x-4 text-sm text-gray-500">
+ <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
  <span> {formatDisplayDate(wedding.date)}</span>
  {wedding.venue && <span> {wedding.venue}</span>}
  {wedding.guest_count && <span> {wedding.guest_count} guests</span>}
@@ -246,14 +246,14 @@ export default function WeddingPlannerDashboard() {
  <div className="flex space-x-2">
  <button
  onClick={() => router.push(`/admin/weddings/${wedding.id}`)}
- className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm hover:bg-blue-200 transition-colors"
+ className="bg-blue-100 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-lg text-sm hover:bg-blue-200 transition-colors"
  >
  Manage
  </button>
  <a
  href={`/${wedding.slug}`}
  target="_blank"
- className="bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-sm hover:bg-gray-200 transition-colors inline-block"
+ className="bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 px-3 py-1 rounded-lg text-sm hover:bg-gray-200 transition-colors inline-block"
  >
  View Site
  </a>
@@ -266,27 +266,27 @@ export default function WeddingPlannerDashboard() {
  </div>
 
  {/* Quick Actions */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
- <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+ <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Quick Actions</h2>
  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
  <button
  onClick={() => router.push('/admin/guests')}
- className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+ className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
  >
  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
- <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+ <svg className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
  </svg>
  </div>
  <div className="text-left">
- <p className="font-medium text-gray-900">Manage Guests</p>
- <p className="text-sm text-gray-500">View and edit guest lists</p>
+ <p className="font-medium text-gray-900 dark:text-gray-100">Manage Guests</p>
+ <p className="text-sm text-gray-500 dark:text-gray-400">View and edit guest lists</p>
  </div>
  </button>
 
  <button
  onClick={() => router.push('/admin/reminders')}
- className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+ className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
  >
  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -294,14 +294,14 @@ export default function WeddingPlannerDashboard() {
  </svg>
  </div>
  <div className="text-left">
- <p className="font-medium text-gray-900">Send Reminders</p>
- <p className="text-sm text-gray-500">Email and SMS notifications</p>
+ <p className="font-medium text-gray-900 dark:text-gray-100">Send Reminders</p>
+ <p className="text-sm text-gray-500 dark:text-gray-400">Email and SMS notifications</p>
  </div>
  </button>
 
  <button
  onClick={() => router.push('/admin/gallery/upload')}
- className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+ className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
  >
  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,8 +309,8 @@ export default function WeddingPlannerDashboard() {
  </svg>
  </div>
  <div className="text-left">
- <p className="font-medium text-gray-900">Upload Photos</p>
- <p className="text-sm text-gray-500">Add to wedding galleries</p>
+ <p className="font-medium text-gray-900 dark:text-gray-100">Upload Photos</p>
+ <p className="text-sm text-gray-500 dark:text-gray-400">Add to wedding galleries</p>
  </div>
  </button>
  </div>
@@ -319,8 +319,8 @@ export default function WeddingPlannerDashboard() {
  {/* Recent Activity & Progress Tracking */}
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
  {/* Progress Overview */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
- <h2 className="text-lg font-semibold text-gray-900 mb-4">Wedding Progress</h2>
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+ <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Wedding Progress</h2>
  <div className="space-y-4">
  {weddings.slice(0, 3).map((wedding) => {
  const progressPercentage = wedding.progress_percentage || 0;
@@ -328,8 +328,8 @@ export default function WeddingPlannerDashboard() {
  return (
  <div key={wedding.id} className="border-b border-gray-100 pb-4 last:border-b-0">
  <div className="flex items-center justify-between mb-2">
- <h4 className="font-medium text-gray-900">{wedding.couple_names}</h4>
- <span className="text-sm text-gray-500">
+ <h4 className="font-medium text-gray-900 dark:text-gray-100">{wedding.couple_names}</h4>
+ <span className="text-sm text-gray-500 dark:text-gray-400">
  {daysUntilWedding > 0 ? `${daysUntilWedding} days left` :
  daysUntilWedding === 0 ? 'Today!' :
  'Wedding passed'}
@@ -341,7 +341,7 @@ export default function WeddingPlannerDashboard() {
  style={{ width: `${progressPercentage}%` }}
  ></div>
  </div>
- <div className="flex justify-between text-sm text-gray-500">
+ <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
  <span>{progressPercentage}% complete</span>
  <span>{wedding.rsvp_stats?.confirmed || 0} / {wedding.guest_count || 0} RSVPs</span>
  </div>
@@ -352,8 +352,8 @@ export default function WeddingPlannerDashboard() {
  </div>
 
  {/* Recent Activity */}
- <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
- <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h2>
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+ <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Recent Activity</h2>
  <div className="space-y-4">
  {recentActivity.length > 0 ? recentActivity.map((activity, index) => (
  <div key={index} className="flex items-start space-x-3">
@@ -364,8 +364,8 @@ export default function WeddingPlannerDashboard() {
  'bg-purple-500'
  }`}></div>
  <div>
- <p className="text-sm text-gray-900">{activity.message}</p>
-          <p className="text-xs text-gray-500">
+ <p className="text-sm text-gray-900 dark:text-gray-100">{activity.message}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             {formatDateTime(activity.timestamp, {
               month: 'short',
               day: 'numeric',
@@ -377,7 +377,7 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
  )) : (
- <div className="text-center text-gray-500 py-4">
+ <div className="text-center text-gray-500 dark:text-gray-400 py-4">
  <p className="text-sm">No recent activity</p>
  </div>
  )}

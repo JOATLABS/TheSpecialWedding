@@ -207,7 +207,7 @@ export default function WeddingDetailsPage() {
  <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
  <div className="max-w-6xl mx-auto">
  {/* Header */}
- <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
+ <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
  <div>
@@ -224,7 +224,7 @@ export default function WeddingDetailsPage() {
  <button
  onClick={saveWedding}
  disabled={saving}
- className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-wedding-ivory transition-colors disabled:opacity-50 text-sm sm:text-base flex-1 sm:flex-initial"
+ className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-gray-50 dark:bg-transparent transition-colors disabled:opacity-50 text-sm sm:text-base flex-1 sm:flex-initial"
  >
  {saving ? 'Saving...' : 'Save Changes'}
  </button>
@@ -235,14 +235,14 @@ export default function WeddingDetailsPage() {
 
  {/* Error Display */}
  {error && (
- <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
- <p className="text-red-700">{error}</p>
+ <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+ <p className="text-red-700 dark:text-red-300">{error}</p>
  </div>
  )}
 
  {/* Tabs */}
- <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
- <div className="border-b border-gray-200">
+ <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
+ <div className="border-b border-gray-200 dark:border-gray-700">
  <nav className="flex overflow-x-auto scrollbar-hide">
  {(['events', 'rsvp', 'privacy', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
  <button
@@ -275,14 +275,14 @@ export default function WeddingDetailsPage() {
  </div>
 
  {wedding.events.map((event, index) => (
- <div key={index} className="border border-gray-200 rounded-lg p-6 space-y-4">
+ <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 space-y-4">
  <div className="flex justify-between items-start">
  <h3 className="text-lg font-semibold capitalize">
  {event.type.replace('_', ' ')} - {event.date}
  </h3>
  <button
  onClick={() => removeEvent(index)}
- className="text-red-600 hover:bg-red-50 px-3 py-1 rounded"
+ className="text-red-600 dark:text-red-300 hover:bg-red-50 px-3 py-1 rounded"
  >
  Remove
  </button>
@@ -290,13 +290,13 @@ export default function WeddingDetailsPage() {
 
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Event Type
  </label>
  <select
  value={event.type}
  onChange={(e) => updateEvent(index, { ...event, type: e.target.value as any })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <option value="traditional">Traditional</option>
  <option value="white_wedding">White Wedding</option>
@@ -307,19 +307,19 @@ export default function WeddingDetailsPage() {
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Date
  </label>
  <input
  type="date"
  value={event.date}
  onChange={(e) => updateEvent(index, { ...event, date: e.target.value })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Venue Name
  </label>
  <input
@@ -329,13 +329,13 @@ export default function WeddingDetailsPage() {
  ...event,
  details: { ...event.details, venue_name: e.target.value }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="e.g., Grand Ballroom"
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Time
  </label>
  <input
@@ -345,13 +345,13 @@ export default function WeddingDetailsPage() {
  ...event,
  details: { ...event.details, time: e.target.value }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="e.g., 3:00 PM"
  />
  </div>
 
  <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Location/Address
  </label>
  <input
@@ -361,13 +361,13 @@ export default function WeddingDetailsPage() {
  ...event,
  details: { ...event.details, location: e.target.value }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="e.g., 123 Main Street, Lagos"
  />
  </div>
 
  <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Dress Code/Attire
  </label>
  <input
@@ -377,7 +377,7 @@ export default function WeddingDetailsPage() {
  ...event,
  details: { ...event.details, attire: e.target.value }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="e.g., Formal attire, Traditional Nigerian attire"
  />
  </div>
@@ -393,7 +393,7 @@ export default function WeddingDetailsPage() {
  <h2 className="text-2xl font-bold text-wedding-navy mb-4">RSVP Configuration</h2>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Greeting Message
  </label>
  <textarea
@@ -402,13 +402,13 @@ export default function WeddingDetailsPage() {
  ...wedding,
  rsvp_config: { ...wedding.rsvp_config!, greeting: e.target.value }
  })}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  rows={3}
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Help Text
  </label>
  <textarea
@@ -417,13 +417,13 @@ export default function WeddingDetailsPage() {
  ...wedding,
  rsvp_config: { ...wedding.rsvp_config!, help_text: e.target.value }
  })}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  rows={2}
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Contact Phone Numbers
  </label>
  <div className="space-y-2">
@@ -440,7 +440,7 @@ export default function WeddingDetailsPage() {
  rsvp_config: { ...wedding.rsvp_config!, phone_numbers: newPhones }
  });
  }}
- className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+ className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  />
  <button
  onClick={() => {
@@ -452,7 +452,7 @@ export default function WeddingDetailsPage() {
  }
  });
  }}
- className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg"
+ className="px-3 py-2 text-red-600 dark:text-red-300 hover:bg-red-50 rounded-lg"
  >
  Remove
  </button>
@@ -482,7 +482,7 @@ export default function WeddingDetailsPage() {
 
  {/* Privacy Mode */}
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Privacy Mode
  </label>
  <select
@@ -491,13 +491,13 @@ export default function WeddingDetailsPage() {
  ...wedding,
  privacy_settings: { ...wedding.privacy_settings!, privacy_mode: e.target.value as any }
  })}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <option value="private">Private - Only invited guests can access</option>
  <option value="password">Password Protected - Anyone with password can view</option>
  <option value="public">Public - Anyone with link can view</option>
  </select>
- <p className="text-sm text-gray-500 mt-1">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  {wedding.privacy_settings.privacy_mode === 'private' && 'Guests must verify their identity to access the wedding page.'}
  {wedding.privacy_settings.privacy_mode === 'password' && 'Anyone with the password can view the wedding page without verification.'}
  {wedding.privacy_settings.privacy_mode === 'public' && 'The wedding page is publicly accessible to anyone with the link.'}
@@ -507,7 +507,7 @@ export default function WeddingDetailsPage() {
  {/* Password Protection (only shown for password mode) */}
  {wedding.privacy_settings.privacy_mode === 'password' && (
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Access Password
  </label>
  <input
@@ -517,22 +517,22 @@ export default function WeddingDetailsPage() {
  ...wedding,
  privacy_settings: { ...wedding.privacy_settings!, password_protection: e.target.value }
  })}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="Enter access password"
  />
- <p className="text-sm text-gray-500 mt-1">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  Share this password with guests who should be able to view the wedding page.
  </p>
  </div>
  )}
 
  {/* Guest Authentication Required */}
- <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
  <div>
- <label className="block text-sm font-medium text-gray-700">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
  Require Guest Authentication
  </label>
- <p className="text-sm text-gray-500">
+ <p className="text-sm text-gray-500 dark:text-gray-400">
  Guests must verify their identity before accessing the RSVP form
  </p>
  </div>
@@ -551,16 +551,16 @@ export default function WeddingDetailsPage() {
  </div>
 
  {/* Verification Methods */}
- <div className="border border-gray-200 rounded-lg p-4 space-y-4">
- <h3 className="text-lg font-semibold text-gray-800">Verification Methods</h3>
- <p className="text-sm text-gray-500">Choose how guests can verify their identity</p>
+ <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+ <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Verification Methods</h3>
+ <p className="text-sm text-gray-500 dark:text-gray-400">Choose how guests can verify their identity</p>
 
- <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+ <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
  <div>
- <label className="block text-sm font-medium text-gray-700">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
  Phone Number Verification
  </label>
- <p className="text-xs text-gray-500">
+ <p className="text-xs text-gray-500 dark:text-gray-400">
  Guests verify via phone number lookup
  </p>
  </div>
@@ -578,12 +578,12 @@ export default function WeddingDetailsPage() {
  </label>
  </div>
 
- <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+ <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
  <div>
- <label className="block text-sm font-medium text-gray-700">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
  Name Verification
  </label>
- <p className="text-xs text-gray-500">
+ <p className="text-xs text-gray-500 dark:text-gray-400">
  Guests verify via name lookup
  </p>
  </div>
@@ -603,12 +603,12 @@ export default function WeddingDetailsPage() {
  </div>
 
  {/* Allow Guest Sharing */}
- <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+ <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
  <div>
- <label className="block text-sm font-medium text-gray-700">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
  Allow Guest Sharing
  </label>
- <p className="text-sm text-gray-500">
+ <p className="text-sm text-gray-500 dark:text-gray-400">
  Enable guests to share their RSVP links with others
  </p>
  </div>
@@ -627,7 +627,7 @@ export default function WeddingDetailsPage() {
  </div>
 
  {/* Info Box */}
- <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+ <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
  <h4 className="font-semibold text-blue-900 mb-2">💡 Privacy Tips</h4>
  <ul className="text-sm text-blue-800 space-y-1">
  <li>• <strong>Private mode</strong> is recommended for most weddings to ensure only invited guests can RSVP</li>
@@ -653,42 +653,42 @@ export default function WeddingDetailsPage() {
  </div>
 
  {(wedding.registries || []).map((registry, index) => (
- <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
+ <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Registry Name
  </label>
  <input
  type="text"
  value={registry.name}
  onChange={(e) => updateRegistry(index, { ...registry, name: e.target.value })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="e.g., Target, Amazon"
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Registry URL
  </label>
  <input
  type="url"
  value={registry.url}
  onChange={(e) => updateRegistry(index, { ...registry, url: e.target.value })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="https://..."
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Button Color
  </label>
  <select
  value={registry.color || 'bg-gray-600'}
  onChange={(e) => updateRegistry(index, { ...registry, color: e.target.value })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <option value="bg-gray-600">Gray</option>
  <option value="bg-red-600">Red</option>
@@ -702,7 +702,7 @@ export default function WeddingDetailsPage() {
 
  <button
  onClick={() => removeRegistry(index)}
- className="text-red-600 hover:bg-red-50 px-3 py-1 rounded"
+ className="text-red-600 dark:text-red-300 hover:bg-red-50 px-3 py-1 rounded"
  >
  Remove Registry
  </button>
@@ -725,28 +725,28 @@ export default function WeddingDetailsPage() {
  </div>
 
  {(wedding.faqs || []).map((faq, index) => (
- <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
+ <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Question
  </label>
  <input
  type="text"
  value={faq.question}
  onChange={(e) => updateFAQ(index, { ...faq, question: e.target.value })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="e.g., What should I wear?"
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Answer
  </label>
  <textarea
  value={faq.answer}
  onChange={(e) => updateFAQ(index, { ...faq, answer: e.target.value })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  rows={2}
  placeholder="e.g., We recommend semi-formal attire..."
  />
@@ -754,7 +754,7 @@ export default function WeddingDetailsPage() {
 
  <button
  onClick={() => removeFAQ(index)}
- className="text-red-600 hover:bg-red-50 px-3 py-1 rounded"
+ className="text-red-600 dark:text-red-300 hover:bg-red-50 px-3 py-1 rounded"
  >
  Remove FAQ
  </button>
@@ -770,7 +770,7 @@ export default function WeddingDetailsPage() {
 
  {/* Color Presets */}
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Quick Theme Presets
  </label>
  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -795,7 +795,7 @@ export default function WeddingDetailsPage() {
  accent_color: preset.accent
  }
  })}
- className="p-3 border border-gray-200 rounded-lg hover:border-wedding-rose transition-colors"
+ className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-wedding-rose transition-colors"
  >
  <div className="flex gap-2 mb-2">
  <div
@@ -811,7 +811,7 @@ export default function WeddingDetailsPage() {
  style={{ backgroundColor: preset.accent }}
  />
  </div>
- <p className="text-xs text-gray-700">{preset.name}</p>
+ <p className="text-xs text-gray-700 dark:text-gray-300">{preset.name}</p>
  </button>
  ))}
  </div>
@@ -820,7 +820,7 @@ export default function WeddingDetailsPage() {
  {/* Custom Colors */}
  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Primary Color
  </label>
  <div className="flex gap-2">
@@ -840,15 +840,15 @@ export default function WeddingDetailsPage() {
  ...wedding,
  theme_config: { ...wedding.theme_config!, primary_color: e.target.value }
  })}
- className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="#1e3a5f"
  />
  </div>
- <p className="text-xs text-gray-500 mt-1">Used for headers and main elements</p>
+ <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Used for headers and main elements</p>
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Secondary Color
  </label>
  <div className="flex gap-2">
@@ -868,15 +868,15 @@ export default function WeddingDetailsPage() {
  ...wedding,
  theme_config: { ...wedding.theme_config!, secondary_color: e.target.value }
  })}
- className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="#d4af37"
  />
  </div>
- <p className="text-xs text-gray-500 mt-1">Used for accents and highlights</p>
+ <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Used for accents and highlights</p>
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Accent Color
  </label>
  <div className="flex gap-2">
@@ -896,18 +896,18 @@ export default function WeddingDetailsPage() {
  ...wedding,
  theme_config: { ...wedding.theme_config!, accent_color: e.target.value }
  })}
- className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+ className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="#c8847e"
  />
  </div>
- <p className="text-xs text-gray-500 mt-1">Used for buttons and call-to-actions</p>
+ <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Used for buttons and call-to-actions</p>
  </div>
  </div>
 
  {/* Style Options */}
  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Background Style
  </label>
  <select
@@ -916,7 +916,7 @@ export default function WeddingDetailsPage() {
  ...wedding,
  theme_config: { ...wedding.theme_config!, background_style: e.target.value as any }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <option value="gradient">Frosted Glass with Gradient</option>
  <option value="solid">Frosted Glass with Solid Color</option>
@@ -925,7 +925,7 @@ export default function WeddingDetailsPage() {
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Font Style
  </label>
  <select
@@ -934,7 +934,7 @@ export default function WeddingDetailsPage() {
  ...wedding,
  theme_config: { ...wedding.theme_config!, font_style: e.target.value as any }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <option value="elegant">Elegant (Serif)</option>
  <option value="modern">Modern (Sans-serif)</option>
@@ -983,12 +983,12 @@ export default function WeddingDetailsPage() {
  <div className="space-y-6">
  <h2 className="text-2xl font-bold text-wedding-navy mb-4">Story & Wedding Party</h2>
  {/* Info Box */}
- <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+ <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
  <h4 className="font-semibold text-blue-900 mb-2"> Image Organization</h4>
  <p className="text-sm text-blue-800 mb-2">
  To keep wedding party photos separate from the public gallery, use these folder structures:
  </p>
- <ul className="text-sm text-blue-700 space-y-1">
+ <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
  <li>• <code className="bg-blue-100 px-1 rounded">gallery/{wedding.slug}/</code> - Public gallery photos</li>
  <li>• <code className="bg-blue-100 px-1 rounded">our-story/{wedding.slug}/</code> - Couple photos for story section</li>
  <li>• <code className="bg-blue-100 px-1 rounded">wedding-party/{wedding.slug}/</code> - Wedding party member photos</li>
@@ -996,12 +996,12 @@ export default function WeddingDetailsPage() {
  </div>
 
  {/* Our Story Section */}
- <div className="border border-gray-200 rounded-lg p-6">
+ <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6">
  <h3 className="text-lg font-semibold mb-4">Our Story</h3>
 
  <div className="space-y-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Story Text
  </label>
  <textarea
@@ -1011,12 +1011,12 @@ export default function WeddingDetailsPage() {
  our_story: { ...wedding.our_story!, text: e.target.value }
  })}
  rows={6}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg resize-none"
  placeholder="Tell your love story..."
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Image Shape
  </label>
  <select
@@ -1025,7 +1025,7 @@ export default function WeddingDetailsPage() {
  ...wedding,
  our_story: { ...wedding.our_story!, image_shape: e.target.value as any }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <option value="circle">Circle</option>
  <option value="heart">Heart</option>
@@ -1034,10 +1034,10 @@ export default function WeddingDetailsPage() {
  </select>
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
  Couple Photo
  </label>
- <p className="text-sm text-gray-500 mb-2">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
  Upload to gallery, then use format: our-story/{wedding.slug}/filename.jpg
  </p>
  <input
@@ -1047,14 +1047,14 @@ export default function WeddingDetailsPage() {
  ...wedding,
  our_story: { ...wedding.our_story!, image_url: e.target.value }
  })}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="our-story/wedding-slug/image.jpg"
  />
  </div>
  </div>
  </div>
  {/* Wedding Party Section */}
- <div className="border border-gray-200 rounded-lg p-6">
+ <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6">
  <div className="flex justify-between items-center mb-4">
  <h3 className="text-lg font-semibold">Wedding Party</h3>
  <button
@@ -1078,10 +1078,10 @@ export default function WeddingDetailsPage() {
  </div>
  <div className="space-y-4">
  {wedding.wedding_party?.map((member, index) => (
- <div key={member.id} className="border border-gray-200 rounded-lg p-4">
+ <div key={member.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Name
  </label>
  <input
@@ -1092,12 +1092,12 @@ export default function WeddingDetailsPage() {
  updated[index] = { ...member, name: e.target.value };
  setWedding({ ...wedding, wedding_party: updated });
  }}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="John Doe"
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Side
  </label>
  <select
@@ -1107,14 +1107,14 @@ export default function WeddingDetailsPage() {
  updated[index] = { ...member, side: e.target.value as 'bride' | 'groom' };
  setWedding({ ...wedding, wedding_party: updated });
  }}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <option value="bride">Bride</option>
  <option value="groom">Groom</option>
  </select>
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Role
  </label>
  <select
@@ -1124,7 +1124,7 @@ export default function WeddingDetailsPage() {
  updated[index] = { ...member, role: e.target.value };
  setWedding({ ...wedding, wedding_party: updated });
  }}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  >
  <optgroup label="Bride's Side">
  <option value="maid_of_honor">Maid of Honor</option>
@@ -1137,7 +1137,7 @@ export default function WeddingDetailsPage() {
  </select>
  </div>
  <div className="md:col-span-2">
- <label className="block text-sm font-medium text-gray-700 mb-1">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
  Photo (optional) - Use format: wedding-party/{wedding.slug}/name.jpg
  </label>
  <input
@@ -1148,7 +1148,7 @@ export default function WeddingDetailsPage() {
  updated[index] = { ...member, image_url: e.target.value };
  setWedding({ ...wedding, wedding_party: updated });
  }}
- className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
  placeholder="wedding-party/wedding-slug/member-photo.jpg"
  />
  </div>
@@ -1169,7 +1169,7 @@ export default function WeddingDetailsPage() {
  </div>
  ))}
  {(!wedding.wedding_party || wedding.wedding_party.length === 0) && (
- <p className="text-gray-500 text-center py-8">
+ <p className="text-gray-500 dark:text-gray-400 text-center py-8">
             No wedding party members added yet. Click “Add Member” to get started.
  </p>
  )}

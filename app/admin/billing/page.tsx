@@ -255,7 +255,7 @@ export default function BillingPage() {
     <div className="container max-w-7xl mx-auto py-8 px-4">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Billing & Subscription</h1>
-        <p className="text-gray-600 dark:text-gray-400">
+        <p className="text-gray-600 dark:text-gray-400 dark:text-gray-400">
           Manage your subscription plan and payment methods
         </p>
       </div>
@@ -275,11 +275,11 @@ export default function BillingPage() {
           <CardContent className="space-y-4">
             <div>
               <h3 className="font-semibold text-lg">{currentPlan.name}</h3>
-              <p className="text-gray-600 dark:text-gray-400">{currentPlan.description}</p>
+              <p className="text-gray-600 dark:text-gray-400 dark:text-gray-400">{currentPlan.description}</p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Price</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400">Price</p>
                 <p className="font-semibold">
                   {formatPrice(
                     currentSubscription.billing_interval === 'yearly'
@@ -290,19 +290,19 @@ export default function BillingPage() {
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Renewal Date</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400">Renewal Date</p>
                 <p className="font-semibold">
                   {new Date(currentSubscription.current_period_end).toLocaleDateString()}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Weddings</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400">Weddings</p>
                 <p className="font-semibold">
                   {currentPlan.max_weddings === -1 ? 'Unlimited' : currentPlan.max_weddings}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Storage</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400">Storage</p>
                 <p className="font-semibold">{currentPlan.storage_gb} GB</p>
               </div>
             </div>
@@ -318,7 +318,7 @@ export default function BillingPage() {
 
       {/* Billing Interval Toggle */}
       <div className="flex justify-center mb-8">
-        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 p-1">
+        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 dark:border-gray-700 p-1">
           <button
             onClick={() => setSelectedBillingInterval('monthly')}
             className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -377,7 +377,7 @@ export default function BillingPage() {
                 <CardDescription>{plan.description}</CardDescription>
                 <div className="mt-4">
                   <span className="text-4xl font-bold">${price.toFixed(0)}</span>
-                  <span className="text-gray-600 dark:text-gray-400">
+                  <span className="text-gray-600 dark:text-gray-400 dark:text-gray-400">
                     /{selectedBillingInterval === 'monthly' ? 'mo' : 'yr'}
                   </span>
                 </div>

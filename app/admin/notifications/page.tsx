@@ -194,11 +194,11 @@ export default function NotificationsPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-heading text-wedding-rose">Platform Notifications</h1>
-        <p className="text-gray-600">Send announcements and updates to all users</p>
+        <p className="text-gray-600 dark:text-gray-400">Send announcements and updates to all users</p>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex space-x-8">
           {[
             { key: 'send', label: 'Send Notification' },
@@ -222,11 +222,11 @@ export default function NotificationsPage() {
 
       {/* Send Notification Tab */}
       {activeTab === 'send' && (
-        <div className="bg-white rounded-lg shadow-sm border p-6">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border p-6">
           <h2 className="text-xl font-semibold text-wedding-navy mb-4">Send New Notification</h2>
           <div className="space-y-4">
             {/* Template Toggle */}
-            <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
               <input
                 type="checkbox"
                 id="use-template"
@@ -246,7 +246,7 @@ export default function NotificationsPage() {
                 }}
                 className="h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
               />
-              <label htmlFor="use-template" className="text-sm font-medium text-gray-700 cursor-pointer">
+              <label htmlFor="use-template" className="text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 cursor-pointer">
                 Use a template
               </label>
             </div>
@@ -254,7 +254,7 @@ export default function NotificationsPage() {
             {/* Template Selection */}
             {useTemplate && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Select Template *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Select Template *</label>
                 <select
                   value={selectedTemplateId}
                   onChange={(e) => {
@@ -265,7 +265,7 @@ export default function NotificationsPage() {
                       setCustomContent(template.content);
                     }
                   }}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 >
                   <option value="">-- Select a template --</option>
                   {templates.filter(t => t.is_active !== false).map(template => (
@@ -275,18 +275,18 @@ export default function NotificationsPage() {
                   ))}
                 </select>
                 {templates.length === 0 && (
-                  <p className="mt-2 text-sm text-gray-500">No templates available. Create one in the Templates tab.</p>
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No templates available. Create one in the Templates tab.</p>
                 )}
               </div>
             )}
 
             {/* Recipients */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Recipients *</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Recipients *</label>
               <select
                 value={recipientFilter}
                 onChange={(e) => setRecipientFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
                 <option value="all_users">All Users</option>
                 <option value="active_users">Active Users Only</option>
@@ -298,33 +298,33 @@ export default function NotificationsPage() {
 
             {/* Subject */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Subject Line *</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Subject Line *</label>
               <input
                 type="text"
                 value={customSubject}
                 onChange={(e) => setCustomSubject(e.target.value)}
                 placeholder="Enter email subject..."
                 disabled={useTemplate && selectedTemplateId !== ''}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 dark:bg-slate-700 disabled:cursor-not-allowed"
               />
               {useTemplate && selectedTemplateId && (
-                <p className="mt-1 text-xs text-gray-500">Subject is loaded from template (read-only)</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Subject is loaded from template (read-only)</p>
               )}
             </div>
 
             {/* Content */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Message Content *</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Message Content *</label>
               <textarea
                 value={customContent}
                 onChange={(e) => setCustomContent(e.target.value)}
                 placeholder="Enter your message content..."
                 rows={8}
                 disabled={useTemplate && selectedTemplateId !== ''}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 dark:bg-slate-700 disabled:cursor-not-allowed"
               />
               {useTemplate && selectedTemplateId && (
-                <p className="mt-1 text-xs text-gray-500">Content is loaded from template (read-only)</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Content is loaded from template (read-only)</p>
               )}
             </div>
 
@@ -359,7 +359,7 @@ export default function NotificationsPage() {
               {templates.map((template) => (
                 <div key={template._id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6 hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">{template.name}</h3>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 dark:text-white">{template.name}</h3>
                     <div className="flex gap-2">
                       <span className={`px-2 py-1 text-xs font-medium rounded ${
                         template.type === 'email'
@@ -369,15 +369,15 @@ export default function NotificationsPage() {
                         {template.type?.toUpperCase() || 'EMAIL'}
                       </span>
                       {template.category && (
-                        <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                        <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 dark:bg-gray-700 dark:text-gray-300">
                           {template.category.replace('_', ' ').toUpperCase()}
                         </span>
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 font-medium">{template.subject}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-500 line-clamp-2">{template.content}</p>
-                  <div className="mt-4 pt-4 border-t dark:border-gray-700 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 mb-3 font-medium">{template.subject}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 line-clamp-2">{template.content}</p>
+                  <div className="mt-4 pt-4 border-t dark:border-gray-700 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 dark:text-gray-400">
                     <span>Created: {new Date(template.created_at).toLocaleDateString()}</span>
                     {template.is_active !== undefined && (
                       <span className={template.is_active ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
@@ -389,10 +389,10 @@ export default function NotificationsPage() {
               ))}
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border p-8 text-center">
               <div className="text-gray-400 text-4xl mb-4">📧</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Templates Yet</h3>
-              <p className="text-gray-600 mb-4">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Templates Yet</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
                 Create reusable notification templates for common announcements like maintenance,
                 feature updates, or security notices.
               </p>
@@ -416,23 +416,23 @@ export default function NotificationsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 dark:bg-gray-800">
                   <tr>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Subject</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Recipients</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Sent Date</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Status</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Subject</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Recipients</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Sent Date</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sentNotifications.map((notification) => (
                     <tr key={notification._id} className="border-t hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700">
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 font-medium">{notification.title}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 dark:text-gray-100 font-medium">{notification.title}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
                         {notification.delivery_summary ?
                           `${notification.delivery_summary.sent}/${notification.total_recipients}` :
                           notification.total_recipients
                         }
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{formatDate(notification.sent_at)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">{formatDate(notification.sent_at)}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           notification.status === 'sent' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
@@ -450,13 +450,13 @@ export default function NotificationsPage() {
             </div>
           ) : (
             <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 p-8 text-center">
-              <div className="text-gray-400 dark:text-gray-600 text-4xl mb-4">📊</div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Notifications Sent Yet</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
+              <div className="text-gray-400 dark:text-gray-600 dark:text-gray-400 text-4xl mb-4">📊</div>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 dark:text-white mb-2">No Notifications Sent Yet</h3>
+              <p className="text-gray-600 dark:text-gray-400 dark:text-gray-400 mb-4">
                 Once you start sending platform notifications, you'll see delivery statistics,
                 open rates, and performance metrics here.
               </p>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
+              <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-400">
                 <p>• View delivery status and recipient counts</p>
                 <p>• Track open and click rates</p>
                 <p>• Monitor notification performance over time</p>
@@ -469,13 +469,13 @@ export default function NotificationsPage() {
       {/* Template Creation Modal */}
       {showTemplateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-semibold text-wedding-navy">Create Notification Template</h2>
                 <button
                   onClick={() => setShowTemplateModal(false)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="text-gray-400 hover:text-gray-600 dark:text-gray-400 text-2xl"
                 >
                   ×
                 </button>
@@ -485,23 +485,23 @@ export default function NotificationsPage() {
             <div className="p-6 space-y-4">
               {/* Template Name */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Template Name *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Template Name *</label>
                 <input
                   type="text"
                   value={templateName}
                   onChange={(e) => setTemplateName(e.target.value)}
                   placeholder="e.g., System Maintenance Notice"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 />
               </div>
 
               {/* Delivery Method */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Method *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Delivery Method *</label>
                 <select
                   value={templateType}
                   onChange={(e) => setTemplateType(e.target.value as any)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 >
                   <option value="email">Email</option>
                   <option value="sms">SMS</option>
@@ -510,11 +510,11 @@ export default function NotificationsPage() {
 
               {/* Template Category */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Category *</label>
                 <select
                   value={templateCategory}
                   onChange={(e) => setTemplateCategory(e.target.value as any)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 >
                   <option value="system_update">System Update</option>
                   <option value="maintenance">Maintenance</option>
@@ -526,7 +526,7 @@ export default function NotificationsPage() {
 
               {/* Subject */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                   {templateType === 'email' ? 'Email Subject' : 'SMS Preview Text'} *
                 </label>
                 <input
@@ -534,19 +534,19 @@ export default function NotificationsPage() {
                   value={templateSubject}
                   onChange={(e) => setTemplateSubject(e.target.value)}
                   placeholder={templateType === 'email' ? 'Enter email subject line...' : 'Enter SMS preview text...'}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 />
               </div>
 
               {/* Content */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Message Content *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Message Content *</label>
                 <textarea
                   value={templateContent}
                   onChange={(e) => setTemplateContent(e.target.value)}
                   placeholder="Enter your template message..."
                   rows={8}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                 />
               </div>
 
@@ -554,7 +554,7 @@ export default function NotificationsPage() {
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   onClick={() => setShowTemplateModal(false)}
-                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  className="px-6 py-2 border border-gray-300 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:bg-slate-700"
                 >
                   Cancel
                 </button>

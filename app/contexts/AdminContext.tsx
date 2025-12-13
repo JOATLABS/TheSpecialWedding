@@ -125,15 +125,16 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
                 toast.success('Login successful');
 
+                // Use window.location.href for immediate navigation to avoid race condition with AdminRouteGuard
                 // Redirect based on user role
                 if (profile.is_wedding_planner) {
-                    router.push('/admin/planner');
+                    window.location.href = '/admin/planner';
                 } else {
-                    router.push('/admin');
+                    window.location.href = '/admin';
                 }
             } else {
                 toast.success('Login successful');
-                router.push('/admin');
+                window.location.href = '/admin';
             }
         } catch (err: any) {
             toast.error(err.message);
