@@ -94,7 +94,7 @@ export default function PlatformMonitoringDashboard() {
         return;
       }
 
-      const response = await fetch(`${baseUrl}/admin/platform/metrics`, {
+      const response = await fetch(`${baseUrl}/admin/platform/health`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -236,12 +236,12 @@ export default function PlatformMonitoringDashboard() {
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Database</h3>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getHealthStatusColor(metrics.health.database.status)}`}>
-                  {metrics.health.database.status}
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getHealthStatusColor(metrics.health?.database?.status || 'unknown')}`}>
+                  {metrics.health?.database?.status || 'N/A'}
                 </span>
               </div>
               <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {metrics.health.database.latency_ms.toFixed(1)}ms
+                {metrics.health?.database?.latency_ms?.toFixed(1) || '0'}ms
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Response time</p>
             </Card>
@@ -250,15 +250,15 @@ export default function PlatformMonitoringDashboard() {
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">CPU</h3>
-                <span className="text-xs text-gray-500 dark:text-gray-400">{metrics.health.cpu.cores} cores</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{metrics.health?.cpu?.cores || 0} cores</span>
               </div>
               <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {metrics.health.cpu.percent.toFixed(1)}%
+                {metrics.health?.cpu?.percent?.toFixed(1) || '0'}%
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
                 <div
-                  className={`h-2 rounded-full ${getUsageColor(metrics.health.cpu.percent)}`}
-                  style={{ width: `${Math.min(metrics.health.cpu.percent, 100)}%` }}
+                  className={`h-2 rounded-full ${getUsageColor(metrics.health?.cpu?.percent || 0)}`}
+                  style={{ width: `${Math.min(metrics.health?.cpu?.percent || 0, 100)}%` }}
                 ></div>
               </div>
             </Card>
@@ -268,16 +268,16 @@ export default function PlatformMonitoringDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Memory</h3>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {metrics.health.memory.used_gb.toFixed(1)} / {metrics.health.memory.total_gb.toFixed(1)} GB
+                  {metrics.health?.memory?.used_gb?.toFixed(1) || '0'} / {metrics.health?.memory?.total_gb?.toFixed(1) || '0'} GB
                 </span>
               </div>
               <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {metrics.health.memory.percent_used.toFixed(1)}%
+                {metrics.health?.memory?.percent_used?.toFixed(1) || '0'}%
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
                 <div
-                  className={`h-2 rounded-full ${getUsageColor(metrics.health.memory.percent_used)}`}
-                  style={{ width: `${Math.min(metrics.health.memory.percent_used, 100)}%` }}
+                  className={`h-2 rounded-full ${getUsageColor(metrics.health?.memory?.percent_used || 0)}`}
+                  style={{ width: `${Math.min(metrics.health?.memory?.percent_used || 0, 100)}%` }}
                 ></div>
               </div>
             </Card>
@@ -287,20 +287,20 @@ export default function PlatformMonitoringDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Disk</h3>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {metrics.health.disk.free_gb.toFixed(1)} GB free
+                  {metrics.health?.disk?.free_gb?.toFixed(1) || '0'} GB free
                 </span>
               </div>
               <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {metrics.health.disk.percent_used.toFixed(1)}%
+                {metrics.health?.disk?.percent_used?.toFixed(1) || '0'}%
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-3">
                 <div
-                  className={`h-2 rounded-full ${getUsageColor(metrics.health.disk.percent_used)}`}
-                  style={{ width: `${Math.min(metrics.health.disk.percent_used, 100)}%` }}
+                  className={`h-2 rounded-full ${getUsageColor(metrics.health?.disk?.percent_used || 0)}`}
+                  style={{ width: `${Math.min(metrics.health?.disk?.percent_used || 0, 100)}%` }}
                 ></div>
               </div>
             </Card>
-            {!metrics.health.psutil_available && (
+            {!metrics.health?.psutil_available && (
               <div className="md:col-span-2 xl:col-span-4">
                 <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-800">
                   System resource metrics are unavailable. Install the optional <code className="font-mono">psutil</code>
@@ -318,7 +318,7 @@ export default function PlatformMonitoringDashboard() {
             <Card className="p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                  <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
                     <svg className="w-6 h-6 text-red-600 dark:text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
@@ -326,7 +326,7 @@ export default function PlatformMonitoringDashboard() {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Errors (24h)</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors.total_24h}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.total_24h ?? 0}</p>
                 </div>
               </div>
             </Card>
@@ -334,15 +334,15 @@ export default function PlatformMonitoringDashboard() {
             <Card className="p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical Errors (24h)</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors.critical_24h}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.critical_24h ?? 0}</p>
                 </div>
               </div>
             </Card>
@@ -350,29 +350,29 @@ export default function PlatformMonitoringDashboard() {
             <Card className="p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Recent Errors</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors.recent_errors.length}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.recent_errors?.length ?? 0}</p>
                 </div>
               </div>
             </Card>
           </div>
 
           {/* Recent Errors List */}
-          {metrics.errors.recent_errors.length > 0 && (
+          {(metrics.errors?.recent_errors?.length ?? 0) > 0 && (
             <Card className="overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-700">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Recent Errors</h3>
               </div>
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {metrics.errors.recent_errors.slice(0, 10).map((error) => (
-                  <div key={error.error_id} className="p-4 hover:bg-gray-50 transition-colors">
+                {(metrics.errors?.recent_errors ?? []).slice(0, 10).map((error) => (
+                  <div key={error.error_id} className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-1">
@@ -407,17 +407,17 @@ export default function PlatformMonitoringDashboard() {
                   </div>
                 ))}
               </div>
-              {metrics.errors.recent_errors.length > 10 && (
-                <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 dark:border-gray-700 text-center">
+              {(metrics.errors?.recent_errors?.length ?? 0) > 10 && (
+                <div className="px-6 py-3 bg-gray-50 dark:bg-slate-700 border-t border-gray-200 dark:border-gray-700 text-center">
                   <Link href="/admin/platform/errors" className="text-sm text-blue-600 hover:text-blue-800 font-medium">
-                    View All Errors ({metrics.errors.recent_errors.length})
+                    View All Errors ({metrics.errors?.recent_errors?.length ?? 0})
                   </Link>
                 </div>
               )}
             </Card>
           )}
 
-          {metrics.errors.recent_errors.length === 0 && (
+          {(metrics.errors?.recent_errors?.length ?? 0) === 0 && (
             <Card className="p-8 text-center">
               <div className="text-green-600 dark:text-green-300 mb-2">
                 <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -430,7 +430,7 @@ export default function PlatformMonitoringDashboard() {
         </section>
 
         {/* Performance Metrics */}
-        {metrics.performance.slow_endpoints.length > 0 && (
+        {(metrics.performance?.slow_endpoints?.length ?? 0) > 0 && (
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Performance Issues</h2>
             <Card className="overflow-hidden">
@@ -448,7 +448,7 @@ export default function PlatformMonitoringDashboard() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {metrics.performance.slow_endpoints.map((endpoint, idx) => (
+                    {(metrics.performance?.slow_endpoints ?? []).map((endpoint, idx) => (
                       <tr key={endpoint.endpoint ?? idx}>
                         <td className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100">{endpoint.endpoint}</td>
                         <td className="px-6 py-4 text-sm">
@@ -471,27 +471,27 @@ export default function PlatformMonitoringDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
             <Card className="p-6">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Users</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business.total_users}</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business?.total_users ?? 0}</p>
             </Card>
 
             <Card className="p-6">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Active Subscriptions</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business.active_subscriptions}</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business?.active_subscriptions ?? 0}</p>
             </Card>
 
             <Card className="p-6">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Total Weddings</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business.total_weddings}</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{metrics.business?.total_weddings ?? 0}</p>
             </Card>
 
             <Card className="p-6">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">MRR</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">${metrics.business.mrr.toFixed(0)}</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">${metrics.business?.mrr?.toFixed(0) ?? '0'}</p>
             </Card>
 
             <Card className="p-6">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">ARR</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">${metrics.business.arr.toFixed(0)}</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">${metrics.business?.arr?.toFixed(0) ?? '0'}</p>
             </Card>
           </div>
         </section>
@@ -540,7 +540,7 @@ export default function PlatformMonitoringDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Link
               href="/admin/platform/errors"
-              className="block p-4 bg-white border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
+              className="block p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -557,7 +557,7 @@ export default function PlatformMonitoringDashboard() {
 
             <Link
               href="/admin/metrics"
-              className="block p-4 bg-white border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
+              className="block p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
@@ -574,7 +574,7 @@ export default function PlatformMonitoringDashboard() {
 
             <Link
               href="/admin/saas"
-              className="block p-4 bg-white border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
+              className="block p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:shadow-md transition-all"
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">

@@ -17,4 +17,17 @@ class Settings:
         or API_KEY
     )
 
+    # Google Calendar Integration
+    GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")
+    GOOGLE_REDIRECT_URI: str = os.getenv(
+        "GOOGLE_REDIRECT_URI",
+        "http://localhost:3000/admin/planner/calendar/callback"
+    )
+    # Scopes needed for calendar read/write access
+    GOOGLE_CALENDAR_SCOPES: list = [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/calendar.events",
+    ]
+
 settings = Settings()

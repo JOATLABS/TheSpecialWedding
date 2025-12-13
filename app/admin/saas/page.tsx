@@ -827,23 +827,22 @@ const SaasAdminDashboard = () => {
  </div>
 
  {/* Navigation Tabs */}
- <div className="bg-white border-b">
+ <div className="bg-white dark:bg-slate-800 border-b dark:border-gray-700">
  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
  <nav className="flex space-x-8">
  {[
  { key: 'overview', label: 'Overview' },
  { key: 'plans', label: 'Subscription Plans' },
  { key: 'content', label: 'SAAS Content' },
- { key: 'theme', label: 'Theme & Design' },
- { key: 'planners', label: 'Wedding Planners' }
+ { key: 'theme', label: 'Theme & Design' }
  ].map((tab) => (
  <button
  key={tab.key}
  onClick={() => setActiveTab(tab.key as any)}
  className={`py-4 px-1 border-b-2 font-medium text-sm ${
  activeTab === tab.key
- ? 'border-blue-500 text-blue-600'
- : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+ ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+ : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
  }`}
  >
  {tab.label}
@@ -1688,107 +1687,6 @@ const SaasAdminDashboard = () => {
  </div>
  )}
 
- {activeTab === 'planners' && (
- <div className="space-y-6">
- <div className="flex justify-between items-center">
- <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Wedding Planners</h2>
- <button
- onClick={handleCreatePlanner}
- className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
- >
- Create New Planner
- </button>
- </div>
-
- <Card className="overflow-hidden">
- <div className="overflow-x-auto">
- <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
- <thead className="bg-gray-50 dark:bg-slate-700">
- <tr>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
- Company & Email
- </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
- Plan
- </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
- Status
- </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
- Last Login
- </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
- Actions
- </th>
- </tr>
- </thead>
- <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
- {planners.map((planner) => (
- <tr key={planner.id}>
- <td className="px-6 py-4 whitespace-nowrap">
- <div>
- <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{planner.companyName}</div>
- <div className="text-sm text-gray-500 dark:text-gray-400">{planner.email}</div>
- </div>
- </td>
- <td className="px-6 py-4 whitespace-nowrap">
- <div className="flex items-center space-x-2">
- <select
- value={planner.subscriptionPlanId || ''}
- onChange={(e) => handleAssignPlan(planner.id, e.target.value)}
- className="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
- >
- <option value="">Select Plan</option>
- {plans.filter(p => p.is_active).map(plan => (
- <option key={plan._id} value={plan._id}>
- {plan.name}
- </option>
- ))}
- </select>
- <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
- {plans.find(p => p._id === planner.subscriptionPlanId)?.name || 'Unknown'}
- </span>
- </div>
- </td>
- <td className="px-6 py-4 whitespace-nowrap">
- <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
- planner.is_active && planner.subscriptionStatus === 'active'
- ? 'bg-green-100 text-green-800'
- : 'bg-red-100 text-red-800'
- }`}>
- {planner.is_active && planner.subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
- </span>
- </td>
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-            {planner.lastLogin
-              ? formatDate(planner.lastLogin)
-              : 'Never'
-            }
- </td>
- <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
- <button
- onClick={() => handleTogglePlannerStatus(planner.id)}
- className={`${
- planner.is_active ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'
- }`}
- >
- {planner.is_active ? 'Deactivate' : 'Activate'}
- </button>
- <button className="text-blue-600 hover:text-blue-900">
- Edit
- </button>
- <button className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100">
- View Weddings
- </button>
- </td>
- </tr>
- ))}
- </tbody>
- </table>
- </div>
- </Card>
- </div>
- )}
  </div>
 
  {/* Create/Edit Plan Modal */}

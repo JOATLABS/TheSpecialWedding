@@ -149,14 +149,14 @@ export default function AllErrorsPage() {
         )}
 
         {/* Filters */}
-        <Card className="p-6 mb-6">
+        <Card className="p-6 mb-6 bg-opacity-100 dark:bg-opacity-100">
           <div className="flex flex-wrap items-center gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Severity</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Severity</label>
               <select
                 value={severityFilter}
                 onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Severities</option>
                 <option value="critical">Critical Only</option>
@@ -165,11 +165,11 @@ export default function AllErrorsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Status</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
               <select
                 value={acknowledgedFilter}
                 onChange={(e) => setAcknowledgedFilter(e.target.value as AcknowledgedFilter)}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Status</option>
                 <option value="false">Unacknowledged</option>
@@ -178,11 +178,11 @@ export default function AllErrorsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Limit</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Limit</label>
               <select
                 value={limit}
                 onChange={(e) => setLimit(Number(e.target.value))}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value={25}>25 errors</option>
                 <option value={50}>50 errors</option>
@@ -206,23 +206,23 @@ export default function AllErrorsPage() {
 
         {/* Error Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card className="p-4">
+          <Card className="p-4 bg-opacity-100 dark:bg-opacity-100">
             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Errors</p>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{errors.length}</p>
           </Card>
-          <Card className="p-4">
+          <Card className="p-4 bg-opacity-100 dark:bg-opacity-100">
             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical</p>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-300 mt-1">
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
               {errors.filter(e => e.severity === 'critical').length}
             </p>
           </Card>
-          <Card className="p-4">
+          <Card className="p-4 bg-opacity-100 dark:bg-opacity-100">
             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</p>
-            <p className="text-2xl font-bold text-yellow-600 mt-1">
+            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
               {errors.filter(e => e.severity === 'warning').length}
             </p>
           </Card>
-          <Card className="p-4">
+          <Card className="p-4 bg-opacity-100 dark:bg-opacity-100">
             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged</p>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
               {errors.filter(e => !e.acknowledged).length}
@@ -232,7 +232,7 @@ export default function AllErrorsPage() {
 
         {/* Errors List */}
         {errors.length === 0 ? (
-          <Card className="p-12 text-center">
+          <Card className="p-12 text-center bg-opacity-100 dark:bg-opacity-100">
             <div className="text-green-600 dark:text-green-300 mb-4">
               <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -247,7 +247,7 @@ export default function AllErrorsPage() {
             </p>
           </Card>
         ) : (
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden bg-opacity-100 dark:bg-opacity-100">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-slate-700">
@@ -277,7 +277,7 @@ export default function AllErrorsPage() {
                 </thead>
                 <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
                   {errors.map((error) => (
-                    <tr key={error.error_id} className="hover:bg-gray-50 dark:bg-slate-700">
+                    <tr key={error.error_id} className="hover:bg-gray-50 dark:hover:bg-slate-700">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           error.severity === 'critical' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'

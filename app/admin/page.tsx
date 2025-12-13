@@ -220,23 +220,23 @@ export default function AdminMetricsDashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="bg-white shadow-xl rounded-2xl p-8 border border-rose-100">
+      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-2xl p-8 border border-rose-100 dark:border-slate-700">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-wedding-navy">Platform Health Overview</h1>
-            <p className="text-wedding-muted mt-1">
+            <h1 className="text-3xl font-bold text-wedding-navy dark:text-white">Platform Health Overview</h1>
+            <p className="text-wedding-muted dark:text-gray-400 mt-1">
               {latestSnapshot
                 ? `Last updated ${formatTimestamp(latestSnapshot.snapshot_time || latestSnapshot.timestamp)}`
                 : 'Metrics snapshots will appear once data is collected.'}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <label htmlFor="history-range" className="text-sm font-medium text-wedding-muted">
+            <label htmlFor="history-range" className="text-sm font-medium text-wedding-muted dark:text-gray-400">
               History range
             </label>
             <select
               id="history-range"
-              className="border border-rose-200 rounded-lg px-3 py-2 text-sm"
+              className="border border-rose-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white"
               value={historyHours}
               onChange={(event) => setHistoryHours(Number(event.target.value))}
             >
@@ -249,7 +249,7 @@ export default function AdminMetricsDashboard() {
           </div>
         </div>
         {error && (
-          <p className="mt-4 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-4 py-3">
+          <p className="mt-4 text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg px-4 py-3">
             {error}
           </p>
         )}
@@ -286,53 +286,53 @@ export default function AdminMetricsDashboard() {
         />
       </div>
 
-      <div className="bg-white shadow-xl rounded-2xl border border-rose-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-rose-100">
-          <h2 className="text-xl font-semibold text-wedding-navy">Snapshot history</h2>
-          <p className="text-sm text-wedding-muted">
+      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-2xl border border-rose-100 dark:border-slate-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-rose-100 dark:border-slate-700">
+          <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Snapshot history</h2>
+          <p className="text-sm text-wedding-muted dark:text-gray-400">
             Showing {history.length} snapshots captured in the selected window.
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-rose-100">
-            <thead className="bg-rose-50">
+          <table className="min-w-full divide-y divide-rose-100 dark:divide-slate-700">
+            <thead className="bg-rose-50 dark:bg-slate-700">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-wedding-muted uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-wedding-muted dark:text-gray-300 uppercase tracking-wider">
                   Captured at
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-wedding-muted uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-wedding-muted dark:text-gray-300 uppercase tracking-wider">
                   Reported timestamp
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-wedding-muted uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-wedding-muted dark:text-gray-300 uppercase tracking-wider">
                   Metrics summary
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-rose-50">
+            <tbody className="bg-white dark:bg-slate-800 divide-y divide-rose-50 dark:divide-slate-700">
               {historyLoading ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-wedding-muted">
+                  <td colSpan={3} className="px-4 py-6 text-center text-wedding-muted dark:text-gray-400">
                     Loading history…
                   </td>
                 </tr>
               ) : history.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-6 text-center text-wedding-muted">
+                  <td colSpan={3} className="px-4 py-6 text-center text-wedding-muted dark:text-gray-400">
                     No snapshot history available for this range yet.
                   </td>
                 </tr>
               ) : (
                 history.map((snapshot) => (
                   <tr key={snapshot.id || snapshot.snapshot_time || snapshot.timestamp}>
-                    <td className="px-4 py-3 text-sm text-wedding-navy whitespace-nowrap">
+                    <td className="px-4 py-3 text-sm text-wedding-navy dark:text-white whitespace-nowrap">
                       {formatTimestamp(snapshot.snapshot_time)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-wedding-muted whitespace-nowrap">
+                    <td className="px-4 py-3 text-sm text-wedding-muted dark:text-gray-400 whitespace-nowrap">
                       {formatTimestamp(snapshot.timestamp)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-wedding-muted">
+                    <td className="px-4 py-3 text-sm text-wedding-muted dark:text-gray-400">
                       {Object.keys(snapshot.metrics || {}).slice(0, 5).map((key) => (
-                        <span key={key} className="inline-flex items-center bg-rose-50 text-rose-600 text-xs font-medium mr-2 mb-2 px-3 py-1 rounded-full">
+                        <span key={key} className="inline-flex items-center bg-rose-50 dark:bg-slate-700 text-rose-600 dark:text-rose-400 text-xs font-medium mr-2 mb-2 px-3 py-1 rounded-full">
                           {key}
                         </span>
                       ))}
@@ -345,22 +345,22 @@ export default function AdminMetricsDashboard() {
         </div>
       </div>
 
-      <div className="bg-white shadow-xl rounded-2xl border border-rose-100 p-6">
-        <h2 className="text-xl font-semibold text-wedding-navy mb-4">Raw metrics</h2>
+      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-2xl border border-rose-100 dark:border-slate-700 p-6">
+        <h2 className="text-xl font-semibold text-wedding-navy dark:text-white mb-4">Raw metrics</h2>
         {loading ? (
-          <p className="text-wedding-muted">Loading latest metrics…</p>
+          <p className="text-wedding-muted dark:text-gray-400">Loading latest metrics…</p>
         ) : !latestSnapshot ? (
-          <p className="text-wedding-muted">No metrics snapshot captured yet.</p>
+          <p className="text-wedding-muted dark:text-gray-400">No metrics snapshot captured yet.</p>
         ) : generalMetrics.length === 0 ? (
-          <p className="text-wedding-muted">Metrics payload is empty.</p>
+          <p className="text-wedding-muted dark:text-gray-400">Metrics payload is empty.</p>
         ) : (
           <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
             {generalMetrics.map((metric) => (
-              <div key={metric.key} className="bg-rose-50 border border-rose-100 rounded-lg px-4 py-3">
-                <dt className="text-xs font-semibold text-rose-500 uppercase tracking-wide">
+              <div key={metric.key} className="bg-rose-50 dark:bg-slate-700 border border-rose-100 dark:border-slate-600 rounded-lg px-4 py-3">
+                <dt className="text-xs font-semibold text-rose-500 dark:text-rose-400 uppercase tracking-wide">
                   {metric.key}
                 </dt>
-                <dd className="text-sm text-wedding-navy mt-1 break-all">
+                <dd className="text-sm text-wedding-navy dark:text-white mt-1 break-all">
                   {metric.value}
                 </dd>
               </div>
@@ -380,9 +380,9 @@ interface MetricCardProps {
 
 function MetricCard({ title, value, loading }: MetricCardProps) {
   return (
-    <div className="bg-white border border-rose-100 rounded-2xl shadow-lg p-6 flex flex-col gap-3">
-      <span className="text-sm font-semibold text-rose-500 uppercase tracking-wide">{title}</span>
-      <span className="text-2xl font-bold text-wedding-navy">
+    <div className="bg-white dark:bg-slate-800 border border-rose-100 dark:border-slate-700 rounded-2xl shadow-lg p-6 flex flex-col gap-3">
+      <span className="text-sm font-semibold text-rose-500 dark:text-rose-400 uppercase tracking-wide">{title}</span>
+      <span className="text-2xl font-bold text-wedding-navy dark:text-white">
         {loading ? 'Loading…' : value}
       </span>
     </div>

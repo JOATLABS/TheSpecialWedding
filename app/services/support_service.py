@@ -7,8 +7,12 @@ import secrets
 import string
 import logging
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
+
+# Root admin email for support notifications
+ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
 
 class SupportService:
     def __init__(self):
@@ -58,6 +62,13 @@ class SupportService:
 
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create ticket")
+
+            # Send email notification to root admin
+            try:
+                await self._send_new_ticket_notification(ticket, created_by)
+            except Exception as email_error:
+                logger.error(f"Failed to send email notification for ticket {ticket_number}: {str(email_error)}")
+                # Don't fail the ticket creation if email fails
 
             return {
                 "id": str(result.inserted_id),
@@ -602,3 +613,117 @@ class SupportService:
 
         except Exception:
             return False
+
+    async def _send_new_ticket_notification(self, ticket: dict, created_by: str) -> None:
+        """Send email notification to root admin when a new support ticket is created"""
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            email_service = ResendEmailService()
+            if not email_service.configured:
+                logger.warning("Email service not configured, skipping ticket notification")
+                return
+
+            # Get creator info
+            creator_info = self.users_collection.find_one(
+                {"email": created_by},
+                {"first_name": 1, "last_name": 1, "company_name": 1}
+            )
+
+            creator_name = "Unknown User"
+            if creator_info:
+                if creator_info.get("company_name"):
+                    creator_name = creator_info["company_name"]
+                else:
+                    creator_name = f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip() or created_by
+
+            # Priority colors
+            priority_colors = {
+                "urgent": "#dc2626",
+                "high": "#ea580c",
+                "medium": "#ca8a04",
+                "low": "#16a34a"
+            }
+            priority_color = priority_colors.get(ticket.get("priority", "medium"), "#ca8a04")
+
+            # Build email HTML
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>New Support Ticket</title>
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6; padding: 40px 20px;">
+                <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); overflow: hidden;">
+                    <!-- Header -->
+                    <div style="background: linear-gradient(135deg, #3b82f6, #8b5cf6); padding: 24px; text-align: center;">
+                        <h1 style="color: white; margin: 0; font-size: 24px;">🎫 New Support Ticket</h1>
+                    </div>
+
+                    <!-- Content -->
+                    <div style="padding: 32px;">
+                        <div style="background-color: #f8fafc; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 8px 0; color: #6b7280; width: 120px;">Ticket #:</td>
+                                    <td style="padding: 8px 0; font-weight: 600; color: #1f2937;">{ticket.get('ticket_number', 'N/A')}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0; color: #6b7280;">From:</td>
+                                    <td style="padding: 8px 0; font-weight: 600; color: #1f2937;">{creator_name}<br><span style="font-weight: normal; color: #6b7280;">{created_by}</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0; color: #6b7280;">Category:</td>
+                                    <td style="padding: 8px 0; color: #1f2937; text-transform: capitalize;">{ticket.get('category', 'general').replace('_', ' ')}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0; color: #6b7280;">Priority:</td>
+                                    <td style="padding: 8px 0;">
+                                        <span style="background-color: {priority_color}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase;">{ticket.get('priority', 'medium')}</span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 12px 0;">{ticket.get('subject', 'No Subject')}</h2>
+
+                        <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
+                            <p style="color: #374151; margin: 0; line-height: 1.6; white-space: pre-wrap;">{ticket.get('description', 'No description provided')}</p>
+                        </div>
+
+                        <div style="text-align: center; margin-top: 32px;">
+                            <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3001')}/admin/support"
+                               style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                View in Dashboard →
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e5e7eb;">
+                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
+                            This email was sent from WeddingApp Support System
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            # Send email to root admin
+            subject = f"[{ticket.get('priority', 'medium').upper()}] New Support Ticket: {ticket.get('subject', 'No Subject')}"
+
+            await email_service.send_email(
+                to_email=ROOT_ADMIN_EMAIL,
+                subject=subject,
+                html_content=html_content,
+                from_name="WeddingApp Support",
+                email_type="support_ticket_notification"
+            )
+
+            logger.info(f"Support ticket notification sent to {ROOT_ADMIN_EMAIL} for ticket {ticket.get('ticket_number')}")
+
+        except Exception as e:
+            logger.error(f"Failed to send support ticket notification: {str(e)}")
+            raise

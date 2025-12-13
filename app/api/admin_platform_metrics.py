@@ -158,11 +158,11 @@ if PSUTIL_AVAILABLE:
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin/platform", tags=["ROOT_ADMIN", "Monitoring"])
+router = APIRouter(prefix="/platform", tags=["ROOT_ADMIN", "Monitoring"])
 
 
-@router.get("/metrics")
-async def get_platform_metrics(
+@router.get("/health")
+async def get_platform_health(
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """

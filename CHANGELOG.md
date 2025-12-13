@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Redis Service for Development**: Added Redis service to `docker-compose.yml` for development environment parity with production
+- **System Metrics Monitoring**: Added `psutil` package to `requirements.txt` for CPU, memory, and disk monitoring in Platform Metrics dashboard
+- **Authentication Loading State**: Added `isLoading` state to `AdminContext` for proper authentication state management
+- **Comprehensive Dark Mode Support**: Full dark mode theming across all admin pages
+  - Theme toggle in header supporting light/dark/system modes
+  - ThemeContext for managing theme state with localStorage persistence
+  - System preference detection via `prefers-color-scheme` media query
 - Enhanced error handling and logging for SAAS configuration saves
 - Clean configuration object creation to prevent circular references
 - Authentication token validation for admin operations
@@ -20,7 +27,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security logging and rate limiting for guest verification attempts
 - Debug logging throughout guest verification chain for troubleshooting
 
+### Removed
+- **Wedding Planners Tab from SaaS Page**: Removed duplicate "Wedding Planners" tab from `/admin/saas` page
+  - Planner management is now exclusively accessed via the sidebar "Planners" navigation (`/admin/users`)
+  - Eliminates duplicate functionality and reduces UI confusion
+  - SaaS page now focuses on: Overview, Subscription Plans, SAAS Content, and Theme & Design
+
 ### Fixed
+- **CRITICAL**: Fixed login redirect race condition in `AdminRouteGuard`
+  - Added `isLoading` state to `AdminContext.tsx` to track authentication initialization
+  - Updated `AdminRouteGuard.tsx` to wait for auth check completion before redirecting
+  - Changed post-login navigation from `router.push()` to `window.location.href` for immediate redirect
+  - Root cause: Guard was checking `isAuthenticated` before `useEffect` loaded token from storage
+- **CRITICAL**: Fixed Platform Metrics page crashes due to undefined nested objects
+  - Added optional chaining (`?.`) and nullish coalescing (`??`) throughout `app/admin/platform/metrics/page.tsx`
+  - Protected access to `metrics.health.database`, `metrics.errors`, `metrics.business`, `metrics.performance`
+  - Page now gracefully handles missing or incomplete API responses
+- **CRITICAL**: Fixed API 404 errors for `/admin/platform/*` endpoints
+  - Changed router prefix in `app/api/admin_platform_metrics.py` from `/admin/platform` to `/platform`
+  - Router was included with `/admin` prefix in `main.py`, causing double prefix `/admin/admin/platform/`
+- **Error Logs Page Dark Mode**: Fixed dark mode styling in `app/admin/platform/errors/page.tsx`
+  - Added `bg-opacity-100 dark:bg-opacity-100` to Card components to prevent washed-out appearance
+  - Fixed duplicate CSS classes in select dropdowns
+  - Corrected hover state from `dark:bg-slate-700` to `dark:hover:bg-slate-700` on table rows
+- **Missing Components**: Restored accidentally deleted files from git history
+  - `app/contexts/ThemeContext.tsx` - Theme management context
+  - `app/admin/components/Sidebar.tsx` - Admin sidebar navigation
+  - `app/admin/components/TopHeader.tsx` - Admin top header component
+- **Missing Dependencies**: Added `framer-motion` package for admin dashboard animations
+- **Dark Mode Styling Fixes**: Comprehensive dark mode support across admin dashboard
+  - Fixed `tailwind.config.js` to use `darkMode: 'class'` instead of `'media'` for class-based toggling
+  - Fixed `Card` component (`app/components/ui/Card.tsx`) with `dark:bg-slate-800` backgrounds
+  - Fixed `CardTitle` and `CardDescription` components with dark text variants
+  - Fixed Platform Health Overview page (`/admin/page.tsx`) - all cards, tables, and metrics
+  - Fixed SaaS Management page (`/admin/saas/page.tsx`) - navigation tabs and content
+  - Fixed Platform Metrics page (`/admin/platform/metrics/page.tsx`) - hover states and quick action links
+  - Fixed Error Details page (`/admin/platform/errors/[errorId]/page.tsx`) - all sections and badges
+  - Removed hardcoded light backgrounds from vendors, guests, and weddings pages
+  - Added dark mode hover states (`dark:hover:bg-slate-700`) throughout
+  - Fixed select dropdowns, code blocks, and form elements for dark mode
 - **CRITICAL**: Fixed async/await chain in guest verification flow preventing authentication
   - Made `verify_guest_access` async and added `await` to all service calls
   - Fixed coroutine access errors in `guest_verification_service.py`, `guest_verification.py`, `gallery_public.py`, `wedding.py`
