@@ -96,7 +96,7 @@ function CreationOptionCard({
       </div>
       <div className="space-y-2">
         <p className="text-sm font-semibold text-wedding-navy">{option.title}</p>
-        <p className="text-xs text-gray-600">{option.description}</p>
+        <p className="text-xs text-gray-600 dark:text-gray-400">{option.description}</p>
       </div>
     </label>
   );
@@ -377,7 +377,7 @@ export default function FormsManagementPage(): ReactElement {
       </section>
 
       {error && (
-        <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 shadow-sm backdrop-blur">
+        <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 dark:text-red-300 shadow-sm backdrop-blur">
           {error}
         </div>
       )}
@@ -386,7 +386,7 @@ export default function FormsManagementPage(): ReactElement {
         <header className="flex flex-col gap-4 border-b border-white/40 px-8 py-6 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-wedding-navy">Forms library</h2>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Track what’s live, spot unread insights, and jump into analytics without breaking focus.
             </p>
           </div>
@@ -397,7 +397,7 @@ export default function FormsManagementPage(): ReactElement {
           <div className="px-8 py-20 text-center">
             <div className="mx-auto max-w-md space-y-3">
               <h3 className="text-lg font-semibold text-wedding-navy">Design your first form</h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Start from the curated template gallery or open a blank canvas to craft a bespoke workflow.
               </p>
               <Button onClick={() => setShowCreateModal(true)} className="shadow-md shadow-wedding-rose/30">
@@ -421,10 +421,10 @@ export default function FormsManagementPage(): ReactElement {
                       <h3 className="text-lg font-semibold text-wedding-navy">{form.name}</h3>
                       {form.unread_responses > 0 && <FormBadge tone="accent">{form.unread_responses} unread</FormBadge>}
                     </div>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
                       {form.settings.description || form.settings.title}
                     </p>
-                    <dl className="grid grid-cols-2 gap-3 text-xs text-gray-500">
+                    <dl className="grid grid-cols-2 gap-3 text-xs text-gray-500 dark:text-gray-400">
                       <div className="space-y-1">
                         <dt className="font-semibold text-wedding-navy/80">Visibility</dt>
                         <dd>{form.settings.is_public ? 'Public link' : 'Planner only'}</dd>
@@ -553,7 +553,7 @@ export default function FormsManagementPage(): ReactElement {
                     <form className="space-y-7 p-8" onSubmit={handleCreateForm}>
                       <div className="space-y-2">
                         <Dialog.Title className="text-2xl font-semibold text-wedding-navy">Create a new form</Dialog.Title>
-                        <Dialog.Description className="text-sm text-gray-600">
+                        <Dialog.Description className="text-sm text-gray-600 dark:text-gray-400">
                           Pick a starting point and configure visibility. The creation studio applies Apple glass design primitives automatically.
                         </Dialog.Description>
                       </div>
@@ -623,7 +623,7 @@ export default function FormsManagementPage(): ReactElement {
                             <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner">
                               <span className="flex flex-col">
                                 <span className="font-medium">Public access</span>
-                                <span className="text-xs text-gray-500">Generate a link anyone can view.</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Generate a link anyone can view.</span>
                               </span>
                               <input
                                 type="checkbox"
@@ -635,7 +635,7 @@ export default function FormsManagementPage(): ReactElement {
                             <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner">
                               <span className="flex flex-col">
                                 <span className="font-medium">Collect emails</span>
-                                <span className="text-xs text-gray-500">Capture respondent contact details for follow-ups.</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Capture respondent contact details for follow-ups.</span>
                               </span>
                               <input
                                 type="checkbox"
@@ -670,7 +670,7 @@ export default function FormsManagementPage(): ReactElement {
                       )}
 
                       {creationError && (
-                        <p className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-2 text-sm text-red-700 shadow-inner">
+                        <p className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-2 text-sm text-red-700 dark:text-red-300 shadow-inner">
                           {creationError}
                         </p>
                       )}

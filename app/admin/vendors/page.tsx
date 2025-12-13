@@ -259,7 +259,7 @@ export default function VendorManagementPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading vendor management...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading vendor management...</p>
         </div>
       </div>
     );
@@ -269,7 +269,7 @@ export default function VendorManagementPage() {
     <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
           <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
@@ -283,7 +283,7 @@ export default function VendorManagementPage() {
                   setShowForm(!showForm);
                   if (!showForm) resetForm();
                 }}
-                className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-wedding-ivory transition-colors text-sm sm:text-base w-full sm:w-auto"
+                className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-gray-50 dark:bg-transparent transition-colors text-sm sm:text-base w-full sm:w-auto"
               >
                 {showForm ? 'Cancel' : 'Create Vendor Form'}
               </button>
@@ -293,14 +293,14 @@ export default function VendorManagementPage() {
 
         {/* Error Display */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-700">{error}</p>
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-red-700 dark:text-red-300">{error}</p>
           </div>
         )}
 
         {/* Vendor Form Creation */}
         {showForm && (
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
             <div className="p-4 sm:p-8">
               <h2 className="text-xl sm:text-2xl font-bold text-wedding-navy mb-4 sm:mb-6">
                 {editingId ? 'Edit Vendor Form' : 'Create New Vendor Form'}
@@ -308,14 +308,14 @@ export default function VendorManagementPage() {
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Wedding Selection */}
                 <div>
-                  <label htmlFor="wedding_id" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="wedding_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                     Select Wedding
                   </label>
                   <select
                     id="wedding_id"
                     value={formData.wedding_id}
                     onChange={(e) => setFormData({ ...formData, wedding_id: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   >
                     <option value="">Select a wedding...</option>
@@ -329,7 +329,7 @@ export default function VendorManagementPage() {
 
                 {/* Form Name */}
                 <div>
-                  <label htmlFor="form_name" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="form_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                     Form Name
                   </label>
                   <input
@@ -337,7 +337,7 @@ export default function VendorManagementPage() {
                     id="form_name"
                     value={formData.form_name}
                     onChange={(e) => setFormData({ ...formData, form_name: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     placeholder="e.g., Photography Services Quote"
                     required
                   />
@@ -346,7 +346,7 @@ export default function VendorManagementPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Vendor Name */}
                   <div>
-                    <label htmlFor="vendor_name" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="vendor_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                       Vendor Name
                     </label>
                     <input
@@ -354,7 +354,7 @@ export default function VendorManagementPage() {
                       id="vendor_name"
                       value={formData.vendor_name}
                       onChange={(e) => setFormData({ ...formData, vendor_name: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                       placeholder="Vendor or Company Name"
                       required
                     />
@@ -362,7 +362,7 @@ export default function VendorManagementPage() {
 
                   {/* Vendor Email */}
                   <div>
-                    <label htmlFor="vendor_email" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="vendor_email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                       Vendor Email
                     </label>
                     <input
@@ -370,7 +370,7 @@ export default function VendorManagementPage() {
                       id="vendor_email"
                       value={formData.vendor_email}
                       onChange={(e) => setFormData({ ...formData, vendor_email: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                       placeholder="vendor@example.com"
                       required
                     />
@@ -379,14 +379,14 @@ export default function VendorManagementPage() {
 
                 {/* Vendor Type */}
                 <div>
-                  <label htmlFor="vendor_type" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="vendor_type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                     Vendor Type
                   </label>
                   <select
                     id="vendor_type"
                     value={formData.vendor_type}
                     onChange={(e) => handleVendorTypeChange(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   >
                     {vendorTypes.map((type) => (
@@ -400,13 +400,13 @@ export default function VendorManagementPage() {
                 {/* Form Fields Preview */}
                 {formData.fields.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Form Fields Preview</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Form Fields Preview</h3>
+                    <div className="bg-gray-50 dark:bg-slate-700 p-4 rounded-lg space-y-4">
                       {formData.fields.map((field, index) => (
-                        <div key={field.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded">
+                        <div key={field.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 dark:border-gray-700 rounded">
                           <div>
                             <span className="font-medium">{field.label}</span>
-                            <span className="ml-2 text-sm text-gray-500">({field.type})</span>
+                            <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">({field.type})</span>
                             {field.required && <span className="ml-1 text-red-500">*</span>}
                           </div>
                           <div className="text-sm text-gray-400">
@@ -432,53 +432,53 @@ export default function VendorManagementPage() {
         )}
 
         {/* Vendor Forms List */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden">
           <div className="p-4 sm:p-8">
             <h2 className="text-xl font-bold text-wedding-navy mb-6">Vendor Forms</h2>
             {vendors.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                 <p className="text-lg">No vendor forms created yet.</p>
                 <p className="text-sm mt-2">Create your first vendor form to get started.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-slate-700">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Form Details
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Vendor
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Wedding
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {vendors.map((vendor) => (
-                      <tr key={vendor._id} className="hover:bg-gray-50">
+                      <tr key={vendor._id} className="hover:bg-gray-50 dark:bg-slate-700">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">{vendor.form_name}</div>
-                            <div className="text-sm text-gray-500">{vendor.vendor_type.replace('_', ' ')}</div>
+                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{vendor.form_name}</div>
+                            <div className="text-sm text-gray-500 dark:text-gray-400">{vendor.vendor_type.replace('_', ' ')}</div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">{vendor.vendor_name}</div>
-                            <div className="text-sm text-gray-500">{vendor.vendor_email}</div>
+                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{vendor.vendor_name}</div>
+                            <div className="text-sm text-gray-500 dark:text-gray-400">{vendor.vendor_email}</div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
+                          <div className="text-sm text-gray-900 dark:text-gray-100">
                             {weddings.find(w => w._id === vendor.wedding_id)?.couple_names || 'Unknown'}
                           </div>
                         </td>
@@ -497,7 +497,7 @@ export default function VendorManagementPage() {
                           {vendor.status === 'submitted' && (
                             <button
                               onClick={() => router.push(`/admin/vendors/${vendor._id}/submission`)}
-                              className="text-green-600 hover:text-green-900"
+                              className="text-green-600 dark:text-green-300 hover:text-green-900"
                             >
                               View Submission
                             </button>

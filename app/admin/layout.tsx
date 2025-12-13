@@ -15,6 +15,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
 
+  // Check if current page is the login page - should not show sidebar/header
+  const isLoginPage = pathname === '/admin/login';
+
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 1024;
@@ -37,6 +40,23 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     if (pathname.includes('/admin/profile')) return 'Settings';
     return undefined; // Let Header decide default
   };
+
+  // For login page, render without sidebar/header
+  if (isLoginPage) {
+    return (
+      <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans transition-colors duration-300">
+        {/* Background Mesh Gradient (Fixed) */}
+        <div className="fixed inset-0 z-0 pointer-events-none opacity-40 dark:opacity-20">
+           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary-400/30 blur-[100px] animate-float" />
+           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-secondary-400/30 blur-[100px] animate-float" style={{ animationDelay: '-3s' }} />
+        </div>
+        <main className="relative z-10 min-h-screen">
+          {children}
+        </main>
+        <Toaster position="top-right" richColors theme="system" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans transition-colors duration-300">

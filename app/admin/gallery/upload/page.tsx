@@ -191,7 +191,7 @@ export default function AdminGalleryUploadPage() {
   };
 
   return (
-    <main className="min-h-screen bg-wedding-ivory p-6">
+    <main className="min-h-screen dark:bg-transparent p-6">
       <div className="w-full max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-elegant text-wedding-navy">Gallery Management</h1>
@@ -206,7 +206,7 @@ export default function AdminGalleryUploadPage() {
             <select
               value={selectedWedding}
               onChange={(e) => handleWeddingChange(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
               required
             >
               <option value="">Choose a wedding...</option>
@@ -257,13 +257,13 @@ export default function AdminGalleryUploadPage() {
                     <select
                       value={selectedFolder}
                       onChange={(e) => setSelectedFolder(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
                     >
                       <option value="gallery">Public Gallery</option>
                       <option value="our-story">Our Story</option>
                       <option value="wedding-party">Wedding Party</option>
                     </select>
-                    <p className="mt-2 text-sm text-gray-600">
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                       • <strong>Public Gallery</strong>: Photos visible to all guests
                       <br />
                       • <strong>Our Story</strong>: Couple photos for the story section
@@ -342,7 +342,7 @@ export default function AdminGalleryUploadPage() {
                   </Button>
 
                   {!selectedWedding && (
-                    <p className="text-sm text-gray-600 text-center">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
                       Please select a wedding before uploading images
                     </p>
                   )}
@@ -370,7 +370,7 @@ export default function AdminGalleryUploadPage() {
                       <span className="ml-3 text-wedding-navy">Loading images...</span>
                     </div>
                   ) : uploadedImages.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
+                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                       <p className="text-lg">No images uploaded yet</p>
                       <p className="text-sm mt-2">Switch to Upload tab to add some images</p>
                     </div>
@@ -405,7 +405,7 @@ export default function AdminGalleryUploadPage() {
                           
                           {/* Image Info */}
                           <div className="mt-2">
-                            <p className="text-xs text-gray-600 truncate">
+                            <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
                               {image.key || image.filename || `image-${index + 1}`}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
@@ -422,7 +422,7 @@ export default function AdminGalleryUploadPage() {
                                  'Unknown'}
                               </span>
                               {image.size && (
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
                                   {(image.size / 1024).toFixed(1)} KB
                                 </span>
                               )}
@@ -496,7 +496,7 @@ export default function AdminGalleryUploadPage() {
 
                   {/* Gallery Stats */}
                   {uploadedImages.length > 0 && (
-                    <div className="mt-6 p-4 bg-wedding-ivory rounded-lg">
+                    <div className="mt-6 p-4 bg-gray-50 dark:bg-transparent rounded-lg">
                       <div className="flex justify-between items-center text-sm text-wedding-navy">
                         <span>Total Images: {uploadedImages.length}</span>
                         <span>Wedding: {selectedWeddingSlug}</span>

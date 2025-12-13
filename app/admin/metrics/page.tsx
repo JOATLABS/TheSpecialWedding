@@ -180,7 +180,7 @@ export default function PlatformMetricsPage(): ReactElement {
   if (error) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-red-200 bg-red-50 px-6 py-4 text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-6 py-4 text-red-700 dark:text-red-300">
           {error}
         </div>
         <button
@@ -195,7 +195,7 @@ export default function PlatformMetricsPage(): ReactElement {
 
   if (!metrics) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white/70 px-6 py-4 text-gray-600 shadow-sm backdrop-blur">
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/70 px-6 py-4 text-gray-600 dark:text-gray-400 shadow-sm backdrop-blur">
         Metrics data is currently unavailable.
       </div>
     );
@@ -206,7 +206,7 @@ export default function PlatformMetricsPage(): ReactElement {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-heading text-wedding-rose">Platform Analytics</h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             Updated {formatDateTime(metrics.generated_at, {
               month: 'short',
               day: 'numeric',
@@ -235,29 +235,29 @@ export default function PlatformMetricsPage(): ReactElement {
         <h2 className="text-xl font-semibold text-wedding-navy">User Growth</h2>
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
-            <p className="text-sm font-medium text-gray-500">Total Accounts</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Accounts</p>
             <p className="mt-2 text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.total)}</p>
-            <p className="mt-1 text-xs text-gray-500">Active Roles: {roleBreakdown.length}</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Active Roles: {roleBreakdown.length}</p>
           </Card>
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
-            <p className="text-sm font-medium text-gray-500">Active This Period</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active This Period</p>
             <p className="mt-2 text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.active)}</p>
-            <p className="mt-1 text-xs text-green-600">Growth {formatPercentage(metrics.users.growth_rate)}</p>
+            <p className="mt-1 text-xs text-green-600 dark:text-green-300">Growth {formatPercentage(metrics.users.growth_rate)}</p>
           </Card>
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
-            <p className="text-sm font-medium text-gray-500">New Accounts</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">New Accounts</p>
             <p className="mt-2 text-3xl font-bold text-wedding-navy">{formatNumber(metrics.users.new_in_period)}</p>
-            <p className="mt-1 text-xs text-gray-500">Within selected timeframe</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Within selected timeframe</p>
           </Card>
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
-            <p className="text-sm font-medium text-gray-500">Role Distribution</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Role Distribution</p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               {roleBreakdown.map(({ role, count }) => (
                 <span key={role} className="rounded-full bg-white/80 px-3 py-1 text-wedding-navy shadow-sm">
                   {role.replace('_', ' ')} · {formatNumber(count)}
                 </span>
               ))}
-              {roleBreakdown.length === 0 && <span className="text-gray-500">No accounts recorded.</span>}
+              {roleBreakdown.length === 0 && <span className="text-gray-500 dark:text-gray-400">No accounts recorded.</span>}
             </div>
           </Card>
         </div>
@@ -267,11 +267,11 @@ export default function PlatformMetricsPage(): ReactElement {
         <h2 className="text-xl font-semibold text-wedding-navy">Subscription &amp; Revenue</h2>
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
-            <p className="text-sm font-medium text-gray-500">Active Subscriptions</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Subscriptions</p>
             <p className="mt-2 text-3xl font-bold text-wedding-navy">
               {formatNumber(metrics.subscriptions.status_breakdown.active)}
             </p>
-            <ul className="mt-3 space-y-1 text-sm text-gray-600">
+            <ul className="mt-3 space-y-1 text-sm text-gray-600 dark:text-gray-400">
               {statusBreakdown.map(({ status, count }) => (
                 <li key={status} className="flex justify-between">
                   <span className="capitalize">{status.replace('_', ' ')}</span>
@@ -281,31 +281,31 @@ export default function PlatformMetricsPage(): ReactElement {
             </ul>
           </Card>
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
-            <p className="text-sm font-medium text-gray-500">Recurring Revenue</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Recurring Revenue</p>
             <p className="mt-2 text-3xl font-bold text-wedding-navy">
               {formatCurrency(metrics.subscriptions.monthly_recurring_revenue)}
             </p>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Annual Projection {formatCurrency(metrics.subscriptions.projected_annual_revenue)}
             </p>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Yearly Contracts {formatCurrency(metrics.subscriptions.yearly_recurring_revenue)}
             </p>
           </Card>
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
-            <p className="text-sm font-medium text-gray-500">Subscription Plans</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Subscription Plans</p>
             <p className="mt-2 text-3xl font-bold text-wedding-navy">{metrics.subscriptions.active_plans}</p>
-            <p className="mt-1 text-xs text-gray-500">Active plans available to assign</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Active plans available to assign</p>
           </Card>
         </div>
 
         <Card className="border border-white/40 bg-white/70 shadow-sm backdrop-blur overflow-hidden">
           <div className="border-b border-white/40 px-6 py-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Plan Breakdown</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Plan Breakdown</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-white/40 text-sm">
-              <thead className="bg-white/60 text-left text-xs uppercase tracking-wide text-gray-500">
+              <thead className="bg-white/60 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 <tr>
                   <th className="px-6 py-3">Plan</th>
                   <th className="px-6 py-3">Active Users</th>
@@ -314,7 +314,7 @@ export default function PlatformMetricsPage(): ReactElement {
                   <th className="px-6 py-3">ARR</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/40 bg-white/30 text-gray-700">
+              <tbody className="divide-y divide-white/40 bg-white/30 text-gray-700 dark:text-gray-300">
                 {Object.keys(metrics.subscriptions.plan_breakdown).length === 0 && (
                   <tr>
                     <td className="px-6 py-4" colSpan={5}>
@@ -344,7 +344,7 @@ export default function PlatformMetricsPage(): ReactElement {
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
             <h3 className="text-lg font-semibold text-wedding-navy">Wedding Projects</h3>
-            <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600">
+            <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400">
               <div>
                 <p className="font-medium text-wedding-navy">Total Weddings</p>
                 <p className="text-2xl font-semibold">{formatNumber(metrics.operations.weddings.total)}</p>
@@ -362,7 +362,7 @@ export default function PlatformMetricsPage(): ReactElement {
                 <p className="text-2xl font-semibold">{formatNumber(metrics.operations.weddings.created_in_period)}</p>
               </div>
             </div>
-            <div className="mt-4 rounded-lg bg-white/70 px-4 py-3 text-sm text-gray-600 shadow-inner">
+            <div className="mt-4 rounded-lg bg-white/70 px-4 py-3 text-sm text-gray-600 dark:text-gray-400 shadow-inner">
               <p>Guests managed: {formatNumber(metrics.operations.weddings.guest_total)}</p>
               <p>RSVP records: {formatNumber(metrics.operations.weddings.rsvp_total)}</p>
             </div>
@@ -370,7 +370,7 @@ export default function PlatformMetricsPage(): ReactElement {
 
           <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
             <h3 className="text-lg font-semibold text-wedding-navy">Form Engagement</h3>
-            <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600">
+            <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400">
               <div>
                 <p className="font-medium text-wedding-navy">Active Forms</p>
                 <p className="text-2xl font-semibold">{formatNumber(metrics.operations.forms.total)}</p>
@@ -393,25 +393,25 @@ export default function PlatformMetricsPage(): ReactElement {
 
         <Card className="border border-white/40 bg-white/70 p-6 shadow-sm backdrop-blur">
           <h3 className="text-lg font-semibold text-wedding-navy">Communication Volume</h3>
-          <div className="mt-4 grid gap-6 md:grid-cols-3 text-sm text-gray-600">
+          <div className="mt-4 grid gap-6 md:grid-cols-3 text-sm text-gray-600 dark:text-gray-400">
             <div>
               <p className="font-medium text-wedding-navy">Notifications Sent</p>
               <p className="text-2xl font-semibold">{formatNumber(metrics.operations.communications.notifications_sent)}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 +{formatNumber(metrics.operations.communications.notifications_in_period)} this timeframe
               </p>
             </div>
             <div>
               <p className="font-medium text-wedding-navy">Email Logs</p>
               <p className="text-2xl font-semibold">{formatNumber(metrics.operations.communications.email_logs_total)}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {formatNumber(metrics.operations.communications.emails_sent_in_period)} successful deliveries
               </p>
             </div>
             <div>
               <p className="font-medium text-wedding-navy">AI Automations</p>
               <p className="text-2xl font-semibold">{formatNumber(metrics.operations.communications.ai_events_total)}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {formatNumber(metrics.operations.communications.ai_events_in_period)} requests this timeframe
               </p>
             </div>

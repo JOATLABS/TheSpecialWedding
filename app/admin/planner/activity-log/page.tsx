@@ -88,8 +88,8 @@ export default function PlannerActivityLogPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Planner Activity Log</h1>
-          <p className="text-gray-600">Detailed activity across weddings you manage.</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Planner Activity Log</h1>
+          <p className="text-gray-600 dark:text-gray-400">Detailed activity across weddings you manage.</p>
         </div>
         <button
           onClick={fetchActivities}
@@ -100,31 +100,31 @@ export default function PlannerActivityLogPage() {
       </div>
 
       {loading ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center text-gray-600">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 text-center text-gray-600 dark:text-gray-400">
           Loading activity...
         </div>
       ) : error ? (
-        <div className="bg-white rounded-lg shadow-sm border border-red-200 p-6">
-          <p className="text-red-700 font-medium mb-2">Failed to load activity</p>
-          <p className="text-red-600 text-sm">{error}</p>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-red-200 p-6">
+          <p className="text-red-700 dark:text-red-300 font-medium mb-2">Failed to load activity</p>
+          <p className="text-red-600 dark:text-red-300 text-sm">{error}</p>
         </div>
       ) : activities.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center text-gray-600">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 text-center text-gray-600 dark:text-gray-400">
           No activity recorded yet.
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Latest activity</h2>
-            <span className="text-sm text-gray-500">{activities.length} items</span>
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Latest activity</h2>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{activities.length} items</span>
           </div>
-          <ul className="divide-y divide-gray-200">
+          <ul className="divide-y divide-gray-200 dark:divide-gray-700">
             {activities.map((activity) => (
               <li key={activity.id} className="px-6 py-4 flex items-start space-x-3">
                 <div className="mt-1">{renderStatusDot(activity.type)}</div>
                 <div className="flex-1">
-                  <p className="text-sm text-gray-900">{activity.message || 'Activity'}</p>
-                  <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-2">
+                  <p className="text-sm text-gray-900 dark:text-gray-100">{activity.message || 'Activity'}</p>
+                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-2">
                     <span>
                       {formatDateTime(activity.timestamp, {
                         month: 'short',
@@ -135,7 +135,7 @@ export default function PlannerActivityLogPage() {
                       })}
                     </span>
                     {activity.wedding_id && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400">
                         Wedding: {activity.wedding_id}
                       </span>
                     )}
