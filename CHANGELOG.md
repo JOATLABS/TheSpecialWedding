@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Planner Calendar & Task Management System**: Complete calendar feature for wedding planners to schedule and manage tasks
+  - **Google Calendar Integration**:
+    - OAuth 2.0 authentication flow with secure token storage
+    - Two-way sync: tasks created in app sync to Google Calendar
+    - Auto-refresh of expired tokens
+    - Connect/disconnect functionality with token cleanup
+  - **Task Management Backend** (`app/api/planner_calendar.py`):
+    - Full CRUD operations for planner tasks
+    - Task filtering by wedding, category, status, and date range
+    - Bulk status updates for multiple tasks
+    - Month view endpoint for calendar rendering
+    - Upcoming tasks endpoint for dashboard widgets
+  - **Calendar Models** (`app/models/calendar.py`):
+    - `PlannerTaskModel` with comprehensive fields (priority, category, reminders, recurrence)
+    - `CalendarTokenModel` for secure OAuth token storage
+    - Support for all-day events and timed events
+    - 17 wedding planning categories (venue, catering, photography, etc.)
+  - **Google Calendar Service** (`app/services/google_calendar_service.py`):
+    - Complete OAuth flow handling
+    - Create, update, delete events in Google Calendar
+    - Fetch events from connected calendar
+    - Automatic token refresh on expiry
+  - **Frontend Calendar UI** (`app/admin/planner/calendar/`):
+    - Interactive month view calendar with task display
+    - Click-to-create tasks on any date
+    - Task modal for creating/editing with full field support
+    - Google Calendar connection component with status display
+    - Upcoming tasks sidebar widget
+    - Priority-based color coding
+    - OAuth callback page for handling Google authorization
+  - **TypeScript API Client** (`app/services/calendarApi.ts`):
+    - Full type definitions for tasks and calendar operations
+    - Helper functions for formatting dates and priorities
+    - Category and status label configurations
+  - **Navigation**: Added "Calendar" item to planner sidebar navigation
+  - **New Dependencies**: `google-api-python-client`, `google-auth-oauthlib`, `google-auth`, `icalendar`
+  - **Database Collections**: Added `calendar_tokens` and `planner_tasks` collections
+  - **Configuration**: Added Google OAuth settings to `app/core/config.py`
 - **Redis Service for Development**: Added Redis service to `docker-compose.yml` for development environment parity with production
 - **System Metrics Monitoring**: Added `psutil` package to `requirements.txt` for CPU, memory, and disk monitoring in Platform Metrics dashboard
 - **Authentication Loading State**: Added `isLoading` state to `AdminContext` for proper authentication state management
