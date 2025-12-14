@@ -378,15 +378,19 @@ export default function ProfilePage() {
                     Upload a photo to personalize your account. Max size: 5MB
                   </p>
                   <div className="flex gap-2">
-                    <label className="cursor-pointer bg-wedding-rose text-white px-4 py-2 rounded-md hover:bg-wedding-gold transition text-sm font-medium">
+                    <input
+                      type="file"
+                      id="profile-image-upload"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      onChange={handleImageChange}
+                      disabled={imageUploading}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="profile-image-upload"
+                      className="cursor-pointer bg-wedding-rose text-white px-4 py-2 rounded-md hover:bg-wedding-gold transition text-sm font-medium inline-block"
+                    >
                       {imageUploading ? 'Uploading...' : 'Upload Photo'}
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/gif,image/webp"
-                        onChange={handleImageChange}
-                        disabled={imageUploading}
-                        className="hidden"
-                      />
                     </label>
                     {userProfile.profile_image_url && (
                       <button

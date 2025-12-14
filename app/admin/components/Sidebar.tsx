@@ -22,7 +22,8 @@ import {
   AlertTriangle,
   Layers,
   TrendingUp,
-  Server
+  Server,
+  Calendar
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -56,6 +57,7 @@ const adminNavItems: NavItem[] = [
 // Navigation items for Wedding Planners
 const plannerNavItems: NavItem[] = [
   { name: 'Dashboard', href: '/admin/planner', icon: LayoutDashboard },
+  { name: 'Calendar', href: '/admin/planner/calendar', icon: Calendar },
   { name: 'Weddings', href: '/admin/weddings', icon: Heart },
   { name: 'Guests', href: '/admin/guests', icon: Users },
   { name: 'Budget', href: '/admin/budget', icon: Wallet },
