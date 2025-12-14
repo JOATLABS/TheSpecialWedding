@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2024-12-14
+
 ### Added
 - **Planner Calendar & Task Management System**: Complete calendar feature for wedding planners to schedule and manage tasks
   - **Google Calendar Integration**:
@@ -46,6 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **New Dependencies**: `google-api-python-client`, `google-auth-oauthlib`, `google-auth`, `icalendar`
   - **Database Collections**: Added `calendar_tokens` and `planner_tasks` collections
   - **Configuration**: Added Google OAuth settings to `app/core/config.py`
+  - **Testing**:
+    - Unit tests for calendar service (`tests/unit/test_calendar_service.py`)
+    - E2E tests for calendar UI (`tests/planner-calendar.spec.ts`)
+    - Pytest configuration (`pytest.ini`)
+    - Added `pytest` and `pytest-asyncio` dependencies
 - **Redis Service for Development**: Added Redis service to `docker-compose.yml` for development environment parity with production
 - **System Metrics Monitoring**: Added `psutil` package to `requirements.txt` for CPU, memory, and disk monitoring in Platform Metrics dashboard
 - **Authentication Loading State**: Added `isLoading` state to `AdminContext` for proper authentication state management
