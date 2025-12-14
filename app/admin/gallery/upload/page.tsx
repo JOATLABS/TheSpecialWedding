@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
@@ -37,15 +38,24 @@ export default function AdminGalleryUploadPage() {
     if (!token) router.push('/admin/login');
   }, [token, router]);
 
-  // fetch weddings
+  // fetch weddings when token is available
   useEffect(() => {
-    fetchWeddings();
-  }, []);
+    if (token) {
+      fetchWeddings();
+    }
+  }, [token]);
 
   const fetchWeddings = async () => {
+    if (!token) return;
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/weddings`);
+      // Use the authenticated planner endpoint to get assigned weddings
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -279,12 +289,14 @@ export default function AdminGalleryUploadPage() {
                       {previews.map((url, i) => (
                         <div
                           key={i}
-                          className="relative rounded-lg overflow-hidden shadow-lg"
+                          className="relative h-40 overflow-hidden rounded-lg shadow-lg"
                         >
-                          <img
+                          <Image
                             src={url}
                             alt={`Preview ${i + 1}`}
-                            className="w-full h-40 object-cover"
+                            fill
+                            className="object-cover"
+                            sizes="(min-width: 640px) 33vw, 50vw"
                           />
                           <button
                             type="button"
@@ -368,13 +380,15 @@ export default function AdminGalleryUploadPage() {
                         const isFeatured = currentFeaturedImage === (image.key || image.filename);
                         return (
                           <div key={index} className="relative group">
-                            <div className={`aspect-square rounded-lg overflow-hidden shadow-lg bg-gray-100 ${isFeatured ? 'ring-4 ring-purple-600' : ''}`}>
-                              <img
+                            <div className={`relative aspect-square overflow-hidden rounded-lg shadow-lg bg-gray-100 ${isFeatured ? 'ring-4 ring-purple-600' : ''}`}>
+                              <Image
                                 src={image.url || image.file_url || '#'}
                                 alt={`Gallery image ${index + 1}`}
-                                className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                                onError={(e) => {
-                                  e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlPC90ZXh0Pjwvc3ZnPg==';
+                                fill
+                                className="object-cover transition-transform group-hover:scale-105"
+                                sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+                                onError={(event) => {
+                                  event.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlPC90ZXh0Pjwvc3ZnPg==';
                                 }}
                               />
                               {isFeatured && (

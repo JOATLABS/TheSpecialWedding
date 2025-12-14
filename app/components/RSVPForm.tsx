@@ -25,28 +25,31 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
   
-  // Initialize plus-ones array based on allowed number
-  useState(() => {
-    if (guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0) {
-      const initialPlusOnes = Array(guest.number_of_plus_ones_allowed).fill(null).map(() => ({
-        name: '',
-        phone: '',
-        attending: [],
-        dietary: ''
-      }));
-      setPlusOnes(initialPlusOnes);
+  const addPlusOne = () => {
+    if (plusOnes.length < guest.number_of_plus_ones_allowed) {
+      setPlusOnes([...plusOnes, { name: '', phone: '', attending: [], dietary: '' }]);
     }
-  });
+  };
+
+  const removePlusOne = (index: number) => {
+    const newPlusOnes = [...plusOnes];
+    newPlusOnes.splice(index, 1);
+    setPlusOnes(newPlusOnes);
+  };
 
   const generateICS = () => {
-    const eventDate = wedding.events?.find(e => e.type === 'white_wedding')?.date || wedding.date;
-    const start = new Date(eventDate + 'T15:00:00Z');
-    const end = new Date(eventDate + 'T18:00:00Z');
+    const event = wedding.events?.find(e => e.type === 'white_wedding');
+    const eventDate = event?.date || wedding.date;
+    const startTime = event?.details?.time || '15:00';
+    const endTime = event?.details?.endTime || '18:00';
+
+    const start = new Date(`${eventDate}T${startTime}:00Z`);
+    const end = new Date(`${eventDate}T${endTime}:00Z`);
 
     const ics = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nSUMMARY:${wedding.couple_names} Wedding\n` +
       `DTSTART:${start.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n` +
       `DTEND:${end.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n` +
-      `LOCATION:Wedding Venue\nDESCRIPTION:You are invited!\nEND:VEVENT\nEND:VCALENDAR`;
+      `LOCATION:${event?.details?.venue_name || 'Wedding Venue'}\nDESCRIPTION:You are invited!\nEND:VEVENT\nEND:VCALENDAR`;
 
     const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
     const link = document.createElement('a');
@@ -59,36 +62,16 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
   const onSubmit = async (data: any) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const apiUrl = baseUrl.replace('/admin', '');
       
-      // Get filled plus-ones from form data
-      const filledPlusOnes = [];
-      for (let i = 0; i < guest.number_of_plus_ones_allowed; i++) {
-        const plusOneName = data[`plus_one_${i}_name`];
-        if (plusOneName && plusOneName.trim()) {
-          filledPlusOnes.push({
-            name: plusOneName,
-            phone: data[`plus_one_${i}_phone`] || '',
-            attending: data.attending || [], // Plus-ones attend same events as main guest
-            dietary: data[`plus_one_${i}_dietary`] || ''
-          });
-        }
-      }
+      const filledPlusOnes = plusOnes.filter(p => p.name.trim());
       
-      // Submit main RSVP with first plus-one (if any)
       const mainRsvpData = {
         ...data,
         wedding_id: wedding.id,
-        plus_one: filledPlusOnes.length > 0 ? filledPlusOnes[0] : null
+        plus_ones: filledPlusOnes
       };
-      
-      // Remove individual plus-one fields from main data
-      for (let i = 0; i < guest.number_of_plus_ones_allowed; i++) {
-        delete mainRsvpData[`plus_one_${i}_name`];
-        delete mainRsvpData[`plus_one_${i}_phone`];
-        delete mainRsvpData[`plus_one_${i}_dietary`];
-      }
       
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
         method: 'POST',
@@ -97,12 +80,6 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       });
 
       if (!res.ok) throw new Error('RSVP failed');
-      
-      // For now, additional plus-ones beyond the first would need to be handled separately
-      // The backend currently only supports one plus-one per RSVP submission
-      if (filledPlusOnes.length > 1) {
-        console.log('Note: Currently only the first guest will be submitted. Additional guests need separate handling.');
-      }
 
       localStorage.setItem(`rsvp-${token}`, 'true');
       setSubmitted(true);
@@ -233,9 +210,12 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
             </span>
           </h2>
           <div className="space-y-6">
-            {Array.from({ length: guest.number_of_plus_ones_allowed }).map((_, index) => (
+            {plusOnes.map((plusOne, index) => (
               <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-medium text-gray-700 mb-3">Guest {index + 1}</h3>
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-medium text-gray-700">Guest {index + 1}</h3>
+                  <button type="button" onClick={() => removePlusOne(index)} className="text-red-500 hover:text-red-700 text-sm">Remove</button>
+                </div>
                 <div className="space-y-4">
                   <div>
                     <label className="block font-medium text-gray-700 mb-2">Full Name</label>
@@ -243,7 +223,12 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                       className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
                       type="text" 
                       placeholder="Enter guest's full name" 
-                      {...register(`plus_one_${index}_name`)} 
+                      value={plusOne.name}
+                      onChange={(e) => {
+                        const newPlusOnes = [...plusOnes];
+                        newPlusOnes[index].name = e.target.value;
+                        setPlusOnes(newPlusOnes);
+                      }}
                     />
                   </div>
                   <div>
@@ -252,7 +237,12 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                       className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
                       type="tel" 
                       placeholder="+1 (555) 123-4567" 
-                      {...register(`plus_one_${index}_phone`)} 
+                      value={plusOne.phone}
+                      onChange={(e) => {
+                        const newPlusOnes = [...plusOnes];
+                        newPlusOnes[index].phone = e.target.value;
+                        setPlusOnes(newPlusOnes);
+                      }}
                     />
                   </div>
                   <div>
@@ -261,14 +251,24 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                       className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
                       type="text" 
                       placeholder="e.g., Vegetarian, Gluten-free, etc." 
-                      {...register(`plus_one_${index}_dietary`)} 
+                      value={plusOne.dietary}
+                      onChange={(e) => {
+                        const newPlusOnes = [...plusOnes];
+                        newPlusOnes[index].dietary = e.target.value;
+                        setPlusOnes(newPlusOnes);
+                      }}
                     />
                   </div>
                 </div>
               </div>
             ))}
+            {plusOnes.length < guest.number_of_plus_ones_allowed && (
+              <button type="button" onClick={addPlusOne} className="w-full bg-gray-200 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-300">
+                + Add Guest
+              </button>
+            )}
             <p className="text-sm text-gray-600 italic">
-              * Leave blank if you're not bringing additional guests
+              * Leave blank if you’re not bringing additional guests
             </p>
           </div>
         </div>

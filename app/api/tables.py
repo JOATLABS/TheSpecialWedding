@@ -1,0 +1,179 @@
+from fastapi import APIRouter, Depends, HTTPException, Body
+from typing import List
+from app.models.table import TableModel, UpdateTableRequest, AssignGuestsRequest
+from app.dependencies.auth_extended import (
+    require_admin_or_planner,
+    ExtendedAuthUser,
+    check_wedding_access
+)
+from app.core.database import mongo
+from bson import ObjectId
+
+router = APIRouter()
+
+@router.get("/tables/{wedding_id}", tags=["Seating"])
+async def list_tables(
+    wedding_id: str,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Fetch all tables for a wedding"""
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    tables_cursor = mongo.db["tables"].find({"wedding_id": wedding_id})
+    tables = await tables_cursor.to_list(length=None)
+
+    # Convert ObjectIds to strings
+    for table in tables:
+        if "_id" in table:
+            table["id"] = str(table["_id"])
+            del table["_id"]
+
+    return tables
+
+@router.post("/tables", tags=["Seating"])
+async def create_table(
+    table: TableModel,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Create a new table"""
+    if not await check_wedding_access(current_user, table.wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    table_data = table.dict()
+    result = await mongo.db["tables"].insert_one(table_data)
+
+    # Clean up response
+    response_data = table_data.copy()
+    if "_id" in response_data:
+        response_data["id"] = str(response_data["_id"])
+        del response_data["_id"]
+    else:
+        response_data["id"] = str(result.inserted_id)
+
+    # Ensure no ObjectId remains in values
+    for k, v in response_data.items():
+        if isinstance(v, ObjectId):
+            response_data[k] = str(v)
+
+    return response_data
+
+@router.put("/tables/{table_id}", tags=["Seating"])
+async def update_table(
+    table_id: str,
+    update_data: UpdateTableRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Update table properties"""
+    try:
+        oid = ObjectId(table_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid table ID")
+
+    # First get the table to check wedding_id access
+    table = await mongo.db["tables"].find_one({"_id": oid})
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    if not await check_wedding_access(current_user, table["wedding_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
+
+    if update_dict:
+        await mongo.db["tables"].update_one(
+            {"_id": oid},
+            {"$set": update_dict}
+        )
+
+    return {"message": "Table updated successfully"}
+
+@router.delete("/tables/{table_id}", tags=["Seating"])
+async def delete_table(
+    table_id: str,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Delete a table and unassign its guests"""
+    try:
+        oid = ObjectId(table_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid table ID")
+
+    # First get the table to check wedding_id access
+    table = await mongo.db["tables"].find_one({"_id": oid})
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    if not await check_wedding_access(current_user, table["wedding_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    # Unassign guests assigned to this table
+    await mongo.db["guests"].update_many(
+        {"table_id": table_id},
+        {"$set": {"table_id": None}}
+    )
+
+    # Delete the table
+    await mongo.db["tables"].delete_one({"_id": oid})
+
+    return {"message": "Table deleted and guests unassigned"}
+
+@router.post("/tables/assign", tags=["Seating"])
+async def assign_guests(
+    request: AssignGuestsRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Bulk assign guests to a table"""
+    try:
+        table_oid = ObjectId(request.table_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid table ID")
+
+    # Validate table exists and check access
+    table = await mongo.db["tables"].find_one({"_id": table_oid})
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    if not await check_wedding_access(current_user, table["wedding_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    # Bulk update guests
+    guest_object_ids = []
+    for gid in request.guest_ids:
+        try:
+            guest_object_ids.append(ObjectId(gid))
+        except:
+            continue
+
+    if guest_object_ids:
+        await mongo.db["guests"].update_many(
+            {"_id": {"$in": guest_object_ids}, "wedding_id": table["wedding_id"]},
+            {"$set": {"table_id": request.table_id}}
+        )
+
+    return {"message": f"Assigned {len(guest_object_ids)} guests to table"}
+
+@router.post("/tables/unassign", tags=["Seating"])
+async def unassign_guests(
+    guest_ids: List[str] = Body(...),
+    wedding_id: str = Body(...),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Bulk unassign guests"""
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    guest_object_ids = []
+    for gid in guest_ids:
+        try:
+            guest_object_ids.append(ObjectId(gid))
+        except:
+            continue
+
+    if guest_object_ids:
+        await mongo.db["guests"].update_many(
+            {"_id": {"$in": guest_object_ids}, "wedding_id": wedding_id},
+            {"$set": {"table_id": None}}
+        )
+
+    return {"message": f"Unassigned {len(guest_object_ids)} guests"}

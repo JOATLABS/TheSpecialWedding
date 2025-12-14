@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAdmin } from '../../contexts/AdminContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useAdmin } from '@/contexts/AdminContext';
 
 interface Wedding {
   id?: string;
@@ -57,7 +57,7 @@ export default function AdminGuestsPage() {
   const [plusOnes, setPlusOnes] = useState<PlusOne[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending' | 'import'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
@@ -70,28 +70,35 @@ export default function AdminGuestsPage() {
     number_of_plus_ones_allowed: 0
   });
 
-  useEffect(() => {
-    fetchWeddings();
-  }, []);
+  // Import state
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; tokens: string[] } | null>(null);
+  const [importError, setImportError] = useState<string>('');
 
-  useEffect(() => {
-    if (selectedWedding) {
-      fetchGuestData();
-    }
-  }, [selectedWedding]);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
+    if (!token) return;
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/weddings`);
+      // Use authenticated planner endpoint to get assigned weddings
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
       setError('Failed to load weddings');
     }
-  };
+  }, [token]);
 
-  const fetchGuestData = async () => {
+  const fetchGuestData = useCallback(async () => {
+    if (!selectedWedding) {
+      return;
+    }
+
     setLoading(true);
     try {
       // Fetch guests
@@ -104,16 +111,25 @@ export default function AdminGuestsPage() {
           },
         }
       );
-      
-      if (!guestsResponse.ok) {
-        console.error('Failed to fetch guests:', guestsResponse.status);
-        throw new Error('Failed to fetch guests');
+
+      // Handle response - don't throw error for empty guest list or auth issues
+      let normalizedGuests: Guest[] = [];
+      if (guestsResponse.ok) {
+        const guestsData = await guestsResponse.json();
+        normalizedGuests = Array.isArray(guestsData) ? guestsData : [];
+      } else if (guestsResponse.status === 404) {
+        // No guests found - this is fine, just show empty list
+        normalizedGuests = [];
+      } else if (guestsResponse.status === 401) {
+        // Token might be expired - let auth handler deal with it
+        console.warn('Authentication issue when fetching guests');
+        normalizedGuests = [];
+      } else {
+        console.warn('Failed to fetch guests:', guestsResponse.status);
+        normalizedGuests = [];
       }
-      
-      const guestsData = await guestsResponse.json();
-      console.log('Guests data:', guestsData); // Debug log
-      console.log('Selected wedding ID:', selectedWedding); // Debug log
-      setGuests(Array.isArray(guestsData) ? guestsData : []);
+
+      setGuests(normalizedGuests);
 
       // Fetch RSVPs
       try {
@@ -138,8 +154,40 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // TODO: Fetch plus ones when endpoint is available
-      setPlusOnes([]);
+      // Fetch plus ones for all guests
+      try {
+        const plusOnesResponse = await Promise.all(
+          normalizedGuests.map(async (guest: any) => {
+            try {
+              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+              if (response.ok) {
+                const guestPlusOnes = await response.json();
+                return guestPlusOnes.map((po: any) => ({
+                  ...po,
+                  guest_id: guest.id,
+                  guest_name: guest.name
+                }));
+              }
+              return [];
+            } catch (error) {
+              console.log(`Plus-ones fetch error for guest ${guest.id}:`, error);
+              return [];
+            }
+          })
+        );
+        // Flatten the array of arrays
+        const allPlusOnes = plusOnesResponse.flat();
+        setPlusOnes(allPlusOnes);
+        console.log('Plus-ones loaded:', allPlusOnes.length);
+      } catch (error) {
+        console.log('Plus-ones fetch error:', error);
+        setPlusOnes([]);
+      }
       
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -147,7 +195,17 @@ export default function AdminGuestsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedWedding, token]);
+
+  useEffect(() => {
+    fetchWeddings();
+  }, [fetchWeddings]);
+
+  useEffect(() => {
+    if (selectedWedding) {
+      fetchGuestData();
+    }
+  }, [fetchGuestData, selectedWedding]);
 
   const handleSendReminder = async (guestId: string) => {
     try {
@@ -232,6 +290,72 @@ export default function AdminGuestsPage() {
       }
     } catch (err) {
       setError('Failed to delete guest');
+    }
+  };
+
+  // Import handlers
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile && selectedFile.type === 'text/csv') {
+      setImportFile(selectedFile);
+      setImportError('');
+    } else {
+      setImportError('Please select a valid CSV file');
+      setImportFile(null);
+    }
+  };
+
+  const handleImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!importFile || !selectedWedding) {
+      setImportError('Please select both a CSV file and a wedding');
+      return;
+    }
+
+    setImportLoading(true);
+    setImportError('');
+    setImportResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(
+        `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Import failed');
+      }
+
+      const data = await response.json();
+      setImportResult(data);
+      setImportFile(null);
+
+      // Reset file input
+      const fileInput = document.getElementById('csvFile') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+
+      // Refresh guest list
+      fetchGuestData();
+
+      // Switch to all guests tab to show imported guests
+      setTimeout(() => setActiveTab('all'), 1500);
+
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Import failed');
+    } finally {
+      setImportLoading(false);
     }
   };
 
@@ -352,7 +476,7 @@ export default function AdminGuestsPage() {
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
-                    RSVP'd ({rsvps.length})
+                    RSVP’d ({rsvps.length})
                   </button>
                   <button
                     onClick={() => setActiveTab('pending')}
@@ -363,6 +487,16 @@ export default function AdminGuestsPage() {
                     }`}
                   >
                     Pending ({guests.length - rsvps.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('import')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      activeTab === 'import'
+                        ? 'bg-wedding-sage text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    📥 Import
                   </button>
                 </div>
 
@@ -377,7 +511,90 @@ export default function AdminGuestsPage() {
               </div>
             </div>
 
-            {/* Guest List */}
+            {/* Import Form - shown when Import tab is active */}
+            {activeTab === 'import' && (
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
+                <div className="bg-gradient-to-r from-wedding-sage to-wedding-gold px-8 py-6">
+                  <h2 className="text-2xl font-bold text-white">Import Guests from CSV</h2>
+                  <p className="text-white/80 mt-1">Upload a CSV file to bulk import guests</p>
+                </div>
+                <div className="p-6 space-y-6">
+                  {/* CSV Format Documentation */}
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h3 className="text-lg font-semibold text-blue-900 mb-2">CSV Format Requirements</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
+                      <div>
+                        <strong>Required columns:</strong>
+                        <ul className="ml-4 mt-1 list-disc">
+                          <li>name (min. 2 characters)</li>
+                          <li>phone OR email (at least one)</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <strong>Optional columns:</strong>
+                        <ul className="ml-4 mt-1 list-disc">
+                          <li>role (default: &quot;guest&quot;)</li>
+                          <li>plus_one_allowed (true/false)</li>
+                          <li>number_of_plus_ones_allowed (number)</li>
+                          <li>group_id (for grouping)</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Import Form */}
+                  <form onSubmit={handleImport} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        CSV File
+                      </label>
+                      <input
+                        id="csvFile"
+                        type="file"
+                        accept=".csv"
+                        onChange={handleImportFileChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-wedding-sage file:text-white hover:file:bg-wedding-gold"
+                        required
+                      />
+                      {importFile && (
+                        <p className="mt-2 text-sm text-green-600">Selected: {importFile.name}</p>
+                      )}
+                    </div>
+
+                    {/* Error Message */}
+                    {importError && (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-red-700">{importError}</p>
+                      </div>
+                    )}
+
+                    {/* Success Message */}
+                    {importResult && (
+                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-green-700 font-semibold">
+                          Successfully imported {importResult.imported} guests!
+                        </p>
+                        <p className="text-green-600 text-sm mt-1">
+                          Switching to guest list...
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={importLoading || !importFile}
+                      className="w-full py-3 rounded-lg bg-gradient-to-r from-wedding-sage to-wedding-gold text-white font-semibold hover:from-wedding-rose hover:to-wedding-gold focus:outline-none focus:ring-2 focus:ring-wedding-sage disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    >
+                      {importLoading ? 'Importing...' : 'Import Guests'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Guest List - hidden when Import tab is active */}
+            {activeTab !== 'import' && (
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
@@ -387,6 +604,12 @@ export default function AdminGuestsPage() {
               ) : filteredGuests.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   <p>No guests found.</p>
+                  <button
+                    onClick={() => setActiveTab('import')}
+                    className="mt-4 px-4 py-2 bg-wedding-sage text-white rounded-lg hover:bg-wedding-gold transition-colors"
+                  >
+                    📥 Import Guests from CSV
+                  </button>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-200">
@@ -417,7 +640,7 @@ export default function AdminGuestsPage() {
                                 </span>
                                 {rsvp && (
                                   <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                    RSVP'd
+                                    RSVP’d
                                   </span>
                                 )}
                               </div>
@@ -556,9 +779,10 @@ export default function AdminGuestsPage() {
                 </div>
               )}
             </div>
+            )}
           </>
         )}
-        
+
         {/* Edit Guest Modal */}
         {editingGuest && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">

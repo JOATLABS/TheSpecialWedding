@@ -4,6 +4,7 @@ export interface EventDetails {
   venue_name?: string;
   location?: string;
   time?: string;
+  endTime?: string;
   attire?: string;
 }
 
@@ -19,17 +20,9 @@ export interface RegistryItem {
   color?: string;
 }
 
-export interface FAQLink {
-  label: string;
-  url: string;
-}
-
 export interface FAQItem {
   question: string;
   answer: string;
-  address?: string;
-  links?: FAQLink[];
-  image_urls?: string[];
 }
 
 export interface RSVPConfig {
@@ -52,6 +45,15 @@ export interface OurStory {
   image_shape?: 'circle' | 'heart' | 'square' | 'hexagon';
 }
 
+export interface PrivacySettings {
+  privacy_mode: 'private' | 'password' | 'public';
+  guest_auth_required: boolean;
+  password_protection?: string;
+  allow_guest_sharing: boolean;
+  require_phone_verification: boolean;
+  require_name_verification: boolean;
+}
+
 export interface WeddingPartyMember {
   id: string;
   name: string;
@@ -69,8 +71,8 @@ export interface Wedding {
   couple_names: string;
   date: string;
   events: WeddingEvent[];
-  event_location_private?: boolean;
   rsvp_config?: RSVPConfig;
+  privacy_settings?: PrivacySettings;
   registries?: RegistryItem[];
   faqs?: FAQItem[];
   theme_config?: ThemeConfig;
