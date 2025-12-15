@@ -390,8 +390,8 @@ export default function PlannerCalendarPage() {
                     className="text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
                   >
                     <option value="">All Weddings</option>
-                    {weddings.map((w) => (
-                      <option key={w.id} value={w.id}>
+                    {weddings.map((w, index) => (
+                      <option key={w.id || `wedding-${index}`} value={w.id}>
                         {w.couple_names}
                       </option>
                     ))}

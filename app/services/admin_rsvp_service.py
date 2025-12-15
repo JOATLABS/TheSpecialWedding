@@ -3,6 +3,8 @@ import io
 from bson import ObjectId
 from fastapi import HTTPException
 from app.core.database import mongo
+from datetime import datetime
+from typing import List, Optional
 
 class AdminRSVPService:
     def __init__(self):
@@ -147,3 +149,57 @@ class AdminRSVPService:
             return {"message": "RSVP deleted successfully"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to delete RSVP: {str(e)}")
+
+    async def admin_create_or_update_rsvp(
+        self,
+        guest_id: str,
+        wedding_id: str,
+        attending: List[str],
+        dietary: Optional[str] = None,
+        confirmed_by_admin: bool = True
+    ):
+        """Admin endpoint to create or update an RSVP manually (e.g., phone confirmation)."""
+        try:
+            # Verify guest exists
+            guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
+            if not guest:
+                raise HTTPException(status_code=404, detail="Guest not found")
+
+            # Validate attending events
+            valid_events = {"traditional", "white_wedding", "reception"}
+            if attending and not all(event in valid_events for event in attending):
+                raise HTTPException(status_code=400, detail="Invalid event(s) in attending list")
+
+            # Upsert RSVP
+            rsvp_data = {
+                "guest_id": guest_id,
+                "wedding_id": wedding_id,
+                "attending": attending,
+                "dietary": dietary,
+                "submitted_at": datetime.utcnow(),
+                "confirmed_by_admin": confirmed_by_admin
+            }
+
+            result = await self.rsvp_collection.update_one(
+                {
+                    "$or": [
+                        {"guest_id": ObjectId(guest_id)},
+                        {"guest_id": guest_id}
+                    ]
+                },
+                {"$set": rsvp_data},
+                upsert=True
+            )
+
+            action = "created" if result.upserted_id else "updated"
+            return {
+                "message": f"RSVP {action} successfully",
+                "guest_id": guest_id,
+                "attending": attending,
+                "dietary": dietary,
+                "confirmed_by_admin": confirmed_by_admin
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to update RSVP: {str(e)}")

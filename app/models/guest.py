@@ -77,3 +77,33 @@ class UpdateGuestRequest(BaseModel):
                 "number_of_plus_ones_allowed": 2
             }
         }
+
+
+class CreateGuestRequest(BaseModel):
+    """Request model for creating a single guest"""
+    name: str = Field(..., min_length=2, max_length=100)
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    group_id: Optional[str] = None
+    role: Optional[str] = Field("guest")
+    plus_one_allowed: Optional[bool] = Field(default=False)
+    number_of_plus_ones_allowed: Optional[int] = Field(default=0, ge=0, le=10)
+
+    @field_validator("phone")
+    def validate_phone(cls, value):
+        if value and not re.match(r"^\d{10,15}$", value):
+            raise ValueError("Phone number must be 10 to 15 digits")
+        return value
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "name": "John Doe",
+                "phone": "1234567890",
+                "email": "john@example.com",
+                "role": "guest",
+                "group_id": "family_bride",
+                "plus_one_allowed": True,
+                "number_of_plus_ones_allowed": 1
+            }
+        }

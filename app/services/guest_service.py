@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from datetime import datetime
 from typing import Optional
+from app.utils.token_generator import generate_token
 
 
 class GuestService:
@@ -151,5 +152,48 @@ class GuestService:
             return guest
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
+
+    async def create_guest(self, guest_data, wedding_id: str):
+        """Create a single guest for a wedding."""
+        try:
+            # Convert Pydantic model to dict
+            data = guest_data.model_dump() if hasattr(guest_data, 'model_dump') else guest_data.dict()
+
+            # Require at least phone or email
+            if not data.get("phone") and not data.get("email"):
+                raise HTTPException(status_code=400, detail="At least phone or email is required")
+
+            # Generate unique token
+            token = generate_token()
+
+            # Ensure logical consistency for plus-ones
+            if not data.get("plus_one_allowed", False):
+                data["number_of_plus_ones_allowed"] = 0
+
+            doc = {
+                "wedding_id": wedding_id,
+                "name": data["name"].strip(),
+                "token": token,
+                "phone": data.get("phone", "").strip() if data.get("phone") else None,
+                "email": data.get("email", "").strip() if data.get("email") else None,
+                "role": data.get("role", "guest"),
+                "group_id": data.get("group_id"),
+                "plus_one_allowed": data.get("plus_one_allowed", False),
+                "number_of_plus_ones_allowed": data.get("number_of_plus_ones_allowed", 0),
+                "plus_one_submitted": False,
+                "sms_opt_in": False,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+
+            result = await self.collection.insert_one(doc)
+            doc["id"] = str(result.inserted_id)
+            doc.pop("_id", None)
+
+            return doc
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error creating guest: {str(e)}")
         
     

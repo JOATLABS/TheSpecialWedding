@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 import inspect
 from app.services.guest_service import GuestService
-from app.models.guest import UpdateGuestRequest
+from app.models.guest import UpdateGuestRequest, GuestModel, CreateGuestRequest
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.utils.token_generator import generate_token
 
 router = APIRouter()
 
@@ -79,3 +80,21 @@ async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(r
         raise e
     except Exception:
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
+
+
+@router.post("/guests", tags=["Admin"])
+async def create_guest(
+    guest_data: CreateGuestRequest,
+    wedding_id: str = Query(...),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+):
+    """Create a single guest for a wedding."""
+    # Check if user has access to this wedding
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+    try:
+        return await guest_service.create_guest(guest_data, wedding_id)
+    except HTTPException as e:
+        raise e
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to create guest: {str(err)}")
