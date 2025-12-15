@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import MetricCard from '@/admin/components/MetricCard';
+// import MetricCard from '@/admin/components/MetricCard';
 import { GlassCard } from '@/admin/components/ui/glass/GlassCard';
 import { GlassTable } from '@/admin/components/ui/glass/GlassTable';
-import { Database, Server, Activity, Clock } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+// import { Database, Server, Activity, Clock } from 'lucide-react';
+// import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface MetricsSnapshot {
   id?: string;
@@ -170,6 +170,7 @@ export default function AdminMetricsDashboard() {
     [latestSnapshot],
   );
 
+  /*
   const databaseStatus = useMemo(() => {
     const value = getValueFromPaths(metrics, [
       ['health', 'database', 'status'],
@@ -213,6 +214,7 @@ export default function AdminMetricsDashboard() {
     ]);
     return typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : undefined;
   }, [metrics]);
+  */
 
   const generalMetrics = useMemo(() => {
     return Object.entries(metrics)
@@ -275,6 +277,7 @@ export default function AdminMetricsDashboard() {
 
       {/* Primary Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        {/* MetricCard disabled due to missing dependencies
         <MetricCard
           title="Database Status"
           value={databaseStatus === 'online' || databaseStatus === 'connected' ? 'Healthy' : databaseStatus}
@@ -311,13 +314,16 @@ export default function AdminMetricsDashboard() {
           color={cpuLoad && cpuLoad > 80 ? '#f43f5e' : '#10b981'}
           loading={loading}
         />
+        */}
+        <div className="p-4 bg-yellow-50 text-yellow-800 rounded">Metrics visualization temporarily disabled</div>
       </div>
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <GlassCard className="p-6">
            <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Database Latency Trend</h3>
-           <div className="h-64 w-full">
+           <div className="h-64 w-full flex items-center justify-center bg-slate-50">
+             {/*
              <ResponsiveContainer width="100%" height="100%">
                <AreaChart data={latencyHistoryData}>
                  <defs>
@@ -335,6 +341,8 @@ export default function AdminMetricsDashboard() {
                  <Area type="monotone" dataKey="latency" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorLatency)" />
                </AreaChart>
              </ResponsiveContainer>
+             */}
+             <p className="text-slate-400">Chart disabled</p>
            </div>
         </GlassCard>
 

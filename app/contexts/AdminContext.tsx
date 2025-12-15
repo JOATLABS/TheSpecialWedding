@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { clearAdminAuthStorage, persistAdminAuthToken } from '@/utils/adminAuthStorage';
 
 interface UserProfile {
+    id?: string;
     email: string;
     role: string;
     is_root_admin: boolean;
