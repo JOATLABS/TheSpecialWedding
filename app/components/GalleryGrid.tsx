@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import Image from 'next/image';
 
 interface GalleryImage {
@@ -17,13 +17,48 @@ interface GalleryGridProps {
   };
 }
 
-export const GalleryGrid: React.FC<GalleryGridProps> = ({ 
+// Memoized Thumbnail Component to prevent re-rendering all thumbnails on selection change
+const Thumbnail = memo(({
+  img,
+  index,
+  isSelected,
+  onClick
+}: {
+  img: GalleryImage;
+  index: number;
+  isSelected: boolean;
+  onClick: (index: number, e: React.MouseEvent) => void;
+}) => {
+  return (
+    <button
+      onClick={(e) => onClick(index, e)}
+      className={`relative w-16 h-16 rounded overflow-hidden transition-all ${
+        isSelected
+          ? 'ring-2 ring-white scale-110'
+          : 'opacity-70 hover:opacity-100'
+      }`}
+    >
+      <Image
+        src={img.url}
+        alt={`Thumbnail ${index + 1}`}
+        fill
+        sizes="64px"
+        className="object-cover"
+      />
+    </button>
+  );
+});
+
+Thumbnail.displayName = 'Thumbnail';
+
+const GalleryGridComponent: React.FC<GalleryGridProps> = ({
   images, 
   columns = { sm: 2, md: 3, lg: 4 } 
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadedImages, setLoadedImages] = useState<Set<number>>(new Set());
+  // Optimization: Use useRef for loadedImages to prevent re-renders on background load
+  const loadedImagesRef = useRef<Set<number>>(new Set());
 
   // Preload adjacent images for smooth navigation
   const preloadAdjacentImages = useCallback((index: number) => {
@@ -34,15 +69,15 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
     ].filter(i => i >= 0 && i < images.length);
 
     indicesToLoad.forEach(i => {
-      if (!loadedImages.has(i)) {
+      if (!loadedImagesRef.current.has(i)) {
         const img = new window.Image();
         img.src = images[i].url;
         img.onload = () => {
-          setLoadedImages(prev => new Set(prev).add(i));
+          loadedImagesRef.current.add(i);
         };
       }
     });
-  }, [images, loadedImages]);
+  }, [images]);
 
   // Open lightbox
   const openLightbox = useCallback((index: number) => {
@@ -84,6 +119,14 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
       return newIndex;
     });
   }, [images.length, preloadAdjacentImages]);
+
+  // Handler for thumbnail click
+  const handleThumbnailClick = useCallback((index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIndex(index);
+    setIsLoading(true);
+    preloadAdjacentImages(index);
+  }, [preloadAdjacentImages]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -250,28 +293,13 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
           <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 p-4 overflow-x-auto">
             <div className="flex gap-2 justify-center">
               {images.map((img, index) => (
-                <button
+                <Thumbnail
                   key={img.key}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedIndex(index);
-                    setIsLoading(true);
-                    preloadAdjacentImages(index);
-                  }}
-                  className={`relative w-16 h-16 rounded overflow-hidden transition-all ${
-                    index === selectedIndex 
-                      ? 'ring-2 ring-white scale-110' 
-                      : 'opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <Image
-                    src={img.url}
-                    alt={`Thumbnail ${index + 1}`}
-                    fill
-                    sizes="64px"
-                    className="object-cover"
-                  />
-                </button>
+                  img={img}
+                  index={index}
+                  isSelected={index === selectedIndex}
+                  onClick={handleThumbnailClick}
+                />
               ))}
             </div>
           </div>
@@ -280,3 +308,5 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
     </>
   );
 };
+
+export const GalleryGrid = memo(GalleryGridComponent);
