@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+
+// ==================== INTERFACES ====================
 
 interface Wedding {
   id?: string;
@@ -38,6 +40,7 @@ interface RSVP {
   attending: string[];
   dietary?: string;
   submitted_at: string;
+  confirmed_by_admin?: boolean;
 }
 
 interface PlusOne {
@@ -48,26 +51,91 @@ interface PlusOne {
   attending: string[];
 }
 
+type SortField = 'name' | 'email' | 'phone' | 'role' | 'group_id' | 'rsvp_status' | 'plus_ones';
+type SortDirection = 'asc' | 'desc';
+type ViewMode = 'table' | 'cards';
+
+// Preset guest groups
+const PRESET_GROUPS = [
+  { id: 'family_bride', label: "Family of the Bride" },
+  { id: 'family_groom', label: "Family of the Groom" },
+  { id: 'wedding_party', label: "Wedding Party" },
+  { id: 'bridesmaids', label: "Bridesmaids" },
+  { id: 'groomsmen', label: "Groomsmen" },
+  { id: 'friends_bride', label: "Friends of the Bride" },
+  { id: 'friends_groom', label: "Friends of the Groom" },
+  { id: 'coworkers', label: "Coworkers" },
+  { id: 'neighbors', label: "Neighbors" },
+  { id: 'vip', label: "VIP Guests" },
+];
+
+const EVENT_OPTIONS = [
+  { value: 'traditional', label: 'Traditional Ceremony' },
+  { value: 'white_wedding', label: 'White Wedding' },
+  { value: 'reception', label: 'Reception' },
+];
+
+// ==================== MAIN COMPONENT ====================
+
 export default function AdminGuestsPage() {
   const { token } = useAdmin();
+
+  // Data state
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWedding, setSelectedWedding] = useState<string>('');
   const [guests, setGuests] = useState<Guest[]>([]);
   const [rsvps, setRsvps] = useState<RSVP[]>([]);
   const [plusOnes, setPlusOnes] = useState<PlusOne[]>([]);
+
+  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending' | 'import'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
+
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  // Filter state
+  const [filterGroup, setFilterGroup] = useState<string>('');
+  const [filterRole, setFilterRole] = useState<string>('');
+
+  // Selection state for bulk actions
+  const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
+
+  // Modal states
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [addingGuest, setAddingGuest] = useState(false);
+  const [bulkActionModal, setBulkActionModal] = useState<'group' | 'form' | null>(null);
+
+  // Edit form state (includes RSVP)
   const [editForm, setEditForm] = useState({
     name: '',
     email: '',
     phone: '',
     role: 'guest',
+    group_id: '',
     plus_one_allowed: false,
-    number_of_plus_ones_allowed: 0
+    number_of_plus_ones_allowed: 0,
+    // RSVP fields
+    rsvp_attending: [] as string[],
+    rsvp_dietary: '',
+  });
+
+  // Add guest form state
+  const [addForm, setAddForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    role: 'guest',
+    group_id: '',
+    plus_one_allowed: false,
+    number_of_plus_ones_allowed: 0,
   });
 
   // Import state
@@ -76,11 +144,16 @@ export default function AdminGuestsPage() {
   const [importResult, setImportResult] = useState<{ imported: number; tokens: string[] } | null>(null);
   const [importError, setImportError] = useState<string>('');
 
+  // Bulk action state
+  const [bulkGroupId, setBulkGroupId] = useState('');
+  const [bulkFormMessage, setBulkFormMessage] = useState('');
+
+  // ==================== DATA FETCHING ====================
+
   const fetchWeddings = useCallback(async () => {
     if (!token) return;
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      // Use authenticated planner endpoint to get assigned weddings
       const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -89,108 +162,74 @@ export default function AdminGuestsPage() {
       });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
-    } catch (err) {
+    } catch {
       setError('Failed to load weddings');
     }
   }, [token]);
 
   const fetchGuestData = useCallback(async () => {
-    if (!selectedWedding) {
-      return;
-    }
+    if (!selectedWedding) return;
 
     setLoading(true);
     try {
-      // Fetch guests
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+      // Fetch guests
       const guestsResponse = await fetch(
         `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
+        { headers: { 'Authorization': `Bearer ${token}` } }
       );
 
-      // Handle response - don't throw error for empty guest list or auth issues
       let normalizedGuests: Guest[] = [];
       if (guestsResponse.ok) {
         const guestsData = await guestsResponse.json();
         normalizedGuests = Array.isArray(guestsData) ? guestsData : [];
-      } else if (guestsResponse.status === 404) {
-        // No guests found - this is fine, just show empty list
-        normalizedGuests = [];
-      } else if (guestsResponse.status === 401) {
-        // Token might be expired - let auth handler deal with it
-        console.warn('Authentication issue when fetching guests');
-        normalizedGuests = [];
-      } else {
-        console.warn('Failed to fetch guests:', guestsResponse.status);
-        normalizedGuests = [];
       }
-
       setGuests(normalizedGuests);
 
       // Fetch RSVPs
       try {
         const rsvpsResponse = await fetch(
           `${baseUrl}/admin/rsvps?wedding_id=${selectedWedding}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          }
+          { headers: { 'Authorization': `Bearer ${token}` } }
         );
         if (rsvpsResponse.ok) {
           const rsvpsData = await rsvpsResponse.json();
-          console.log('RSVPs data:', rsvpsData); // Debug log
           setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
         } else {
-          console.log('RSVPs endpoint failed:', rsvpsResponse.status);
           setRsvps([]);
         }
-      } catch (rsvpError) {
-        console.log('RSVPs fetch error:', rsvpError);
+      } catch {
         setRsvps([]);
       }
 
       // Fetch plus ones for all guests
       try {
         const plusOnesResponse = await Promise.all(
-          normalizedGuests.map(async (guest: any) => {
+          normalizedGuests.map(async (guest) => {
             try {
               const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
+                headers: { 'Authorization': `Bearer ${token}` },
               });
               if (response.ok) {
                 const guestPlusOnes = await response.json();
-                return guestPlusOnes.map((po: any) => ({
+                return guestPlusOnes.map((po: PlusOne) => ({
                   ...po,
                   guest_id: guest.id,
-                  guest_name: guest.name
                 }));
               }
               return [];
-            } catch (error) {
-              console.log(`Plus-ones fetch error for guest ${guest.id}:`, error);
+            } catch {
               return [];
             }
           })
         );
-        // Flatten the array of arrays
-        const allPlusOnes = plusOnesResponse.flat();
-        setPlusOnes(allPlusOnes);
-        console.log('Plus-ones loaded:', allPlusOnes.length);
-      } catch (error) {
-        console.log('Plus-ones fetch error:', error);
+        setPlusOnes(plusOnesResponse.flat());
+      } catch {
         setPlusOnes([]);
       }
-      
-    } catch (err) {
-      console.error('Error fetching data:', err);
+
+    } catch {
       setError('Failed to load guest data');
     } finally {
       setLoading(false);
@@ -204,13 +243,303 @@ export default function AdminGuestsPage() {
   useEffect(() => {
     if (selectedWedding) {
       fetchGuestData();
+      // Clear selections when wedding changes
+      setSelectedGuests(new Set());
+      setSelectAll(false);
     }
   }, [fetchGuestData, selectedWedding]);
 
-  const handleSendReminder = async (guestId: string) => {
+  // ==================== HELPER FUNCTIONS ====================
+
+  const normalizeId = (id: string | undefined) => id?.toString() || '';
+
+  const getRSVPForGuest = (guestId: string) => {
+    const normalizedGuestId = normalizeId(guestId);
+    return rsvps.find(r => normalizeId(r.guest_id) === normalizedGuestId);
+  };
+
+  const getPlusOnesForGuest = (guestId: string) => {
+    const normalizedGuestId = normalizeId(guestId);
+    return plusOnes.filter(p => normalizeId(p.guest_id) === normalizedGuestId);
+  };
+
+  const getGroupLabel = (groupId: string | undefined) => {
+    if (!groupId) return '-';
+    const preset = PRESET_GROUPS.find(g => g.id === groupId);
+    return preset ? preset.label : groupId;
+  };
+
+  const showSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(''), 3000);
+  };
+
+  // ==================== FILTERING & SORTING ====================
+
+  const filteredAndSortedGuests = useMemo(() => {
+    let result = guests.filter(guest => {
+      // Search filter
+      const matchesSearch =
+        guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        guest.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        guest.phone?.includes(searchTerm);
+
+      if (!matchesSearch) return false;
+
+      // Tab filter
+      const guestId = normalizeId(guest.id || guest._id);
+      const hasRSVP = rsvps.some(r => normalizeId(r.guest_id) === guestId);
+
+      if (activeTab === 'rsvp' && !hasRSVP) return false;
+      if (activeTab === 'pending' && hasRSVP) return false;
+
+      // Group filter
+      if (filterGroup && guest.group_id !== filterGroup) return false;
+
+      // Role filter
+      if (filterRole && guest.role !== filterRole) return false;
+
+      return true;
+    });
+
+    // Sorting
+    result.sort((a, b) => {
+      let aValue: string | number = '';
+      let bValue: string | number = '';
+
+      switch (sortField) {
+        case 'name':
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+          break;
+        case 'email':
+          aValue = (a.email || '').toLowerCase();
+          bValue = (b.email || '').toLowerCase();
+          break;
+        case 'phone':
+          aValue = a.phone || '';
+          bValue = b.phone || '';
+          break;
+        case 'role':
+          aValue = a.role;
+          bValue = b.role;
+          break;
+        case 'group_id':
+          aValue = getGroupLabel(a.group_id);
+          bValue = getGroupLabel(b.group_id);
+          break;
+        case 'rsvp_status':
+          const aHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(a.id || a._id));
+          const bHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(b.id || b._id));
+          aValue = aHasRSVP ? 1 : 0;
+          bValue = bHasRSVP ? 1 : 0;
+          break;
+        case 'plus_ones':
+          aValue = getPlusOnesForGuest(a.id || a._id || '').length;
+          bValue = getPlusOnesForGuest(b.id || b._id || '').length;
+          break;
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvps, plusOnes]);
+
+  // ==================== SELECTION HANDLERS ====================
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedGuests(new Set());
+    } else {
+      const allIds = new Set(filteredAndSortedGuests.map(g => g.id || g._id || ''));
+      setSelectedGuests(allIds);
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const handleSelectGuest = (guestId: string) => {
+    const newSelected = new Set(selectedGuests);
+    if (newSelected.has(guestId)) {
+      newSelected.delete(guestId);
+    } else {
+      newSelected.add(guestId);
+    }
+    setSelectedGuests(newSelected);
+    setSelectAll(newSelected.size === filteredAndSortedGuests.length);
+  };
+
+  // ==================== SORT HANDLER ====================
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <span className="text-gray-400 ml-1">↕</span>;
+    return <span className="text-wedding-navy ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  // ==================== CRUD HANDLERS ====================
+
+  const handleAddGuest = async () => {
+    if (!addForm.name.trim()) {
+      setError('Name is required');
+      return;
+    }
+    if (!addForm.email && !addForm.phone) {
+      setError('Either email or phone is required');
+      return;
+    }
+
     try {
-      const guest = guests.find(g => (g.id || g._id) === guestId);
-      if (!guest) return;
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${selectedWedding}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: addForm.name,
+          email: addForm.email || null,
+          phone: addForm.phone || null,
+          role: addForm.role,
+          group_id: addForm.group_id || null,
+          plus_one_allowed: addForm.plus_one_allowed,
+          number_of_plus_ones_allowed: addForm.plus_one_allowed ? addForm.number_of_plus_ones_allowed : 0,
+        }),
+      });
+
+      if (response.ok) {
+        setAddingGuest(false);
+        setAddForm({
+          name: '',
+          email: '',
+          phone: '',
+          role: 'guest',
+          group_id: '',
+          plus_one_allowed: false,
+          number_of_plus_ones_allowed: 0,
+        });
+        fetchGuestData();
+        showSuccess('Guest added successfully!');
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Failed to add guest');
+      }
+    } catch {
+      setError('Failed to add guest');
+    }
+  };
+
+  const handleEditGuest = (guest: Guest) => {
+    const rsvp = getRSVPForGuest(guest.id || guest._id || '');
+    setEditingGuest(guest);
+    setEditForm({
+      name: guest.name,
+      email: guest.email || '',
+      phone: guest.phone || '',
+      role: guest.role,
+      group_id: guest.group_id || '',
+      plus_one_allowed: guest.plus_one_allowed,
+      number_of_plus_ones_allowed: guest.number_of_plus_ones_allowed || 0,
+      rsvp_attending: rsvp?.attending || [],
+      rsvp_dietary: rsvp?.dietary || '',
+    });
+  };
+
+  const handleSaveGuest = async () => {
+    if (!editingGuest) return;
+
+    const guestId = editingGuest.id || editingGuest._id;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+      // Update guest info
+      const guestResponse = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: editForm.name,
+          email: editForm.email || null,
+          phone: editForm.phone || null,
+          role: editForm.role,
+          group_id: editForm.group_id || null,
+          plus_one_allowed: editForm.plus_one_allowed,
+          number_of_plus_ones_allowed: editForm.plus_one_allowed ? editForm.number_of_plus_ones_allowed : 0,
+        }),
+      });
+
+      if (!guestResponse.ok) {
+        throw new Error('Failed to update guest');
+      }
+
+      // Update RSVP if attending events are specified
+      if (editForm.rsvp_attending.length > 0 || editForm.rsvp_dietary) {
+        const rsvpResponse = await fetch(`${baseUrl}/admin/rsvps/${guestId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            attending: editForm.rsvp_attending,
+            dietary: editForm.rsvp_dietary || null,
+            confirmed_by_admin: true,
+          }),
+        });
+
+        if (!rsvpResponse.ok) {
+          console.warn('Failed to update RSVP, but guest was updated');
+        }
+      }
+
+      setEditingGuest(null);
+      fetchGuestData();
+      showSuccess('Guest updated successfully!');
+    } catch {
+      setError('Failed to update guest');
+    }
+  };
+
+  const handleDeleteGuest = async (guestId: string) => {
+    if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        fetchGuestData();
+        showSuccess('Guest deleted successfully!');
+      } else {
+        setError('Failed to delete guest');
+      }
+    } catch {
+      setError('Failed to delete guest');
+    }
+  };
+
+  const handleSendReminder = async (guestId: string) => {
+    const guest = guests.find(g => (g.id || g._id) === guestId);
+    if (!guest) return;
+
+    try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/admin/reminders/send`, {
         method: 'POST',
@@ -225,75 +554,87 @@ export default function AdminGuestsPage() {
       });
 
       if (response.ok) {
-        alert('Reminder sent successfully!');
+        showSuccess('Reminder sent successfully!');
       } else {
         throw new Error('Failed to send reminder');
       }
-    } catch (err) {
-      alert('Failed to send reminder');
+    } catch {
+      setError('Failed to send reminder');
     }
   };
 
-  const handleEditGuest = (guest: Guest) => {
-    setEditingGuest(guest);
-    setEditForm({
-      name: guest.name,
-      email: guest.email || '',
-      phone: guest.phone || '',
-      role: guest.role,
-      plus_one_allowed: guest.plus_one_allowed,
-      number_of_plus_ones_allowed: guest.number_of_plus_ones_allowed || 0
-    });
-  };
+  // ==================== BULK ACTIONS ====================
 
-  const handleSaveGuest = async () => {
-    if (!editingGuest) return;
-    
+  const handleBulkAssignGroup = async () => {
+    if (!bulkGroupId) {
+      setError('Please select a group');
+      return;
+    }
+
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/guests/${editingGuest.id || editingGuest._id}`, {
-        method: 'PUT',
+      const promises = Array.from(selectedGuests).map(guestId =>
+        fetch(`${baseUrl}/admin/guests/${guestId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ group_id: bulkGroupId }),
+        })
+      );
+
+      await Promise.all(promises);
+      setBulkActionModal(null);
+      setBulkGroupId('');
+      setSelectedGuests(new Set());
+      setSelectAll(false);
+      fetchGuestData();
+      showSuccess(`${selectedGuests.size} guests assigned to group!`);
+    } catch {
+      setError('Failed to assign group to some guests');
+    }
+  };
+
+  const handleBulkSendForm = async () => {
+    if (!bulkFormMessage.trim()) {
+      setError('Please enter a message');
+      return;
+    }
+
+    try {
+      const selectedGuestsList = guests.filter(g => selectedGuests.has(g.id || g._id || ''));
+      const tokens = selectedGuestsList.map(g => g.token);
+
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/admin/reminders/send`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          guest_tokens: tokens,
+          message: bulkFormMessage,
+        }),
       });
-      
+
       if (response.ok) {
-        setEditingGuest(null);
-        fetchGuestData(); // Refresh all data
+        setBulkActionModal(null);
+        setBulkFormMessage('');
+        setSelectedGuests(new Set());
+        setSelectAll(false);
+        showSuccess(`Message sent to ${tokens.length} guests!`);
       } else {
-        setError('Failed to update guest');
+        throw new Error('Failed to send message');
       }
-    } catch (err) {
-      setError('Failed to update guest');
+    } catch {
+      setError('Failed to send message to some guests');
     }
   };
 
-  const handleDeleteGuest = async (guestId: string) => {
-    if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
-    
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      
-      if (response.ok) {
-        fetchGuestData(); // Refresh all data
-      } else {
-        setError('Failed to delete guest');
-      }
-    } catch (err) {
-      setError('Failed to delete guest');
-    }
-  };
+  // ==================== IMPORT HANDLERS ====================
 
-  // Import handlers
   const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile && selectedFile.type === 'text/csv') {
@@ -326,9 +667,7 @@ export default function AdminGuestsPage() {
         `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
+          headers: { 'Authorization': `Bearer ${token}` },
           body: formData,
         }
       );
@@ -342,14 +681,10 @@ export default function AdminGuestsPage() {
       setImportResult(data);
       setImportFile(null);
 
-      // Reset file input
       const fileInput = document.getElementById('csvFile') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
 
-      // Refresh guest list
       fetchGuestData();
-
-      // Switch to all guests tab to show imported guests
       setTimeout(() => setActiveTab('all'), 1500);
 
     } catch (err) {
@@ -359,46 +694,24 @@ export default function AdminGuestsPage() {
     }
   };
 
-  // Helper function to normalize ID comparison
-  const normalizeId = (id: string | undefined) => {
-    return id?.toString() || '';
-  };
+  // ==================== RSVP EVENT TOGGLE ====================
 
-  // Filter guests based on tab and search
-  const filteredGuests = guests.filter(guest => {
-    const matchesSearch = guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         guest.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         guest.phone?.includes(searchTerm);
-    
-    if (!matchesSearch) return false;
-
-    const guestId = normalizeId(guest.id || guest._id);
-    const hasRSVP = rsvps.some(r => {
-      const rsvpGuestId = normalizeId(r.guest_id);
-      return rsvpGuestId === guestId;
+  const toggleRSVPEvent = (event: string) => {
+    setEditForm(prev => {
+      const attending = prev.rsvp_attending.includes(event)
+        ? prev.rsvp_attending.filter(e => e !== event)
+        : [...prev.rsvp_attending, event];
+      return { ...prev, rsvp_attending: attending };
     });
-    
-    switch (activeTab) {
-      case 'rsvp':
-        return hasRSVP;
-      case 'pending':
-        return !hasRSVP;
-      default:
-        return true;
-    }
-  });
-
-  const getRSVPForGuest = (guestId: string) => {
-    const normalizedGuestId = normalizeId(guestId);
-    return rsvps.find(r => normalizeId(r.guest_id) === normalizedGuestId);
   };
 
-  const getPlusOnesForGuest = (guestId: string) => {
-    const normalizedGuestId = normalizeId(guestId);
-    return plusOnes.filter(p => normalizeId(p.guest_id) === normalizedGuestId);
-  };
+  // ==================== COMPUTED VALUES ====================
 
   const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
+  const uniqueGroups = Array.from(new Set(guests.map(g => g.group_id).filter((g): g is string => Boolean(g))));
+  const uniqueRoles = Array.from(new Set(guests.map(g => g.role).filter((r): r is string => Boolean(r))));
+
+  // ==================== RENDER ====================
 
   return (
     <div className="space-y-6">
@@ -411,16 +724,29 @@ export default function AdminGuestsPage() {
           </div>
         </div>
 
+        {/* Success/Error Messages */}
+        {successMessage && (
+          <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <p className="text-green-700 dark:text-green-300">{successMessage}</p>
+          </div>
+        )}
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-red-700 dark:text-red-300">{error}</p>
+            <button onClick={() => setError('')} className="text-sm text-red-500 hover:text-red-700 mt-1">Dismiss</button>
+          </div>
+        )}
+
         {/* Wedding Selection */}
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
-          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
+          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Select Wedding
           </label>
           <select
             id="wedding"
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
@@ -455,63 +781,134 @@ export default function AdminGuestsPage() {
 
             {/* Controls */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-8">
-              <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                {/* Tabs */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setActiveTab('all')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      activeTab === 'all'
-                        ? 'bg-wedding-navy text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    All Guests ({guests.length})
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('rsvp')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      activeTab === 'rsvp'
-                        ? 'bg-wedding-navy text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    RSVP’d ({rsvps.length})
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('pending')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      activeTab === 'pending'
-                        ? 'bg-wedding-navy text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Pending ({guests.length - rsvps.length})
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('import')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      activeTab === 'import'
-                        ? 'bg-wedding-sage text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    📥 Import
-                  </button>
+              <div className="flex flex-col gap-4">
+                {/* Top row: Tabs and Actions */}
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                  {/* Tabs */}
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => setActiveTab('all')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        activeTab === 'all'
+                          ? 'bg-wedding-navy text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      All ({guests.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('rsvp')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        activeTab === 'rsvp'
+                          ? 'bg-wedding-navy text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      RSVP&apos;d ({rsvps.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('pending')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        activeTab === 'pending'
+                          ? 'bg-wedding-navy text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Pending ({guests.length - rsvps.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('import')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        activeTab === 'import'
+                          ? 'bg-wedding-sage text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Import
+                    </button>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAddingGuest(true)}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                    >
+                      + Add Guest
+                    </button>
+                    <button
+                      onClick={() => setViewMode(viewMode === 'table' ? 'cards' : 'table')}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                      {viewMode === 'table' ? 'Card View' : 'Table View'}
+                    </button>
+                  </div>
                 </div>
 
-                {/* Search */}
-                <input
-                  type="text"
-                  placeholder="Search guests..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-                />
+                {/* Second row: Search and Filters */}
+                <div className="flex flex-col md:flex-row gap-4">
+                  <input
+                    type="text"
+                    placeholder="Search guests..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  />
+                  <select
+                    value={filterGroup}
+                    onChange={(e) => setFilterGroup(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">All Groups</option>
+                    {PRESET_GROUPS.map(group => (
+                      <option key={group.id} value={group.id}>{group.label}</option>
+                    ))}
+                    {uniqueGroups.filter(g => !PRESET_GROUPS.find(p => p.id === g)).map(group => (
+                      <option key={group} value={group}>{group}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={filterRole}
+                    onChange={(e) => setFilterRole(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">All Roles</option>
+                    {uniqueRoles.map(role => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Third row: Bulk actions (shown when guests selected) */}
+                {selectedGuests.size > 0 && (
+                  <div className="flex items-center gap-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      {selectedGuests.size} guest{selectedGuests.size > 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={() => setBulkActionModal('group')}
+                      className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                    >
+                      Assign Group
+                    </button>
+                    <button
+                      onClick={() => setBulkActionModal('form')}
+                      className="px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
+                    >
+                      Send Message
+                    </button>
+                    <button
+                      onClick={() => { setSelectedGuests(new Set()); setSelectAll(false); }}
+                      className="px-3 py-1 bg-gray-500 text-white text-sm rounded-lg hover:bg-gray-600"
+                    >
+                      Clear Selection
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Import Form - shown when Import tab is active */}
+            {/* Import Form */}
             {activeTab === 'import' && (
               <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden mb-8">
                 <div className="bg-gradient-to-r from-wedding-sage to-wedding-gold px-8 py-6">
@@ -519,7 +916,6 @@ export default function AdminGuestsPage() {
                   <p className="text-white/80 mt-1">Upload a CSV file to bulk import guests</p>
                 </div>
                 <div className="p-6 space-y-6">
-                  {/* CSV Format Documentation */}
                   <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                     <h3 className="text-lg font-semibold text-blue-900 mb-2">CSV Format Requirements</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
@@ -542,10 +938,9 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
 
-                  {/* Import Form */}
                   <form onSubmit={handleImport} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         CSV File
                       </label>
                       <input
@@ -553,7 +948,7 @@ export default function AdminGuestsPage() {
                         type="file"
                         accept=".csv"
                         onChange={handleImportFileChange}
-                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-wedding-sage file:text-white hover:file:bg-wedding-gold"
+                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-wedding-sage file:text-white hover:file:bg-wedding-gold"
                         required
                       />
                       {importFile && (
@@ -561,26 +956,20 @@ export default function AdminGuestsPage() {
                       )}
                     </div>
 
-                    {/* Error Message */}
                     {importError && (
                       <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                         <p className="text-red-700 dark:text-red-300">{importError}</p>
                       </div>
                     )}
 
-                    {/* Success Message */}
                     {importResult && (
                       <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                         <p className="text-green-700 dark:text-green-300 font-semibold">
                           Successfully imported {importResult.imported} guests!
                         </p>
-                        <p className="text-green-600 dark:text-green-300 text-sm mt-1">
-                          Switching to guest list...
-                        </p>
                       </div>
                     )}
 
-                    {/* Submit Button */}
                     <button
                       type="submit"
                       disabled={importLoading || !importFile}
@@ -593,156 +982,204 @@ export default function AdminGuestsPage() {
               </div>
             )}
 
-            {/* Guest List - hidden when Import tab is active */}
+            {/* Guest List */}
             {activeTab !== 'import' && (
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
-                  <span className="ml-3 text-gray-600 dark:text-gray-400">Loading guests...</span>
-                </div>
-              ) : filteredGuests.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                  <p>No guests found.</p>
-                  <button
-                    onClick={() => setActiveTab('import')}
-                    className="mt-4 px-4 py-2 bg-wedding-sage text-white rounded-lg hover:bg-wedding-gold transition-colors"
-                  >
-                    📥 Import Guests from CSV
-                  </button>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredGuests.map((guest) => {
-                    const guestId = guest.id || guest._id || '';
-                    const rsvp = getRSVPForGuest(guestId);
-                    const guestPlusOnes = getPlusOnesForGuest(guestId);
-                    const isExpanded = expandedGuest === guestId;
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
+                    <span className="ml-3 text-gray-600 dark:text-gray-400">Loading guests...</span>
+                  </div>
+                ) : filteredAndSortedGuests.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                    <p>No guests found.</p>
+                    <button
+                      onClick={() => setAddingGuest(true)}
+                      className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      + Add Your First Guest
+                    </button>
+                  </div>
+                ) : viewMode === 'table' ? (
+                  /* TABLE VIEW */
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 dark:bg-slate-700">
+                        <tr>
+                          <th className="px-4 py-3 text-left">
+                            <input
+                              type="checkbox"
+                              checked={selectAll}
+                              onChange={handleSelectAll}
+                              className="rounded text-wedding-rose focus:ring-wedding-rose"
+                            />
+                          </th>
+                          <th
+                            className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600"
+                            onClick={() => handleSort('name')}
+                          >
+                            Name <SortIcon field="name" />
+                          </th>
+                          <th
+                            className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600"
+                            onClick={() => handleSort('email')}
+                          >
+                            Email <SortIcon field="email" />
+                          </th>
+                          <th
+                            className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600"
+                            onClick={() => handleSort('phone')}
+                          >
+                            Phone <SortIcon field="phone" />
+                          </th>
+                          <th
+                            className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600"
+                            onClick={() => handleSort('group_id')}
+                          >
+                            Group <SortIcon field="group_id" />
+                          </th>
+                          <th
+                            className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600"
+                            onClick={() => handleSort('rsvp_status')}
+                          >
+                            RSVP <SortIcon field="rsvp_status" />
+                          </th>
+                          <th
+                            className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600"
+                            onClick={() => handleSort('plus_ones')}
+                          >
+                            Plus Ones <SortIcon field="plus_ones" />
+                          </th>
+                          <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {filteredAndSortedGuests.map((guest) => {
+                          const guestId = guest.id || guest._id || '';
+                          const rsvp = getRSVPForGuest(guestId);
+                          const guestPlusOnes = getPlusOnesForGuest(guestId);
+                          const isSelected = selectedGuests.has(guestId);
 
-                    return (
-                      <div key={guestId} className="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
-                        {/* Guest Row */}
-                        <div className="p-6">
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-4">
-                                <div>
-                                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{guest.name}</h3>
-                                  <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                    {guest.email && <span>{guest.email}</span>}
-                                    {guest.phone && <span>{guest.phone}</span>}
-                                  </div>
-                                </div>
-                                <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                                  guest.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {guest.role}
-                                </span>
-                                {rsvp && (
-                                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                    RSVP’d
+                          return (
+                            <tr
+                              key={guestId}
+                              className={`hover:bg-gray-50 dark:hover:bg-slate-700 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                            >
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleSelectGuest(guestId)}
+                                  className="rounded text-wedding-rose focus:ring-wedding-rose"
+                                />
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="font-medium text-gray-900 dark:text-gray-100">{guest.name}</div>
+                                <div className="text-xs text-gray-500">{guest.role}</div>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                {guest.email || '-'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                {guest.phone || '-'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                {getGroupLabel(guest.group_id)}
+                              </td>
+                              <td className="px-4 py-3">
+                                {rsvp ? (
+                                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                    {rsvp.confirmed_by_admin ? 'Confirmed' : 'RSVP\'d'}
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                    Pending
                                   </span>
                                 )}
-                              </div>
-
-                              {/* RSVP Details */}
-                              {rsvp && (
-                                <div className="mt-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
-                                  <div className="flex gap-6 text-sm">
-                                    <div>
-                                      <span className="font-medium text-gray-700 dark:text-gray-300">Attending:</span>
-                                      <span className="ml-2">{rsvp.attending.join(', ')}</span>
-                                    </div>
-                                    {rsvp.dietary && (
-                                      <div>
-                                        <span className="font-medium text-gray-700 dark:text-gray-300">Dietary:</span>
-                                        <span className="ml-2">{rsvp.dietary}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Plus One Status */}
-                              {guest.plus_one_allowed && (
-                                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                                  Plus Ones: {guestPlusOnes.length} / {guest.number_of_plus_ones_allowed || 0}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => setExpandedGuest(isExpanded ? null : guestId)}
-                                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 transition-colors"
-                              >
-                                {isExpanded ? 'Hide' : 'Details'}
-                              </button>
-                              <button
-                                onClick={() => handleEditGuest(guest)}
-                                className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                              >
-                                Edit
-                              </button>
-                              {!rsvp && (
-                                <button
-                                  onClick={() => handleSendReminder(guestId)}
-                                  className="px-3 py-1 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90 transition-colors"
-                                >
-                                  Send Reminder
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleDeleteGuest(guestId)}
-                                className="px-3 py-1 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Expanded Details */}
-                        {isExpanded && (
-                          <div className="px-6 pb-6">
-                            <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-                              {/* Guest Info */}
-                              <div>
-                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Guest Information</h4>
-                                <dl className="space-y-1 text-sm">
-                                  <div>
-                                    <dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt>
-                                    <dd className="inline ml-2 font-mono text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">
-                                      {guest.token}
-                                    </dd>
-                                  </div>
-                                  {guest.group_id && (
-                                    <div>
-                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt>
-                                      <dd className="inline ml-2">{guest.group_id}</dd>
-                                    </div>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                {guest.plus_one_allowed ? (
+                                  <span>{guestPlusOnes.length} / {guest.number_of_plus_ones_allowed}</span>
+                                ) : (
+                                  <span className="text-gray-400">N/A</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    onClick={() => setExpandedGuest(expandedGuest === guestId ? null : guestId)}
+                                    className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                                  >
+                                    {expandedGuest === guestId ? 'Hide' : 'View'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleEditGuest(guest)}
+                                    className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                                  >
+                                    Edit
+                                  </button>
+                                  {!rsvp && (
+                                    <button
+                                      onClick={() => handleSendReminder(guestId)}
+                                      className="px-2 py-1 text-xs bg-wedding-sage text-white rounded hover:bg-opacity-90"
+                                    >
+                                      Remind
+                                    </button>
                                   )}
-                                  <div>
-                                    <dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt>
-                                    <dd className="inline ml-2">
-                                      {guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed || 0})` : 'No'}
-                                    </dd>
-                                  </div>
+                                  <button
+                                    onClick={() => handleDeleteGuest(guestId)}
+                                    className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    {/* Expanded Details Row */}
+                    {expandedGuest && (
+                      <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-slate-700/50">
+                        {(() => {
+                          const guest = guests.find(g => (g.id || g._id) === expandedGuest);
+                          if (!guest) return null;
+                          const rsvp = getRSVPForGuest(expandedGuest);
+                          const guestPlusOnes = getPlusOnesForGuest(expandedGuest);
+
+                          return (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              <div>
+                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Guest Details</h4>
+                                <dl className="space-y-1 text-sm">
+                                  <div><dt className="inline font-medium">Token:</dt> <dd className="inline ml-2 font-mono text-xs bg-gray-200 dark:bg-slate-600 px-2 py-1 rounded">{guest.token}</dd></div>
+                                  <div><dt className="inline font-medium">Group:</dt> <dd className="inline ml-2">{getGroupLabel(guest.group_id)}</dd></div>
+                                  <div><dt className="inline font-medium">Plus Ones Allowed:</dt> <dd className="inline ml-2">{guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed})` : 'No'}</dd></div>
                                 </dl>
                               </div>
-
-                              {/* Plus Ones List */}
-                              {guest.plus_one_allowed && guestPlusOnes.length > 0 && (
+                              {rsvp && (
                                 <div>
-                                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Plus Ones</h4>
+                                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
+                                  <dl className="space-y-1 text-sm">
+                                    <div><dt className="inline font-medium">Attending:</dt> <dd className="inline ml-2">{rsvp.attending.join(', ') || 'None'}</dd></div>
+                                    <div><dt className="inline font-medium">Dietary:</dt> <dd className="inline ml-2">{rsvp.dietary || 'None'}</dd></div>
+                                    {rsvp.confirmed_by_admin && <div className="text-xs text-blue-600">(Confirmed by admin)</div>}
+                                  </dl>
+                                </div>
+                              )}
+                              {guestPlusOnes.length > 0 && (
+                                <div>
+                                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Plus Ones ({guestPlusOnes.length})</h4>
                                   <ul className="space-y-2">
-                                    {guestPlusOnes.map((plusOne, idx) => (
-                                      <li key={plusOne._id || idx} className="text-sm bg-gray-50 dark:bg-slate-700 p-2 rounded">
-                                        <div className="font-medium">{plusOne.name}</div>
-                                        <div className="text-gray-600 dark:text-gray-400">
-                                          Attending: {plusOne.attending.join(', ')}
-                                          {plusOne.dietary && ` • Dietary: ${plusOne.dietary}`}
+                                    {guestPlusOnes.map((po, idx) => (
+                                      <li key={po._id || idx} className="text-sm bg-white dark:bg-slate-600 p-2 rounded">
+                                        <div className="font-medium">{po.name}</div>
+                                        <div className="text-gray-500 dark:text-gray-400 text-xs">
+                                          {po.attending.join(', ')} {po.dietary && `| ${po.dietary}`}
                                         </div>
                                       </li>
                                     ))}
@@ -750,82 +1187,235 @@ export default function AdminGuestsPage() {
                                 </div>
                               )}
                             </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* CARD VIEW */
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {filteredAndSortedGuests.map((guest) => {
+                      const guestId = guest.id || guest._id || '';
+                      const rsvp = getRSVPForGuest(guestId);
+                      const guestPlusOnes = getPlusOnesForGuest(guestId);
+                      const isExpanded = expandedGuest === guestId;
+                      const isSelected = selectedGuests.has(guestId);
 
-                            {/* Wedding Events for this guest */}
-                            {selectedWeddingData?.events && (
-                              <div className="mt-4">
-                                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Wedding Events</h4>
-                                <div className="flex gap-2">
-                                  {selectedWeddingData.events.map((event, idx) => (
-                                    <span
-                                      key={idx}
-                                      className={`px-3 py-1 text-xs rounded-full ${
-                                        rsvp?.attending.includes(event.type)
-                                          ? 'bg-green-100 text-green-800'
-                                          : 'bg-gray-100 text-gray-600'
-                                      }`}
-                                    >
-                                      {event.type.replace('_', ' ')} - {event.date}
+                      return (
+                        <div key={guestId} className={`hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                          <div className="p-6">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleSelectGuest(guestId)}
+                                  className="rounded text-wedding-rose focus:ring-wedding-rose"
+                                />
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3">
+                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{guest.name}</h3>
+                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                      guest.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                                    }`}>
+                                      {guest.role}
                                     </span>
-                                  ))}
+                                    {rsvp && (
+                                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                        {rsvp.confirmed_by_admin ? 'Confirmed' : 'RSVP\'d'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                    {guest.email && <span>{guest.email}</span>}
+                                    {guest.phone && <span>{guest.phone}</span>}
+                                    {guest.group_id && <span className="text-wedding-sage">{getGroupLabel(guest.group_id)}</span>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setExpandedGuest(isExpanded ? null : guestId)}
+                                  className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                                >
+                                  {isExpanded ? 'Hide' : 'Details'}
+                                </button>
+                                <button
+                                  onClick={() => handleEditGuest(guest)}
+                                  className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                                >
+                                  Edit
+                                </button>
+                                {!rsvp && (
+                                  <button
+                                    onClick={() => handleSendReminder(guestId)}
+                                    className="px-3 py-1 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90"
+                                  >
+                                    Remind
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteGuest(guestId)}
+                                  className="px-3 py-1 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* RSVP Quick Info */}
+                            {rsvp && (
+                              <div className="mt-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+                                <div className="flex gap-6 text-sm">
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Attending:</span>
+                                    <span className="ml-2">{rsvp.attending.join(', ') || 'None'}</span>
+                                  </div>
+                                  {rsvp.dietary && (
+                                    <div>
+                                      <span className="font-medium text-gray-700 dark:text-gray-300">Dietary:</span>
+                                      <span className="ml-2">{rsvp.dietary}</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}
+
+                            {/* Plus Ones Quick Info */}
+                            {guest.plus_one_allowed && (
+                              <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                Plus Ones: {guestPlusOnes.length} / {guest.number_of_plus_ones_allowed || 0}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+
+                          {/* Expanded Details */}
+                          {isExpanded && (
+                            <div className="px-6 pb-6">
+                              <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Guest Information</h4>
+                                  <dl className="space-y-1 text-sm">
+                                    <div>
+                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt>
+                                      <dd className="inline ml-2 font-mono text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">
+                                        {guest.token}
+                                      </dd>
+                                    </div>
+                                    <div>
+                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt>
+                                      <dd className="inline ml-2">{getGroupLabel(guest.group_id)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt>
+                                      <dd className="inline ml-2">
+                                        {guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed || 0})` : 'No'}
+                                      </dd>
+                                    </div>
+                                  </dl>
+                                </div>
+
+                                {guestPlusOnes.length > 0 && (
+                                  <div>
+                                    <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Plus Ones</h4>
+                                    <ul className="space-y-2">
+                                      {guestPlusOnes.map((plusOne, idx) => (
+                                        <li key={plusOne._id || idx} className="text-sm bg-gray-50 dark:bg-slate-700 p-2 rounded">
+                                          <div className="font-medium">{plusOne.name}</div>
+                                          <div className="text-gray-600 dark:text-gray-400">
+                                            Attending: {plusOne.attending.join(', ')}
+                                            {plusOne.dietary && ` | Dietary: ${plusOne.dietary}`}
+                                          </div>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+
+                              {selectedWeddingData?.events && (
+                                <div className="mt-4">
+                                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Wedding Events</h4>
+                                  <div className="flex gap-2 flex-wrap">
+                                    {selectedWeddingData.events.map((event, idx) => (
+                                      <span
+                                        key={idx}
+                                        className={`px-3 py-1 text-xs rounded-full ${
+                                          rsvp?.attending.includes(event.type)
+                                            ? 'bg-green-100 text-green-800'
+                                            : 'bg-gray-100 text-gray-600'
+                                        }`}
+                                      >
+                                        {event.type.replace('_', ' ')} - {event.date}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </>
         )}
 
-        {/* Edit Guest Modal */}
-        {editingGuest && (
+        {/* ==================== MODALS ==================== */}
+
+        {/* Add Guest Modal */}
+        {addingGuest && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6">
-              <h2 className="text-2xl font-bold text-wedding-navy mb-4">Edit Guest</h2>
-              
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-2xl font-bold text-wedding-navy dark:text-white mb-4">Add New Guest</h2>
+
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
                   <input
                     type="text"
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    value={addForm.name}
+                    onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    placeholder="Guest name"
                   />
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Email</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                   <input
                     type="email"
-                    value={editForm.email}
-                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    value={addForm.email}
+                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    placeholder="guest@email.com"
                   />
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Phone</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
                   <input
                     type="tel"
-                    value={editForm.phone}
-                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    value={addForm.phone}
+                    onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    placeholder="1234567890"
                   />
                 </div>
-                
+
+                <p className="text-xs text-gray-500 dark:text-gray-400">* Either email or phone is required</p>
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Role</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
                   <select
-                    value={editForm.role}
-                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    value={addForm.role}
+                    onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   >
                     <option value="guest">Guest</option>
                     <option value="admin">Admin</option>
@@ -833,34 +1423,211 @@ export default function AdminGuestsPage() {
                     <option value="bride">Bride</option>
                   </select>
                 </div>
-                
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Group</label>
+                  <select
+                    value={addForm.group_id}
+                    onChange={(e) => setAddForm({ ...addForm, group_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  >
+                    <option value="">No Group</option>
+                    {PRESET_GROUPS.map(group => (
+                      <option key={group.id} value={group.id}>{group.label}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="flex items-center space-x-2">
                     <input
                       type="checkbox"
-                      checked={editForm.plus_one_allowed}
-                      onChange={(e) => setEditForm({ ...editForm, plus_one_allowed: e.target.checked })}
+                      checked={addForm.plus_one_allowed}
+                      onChange={(e) => setAddForm({ ...addForm, plus_one_allowed: e.target.checked })}
                       className="rounded text-wedding-rose focus:ring-wedding-rose"
                     />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">Allow Plus Ones</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allow Plus Ones</span>
                   </label>
                 </div>
-                
-                {editForm.plus_one_allowed && (
+
+                {addForm.plus_one_allowed && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Number of Plus Ones Allowed</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Number of Plus Ones Allowed</label>
                     <input
                       type="number"
                       min="0"
                       max="10"
-                      value={editForm.number_of_plus_ones_allowed}
-                      onChange={(e) => setEditForm({ ...editForm, number_of_plus_ones_allowed: parseInt(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      value={addForm.number_of_plus_ones_allowed}
+                      onChange={(e) => setAddForm({ ...addForm, number_of_plus_ones_allowed: parseInt(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     />
                   </div>
                 )}
               </div>
-              
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={handleAddGuest}
+                  className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Add Guest
+                </button>
+                <button
+                  onClick={() => setAddingGuest(false)}
+                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Guest Modal (with RSVP) */}
+        {editingGuest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-2xl font-bold text-wedding-navy dark:text-white mb-4">Edit Guest</h2>
+
+              <div className="space-y-4">
+                {/* Guest Info Section */}
+                <div className="border-b pb-4">
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">Guest Information</h3>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                        <input
+                          type="email"
+                          value={editForm.email}
+                          onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
+                        <input
+                          type="tel"
+                          value={editForm.phone}
+                          onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                        <select
+                          value={editForm.role}
+                          onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        >
+                          <option value="guest">Guest</option>
+                          <option value="admin">Admin</option>
+                          <option value="groom">Groom</option>
+                          <option value="bride">Bride</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Group</label>
+                        <select
+                          value={editForm.group_id}
+                          onChange={(e) => setEditForm({ ...editForm, group_id: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        >
+                          <option value="">No Group</option>
+                          {PRESET_GROUPS.map(group => (
+                            <option key={group.id} value={group.id}>{group.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={editForm.plus_one_allowed}
+                          onChange={(e) => setEditForm({ ...editForm, plus_one_allowed: e.target.checked })}
+                          className="rounded text-wedding-rose focus:ring-wedding-rose"
+                        />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allow Plus Ones</span>
+                      </label>
+                    </div>
+
+                    {editForm.plus_one_allowed && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Number of Plus Ones Allowed</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          value={editForm.number_of_plus_ones_allowed}
+                          onChange={(e) => setEditForm({ ...editForm, number_of_plus_ones_allowed: parseInt(e.target.value) || 0 })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* RSVP Section */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">
+                    RSVP Status
+                    <span className="ml-2 text-sm font-normal text-gray-500">(Manual confirmation)</span>
+                  </h3>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Attending Events</label>
+                      <div className="space-y-2">
+                        {EVENT_OPTIONS.map(event => (
+                          <label key={event.value} className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={editForm.rsvp_attending.includes(event.value)}
+                              onChange={() => toggleRSVPEvent(event.value)}
+                              className="rounded text-wedding-rose focus:ring-wedding-rose"
+                            />
+                            <span className="text-sm text-gray-700 dark:text-gray-300">{event.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Dietary Restrictions</label>
+                      <input
+                        type="text"
+                        value={editForm.rsvp_dietary}
+                        onChange={(e) => setEditForm({ ...editForm, rsvp_dietary: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                        placeholder="e.g., Vegetarian, Gluten-free"
+                      />
+                    </div>
+
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Setting attending events will mark this guest as RSVP&apos;d (confirmed by admin).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-3 mt-6">
                 <button
                   onClick={handleSaveGuest}
@@ -870,7 +1637,89 @@ export default function AdminGuestsPage() {
                 </button>
                 <button
                   onClick={() => setEditingGuest(null)}
-                  className="flex-1 bg-gray-200 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Assign Group Modal */}
+        {bulkActionModal === 'group' && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6">
+              <h2 className="text-2xl font-bold text-wedding-navy dark:text-white mb-4">Assign Group to {selectedGuests.size} Guests</h2>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Group</label>
+                  <select
+                    value={bulkGroupId}
+                    onChange={(e) => setBulkGroupId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  >
+                    <option value="">Select a group...</option>
+                    {PRESET_GROUPS.map(group => (
+                      <option key={group.id} value={group.id}>{group.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={handleBulkAssignGroup}
+                  disabled={!bulkGroupId}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Assign Group
+                </button>
+                <button
+                  onClick={() => { setBulkActionModal(null); setBulkGroupId(''); }}
+                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Send Message Modal */}
+        {bulkActionModal === 'form' && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6">
+              <h2 className="text-2xl font-bold text-wedding-navy dark:text-white mb-4">Send Message to {selectedGuests.size} Guests</h2>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
+                  <textarea
+                    value={bulkFormMessage}
+                    onChange={(e) => setBulkFormMessage(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    placeholder="Enter your message..."
+                  />
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  This will send an SMS/email reminder to all selected guests.
+                </p>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={handleBulkSendForm}
+                  disabled={!bulkFormMessage.trim()}
+                  className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Send Message
+                </button>
+                <button
+                  onClick={() => { setBulkActionModal(null); setBulkFormMessage(''); }}
+                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
                 >
                   Cancel
                 </button>
