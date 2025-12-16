@@ -1,7 +1,8 @@
 import React from 'react';
-import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor, DragOverlay, defaultDropAnimationSideEffects } from '@dnd-kit/core';
 import { Table, Guest } from '@/types/table';
 import { TableNode } from './TableNode';
+import { motion } from 'framer-motion';
 
 interface SeatingCanvasProps {
   tables: Table[];
@@ -22,7 +23,7 @@ export function SeatingCanvas({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     })
   );
@@ -52,19 +53,35 @@ export function SeatingCanvas({
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="relative w-full h-full bg-gray-100 overflow-hidden"
-           style={{
-             backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
-             backgroundSize: '20px 20px'
-           }}>
-        {tables.map(table => (
-          <TableNode
-            key={table.id}
-            table={table}
-            guests={guests.filter(g => g.table_id === table.id)}
-            onDelete={onTableDelete}
-          />
-        ))}
+      <div className="relative w-full h-full overflow-hidden bg-[#f8fafc]">
+
+        {/* Animated Background - Liquid/Mesh Gradient */}
+        <div className="absolute inset-0 opacity-40 pointer-events-none">
+          <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-200 rounded-full blur-[100px] animate-blob mix-blend-multiply" />
+          <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-200 rounded-full blur-[100px] animate-blob animation-delay-2000 mix-blend-multiply" />
+          <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] bg-pink-200 rounded-full blur-[100px] animate-blob animation-delay-4000 mix-blend-multiply" />
+        </div>
+
+        {/* Grid Pattern Overlay */}
+        <div
+          className="absolute inset-0 opacity-[0.03] pointer-events-none"
+          style={{
+            backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)',
+            backgroundSize: '40px 40px'
+          }}
+        />
+
+        {/* Content Layer */}
+        <div className="relative w-full h-full z-10">
+          {tables.map(table => (
+            <TableNode
+              key={table.id}
+              table={table}
+              guests={guests.filter(g => g.table_id === table.id)}
+              onDelete={onTableDelete}
+            />
+          ))}
+        </div>
       </div>
     </DndContext>
   );

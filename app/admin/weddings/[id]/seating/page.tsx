@@ -97,19 +97,65 @@ export default function SeatingPage() {
     }
   };
 
-  return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
-      <Sidebar guests={guests} />
+  const handlePrint = () => {
+    window.print();
+  };
 
-      <div className="flex-1 flex flex-col relative">
-        <div className="h-16 bg-white/80 backdrop-blur border-b border-gray-200 flex items-center justify-between px-6 z-20">
+  const handleExport = () => {
+    // Generate CSV content
+    const headers = ['Table', 'Guest Name', 'Group', 'Role'];
+    const rows = tables.flatMap(table => {
+      const tableGuests = guests.filter(g => g.table_id === table.id);
+      if (tableGuests.length === 0) {
+        return [[table.name, '(Empty)', '', '']];
+      }
+      return tableGuests.map(g => [
+        table.name,
+        g.name,
+        g.group_id || '',
+        g.role || ''
+      ]);
+    });
+
+    // Add unseated guests
+    const unseated = guests.filter(g => !g.table_id);
+    unseated.forEach(g => {
+      rows.push(['(Unseated)', g.name, g.group_id || '', g.role || '']);
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'seating_plan.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  return (
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden print:h-auto print:overflow-visible">
+      <div className="print:hidden">
+        <Sidebar guests={guests} />
+      </div>
+
+      <div className="flex-1 flex flex-col relative print:w-full">
+        <div className="h-16 bg-white/80 backdrop-blur border-b border-gray-200 flex items-center justify-between px-6 z-20 print:hidden">
           <h1 className="font-playfair text-xl font-bold text-gray-800">Seating Plan</h1>
 
           <div className="flex gap-2">
-            <GlassButton variant="secondary" size="sm" icon={<Printer className="w-4 h-4" />}>
+            <GlassButton onClick={handlePrint} variant="secondary" size="sm" icon={<Printer className="w-4 h-4" />}>
               Print
             </GlassButton>
-            <GlassButton variant="secondary" size="sm" icon={<Download className="w-4 h-4" />}>
+            <GlassButton onClick={handleExport} variant="secondary" size="sm" icon={<Download className="w-4 h-4" />}>
               Export
             </GlassButton>
             <GlassButton onClick={handleAddTable} size="sm" icon={<Plus className="w-4 h-4" />}>
