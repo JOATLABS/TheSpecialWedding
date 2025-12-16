@@ -1,8 +1,8 @@
 import React from 'react';
-import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor, DragOverlay, defaultDropAnimationSideEffects } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { Table, Guest } from '@/types/table';
 import { TableNode } from './TableNode';
-import { motion } from 'framer-motion';
+import { LiquidBackground } from './LiquidBackground';
 
 interface SeatingCanvasProps {
   tables: Table[];
@@ -55,21 +55,8 @@ export function SeatingCanvas({
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="relative w-full h-full overflow-hidden bg-[#f8fafc]">
 
-        {/* Animated Background - Liquid/Mesh Gradient */}
-        <div className="absolute inset-0 opacity-40 pointer-events-none">
-          <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-200 rounded-full blur-[100px] animate-blob mix-blend-multiply" />
-          <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-200 rounded-full blur-[100px] animate-blob animation-delay-2000 mix-blend-multiply" />
-          <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] bg-pink-200 rounded-full blur-[100px] animate-blob animation-delay-4000 mix-blend-multiply" />
-        </div>
-
-        {/* Grid Pattern Overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.03] pointer-events-none"
-          style={{
-            backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)',
-            backgroundSize: '40px 40px'
-          }}
-        />
+        {/* 3D Liquid Background */}
+        <LiquidBackground />
 
         {/* Content Layer */}
         <div className="relative w-full h-full z-10">

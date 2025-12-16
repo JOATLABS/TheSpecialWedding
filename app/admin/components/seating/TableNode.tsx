@@ -52,9 +52,10 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
     >
       <motion.div
         layoutId={`table-${table.id}`}
-        initial={{ scale: 0.9, opacity: 0 }}
+        initial={{ scale: 0.9, opacity: 0, rotateX: 0, rotateY: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        whileHover={{ scale: 1.01 }}
+        whileHover={{ scale: 1.02, rotateX: 5, rotateY: 5 }}
+        whileTap={{ scale: 0.98 }}
         className={`
           w-72 ${borderRadius}
           bg-white/40 backdrop-blur-xl
@@ -65,6 +66,7 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
           ${isOver ? 'ring-2 ring-blue-400/50 bg-blue-50/40' : ''}
           ${isOverCapacity ? 'ring-2 ring-red-400/50' : ''}
         `}
+        style={{ transformStyle: "preserve-3d", perspective: 1000 }}
       >
         {/* Header / Handle */}
         <div
