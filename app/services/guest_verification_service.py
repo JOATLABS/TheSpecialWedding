@@ -324,17 +324,41 @@ class GuestVerificationService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             privacy_settings = wedding.get("privacy_settings", {})
-            return {
+            privacy_mode = privacy_settings.get("privacy_mode", "private")
+
+            # Log privacy mode for debugging
+            security_logger.info(f"Privacy info for {slug}: mode={privacy_mode}, settings={privacy_settings}")
+
+            # Base response with privacy info
+            response = {
+                "id": str(wedding.get("_id")),
                 "couple_names": wedding.get("couple_names"),
-                "privacy_mode": privacy_settings.get("privacy_mode", "private"),
-                "requires_password": privacy_settings.get("privacy_mode") == "password",
-                "requires_guest_verification": privacy_settings.get("privacy_mode") == "private",
+                "date": wedding.get("date"),
+                "privacy_mode": privacy_mode,
+                "requires_password": privacy_mode == "password",
+                "requires_guest_verification": privacy_mode == "private",
+                "featured_image": wedding.get("featured_image"),
+                "theme_config": wedding.get("theme_config"),
+                "rsvp_config": wedding.get("rsvp_config"),
+                "events": wedding.get("events", []),
                 "verification_requirements": {
                     "otp_enabled": True,
                     "supports_phone": True,
                     "supports_email": True
                 }
             }
+
+            # For public weddings, include full wedding data since no verification needed
+            if privacy_mode == "public":
+                response.update({
+                    "registries": wedding.get("registries", []),
+                    "faqs": wedding.get("faqs", []),
+                    "our_story": wedding.get("our_story"),
+                    "venue": wedding.get("venue"),
+                    "wedding_party": wedding.get("wedding_party", []),
+                })
+
+            return response
 
         except HTTPException:
             raise

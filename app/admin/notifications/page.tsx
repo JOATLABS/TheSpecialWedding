@@ -35,12 +35,29 @@ interface SentNotification {
   };
 }
 
+// Planner notification (received notifications like form submissions, RSVPs)
+interface PlannerNotification {
+  _id: string;
+  type: 'form_submission' | 'rsvp_update' | 'guest_message' | 'system' | 'reminder';
+  title: string;
+  message: string;
+  wedding_id?: string;
+  wedding_name?: string;
+  is_read: boolean;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
 export default function NotificationsPage() {
-  const { apiRequest } = useAdmin();
+  const { apiRequest, userProfile } = useAdmin();
   const [activeTab, setActiveTab] = useState<'send' | 'templates' | 'history'>('send');
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
   const [sentNotifications, setSentNotifications] = useState<SentNotification[]>([]);
+  const [plannerNotifications, setPlannerNotifications] = useState<PlannerNotification[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Check if user is root admin
+  const isRootAdmin = userProfile?.is_root_admin === true;
   // Send notification form
   const [useTemplate, setUseTemplate] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -59,31 +76,44 @@ export default function NotificationsPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      // Try to fetch from actual API endpoints, fall back to empty arrays
-      try {
-        // Fetch templates from backend
-        const templatesResponse = await apiRequest<{ templates: NotificationTemplate[] }>('/admin/notification-templates', 'GET');
-        setTemplates(templatesResponse?.templates ?? []);
-      } catch (error) {
-        console.warn('Notification templates endpoint not available, using empty array');
-        setTemplates([]);
-      }
 
-      try {
-        const historyResponse = await apiRequest<{ notifications: SentNotification[] }>('/admin/notifications', 'GET');
-        setSentNotifications(historyResponse?.notifications ?? []);
-      } catch (error) {
-        console.warn('Notification history endpoint not available, using empty array');
-        setSentNotifications([]);
+      if (isRootAdmin) {
+        // Admin view: fetch templates and sent notifications
+        try {
+          const templatesResponse = await apiRequest<{ templates: NotificationTemplate[] }>('/admin/notification-templates', 'GET');
+          setTemplates(templatesResponse?.templates ?? []);
+        } catch (error) {
+          console.warn('Notification templates endpoint not available, using empty array');
+          setTemplates([]);
+        }
+
+        try {
+          const historyResponse = await apiRequest<{ notifications: SentNotification[] }>('/admin/notifications', 'GET');
+          setSentNotifications(historyResponse?.notifications ?? []);
+        } catch (error) {
+          console.warn('Notification history endpoint not available, using empty array');
+          setSentNotifications([]);
+        }
+      } else {
+        // Planner view: fetch received notifications
+        try {
+          const response = await apiRequest<{ notifications: PlannerNotification[] }>('/admin/planner/notifications', 'GET');
+          setPlannerNotifications(response?.notifications ?? []);
+        } catch (error) {
+          console.warn('Planner notifications endpoint not available');
+          // Generate sample notifications for now
+          setPlannerNotifications([]);
+        }
       }
     } catch (error) {
       console.error('Error fetching notification data:', error);
       setTemplates([]);
       setSentNotifications([]);
+      setPlannerNotifications([]);
     } finally {
       setLoading(false);
     }
-  }, [apiRequest]);
+  }, [apiRequest, isRootAdmin]);
 
   useEffect(() => {
     fetchData();
@@ -189,6 +219,108 @@ export default function NotificationsPage() {
     );
   }
 
+  // ============================================
+  // PLANNER VIEW - Show received notifications
+  // ============================================
+  if (!isRootAdmin) {
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-heading text-wedding-rose dark:text-wedding-rose">Notifications</h1>
+          <p className="text-gray-600 dark:text-gray-400">Form submissions, RSVP updates, and activity alerts</p>
+        </div>
+
+        {/* Notifications List */}
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          {plannerNotifications.length > 0 ? (
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {plannerNotifications.map((notification) => (
+                <div
+                  key={notification._id}
+                  className={`p-4 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors ${
+                    !notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${
+                          notification.type === 'form_submission' ? 'bg-green-500' :
+                          notification.type === 'rsvp_update' ? 'bg-blue-500' :
+                          notification.type === 'guest_message' ? 'bg-purple-500' :
+                          notification.type === 'reminder' ? 'bg-orange-500' :
+                          'bg-gray-500'
+                        }`} />
+                        <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {notification.title}
+                        </h3>
+                        {!notification.is_read && (
+                          <span className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
+                            New
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        {notification.message}
+                      </p>
+                      <div className="mt-2 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                        <span>{formatDate(notification.created_at)}</span>
+                        {notification.wedding_name && (
+                          <span className="text-indigo-600 dark:text-indigo-400">
+                            {notification.wedding_name}
+                          </span>
+                        )}
+                        <span className="capitalize px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                          {notification.type.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-12 text-center">
+              <div className="text-gray-400 dark:text-gray-500 text-5xl mb-4">🔔</div>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Notifications Yet</h3>
+              <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+                You'll receive notifications here when guests submit forms, update their RSVPs,
+                or when there are important updates for your weddings.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Notification Types Legend */}
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Notification Types</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-green-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Form Submissions</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-blue-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">RSVP Updates</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-purple-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Guest Messages</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-orange-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Reminders</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // ROOT ADMIN VIEW - Platform notifications
+  // ============================================
   return (
     <div className="space-y-6">
       {/* Header */}

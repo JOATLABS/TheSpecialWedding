@@ -65,6 +65,12 @@ export interface WeddingPartyMember {
   linked_guest_email?: string;
 }
 
+export interface WeddingPartySyncSettings {
+  sync_enabled: boolean;
+  sync_mode: 'auto' | 'manual';
+  last_synced_at?: string;
+}
+
 export interface Wedding {
   id: string;
   slug: string;
@@ -79,6 +85,7 @@ export interface Wedding {
   featured_image?: string;
   our_story?: OurStory;
   wedding_party?: WeddingPartyMember[];
+  wedding_party_sync?: WeddingPartySyncSettings;
   created_at?: string;
   [key: string]: any; // for flexibility (additional fields)
 }

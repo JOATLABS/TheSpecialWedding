@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
+import { MultiSelect } from '@/components/ui/MultiSelect';
+import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
 
 interface Wedding {
  id?: string;
@@ -355,7 +357,7 @@ export default function AdminRemindersPage() {
 
  try {
  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- const response = await fetch(`${baseUrl}/admin/reminders/send`, {
+ const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -372,7 +374,12 @@ export default function AdminRemindersPage() {
  throw new Error(errorData.detail || 'Failed to send messages');
  }
 
- setSuccess(`Successfully sent messages to ${selectedGuests.length} guests!`);
+ const result = await response.json();
+ if (result.sent > 0) {
+ setSuccess(`Successfully sent messages to ${result.sent} guests!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`);
+ } else {
+ setError('No messages sent. Guests may have opted out or have no phone numbers.');
+ }
  setCustomMessage('');
  setSelectedGuests([]);
  fetchMessageHistory();
@@ -783,42 +790,46 @@ export default function AdminRemindersPage() {
  <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Individual Messages</h2>
  {selectedWedding ? (
  <div className="space-y-6">
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
- Select Guests ({selectedGuests.length} selected)
- </label>
- <div className="max-h-64 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg p-4">
- {guestsWithPhone.map((guest) => (
- <label key={guest.id || guest._id} className="flex items-center space-x-3 py-2">
- <input
- type="checkbox"
- checked={selectedGuests.includes(guest.token)}
- onChange={(e) => {
- if (e.target.checked) {
- setSelectedGuests([...selectedGuests, guest.token]);
- } else {
- setSelectedGuests(selectedGuests.filter(token => token !== guest.token));
- }
- }}
- className="rounded border-gray-300 text-wedding-rose focus:ring-wedding-rose"
+ {/* Modern Multi-Select Dropdown */}
+ <MultiSelect
+ label={`Select Guests (${selectedGuests.length} selected)`}
+ options={guestsWithPhone.map((guest) => ({
+ value: guest.token,
+ label: guest.name,
+ sublabel: guest.phone || undefined,
+ }))}
+ selected={selectedGuests}
+ onChange={setSelectedGuests}
+ placeholder="Click to select guests..."
+ searchPlaceholder="Search by name or phone..."
+ emptyMessage="No guests with phone numbers found"
  />
- <span className="text-sm">
- {guest.name} ({guest.phone})
- </span>
+
+ {/* Message Enrichment Options */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+ Add to Message
  </label>
- ))}
- </div>
+ <MessageEnrichment
+ onInsert={(text) => {
+ setCustomMessage((prev) => prev ? `${prev}\n${text}` : text);
+ }}
+ />
  </div>
 
+ {/* Message Textarea */}
  <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">Message</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Message</label>
  <textarea
  value={customMessage}
  onChange={(e) => setCustomMessage(e.target.value)}
  placeholder="Enter your custom message..."
- rows={4}
- className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ rows={5}
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent resize-none"
  />
+ <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+ Tip: Use the buttons above to quickly add links, locations, or form references to your message.
+ </p>
  </div>
 
  <button
@@ -830,7 +841,7 @@ export default function AdminRemindersPage() {
  </button>
  </div>
  ) : (
- <p className="text-gray-500 dark:text-gray-400 dark:text-gray-400">Please select a wedding to send individual messages.</p>
+ <p className="text-gray-500 dark:text-gray-400">Please select a wedding to send individual messages.</p>
  )}
  </div>
  )}
