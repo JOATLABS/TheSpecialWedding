@@ -25,6 +25,8 @@ class RegistryItemModel(BaseModel):
 class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
+    link_url: Optional[str] = Field(default=None, description="Optional URL for a call-to-action button")
+    link_label: Optional[str] = Field(default=None, description="Label for the button (e.g., 'Book Hotel Room')")
 
 
 class PrivacySettingsModel(BaseModel):

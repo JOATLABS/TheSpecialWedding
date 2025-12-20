@@ -201,6 +201,35 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         </div>
       </div>
 
+      {/* Email Opt-in */}
+      <div className="border border-gray-300 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-700 mb-3">Email Notifications</h3>
+
+        <label className="flex items-start space-x-3 mb-4">
+          <input
+            type="checkbox"
+            {...register('email_opt_in')}
+            defaultChecked={false}
+            className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose"
+          />
+          <div className="flex-1">
+            <span className="block font-medium text-gray-700">
+              Receive email updates from {wedding.couple_names || 'the couple'}
+            </span>
+            <span className="block text-sm text-gray-600 mt-1">
+              Event reminders, schedule changes, and important wedding day information
+            </span>
+          </div>
+        </label>
+
+        <div className="bg-gray-50 p-3 rounded text-xs text-gray-600 leading-relaxed">
+          <p>
+            By checking the box above, you consent to receive email communications about this wedding.
+            You can unsubscribe at any time by clicking the unsubscribe link in any email.
+          </p>
+        </div>
+      </div>
+
       {guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0 && (
         <div className="border-t pt-6 mt-6">
           <h2 className="text-lg font-semibold text-gray-700 mb-4">

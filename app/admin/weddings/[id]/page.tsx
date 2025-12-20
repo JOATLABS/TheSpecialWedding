@@ -870,6 +870,39 @@ export default function WeddingDetailsPage() {
  />
  </div>
 
+ {/* Optional Link/Button */}
+ <div className="border-t border-gray-200 dark:border-gray-600 pt-4 mt-2">
+ <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+ Optional: Add a button link (e.g., for hotel booking)
+ </p>
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+ <div>
+ <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+ Button Label
+ </label>
+ <input
+ type="text"
+ value={faq.link_label || ''}
+ onChange={(e) => updateFAQ(index, { ...faq, link_label: e.target.value || undefined })}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm"
+ placeholder="e.g., Book Hotel Room"
+ />
+ </div>
+ <div>
+ <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+ Button URL
+ </label>
+ <input
+ type="url"
+ value={faq.link_url || ''}
+ onChange={(e) => updateFAQ(index, { ...faq, link_url: e.target.value || undefined })}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm"
+ placeholder="https://..."
+ />
+ </div>
+ </div>
+ </div>
+
  <button
  onClick={() => removeFAQ(index)}
  className="text-red-600 dark:text-red-300 hover:bg-red-50 px-3 py-1 rounded"

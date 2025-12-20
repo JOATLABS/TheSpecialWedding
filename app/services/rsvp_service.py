@@ -44,7 +44,17 @@ class RSVPService:
                 update_data["sms_opt_in"] = rsvp_data.sms_opt_in
                 if rsvp_data.sms_opt_in:
                     update_data["sms_opt_in_date"] = datetime.utcnow()
-            
+                elif rsvp_data.sms_opt_in is False:
+                    update_data["sms_opt_out_date"] = datetime.utcnow()
+
+            # Handle Email opt-in
+            if hasattr(rsvp_data, 'email_opt_in'):
+                update_data["email_opt_in"] = rsvp_data.email_opt_in
+                if rsvp_data.email_opt_in:
+                    update_data["email_opt_in_date"] = datetime.utcnow()
+                elif rsvp_data.email_opt_in is False:
+                    update_data["email_opt_out_date"] = datetime.utcnow()
+
             await self.guest_collection.update_one(
                 {"_id": guest_id},
                 {"$set": update_data}

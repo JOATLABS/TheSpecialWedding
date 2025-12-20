@@ -10,6 +10,7 @@ from bson import ObjectId
 import logging
 
 from app.models.subscription import SubscriptionStatus
+from app.services.email_service_resend import ResendEmailService
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class StripeService:
         self.users_collection = mongo.get_users_collection()
         self.plans_collection = mongo.db["subscription_plans"]
         self.stripe_customers_collection = mongo.db["stripe_customers"]
+        self.email_service = ResendEmailService()
 
     def _ensure_stripe_enabled(self):
         """Verify Stripe is properly configured"""
@@ -818,6 +820,14 @@ class StripeService:
                 )
 
             logger.info(f"Invoice paid for subscription {subscription_id}")
+
+            # Send payment success notification to user
+            await self._send_payment_notification(
+                subscription_id=subscription_id,
+                notification_type="payment_success",
+                invoice=invoice
+            )
+
             return {"status": "success", "subscription_id": subscription_id}
 
         except Exception as e:
@@ -858,11 +868,347 @@ class StripeService:
                 )
 
             logger.warning(f"Invoice payment failed for subscription {subscription_id}")
+
+            # Send payment failed notification to user
+            await self._send_payment_notification(
+                subscription_id=subscription_id,
+                notification_type="payment_failed",
+                invoice=invoice
+            )
+
             return {"status": "success", "subscription_id": subscription_id}
 
         except Exception as e:
             logger.error(f"Error handling invoice payment failed: {str(e)}")
             return {"status": "error", "message": str(e)}
+
+    # ==================== PAYMENT NOTIFICATIONS ====================
+
+    async def _send_payment_notification(
+        self,
+        subscription_id: str,
+        notification_type: str,
+        invoice: Dict[str, Any] = None
+    ) -> None:
+        """
+        Send payment notification to the subscription owner.
+        Creates both an in-app notification and sends an email.
+
+        Args:
+            subscription_id: The Stripe subscription ID
+            notification_type: 'payment_success' or 'payment_failed'
+            invoice: The invoice data from Stripe
+        """
+        try:
+            # Find the subscription and user
+            subscription = await self.subscriptions_collection.find_one({
+                "stripe_subscription_id": subscription_id
+            })
+
+            if not subscription:
+                logger.warning(f"No subscription found for notification: {subscription_id}")
+                return
+
+            user_id = subscription.get("user_id")
+            if not user_id:
+                logger.warning(f"No user_id in subscription: {subscription_id}")
+                return
+
+            # Find user by ID or email
+            user = None
+            if ObjectId.is_valid(user_id):
+                user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+            if not user:
+                user = await self.users_collection.find_one({"email": user_id})
+
+            if not user or not user.get("email"):
+                logger.warning(f"User not found for notification: {user_id}")
+                return
+
+            user_email = user.get("email")
+            user_name = user.get("first_name") or user.get("company_name") or user_email.split("@")[0]
+
+            # Get plan details
+            plan = None
+            if subscription.get("plan_id"):
+                try:
+                    if ObjectId.is_valid(subscription["plan_id"]):
+                        plan = await self.plans_collection.find_one({"_id": ObjectId(subscription["plan_id"])})
+                    else:
+                        plan = await self.plans_collection.find_one({"_id": subscription["plan_id"]})
+                except Exception:
+                    pass
+
+            plan_name = plan.get("name", "Subscription") if plan else "Subscription"
+
+            # Calculate amount from invoice
+            amount = invoice.get("amount_paid", 0) / 100 if invoice else 0
+            currency = (invoice.get("currency", "usd") if invoice else "usd").upper()
+
+            # Create in-app notification first
+            await self._create_in_app_notification(
+                user_id=user_id,
+                user_email=user_email,
+                notification_type=notification_type,
+                plan_name=plan_name,
+                amount=amount,
+                currency=currency
+            )
+
+            # Prepare email content
+            if notification_type == "payment_success":
+                subject = f"Payment Received - {plan_name}"
+                html_content = self._render_payment_success_email(
+                    user_name=user_name,
+                    plan_name=plan_name,
+                    amount=amount,
+                    currency=currency,
+                    invoice_date=datetime.utcnow().strftime("%B %d, %Y"),
+                    invoice_pdf=invoice.get("invoice_pdf") if invoice else None
+                )
+            else:  # payment_failed
+                subject = f"Payment Failed - Action Required"
+                html_content = self._render_payment_failed_email(
+                    user_name=user_name,
+                    plan_name=plan_name,
+                    amount=amount,
+                    currency=currency
+                )
+
+            # Send the email
+            if not getattr(self.email_service, "configured", False):
+                logger.warning("Email service not configured, skipping email notification")
+                return
+
+            result = await self.email_service.send_email(
+                to_email=user_email,
+                subject=subject,
+                html_content=html_content,
+                email_type="billing_notification"
+            )
+
+            if result.get("success"):
+                logger.info(f"Payment notification sent to {user_email} for {notification_type}")
+            else:
+                logger.error(f"Failed to send payment notification: {result.get('error')}")
+
+        except Exception as e:
+            # Don't fail the webhook if notification fails
+            logger.error(f"Error sending payment notification: {str(e)}")
+
+    async def _create_in_app_notification(
+        self,
+        user_id: str,
+        user_email: str,
+        notification_type: str,
+        plan_name: str,
+        amount: float,
+        currency: str
+    ) -> None:
+        """
+        Create an in-app notification that appears in the notification bell.
+
+        Args:
+            user_id: The user's ID
+            user_email: The user's email
+            notification_type: 'payment_success' or 'payment_failed'
+            plan_name: Name of the subscription plan
+            amount: Payment amount
+            currency: Currency code (USD, etc.)
+        """
+        try:
+            notifications_collection = mongo.db["notifications"]
+
+            if notification_type == "payment_success":
+                notification = {
+                    "_id": ObjectId(),
+                    "title": "Payment Successful",
+                    "message": f"Your payment of ${amount:.2f} {currency} for {plan_name} was processed successfully.",
+                    "type": "billing",
+                    "target_audience": "specific_user",
+                    "user_id": user_email,  # Target specific user by email
+                    "created_by": "system",
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                    "expiry_date": None,
+                    "is_dismissible": True,
+                    "priority": "low",
+                    "status": "active",
+                    "read_by": [],
+                    "dismissed_by": [],
+                    "metadata": {
+                        "notification_type": "payment_success",
+                        "amount": amount,
+                        "currency": currency,
+                        "plan_name": plan_name
+                    }
+                }
+            else:  # payment_failed
+                notification = {
+                    "_id": ObjectId(),
+                    "title": "Payment Failed",
+                    "message": f"We couldn't process your payment of ${amount:.2f} {currency} for {plan_name}. Please update your payment method.",
+                    "type": "billing",
+                    "target_audience": "specific_user",
+                    "user_id": user_email,  # Target specific user by email
+                    "created_by": "system",
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                    "expiry_date": None,
+                    "is_dismissible": False,  # Payment failures should not be easily dismissed
+                    "priority": "urgent",  # High priority for failed payments
+                    "status": "active",
+                    "read_by": [],
+                    "dismissed_by": [],
+                    "metadata": {
+                        "notification_type": "payment_failed",
+                        "amount": amount,
+                        "currency": currency,
+                        "plan_name": plan_name,
+                        "action_url": "/admin/planner/billing"
+                    }
+                }
+
+            await notifications_collection.insert_one(notification)
+            logger.info(f"Created in-app {notification_type} notification for user {user_email}")
+
+        except Exception as e:
+            logger.error(f"Error creating in-app notification: {str(e)}")
+
+    def _render_payment_success_email(
+        self,
+        user_name: str,
+        plan_name: str,
+        amount: float,
+        currency: str,
+        invoice_date: str,
+        invoice_pdf: Optional[str] = None
+    ) -> str:
+        """Render payment success email HTML"""
+        download_section = ""
+        if invoice_pdf:
+            download_section = f'''
+                <tr>
+                  <td style="padding:20px 40px 0;">
+                    <a href="{invoice_pdf}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500;">Download Invoice PDF</a>
+                  </td>
+                </tr>
+            '''
+
+        return f'''
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:40px 0;">
+          <tr>
+            <td align="center" style="padding:0 16px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;">
+                <tr>
+                  <td style="padding:40px 40px 0;text-align:center;">
+                    <div style="width:64px;height:64px;background:#dcfce7;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;">
+                      <span style="font-size:28px;">✓</span>
+                    </div>
+                    <h1 style="margin:0 0 8px;font-size:24px;font-weight:600;color:#0f172a;font-family:'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;">Payment Successful</h1>
+                    <p style="margin:0;color:#64748b;font-size:14px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;">Thank you for your payment</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;">
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {user_name},</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We've received your payment. Here are the details:</p>
+
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:12px;padding:20px;margin-bottom:24px;">
+                      <tr>
+                        <td style="padding:8px 16px;">
+                          <p style="margin:0;font-size:14px;color:#64748b;">Plan</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{plan_name}</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 16px;">
+                          <p style="margin:0;font-size:14px;color:#64748b;">Amount</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">${amount:.2f} {currency}</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 16px;">
+                          <p style="margin:0;font-size:14px;color:#64748b;">Date</p>
+                          <p style="margin:4px 0 0;font-size:16px;font-weight:500;color:#0f172a;">{invoice_date}</p>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <p style="margin:0;font-size:14px;color:#64748b;line-height:1.6;">You can view your billing history and manage your subscription in your account settings.</p>
+                  </td>
+                </tr>
+                {download_section}
+                <tr>
+                  <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;">
+                    <p style="margin:0;">If you have any questions, please contact our support team.</p>
+                    <p style="margin:12px 0 0;">© {datetime.utcnow().year} The Special Wedding. All rights reserved.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        '''
+
+    def _render_payment_failed_email(
+        self,
+        user_name: str,
+        plan_name: str,
+        amount: float,
+        currency: str
+    ) -> str:
+        """Render payment failed email HTML"""
+        return f'''
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:40px 0;">
+          <tr>
+            <td align="center" style="padding:0 16px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;">
+                <tr>
+                  <td style="padding:40px 40px 0;text-align:center;">
+                    <div style="width:64px;height:64px;background:#fee2e2;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;">
+                      <span style="font-size:28px;">!</span>
+                    </div>
+                    <h1 style="margin:0 0 8px;font-size:24px;font-weight:600;color:#0f172a;font-family:'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;">Payment Failed</h1>
+                    <p style="margin:0;color:#dc2626;font-size:14px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;">Action required to continue your subscription</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;">
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Hi {user_name},</p>
+                    <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569;">We were unable to process your payment of <strong>${amount:.2f} {currency}</strong> for your <strong>{plan_name}</strong> subscription.</p>
+
+                    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;margin-bottom:24px;">
+                      <p style="margin:0;font-size:14px;color:#991b1b;line-height:1.6;"><strong>What you need to do:</strong></p>
+                      <ul style="margin:12px 0 0;padding-left:20px;color:#991b1b;font-size:14px;line-height:1.8;">
+                        <li>Check that your card hasn't expired</li>
+                        <li>Ensure sufficient funds are available</li>
+                        <li>Update your payment method if needed</li>
+                      </ul>
+                    </div>
+
+                    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                      <tr>
+                        <td style="background:#2563eb;border-radius:8px;">
+                          <a href="https://app.thespecialwedding.com/admin/planner/billing" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <p style="margin:24px 0 0;font-size:14px;color:#64748b;line-height:1.6;">If you don't update your payment method, your subscription features may be limited.</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;">
+                    <p style="margin:0;">If you believe this is an error or need assistance, please contact our support team.</p>
+                    <p style="margin:12px 0 0;">© {datetime.utcnow().year} The Special Wedding. All rights reserved.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        '''
 
     # ==================== CONNECT / MARKETPLACE ====================
 

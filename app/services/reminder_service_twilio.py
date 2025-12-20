@@ -216,6 +216,12 @@ class TwilioRSVPReminderHelper:
                 logger.info(f"Twilio invite sent to {phone}, SID: {twilio_message.sid}")
                 status = "success"
                 sent_count += 1
+
+                # Mark guest as having received an invite
+                await self.guest_collection.update_one(
+                    {"_id": guest_id},
+                    {"$set": {"invite_sent": True, "invite_sent_date": now}}
+                )
             except Exception as e:
                 logger.error(f"Failed to send Twilio invite to {phone}: {str(e)}")
                 status = f"failed: {str(e)}"

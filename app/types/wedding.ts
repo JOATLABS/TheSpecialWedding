@@ -23,6 +23,8 @@ export interface RegistryItem {
 export interface FAQItem {
   question: string;
   answer: string;
+  link_url?: string;
+  link_label?: string;
 }
 
 export interface RSVPConfig {

@@ -14,6 +14,9 @@ interface UserProfile {
     is_wedding_planner: boolean;
     is_vendor: boolean;
     user_data?: any;
+    profile_image_url?: string;
+    first_name?: string;
+    last_name?: string;
 }
 
 type AdminContextType = {
