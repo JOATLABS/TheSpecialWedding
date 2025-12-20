@@ -90,6 +90,7 @@ async def send_individual_reminders(payload: IndividualReminderRequest):
 
     sent_count = 0
     failed_count = 0
+    failure_reasons = []
     logs = []
     now = datetime.now(timezone.utc)
 
@@ -102,19 +103,40 @@ async def send_individual_reminders(payload: IndividualReminderRequest):
         if not guest:
             logger.warning(f"Guest not found for token: {token}")
             failed_count += 1
+            failure_reasons.append(f"Guest not found for token: {token}")
             continue
 
+        guest_name = guest.get("name", "Unknown")
         phone = guest.get("phone")
         if not phone:
-            logger.warning(f"Guest {guest.get('name')} has no phone number")
+            logger.warning(f"Guest {guest_name} has no phone number")
             failed_count += 1
+            failure_reasons.append(f"{guest_name} has no phone number")
             continue
 
-        # Check if guest has explicitly opted out
-        if guest.get("sms_opt_in") == False:
-            logger.info(f"Guest {guest.get('name')} has opted out of SMS")
-            failed_count += 1
-            continue
+        # Check opt-in status for subsequent messages (after invite was sent)
+        invite_sent = guest.get("invite_sent", False)
+        sms_opt_in = guest.get("sms_opt_in")
+
+        # If invite was already sent, check opt-in status
+        if invite_sent:
+            # After first invite: only send if explicitly opted in
+            if sms_opt_in is not True:
+                if sms_opt_in is False:
+                    logger.info(f"Guest {guest_name} has opted out of SMS")
+                    failure_reasons.append(f"{guest_name} has opted out of SMS notifications")
+                else:
+                    logger.info(f"Guest {guest_name} hasn't opted in to SMS (status: not set)")
+                    failure_reasons.append(f"{guest_name} hasn't opted in to SMS notifications yet (please wait for their RSVP)")
+                failed_count += 1
+                continue
+        else:
+            # First message: only block if explicitly opted out
+            if sms_opt_in is False:
+                logger.info(f"Guest {guest_name} has opted out of SMS")
+                failed_count += 1
+                failure_reasons.append(f"{guest_name} has opted out of SMS notifications")
+                continue
 
         # Ensure phone is in E.164 format
         if not phone.startswith('+'):
@@ -145,6 +167,7 @@ async def send_individual_reminders(payload: IndividualReminderRequest):
             logger.error(f"Failed to send SMS to {phone}: {e}")
             failed_count += 1
             status = f"failed: {str(e)}"
+            failure_reasons.append(f"SMS to {guest_name} failed: {str(e)}")
 
         # Log the attempt
         logs.append({
@@ -167,7 +190,8 @@ async def send_individual_reminders(payload: IndividualReminderRequest):
         "sent": sent_count,
         "failed": failed_count,
         "total": len(payload.guest_tokens),
-        "provider": "twilio"
+        "provider": "twilio",
+        "failure_reasons": failure_reasons if failure_reasons else None
     }
 
 

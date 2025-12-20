@@ -68,11 +68,23 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
             href="/admin/profile"
             className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-secondary-400 flex items-center justify-center">
-              <User size={16} className="text-white" />
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-secondary-400 flex items-center justify-center overflow-hidden">
+              {userProfile?.profile_image_url ? (
+                <img
+                  src={userProfile.profile_image_url}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              ) : userProfile?.first_name || userProfile?.last_name ? (
+                <span className="text-sm font-semibold text-white">
+                  {(userProfile.first_name?.charAt(0) || '') + (userProfile.last_name?.charAt(0) || '')}
+                </span>
+              ) : (
+                <User size={16} className="text-white" />
+              )}
             </div>
             <span className="hidden sm:block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {userProfile?.email?.split('@')[0] || 'User'}
+              {userProfile?.first_name || userProfile?.email?.split('@')[0] || 'User'}
             </span>
           </Link>
         </div>

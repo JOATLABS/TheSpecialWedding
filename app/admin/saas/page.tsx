@@ -21,6 +21,11 @@ interface SubscriptionPlan {
  features: {
  [key: string]: boolean;
  };
+ // Metered billing
+ is_metered?: boolean;
+ meter_event_name?: string;
+ meter_id?: string;
+ // Display
  is_featured: boolean;
  is_active: boolean;
  display_order: number;
@@ -1013,6 +1018,11 @@ const SaasAdminDashboard = () => {
  <p>Max Weddings: {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings}</p>
  <p>AI Credits: {plan.ai_credits_monthly}/month</p>
  <p>Storage: {plan.storage_gb}GB</p>
+ {plan.is_metered && (
+ <p className="text-blue-600 dark:text-blue-400 font-medium">
+ Metered: {plan.meter_event_name || 'wedding_active'}
+ </p>
+ )}
  </div>
 
  <div className="space-y-2">
@@ -1768,6 +1778,10 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  is_featured: plan?.is_featured || false,
  is_active: plan?.is_active !== false,
  display_order: plan?.display_order || 0,
+ // Metered billing configuration
+ is_metered: (plan as any)?.is_metered || false,
+ meter_event_name: (plan as any)?.meter_event_name || 'wedding_active',
+ meter_id: (plan as any)?.meter_id || '',
  features: {
  basic_website_builder: plan?.features?.basic_website_builder || false,
  guest_management: plan?.features?.guest_management || false,
@@ -1858,6 +1872,55 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  onChange={(e) => setFormData(prev => ({ ...prev, storage_gb: parseInt(e.target.value) || 0 }))}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
+ </div>
+ </div>
+
+ {/* Metered Billing Configuration */}
+ <div className="border-t border-gray-200 dark:border-gray-600 pt-4 mt-4">
+ <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center">
+ <span className="mr-2">Metered Billing</span>
+ <span className="text-xs font-normal text-gray-500">(per-wedding billing)</span>
+ </h4>
+ <div className="space-y-3">
+ <label className="flex items-center space-x-2">
+ <input
+ type="checkbox"
+ checked={formData.is_metered}
+ onChange={(e) => setFormData(prev => ({ ...prev, is_metered: e.target.checked }))}
+ className="rounded"
+ />
+ <span className="text-sm">Enable metered billing (charge per wedding created)</span>
+ </label>
+ {formData.is_metered && (
+ <div className="grid grid-cols-2 gap-4 ml-6">
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+ Meter Event Name
+ </label>
+ <input
+ type="text"
+ value={formData.meter_event_name}
+ onChange={(e) => setFormData(prev => ({ ...prev, meter_event_name: e.target.value }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="wedding_active"
+ />
+ <p className="text-xs text-gray-500 mt-1">Must match Stripe Billing Meter event name</p>
+ </div>
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+ Stripe Meter ID
+ </label>
+ <input
+ type="text"
+ value={formData.meter_id}
+ onChange={(e) => setFormData(prev => ({ ...prev, meter_id: e.target.value }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="mtr_..."
+ />
+ <p className="text-xs text-gray-500 mt-1">From Stripe Dashboard → Billing → Meters</p>
+ </div>
+ </div>
+ )}
  </div>
  </div>
 

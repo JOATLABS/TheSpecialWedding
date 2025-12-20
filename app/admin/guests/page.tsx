@@ -30,6 +30,10 @@ interface Guest {
   plus_one_allowed: boolean;
   number_of_plus_ones_allowed?: number;
   plus_one_submitted: boolean;
+  sms_opt_in?: boolean | null;
+  email_opt_in?: boolean | null;
+  invite_sent?: boolean;
+  invite_sent_date?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -284,6 +288,53 @@ export default function AdminGuestsPage() {
     setTimeout(() => setSuccessMessage(''), 3000);
   };
 
+  // Notification status helper
+  const getNotificationStatus = (guest: Guest) => {
+    const smsStatus = guest.sms_opt_in === true ? 'in' : guest.sms_opt_in === false ? 'out' : 'pending';
+    const emailStatus = guest.email_opt_in === true ? 'in' : guest.email_opt_in === false ? 'out' : 'pending';
+    return { sms: smsStatus, email: emailStatus, inviteSent: guest.invite_sent };
+  };
+
+  // Notification icons component
+  const NotificationIcons = ({ guest }: { guest: Guest }) => {
+    const status = getNotificationStatus(guest);
+    return (
+      <div className="flex gap-1 mt-1">
+        {/* SMS Status */}
+        <span
+          title={`SMS: ${status.sms === 'in' ? 'Opted In' : status.sms === 'out' ? 'Opted Out' : 'Not Set'}`}
+          className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded ${
+            status.sms === 'in' ? 'bg-green-100 text-green-700' :
+            status.sms === 'out' ? 'bg-red-100 text-red-700' :
+            'bg-gray-100 text-gray-500'
+          }`}
+        >
+          📱{status.sms === 'in' ? '✓' : status.sms === 'out' ? '✗' : '?'}
+        </span>
+        {/* Email Status */}
+        <span
+          title={`Email: ${status.email === 'in' ? 'Opted In' : status.email === 'out' ? 'Opted Out' : 'Not Set'}`}
+          className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded ${
+            status.email === 'in' ? 'bg-green-100 text-green-700' :
+            status.email === 'out' ? 'bg-red-100 text-red-700' :
+            'bg-gray-100 text-gray-500'
+          }`}
+        >
+          ✉️{status.email === 'in' ? '✓' : status.email === 'out' ? '✗' : '?'}
+        </span>
+        {/* Invite Sent */}
+        {status.inviteSent && (
+          <span
+            title="Invite Sent"
+            className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-100 text-blue-700"
+          >
+            📨
+          </span>
+        )}
+      </div>
+    );
+  };
+
   // ==================== FILTERING & SORTING ====================
 
   const filteredAndSortedGuests = useMemo(() => {
@@ -339,10 +390,11 @@ export default function AdminGuestsPage() {
           bValue = getGroupLabel(b.group_id);
           break;
         case 'rsvp_status':
+          // RSVP status priority: 0 = Not Invited, 1 = Pending (invited), 2 = RSVP'd
           const aHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(a.id || a._id));
           const bHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(b.id || b._id));
-          aValue = aHasRSVP ? 1 : 0;
-          bValue = bHasRSVP ? 1 : 0;
+          aValue = aHasRSVP ? 2 : (a.invite_sent ? 1 : 0);
+          bValue = bHasRSVP ? 2 : (b.invite_sent ? 1 : 0);
           break;
         case 'plus_ones':
           aValue = getPlusOnesForGuest(a.id || a._id || '').length;
@@ -585,17 +637,12 @@ export default function AdminGuestsPage() {
           setReminderModal(null);
           setReminderMessage('');
         } else {
-          // Provide more specific error messaging
+          // Display specific failure reasons from backend
           let errorMsg = 'Failed to send reminder.';
-          if (result.errors && result.errors.length > 0) {
-            errorMsg = result.errors[0];
-          } else if (result.failed > 0) {
-            // Check if guest has a phone number
-            if (!reminderModal?.guest.phone) {
-              errorMsg = 'Guest has no phone number.';
-            } else {
-              errorMsg = 'SMS delivery failed. Please verify the phone number format includes country code (e.g., +1234567890).';
-            }
+          if (result.failure_reasons && result.failure_reasons.length > 0) {
+            errorMsg = result.failure_reasons.join('. ');
+          } else if (!reminderModal?.guest.phone) {
+            errorMsg = 'Guest has no phone number.';
           }
           setError(errorMsg);
         }
@@ -813,24 +860,35 @@ export default function AdminGuestsPage() {
         {selectedWedding && (
           <>
             {/* Stats Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</h3>
-                <p className="text-3xl font-bold text-wedding-navy mt-2">{guests.length}</p>
-              </div>
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs Received</h3>
-                <p className="text-3xl font-bold text-green-600 dark:text-green-300 mt-2">{rsvps.length}</p>
-              </div>
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending RSVPs</h3>
-                <p className="text-3xl font-bold text-orange-600 mt-2">{guests.length - rsvps.length}</p>
-              </div>
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Plus Ones</h3>
-                <p className="text-3xl font-bold text-wedding-sage mt-2">{plusOnes.length}</p>
-              </div>
-            </div>
+            {(() => {
+              const guestsWithRsvp = new Set(rsvps.map(r => normalizeId(r.guest_id)));
+              const invitedNoRsvp = guests.filter(g => g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
+              const notInvited = guests.filter(g => !g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</h3>
+                    <p className="text-3xl font-bold text-wedding-navy mt-2">{guests.length}</p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs Received</h3>
+                    <p className="text-3xl font-bold text-green-600 dark:text-green-300 mt-2">{rsvps.length}</p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Awaiting Response</h3>
+                    <p className="text-3xl font-bold text-yellow-600 mt-2">{invitedNoRsvp}</p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Not Invited</h3>
+                    <p className="text-3xl font-bold text-gray-500 mt-2">{notInvited}</p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Plus Ones</h3>
+                    <p className="text-3xl font-bold text-wedding-sage mt-2">{plusOnes.length}</p>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Controls */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-8">
@@ -867,7 +925,7 @@ export default function AdminGuestsPage() {
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
-                      Pending ({guests.length - rsvps.length})
+                      Awaiting RSVP ({guests.length - rsvps.length})
                     </button>
                     <button
                       onClick={() => setActiveTab('import')}
@@ -1132,6 +1190,7 @@ export default function AdminGuestsPage() {
                                 <td className="px-4 py-3">
                                   <div className="font-medium text-gray-900 dark:text-gray-100">{guest.name}</div>
                                   <div className="text-xs text-gray-500">{guest.role}</div>
+                                  <NotificationIcons guest={guest} />
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                                   {guest.email || '-'}
@@ -1147,9 +1206,13 @@ export default function AdminGuestsPage() {
                                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
                                       {rsvp.confirmed_by_admin ? 'Confirmed' : 'RSVP\'d'}
                                     </span>
-                                  ) : (
+                                  ) : guest.invite_sent ? (
                                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
                                       Pending
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                      Not Invited
                                     </span>
                                   )}
                                 </td>
@@ -1202,6 +1265,37 @@ export default function AdminGuestsPage() {
                                           <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt> <dd className="inline ml-2 font-mono text-xs bg-gray-200 dark:bg-slate-600 px-2 py-1 rounded">{guest.token}</dd></div>
                                           <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{getGroupLabel(guest.group_id)}</dd></div>
                                           <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed})` : 'No'}</dd></div>
+                                        </dl>
+                                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 mt-4">Notification Preferences</h4>
+                                        <dl className="space-y-1 text-sm">
+                                          <div className="flex items-center gap-2">
+                                            <dt className="font-medium text-gray-700 dark:text-gray-300">SMS:</dt>
+                                            <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                              guest.sms_opt_in === true ? 'bg-green-100 text-green-700' :
+                                              guest.sms_opt_in === false ? 'bg-red-100 text-red-700' :
+                                              'bg-gray-100 text-gray-500'
+                                            }`}>
+                                              {guest.sms_opt_in === true ? 'Opted In' : guest.sms_opt_in === false ? 'Opted Out' : 'Not Set'}
+                                            </dd>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <dt className="font-medium text-gray-700 dark:text-gray-300">Email:</dt>
+                                            <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                              guest.email_opt_in === true ? 'bg-green-100 text-green-700' :
+                                              guest.email_opt_in === false ? 'bg-red-100 text-red-700' :
+                                              'bg-gray-100 text-gray-500'
+                                            }`}>
+                                              {guest.email_opt_in === true ? 'Opted In' : guest.email_opt_in === false ? 'Opted Out' : 'Not Set'}
+                                            </dd>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <dt className="font-medium text-gray-700 dark:text-gray-300">Invite Sent:</dt>
+                                            <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                              guest.invite_sent ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                                            }`}>
+                                              {guest.invite_sent ? 'Yes' : 'No'}
+                                            </dd>
+                                          </div>
                                         </dl>
                                       </div>
                                       {rsvp && (

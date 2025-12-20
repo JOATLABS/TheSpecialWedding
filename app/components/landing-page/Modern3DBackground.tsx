@@ -82,52 +82,50 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
           />
         </div>
         
-        {/* Theme-based overlay - lighter to preserve 3D parallax effect */}
+        {/* Theme-based overlay */}
         {theme?.background_style === 'gradient' && (
-          <div
+          <div 
             className="absolute inset-0"
             style={{
-              background: `linear-gradient(135deg, ${theme.primary_color}66, ${theme.secondary_color}66)`
+              background: `linear-gradient(135deg, ${theme.primary_color}CC, ${theme.secondary_color}CC)`
             }}
           />
         )}
-
+        
         {theme?.background_style === 'solid' && (
-          <div
+          <div 
             className="absolute inset-0"
             style={{
-              backgroundColor: `${theme.primary_color}66`
+              backgroundColor: `${theme.primary_color}CC`
             }}
           />
         )}
-
-        {/* For image mode - minimal overlay to keep image visible */}
-        {theme?.background_style === 'image' && (
-          <div className="absolute inset-0 bg-black/10" />
-        )}
-
-        {/* Frost effect for default style (when not explicitly set) */}
-        {!theme?.background_style && (
+        
+        {/* Frost effect for glass style (default) */}
+        {(!theme?.background_style || theme.background_style === 'gradient') && (
           <>
-            {/* Light overlay for text contrast - reduced opacity */}
-            <div className="absolute inset-0 bg-slate-900/20" />
+            {/* Dark overlay for better text contrast */}
+            <div className="absolute inset-0 bg-slate-900/35" />
+
+            {/* Blur overlay for depth */}
+            <div className="absolute inset-0 backdrop-blur-[2px]" />
           </>
         )}
 
-        {/* Central glow to lift foreground cards - subtle */}
+        {/* Central glow to lift foreground cards */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
-            background: 'radial-gradient(circle at center, rgba(255,255,255,0.15), rgba(195,255,255,0) 62%)',
+            background: 'radial-gradient(circle at center, rgba(255,255,255,0.26), rgba(195,255,255,0) 62%)',
             transform: `translate3d(0, ${highlightOffset}px, 0)`
           }}
         />
 
-        {/* Subtle vignette for depth perception - reduced */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(15,23,42,0),rgba(15,23,42,0.35))] opacity-60" />
+        {/* Subtle vignette for depth perception */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(15,23,42,0),rgba(15,23,42,0.55))] opacity-70" />
 
-        {/* Directional depth gradient - lighter at base for better image visibility */}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/10 to-slate-950/40" />
+        {/* Directional depth gradient - darker at base */}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/25 to-slate-950/70" />
 
         {/* Highlight streak to simulate light pass */}
         <div

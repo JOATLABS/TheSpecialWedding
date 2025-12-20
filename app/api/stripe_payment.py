@@ -399,6 +399,216 @@ async def create_payment_intent(
         raise HTTPException(status_code=500, detail=f"Failed to create payment intent: {str(e)}")
 
 
+# ==================== BILLING HISTORY ENDPOINTS ====================
+
+@router.get("/invoices")
+async def get_invoices(
+    limit: int = 10,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get billing history (invoices) for the current user
+
+    Returns list of past invoices with amounts, dates, status, and PDF links.
+    """
+    try:
+        import stripe
+        from app.core.settings import settings
+        from app.core.database import mongo
+        from bson import ObjectId
+
+        if not settings.stripe_enabled or not settings.stripe_secret_key:
+            return []
+
+        stripe.api_key = settings.stripe_secret_key
+        user_id = str(current_user.user_data.get("_id"))
+
+        # Get customer ID from stripe_customers collection
+        customer_record = await mongo.db["stripe_customers"].find_one({"user_id": user_id})
+        if not customer_record or not customer_record.get("stripe_customer_id"):
+            return []
+
+        customer_id = customer_record["stripe_customer_id"]
+
+        # Fetch invoices from Stripe
+        invoices = stripe.Invoice.list(
+            customer=customer_id,
+            limit=limit,
+            status="paid"  # Only show paid invoices
+        )
+
+        result = []
+        for invoice in invoices.data:
+            result.append({
+                "id": invoice.id,
+                "date": invoice.created,  # Unix timestamp
+                "amount": invoice.amount_paid,  # In cents
+                "status": invoice.status,
+                "invoice_pdf": invoice.invoice_pdf,
+                "description": invoice.lines.data[0].description if invoice.lines.data else "Subscription payment",
+                "period_start": invoice.period_start,
+                "period_end": invoice.period_end,
+                "number": invoice.number
+            })
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error fetching invoices: {str(e)}")
+        return []
+
+
+@router.get("/payment-method")
+async def get_payment_method(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get the default payment method details for the current user
+
+    Returns masked card information (last 4 digits, brand, expiry).
+    """
+    try:
+        import stripe
+        from app.core.settings import settings
+        from app.core.database import mongo
+        from bson import ObjectId
+
+        if not settings.stripe_enabled or not settings.stripe_secret_key:
+            return {"has_payment_method": False}
+
+        stripe.api_key = settings.stripe_secret_key
+        user_id = str(current_user.user_data.get("_id"))
+
+        # Get customer ID
+        customer_record = await mongo.db["stripe_customers"].find_one({"user_id": user_id})
+        if not customer_record or not customer_record.get("stripe_customer_id"):
+            return {"has_payment_method": False}
+
+        customer_id = customer_record["stripe_customer_id"]
+
+        # Get customer to find default payment method
+        customer = stripe.Customer.retrieve(customer_id)
+
+        default_pm_id = customer.invoice_settings.default_payment_method
+        if not default_pm_id:
+            # Try to get from subscriptions
+            subscriptions = stripe.Subscription.list(customer=customer_id, limit=1)
+            if subscriptions.data:
+                default_pm_id = subscriptions.data[0].default_payment_method
+
+        if not default_pm_id:
+            return {"has_payment_method": False}
+
+        # Retrieve payment method details
+        pm = stripe.PaymentMethod.retrieve(default_pm_id)
+
+        if pm.type == "card":
+            return {
+                "has_payment_method": True,
+                "type": "card",
+                "card_brand": pm.card.brand.capitalize() if pm.card.brand else "Card",
+                "card_last_four": pm.card.last4,
+                "card_exp_month": pm.card.exp_month,
+                "card_exp_year": pm.card.exp_year,
+                "card_funding": pm.card.funding
+            }
+        else:
+            return {
+                "has_payment_method": True,
+                "type": pm.type
+            }
+
+    except Exception as e:
+        logger.error(f"Error fetching payment method: {str(e)}")
+        return {"has_payment_method": False}
+
+
+@router.get("/subscription")
+async def get_subscription_details(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get detailed subscription information including payment method
+
+    Returns subscription status, plan details, billing dates, and card info.
+    """
+    try:
+        import stripe
+        from app.core.settings import settings
+        from app.core.database import mongo
+        from bson import ObjectId
+        from datetime import datetime
+
+        if not settings.stripe_enabled or not settings.stripe_secret_key:
+            raise HTTPException(status_code=503, detail="Stripe is not enabled")
+
+        stripe.api_key = settings.stripe_secret_key
+        user_id = str(current_user.user_data.get("_id"))
+
+        # Get local subscription record
+        subscription_record = await mongo.db["user_subscriptions"].find_one({"user_id": user_id})
+        if not subscription_record:
+            raise HTTPException(status_code=404, detail="No subscription found")
+
+        plan_id = subscription_record.get("plan_id")
+        plan = None
+        if plan_id:
+            plan = await mongo.db["subscription_plans"].find_one({"_id": plan_id})
+
+        # Get customer and payment method from Stripe
+        customer_record = await mongo.db["stripe_customers"].find_one({"user_id": user_id})
+        card_info = {}
+
+        if customer_record and customer_record.get("stripe_customer_id"):
+            try:
+                customer = stripe.Customer.retrieve(customer_record["stripe_customer_id"])
+
+                # Get default payment method
+                default_pm_id = customer.invoice_settings.default_payment_method
+                if not default_pm_id:
+                    subs = stripe.Subscription.list(customer=customer.id, limit=1)
+                    if subs.data:
+                        default_pm_id = subs.data[0].default_payment_method
+
+                if default_pm_id:
+                    pm = stripe.PaymentMethod.retrieve(default_pm_id)
+                    if pm.type == "card":
+                        card_info = {
+                            "card_brand": pm.card.brand.capitalize() if pm.card.brand else "Card",
+                            "card_last_four": pm.card.last4,
+                            "card_exp_month": pm.card.exp_month,
+                            "card_exp_year": pm.card.exp_year
+                        }
+            except Exception as e:
+                logger.warning(f"Could not fetch Stripe card info: {e}")
+
+        # Build response
+        response = {
+            "plan_id": plan_id,
+            "status": subscription_record.get("status", "active"),
+            "billing_interval": subscription_record.get("billing_interval", "monthly"),
+            "current_period_start": subscription_record.get("current_period_start"),
+            "current_period_end": subscription_record.get("current_period_end"),
+            "created_at": subscription_record.get("created_at"),
+            "stripe_subscription_id": subscription_record.get("stripe_subscription_id"),
+            "stripe_customer_id": subscription_record.get("stripe_customer_id"),
+            "payment_status": subscription_record.get("payment_status"),
+            **card_info
+        }
+
+        if plan:
+            response["plan_name"] = plan.get("name")
+            response["plan_description"] = plan.get("description")
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching subscription details: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch subscription: {str(e)}")
+
+
 # ==================== CONFIGURATION ENDPOINT ====================
 
 @router.get("/config")
