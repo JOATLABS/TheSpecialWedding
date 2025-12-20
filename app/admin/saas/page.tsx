@@ -56,7 +56,7 @@ interface ThemeConfig {
  fallback_images: string[];
 }
 
-interface SaasFullConfig {
+export interface SaasFullConfig {
  // Legacy hero fields (backward compatibility)
  hero_title: string;
  hero_subtitle: string;

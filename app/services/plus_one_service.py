@@ -66,6 +66,20 @@ class PlusOneService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to update plus-one: {str(e)}")
 
+    async def get_plus_ones_by_wedding_id(self, wedding_id: str):
+        try:
+            guest_collection = mongo.get_guest_collection()
+            guests = await guest_collection.find({"wedding_id": wedding_id}).to_list(length=None)
+            guest_ids = [str(g["_id"]) for g in guests]
+
+            results = await self.collection.find({"guest_id": {"$in": guest_ids}}).to_list(length=None)
+            for r in results:
+                r["id"] = str(r["_id"])
+                r.pop("_id", None)
+            return results
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve plus-ones: {str(e)}")
+
     async def delete_plus_one(self, plus_one_id: str):
         try:
             # Get plus-one to find guest_id
@@ -80,7 +94,7 @@ class PlusOneService:
             
             # Update guest's plus_one_submitted status if needed
             guest_collection = mongo.get_guest_collection()
-            guest = await guest_collection.find_one({"_id": guest_id})
+            guest = await guest_collection.find_one({"_id": ObjectId(guest_id)})
             if guest:
                 current_count = await self.collection.count_documents({"guest_id": guest_id})
                 max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
@@ -88,7 +102,7 @@ class PlusOneService:
                 # If we now have room for more plus-ones, set submitted to False
                 if current_count < max_plus_ones:
                     await guest_collection.update_one(
-                        {"_id": guest_id},
+                        {"_id": ObjectId(guest_id)},
                         {"$set": {"plus_one_submitted": False, "updated_at": datetime.utcnow()}}
                     )
             

@@ -50,13 +50,12 @@ export default function Checklist({ weddingId, token }: ChecklistProps) {
 
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      await fetch(`${baseUrl}/admin/weddings/${weddingId}/checklist/${itemId}`, {
+      const newCompletedStatus = !item.completed;
+      await fetch(`${baseUrl}/admin/weddings/${weddingId}/checklist/${itemId}?completed=${newCompletedStatus}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ completed: !item.completed }),
       });
 
       setItems(items.map(i => (i.id === itemId ? { ...i, completed: !i.completed } : i)));

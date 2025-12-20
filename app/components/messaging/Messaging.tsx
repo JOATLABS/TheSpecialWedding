@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Inbox from './Inbox';
 import ConversationView from './ConversationView';
 import Composer from './Composer';
-import { ConversationResponse, MessageResponse } from '../../models/messaging';
+import { ConversationResponse, MessageResponse } from '../../types/messaging';
 
 interface MessagingProps {
   weddingId: string;
@@ -16,9 +16,19 @@ const Messaging: React.FC<MessagingProps> = ({ weddingId }) => {
   const [socket, setSocket] = useState<WebSocket | null>(null);
 
   const fetchConversations = useCallback(async () => {
+    const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+    if (!token) {
+      console.error("No auth token found");
+      return;
+    }
+
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/messaging/weddings/${weddingId}/conversations`);
+      const response = await fetch(`${baseUrl}/messaging/weddings/${weddingId}/conversations`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setConversations(data.items);
@@ -32,9 +42,19 @@ const Messaging: React.FC<MessagingProps> = ({ weddingId }) => {
   }, [weddingId]);
 
   const fetchMessages = useCallback(async (conversationId: string) => {
+    const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+    if (!token) {
+      console.error("No auth token found");
+      return;
+    }
+
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/messaging/weddings/${weddingId}/conversations/${conversationId}/messages`);
+      const response = await fetch(`${baseUrl}/messaging/weddings/${weddingId}/conversations/${conversationId}/messages`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages);
@@ -75,6 +95,12 @@ const Messaging: React.FC<MessagingProps> = ({ weddingId }) => {
   }, [activeConversation, fetchMessages]);
 
   const handleSendMessage = async (message: string, file?: File) => {
+    const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+    if (!token) {
+      console.error("No auth token found");
+      return;
+    }
+
     if (activeConversation) {
       const formData = new FormData();
       formData.append('body', message);
@@ -86,6 +112,9 @@ const Messaging: React.FC<MessagingProps> = ({ weddingId }) => {
         const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
         await fetch(`${baseUrl}/messaging/weddings/${weddingId}/conversations/${activeConversation.conversation_id}/messages`, {
           method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
           body: formData,
         });
       } catch (error) {
