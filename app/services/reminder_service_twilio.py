@@ -107,20 +107,17 @@ class TwilioReminderService:
             if not to.startswith('+'):
                 to = f"+1{to}"  # Assume US number if no country code
 
-            # Get from number from env
-            from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
-
-            # Create message with Twilio using direct phone number
-            # Try messaging service first, fallback to direct number if it fails
-            try:
+            # Prefer Messaging Service SID; if not set, require a valid from number
+            if self.messaging_service_sid:
                 message = self.client.messages.create(
                     messaging_service_sid=self.messaging_service_sid,
                     body=body,
                     to=to
                 )
-            except Exception as msg_service_error:
-                logger.warning(f"Messaging service failed, trying direct number: {str(msg_service_error)}")
-                # Fallback to direct phone number
+            else:
+                from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
+                if not from_number:
+                    raise RuntimeError("TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER is required for SMS sending")
                 message = self.client.messages.create(
                     from_=from_number,
                     body=body,
