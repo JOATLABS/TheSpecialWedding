@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 
 // ==================== INTERFACES ====================
@@ -59,15 +59,20 @@ type ViewMode = 'table' | 'cards';
 const PRESET_GROUPS = [
   { id: 'family_bride', label: "Family of the Bride" },
   { id: 'family_groom', label: "Family of the Groom" },
-  { id: 'wedding_party', label: "Wedding Party" },
-  { id: 'bridesmaids', label: "Bridesmaids" },
-  { id: 'groomsmen', label: "Groomsmen" },
+  { id: 'maid_of_honor', label: "Maid of Honor", isWeddingParty: true, side: 'bride' as const },
+  { id: 'bridesmaids', label: "Bridesmaids", isWeddingParty: true, side: 'bride' as const },
+  { id: 'best_man', label: "Best Man", isWeddingParty: true, side: 'groom' as const },
+  { id: 'groomsmen', label: "Groomsmen", isWeddingParty: true, side: 'groom' as const },
+  { id: 'wedding_party', label: "Wedding Party (Other)", isWeddingParty: true },
   { id: 'friends_bride', label: "Friends of the Bride" },
   { id: 'friends_groom', label: "Friends of the Groom" },
   { id: 'coworkers', label: "Coworkers" },
   { id: 'neighbors', label: "Neighbors" },
   { id: 'vip', label: "VIP Guests" },
 ];
+
+// Wedding party group IDs for sync feature
+const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'groomsmen', 'wedding_party'];
 
 const EVENT_OPTIONS = [
   { value: 'traditional', label: 'Traditional Ceremony' },
@@ -148,12 +153,17 @@ export default function AdminGuestsPage() {
   const [bulkGroupId, setBulkGroupId] = useState('');
   const [bulkFormMessage, setBulkFormMessage] = useState('');
 
+  // Reminder modal state
+  const [reminderModal, setReminderModal] = useState<{ guest: Guest; weddingSlug: string } | null>(null);
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [sendingReminder, setSendingReminder] = useState(false);
+
   // ==================== DATA FETCHING ====================
 
   const fetchWeddings = useCallback(async () => {
     if (!token) return;
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -172,7 +182,7 @@ export default function AdminGuestsPage() {
 
     setLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
       // Fetch guests
       const guestsResponse = await fetch(
@@ -400,7 +410,7 @@ export default function AdminGuestsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${selectedWedding}`, {
         method: 'POST',
         headers: {
@@ -462,7 +472,7 @@ export default function AdminGuestsPage() {
     const guestId = editingGuest.id || editingGuest._id;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
       // Update guest info
       const guestResponse = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
@@ -518,7 +528,7 @@ export default function AdminGuestsPage() {
     if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
@@ -535,31 +545,68 @@ export default function AdminGuestsPage() {
     }
   };
 
-  const handleSendReminder = async (guestId: string) => {
+  const openReminderModal = (guestId: string) => {
     const guest = guests.find(g => (g.id || g._id) === guestId);
     if (!guest) return;
 
+    // Get the wedding slug for RSVP link
+    const wedding = weddings.find(w => (w.id || w._id) === selectedWedding);
+    const weddingSlug = wedding?.slug || '';
+
+    // Set default message with personalization
+    const defaultMessage = `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${process.env.NEXT_PUBLIC_FRONTEND_URL || ''}/${weddingSlug}/invite/${guest.token}`;
+
+    setReminderMessage(defaultMessage);
+    setReminderModal({ guest, weddingSlug });
+  };
+
+  const handleSendReminder = async () => {
+    if (!reminderModal || !reminderMessage.trim()) return;
+
+    setSendingReminder(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/reminders/send`, {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          guest_tokens: [guest.token],
-          message: `Hi ${guest.name}, please RSVP for the wedding!`,
+          guest_tokens: [reminderModal.guest.token],
+          message: reminderMessage,
         }),
       });
 
       if (response.ok) {
-        showSuccess('Reminder sent successfully!');
+        const result = await response.json();
+        if (result.sent > 0) {
+          showSuccess('Reminder sent successfully!');
+          setReminderModal(null);
+          setReminderMessage('');
+        } else {
+          // Provide more specific error messaging
+          let errorMsg = 'Failed to send reminder.';
+          if (result.errors && result.errors.length > 0) {
+            errorMsg = result.errors[0];
+          } else if (result.failed > 0) {
+            // Check if guest has a phone number
+            if (!reminderModal?.guest.phone) {
+              errorMsg = 'Guest has no phone number.';
+            } else {
+              errorMsg = 'SMS delivery failed. Please verify the phone number format includes country code (e.g., +1234567890).';
+            }
+          }
+          setError(errorMsg);
+        }
       } else {
-        throw new Error('Failed to send reminder');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to send reminder');
       }
-    } catch {
-      setError('Failed to send reminder');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send reminder');
+    } finally {
+      setSendingReminder(false);
     }
   };
 
@@ -572,7 +619,7 @@ export default function AdminGuestsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const promises = Array.from(selectedGuests).map(guestId =>
         fetch(`${baseUrl}/admin/guests/${guestId}`, {
           method: 'PUT',
@@ -606,8 +653,8 @@ export default function AdminGuestsPage() {
       const selectedGuestsList = guests.filter(g => selectedGuests.has(g.id || g._id || ''));
       const tokens = selectedGuestsList.map(g => g.token);
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/reminders/send`, {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -620,16 +667,22 @@ export default function AdminGuestsPage() {
       });
 
       if (response.ok) {
+        const result = await response.json();
         setBulkActionModal(null);
         setBulkFormMessage('');
         setSelectedGuests(new Set());
         setSelectAll(false);
-        showSuccess(`Message sent to ${tokens.length} guests!`);
+        if (result.sent > 0) {
+          showSuccess(`Message sent to ${result.sent} guests!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`);
+        } else {
+          setError('No messages sent. Guests may have opted out or have no phone numbers.');
+        }
       } else {
-        throw new Error('Failed to send message');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to send message');
       }
-    } catch {
-      setError('Failed to send message to some guests');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send message to some guests');
     }
   };
 
@@ -662,7 +715,7 @@ export default function AdminGuestsPage() {
       const formData = new FormData();
       formData.append('file', importFile);
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const response = await fetch(
         `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
         {
@@ -1061,136 +1114,130 @@ export default function AdminGuestsPage() {
                           const rsvp = getRSVPForGuest(guestId);
                           const guestPlusOnes = getPlusOnesForGuest(guestId);
                           const isSelected = selectedGuests.has(guestId);
+                          const isExpanded = expandedGuest === guestId;
 
                           return (
-                            <tr
-                              key={guestId}
-                              className={`hover:bg-gray-50 dark:hover:bg-slate-700 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                            >
-                              <td className="px-4 py-3">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => handleSelectGuest(guestId)}
-                                  className="rounded text-wedding-rose focus:ring-wedding-rose"
-                                />
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="font-medium text-gray-900 dark:text-gray-100">{guest.name}</div>
-                                <div className="text-xs text-gray-500">{guest.role}</div>
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                                {guest.email || '-'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                                {guest.phone || '-'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                                {getGroupLabel(guest.group_id)}
-                              </td>
-                              <td className="px-4 py-3">
-                                {rsvp ? (
-                                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                    {rsvp.confirmed_by_admin ? 'Confirmed' : 'RSVP\'d'}
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                    Pending
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                                {guest.plus_one_allowed ? (
-                                  <span>{guestPlusOnes.length} / {guest.number_of_plus_ones_allowed}</span>
-                                ) : (
-                                  <span className="text-gray-400">N/A</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex justify-end gap-2">
-                                  <button
-                                    onClick={() => setExpandedGuest(expandedGuest === guestId ? null : guestId)}
-                                    className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                  >
-                                    {expandedGuest === guestId ? 'Hide' : 'View'}
-                                  </button>
-                                  <button
-                                    onClick={() => handleEditGuest(guest)}
-                                    className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-                                  >
-                                    Edit
-                                  </button>
-                                  {!rsvp && (
-                                    <button
-                                      onClick={() => handleSendReminder(guestId)}
-                                      className="px-2 py-1 text-xs bg-wedding-sage text-white rounded hover:bg-opacity-90"
-                                    >
-                                      Remind
-                                    </button>
+                            <React.Fragment key={guestId}>
+                              <tr
+                                className={`hover:bg-gray-50 dark:hover:bg-slate-700 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''} ${isExpanded ? 'bg-blue-50/50 dark:bg-slate-600/30' : ''}`}
+                              >
+                                <td className="px-4 py-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => handleSelectGuest(guestId)}
+                                    className="rounded text-wedding-rose focus:ring-wedding-rose"
+                                  />
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="font-medium text-gray-900 dark:text-gray-100">{guest.name}</div>
+                                  <div className="text-xs text-gray-500">{guest.role}</div>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                  {guest.email || '-'}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                  {guest.phone || '-'}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                  {getGroupLabel(guest.group_id)}
+                                </td>
+                                <td className="px-4 py-3">
+                                  {rsvp ? (
+                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                      {rsvp.confirmed_by_admin ? 'Confirmed' : 'RSVP\'d'}
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                      Pending
+                                    </span>
                                   )}
-                                  <button
-                                    onClick={() => handleDeleteGuest(guestId)}
-                                    className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                  {guest.plus_one_allowed ? (
+                                    <span>{guestPlusOnes.length} / {guest.number_of_plus_ones_allowed}</span>
+                                  ) : (
+                                    <span className="text-gray-400">N/A</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      onClick={() => setExpandedGuest(isExpanded ? null : guestId)}
+                                      className={`px-2 py-1 text-xs rounded ${isExpanded ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                    >
+                                      {isExpanded ? 'Hide' : 'View'}
+                                    </button>
+                                    <button
+                                      onClick={() => handleEditGuest(guest)}
+                                      className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                                    >
+                                      Edit
+                                    </button>
+                                    {!rsvp && (
+                                      <button
+                                        onClick={() => openReminderModal(guestId)}
+                                        className="px-2 py-1 text-xs bg-wedding-sage text-white rounded hover:bg-opacity-90"
+                                      >
+                                        Remind
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleDeleteGuest(guestId)}
+                                      className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                              {/* Inline Expanded Details Row */}
+                              {isExpanded && (
+                                <tr key={`${guestId}-details`} className="bg-gray-50 dark:bg-slate-700/50">
+                                  <td colSpan={8} className="px-6 py-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                      <div>
+                                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Guest Details</h4>
+                                        <dl className="space-y-1 text-sm">
+                                          <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt> <dd className="inline ml-2 font-mono text-xs bg-gray-200 dark:bg-slate-600 px-2 py-1 rounded">{guest.token}</dd></div>
+                                          <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{getGroupLabel(guest.group_id)}</dd></div>
+                                          <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed})` : 'No'}</dd></div>
+                                        </dl>
+                                      </div>
+                                      {rsvp && (
+                                        <div>
+                                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
+                                          <dl className="space-y-1 text-sm">
+                                            <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.join(', ') || 'None'}</dd></div>
+                                            <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Dietary:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.dietary || 'None'}</dd></div>
+                                            {rsvp.confirmed_by_admin && <div className="text-xs text-blue-500">(Confirmed by admin)</div>}
+                                          </dl>
+                                        </div>
+                                      )}
+                                      {guestPlusOnes.length > 0 && (
+                                        <div>
+                                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Plus Ones ({guestPlusOnes.length})</h4>
+                                          <ul className="space-y-2">
+                                            {guestPlusOnes.map((po, idx) => (
+                                              <li key={po._id || idx} className="text-sm bg-white dark:bg-slate-600 p-2 rounded shadow-sm">
+                                                <div className="font-medium text-gray-900 dark:text-gray-100">{po.name}</div>
+                                                <div className="text-gray-500 dark:text-gray-400 text-xs">
+                                                  {po.attending.join(', ')} {po.dietary && `| ${po.dietary}`}
+                                                </div>
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
                     </table>
-
-                    {/* Expanded Details Row */}
-                    {expandedGuest && (
-                      <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-slate-700/50">
-                        {(() => {
-                          const guest = guests.find(g => (g.id || g._id) === expandedGuest);
-                          if (!guest) return null;
-                          const rsvp = getRSVPForGuest(expandedGuest);
-                          const guestPlusOnes = getPlusOnesForGuest(expandedGuest);
-
-                          return (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                              <div>
-                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Guest Details</h4>
-                                <dl className="space-y-1 text-sm">
-                                  <div><dt className="inline font-medium">Token:</dt> <dd className="inline ml-2 font-mono text-xs bg-gray-200 dark:bg-slate-600 px-2 py-1 rounded">{guest.token}</dd></div>
-                                  <div><dt className="inline font-medium">Group:</dt> <dd className="inline ml-2">{getGroupLabel(guest.group_id)}</dd></div>
-                                  <div><dt className="inline font-medium">Plus Ones Allowed:</dt> <dd className="inline ml-2">{guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed})` : 'No'}</dd></div>
-                                </dl>
-                              </div>
-                              {rsvp && (
-                                <div>
-                                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
-                                  <dl className="space-y-1 text-sm">
-                                    <div><dt className="inline font-medium">Attending:</dt> <dd className="inline ml-2">{rsvp.attending.join(', ') || 'None'}</dd></div>
-                                    <div><dt className="inline font-medium">Dietary:</dt> <dd className="inline ml-2">{rsvp.dietary || 'None'}</dd></div>
-                                    {rsvp.confirmed_by_admin && <div className="text-xs text-blue-600">(Confirmed by admin)</div>}
-                                  </dl>
-                                </div>
-                              )}
-                              {guestPlusOnes.length > 0 && (
-                                <div>
-                                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Plus Ones ({guestPlusOnes.length})</h4>
-                                  <ul className="space-y-2">
-                                    {guestPlusOnes.map((po, idx) => (
-                                      <li key={po._id || idx} className="text-sm bg-white dark:bg-slate-600 p-2 rounded">
-                                        <div className="font-medium">{po.name}</div>
-                                        <div className="text-gray-500 dark:text-gray-400 text-xs">
-                                          {po.attending.join(', ')} {po.dietary && `| ${po.dietary}`}
-                                        </div>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
                   </div>
                 ) : (
                   /* CARD VIEW */
@@ -1250,7 +1297,7 @@ export default function AdminGuestsPage() {
                                 </button>
                                 {!rsvp && (
                                   <button
-                                    onClick={() => handleSendReminder(guestId)}
+                                    onClick={() => openReminderModal(guestId)}
                                     className="px-3 py-1 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90"
                                   >
                                     Remind
@@ -1720,6 +1767,105 @@ export default function AdminGuestsPage() {
                 <button
                   onClick={() => { setBulkActionModal(null); setBulkFormMessage(''); }}
                   className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Send Reminder Modal */}
+        {reminderModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6">
+              <h2 className="text-2xl font-bold text-wedding-navy dark:text-white mb-4">
+                Send Reminder to {reminderModal.guest.name}
+              </h2>
+
+              <div className="space-y-4">
+                {/* Guest Info */}
+                <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    <span className="font-medium">Phone:</span> {reminderModal.guest.phone || 'No phone number'}
+                  </p>
+                  {reminderModal.guest.email && (
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      <span className="font-medium">Email:</span> {reminderModal.guest.email}
+                    </p>
+                  )}
+                </div>
+
+                {/* Message Input */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Message (SMS)
+                  </label>
+                  <textarea
+                    value={reminderMessage}
+                    onChange={(e) => setReminderMessage(e.target.value)}
+                    rows={5}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+                    placeholder="Enter your reminder message..."
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {reminderMessage.length} characters
+                  </p>
+                </div>
+
+                {/* Quick Templates */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Quick Templates
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setReminderMessage(`Hi ${reminderModal.guest.name}, please RSVP for our wedding! We'd love to have you celebrate with us.`)}
+                      className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-slate-500"
+                    >
+                      RSVP Reminder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReminderMessage(`Hi ${reminderModal.guest.name}, just a friendly reminder about our upcoming wedding. We can't wait to see you there!`)}
+                      className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-slate-500"
+                    >
+                      Event Reminder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://thespecialwedding.com';
+                        setReminderMessage(`Hi ${reminderModal.guest.name}, you're invited to our wedding! RSVP here: ${frontendUrl}/${reminderModal.weddingSlug}/invite/${reminderModal.guest.token}`);
+                      }}
+                      className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-slate-500"
+                    >
+                      With RSVP Link
+                    </button>
+                  </div>
+                </div>
+
+                {!reminderModal.guest.phone && (
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      This guest has no phone number. SMS cannot be sent.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={handleSendReminder}
+                  disabled={sendingReminder || !reminderMessage.trim() || !reminderModal.guest.phone}
+                  className="flex-1 bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendingReminder ? 'Sending...' : 'Send Reminder'}
+                </button>
+                <button
+                  onClick={() => { setReminderModal(null); setReminderMessage(''); }}
+                  className="flex-1 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-500 transition-colors"
                 >
                   Cancel
                 </button>

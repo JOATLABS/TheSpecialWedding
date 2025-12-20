@@ -51,40 +51,46 @@ export default function WeddingLandingPage() {
   const targetGuest = guestData || guest;
 
   try {
- // Use the verified gallery endpoint
- const requestBody = new URLSearchParams({
- wedding_slug: slug,
- });
+    // For public weddings, use the simple gallery endpoint
+    // For private/password weddings, use the verified endpoint with query params
+    const isPublic = targetWedding?.privacy_mode === 'public';
 
- // Add authentication parameters based on what we have
- if (targetGuest?.token) {
- requestBody.append('token', targetGuest.token);
- } else if (targetGuest?.name) {
- requestBody.append('name', targetGuest.name);
- if (targetGuest.phone) {
- requestBody.append('phone', targetGuest.phone);
- }
- }
+    let galleryUrl: string;
+    if (isPublic) {
+      // Public gallery endpoint
+      galleryUrl = `${API_URL}/gallery?wedding_slug=${encodeURIComponent(slug)}`;
+    } else {
+      // Build query params for verified endpoint
+      const params = new URLSearchParams({ wedding_slug: slug });
 
- const res = await fetch(`${API_URL}/gallery/verified`, {
- method: 'POST',
- headers: {
- 'Content-Type': 'application/x-www-form-urlencoded',
- },
- body: requestBody.toString(),
- });
+      // Add authentication parameters based on what we have
+      if (targetGuest?.token) {
+        params.append('token', targetGuest.token);
+      } else if (targetGuest?.name) {
+        params.append('name', targetGuest.name);
+        if (targetGuest.phone) {
+          params.append('phone', targetGuest.phone);
+        }
+      }
 
- if (res.ok) {
- const data = await res.json();
- setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
- } else {
- // If gallery fails, don't show error - just continue without images
- console.warn('Gallery access failed, continuing without images');
- setImages([]);
- }
+      galleryUrl = `${API_URL}/gallery/verified?${params.toString()}`;
+    }
+
+    const res = await fetch(galleryUrl, {
+      method: isPublic ? 'GET' : 'POST',
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
+    } else {
+      // If gallery fails, don't show error - just continue without images
+      console.warn('Gallery access failed, continuing without images');
+      setImages([]);
+    }
   } catch (err: any) {
-  console.warn('Gallery could not be loaded:', err);
-  setImages([]); // Continue without gallery instead of showing error
+    console.warn('Gallery could not be loaded:', err);
+    setImages([]); // Continue without gallery instead of showing error
   }
  },
  [guest, slug, wedding]
