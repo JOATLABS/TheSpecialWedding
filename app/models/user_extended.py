@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
+
 class UserModel(BaseModel):
     """Extended user model supporting multiple roles"""
     id: str = Field(..., alias="_id")
@@ -38,9 +39,10 @@ class UserModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     last_login: Optional[datetime] = Field(None, description="Last login timestamp")
+
     class Config:
         populate_by_name = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "_id": "user_001",
                 "email": "planner@example.com",
@@ -54,17 +56,21 @@ class UserModel(BaseModel):
         }
 
 # Migration compatible: This extends functionality without breaking existing admin_users collection
+
+
 class AdminUserModel(BaseModel):
     """Legacy admin user model - keeping for backward compatibility"""
     email: str = Field(..., description="Admin email")
     password_hash: str = Field(..., description="Hashed password")
     role: str = Field(default="admin", description="Always 'admin' for backward compatibility")
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "email": "thedeveloper@thespecialwedding.com",
                 "password_hash": "hashed_password_here",
                 "role": "admin"
             }
         }
+# Note: New user-related features should use UserModel going forward

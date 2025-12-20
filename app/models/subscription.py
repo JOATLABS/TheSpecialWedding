@@ -3,19 +3,23 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+
 class SubscriptionStatus(str, Enum):
     """Subscription status enumeration"""
+    PENDING_PAYMENT = "pending_payment"
     TRIAL = "trial"
     ACTIVE = "active"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
     SUSPENDED = "suspended"
 
+
 class BillingInterval(str, Enum):
     """Billing interval enumeration"""
     MONTHLY = "monthly"
     YEARLY = "yearly"
     LIFETIME = "lifetime"
+
 
 class SubscriptionPlanModel(BaseModel):
     """Subscription plan model"""
@@ -49,9 +53,10 @@ class SubscriptionPlanModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this plan")
+    
     class Config:
         populate_by_name = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "_id": "plan_starter",
                 "name": "Starter",
@@ -79,6 +84,7 @@ class SubscriptionPlanModel(BaseModel):
                 "created_by": "thedeveloper@thespecialwedding.com"
             }
         }
+
 
 class UserSubscriptionModel(BaseModel):
     """User subscription instance model"""
@@ -109,9 +115,10 @@ class UserSubscriptionModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this subscription")
+    
     class Config:
         populate_by_name = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "_id": "sub_user123_plan456",
                 "user_id": "user_12345",
@@ -128,6 +135,7 @@ class UserSubscriptionModel(BaseModel):
                 "created_by": "thedeveloper@thespecialwedding.com"
             }
         }
+
 
 class UsageTrackingModel(BaseModel):
     """Usage tracking for subscription limits"""
@@ -147,7 +155,7 @@ class UsageTrackingModel(BaseModel):
     last_updated: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "user_id": "user_12345",
                 "subscription_id": "sub_user123_plan456",
@@ -159,6 +167,7 @@ class UsageTrackingModel(BaseModel):
                 "credits_reset_date": "2025-09-01T00:00:00Z"
             }
         }
+
 
 # Request/Response models for API
 class CreateSubscriptionPlanRequest(BaseModel):
@@ -179,6 +188,7 @@ class CreateSubscriptionPlanRequest(BaseModel):
     is_featured: bool = False
     sort_order: int = 0
 
+
 class UpdateSubscriptionPlanRequest(BaseModel):
     """Request model for updating subscription plans"""
     name: Optional[str] = None
@@ -197,6 +207,7 @@ class UpdateSubscriptionPlanRequest(BaseModel):
     is_active: Optional[bool] = None
     is_featured: Optional[bool] = None
     sort_order: Optional[int] = None
+
 
 class AssignSubscriptionRequest(BaseModel):
     """Request model for assigning subscription to user"""

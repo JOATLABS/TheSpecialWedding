@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any, Union, Literal
 from datetime import datetime
 from enum import Enum
@@ -6,6 +6,7 @@ import re
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class FieldType(str, Enum):
     TEXT = "text"
@@ -21,10 +22,12 @@ class FieldType(str, Enum):
     RATING = "rating"
     SCALE = "scale"
 
+
 class ValidationRule(BaseModel):
     type: str = Field(..., description="Validation type: required, min_length, max_length, pattern, min, max")
     value: Union[str, int, bool] = Field(..., description="Validation value")
     message: Optional[str] = Field(None, description="Custom validation error message")
+
 
 class FormField(BaseModel):
     id: str = Field(..., description="Unique field identifier")
@@ -37,6 +40,7 @@ class FormField(BaseModel):
     validation_rules: List[ValidationRule] = Field(default_factory=list, description="Field validation rules")
     conditional_logic: Optional[Dict[str, Any]] = Field(None, description="Show/hide conditions")
     order: int = Field(default=0, description="Field display order")
+
     @field_validator('id')
     @classmethod
     def validate_field_id(cls, v):
@@ -102,6 +106,7 @@ class FormField(BaseModel):
 
         return v.strip()
 
+
 class FormSettings(BaseModel):
     title: str = Field(..., description="Form title")
     description: Optional[str] = Field(None, description="Form description")
@@ -112,6 +117,7 @@ class FormSettings(BaseModel):
     collect_email: bool = Field(default=True, description="Require email from submitters")
     is_public: bool = Field(default=False, description="Whether form is publicly accessible")
     requires_auth: bool = Field(default=False, description="Whether form requires authentication")
+
     @field_validator('title')
     @classmethod
     def validate_title(cls, v):
@@ -173,6 +179,7 @@ class FormSettings(BaseModel):
             raise ValueError('Invalid URL format')
         return v
 
+
 class EmailDistributionSettings(BaseModel):
     subject: str = Field(..., description="Email subject line")
     message: str = Field(..., description="Email body message")
@@ -180,6 +187,7 @@ class EmailDistributionSettings(BaseModel):
     include_form_link: bool = Field(default=True, description="Include direct form link")
     send_reminder: bool = Field(default=False, description="Send reminder emails")
     reminder_days: int = Field(default=7, description="Days until reminder")
+
 
 class FormModel(BaseModel):
     id: Optional[str] = Field(None, alias="_id", description="Form ID")
@@ -197,7 +205,7 @@ class FormModel(BaseModel):
 
     class Config:
         populate_by_name = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "Wedding Feedback Form",
                 "settings": {
@@ -228,6 +236,7 @@ class FormModel(BaseModel):
             }
         }
 
+
 class FormResponse(BaseModel):
     id: Optional[str] = Field(None, alias="_id", description="Response ID")
     form_id: str = Field(..., description="Form ID")
@@ -242,7 +251,7 @@ class FormResponse(BaseModel):
 
     class Config:
         populate_by_name = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "form_id": "form_123",
                 "responses": {
@@ -254,6 +263,7 @@ class FormResponse(BaseModel):
                 "wedding_id": "wedding_456"
             }
         }
+
 
 class FormDistribution(BaseModel):
     id: Optional[str] = Field(None, alias="_id", description="Distribution ID")
@@ -272,12 +282,15 @@ class FormDistribution(BaseModel):
         populate_by_name = True
 
 # Form Builder Request Models
+
+
 class CreateFormRequest(BaseModel):
     name: str = Field(..., description="Form name")
     settings: FormSettings = Field(..., description="Form settings")
     fields: List[FormField] = Field(..., description="Form fields")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     template_type: Optional[str] = Field(None, description="Template type")
+
     @field_validator('name')
     @classmethod
     def validate_name(cls, v):
@@ -363,21 +376,25 @@ class FormViewUpdateRequest(BaseModel):
 
         return value
 
+
 class UpdateFormRequest(BaseModel):
     name: Optional[str] = Field(None, description="Form name")
     settings: Optional[FormSettings] = Field(None, description="Form settings")
     fields: Optional[List[FormField]] = Field(None, description="Form fields")
     is_active: Optional[bool] = Field(None, description="Form active status")
 
+
 class SendFormRequest(BaseModel):
     recipient_emails: List[str] = Field(..., description="Recipient email addresses")
     email_settings: EmailDistributionSettings = Field(..., description="Email configuration")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
 
+
 class SubmitFormRequest(BaseModel):
     responses: Dict[str, Any] = Field(..., description="Form field responses")
     submitted_by_email: Optional[str] = Field(None, description="Submitter email")
     submitted_by_name: Optional[str] = Field(None, description="Submitter name")
+
     @field_validator('responses')
     @classmethod
     def validate_responses(cls, v):

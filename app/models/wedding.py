@@ -107,7 +107,7 @@ class WeddingModel(BaseModel):
 
     class Config:
         populate_by_name = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "_id": "wedding_001",
                 "couple_names": "Tolu & Peace",

@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
-from bson import ObjectId
 import re
+
 
 class GuestModel(BaseModel):
     wedding_id: str = Field(...)
@@ -39,7 +39,7 @@ class GuestModel(BaseModel):
         return value
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "wedding_id": "wedding_001",
                 "name": "John Doe",
@@ -53,6 +53,7 @@ class GuestModel(BaseModel):
                 "plus_one_submitted": False
             }
         }
+
 
 class UpdateGuestRequest(BaseModel):
     """Request model for updating guest information"""
@@ -73,7 +74,7 @@ class UpdateGuestRequest(BaseModel):
         return value
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "Jane Doe",
                 "phone": "1234567890",
@@ -104,7 +105,7 @@ class CreateGuestRequest(BaseModel):
         return value
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "John Doe",
                 "phone": "1234567890",
