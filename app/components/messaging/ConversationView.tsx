@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { MessageResponse } from '../../models/messaging';
+import { MessageResponse, ConversationResponse } from '../../types/messaging';
 
 interface ConversationViewProps {
   messages: MessageResponse[];
-  activeConversation: { subject: string | null | undefined};
+  activeConversation: ConversationResponse;
 }
 
 const ConversationView: React.FC<ConversationViewProps> = ({ messages, activeConversation }) => {

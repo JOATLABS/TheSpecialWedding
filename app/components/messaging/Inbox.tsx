@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ConversationResponse } from '../../models/messaging';
+import { ConversationResponse } from '../../types/messaging';
 
 interface InboxProps {
   conversations: ConversationResponse[];
@@ -58,11 +58,6 @@ const Inbox: React.FC<InboxProps> = ({ conversations, onSelectConversation, acti
                 </div>
                 <div className="flex justify-between">
                   <p className="text-sm text-gray-600 truncate">{`Wedding: ${conversation.wedding_id}`}</p>
-                  {conversation.unread_count && conversation.unread_count > 0 && (
-                    <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-blue-500 rounded-full">
-                      {conversation.unread_count}
-                    </span>
-                  )}
                 </div>
               </div>
             </div>

@@ -3,7 +3,7 @@ from app.services.plus_one_service import PlusOneService
 from app.services.auth_service import get_current_user_id, get_current_user, require_admin_auth
 import logging
 
-router = APIRouter(prefix="/admin/plus_ones", tags=["Admin"])
+router = APIRouter(prefix="/plus_ones", tags=["Admin"])
 plus_one_service = PlusOneService()
 
 @router.get("", dependencies=[Depends(require_admin_auth)])

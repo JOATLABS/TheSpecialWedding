@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect, Form, UploadFile, File
 
-from app.dependencies.auth import AuthUser, get_current_user, get_user_from_token
+from app.dependencies.auth import AuthUser, get_current_user
 from app.models.messaging import (
     ConversationCreateRequest,
     ConversationListResponse,
@@ -72,8 +72,12 @@ def _get_participant(
 
 @router.websocket("/ws/{conversation_id}")
 async def websocket_endpoint(websocket: WebSocket, conversation_id: str, token: str = Query(...)):
-    user = await get_user_from_token(token)
-    if not user:
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    try:
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        user = await get_current_user(credentials)
+    except HTTPException:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
