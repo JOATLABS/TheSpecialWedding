@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import secrets
 import string
 import os
+import logging
 #import requests
 from app.utils.auth_utils import get_password_hash, verify_password
 from app.services.email_service_resend import ResendEmailService
@@ -17,6 +18,30 @@ class UserManagementService:
         self.invitations_collection = mongo.db["user_invitations"]
         self.weddings_collection = mongo.db["weddings"]
         self.email_service = ResendEmailService()
+        self._pending_ttl_index_created = False
+        self.logger = logging.getLogger(__name__)
+
+    async def _ensure_pending_ttl_index(self):
+        """
+        Ensure a TTL index exists to clean up stale pending signups.
+        Expires documents with subscription_status=pending_payment once pending_expires_at passes.
+        """
+        if self._pending_ttl_index_created:
+            return
+        try:
+            await self.users_collection.create_index(
+                [("pending_expires_at", 1)],
+                name="idx_pending_payment_ttl",
+                expireAfterSeconds=0,
+                partialFilterExpression={
+                    "subscription_status": "pending_payment",
+                    "pending_expires_at": {"$exists": True}
+                }
+            )
+            self._pending_ttl_index_created = True
+        except Exception as e:
+            # Non-fatal: log and continue
+            self.logger.error(f"Failed to ensure pending TTL index: {str(e)}")
 
     def generate_invitation_token(self) -> str:
         """Generate a secure invitation token"""
@@ -389,6 +414,7 @@ class UserManagementService:
 
             # Get trial settings from SAAS config
             trial_settings = await self.get_trial_settings()
+            await self._ensure_pending_ttl_index()
 
             # Check if user already exists
             existing_user = await self.users_collection.find_one({"email": email})
@@ -406,10 +432,9 @@ class UserManagementService:
             verification_token = self.generate_invitation_token()
             verification_expires = datetime.utcnow() + timedelta(hours=48)  # 48 hours to verify
 
-            # Create user account (inactive until email verification)
+            # Create user account (pending until Stripe checkout + verification)
             password_hash = get_password_hash(registration_data["password"])
-            trial_days = trial_settings.get("default_trial_days", 30)
-            trial_end_date = datetime.utcnow() + timedelta(days=trial_days)
+            pending_expires_at = datetime.utcnow() + timedelta(hours=48)
             user_data = {
                 "email": email,
                 "password_hash": password_hash,
@@ -418,13 +443,14 @@ class UserManagementService:
                 "last_name": registration_data.get("last_name", ""),
                 "company_name": registration_data.get("company_name", ""),
                 "subscription_plan_id": registration_data.get("selected_plan_id"),
-                "subscription_status": "trial",
-                "trial_end_date": trial_end_date,
+                "subscription_status": "pending_payment",
+                "trial_end_date": None,
                 "trial_warning_sent": False,
-                "is_active": False,  # Account inactive until email verification
-                "email_verified": False,
+                "is_active": False,  # Account inactive until payment + email verification
+                "email_verified": False,  # Will be auto-verified on successful checkout
                 "email_verification_token": verification_token,
                 "verification_token_expires": verification_expires,
+                "pending_expires_at": pending_expires_at,
                 "created_at": datetime.utcnow(),
                 "registration_source": "public_signup"
             }

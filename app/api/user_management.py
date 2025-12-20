@@ -186,9 +186,9 @@ def complete_account_setup(setup_data: AccountSetupModel):
 
 
 @router.post("/public/register", tags=["Public"])
-def register_wedding_planner(registration_data: PublicRegistrationModel):
+async def register_wedding_planner(registration_data: PublicRegistrationModel):
     """Public registration for wedding planners - No auth required"""
-    return user_service.register_wedding_planner(registration_data.dict())
+    return await user_service.register_wedding_planner(registration_data.dict())
 
 
 @router.get("/verify-email/{token}", tags=["Public"])

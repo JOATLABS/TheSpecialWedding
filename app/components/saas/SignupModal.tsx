@@ -71,6 +71,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
     watch,
     reset
@@ -80,7 +81,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
   useEffect(() => {
     const fetchPlans = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/public/subscription-plans`);
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/public/subscription-plans`);
         if (response.ok) {
           const data = await response.json();
           const activePlans = data.filter((p: SubscriptionPlan) => p).sort((a: SubscriptionPlan, b: SubscriptionPlan) =>
@@ -135,7 +136,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
 
     try {
       // Step 1: Register user
-      const registerResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/public/register`, {
+      const registerResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/public/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -151,56 +152,65 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       });
 
       if (!registerResponse.ok) {
-        const error = await registerResponse.json();
-        throw new Error(error.detail || 'Registration failed');
-      }
-
-      toast.success('Account created! Redirecting to payment...');
-
-      // Step 2: Auto-login
-      const formData = new URLSearchParams();
-      formData.append('username', data.email);
-      formData.append('password', data.password);
-
-      const loginResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData
-      });
-
-      if (!loginResponse.ok) {
-        toast.info('Account created! Please log in to continue.');
-        window.location.href = '/admin/login';
+        let message = 'Registration failed';
+        try {
+          const error = await registerResponse.json();
+          if (error?.detail) {
+            if (Array.isArray(error.detail)) {
+              message = error.detail.map((d: any) => d.msg || d.detail || d.loc?.join('.') || 'Validation error').join('; ');
+            } else if (typeof error.detail === 'string') {
+              message = error.detail;
+            }
+          }
+        } catch {
+          // ignore parse issues
+        }
+        toast.error(message);
         return;
       }
 
-      const { access_token } = await loginResponse.json();
-      localStorage.setItem('authToken', access_token);
+      const registerData = await registerResponse.json();
+      const userId = registerData?.user_id;
 
-      // Step 3: Create Stripe Checkout
-      const checkoutResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/stripe/create-checkout-session`, {
+      toast.success('Account created! Redirecting to secure checkout...');
+
+      // Step 2: Create Stripe Checkout (no login until webhook activation)
+      const checkoutResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/public/create-checkout-session`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          user_id: userId,
+          email: data.email,
           plan_id: selectedPlan?._id,
           billing_interval: billingInterval,
-          success_url: `${window.location.origin}/admin?payment=success`,
+          success_url: `${window.location.origin}/admin/login?payment=success`,
           cancel_url: `${window.location.origin}/?payment=cancelled`,
-          trial_days: 14
+          trial_days: 0
         })
       });
 
       if (!checkoutResponse.ok) {
-        toast.warning('Account created! Complete payment in your dashboard.');
-        window.location.href = '/admin/billing';
+        let message = 'Account created! Please continue from the payment link we emailed you.';
+        try {
+          const error = await checkoutResponse.json();
+          if (error?.detail) {
+            message = typeof error.detail === 'string' ? error.detail : JSON.stringify(error.detail);
+          }
+        } catch {
+          // ignore
+        }
+        toast.warning(message);
         return;
       }
 
       const { checkout_session } = await checkoutResponse.json();
-      window.location.href = checkout_session.url;
+      if (checkout_session?.url) {
+        window.location.href = checkout_session.url;
+      } else {
+        toast.error('Could not start payment checkout. Please try again from your email link.');
+      }
 
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Signup failed');
@@ -282,7 +292,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               <select
                 value={selectedPlan?._id || ''}
                 onChange={(e) => setSelectedPlan(plans.find(p => p._id === e.target.value) || null)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
               >
                 {plans.map(plan => (
                   <option key={plan._id} value={plan._id}>{plan.name} - ${plan.price_monthly}/mo</option>
@@ -307,31 +317,49 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-slate-700">First name</label>
-                  <input {...register('firstName', { required: 'Required' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                  <input
+                    {...register('firstName', { required: 'Required' })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
                   {errors.firstName && <p className="mt-1 text-xs text-red-600">{errors.firstName.message}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Last name</label>
-                  <input {...register('lastName', { required: 'Required' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                  <input
+                    {...register('lastName', { required: 'Required' })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
                   {errors.lastName && <p className="mt-1 text-xs text-red-600">{errors.lastName.message}</p>}
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700">Company name</label>
-                <input {...register('companyName', { required: 'Required' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                <input
+                  {...register('companyName', { required: 'Required' })}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
                 {errors.companyName && <p className="mt-1 text-xs text-red-600">{errors.companyName.message}</p>}
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Email</label>
-                  <input type="email" {...register('email', { required: 'Required' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                  <input
+                    type="email"
+                    {...register('email', { required: 'Required' })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
                   {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Phone</label>
-                  <input type="tel" {...register('phone', { required: 'Required' })} placeholder="405-708-1076" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                  <input
+                    type="tel"
+                    {...register('phone', { required: 'Required' })}
+                    placeholder="405-708-1076"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
                   {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone.message}</p>}
                 </div>
               </div>
@@ -339,20 +367,39 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Password</label>
-                  <input type="password" {...register('password', { required: 'Required', minLength: 8 })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                  <input
+                    type="password"
+                    {...register('password', {
+                      required: 'Required',
+                      minLength: { value: 8, message: 'Minimum 8 characters' },
+                      pattern: {
+                        value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-[\]{}|;:,.<>?]).{8,}$/,
+                        message: 'Must include upper, lower, number, and special character'
+                      }
+                    })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
                   {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Confirm password</label>
-                  <input type="password" {...register('confirmPassword', { required: 'Required' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900" />
+                  <input
+                    type="password"
+                    {...register('confirmPassword', {
+                      required: 'Required',
+                      validate: (value) => value === watch('password') || 'Passwords must match'
+                    })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
                   {errors.confirmPassword && <p className="mt-1 text-xs text-red-600">{errors.confirmPassword.message}</p>}
                 </div>
               </div>
 
               <label className="flex items-start gap-2 text-sm">
-                <input type="checkbox" {...register('acceptTerms', { required: true })} className="mt-1" />
+                <input type="checkbox" {...register('acceptTerms', { required: 'Please accept the terms to continue' })} className="mt-1" />
                 <span className="text-slate-600">I agree to the Terms and Privacy Policy</span>
               </label>
+              {errors.acceptTerms && <p className="text-xs text-red-600">{errors.acceptTerms.message as string}</p>}
 
               <button
                 type="submit"

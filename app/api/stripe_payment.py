@@ -3,6 +3,7 @@ Stripe Payment API Endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from typing import Optional
+from bson import ObjectId
 from pydantic import BaseModel, Field
 from app.services.stripe_service import stripe_service
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
@@ -10,7 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/stripe", tags=["Stripe Payments"])
+router = APIRouter(prefix="", tags=["Stripe Payments"])
 
 
 # ==================== REQUEST MODELS ====================
@@ -22,6 +23,11 @@ class CreateCheckoutSessionRequest(BaseModel):
     success_url: Optional[str] = Field(None, description="Success redirect URL")
     cancel_url: Optional[str] = Field(None, description="Cancel redirect URL")
     trial_days: int = Field(default=0, ge=0, description="Number of trial days")
+
+
+class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):
+    """Public request model (no auth) for creating a Stripe Checkout Session after registration"""
+    email: str = Field(..., description="Email to validate pending user ownership")
 
 
 class CreatePortalSessionRequest(BaseModel):
@@ -87,6 +93,44 @@ async def create_checkout_session(
         raise
     except Exception as e:
         logger.error(f"Error creating checkout session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
+
+
+@router.post("/public/create-checkout-session")
+async def create_public_checkout_session(
+    request: PublicCreateCheckoutSessionRequest
+):
+    """
+    Public endpoint to create a Stripe Checkout Session for pending signups.
+    Validates the pending user by email, then creates checkout without requiring login.
+    """
+    try:
+        pending_user = await stripe_service.users_collection.find_one({"email": request.email})
+
+        if not pending_user:
+            raise HTTPException(status_code=404, detail="Pending user not found")
+
+        if pending_user.get("subscription_status") not in ["pending_payment", "trial", "active"]:
+            raise HTTPException(status_code=400, detail="User is not eligible for checkout")
+
+        session = await stripe_service.create_checkout_session(
+            user_id=str(pending_user["_id"]),
+            plan_id=request.plan_id,
+            billing_interval=request.billing_interval,
+            success_url=request.success_url,
+            cancel_url=request.cancel_url,
+            trial_days=request.trial_days
+        )
+
+        return {
+            "status": "success",
+            "checkout_session": session
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating public checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
 
 

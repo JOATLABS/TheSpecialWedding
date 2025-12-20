@@ -137,16 +137,19 @@ class StripeService:
             if is_metered and meter_event_name and not meter_id:
                 try:
                     # List meters to find matching event name
-                    # Note: stripe.billing.Meter.list is available in recent versions
                     meters = stripe.billing.Meter.list(status='active')
                     for meter in meters.data:
                         if meter.event_name == meter_event_name:
                             meter_id = meter.id
                             break
-                    if not meter_id:
-                        logger.warning(f"Could not find active Stripe meter for event '{meter_event_name}'. Creating prices without explicit meter link (legacy metered).")
                 except Exception as e:
                     logger.warning(f"Failed to list Stripe meters: {e}")
+
+            if is_metered and not meter_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Metered plan '{plan.get('_id')}' requires a valid Stripe meter_id or meter_event_name"
+                )
 
             # 1. Create or Update Product
             if not product_id:
@@ -222,6 +225,10 @@ class StripeService:
                     "recurring": expected_recurring,
                     "nickname": f"{plan['name']} {interval.title()}"
                 }
+
+                if is_metered and meter_id:
+                    price_kwargs["recurring"]["meter"] = meter_id
+                    price_kwargs["recurring"]["usage_type"] = "metered"
 
                 new_price = stripe.Price.create(**price_kwargs)
                 return new_price.id
@@ -308,6 +315,9 @@ class StripeService:
             if not plan.get("is_active", True):
                 raise HTTPException(status_code=400, detail="Subscription plan is not currently active")
 
+            # Metered flag for downstream usage (quantity rules)
+            is_metered = plan.get("is_metered", False)
+
             # Respect plan-level trial configuration when available
             plan_trial_days = plan.get("trial_days")
             if isinstance(plan_trial_days, int) and plan_trial_days >= 0:
@@ -366,14 +376,16 @@ class StripeService:
                     }
                 }
 
+            # Build line item; quantity must be omitted for metered prices
+            line_item: Dict[str, Any] = {"price": stripe_price_id}
+            if not is_metered:
+                line_item["quantity"] = 1
+
             # Create checkout session
             checkout_session = stripe.checkout.Session.create(
                 customer=customer_id,
                 payment_method_types=["card"],
-                line_items=[{
-                    "price": stripe_price_id,
-                    "quantity": 1,
-                }],
+                line_items=[line_item],
                 mode="subscription",
                 success_url=success_url,
                 cancel_url=cancel_url,
@@ -381,9 +393,6 @@ class StripeService:
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
                 payment_method_collection="always",
-                payment_settings={
-                    "save_default_payment_method": "on_subscription"
-                },
                 customer_update={
                     "address": "auto",
                     "name": "auto"
@@ -536,9 +545,23 @@ class StripeService:
                 user_updates["trial_end_date"] = None
                 user_updates["trial_warning_sent"] = False
 
+            unset_fields: Dict[str, Any] = {}
+
+            # Auto-activate and verify when a paid/trial subscription is established
+            if internal_status in (SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value):
+                user_updates["is_active"] = True
+                user_updates["email_verified"] = True
+                unset_fields["email_verification_token"] = ""
+                unset_fields["verification_token_expires"] = ""
+                unset_fields["pending_expires_at"] = ""
+
+            update_doc: Dict[str, Any] = {"$set": user_updates}
+            if unset_fields:
+                update_doc["$unset"] = unset_fields
+
             await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
-                {"$set": user_updates}
+                update_doc
             )
 
         return {
