@@ -96,11 +96,54 @@ async def create_support_ticket_indexes():
         return False
 
 
+async def create_wedding_indexes():
+    """
+    Create indexes for weddings collection
+
+    Key queries that need optimization:
+    1. Get wedding by slug (public URL access) - UNIQUE
+    2. Get weddings by planner email
+    3. Sort by date
+    """
+    collection = mongo.db["weddings"]
+
+    try:
+        # 1. Unique slug index (prevents collision across planners)
+        await collection.create_index(
+            [("slug", ASCENDING)],
+            name="idx_slug_unique",
+            unique=True,
+            sparse=True  # Allow null slugs (for legacy data)
+        )
+        logger.info("Created index: idx_slug_unique (unique)")
+
+        # 2. Planner lookup
+        await collection.create_index(
+            [("assigned_planner_email", ASCENDING)],
+            name="idx_assigned_planner"
+        )
+        logger.info("Created index: idx_assigned_planner")
+
+        # 3. Date-based sorting
+        await collection.create_index(
+            [("date", ASCENDING)],
+            name="idx_wedding_date"
+        )
+        logger.info("Created index: idx_wedding_date")
+
+        logger.info("All wedding indexes created successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating wedding indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
         await create_support_ticket_indexes()
-        # Add other index creation functions here as needed
+        await create_wedding_indexes()
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")

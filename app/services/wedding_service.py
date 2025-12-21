@@ -3,11 +3,32 @@ from app.core.database import mongo
 from app.models.wedding import WeddingModel
 from typing import List
 from datetime import datetime
+import re
 
 
 class WeddingService:
     def __init__(self):
         self.collection = mongo.db["weddings"]
+
+    async def _ensure_unique_slug(self, base_slug: str) -> str:
+        """Ensure slug is unique by appending a number suffix if needed"""
+        slug = base_slug
+        counter = 1
+
+        while True:
+            existing = await self.collection.find_one({"slug": slug})
+            if not existing:
+                return slug
+            # Append or increment counter
+            counter += 1
+            slug = f"{base_slug}-{counter}"
+            # Safety limit to prevent infinite loops
+            if counter > 100:
+                # Use timestamp as fallback
+                slug = f"{base_slug}-{int(datetime.utcnow().timestamp())}"
+                break
+
+        return slug
 
     async def create_wedding(self, wedding: WeddingModel):
         """Create a new wedding"""
@@ -31,8 +52,12 @@ class WeddingService:
             if existing:
                 raise HTTPException(status_code=400, detail="Wedding ID already exists")
 
+            # Ensure slug is unique (prevent collisions across planners)
+            if "slug" in wedding_dict and wedding_dict["slug"]:
+                wedding_dict["slug"] = await self._ensure_unique_slug(wedding_dict["slug"])
+
             await self.collection.insert_one(wedding_dict)
-            return {"message": "Wedding created successfully", "id": wedding_dict["_id"]}
+            return {"message": "Wedding created successfully", "id": wedding_dict["_id"], "slug": wedding_dict.get("slug")}
         except HTTPException:
             raise
         except Exception as e:
