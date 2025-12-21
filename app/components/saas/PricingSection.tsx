@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 
 import { GlassCard } from '../ui/GlassCard';
@@ -134,7 +135,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
 
   const fetchPlans = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/public/subscription-plans`);
 
       if (!response.ok) {

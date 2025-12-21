@@ -1,8 +1,9 @@
 'use client';
 import { useParams, useRouter } from 'next/navigation';
+import { getApiBaseUrl } from '@/utils/env';
 import { useEffect, useState } from 'react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = getApiBaseUrl();
 
 export default function VerifyEmailPage() {
   const params = useParams();

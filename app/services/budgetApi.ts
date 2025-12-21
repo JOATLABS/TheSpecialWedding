@@ -1,4 +1,5 @@
 // Budget API service functions
+import { getApiBaseUrl } from '@/utils/env';
 import type {
   BudgetCategory,
   BudgetSummary,
@@ -13,7 +14,7 @@ import type {
   CreateBudgetTemplatePayload
 } from '../types/budget';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 
 class BudgetApiService {
   private getHeaders(token: string) {

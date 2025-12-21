@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
@@ -48,7 +49,7 @@ export default function WeddingPlannerDashboard() {
 
  const fetchMyWeddings = useCallback(async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  // Use the new optimized metrics API
  const response = await fetch(`${baseUrl}/admin/planner/metrics`, {
  headers: {

@@ -201,7 +201,7 @@ class SubscriptionService:
             await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
                 {"$set": {
-                    "subscription_plan_id": plan_id,
+                    "plan_id": plan_id,
                     "subscription_status": subscription_data["status"],
                     "updated_at": now
                 }}

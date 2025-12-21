@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formsApi } from '@/services/formsApi';
@@ -49,7 +50,7 @@ export default function FormAnalyticsPage() {
       return;
     }
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       // Fetch form details and analytics in parallel
       const [formResponse, analyticsResponse] = await Promise.all([
         fetch(`${baseUrl}/admin/forms/${formId}`, {

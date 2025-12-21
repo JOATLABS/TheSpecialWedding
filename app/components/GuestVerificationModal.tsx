@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { Button } from '@/components/ui/Button';
 
 interface GuestVerificationModalProps {
@@ -44,7 +45,7 @@ export default function GuestVerificationModal({
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [weddingId, setWeddingId] = useState('');
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const API_BASE_URL = getApiBaseUrl();
   const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
   const fetchPrivacyInfo = useCallback(async () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
@@ -68,7 +69,7 @@ export default function BudgetDashboard() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       // Use authenticated planner endpoint to get assigned weddings
       const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
@@ -85,7 +86,7 @@ export default function PlatformMonitoringDashboard() {
 
   const fetchMetrics = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {

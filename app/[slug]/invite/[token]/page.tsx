@@ -1,6 +1,7 @@
 // app/[slug]/invite/[token]/page.tsx
 
 import React from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { notFound } from 'next/navigation';
 import OTPFlow from '@/components/OTPFlow';
 import { formatDate } from '@/utils/dateFormat';
@@ -12,7 +13,7 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
 
  try {
  // Fetch data inline to avoid any potential export detection issues
- const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const base = getApiBaseUrl();
  // Remove /admin if present since these are public endpoints
  const apiUrl = base.replace('/admin', '');
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
@@ -111,7 +112,7 @@ export default function BudgetTemplatesPage() {
 
   const fetchWeddings = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/weddings`);
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);

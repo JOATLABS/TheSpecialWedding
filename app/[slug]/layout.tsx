@@ -1,12 +1,13 @@
 // app/[slug]/layout.tsx
 
 import React from "react";
+import { getApiBaseUrl } from '@/utils/env';
 import { notFound } from "next/navigation";
 import { WeddingProvider } from '@/components/WeddingProvider';
 import { Wedding } from '@/types/wedding';
 
 async function fetchWeddingPrivacyInfo(slug: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+  const baseUrl = getApiBaseUrl();
   const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
   try {
     const res = await fetch(`${apiUrl}/weddings/privacy-info/${slug}`, { cache: 'no-store' });

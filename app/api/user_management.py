@@ -15,14 +15,14 @@ class UserInviteModel(BaseModel):
     email: str
     role: str  # wedding_planner, vendor
     company_name: Optional[str] = None
-    subscription_plan_id: Optional[str] = None
+    plan_id: Optional[str] = None
     service_type: Optional[str] = None  # For vendors
     assigned_wedding_ids: List[str] = []  # For vendors
 
 
 class UserUpdateModel(BaseModel):
     company_name: Optional[str] = None
-    subscription_plan_id: Optional[str] = None
+    plan_id: Optional[str] = None
     subscription_status: Optional[str] = None
     max_weddings: Optional[int] = None
     is_active: Optional[bool] = None

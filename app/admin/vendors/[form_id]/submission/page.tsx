@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
@@ -39,7 +40,7 @@ export default function VendorSubmissionPage() {
 
  const fetchSubmission = useCallback(async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/vendor-forms/${formId}`, {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -95,7 +96,7 @@ export default function VendorSubmissionPage() {
 
  const updateSubmissionStatus = async (newStatus: string) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/vendor-forms/${formId}/status`, {
  method: 'PUT',
  headers: {

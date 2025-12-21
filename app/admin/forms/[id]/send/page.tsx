@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 
@@ -51,7 +52,7 @@ export default function SendFormPage() {
 
  const fetchForm = useCallback(async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/forms/${formId}`, {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -144,7 +145,7 @@ export default function SendFormPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
 
  const validEmails = recipients.filter(email =>
  email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter, useParams } from 'next/navigation';
 
 interface FormField {
@@ -43,7 +44,7 @@ export default function PublicFormPage() {
 
  const fetchForm = useCallback(async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/public/forms/${formId}`);
 
  if (response.ok) {
@@ -95,7 +96,7 @@ export default function PublicFormPage() {
  setError('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  // Prepare submission data
  const submissionData = {
  responses,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import type { ReactElement } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
@@ -105,7 +106,7 @@ export default function PlatformMetricsPage(): ReactElement {
         throw new Error('Missing admin authentication token. Please log in again.');
       }
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const url = `${baseUrl}${path}`;
       const response = await fetch(url, {
         headers: {

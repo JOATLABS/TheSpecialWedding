@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
@@ -148,7 +149,7 @@ export default function AdminWeddingsPage() {
   const fetchWeddings = useCallback(async () => {
     setLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       // Use authenticated planner endpoint to get assigned weddings
       const endpoint = `${baseUrl}/admin/planner/weddings`;
       const response = await fetch(endpoint, {
@@ -175,7 +176,7 @@ export default function AdminWeddingsPage() {
 
   const fetchPlanners = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/users?role=wedding_planner`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -288,7 +289,7 @@ export default function AdminWeddingsPage() {
     setError('');
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const url = editingId 
         ? `${baseUrl}/admin/weddings/${editingId}`
         : `${baseUrl}/admin/weddings`;
@@ -353,7 +354,7 @@ export default function AdminWeddingsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
         method: 'DELETE',
         headers: {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 
@@ -60,7 +61,7 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -101,7 +102,7 @@ export default function ProfilePage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/profile/password`, {
         method: 'PUT',
         headers: {
@@ -131,7 +132,7 @@ export default function ProfilePage() {
     e.preventDefault();
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/profile/email`, {
         method: 'PUT',
         headers: {
@@ -166,7 +167,7 @@ export default function ProfilePage() {
         company_name: profileData.company_name
       };
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/profile/info`, {
         method: 'PUT',
         headers: {
@@ -223,7 +224,7 @@ export default function ProfilePage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/profile/image`, {
         method: 'POST',
         headers: {
@@ -257,7 +258,7 @@ export default function ProfilePage() {
     if (!confirm('Are you sure you want to remove your profile image?')) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/profile/image`, {
         method: 'DELETE',
         headers: {

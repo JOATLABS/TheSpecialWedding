@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
@@ -30,7 +31,7 @@ export default function AllErrorsPage() {
 
   const fetchErrors = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
@@ -77,7 +78,7 @@ export default function AllErrorsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       const unacknowledgedErrors = errors.filter(e => !e.acknowledged);

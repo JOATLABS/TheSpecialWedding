@@ -86,6 +86,15 @@ class BudgetService:
             cursor = self.budget_categories.find({"wedding_id": wedding_id})
             categories = await cursor.to_list(length=None)
 
+            # Serialize categories (convert ObjectId to string)
+            serialized_categories = []
+            for cat in categories:
+                serialized_cat = {**cat}
+                if "_id" in serialized_cat:
+                    serialized_cat["id"] = str(serialized_cat["_id"])
+                    serialized_cat["_id"] = str(serialized_cat["_id"])
+                serialized_categories.append(serialized_cat)
+
             # Get budget summary
             summary = await self._calculate_budget_summary(wedding_id)
 
@@ -95,11 +104,20 @@ class BudgetService:
             ).sort("created_at", -1).limit(10)
             alerts = await alerts_cursor.to_list(length=None)
 
+            # Serialize alerts (convert ObjectId to string)
+            serialized_alerts = []
+            for alert in alerts:
+                serialized_alert = {**alert}
+                if "_id" in serialized_alert:
+                    serialized_alert["id"] = str(serialized_alert["_id"])
+                    serialized_alert["_id"] = str(serialized_alert["_id"])
+                serialized_alerts.append(serialized_alert)
+
             return {
                 "wedding_id": wedding_id,
                 "summary": summary.dict(),
-                "categories": categories,
-                "alerts": alerts,
+                "categories": serialized_categories,
+                "alerts": serialized_alerts,
                 "last_updated": datetime.utcnow()
             }
 

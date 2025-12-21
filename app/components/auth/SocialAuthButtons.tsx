@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useCallback, useMemo } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 
-const DEFAULT_BASE_URL = 'http://localhost:8000';
+
 
 type AuthFlow = 'signup' | 'login';
 
@@ -58,7 +59,7 @@ export const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
   className = '',
   buttonLayout = 'stacked',
 }) => {
-  const baseUrl = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_BASE_URL, []);
+  const baseUrl = useMemo(() => getApiBaseUrl(), []);
 
   const destinations = useMemo(
     () => ({

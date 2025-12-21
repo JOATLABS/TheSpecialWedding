@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
 import { MultiSelect } from '@/components/ui/MultiSelect';
@@ -81,7 +82,7 @@ export default function AdminRemindersPage() {
  if (!token) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/weddings`, {
    headers: {
      'Authorization': `Bearer ${token}`,
@@ -99,7 +100,7 @@ export default function AdminRemindersPage() {
  if (!selectedWedding || !token) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(
  `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
  {
@@ -124,7 +125,7 @@ export default function AdminRemindersPage() {
  if (!token) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
 
  // Fetch both SMS and Email logs
  const [smsResponse, emailResponse] = await Promise.all([
@@ -181,7 +182,7 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  let totalSent = 0;
  let totalFailed = 0;
 
@@ -279,7 +280,7 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  let totalSent = 0;
  let totalFailed = 0;
 
@@ -356,7 +357,7 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
  method: 'POST',
  headers: {
@@ -608,7 +609,7 @@ export default function AdminRemindersPage() {
  <button
  type="button"
  onClick={async () => {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/email/preview-invitation?guest_name=John Doe&couple_names=${selectedWeddingData?.couple_names}&wedding_date=${selectedWeddingData?.date}`, {
  headers: { 'Authorization': `Bearer ${token}` },
  });

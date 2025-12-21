@@ -44,19 +44,19 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error creating vendor form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create vendor form: {str(e)}")
-    def get_vendor_forms_for_planner(self, planner_email: str) -> List[dict]:
+    async def get_vendor_forms_for_planner(self, planner_email: str) -> List[dict]:
         """Get all vendor forms for a specific planner"""
         try:
             # Get planner's weddings
-            planner_weddings = list(self.weddings_collection.find(
+            planner_weddings = await self.weddings_collection.find(
                 {"assigned_planner_email": planner_email},
                 {"_id": 1}
-            ))
+            ).to_list(length=None)
             wedding_ids = [str(w["_id"]) for w in planner_weddings]
             # Get vendor forms for these weddings
-            vendor_forms = list(self.vendor_forms_collection.find({
+            vendor_forms = await self.vendor_forms_collection.find({
                 "wedding_id": {"$in": wedding_ids}
-            }))
+            }).to_list(length=None)
 
             # Convert ObjectId to string
             for form in vendor_forms:
@@ -66,10 +66,10 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error fetching vendor forms: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
-    def get_all_vendor_forms(self) -> List[dict]:
+    async def get_all_vendor_forms(self) -> List[dict]:
         """Get all vendor forms (ROOT_ADMIN only)"""
         try:
-            vendor_forms = list(self.vendor_forms_collection.find())
+            vendor_forms = await self.vendor_forms_collection.find().to_list(length=None)
 
             # Convert ObjectId to string
             for form in vendor_forms:
@@ -194,22 +194,22 @@ class VendorFormService:
 vendor_service = VendorFormService()
 
 @router.post("/vendor-forms", tags=["Vendor Management"])
-def create_vendor_form(form_data: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_vendor_form(form_data: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new vendor form"""
-    return vendor_service.create_vendor_form(form_data, current_user.email)
+    return await vendor_service.create_vendor_form(form_data, current_user.email)
 
 @router.get("/vendor-forms", tags=["Vendor Management"])
-def get_vendor_forms(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_vendor_forms(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get vendor forms - planners see only their forms, ROOT_ADMIN sees all"""
     if current_user.is_root_admin:
-        return vendor_service.get_all_vendor_forms()
+        return await vendor_service.get_all_vendor_forms()
     else:
-        return vendor_service.get_vendor_forms_for_planner(current_user.email)
+        return await vendor_service.get_vendor_forms_for_planner(current_user.email)
 
 @router.post("/vendor-forms/{form_id}/send", tags=["Vendor Management"])
-def send_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def send_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Send vendor form via email"""
-    return vendor_service.send_vendor_form(form_id, current_user.email)
+    return await vendor_service.send_vendor_form(form_id, current_user.email)
 
 @router.get("/vendor-forms/{form_id}", tags=["Vendor Management"])
 async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):

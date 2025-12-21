@@ -1,12 +1,13 @@
 'use client';
 import React, { useCallback, useContext, useEffect, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams } from 'next/navigation';
 import { WeddingContext } from '@/contexts/WeddingContext';
 import { LandingLayout } from '@/components/landing-page/LandingLayout';
 import { GalleryImage } from '@/types/landing';
 import GuestVerificationModal from '@/components/GuestVerificationModal';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+const API_BASE_URL = getApiBaseUrl();
 const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
 export default function WeddingLandingPage() {

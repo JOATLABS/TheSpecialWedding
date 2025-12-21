@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
@@ -39,7 +40,7 @@ export default function ErrorDetailsPage() {
   useEffect(() => {
     const fetchErrorDetails = async () => {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const baseUrl = getApiBaseUrl();
         const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
         if (!token) {
@@ -77,7 +78,7 @@ export default function ErrorDetailsPage() {
 
   const handleAcknowledge = async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       const response = await fetch(`${baseUrl}/admin/platform/errors/${errorId}/acknowledge`, {

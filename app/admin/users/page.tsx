@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -41,7 +42,7 @@ interface Planner {
   created_at?: string;
   wedding_count?: number;
   subscription_tier?: string;
-  subscription_plan_id?: string;
+  plan_id?: string;
   organization?: string;
 }
 
@@ -76,7 +77,7 @@ export default function AdminUsersPage() {
     setError('');
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/users?role=wedding_planner`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -116,7 +117,7 @@ export default function AdminUsersPage() {
     setInviteLoading(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/users/invite`, {
         method: 'POST',
         headers: {
@@ -146,7 +147,7 @@ export default function AdminUsersPage() {
 
   const handleSuspendUser = async (userId: string) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/users/${userId}/suspend`, {
         method: 'POST',
         headers: {
@@ -166,7 +167,7 @@ export default function AdminUsersPage() {
 
   const handleActivateUser = async (userId: string) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/users/${userId}/activate`, {
         method: 'POST',
         headers: {
@@ -190,7 +191,7 @@ export default function AdminUsersPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/users/${userId}`, {
         method: 'DELETE',
         headers: {
@@ -574,9 +575,9 @@ export default function AdminUsersPage() {
 
                         {/* Subscription */}
                         <td className="px-6 py-5 text-center">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${getSubscriptionStyle(planner.subscription_tier || planner.subscription_plan_id)}`}>
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${getSubscriptionStyle(planner.subscription_tier || planner.plan_id)}`}>
                             <Shield className="w-3.5 h-3.5" />
-                            {planner.subscription_tier || planner.subscription_plan_id || 'Free'}
+                            {planner.subscription_tier || planner.plan_id || 'Free'}
                           </span>
                         </td>
 

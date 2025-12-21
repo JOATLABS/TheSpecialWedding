@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import {
@@ -108,7 +109,7 @@ export default function PlannerCalendarPage() {
 
     const fetchWeddings = async () => {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const baseUrl = getApiBaseUrl();
         const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
           headers: {
             Authorization: `Bearer ${token}`,

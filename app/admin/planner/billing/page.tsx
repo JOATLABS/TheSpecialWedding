@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import { getApiBaseUrl } from '@/utils/env';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import {
@@ -113,7 +114,7 @@ export default function PlannerBillingPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token || !userProfile) return;
@@ -134,7 +135,7 @@ export default function PlannerBillingPage() {
       let subscriptionLoaded = false;
       try {
         const stripeSubResponse = await fetch(
-          `${baseUrl}/admin/stripe/subscription`,
+          `${baseUrl}/stripe/subscription`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -245,7 +246,7 @@ export default function PlannerBillingPage() {
       // Load billing history from Stripe
       try {
         const invoicesResponse = await fetch(
-          `${baseUrl}/admin/stripe/invoices`,
+          `${baseUrl}/stripe/invoices`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -342,9 +343,9 @@ export default function PlannerBillingPage() {
     }
   }, [userProfile, loadData]);
 
-  const handleManageBilling = async () => {
+  const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update', loadingMessage?: string) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
@@ -352,8 +353,10 @@ export default function PlannerBillingPage() {
         return;
       }
 
+      toast.loading(loadingMessage || 'Opening billing portal...', { id: 'portal-loading' });
+
       const response = await fetch(
-        `${baseUrl}/admin/stripe/create-portal-session`,
+        `${baseUrl}/stripe/create-portal-session`,
         {
           method: 'POST',
           headers: {
@@ -362,29 +365,49 @@ export default function PlannerBillingPage() {
           },
           credentials: 'include',
           body: JSON.stringify({
-            return_url: `${window.location.origin}/admin/planner/billing`
+            return_url: `${window.location.origin}/admin/planner/billing`,
+            flow_type: flowType
           })
         }
       );
 
+      toast.dismiss('portal-loading');
+
       if (!response.ok) {
-        throw new Error('Failed to create portal session');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || 'Failed to create portal session';
+
+        if (response.status === 404) {
+          toast.error('No billing account found. Please subscribe to a plan first.');
+        } else if (response.status === 503) {
+          toast.error('Billing service is currently unavailable. Please try again later.');
+        } else {
+          toast.error(errorMessage);
+        }
+        return;
       }
 
       const data = await response.json();
 
       if (data.portal_url) {
         window.location.href = data.portal_url;
+      } else {
+        toast.error('Unable to open billing portal. Please try again.');
       }
     } catch (error) {
+      toast.dismiss('portal-loading');
       console.error('Portal error:', error);
-      toast.error('Failed to open billing portal. Please contact support.');
+      toast.error('Failed to connect to billing service. Please check your connection and try again.');
     }
   };
 
+  const handleChangePlan = () => openBillingPortal('subscription_update', 'Opening plan options...');
+  const handleUpdatePayment = () => openBillingPortal('payment_method_update', 'Opening payment settings...');
+  const handleManageBilling = () => openBillingPortal();
+
   const handleSubscribe = async (planId: string, interval: 'monthly' | 'yearly' = 'monthly') => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
@@ -393,7 +416,7 @@ export default function PlannerBillingPage() {
       }
 
       const response = await fetch(
-        `${baseUrl}/admin/stripe/create-checkout-session`,
+        `${baseUrl}/stripe/create-checkout-session`,
         {
           method: 'POST',
           headers: {
@@ -637,7 +660,7 @@ export default function PlannerBillingPage() {
               {alert.actionLabel && (
                 <Button
                   size="sm"
-                  onClick={handleManageBilling}
+                  onClick={alert.action === 'update_payment' ? handleUpdatePayment : handleManageBilling}
                   className={
                     alert.type === 'error'
                       ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -716,7 +739,7 @@ export default function PlannerBillingPage() {
               {/* Actions */}
               <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <Button
-                  onClick={handleManageBilling}
+                  onClick={handleChangePlan}
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   <TrendingUp className="w-4 h-4 mr-2" />
@@ -765,7 +788,7 @@ export default function PlannerBillingPage() {
                   </div>
                 </div>
                 <Button
-                  onClick={handleManageBilling}
+                  onClick={handleUpdatePayment}
                   variant="outline"
                   className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
                 >
@@ -964,9 +987,9 @@ export default function PlannerBillingPage() {
                     Contact our support team for billing questions or subscription changes.
                   </p>
                   <Button
-                    variant="link"
-                    className="text-blue-600 dark:text-blue-400 p-0 h-auto mt-2 text-sm"
-                    onClick={() => window.open('mailto:support@example.com', '_blank')}
+                    variant="ghost"
+                    className="text-blue-600 dark:text-blue-400 p-0 h-auto mt-2 text-sm hover:bg-transparent hover:underline"
+                    onClick={() => router.push('/admin/support')}
                   >
                     Contact Support
                     <ChevronRight className="w-4 h-4 ml-1" />
