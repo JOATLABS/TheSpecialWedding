@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from '@/utils/env';
+
 export type VendorDashboardResponse = {
   profile: {
     email: string;
@@ -61,7 +63,7 @@ export type VendorDashboardResponse = {
   };
 };
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 
 export async function fetchVendorDashboard(token: string): Promise<VendorDashboardResponse> {
   const response = await fetch(`${BASE_URL}/vendor/dashboard`, {

@@ -79,6 +79,37 @@ class QuoteStatus(str, Enum):
     CONVERTED = "converted"  # Converted to contract
 
 
+class ContractType(str, Enum):
+    """Type of contract - template-based or uploaded PDF"""
+    TEMPLATE = "template"
+    UPLOADED_PDF = "uploaded_pdf"
+    CUSTOM = "custom"
+
+
+class PaymentLinkStatus(str, Enum):
+    """Payment link lifecycle status"""
+    DRAFT = "draft"
+    SENT = "sent"
+    CLICKED = "clicked"
+    PAID = "paid"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class PayerType(str, Enum):
+    """Who is paying"""
+    COUPLE = "couple"
+    VENDOR = "vendor"
+    PLANNER = "planner"
+
+
+class RecipientType(str, Enum):
+    """Who receives the payment"""
+    VENDOR = "vendor"
+    PLANNER = "planner"
+    COUPLE = "couple"
+
+
 # =============================================================================
 # VENDOR PROFILE (Master Directory)
 # =============================================================================
@@ -261,6 +292,15 @@ class VendorContract(BaseModel):
     # Contract Details
     contract_title: str = Field(..., min_length=1, max_length=300, description="Contract title")
     contract_number: Optional[str] = Field(None, description="Contract reference number")
+    contract_type: ContractType = Field(ContractType.TEMPLATE, description="template, uploaded_pdf, or custom")
+
+    # Uploaded PDF (when contract_type is uploaded_pdf)
+    uploaded_pdf_url: Optional[str] = Field(None, description="URL of uploaded contract PDF")
+    uploaded_pdf_name: Optional[str] = Field(None, description="Original filename of uploaded PDF")
+
+    # Form Data Integration
+    form_submission_ids: List[str] = Field(default_factory=list, description="Form submissions used to populate contract")
+    form_data_mappings: Dict[str, Any] = Field(default_factory=dict, description="Mapping of placeholders to form data")
 
     # Populated Content (with placeholders filled)
     sections: List[Dict] = Field(default_factory=list, description="Contract sections with content")
@@ -456,6 +496,81 @@ class VendorAssignment(BaseModel):
 
 
 # =============================================================================
+# PAYMENT LINK
+# =============================================================================
+
+class PaymentLink(BaseModel):
+    """
+    Payment link for collecting payments from vendors or couples.
+    Supports multiple payment scenarios:
+    - Couple pays vendor (planner facilitates)
+    - Couple pays planner (planner fee)
+    - Vendor pays planner (referral commission)
+    """
+    id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
+
+    # Relationships
+    wedding_id: Optional[str] = Field(None, description="Wedding ID if applicable")
+    contract_id: Optional[str] = Field(None, description="Related contract ID")
+    milestone_id: Optional[str] = Field(None, description="Related payment milestone ID")
+    vendor_profile_id: Optional[str] = Field(None, description="Related vendor ID")
+
+    # Payer Information
+    payer_type: PayerType = Field(..., description="Who is paying: couple, vendor, or planner")
+    payer_email: str = Field(..., description="Email of the person paying")
+    payer_name: str = Field(..., description="Name of the person paying")
+    payer_phone: Optional[str] = Field(None, description="Phone number of payer")
+
+    # Recipient Information
+    recipient_type: RecipientType = Field(..., description="Who receives: vendor, planner, or couple")
+    recipient_email: str = Field(..., description="Email of recipient")
+    recipient_name: str = Field(..., description="Name of recipient")
+
+    # Payment Details
+    amount: float = Field(..., gt=0, description="Payment amount")
+    currency: str = Field("USD", description="Currency code")
+    description: str = Field(..., min_length=1, max_length=500, description="What this payment is for")
+    due_date: Optional[datetime] = Field(None, description="When payment is due")
+
+    # Stripe Integration
+    stripe_payment_link_id: Optional[str] = Field(None, description="Stripe Payment Link ID")
+    stripe_payment_link_url: Optional[str] = Field(None, description="Stripe Payment Link URL")
+    stripe_checkout_session_id: Optional[str] = Field(None, description="Stripe Checkout Session ID")
+    stripe_payment_intent_id: Optional[str] = Field(None, description="Stripe PaymentIntent ID")
+
+    # Status
+    status: PaymentLinkStatus = Field(PaymentLinkStatus.DRAFT, description="Link status")
+    sent_at: Optional[datetime] = Field(None, description="When link was sent")
+    clicked_at: Optional[datetime] = Field(None, description="When link was first clicked")
+    paid_at: Optional[datetime] = Field(None, description="When payment completed")
+    expires_at: Optional[datetime] = Field(None, description="When link expires")
+
+    # Communication
+    email_subject: Optional[str] = Field(None, description="Custom email subject")
+    email_message: Optional[str] = Field(None, description="Custom email message")
+    reminder_sent_count: int = Field(0, description="Number of reminders sent")
+    last_reminder_at: Optional[datetime] = Field(None, description="When last reminder was sent")
+
+    # Access Control
+    access_token: str = Field(..., description="Secure token for payment link access")
+
+    # System
+    created_by: str = Field(..., description="Planner email who created this")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+        str_strip_whitespace=True
+    )
+
+    @field_serializer('id', when_used='json')
+    def serialize_id(self, value) -> str:
+        return str(value) if value else None
+
+
+# =============================================================================
 # VENDOR COMMUNICATION LOG
 # =============================================================================
 
@@ -594,3 +709,65 @@ class RecordPaymentRequest(BaseModel):
     payment_date: Optional[datetime] = None
     notes: Optional[str] = None
     receipt_url: Optional[str] = None
+
+
+class UploadContractPdfRequest(BaseModel):
+    """Request to create contract from uploaded PDF"""
+    wedding_id: str
+    vendor_profile_id: str
+    contract_title: str
+    total_amount: float
+    deposit_amount: Optional[float] = None
+    service_date: Optional[datetime] = None
+    service_location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class UpdateContractSectionsRequest(BaseModel):
+    """Request to update contract sections"""
+    sections: List[Dict[str, Any]]
+    terms_and_conditions: Optional[str] = None
+    cancellation_policy: Optional[str] = None
+    custom_clauses: Optional[str] = None
+
+
+class CreatePaymentLinkRequest(BaseModel):
+    """Request to create a payment link"""
+    # Payer info
+    payer_type: PayerType
+    payer_email: str
+    payer_name: str
+    payer_phone: Optional[str] = None
+
+    # Recipient info
+    recipient_type: RecipientType
+    recipient_email: str
+    recipient_name: str
+
+    # Payment details
+    amount: float
+    currency: str = "USD"
+    description: str
+    due_date: Optional[datetime] = None
+
+    # Optional relationships
+    wedding_id: Optional[str] = None
+    contract_id: Optional[str] = None
+    milestone_id: Optional[str] = None
+    vendor_profile_id: Optional[str] = None
+
+    # Email customization
+    email_subject: Optional[str] = None
+    email_message: Optional[str] = None
+
+
+class SendPaymentLinkRequest(BaseModel):
+    """Request to send a payment link"""
+    payment_link_id: str
+    custom_message: Optional[str] = None
+
+
+class GetFormDataForContractRequest(BaseModel):
+    """Request to get form data that can be used in a contract"""
+    vendor_email: str
+    wedding_id: str

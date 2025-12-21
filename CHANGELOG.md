@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Enhanced Vendor Management System**: Comprehensive CRM for managing vendors, contracts, and payments
+  - **PDF Contract Upload**: Planners can upload their own contract PDFs instead of using templates
+    - S3 storage integration for secure document hosting
+    - Full tracking workflow (draft → sent → viewed → signed)
+    - Works alongside template-based contracts
+  - **Form Data Integration**: Use vendor form submissions to populate contracts
+    - Auto-extract fields from vendor inquiry forms
+    - Smart suggestions for contract placeholders
+    - One-click insertion of package details, pricing, and terms
+  - **Contract Customization**: Edit contract sections after creation
+    - Add/edit/remove sections with rich content
+    - Custom clauses and terms additions
+    - Modify terms & conditions and cancellation policies
+  - **Payment Links**: Send Stripe payment links to vendors or couples
+    - Multiple payment scenarios:
+      - Couple → Vendor (vendor payment)
+      - Couple → Planner (planning fee)
+      - Vendor → Planner (referral commission)
+    - Custom email messages and due dates
+    - Real-time payment status tracking
+    - Stripe webhook integration for automatic updates
+  - **New Models**: `PaymentLink`, `ContractType`, `PayerType`, `RecipientType`
+  - **New API Endpoints**:
+    - `POST /admin/contracts/upload-pdf` - Upload existing PDF contracts
+    - `GET /admin/contracts/{id}/form-data` - Get form data for contract
+    - `POST /admin/contracts/{id}/apply-form-data` - Apply form data to placeholders
+    - `PUT /admin/contracts/{id}/sections` - Update contract sections
+    - `POST /admin/payment-links` - Create payment link
+    - `POST /admin/payment-links/{id}/send` - Send payment link email
+    - `GET /admin/payment-links` - List payment links
+  - **Subscription Feature Gating**: `vendor_management` feature flag for plans
+
+### Fixed
+
+- **Budget Tracker API**: Fixed ObjectId serialization error causing "Failed to fetch budget summary"
+  - Added proper serialization for MongoDB ObjectId fields in categories and alerts
+  - Removed `ge=0` constraint on `remaining_budget` field to allow negative values when overspent
+- **Wedding Party Sync**: Removed redundant "Wedding Party (Other)" group option
+  - Wedding party now correctly comprises only: Maid of Honor, Bridesmaids, Best Man, Groomsmen
+  - Updated guest group presets and wedding party sync mappings
+- **Gallery Navigation**: Fixed 404 error on `/admin/gallery` - sidebar now correctly links to `/admin/gallery/upload`
+- **Wedding Slug Collision**: Added unique slug enforcement to prevent URL conflicts when multiple planners use same couple names
+  - Backend auto-appends suffix (e.g., `john-jane-2`) if slug already exists
+  - Added unique database index on wedding slugs
+- **Gallery Management Dark Mode**: Fixed dark mode styling on Gallery Management page
+  - Updated titles, labels, tabs, cards, and badges for proper dark theme support
+
 ## [1.4.0] - 2024-12-14
 
 ### Added

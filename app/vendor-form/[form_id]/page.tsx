@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface FormField {
@@ -39,7 +40,7 @@ export default function PublicVendorFormPage() {
   const [submitted, setSubmitted] = useState(false);
 
   const fetchForm = useCallback(async (id: string, inviteToken: string) => {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/vendor-form/${id}/public?token=${inviteToken}`);
 
     if (!response.ok) {
@@ -111,7 +112,7 @@ export default function PublicVendorFormPage() {
         }
       }
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/vendor-form/${formId}/submit?token=${token}`, {
         method: 'POST',
         headers: {

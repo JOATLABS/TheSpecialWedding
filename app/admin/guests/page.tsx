@@ -67,7 +67,6 @@ const PRESET_GROUPS = [
   { id: 'bridesmaids', label: "Bridesmaids", isWeddingParty: true, side: 'bride' as const },
   { id: 'best_man', label: "Best Man", isWeddingParty: true, side: 'groom' as const },
   { id: 'groomsmen', label: "Groomsmen", isWeddingParty: true, side: 'groom' as const },
-  { id: 'wedding_party', label: "Wedding Party (Other)", isWeddingParty: true },
   { id: 'friends_bride', label: "Friends of the Bride" },
   { id: 'friends_groom', label: "Friends of the Groom" },
   { id: 'coworkers', label: "Coworkers" },
@@ -75,8 +74,8 @@ const PRESET_GROUPS = [
   { id: 'vip', label: "VIP Guests" },
 ];
 
-// Wedding party group IDs for sync feature
-const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'groomsmen', 'wedding_party'];
+// Wedding party group IDs for sync feature (bridesmaids, groomsmen, maid of honor, best man)
+const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'groomsmen'];
 
 const EVENT_OPTIONS = [
   { value: 'traditional', label: 'Traditional Ceremony' },

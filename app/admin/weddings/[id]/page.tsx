@@ -8,12 +8,12 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 
 // Wedding party group mappings for sync
+// Wedding party = bridesmaids, groomsmen, maid of honor, best man
 const WEDDING_PARTY_GROUPS = {
   maid_of_honor: { role: 'maid_of_honor', side: 'bride' as const },
   bridesmaids: { role: 'bridesmaid', side: 'bride' as const },
   best_man: { role: 'best_man', side: 'groom' as const },
   groomsmen: { role: 'groomsman', side: 'groom' as const },
-  wedding_party: { role: 'wedding_party', side: 'bride' as const },
 };
 
 interface Guest {
