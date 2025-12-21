@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -93,7 +94,7 @@ export default function VendorManagementPage() {
 
   const fetchVendors = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/vendor-forms`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -112,7 +113,7 @@ export default function VendorManagementPage() {
 
   const fetchWeddings = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const endpoint = userProfile?.is_root_admin
         ? `${baseUrl}/admin/weddings`
         : `${baseUrl}/admin/planner/weddings`;
@@ -159,7 +160,7 @@ export default function VendorManagementPage() {
     setLoading(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const url = editingId
         ? `${baseUrl}/admin/vendor-forms/${editingId}`
         : `${baseUrl}/admin/vendor-forms`;
@@ -216,7 +217,7 @@ export default function VendorManagementPage() {
   const sendVendorForm = async (vendorId: string) => {
     try {
       setLoading(true);
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/vendor-forms/${vendorId}/send`, {
         method: 'POST',
         headers: {

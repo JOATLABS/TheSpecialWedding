@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { GlassCard } from '../components/ui/GlassCard';
 
@@ -41,7 +42,7 @@ function SetupAccountContent() {
   });
 
   const validateToken = useCallback(async (invitationToken: string) => {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/admin/setup/validate-token/${invitationToken}`);
 
     if (!response.ok) {
@@ -106,7 +107,7 @@ function SetupAccountContent() {
     setError('');
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/setup/complete`, {
         method: 'POST',
         headers: {

@@ -532,7 +532,7 @@ class StripeService:
             }
 
             if plan_id:
-                user_updates["subscription_plan_id"] = plan_id
+                user_updates["plan_id"] = plan_id
             if customer_id:
                 user_updates["stripe_customer_id"] = customer_id
             if stripe_subscription_id:
@@ -574,13 +574,19 @@ class StripeService:
 
     # ==================== CUSTOMER PORTAL ====================
 
-    async def create_portal_session(self, user_id: str, return_url: str = None) -> Dict[str, str]:
+    async def create_portal_session(
+        self,
+        user_id: str,
+        return_url: str = None,
+        flow_type: str = None
+    ) -> Dict[str, str]:
         """
         Create a Stripe Customer Portal session for subscription management
 
         Args:
             user_id: Internal user ID
             return_url: URL to return to after portal session
+            flow_type: Optional flow type - 'payment_method_update' or 'subscription_update'
 
         Returns:
             Dictionary with portal session URL
@@ -599,13 +605,32 @@ class StripeService:
             if not return_url:
                 return_url = f"{settings.frontend_url}/admin/billing"
 
-            # Create portal session
-            portal_session = stripe.billing_portal.Session.create(
-                customer=customer_id,
-                return_url=return_url,
-            )
+            # Build portal session params
+            portal_params = {
+                "customer": customer_id,
+                "return_url": return_url,
+            }
 
-            logger.info(f"Created portal session for user {user_id}")
+            # Add flow_data for specific flows
+            if flow_type == "payment_method_update":
+                portal_params["flow_data"] = {
+                    "type": "payment_method_update"
+                }
+            elif flow_type == "subscription_update":
+                # Get the current subscription to specify which one to update
+                subscription = await self.subscriptions_collection.find_one({"user_id": user_id})
+                if subscription and subscription.get("stripe_subscription_id"):
+                    portal_params["flow_data"] = {
+                        "type": "subscription_update",
+                        "subscription_update": {
+                            "subscription": subscription["stripe_subscription_id"]
+                        }
+                    }
+
+            # Create portal session
+            portal_session = stripe.billing_portal.Session.create(**portal_params)
+
+            logger.info(f"Created portal session for user {user_id} with flow_type={flow_type}")
 
             return {
                 "url": portal_session.url

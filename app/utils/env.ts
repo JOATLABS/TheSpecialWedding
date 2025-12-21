@@ -36,9 +36,8 @@ export function getFrontendUrl(): string {
 }
 
 /**
- * Get the API base URL with a fallback (for backwards compatibility during migration)
- * @deprecated Use getApiBaseUrl() instead for strict validation
+ * Check if API base URL is configured
  */
-export function getApiBaseUrlWithFallback(fallback: string = 'http://localhost:8000'): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || fallback;
+export function isApiConfigured(): boolean {
+  return !!process.env.NEXT_PUBLIC_API_BASE_URL;
 }

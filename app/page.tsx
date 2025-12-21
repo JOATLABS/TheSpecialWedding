@@ -1,5 +1,6 @@
 "use client";
 
+import { getApiBaseUrl } from '@/utils/env';
 import {
   BellAlertIcon,
   CalendarDaysIcon,
@@ -311,7 +312,7 @@ export default function HomePage() {
   useEffect(() => {
     const fetchPlans = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/public/subscription-plans`);
+        const response = await fetch(`${getApiBaseUrl()}/public/subscription-plans`);
         if (response.ok) {
           const data = await response.json();
           setApiPlans(data.sort((a: ApiPlan, b: ApiPlan) => a.sort_order - b.sort_order));

@@ -42,7 +42,7 @@ class SubscriptionPlanModel(BaseModel):
     ai_credits_monthly: int = Field(10, description="AI credits per month")
     storage_gb: int = Field(1, description="Storage limit in GB")
     staff_seats: int = Field(0, description="Number of staff accounts allowed")
-    # Feature flags
+    # Feature flags - vendor_management enables/disables the entire vendor feature
     features: Dict[str, bool] = Field(default_factory=dict, description="Feature availability flags")
     features_list: Optional[List[str]] = Field(None, description="Human-readable feature highlights for display")
 

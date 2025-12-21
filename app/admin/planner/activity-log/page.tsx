@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
@@ -28,7 +29,7 @@ export default function PlannerActivityLogPage() {
     try {
       setLoading(true);
       setError(null);
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/planner/activity-log?limit=${limit}`, {
         headers: {
           Authorization: `Bearer ${token}`,

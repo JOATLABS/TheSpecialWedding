@@ -33,6 +33,7 @@ class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):
 class CreatePortalSessionRequest(BaseModel):
     """Request model for creating a Customer Portal Session"""
     return_url: Optional[str] = Field(None, description="Return URL after portal session")
+    flow_type: Optional[str] = Field(None, description="Portal flow type: 'payment_method_update' or 'subscription_update'")
 
 
 class CreatePaymentIntentRequest(BaseModel):
@@ -189,7 +190,8 @@ async def create_portal_session(
 
         portal_session = await stripe_service.create_portal_session(
             user_id=user_id,
-            return_url=request.return_url
+            return_url=request.return_url,
+            flow_type=request.flow_type
         )
 
         return {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -48,7 +49,7 @@ export default function AdminGalleryUploadPage() {
   const fetchWeddings = async () => {
     if (!token) return;
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       // Use the authenticated planner endpoint to get assigned weddings
       const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
@@ -76,7 +77,7 @@ export default function AdminGalleryUploadPage() {
   const fetchUploadedImages = async (weddingSlug: string) => {
     setLoadingImages(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       
       // Fetch from all folders
       const folders = ['gallery', 'our-story', 'wedding-party'];
@@ -109,7 +110,7 @@ export default function AdminGalleryUploadPage() {
     if (!confirm('Are you sure you want to delete this image?')) return;
     
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       console.log('Deleting image with key:', imageKey);
       
       const response = await fetch(
@@ -162,7 +163,7 @@ export default function AdminGalleryUploadPage() {
         fd.append('wedding_slug', selectedWeddingSlug);
         fd.append('folder', selectedFolder);
         
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const baseUrl = getApiBaseUrl();
         const res = await fetch(
           `${baseUrl}/admin/gallery/upload`,
           {
@@ -305,7 +306,7 @@ export default function AdminGalleryUploadPage() {
                                 url.split('/').pop() || ''
                               );
                               try {
-                                const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+                                const base = getApiBaseUrl();
                                 const res = await fetch(
                                   `${base}/gallery?key=${encodeURIComponent(
                                     'gallery/' + key
@@ -458,7 +459,7 @@ export default function AdminGalleryUploadPage() {
                               console.log('Set as Background clicked for:', image.key || image.filename);
                               console.log('Selected wedding ID:', selectedWedding);
                               try {
-                                const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+                                const baseUrl = getApiBaseUrl();
                                 const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
                                   method: 'PUT',
                                   headers: {

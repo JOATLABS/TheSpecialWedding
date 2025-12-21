@@ -11,7 +11,7 @@ class UserModel(BaseModel):
     role: str = Field(default="wedding_planner", description="User role: ROOT_ADMIN, wedding_planner, vendor")
     # Wedding planner specific fields
     company_name: Optional[str] = Field(None, description="Wedding planning company name")
-    subscription_plan_id: Optional[str] = Field(None, description="Current subscription plan")
+    plan_id: Optional[str] = Field(None, description="Current subscription plan ID")
     subscription_status: str = Field(default="trial", description="Subscription status: trial, active, cancelled")
     trial_end_date: Optional[datetime] = Field(None, description="Trial expiration date")
 
@@ -48,7 +48,7 @@ class UserModel(BaseModel):
                 "email": "planner@example.com",
                 "role": "wedding_planner",
                 "company_name": "Dream Weddings LLC",
-                "subscription_plan_id": "plan_basic",
+                "plan_id": "plan_signature",
                 "subscription_status": "active",
                 "max_weddings": 5,
                 "ai_credits_remaining": 50

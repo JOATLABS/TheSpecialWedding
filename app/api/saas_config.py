@@ -348,7 +348,7 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
                 "id": planner["_id"],
                 "email": planner["email"],
                 "company_name": planner.get("company_name", "Unknown Company"),
-                "subscription_plan_id": planner.get("subscription_plan_id"),
+                "plan_id": planner.get("plan_id"),
                 "subscription_status": planner.get("subscription_status", "inactive"),
                 "max_weddings": planner.get("max_weddings", 0),
                 "assigned_weddings_count": weddings_count,
@@ -382,7 +382,7 @@ def create_wedding_planner(
             "email": planner_data["email"],
             "role": "wedding_planner",
             "company_name": planner_data.get("company_name", ""),
-            "subscription_plan_id": planner_data.get("subscription_plan_id"),
+            "plan_id": planner_data.get("plan_id"),
             "subscription_status": "inactive",
             "is_active": True,
             "created_by": current_user.email,
@@ -489,7 +489,7 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
             # Skip trial users for revenue calculation
             if user.get("subscription_status") == "trial":
                 continue
-            plan_id = user.get("subscription_plan_id")
+            plan_id = user.get("plan_id")
             if plan_id:
                 # Get the subscription plan (async find_one)
                 plan = await mongo.get_subscription_plans_collection().find_one({"_id": plan_id})
@@ -525,13 +525,13 @@ def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_
 
             # Count active users on this plan
             active_users_count = mongo.get_users_collection().count_documents({
-                "subscription_plan_id": plan_id,
+                "plan_id": plan_id,
                 "subscription_status": "active",
                 "is_active": True
             })
             # Count trial users on this plan
             trial_users_count = mongo.get_users_collection().count_documents({
-                "subscription_plan_id": plan_id,
+                "plan_id": plan_id,
                 "subscription_status": "trial",
                 "is_active": True
             })

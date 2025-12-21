@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { fetchFormResponsesCsv } from '@/services/formExport';
@@ -53,7 +54,7 @@ export default function FormResponsesPage() {
  const [exporting, setExporting] = useState(false);
  const [exportError, setExportError] = useState('');
 
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
 
  useEffect(() => {
  if (!token || !formId) return;

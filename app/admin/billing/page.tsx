@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
@@ -77,7 +78,7 @@ export default function AdminBillingDashboard() {
   const fetchBillingData = useCallback(async () => {
     try {
       setLoading(true);
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {

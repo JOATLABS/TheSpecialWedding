@@ -1,8 +1,9 @@
 /**
  * Calendar API client for planner task management and Google Calendar integration.
  */
+import { getApiBaseUrl } from '@/utils/env';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 
 // ============================================================================
 // Types

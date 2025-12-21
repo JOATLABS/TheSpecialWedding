@@ -32,7 +32,11 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
             "/health", "/docs", "/openapi.json", "/admin/token",
             "/weddings/verify-guest-access",  # Guest verification endpoints
             "/weddings/privacy-info",         # Public privacy info
-            "/weddings/guest-access"           # Token-based access
+            "/weddings/guest-access",         # Token-based access
+            "/stripe/",                       # Stripe endpoints use JWT auth
+            "/rsvp/",                         # RSVP endpoints use token auth
+            "/admin/auth",                    # Auth endpoints
+            "/public/"                        # Public endpoints
         ]
 
         # Store tokens with expiration

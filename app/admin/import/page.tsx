@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 
@@ -43,7 +44,7 @@ export default function AdminImportPage() {
  const fetchWeddings = useCallback(async () => {
  if (!token) return;
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  // Use authenticated planner endpoint to get assigned weddings
  const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
    headers: {
@@ -63,7 +64,7 @@ export default function AdminImportPage() {
 
  setLoadingGuests(true);
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(
  `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
  {
@@ -102,7 +103,7 @@ export default function AdminImportPage() {
  if (!confirm('Are you sure you want to delete this guest?')) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
  method: 'DELETE',
  headers: {
@@ -147,7 +148,7 @@ export default function AdminImportPage() {
  const formData = new FormData();
  formData.append('file', file);
 
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(
  `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
  {

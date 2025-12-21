@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function GoogleCalendarCallbackPage() {
@@ -32,7 +33,7 @@ export default function GoogleCalendarCallbackPage() {
       }
 
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const baseUrl = getApiBaseUrl();
         const response = await fetch(
           `${baseUrl}/admin/planner/calendar/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
         );

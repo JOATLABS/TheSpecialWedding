@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
@@ -65,7 +66,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         if (!token) return;
 
         try {
-            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+            const baseUrl = getApiBaseUrl();
             const response = await fetch(`${baseUrl}/admin/profile?t=${Date.now()}`, {
                 method: 'GET',
                 headers: {
@@ -101,7 +102,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         try {
         // SECURITY: Clear any existing sessions first to prevent session mixing
         clearAdminAuthStorage();
-            const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+            const baseUrl = getApiBaseUrl();
             const loginUrl = `${baseUrl}/admin/token`;
             const res = await fetch(loginUrl, {
                 method: 'POST',
@@ -179,7 +180,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             throw new Error('Authentication required');
         }
 
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const baseUrl = getApiBaseUrl();
         const response = await fetch(`${baseUrl}${path}`, {
             method,
             headers: {

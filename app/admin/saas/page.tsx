@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '../../components/ui/Card';
@@ -285,7 +286,7 @@ const SaasAdminDashboard = () => {
   }, [userProfile, router]);
   const fetchData = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
@@ -311,7 +312,7 @@ const SaasAdminDashboard = () => {
           id: planner.id,
           email: planner.email,
           companyName: planner.company_name,
-          subscriptionPlanId: planner.subscription_plan_id,
+          subscriptionPlanId: planner.plan_id,
           subscriptionStatus: planner.subscription_status,
           maxWeddings: planner.max_weddings,
           is_active: planner.is_active,
@@ -452,7 +453,7 @@ const SaasAdminDashboard = () => {
  }
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  const response = await fetch(`${baseUrl}/admin/subscription-plans/${planId}`, {
  method: 'DELETE',
@@ -476,7 +477,7 @@ const SaasAdminDashboard = () => {
 
  const handleSavePlan = async (planData: any) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
  const isEditing = !!editingPlan;
@@ -529,7 +530,7 @@ const SaasAdminDashboard = () => {
  }
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  if (!token) {
  alert('Authentication token not found. Please log in again.');
@@ -634,7 +635,7 @@ const SaasAdminDashboard = () => {
  if (!email || !companyName) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  const response = await fetch(`${baseUrl}/saas/wedding-planners`, {
  method: 'POST',
@@ -664,7 +665,7 @@ const SaasAdminDashboard = () => {
 
  const handleTogglePlannerStatus = async (plannerId: string) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // Find the planner to get current status
  const planner = planners.find(p => p.id === plannerId);
@@ -758,7 +759,7 @@ const SaasAdminDashboard = () => {
 
  const handleAssignPlan = async (plannerId: string, planId: string) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // First, cancel existing subscription if any
  try {

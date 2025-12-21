@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 
@@ -63,7 +64,7 @@ export default function AdminMetricsDashboard() {
     setError('');
     setLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/platform/metrics`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -90,7 +91,7 @@ export default function AdminMetricsDashboard() {
     setError('');
     setHistoryLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const startDate = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
       const response = await fetch(
         `${baseUrl}/admin/platform/metrics/history?start_date=${encodeURIComponent(startDate)}`,
