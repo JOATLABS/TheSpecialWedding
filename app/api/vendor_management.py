@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, 
 from typing import List, Optional
 from datetime import datetime
 
-from app.dependencies.auth_extended import ExtendedAuthUser
+from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.dependencies.feature_gates import require_vendor_feature
 from app.services.vendor_service import vendor_service
 from app.models.vendor import (
@@ -18,6 +18,7 @@ from app.models.vendor import (
     AssignVendorRequest,
     VendorCategory,
     CreatePaymentLinkRequest,
+    UpdateContractSectionsRequest,
     PayerType,
     RecipientType
 )
@@ -593,6 +594,70 @@ async def upload_contract_pdf(
         service_date=service_date_parsed,
         service_location=service_location,
         notes=notes
+    )
+
+
+# =============================================================================
+# FORM DATA INTEGRATION
+# =============================================================================
+
+@router.get("/contracts/{contract_id}/form-data", tags=["Contracts"])
+async def get_form_data_for_contract(
+    contract_id: str,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+):
+    """
+    Get form submissions from the vendor that can be used to populate contract fields.
+    Returns available fields from vendor forms and suggestions for mapping.
+    """
+    # First get the contract to find vendor email and wedding
+    contract = await vendor_service.get_contract(contract_id, current_user.email)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    return await vendor_service.get_form_data_for_contract(
+        vendor_email=contract["vendor_email"],
+        wedding_id=contract["wedding_id"],
+        planner_email=current_user.email
+    )
+
+
+@router.post("/contracts/{contract_id}/apply-form-data", tags=["Contracts"])
+async def apply_form_data_to_contract(
+    contract_id: str,
+    form_data_mappings: dict,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+):
+    """
+    Apply form data to a contract's sections.
+    Replaces placeholders like {{package_name}} with actual values from forms.
+    """
+    return await vendor_service.apply_form_data_to_contract(
+        contract_id=contract_id,
+        form_data_mappings=form_data_mappings,
+        planner_email=current_user.email
+    )
+
+
+@router.put("/contracts/{contract_id}/sections", tags=["Contracts"])
+async def update_contract_sections(
+    contract_id: str,
+    request: UpdateContractSectionsRequest,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+):
+    """
+    Update contract sections for customization after creation.
+    Allows editing section content, adding custom clauses, etc.
+    """
+    return await vendor_service.update_contract(
+        contract_id=contract_id,
+        updates={
+            "sections": request.sections,
+            "terms_and_conditions": request.terms_and_conditions,
+            "cancellation_policy": request.cancellation_policy,
+            "custom_clauses": request.custom_clauses
+        },
+        planner_email=current_user.email
     )
 
 
