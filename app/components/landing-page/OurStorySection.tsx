@@ -1,29 +1,9 @@
 'use client';
 
 import React from 'react';
-import Image from 'next/image';
 import { Wedding } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
-
-const getMemberInitials = (name?: string) => {
-  if (!name) return '';
-
-  const words = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (words.length === 0) return '';
-
-  if (words.length === 1) {
-    return words[0].charAt(0).toUpperCase();
-  }
-
-  const [firstWord] = words;
-  const lastWord = words[words.length - 1];
-
-  return `${firstWord.charAt(0)}${lastWord.charAt(0)}`.toUpperCase();
-};
+import Image from 'next/image';
 
 interface OurStorySectionProps {
   wedding: Wedding;
@@ -99,22 +79,15 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             
             <div className="flex flex-col items-center">
               {wedding.our_story.image_url && (
-                <div
-                  className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(
-                    wedding.our_story.image_shape
-                  )}`}
-                >
+                <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
                   <Image
-                    src={
-                      wedding.our_story.image_url.startsWith('http')
-                        ? wedding.our_story.image_url
-                        : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`
-                    }
+                    src={wedding.our_story.image_url.startsWith('http')
+                      ? wedding.our_story.image_url
+                      : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`}
                     alt="Couple"
                     fill
-                    sizes="192px"
                     className="object-cover"
-                    priority
+                    sizes="192px"
                   />
                 </div>
               )}
@@ -134,104 +107,70 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             </h2>
             
             <div className="space-y-8">
-              {/* Bride's Side */}
+              {/* Bride’s Side */}
               {bridesSide.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
-                    Bride's Side
+                    Bride’s Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
-                    {bridesSide.map((member) => {
-                      const hasImage = Boolean(member.image_url);
-                      return (
-                        <div key={member.id} className="text-center">
-                          <div
-                            className={`relative mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 ${
-                              hasImage
-                                ? 'w-24 h-24 sm:w-28 sm:h-28'
-                                : 'w-20 h-20 sm:w-24 sm:h-24'
-                            }`}
-                          >
+                    {bridesSide.map((member) => (
+                      <div key={member.id} className="text-center">
+                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
                           {member.image_url ? (
                             <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
                               fill
-                              sizes="(min-width: 640px) 112px, 96px"
                               className="object-cover"
+                              sizes="128px"
                             />
                           ) : (
-                            <div
-                              className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20"
-                              role="img"
-                              aria-label={`${member.name} initials`}
-                            >
-                              <span
-                                className="text-xl font-bold sm:text-2xl"
-                                style={{ color: theme?.accent_color || '#c8847e' }}
-                                aria-hidden="true"
-                              >
-                                {getMemberInitials(member.name)}
+                            <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
+                              <span className="text-3xl font-bold" style={{ color: theme?.accent_color || '#c8847e' }}>
+                                {member.name.charAt(0)}
                               </span>
                             </div>
                           )}
                         </div>
                         <h4 className="font-semibold text-gray-800">{member.name}</h4>
                         <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
-                        </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Groom's Side */}
+              {/* Groom’s Side */}
               {groomsSide.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
-                    Groom's Side
+                    Groom’s Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
-                    {groomsSide.map((member) => {
-                      const hasImage = Boolean(member.image_url);
-                      return (
-                        <div key={member.id} className="text-center">
-                          <div
-                            className={`relative mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 ${
-                              hasImage
-                                ? 'w-24 h-24 sm:w-28 sm:h-28'
-                                : 'w-20 h-20 sm:w-24 sm:h-24'
-                            }`}
-                          >
+                    {groomsSide.map((member) => (
+                      <div key={member.id} className="text-center">
+                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
                           {member.image_url ? (
                             <Image
                               src={`https://media.thespecialwedding.com/${member.image_url}`}
                               alt={member.name}
                               fill
-                              sizes="(min-width: 640px) 112px, 96px"
                               className="object-cover"
+                              sizes="128px"
                             />
                           ) : (
-                            <div
-                              className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20"
-                              role="img"
-                              aria-label={`${member.name} initials`}
-                            >
-                              <span
-                                className="text-xl font-bold sm:text-2xl"
-                                style={{ color: theme?.primary_color || '#1e3a5f' }}
-                                aria-hidden="true"
-                              >
-                                {getMemberInitials(member.name)}
+                            <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
+                              <span className="text-3xl font-bold" style={{ color: theme?.primary_color || '#1e3a5f' }}>
+                                {member.name.charAt(0)}
                               </span>
                             </div>
                           )}
                         </div>
                         <h4 className="font-semibold text-gray-800">{member.name}</h4>
                         <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
-                        </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

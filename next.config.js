@@ -16,6 +16,33 @@ const nextConfig = {
       },
     ],
   },
+  transpilePackages: ['@hello-pangea/dnd'],
+
+  // Configure build behavior
+  staticPageGenerationTimeout: 180,
+
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+      };
+    }
+
+    try {
+      require.resolve('tiny-invariant');
+    } catch (error) {
+      if (error?.code === 'MODULE_NOT_FOUND') {
+        throw new Error(
+          'Missing required dependency "tiny-invariant". Run "npm install" to ensure all packages are installed before starting Next.js.'
+        );
+      }
+
+      throw error;
+    }
+
+    return config;
+  },
 }
 
 module.exports = nextConfig

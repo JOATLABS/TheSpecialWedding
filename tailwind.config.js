@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class', // Use class-based dark mode (toggled via 'dark' class on html element)
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -15,6 +16,37 @@ module.exports = {
         'wedding-gold': '#E9C46A',
         'wedding-navy': '#1D3557',
         'wedding-blush': '#F8E8E8',
+        // Light/Dark mode colors
+        'light-bg': '#F8FAFC',
+        'dark-bg': '#0F172A',
+        'light-text': '#1E293B',
+        'dark-text': '#F1F5F9',
+        // Primary colors for both modes
+        'primary': {
+          50: '#FFF5F5',
+          100: '#FFE3E3',
+          200: '#FFC7C7',
+          300: '#FFA8A8',
+          400: '#D4A5A5',
+          500: '#C08080',
+          600: '#A06060',
+          700: '#804040',
+          800: '#602020',
+          900: '#401010',
+        },
+        // Secondary colors
+        'secondary': {
+          50: '#F0FDFA',
+          100: '#CCFBF1',
+          200: '#A8DADC',
+          300: '#80C7C9',
+          400: '#5FB4B6',
+          500: '#3FA1A3',
+          600: '#2E8082',
+          700: '#1F6061',
+          800: '#104040',
+          900: '#082020',
+        },
       },
       fontFamily: {
         'wedding': ['Playfair Display', 'serif'],
@@ -26,6 +58,7 @@ module.exports = {
         'parallax-slow': 'parallaxSlow 30s ease-in-out infinite',
         'parallax-medium': 'parallaxMedium 25s ease-in-out infinite',
         'parallax-fast': 'parallaxFast 20s ease-in-out infinite',
+        'float': 'float 6s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -53,6 +86,10 @@ module.exports = {
           '0%': { transform: 'scale(1.1) translateX(0%) translateY(0%)' },
           '50%': { transform: 'scale(1.1) translateX(-1%) translateY(1%)' },
           '100%': { transform: 'scale(1.1) translateX(0%) translateY(0%)' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0) scale(1)' },
+          '50%': { transform: 'translateY(-20px) scale(1.02)' },
         },
       },
     },

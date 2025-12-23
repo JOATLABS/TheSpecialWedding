@@ -1,5 +1,5 @@
 # Python
-__pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 *.cpython-*.pyc
@@ -24,14 +24,11 @@ archive/
 # Logs
 *.log
 
-# Documentation
-docs/
 
 # IDE specific files
 .claude/
 .vscode/
-app/__pycache__/main.cpython-311.pyc
-app/api/__pycache__/health.cpython-311.pyc
+app/api/__pycache__/
 .env.local
 *.cpython-311.pyc
 ssh-to-backend.sh
@@ -40,3 +37,32 @@ backup-mongodb.sh
 start-wedding-backend.sh
 setup-auto-start.sh
 wedding-backend.service
+.secrets.baseline
+test-results/
+tests/
+
+ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
+app/middleware/security_headers.py
+app/middleware/security_headers.py
+app/main_optimized.py
+app/__pycache__/main.cpython-311.pyc
+CLAUDE.md
+task-orchestration/
+app/__pycache__/
+TEST_RESULTS_ORGANIZATION_SUMMARY.md
+TEST_ORGANIZATION_SUMMARY.md
+app/__pycache__/
+remove_emojis.sh
+nextjs.log
+.playwright-mcp/
+app/admin/weddings/page.tsx.broken
+app/__pycache__/main.cpython-311.pyc
+app/__pycache__/main.cpython-311.pyc
+app/__pycache__/main.cpython-311.pyc
+
+docs/SUBSCRIPTION_STRIPE_ALIGNMENT.md
+docs/STRIPE_QUICK_START.md
+SAAS_REDESIGN_IMPLEMENTATION.md
+localhost:8000
+scripts/sync_landing_page_content.py
+scripts/sync_landing_page_content.py
