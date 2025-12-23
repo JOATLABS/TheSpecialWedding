@@ -21,6 +21,7 @@ import {
   type VendorCategory,
 } from '@/services/vendorManagementApi';
 import { toast } from 'sonner';
+import { VendorPaymentModal } from './components/VendorPaymentModal';
 
 // Tab type
 type TabId = 'overview' | 'directory' | 'contracts' | 'payments';
@@ -58,6 +59,10 @@ export default function VendorManagementPage() {
     internal_notes: '',
     is_preferred: false,
   });
+
+  // Payment Modal State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedVendorForPayment, setSelectedVendorForPayment] = useState<{id: string, name: string} | null>(null);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -458,14 +463,32 @@ export default function VendorManagementPage() {
                           </div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteVendor(vendor._id)}
-                        className="text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                      <div className="flex items-center gap-2">
+                         <button
+                           onClick={() => {
+                             // Assuming vendor._id is what we need, but typically we need the User ID for payment.
+                             // For now, passing vendor._id and we'll handle resolution in modal or backend if needed.
+                             // Ideally vendor profile should link to a User ID.
+                             setSelectedVendorForPayment({ id: vendor._id, name: vendor.business_name });
+                             setShowPaymentModal(true);
+                           }}
+                           className="text-gray-400 hover:text-green-500 transition-colors"
+                           title="Pay Vendor"
+                         >
+                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                           </svg>
+                         </button>
+                         <button
+                           onClick={() => handleDeleteVendor(vendor._id)}
+                           className="text-gray-400 hover:text-red-500 transition-colors"
+                           title="Delete Vendor"
+                         >
+                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                           </svg>
+                         </button>
+                      </div>
                     </div>
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
@@ -492,7 +515,7 @@ export default function VendorManagementPage() {
                           {[...Array(5)].map((_, i) => (
                             <svg
                               key={i}
-                              className={`w-4 h-4 ${i < vendor.internal_rating ? 'text-yellow-400' : 'text-gray-300'}`}
+                              className={`w-4 h-4 ${i < (vendor.internal_rating || 0) ? 'text-yellow-400' : 'text-gray-300'}`}
                               fill="currentColor"
                               viewBox="0 0 20 20"
                             >
@@ -748,6 +771,16 @@ export default function VendorManagementPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Payment Modal */}
+      {showPaymentModal && selectedVendorForPayment && (
+        <VendorPaymentModal
+          open={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          vendorId={selectedVendorForPayment.id}
+          vendorName={selectedVendorForPayment.name}
+        />
       )}
     </div>
   );
