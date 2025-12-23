@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,5 +11,23 @@ class Settings:
     MONGO_DB: str = os.getenv("MONGO_DB", "wedding")
     SECRET_KEY: str = os.getenv("SECRET_KEY")
     API_KEY: str = os.getenv("API_KEY", "default-api-key")
+    PLATFORM_METRICS_TOKEN: str = (
+        os.getenv("PLATFORM_METRICS_TOKEN")
+        or os.getenv("API_TOKEN")
+        or API_KEY
+    )
+
+    # Google Calendar Integration
+    GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")
+    GOOGLE_REDIRECT_URI: str = os.getenv(
+        "GOOGLE_REDIRECT_URI",
+        "http://localhost:3000/admin/planner/calendar/callback"
+    )
+    # Scopes needed for calendar read/write access
+    GOOGLE_CALENDAR_SCOPES: list = [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/calendar.events",
+    ]
 
 settings = Settings()

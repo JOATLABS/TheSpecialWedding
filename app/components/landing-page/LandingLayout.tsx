@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from 'next/image';
 
 import { SectionWrapper } from '@/components/landing-page/SectionWrapper';
 import { Modern3DBackground } from "@/components/landing-page/Modern3DBackground";
@@ -14,11 +15,12 @@ import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
-import { FAQLocationMap } from '@/components/landing-page/FAQLocationMap';
-import { tryParseHttpUrl } from '@/lib/url';
+import { WeddingDarkModeToggle, WeddingDarkModeStyles } from '@/components/landing-page/WeddingDarkModeToggle';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
-  const theme = useTheme(wedding);
+  // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
+  useTheme(wedding);
+
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
@@ -27,19 +29,17 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
     ? `https://media.thespecialwedding.com/${wedding.featured_image}`
     : images.length > 0 ? images[0].url : undefined;
 
-  const eventLocationHidden = Boolean(wedding.event_location_private);
-
-  const sections = [
-    'rsvp',
-    'story',
-    'gallery',
-    'registry',
-    ...(eventLocationHidden ? [] : ['venue']),
-    'faq'
-  ];
-
   return (
     <>
+      {/* Dark mode animation styles */}
+      <WeddingDarkModeStyles />
+
+      {/* Dark mode toggle - fixed position */}
+      <WeddingDarkModeToggle
+        className="fixed bottom-6 right-6 z-50"
+        themeColor={wedding.theme_config?.primary_color || 'rose'}
+      />
+
       <main className="relative w-full">
       {/* Modern 3D Background */}
       <Modern3DBackground 
@@ -52,7 +52,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       <div className="relative z-10">
 
         {/* Nav */}
-        <AnchorNav sections={sections} />
+        <AnchorNav sections={["rsvp", "story", "gallery", "registry", "venue", "faq"]} />
 
         {/* Hero */}
         <ThemedHeroSection wedding={wedding} />
@@ -61,17 +61,17 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         <SectionWrapper id="rsvp">
           <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold mb-4 text-center theme-primary">RSVP</h2>
-            <p className="text-lg text-gray-700 mb-6 text-center">
+            <p className="text-lg text-gray-700 dark:text-gray-200 mb-6 text-center">
               {wedding.rsvp_config?.greeting || "Join us in celebrating our special day! Please let us know if you'll be attending."}
             </p>
             <div className="space-y-4 text-center">
-              <p className="text-gray-600">
-                {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact us directly."}
+              <p className="text-gray-600 dark:text-gray-300">
+                {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact the couple directly."}
               </p>
               <div className="inline-flex text-white px-6 py-3 rounded-lg theme-bg-accent">
                 <div>
                   <p className="font-semibold">Need help?</p>
-                  <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "(319) 529-6088 or (405) 708-1076"}</p>
+                  <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "+1 877-780-4236"}</p>
                 </div>
               </div>
             </div>
@@ -91,17 +91,19 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 {images.slice(0, 8).map((img, i) => (
                   <div key={img.key} className="relative w-full h-48 rounded-lg overflow-hidden shadow-lg">
-                    <img
+                    <Image
                       src={img.url}
                       alt={`Memory ${i + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 50vw, 25vw"
+                      onError={(event) => { event.currentTarget.style.display = 'none'; }}
                     />
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-center text-gray-600 mb-6">Photos will be added soon!</p>
+              <p className="text-center text-gray-600 dark:text-gray-300 mb-6">Photos will be added soon!</p>
             )}
             <div className="text-center">
               <Link
@@ -118,14 +120,14 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         <SectionWrapper id="registry">
           <GlassCard className="max-w-4xl mx-auto p-8 text-center" depth="far" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold mb-6 theme-primary">Wedding Registry</h2>
-            <p className="text-lg text-gray-700 mb-8">
-              Your presence is the greatest gift, but if you’d like to celebrate with us, we’re registered at:
+            <p className="text-lg text-gray-700 dark:text-gray-200 mb-8">
+              Your presence is the greatest gift, but if you'd like to celebrate with us, we're registered at:
             </p>
             {wedding.registries && wedding.registries.length > 0 ? (
               <div className="grid md:grid-cols-2 gap-6">
                 {wedding.registries.map((registry, index) => (
-                  <div key={index} className="bg-gray-50 p-6 rounded-lg">
-                    <h3 className="text-xl font-semibold mb-4">{registry.name}</h3>
+                  <div key={index} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-4 dark:text-gray-100">{registry.name}</h3>
                     <a
                       href={registry.url}
                       target="_blank"
@@ -139,8 +141,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               </div>
             ) : (
               <div className="grid md:grid-cols-2 gap-6">
-                <div className="bg-gray-50 p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold mb-4">Target</h3>
+                <div className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                  <h3 className="text-xl font-semibold mb-4 dark:text-gray-100">Target</h3>
                   <a
                     href="https://www.target.com"
                     target="_blank"
@@ -150,8 +152,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                     View Registry
                   </a>
                 </div>
-                <div className="bg-gray-50 p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold mb-4">Amazon</h3>
+                <div className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                  <h3 className="text-xl font-semibold mb-4 dark:text-gray-100">Amazon</h3>
                   <a
                     href="https://www.amazon.com"
                     target="_blank"
@@ -167,14 +169,12 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         </SectionWrapper>
 
         {/* Wedding Details */}
-        {!eventLocationHidden && (
-          <SectionWrapper id="venue">
-            <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
-              <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Wedding Details</h2>
-              <EventLocationSection wedding={wedding} />
-            </GlassCard>
-          </SectionWrapper>
-        )}
+        <SectionWrapper id="venue">
+          <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
+            <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Wedding Details</h2>
+            <EventLocationSection wedding={wedding} />
+          </GlassCard>
+        </SectionWrapper>
 
         {/* FAQ */}
         <SectionWrapper id="faq">
@@ -182,74 +182,25 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Frequently Asked Questions</h2>
             <div className="space-y-8">
               {wedding.faqs && wedding.faqs.length > 0 ? (
-                wedding.faqs.map((faq, index) => {
-                  const links = (faq.links || [])
-                    .map((link) => {
-                      const parsedUrl = tryParseHttpUrl(link.url);
-                      const label = link.label?.toString?.().trim?.() ?? '';
-
-                      if (!label || !parsedUrl) {
-                        return null;
-                      }
-
-                      return { label, url: parsedUrl };
-                    })
-                    .filter((link): link is { label: string; url: string } => Boolean(link));
-                  const hasAddress = typeof faq.address === 'string' && faq.address.trim().length > 0;
-                  const imageUrls = (faq.image_urls || [])
-                    .map((imageUrl) => tryParseHttpUrl(imageUrl))
-                    .filter((imageUrl): imageUrl is string => Boolean(imageUrl));
-
-                  return (
-                    <div key={index} className="bg-gray-50 p-6 rounded-lg space-y-4">
-                      <div>
-                        <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
-                        <p className="text-gray-700 whitespace-pre-line">{faq.answer}</p>
-                      </div>
-
-                      {hasAddress && (
-                        <FAQLocationMap address={faq.address!} theme={wedding.theme_config} />
-                      )}
-
-                      {links.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Helpful Links</p>
-                          <div className="flex flex-wrap gap-3">
-                            {links.map((link, linkIndex) => (
-                              <a
-                                key={`${link.url}-${linkIndex}`}
-                                href={link.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90 transition-colors"
-                              >
-                                <span>{link.label}</span>
-                                <span aria-hidden="true">↗</span>
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {imageUrls.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Gallery</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {imageUrls.map((imageUrl, imageIndex) => (
-                              <div key={`${imageUrl}-${imageIndex}`} className="overflow-hidden rounded-lg border border-gray-200">
-                                <img
-                                  src={imageUrl}
-                                  alt={`${faq.question} - supporting image ${imageIndex + 1}`}
-                                  className="w-full h-48 object-cover"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                wedding.faqs.map((faq, index) => (
+                  <div key={index} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">{faq.question}</h3>
+                    <p className="text-gray-700 dark:text-gray-300">{faq.answer}</p>
+                    {faq.link_url && faq.link_label && (
+                      <a
+                        href={faq.link_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-wedding-rose hover:bg-wedding-rose/90 text-white font-medium rounded-lg transition-colors shadow-sm"
+                      >
+                        {faq.link_label}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
+                ))
               ) : (
                 [
                   {
@@ -273,9 +224,9 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                     a: "Yes, complimentary parking is available at the venue. Details with your RSVP confirmation."
                   }
                 ].map(({ q, a }) => (
-                  <div key={q} className="bg-gray-50 p-6 rounded-lg">
-                    <h3 className="text-xl font-semibold mb-2">{q}</h3>
-                    <p className="text-gray-700">{a}</p>
+                  <div key={q} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">{q}</h3>
+                    <p className="text-gray-700 dark:text-gray-300">{a}</p>
                   </div>
                 ))
               )}

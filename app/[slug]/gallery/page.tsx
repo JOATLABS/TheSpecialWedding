@@ -1,7 +1,9 @@
 // app/[slug]/gallery/page.tsx
 
 import { Metadata } from 'next';
+import { getApiBaseUrl } from '@/utils/env';
 import { GalleryGrid } from '@/components/GalleryGrid';
+import { formatDate } from '@/utils/dateFormat';
 
 type GalleryImage = {
   key: string;
@@ -14,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 async function fetchGallery(slug: string): Promise<GalleryImage[]> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/admin";
+  const baseUrl = getApiBaseUrl();
   const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
   const res = await fetch(`${apiUrl}/gallery?wedding_slug=${slug}`, {
     cache: 'no-store',
@@ -28,7 +30,7 @@ async function fetchGallery(slug: string): Promise<GalleryImage[]> {
 }
 
 async function fetchWedding(slug: string) {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const base = getApiBaseUrl();
   const res = await fetch(`${base}/weddings/slug/${slug}`);
   if (!res.ok) return null;
   return res.json();
@@ -55,26 +57,12 @@ export default async function GalleryPage({
           </h1>
           {wedding?.date && (
             <p className="text-xl text-blue-100">
-              {(() => {
-                // Fix timezone issues by parsing date components directly
-                if (wedding.date.includes('-')) {
-                  const [year, month, day] = wedding.date.split('-');
-                  const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                  return dateObj.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  });
-                } else {
-                  return new Date(wedding.date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  });
-                }
-              })()}
+              {formatDate(wedding.date, {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
             </p>
           )}
           {wedding?.venue && (

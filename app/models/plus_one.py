@@ -3,6 +3,7 @@ from typing import List, Optional, Any
 from bson import ObjectId
 import re
 
+
 class PyObjectId(ObjectId):
     @classmethod
     def __get_validators__(cls):
@@ -17,6 +18,7 @@ class PyObjectId(ObjectId):
     @classmethod
     def __modify_schema__(cls, field_schema):
         field_schema.update(type="string")
+
 
 class PlusOneModel(BaseModel):
     guest_id: str = Field(...)  # Store as string, convert to ObjectId when needed
@@ -41,7 +43,7 @@ class PlusOneModel(BaseModel):
     class Config:
         allow_population_by_field_name = True
         json_encoders = {ObjectId: str}
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "guest_id": "60c7d3e9e1b1fdbb4f12d9aa",
                 "name": "Jane Doe",

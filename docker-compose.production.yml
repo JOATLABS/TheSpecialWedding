@@ -1,0 +1,369 @@
+# Production Docker Compose for WeddingApp SaaS Platform
+# This configuration runs the FastAPI backend with MongoDB and Redis
+# ensuring proper scaling and isolation for production workloads
+
+services:
+  # ===========================================
+  # API SERVICE - Handles all HTTP requests
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: weddingapp:latest
+
+    # Environment configuration
+    environment:
+      # Database Configuration
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB}?authSource=admin}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB}?authSource=admin}
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017}
+      - MONGO_DB=${MONGO_DB:-wedding}
+      - MONGO_NAME=${MONGO_NAME:-wedding}
+
+      # Application Settings
+      - NODE_ENV=production
+      - PORT=8000
+      - API_PORT=8000
+      - PYTHONPATH=/app
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+
+      # Security Configuration
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-60}
+      - API_KEY=${API_KEY}
+
+      # CORS Configuration
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+
+      # Security Features
+      - ENABLE_CSRF_PROTECTION=${ENABLE_CSRF_PROTECTION:-true}
+      - ENABLE_SECURITY_HEADERS=${ENABLE_SECURITY_HEADERS:-true}
+      - ENABLE_RATE_LIMITING=${ENABLE_RATE_LIMITING:-true}
+
+      # Rate Limiting
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-900}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-60}
+
+      # Admin Configuration
+      - PRIMARY_ADMIN_EMAIL=${ROOT_ADMIN_EMAIL}
+      - PRIMARY_ADMIN_PASSWORD=${ROOT_ADMIN_PASSWORD}
+      - PRIMARY_ADMIN_ROLE=admin
+      - ROOT_ADMIN_EMAIL=${ROOT_ADMIN_EMAIL}
+      - ROOT_ADMIN_PASSWORD=${ROOT_ADMIN_PASSWORD}
+
+      # Email Configuration
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
+      - FROM_EMAIL=${FROM_EMAIL:-${RESEND_FROM_EMAIL}}
+
+      # SMS Provider Configuration
+      - SMS_PROVIDER=${SMS_PROVIDER:-twilio}
+
+      # Twilio Configuration
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+
+      # Telnyx Configuration (alternative)
+      - TELNYX_API_KEY=${TELNYX_API_KEY}
+      - TELNYX_PUBLIC_KEY=${TELNYX_PUBLIC_KEY}
+      - TELNYX_PHONE_NUMBER=${TELNYX_PHONE_NUMBER}
+      - TELNYX_PROFILE_ID=${TELNYX_PROFILE_ID}
+      - TELNYX_TEST_WEBHOOK_URL=${TELNYX_TEST_WEBHOOK_URL}
+
+      # File Storage Configuration
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - MEDIA_DOMAIN=${MEDIA_DOMAIN}
+
+      # AWS S3 Configuration (alternative)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-${S3_ACCESS_KEY_ID}}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-${S3_SECRET_ACCESS_KEY}}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-${S3_BUCKET_NAME}}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+
+      # File Upload Configuration
+      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}
+      - ALLOWED_FILE_TYPES=${ALLOWED_FILE_TYPES:-.jpg,.jpeg,.png,.gif,.pdf}
+
+      # Gallery Configuration
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-https://api.thespecialwedding.com}
+
+      # Maps Configuration
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+
+      # SaaS Configuration
+      - ENABLE_SAAS_FEATURES=${ENABLE_SAAS_FEATURES:-true}
+      - DEFAULT_TRIAL_DAYS=${DEFAULT_TRIAL_DAYS:-14}
+
+      # Stripe Payment Configuration
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+
+      # Redis Configuration
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+
+      # Monitoring & Analytics
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - GOOGLE_ANALYTICS_ID=${GOOGLE_ANALYTICS_ID}
+      - VERCEL_ANALYTICS_ENABLED=false
+
+      # Feature Flags
+      - ENABLE_ADMIN_PANEL=${ENABLE_ADMIN_PANEL:-true}
+      - ENABLE_SMS_REMINDERS=${ENABLE_SMS_REMINDERS:-true}
+      - ENABLE_EMAIL_REMINDERS=${ENABLE_EMAIL_REMINDERS:-true}
+      - ENABLE_GALLERY_UPLOAD=${ENABLE_GALLERY_UPLOAD:-true}
+
+      # Testing Configuration (disabled in production)
+      - BYPASS_AUTH=false
+      - MOCK_SMS_PROVIDER=false
+      - MOCK_EMAIL_PROVIDER=false
+
+    # Health check for API
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+      # Scaling configuration
+      replicas: 2  # Start with 2 API instances
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    # Network configuration
+    networks:
+      - weddingapp-network
+
+    # Dependencies
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # Volumes for persistent data
+    volumes:
+      - ./logs/api:/app/logs
+
+  # ===========================================
+  # ADMIN SETUP - Run once to create root admin user
+  # ===========================================
+  admin-setup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: weddingapp:latest
+    container_name: weddingapp-admin-setup
+
+    # Environment configuration
+    environment:
+      # Core Configuration
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB}?authSource=admin}
+      - MONGO_URI=${MONGODB_URI:-mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB}?authSource=admin}
+      - MONGO_DB=${MONGO_DB:-wedding}
+      - PYTHONPATH=/app
+      - ROOT_ADMIN_EMAIL=${ROOT_ADMIN_EMAIL}
+      - ROOT_ADMIN_PASSWORD=${ROOT_ADMIN_PASSWORD}
+
+    # Network configuration
+    networks:
+      - weddingapp-network
+
+    # Dependencies
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+    # Volumes
+    volumes:
+      - ./scripts:/app/scripts
+      - ./.env:/app/.env
+
+    # Run admin setup script
+    command: python scripts/setup_admin_user.py --auto-create
+
+    # Don't restart - run once only
+    restart: "no"
+
+  # ===========================================
+  # REDIS SERVICE - Caching & Rate Limiting
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    container_name: weddingapp-redis
+
+    # Redis configuration for production
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+
+    # Health check for Redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    # Resource limits (Redis is lightweight)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+    # Network configuration
+    networks:
+      - weddingapp-network
+
+  # ===========================================
+  # MONGODB SERVICE - Database
+  # ===========================================
+  mongo:
+    image: mongo:7.0
+    container_name: weddingapp-mongo
+
+    # MongoDB port (only expose if needed for debugging)
+    # ports:
+    #   - "27017:27017"
+
+    # Environment configuration
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGO_DB:-wedding}
+      # Production REQUIRES authentication for security
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+
+    # Health check for MongoDB
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    # Resource limits for database
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    # Network configuration
+    networks:
+      - weddingapp-network
+
+    # Volumes for data persistence
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+
+  # ===========================================
+  # NGINX LOAD BALANCER - Routes traffic to API replicas
+  # ===========================================
+  nginx:
+    image: nginx:alpine
+    container_name: weddingapp-nginx
+
+    # Expose port 8000 to host
+    ports:
+      - "8000:80"
+
+    # Nginx configuration
+    volumes:
+      - ./nginx-load-balancer.conf:/etc/nginx/nginx.conf:ro
+
+    # Network configuration
+    networks:
+      - weddingapp-network
+
+    # Dependencies - wait for API to be healthy
+    depends_on:
+      api:
+        condition: service_started
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# ===========================================
+# NETWORKS
+# ===========================================
+networks:
+  weddingapp-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.26.0.0/16
+
+# ===========================================
+# VOLUMES
+# ===========================================
+volumes:
+  mongo-data:
+    driver: local
+  mongo-config:
+    driver: local
