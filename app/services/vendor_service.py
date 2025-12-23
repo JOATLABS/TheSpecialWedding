@@ -1523,6 +1523,165 @@ class VendorService:
             raise HTTPException(status_code=500, detail=f"Failed to upload contract: {str(e)}")
 
     # =========================================================================
+    # FORM DATA INTEGRATION
+    # =========================================================================
+
+    async def get_form_data_for_contract(
+        self,
+        vendor_email: str,
+        wedding_id: str,
+        planner_email: str
+    ) -> dict:
+        """
+        Get form submissions from a vendor that can be used to populate contract fields.
+        Returns structured data from vendor forms and generic forms.
+        """
+        try:
+            # Find form submissions by this vendor email for this wedding
+            vendor_form_submissions = await self.vendor_forms.find({
+                "wedding_id": wedding_id,
+                "vendor_email": {"$regex": vendor_email, "$options": "i"},
+                "submitted_at": {"$ne": None}
+            }).to_list(length=100)
+
+            # Also check form_responses for generic forms sent to this email
+            form_responses = await self.form_responses.find({
+                "recipient_email": {"$regex": vendor_email, "$options": "i"},
+                "wedding_id": wedding_id
+            }).to_list(length=100)
+
+            # Extract useful fields from submissions
+            extracted_data = {
+                "vendor_submissions": [],
+                "available_fields": {},
+                "suggested_contract_fields": {}
+            }
+
+            # Process vendor form submissions
+            for submission in vendor_form_submissions:
+                sub_data = submission.get("submission_data", {})
+                extracted_data["vendor_submissions"].append({
+                    "_id": str(submission["_id"]),
+                    "form_name": submission.get("form_name", "Vendor Form"),
+                    "submitted_at": submission.get("submitted_at"),
+                    "data": sub_data
+                })
+
+                # Extract common useful fields
+                for key, value in sub_data.items():
+                    if value and isinstance(value, (str, int, float)):
+                        field_key = key.lower().replace(" ", "_")
+                        extracted_data["available_fields"][field_key] = {
+                            "value": value,
+                            "source": "vendor_form",
+                            "source_id": str(submission["_id"]),
+                            "original_key": key
+                        }
+
+            # Process generic form responses
+            for response in form_responses:
+                resp_data = response.get("responses", {})
+                extracted_data["vendor_submissions"].append({
+                    "_id": str(response["_id"]),
+                    "form_name": response.get("form_name", "Form Response"),
+                    "submitted_at": response.get("submitted_at"),
+                    "data": resp_data
+                })
+
+                for key, value in resp_data.items():
+                    if value and isinstance(value, (str, int, float)):
+                        field_key = key.lower().replace(" ", "_")
+                        if field_key not in extracted_data["available_fields"]:
+                            extracted_data["available_fields"][field_key] = {
+                                "value": value,
+                                "source": "form_response",
+                                "source_id": str(response["_id"]),
+                                "original_key": key
+                            }
+
+            # Suggest mappings for common contract placeholders
+            placeholder_mappings = {
+                "package_name": ["package", "package_name", "service_package", "selected_package"],
+                "package_price": ["price", "package_price", "total_price", "quoted_price", "rate"],
+                "services_included": ["services", "included_services", "deliverables", "what_is_included"],
+                "hours_of_coverage": ["hours", "coverage_hours", "service_hours", "time"],
+                "equipment": ["equipment", "equipment_list", "gear", "tools"],
+                "availability": ["availability", "available_dates", "is_available"],
+                "portfolio": ["portfolio", "portfolio_link", "website", "samples"],
+                "special_requirements": ["requirements", "special_requirements", "notes", "additional_info"],
+                "cancellation_policy": ["cancellation", "cancellation_policy", "refund_policy"],
+            }
+
+            for placeholder, possible_keys in placeholder_mappings.items():
+                for key in possible_keys:
+                    if key in extracted_data["available_fields"]:
+                        extracted_data["suggested_contract_fields"][placeholder] = {
+                            "value": extracted_data["available_fields"][key]["value"],
+                            "source_field": key
+                        }
+                        break
+
+            return extracted_data
+
+        except Exception as e:
+            logger.error(f"Error getting form data for contract: {str(e)}")
+            return {"vendor_submissions": [], "available_fields": {}, "suggested_contract_fields": {}}
+
+    async def apply_form_data_to_contract(
+        self,
+        contract_id: str,
+        form_data_mappings: Dict[str, Any],
+        planner_email: str
+    ) -> dict:
+        """
+        Apply form data to a contract's sections.
+        Replaces placeholders with actual values from form submissions.
+        """
+        try:
+            contract = await self.vendor_contracts.find_one({"_id": ObjectId(contract_id)})
+            if not contract:
+                raise HTTPException(status_code=404, detail="Contract not found")
+
+            # Update sections with mapped values
+            updated_sections = []
+            for section in contract.get("sections", []):
+                content = section.get("content", "")
+
+                # Replace placeholders with form data
+                for placeholder, data in form_data_mappings.items():
+                    value = data.get("value", "") if isinstance(data, dict) else str(data)
+                    content = content.replace(f"{{{{{placeholder}}}}}", str(value))
+
+                updated_sections.append({
+                    **section,
+                    "content": content
+                })
+
+            # Update contract
+            await self.vendor_contracts.update_one(
+                {"_id": ObjectId(contract_id)},
+                {
+                    "$set": {
+                        "sections": updated_sections,
+                        "form_data_mappings": form_data_mappings,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            contract["_id"] = str(contract["_id"])
+            contract["sections"] = updated_sections
+            contract["form_data_mappings"] = form_data_mappings
+
+            return contract
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error applying form data to contract: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to apply form data: {str(e)}")
+
+    # =========================================================================
     # PAYMENT LINKS
     # =========================================================================
 
