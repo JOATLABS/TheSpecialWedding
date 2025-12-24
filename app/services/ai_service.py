@@ -96,6 +96,48 @@ Based on the services, location, and market data, suggest:
 
 Return JSON: {"min_price": X, "max_price": Y, "recommended": Z,
 "market_comparison": "above|at|below", "schedule_suggestion": [...]}"""
+    },
+    "payment_retry_timing": {
+        "credits": 0,  # Internal feature - no cost
+        "ttl_hours": 0,
+        "cacheable": False,
+        "description": "Suggest optimal retry timing for failed payments",
+        "system_prompt": """You are a payment optimization expert. Analyze the failed payment data and suggest the optimal retry timing.
+
+Consider:
+1. Day of week patterns (payday cycles - 1st, 15th of month)
+2. Decline reason (insufficient funds vs card expired vs generic)
+3. Previous payment history success rate
+4. Time since last attempt
+
+Return JSON: {
+  "suggested_retry_date": "YYYY-MM-DD",
+  "suggested_retry_time": "HH:MM",
+  "confidence": 0-100,
+  "reasoning": "brief explanation",
+  "override_backoff": true/false
+}"""
+    },
+    "payment_success_prediction": {
+        "credits": 0,  # Internal feature - no cost
+        "ttl_hours": 1,
+        "cacheable": True,
+        "description": "Predict likelihood of payment success",
+        "system_prompt": """You are a payment analytics expert. Predict the likelihood of this payment succeeding.
+
+Consider:
+1. Days since card was added (fresh cards more likely to work)
+2. Previous payment history on this card
+3. Card type (debit vs credit)
+4. Payment amount relative to previous successful amounts
+5. Time since last successful payment
+
+Return JSON: {
+  "success_probability": 0-100,
+  "risk_level": "low|medium|high",
+  "risk_factors": ["factor1", "factor2"],
+  "recommendations": ["recommendation1", "recommendation2"]
+}"""
     }
 }
 

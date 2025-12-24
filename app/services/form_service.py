@@ -1,5 +1,4 @@
 from fastapi import HTTPException
-from bson import ObjectId
 from app.core.database import mongo
 from app.models.form import (
     FormModel,
@@ -13,7 +12,7 @@ from app.models.form import (
 )
 from app.services.email_service_resend import ResendEmailService
 from app.utils.security_utils import (
-    FormSecurityValidator, InputSanitizer, SecurityHeaders, rate_limiter
+    FormSecurityValidator, InputSanitizer, rate_limiter
 )
 from app.utils.csv_export import FormResponseCSVExporter, CSVSecurityError
 from datetime import datetime
@@ -172,9 +171,7 @@ class FormService:
 
                 if viewer_key:
                     state = (
-                        planner_state.get(viewer_key)
-                        or (planner_state.get(raw_viewer_email) if raw_viewer_email else {})
-                        or {}
+                        planner_state.get(viewer_key) or (planner_state.get(raw_viewer_email) if raw_viewer_email else {}) or {}
                     )
                     last_seen = int(state.get("last_viewed_submission_count", 0) or 0)
                     unread = max(submission_total - last_seen, 0)
@@ -756,8 +753,14 @@ class FormService:
         except Exception:
             return None
 
-    def _generate_form_email_html(self, form_title: str, form_description: str,
-                                 form_url: str, sender_name: str, custom_message: str) -> str:
+    def _generate_form_email_html(
+        self,
+        form_title: str,
+        form_description: str,
+        form_url: str,
+        sender_name: str,
+        custom_message: str,
+    ) -> str:
         """Generate HTML email for form distribution"""
         return f"""
         <!DOCTYPE html>
