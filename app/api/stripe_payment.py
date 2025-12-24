@@ -168,6 +168,35 @@ async def get_checkout_session(
         logger.error(f"Error retrieving checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve session: {str(e)}")
 
+@router.get("/payment-intent/{id}")
+async def get_payment_intent_details(id: str):
+    """
+    Public endpoint to retrieve PaymentIntent details for the payment page.
+    No auth required as couples pay without login.
+    """
+    try:
+        import stripe
+        from app.core.settings import settings
+
+        if not settings.stripe_secret_key:
+             raise HTTPException(status_code=503, detail="Stripe is not configured")
+
+        stripe.api_key = settings.stripe_secret_key
+
+        pi = stripe.PaymentIntent.retrieve(id)
+
+        return {
+            "id": pi.id,
+            "client_secret": pi.client_secret,
+            "amount": pi.amount / 100,
+            "currency": pi.currency,
+            "status": pi.status,
+            "description": pi.description
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving PI: {e}")
+        raise HTTPException(status_code=404, detail="Payment request not found")
+
 
 # ==================== CUSTOMER PORTAL ENDPOINTS ====================
 
@@ -333,21 +362,39 @@ async def pay_vendor(
 ):
     """
     Create a payment intent for a Planner to pay a Vendor.
+    This handles resolving the vendor from either a User ID or a VendorProfile ID.
     """
     try:
         sender_id = str(current_user.user_data.get("_id"))
 
-        # Verify vendor exists and has connect account
         from app.core.database import mongo
         from bson import ObjectId
 
-        vendor = await mongo.db["users"].find_one({"_id": ObjectId(request.vendor_user_id)})
-        if not vendor:
-            raise HTTPException(status_code=404, detail="Vendor not found")
+        # 1. Try finding as User first (direct ID match)
+        vendor_user = await mongo.db["users"].find_one({"_id": ObjectId(request.vendor_user_id)})
 
-        vendor_connect_id = vendor.get("stripe_connect_id")
+        # 2. If not found, try finding as VendorProfile and look up associated user by email
+        if not vendor_user:
+            # Assuming vendors collection name is 'vendor_directory' or 'vendors'.
+            # In vendor.py, it's VendorProfile.
+            # Based on services/vendorManagementApi.ts, endpoint is /admin/directory, so collection likely 'vendor_directory' or similar.
+            # I will check mongo collection name via introspection or common convention.
+            # Given vendor.py doesn't specify collection, I'll assume 'vendor_directory' or 'vendors'.
+            # Let's try 'vendor_directory' first as per API path.
+
+            vendor_profile = await mongo.db["vendor_directory"].find_one({"_id": ObjectId(request.vendor_user_id)})
+
+            if vendor_profile:
+                vendor_email = vendor_profile.get("email")
+                if vendor_email:
+                     vendor_user = await mongo.db["users"].find_one({"email": vendor_email})
+
+        if not vendor_user:
+            raise HTTPException(status_code=404, detail="Vendor user account not found. The vendor must be a registered user to receive payments.")
+
+        vendor_connect_id = vendor_user.get("stripe_connect_id")
         if not vendor_connect_id:
-            raise HTTPException(status_code=400, detail="Vendor is not set up to receive payments via Stripe")
+            raise HTTPException(status_code=400, detail="Vendor has not connected their Stripe account to receive payments.")
 
         # Verify sender permission (if needed, e.g. checking budget)
         # For now, we assume if they pay, they pay.
@@ -433,6 +480,23 @@ async def create_payment_intent(
             destination_account_id=destination_account_id
         )
 
+        # Save payment request record to Mongo
+        from app.core.database import mongo
+        from datetime import datetime
+
+        await mongo.db["payment_requests"].insert_one({
+            "user_id": str(current_user.user_data.get("_id")),
+            "payment_intent_id": payment_intent["payment_intent_id"],
+            "amount": request.amount,
+            "currency": request.currency,
+            "status": "pending", # Initial status
+            "wedding_id": request.wedding_id,
+            "description": request.description,
+            "client_secret": payment_intent["client_secret"],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
+
         return {
             "status": "success",
             "payment_intent": payment_intent
@@ -443,6 +507,30 @@ async def create_payment_intent(
     except Exception as e:
         logger.error(f"Error creating payment intent: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create payment intent: {str(e)}")
+
+
+@router.get("/payment-requests")
+async def get_payment_requests(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get list of payment requests created by the current planner.
+    """
+    try:
+        from app.core.database import mongo
+        user_id = str(current_user.user_data.get("_id"))
+
+        cursor = mongo.db["payment_requests"].find({"user_id": user_id}).sort("created_at", -1)
+        requests = await cursor.to_list(length=100)
+
+        # Convert ObjectId to str
+        for req in requests:
+            req["_id"] = str(req["_id"])
+
+        return requests
+    except Exception as e:
+        logger.error(f"Error fetching payment requests: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch payment requests")
 
 
 # ==================== BILLING HISTORY ENDPOINTS ====================
