@@ -23,11 +23,15 @@
     "pre-deploy": "npm run security && npm run build"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/utilities": "^3.2.2",
     "@headlessui/react": "^2.2.7",
     "@hello-pangea/dnd": "^18.0.1",
     "@heroicons/react": "^2.2.0",
     "@stripe/react-stripe-js": "^5.4.1",
     "@stripe/stripe-js": "^8.6.0",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.4.2",
     "@swc/helpers": "^0.5.17",
     "@vercel/analytics": "^1.5.0",
     "d3-array": "^3.2.4",
@@ -44,6 +48,7 @@
     "recharts": "^3.6.0",
     "sonner": "^2.0.4",
     "tailwind-merge": "^3.4.0",
+    "three": "^0.182.0",
     "tiny-invariant": "^1.3.3",
     "victory-vendor": "^37.3.6"
   },
