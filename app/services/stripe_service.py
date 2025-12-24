@@ -688,6 +688,10 @@ class StripeService:
                 return await self._handle_invoice_paid(data)
             elif event_type == "invoice.payment_failed":
                 return await self._handle_invoice_payment_failed(data)
+            elif event_type == "payment_intent.succeeded":
+                return await self._handle_payment_intent_succeeded(data)
+            elif event_type == "account.updated":
+                return await self._handle_account_updated(data)
             else:
                 logger.info(f"Unhandled event type: {event_type}")
                 return {"status": "ignored", "event_type": event_type}
@@ -928,6 +932,90 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error handling invoice payment failed: {str(e)}")
+            return {"status": "error", "message": str(e)}
+
+    async def _handle_payment_intent_succeeded(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle successful payment intent - updates payment_requests collection
+        for couple payments created by planners.
+        """
+        try:
+            payment_intent_id = payment_intent.get("id")
+            if not payment_intent_id:
+                return {"status": "ignored", "reason": "no payment_intent_id"}
+
+            # Update payment request status in our collection
+            payment_requests_collection = mongo.db["payment_requests"]
+            result = await payment_requests_collection.update_one(
+                {"payment_intent_id": payment_intent_id},
+                {
+                    "$set": {
+                        "status": "succeeded",
+                        "paid_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow(),
+                        "amount_received": payment_intent.get("amount_received", 0) / 100,
+                        "payment_method_type": payment_intent.get("payment_method_types", [None])[0]
+                    }
+                }
+            )
+
+            if result.modified_count > 0:
+                logger.info(f"Payment request {payment_intent_id} marked as succeeded")
+                return {"status": "success", "payment_intent_id": payment_intent_id}
+            else:
+                # This payment intent might not be from our payment requests (could be subscription)
+                logger.debug(f"No payment request found for {payment_intent_id} - may be a subscription payment")
+                return {"status": "ignored", "reason": "not_a_payment_request"}
+
+        except Exception as e:
+            logger.error(f"Error handling payment intent succeeded: {str(e)}")
+            return {"status": "error", "message": str(e)}
+
+    async def _handle_account_updated(self, account: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle Stripe Connect account updates - syncs onboarding status
+        when account.updated event fires (e.g., after user completes onboarding).
+        """
+        try:
+            account_id = account.get("id")
+            if not account_id:
+                return {"status": "ignored", "reason": "no account_id"}
+
+            charges_enabled = account.get("charges_enabled", False)
+            payouts_enabled = account.get("payouts_enabled", False)
+            details_submitted = account.get("details_submitted", False)
+
+            # Find and update user with this connect account
+            result = await self.users_collection.update_one(
+                {"stripe_connect_id": account_id},
+                {
+                    "$set": {
+                        "stripe_connect_charges_enabled": charges_enabled,
+                        "stripe_connect_payouts_enabled": payouts_enabled,
+                        "stripe_connect_details_submitted": details_submitted,
+                        "stripe_connect_updated_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            if result.modified_count > 0:
+                logger.info(
+                    f"Connect account {account_id} updated: charges={charges_enabled}, "
+                    f"payouts={payouts_enabled}, details_submitted={details_submitted}"
+                )
+                return {
+                    "status": "success",
+                    "account_id": account_id,
+                    "charges_enabled": charges_enabled,
+                    "payouts_enabled": payouts_enabled
+                }
+            else:
+                logger.warning(f"No user found with stripe_connect_id: {account_id}")
+                return {"status": "ignored", "reason": "user_not_found"}
+
+        except Exception as e:
+            logger.error(f"Error handling account updated: {str(e)}")
             return {"status": "error", "message": str(e)}
 
     # ==================== PAYMENT NOTIFICATIONS ====================

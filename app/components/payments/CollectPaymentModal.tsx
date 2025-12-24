@@ -43,7 +43,7 @@ export function CollectPaymentModal({
       const fetchWeddings = async () => {
         setFetchingWeddings(true);
         try {
-          const token = localStorage.getItem('authToken');
+          const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
           const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/weddings`, {
              headers: { 'Authorization': `Bearer ${token}` }
           });
@@ -77,7 +77,7 @@ export function CollectPaymentModal({
     try {
       setLoading(true);
 
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       if (!token) {
         toast.error('Please log in to create payment requests');
         return;

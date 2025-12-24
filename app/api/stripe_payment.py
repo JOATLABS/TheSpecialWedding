@@ -457,19 +457,19 @@ async def create_payment_intent(
 
             # If we want to route funds to the planner of the wedding:
             if planner_id:
-                planner = mongo.db["users"].find_one({"_id": planner_id})
+                planner = await mongo.db["users"].find_one({"_id": planner_id})
                 if planner and planner.get("stripe_connect_id"):
                     destination_account_id = planner.get("stripe_connect_id")
 
         # Override destination if explicitly provided (and allowed?)
         # For security, maybe restrict who can set destination_user_id
         if request.destination_user_id:
-             # Look up connect ID for this user
-             from app.core.database import mongo
-             from bson import ObjectId
-             dest_user = mongo.db["users"].find_one({"_id": ObjectId(request.destination_user_id)})
-             if dest_user and dest_user.get("stripe_connect_id"):
-                 destination_account_id = dest_user.get("stripe_connect_id")
+            # Look up connect ID for this user
+            from app.core.database import mongo
+            from bson import ObjectId
+            dest_user = await mongo.db["users"].find_one({"_id": ObjectId(request.destination_user_id)})
+            if dest_user and dest_user.get("stripe_connect_id"):
+                destination_account_id = dest_user.get("stripe_connect_id")
 
         payment_intent = stripe_service.create_payment_intent_for_couple(
             amount=request.amount,
@@ -515,6 +515,7 @@ async def get_payment_requests(
 ):
     """
     Get list of payment requests created by the current planner.
+    Includes wedding_title for associated weddings.
     """
     try:
         from app.core.database import mongo
@@ -523,9 +524,30 @@ async def get_payment_requests(
         cursor = mongo.db["payment_requests"].find({"user_id": user_id}).sort("created_at", -1)
         requests = await cursor.to_list(length=100)
 
-        # Convert ObjectId to str
+        # Collect wedding IDs to fetch titles
+        wedding_ids = set()
+        for req in requests:
+            if req.get("wedding_id"):
+                try:
+                    wedding_ids.add(ObjectId(req["wedding_id"]))
+                except Exception:
+                    pass  # Invalid ObjectId, skip
+
+        # Fetch wedding titles in bulk
+        wedding_titles = {}
+        if wedding_ids:
+            weddings_cursor = mongo.db["weddings"].find(
+                {"_id": {"$in": list(wedding_ids)}},
+                {"_id": 1, "title": 1}
+            )
+            weddings = await weddings_cursor.to_list(length=len(wedding_ids))
+            wedding_titles = {str(w["_id"]): w.get("title", "Untitled Wedding") for w in weddings}
+
+        # Enrich requests with wedding_title and convert ObjectId to str
         for req in requests:
             req["_id"] = str(req["_id"])
+            if req.get("wedding_id"):
+                req["wedding_title"] = wedding_titles.get(req["wedding_id"], None)
 
         return requests
     except Exception as e:

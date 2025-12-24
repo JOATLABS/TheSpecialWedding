@@ -30,6 +30,7 @@ const statusOptions: Array<{ value: NonNullable<RecordPaymentRequest['status']>;
 
 interface RecordPaymentModalProps {
   category: BudgetCategory | null;
+  suggestedVendorName?: string;
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (payload: RecordPaymentRequest) => Promise<void> | void;
@@ -50,6 +51,7 @@ const defaultFormState = (): PaymentFormValues => ({
 
 export function RecordPaymentModal({
   category,
+  suggestedVendorName,
   isOpen,
   onClose,
   onSubmit,
@@ -61,10 +63,13 @@ export function RecordPaymentModal({
 
   useEffect(() => {
     if (isOpen) {
-      setFormState(defaultFormState());
+      setFormState({
+        ...defaultFormState(),
+        vendorName: suggestedVendorName || '',
+      });
       setLocalError('');
     }
-  }, [isOpen, category?.id]);
+  }, [isOpen, category?.id, suggestedVendorName]);
 
   const remainingBudget = useMemo(() => {
     if (!category) return null;
@@ -136,13 +141,13 @@ export function RecordPaymentModal({
     >
       <div className="relative max-w-2xl w-full">
         <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/40 rounded-3xl blur-3xl" aria-hidden="true" />
-        <div className="relative rounded-3xl border border-white/50 bg-white/80 backdrop-blur-xl shadow-2xl p-8 space-y-6">
+        <div className="relative rounded-3xl border border-white/50 dark:border-slate-600 bg-white/80 dark:bg-slate-800/90 backdrop-blur-xl shadow-2xl p-8 space-y-6">
           <div className="flex items-start justify-between gap-6">
             <div>
-              <h2 id="record-payment-title" className="text-2xl font-semibold text-wedding-navy">
+              <h2 id="record-payment-title" className="text-2xl font-semibold text-wedding-navy dark:text-white">
                 {modalTitle}
               </h2>
-              <p className="mt-2 text-sm text-gray-600">
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                 Capture vendor payments with transparency and keep your budget analytics accurate.
               </p>
             </div>
@@ -163,40 +168,40 @@ export function RecordPaymentModal({
           </div>
 
           {category && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-2xl border border-white/40 bg-white/50 p-4 text-sm text-gray-700">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-2xl border border-white/40 dark:border-slate-600 bg-white/50 dark:bg-slate-700/50 p-4 text-sm text-gray-700 dark:text-gray-300">
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Budgeted</p>
-                <p className="text-base font-semibold text-wedding-navy">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Budgeted</p>
+                <p className="text-base font-semibold text-wedding-navy dark:text-blue-400">
                   {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(category.budgeted_amount)}
                 </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Spent</p>
-                <p className="text-base font-semibold text-wedding-rose">
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Spent</p>
+                <p className="text-base font-semibold text-wedding-rose dark:text-rose-400">
                   {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(category.actual_spent)}
                 </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Remaining</p>
-                <p className="text-base font-semibold text-emerald-600">{remainingBudget}</p>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Remaining</p>
+                <p className="text-base font-semibold text-emerald-600 dark:text-emerald-400">{remainingBudget}</p>
               </div>
             </div>
           )}
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <label className="flex flex-col text-sm font-medium text-gray-700">
+              <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
                 Vendor name
                 <input
                   type="text"
                   value={formState.vendorName}
                   onChange={(event) => handleChange('vendorName', event.target.value)}
-                  className="mt-1 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="mt-1 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                   placeholder="e.g. Bloom & Co."
                 />
               </label>
 
-              <label className="flex flex-col text-sm font-medium text-gray-700">
+              <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
                 Payment amount <span className="text-red-500">*</span>
                 <input
                   type="number"
@@ -205,17 +210,17 @@ export function RecordPaymentModal({
                   inputMode="decimal"
                   value={formState.amount}
                   onChange={(event) => handleChange('amount', event.target.value)}
-                  className="mt-1 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="mt-1 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                   required
                 />
               </label>
 
-              <label className="flex flex-col text-sm font-medium text-gray-700">
+              <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
                 Payment method <span className="text-red-500">*</span>
                 <select
                   value={formState.paymentMethod}
                   onChange={(event) => handleChange('paymentMethod', event.target.value as PaymentFormValues['paymentMethod'])}
-                  className="mt-1 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="mt-1 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                   required
                 >
                   {paymentMethodOptions.map((option) => (
@@ -226,13 +231,13 @@ export function RecordPaymentModal({
                 </select>
               </label>
 
-              <label className="flex flex-col text-sm font-medium text-gray-700">
+              <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
                 Payment date <span className="text-red-500">*</span>
                 <input
                   type="date"
                   value={formState.paymentDate}
                   onChange={(event) => handleChange('paymentDate', event.target.value)}
-                  className="mt-1 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="mt-1 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                   required
                   max={new Date().toISOString().slice(0, 10)}
                 />
@@ -240,12 +245,12 @@ export function RecordPaymentModal({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <label className="flex flex-col text-sm font-medium text-gray-700">
+              <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
                 Payment status
                 <select
                   value={formState.status}
                   onChange={(event) => handleChange('status', event.target.value as PaymentFormValues['status'])}
-                  className="mt-1 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="mt-1 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                 >
                   {statusOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -255,41 +260,41 @@ export function RecordPaymentModal({
                 </select>
               </label>
 
-              <label className="flex flex-col text-sm font-medium text-gray-700">
+              <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
                 Receipt URL
                 <input
                   type="url"
                   value={formState.receiptUrl}
                   onChange={(event) => handleChange('receiptUrl', event.target.value)}
-                  className="mt-1 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="mt-1 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                   placeholder="https://"
                   inputMode="url"
                 />
               </label>
             </div>
 
-            <label className="flex flex-col text-sm font-medium text-gray-700">
+            <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
               Description
               <textarea
                 value={formState.description}
                 onChange={(event) => handleChange('description', event.target.value)}
-                className="mt-1 h-20 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                className="mt-1 h-20 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                 placeholder="50% deposit, mileage add-ons, etc."
               />
             </label>
 
-            <label className="flex flex-col text-sm font-medium text-gray-700">
+            <label className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
               Notes for your team
               <textarea
                 value={formState.notes}
                 onChange={(event) => handleChange('notes', event.target.value)}
-                className="mt-1 h-20 rounded-lg border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                className="mt-1 h-20 rounded-lg border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                 placeholder="Remind the couple about remaining balance next month."
               />
             </label>
 
             {(localError || errorMessage) && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+              <p className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300" role="alert">
                 {localError || errorMessage}
               </p>
             )}
