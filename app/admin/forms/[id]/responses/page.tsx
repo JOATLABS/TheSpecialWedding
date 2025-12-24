@@ -138,7 +138,7 @@ export default function FormResponsesPage() {
 
  const formatFieldValue = (field: FormField, value: any) => {
  if (value === null || value === undefined || value === '') {
- return <span className="text-gray-400 italic">No response</span>;
+ return <span className="text-gray-400 dark:text-gray-500 italic">No response</span>;
  }
 
  switch (field.type) {
@@ -146,16 +146,16 @@ export default function FormResponsesPage() {
  return (
  <div className="flex">
  {[...Array(5)].map((_, i) => (
- <span key={i} className={i < value ? 'text-yellow-400' : 'text-gray-300'}>
+ <span key={i} className={i < value ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'}>
  </span>
  ))}
- <span className="ml-2 text-sm text-gray-600">({value}/5)</span>
+ <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">({value}/5)</span>
  </div>
  );
  case 'scale':
  return (
  <div className="flex items-center">
- <div className="w-20 bg-gray-200 rounded-full h-2 mr-2">
+ <div className="w-20 bg-gray-200 dark:bg-slate-700 rounded-full h-2 mr-2">
  <div
  className="bg-blue-600 h-2 rounded-full"
  style={{ width: `${(value / 10) * 100}%` }}
@@ -219,7 +219,7 @@ export default function FormResponsesPage() {
  <div className="min-h-screen flex items-center justify-center">
  <div className="text-center">
  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
- <p className="text-gray-600">Loading responses...</p>
+ <p className="text-gray-600 dark:text-gray-300">Loading responses...</p>
  </div>
  </div>
  );
@@ -242,14 +242,14 @@ export default function FormResponsesPage() {
  }
 
  return (
- <div className="min-h-screen bg-gray-50">
+ <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
  <div className="max-w-7xl mx-auto py-8 px-4">
  {/* Header */}
  <div className="mb-8">
  <div className="flex items-center justify-between mb-4">
  <button
  onClick={() => router.push('/admin/forms')}
- className="flex items-center text-gray-600 hover:text-gray-800"
+ className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white"
  >
  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -272,9 +272,9 @@ export default function FormResponsesPage() {
  {exporting ? 'Exporting…' : 'Export CSV'}
  </button>
  </div>
- <div className="bg-white rounded-lg shadow-sm border p-6">
- <h1 className="text-3xl font-bold text-gray-900 mb-2">Form Responses</h1>
- <div className="flex items-center text-gray-600">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-6">
+ <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Form Responses</h1>
+ <div className="flex items-center text-gray-600 dark:text-gray-300">
  <span className="text-lg font-medium">{form.name}</span>
  <span className="mx-2">•</span>
  <span>{form.settings.title}</span>
@@ -285,10 +285,10 @@ export default function FormResponsesPage() {
  </div>
 
  {responses.length === 0 ? (
- <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-12 text-center">
  <div className="text-4xl mb-4"></div>
- <h3 className="text-lg font-medium text-gray-900 mb-2">No responses yet</h3>
- <p className="text-gray-500 mb-6">Once people start submitting your form, their responses will appear here.</p>
+ <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No responses yet</h3>
+ <p className="text-gray-500 dark:text-gray-400 mb-6">Once people start submitting your form, their responses will appear here.</p>
  <button
  onClick={() => router.push(`/admin/forms/${formId}/send`)}
  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -299,26 +299,26 @@ export default function FormResponsesPage() {
  ) : (
  <>
  {/* Filters and Controls */}
- <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-4 mb-6">
  <div className="flex flex-col gap-4">
  <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
  <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search</label>
  <input
  type="text"
  value={filterEmail}
  onChange={(e) => setFilterEmail(e.target.value)}
  placeholder="Search by name or email..."
- className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-white border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-1">Sort by</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sort by</label>
  <select
  value={sortBy}
  onChange={(e) => setSortBy(e.target.value as any)}
- className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-white border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  >
  <option value="newest">Newest first</option>
  <option value="oldest">Oldest first</option>
@@ -327,7 +327,7 @@ export default function FormResponsesPage() {
  </div>
  </div>
 
- <div className="text-sm text-gray-500">
+ <div className="text-sm text-gray-500 dark:text-gray-400">
  Showing {filteredAndSortedResponses.length} of {responses.length} responses
  </div>
  </div>
@@ -335,31 +335,31 @@ export default function FormResponsesPage() {
  <div className="flex flex-col lg:flex-row gap-4">
  <div className="flex gap-4 flex-1">
  <div className="flex-1">
- <label className="block text-sm font-medium text-gray-700 mb-1">Date from</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date from</label>
  <input
  type="date"
  value={dateFrom}
  onChange={(e) => setDateFrom(e.target.value)}
- className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-white border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  <div className="flex-1">
- <label className="block text-sm font-medium text-gray-700 mb-1">Date to</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date to</label>
  <input
  type="date"
  value={dateTo}
  onChange={(e) => setDateTo(e.target.value)}
- className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-white border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  </div>
 
- <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+ <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
  <input
  type="checkbox"
  checked={includeMetadata}
  onChange={(e) => setIncludeMetadata(e.target.checked)}
- className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+ className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-slate-600 rounded"
  />
  Include submission metadata
  </label>
@@ -374,68 +374,68 @@ export default function FormResponsesPage() {
  </div>
 
  {/* Responses Table */}
- <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 overflow-hidden">
  <div className="overflow-x-auto">
- <table className="min-w-full divide-y divide-gray-200">
- <thead className="bg-gray-50">
+ <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+ <thead className="bg-gray-50 dark:bg-slate-700">
  <tr>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Submitted
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Name
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Email
  </th>
  {form.fields.slice(0, 3).map(field => (
- <th key={field.id} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th key={field.id} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  {field.label}
  </th>
  ))}
  {form.fields.length > 3 && (
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  +{form.fields.length - 3} more
  </th>
  )}
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Actions
  </th>
  </tr>
  </thead>
- <tbody className="bg-white divide-y divide-gray-200">
+ <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
  {filteredAndSortedResponses.map((response) => (
- <tr key={response.id} className="hover:bg-gray-50">
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+ <tr key={response.id} className="hover:bg-gray-50 dark:hover:bg-slate-700">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
         <div>
           {formatDate(response.submitted_at)}
         </div>
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-gray-500 dark:text-gray-400">
           {formatDateTime(response.submitted_at, {
             hour: 'numeric',
             minute: '2-digit',
           })}
         </div>
  </td>
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
- {response.submitted_by_name || <span className="text-gray-400 italic">Anonymous</span>}
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+ {response.submitted_by_name || <span className="text-gray-400 dark:text-gray-500 italic">Anonymous</span>}
  </td>
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
  {response.submitted_by_email ? (
  <a href={`mailto:${response.submitted_by_email}`} className="text-blue-600 hover:underline">
  {response.submitted_by_email}
  </a>
  ) : (
- <span className="text-gray-400 italic">No email</span>
+ <span className="text-gray-400 dark:text-gray-500 italic">No email</span>
  )}
  </td>
  {form.fields.slice(0, 3).map(field => (
- <td key={field.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+ <td key={field.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
  {formatFieldValue(field, response.responses[field.id])}
  </td>
  ))}
  {form.fields.length > 3 && (
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
  <button
  onClick={() => setSelectedResponse(response)}
  className="text-blue-600 hover:underline"
@@ -444,7 +444,7 @@ export default function FormResponsesPage() {
  </button>
  </td>
  )}
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
  <button
  onClick={() => setSelectedResponse(response)}
  className="text-blue-600 hover:text-blue-800 font-medium"
@@ -464,13 +464,13 @@ export default function FormResponsesPage() {
 
  {/* Response Detail Modal */}
  {selectedResponse && (
- <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
- <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
- <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+ <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+ <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
  <h3 className="text-lg font-semibold">Response Details</h3>
  <button
  onClick={() => setSelectedResponse(null)}
- className="text-gray-400 hover:text-gray-600"
+ className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
  >
  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -479,10 +479,10 @@ export default function FormResponsesPage() {
  </div>
  <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
  {/* Response Meta */}
- <div className="bg-gray-50 rounded-lg p-4 mb-6">
+ <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4 mb-6">
  <div className="grid grid-cols-2 gap-4 text-sm">
  <div>
-        <span className="font-medium text-gray-700">Submitted:</span>
+        <span className="font-medium text-gray-700 dark:text-gray-300">Submitted:</span>
         <div>{formatDateTime(selectedResponse.submitted_at, {
           month: 'short',
           day: 'numeric',
@@ -492,11 +492,11 @@ export default function FormResponsesPage() {
         })}</div>
  </div>
  <div>
- <span className="font-medium text-gray-700">Name:</span>
+ <span className="font-medium text-gray-700 dark:text-gray-300">Name:</span>
  <div>{selectedResponse.submitted_by_name || 'Anonymous'}</div>
  </div>
  <div>
- <span className="font-medium text-gray-700">Email:</span>
+ <span className="font-medium text-gray-700 dark:text-gray-300">Email:</span>
  <div>
  {selectedResponse.submitted_by_email ? (
  <a href={`mailto:${selectedResponse.submitted_by_email}`} className="text-blue-600 hover:underline">
@@ -508,7 +508,7 @@ export default function FormResponsesPage() {
  </div>
  </div>
  <div>
- <span className="font-medium text-gray-700">IP Address:</span>
+ <span className="font-medium text-gray-700 dark:text-gray-300">IP Address:</span>
  <div>{selectedResponse.ip_address || 'Not recorded'}</div>
  </div>
  </div>
@@ -517,9 +517,9 @@ export default function FormResponsesPage() {
  {/* Response Data */}
  <div className="space-y-6">
  {form.fields.map(field => (
- <div key={field.id} className="border-b border-gray-200 pb-4">
- <h4 className="font-medium text-gray-900 mb-2">{field.label}</h4>
- <div className="text-gray-700">
+ <div key={field.id} className="border-b border-gray-200 dark:border-slate-700 pb-4">
+ <h4 className="font-medium text-gray-900 dark:text-white mb-2">{field.label}</h4>
+ <div className="text-gray-700 dark:text-gray-300">
  {formatFieldValue(field, selectedResponse.responses[field.id])}
  </div>
  </div>

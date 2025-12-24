@@ -127,6 +127,20 @@ class Settings(BaseSettings):
     root_admin_email: Optional[str] = Field(default=None, alias="ROOT_ADMIN_EMAIL")
     root_admin_password: Optional[str] = Field(default=None, alias="ROOT_ADMIN_PASSWORD")
 
+    # AI Service (Gemini)
+    google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
+    gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
+
+    @property
+    def ai_api_key(self) -> Optional[str]:
+        """Get the AI API key (supports both GOOGLE_API_KEY and GEMINI_API_KEY)."""
+        return self.google_api_key or self.gemini_api_key
+
+    @property
+    def ai_enabled(self) -> bool:
+        """Check if AI features are enabled (requires Google/Gemini API key)."""
+        return bool(self.ai_api_key)
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

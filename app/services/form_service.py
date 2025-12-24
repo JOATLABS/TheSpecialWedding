@@ -26,6 +26,7 @@ import html
 
 logger = logging.getLogger(__name__)
 
+
 class FormService:
     def __init__(self):
         self.forms_collection = mongo.get_forms_collection()
@@ -146,10 +147,9 @@ class FormService:
         """Get forms for a user"""
         try:
             # ROOT_ADMIN can see all forms, others see only their own
-            if is_root_admin:
-                query = {"is_active": True}
-            else:
-                query = {"created_by": created_by, "is_active": True}
+            query: Dict[str, Any] = {"is_active": True}
+            if not is_root_admin:
+                query["created_by"] = created_by
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
@@ -414,7 +414,7 @@ class FormService:
 
                     # Send email
                     if self.email_service.configured:
-                        email_result = self.email_service.send_email(
+                        email_result = await self.email_service.send_email(
                             to_email=recipient_email,
                             subject=send_data.email_settings.subject,
                             html_content=email_html,
@@ -452,8 +452,13 @@ class FormService:
             logging.error(f"Error sending form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to send form: {str(e)}")
 
-    async def submit_form_response(self, form_id: str, response_data: SubmitFormRequest,
-                            ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Dict[str, Any]:
+    async def submit_form_response(
+        self,
+        form_id: str,
+        response_data: SubmitFormRequest,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Submit a form response with security validation"""
         try:
             # Rate limiting for form submissions
@@ -602,7 +607,7 @@ class FormService:
         """Get all responses for a form"""
         try:
             # Verify user owns the form
-            form = await self.get_form(form_id, created_by)
+            await self.get_form(form_id, created_by)
 
             responses = await self.responses_collection.find(
                 {"form_id": form_id}
@@ -731,7 +736,7 @@ class FormService:
                     "completion_rate": completion_rate
                 },
                 "created_at": form["created_at"],
-                "last_response": self._get_last_response_time(form_id)
+                "last_response": await self._get_last_response_time(form_id)
             }
 
         except HTTPException:
