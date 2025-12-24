@@ -510,7 +510,7 @@ export default function VendorManagementPage() {
                       <div className="text-xs text-gray-500">
                         {vendor.weddings_count} wedding{vendor.weddings_count !== 1 ? 's' : ''}
                       </div>
-                      {vendor.internal_rating && (
+                      {typeof vendor.internal_rating === 'number' && vendor.internal_rating > 0 && (
                         <div className="flex items-center gap-1">
                           {[...Array(5)].map((_, i) => (
                             <svg
