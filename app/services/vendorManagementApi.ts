@@ -933,3 +933,130 @@ export function getPaymentLinkStatusColor(status: PaymentLinkStatus): string {
   };
   return colors[status] || 'bg-gray-100 text-gray-800';
 }
+
+// =============================================================================
+// PUBLIC CONTRACT ACCESS (No Auth Required)
+// =============================================================================
+
+export interface PublicContract {
+  _id: string;
+  contract_title: string;
+  contract_number?: string;
+  vendor_name: string;
+  vendor_email: string;
+  planner_name?: string;
+  planner_company?: string;
+  couple_names?: string;
+  wedding_date?: string;
+  service_date?: string;
+  service_location?: string;
+  service_category: VendorCategory;
+  sections: ContractSection[];
+  terms_and_conditions?: string;
+  cancellation_policy?: string;
+  total_amount: number;
+  deposit_amount?: number;
+  currency: string;
+  status: ContractStatus;
+  sent_at?: string;
+  viewed_at?: string;
+  signed_at?: string;
+  signed_by_name?: string;
+}
+
+export async function getPublicContract(
+  contractId: string,
+  accessToken: string
+): Promise<PublicContract> {
+  const response = await fetch(
+    `${API_BASE}/admin/public/contracts/${contractId}?token=${accessToken}`
+  );
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('Contract not found');
+    } else if (response.status === 403) {
+      throw new Error('Access denied - invalid or expired link');
+    }
+    throw new Error('Failed to fetch contract');
+  }
+
+  return response.json();
+}
+
+export async function signPublicContract(
+  contractId: string,
+  accessToken: string,
+  signerName: string,
+  signerEmail: string
+): Promise<{ message: string; signed_at: string }> {
+  const response = await fetch(
+    `${API_BASE}/admin/public/contracts/${contractId}/sign?token=${accessToken}&signer_name=${encodeURIComponent(signerName)}&signer_email=${encodeURIComponent(signerEmail)}`,
+    { method: 'POST' }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to sign contract');
+  }
+
+  return response.json();
+}
+
+// =============================================================================
+// CONTRACT TEMPLATES - Create Custom
+// =============================================================================
+
+export interface CreateTemplateRequest {
+  name: string;
+  description?: string;
+  service_category: VendorCategory;
+  sections: ContractSection[];
+  terms_and_conditions?: string;
+  cancellation_policy?: string;
+  default_deposit_percentage?: number;
+  default_payment_schedule?: PaymentScheduleItem[];
+  is_public?: boolean;
+}
+
+export async function createContractTemplate(
+  token: string,
+  data: CreateTemplateRequest
+): Promise<ContractTemplate> {
+  const response = await fetch(`${API_BASE}/admin/templates`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to create template');
+  }
+
+  return response.json();
+}
+
+export async function saveContractAsTemplate(
+  token: string,
+  contractId: string,
+  templateName: string,
+  description?: string
+): Promise<ContractTemplate> {
+  // First get the contract
+  const contract = await getContract(token, contractId);
+
+  // Create template from contract
+  return createContractTemplate(token, {
+    name: templateName,
+    description: description || `Template created from ${contract.contract_title}`,
+    service_category: contract.service_category,
+    sections: contract.sections,
+    terms_and_conditions: contract.terms_and_conditions,
+    cancellation_policy: contract.cancellation_policy,
+    is_public: false,
+  });
+}

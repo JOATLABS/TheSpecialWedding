@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/cron/:path*",
+      "destination": "/api/cron/:path*"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://api.thespecialwedding.com/:path*"
     }
