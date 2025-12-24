@@ -70,41 +70,18 @@ export function VendorPaymentModal({
 
       const data = await response.json();
 
-      // In a real flow, we might need to confirm the payment intent on the client side
-      // if it requires 3D Secure or other actions, even if it's off-session or merchant-initiated.
-      // But for Connect destination charges where the platform pays, it's usually automatic
-      // IF the platform has a payment method attached.
-
-      // Wait, the planner is paying. The planner is a Customer in Stripe.
-      // The planner needs to have a payment method attached to their Customer object.
-      // This flow assumes the planner has a default payment method.
-      // If not, we should probably redirect them to a payment page or show PaymentElement.
-
-      // For simplicity in this iteration:
-      // If status is 'succeeded', great.
-      // If 'requires_payment_method', we need to show UI.
+      // TODO: Implement proper handling for different payment intent statuses (requires_payment_method,
+      // requires_confirmation, requires_action) by integrating PaymentElement for client-side confirmation
+      // and 3D Secure authentication when the planner doesn't have a saved payment method.
 
       if (data.payment_intent.status === 'succeeded') {
         toast.success(`Payment of $${amount} to ${vendorName} successful!`);
         if (onPaymentComplete) onPaymentComplete();
         onClose();
       } else if (data.payment_intent.status === 'requires_confirmation' || data.payment_intent.status === 'requires_action') {
-         // This is complex to handle in a modal without Elements.
-         // A better approach for "Planner pays Vendor" is:
-         // 1. Create PaymentIntent with transfer_data
-         // 2. Show PaymentElement in this modal so Planner can enter card (or use saved card)
-
-         // Let's assume we want to show PaymentElement here.
-         // But for now, let's just notify success if it worked (e.g. using saved card) or error.
          toast.success('Payment initiated. Please check your billing dashboard.');
          onClose();
       } else {
-         // If it requires payment method, we probably need a Checkout session or Payment Element.
-         // Given the complexity, let's redirect to a payment page for this specific transaction?
-         // Or just tell them to use the "Collect Payment" flow but for themselves?
-
-         // Let's implement the "Show Payment Element" approach in a future step if needed.
-         // For now, simple success/fail.
          toast.success('Payment processed successfully!');
          onClose();
       }
