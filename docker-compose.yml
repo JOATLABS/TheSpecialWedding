@@ -37,6 +37,7 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017
       PYTHONPATH: /app
+      CRON_SECRET: ${CRON_SECRET}
     volumes:
       - ./app:/app/app
       - ./.env:/app/.env

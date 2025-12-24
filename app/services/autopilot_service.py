@@ -4,7 +4,7 @@ Autopilot Payment Service
 Handles automatic payment processing, scheduling, retries, and notifications.
 This is the core engine for the Wedding Finance Autopilot feature.
 """
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 import logging
@@ -824,12 +824,320 @@ class AutopilotService:
             resend.Emails.send({
                 "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
                 "to": [couple_email],
-                "subject": f"Payment Issue - Action Required",
+                "subject": "Payment Issue - Action Required",
                 "html": html_content
             })
 
         except Exception as e:
             logger.error(f"Failed to send failure notification: {str(e)}")
+
+    # =========================================================================
+    # SCHEDULE RECALCULATION (WFA-507)
+    # =========================================================================
+
+    async def recalculate_payment_schedule(self, contract_id: str) -> Dict[str, Any]:
+        """
+        Recalculate payment due dates when wedding date changes.
+
+        Args:
+            contract_id: The contract ID to recalculate
+
+        Returns:
+            Summary of recalculated payments
+        """
+        try:
+            contract = await self.contracts.find_one({"_id": ObjectId(contract_id)})
+            if not contract:
+                return {"success": False, "error": "Contract not found"}
+
+            wedding_date = contract.get("wedding_date")
+            if not wedding_date:
+                return {"success": False, "error": "No wedding date set"}
+
+            if isinstance(wedding_date, str):
+                wedding_date = date.fromisoformat(wedding_date)
+            elif isinstance(wedding_date, datetime):
+                wedding_date = wedding_date.date()
+
+            # Find all scheduled payments with days_before_wedding trigger
+            query = {
+                "contract_id": contract_id,
+                "trigger": "days_before_wedding",
+                "status": {"$in": ["scheduled", "pending"]}
+            }
+
+            cursor = self.scheduled_payments.find(query)
+            payments = await cursor.to_list(length=100)
+
+            updated_count = 0
+            past_due_count = 0
+
+            for payment in payments:
+                days_before = payment.get("days_before")
+                if days_before is None:
+                    continue
+
+                new_due_date = wedding_date - timedelta(days=days_before)
+
+                # Check if new due date is in the past
+                if new_due_date < datetime.utcnow().date():
+                    past_due_count += 1
+                    logger.warning(
+                        f"Payment {payment['_id']} new due date {new_due_date} is in the past"
+                    )
+
+                # Update the payment
+                await self.scheduled_payments.update_one(
+                    {"_id": payment["_id"]},
+                    {
+                        "$set": {
+                            "due_date": datetime.combine(new_due_date, datetime.min.time()),
+                            "updated_at": datetime.utcnow(),
+                            "recalculated_at": datetime.utcnow()
+                        }
+                    }
+                )
+                updated_count += 1
+
+            results = {
+                "success": True,
+                "contract_id": contract_id,
+                "wedding_date": str(wedding_date),
+                "payments_updated": updated_count,
+                "past_due_warnings": past_due_count
+            }
+
+            # If any payments are now past due, notify planner
+            if past_due_count > 0:
+                await self._notify_planner_of_schedule_change(contract, past_due_count)
+
+            logger.info(f"Recalculated schedule for contract {contract_id}: {results}")
+            return results
+
+        except Exception as e:
+            logger.error(f"Error recalculating schedule: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    async def _notify_planner_of_schedule_change(self, contract: Dict, past_due_count: int):
+        """Notify planner when schedule recalculation results in past-due payments."""
+        try:
+            import resend
+            resend.api_key = settings.resend_api_key
+
+            planner_id = contract.get("planner_id")
+            if not planner_id:
+                return
+
+            planner = await self.users.find_one({"_id": ObjectId(planner_id)})
+            if not planner or not planner.get("email"):
+                return
+
+            couple = contract.get("couple", {})
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #f59e0b;">⚠️ Payment Schedule Updated</h2>
+                <p>The wedding date for {couple.get('name', 'a client')} has been changed, and the payment schedule has been recalculated.</p>
+                <div style="background: #fffbeb; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+                    <p style="margin: 0;"><strong>Attention:</strong> {past_due_count} payment(s) now have due dates in the past.</p>
+                    <p style="margin: 10px 0 0;">Please review the payment schedule and take appropriate action.</p>
+                </div>
+                <a href="{settings.frontend_url}/admin/contracts" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
+                    View Contract
+                </a>
+            </body>
+            </html>
+            """
+
+            resend.Emails.send({
+                "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
+                "to": [planner.get("email")],
+                "subject": f"⚠️ Payment Schedule Updated - {couple.get('name', 'Client')}",
+                "html": html_content
+            })
+
+        except Exception as e:
+            logger.error(f"Failed to notify planner of schedule change: {str(e)}")
+
+    # =========================================================================
+    # AI FEATURES (WFA-508, WFA-509)
+    # =========================================================================
+
+    async def get_optimal_retry_timing(self, payment: Dict) -> Dict[str, Any]:
+        """
+        Use AI to suggest optimal retry timing for a failed payment.
+
+        Args:
+            payment: The failed payment record
+
+        Returns:
+            AI suggestion with optimal retry timing
+        """
+        try:
+            from app.services.ai_service import ai_service
+
+            # Build context for AI
+            contract_id = payment.get("contract_id")
+
+            # Get payment history for this contract
+            history = []
+            if contract_id:
+                cursor = self.scheduled_payments.find({
+                    "contract_id": contract_id,
+                    "status": {"$in": ["succeeded", "failed"]}
+                }).sort("updated_at", -1).limit(10)
+                history = await cursor.to_list(length=10)
+
+            context = {
+                "payment": {
+                    "amount": payment.get("amount"),
+                    "due_date": str(payment.get("due_date")),
+                    "failure_code": payment.get("failure_code"),
+                    "failure_reason": payment.get("failure_reason"),
+                    "attempt_count": payment.get("attempt_count", 1),
+                    "last_attempt": str(payment.get("updated_at"))
+                },
+                "history": [
+                    {
+                        "status": p.get("status"),
+                        "amount": p.get("amount"),
+                        "date": str(p.get("paid_at") or p.get("updated_at"))
+                    }
+                    for p in history
+                ],
+                "current_date": datetime.utcnow().isoformat()
+            }
+
+            # Call AI service (no credits - internal feature)
+            result = await ai_service.generate(
+                feature_name="payment_retry_timing",
+                context=context,
+                user_id="system",  # Internal system call
+                skip_credit_check=True
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting AI retry timing: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "fallback": "using_default_backoff"
+            }
+
+    async def predict_payment_success(self, payment: Dict) -> Dict[str, Any]:
+        """
+        Use AI to predict likelihood of payment success.
+
+        Args:
+            payment: The scheduled payment record
+
+        Returns:
+            AI prediction with success probability and risk factors
+        """
+        try:
+            from app.services.ai_service import ai_service
+
+            contract_id = payment.get("contract_id")
+            contract = await self.contracts.find_one({"_id": ObjectId(contract_id)}) if contract_id else None
+
+            # Get payment method age
+            card_added = contract.get("card_added_at") if contract else None
+            days_since_card_added = None
+            if card_added:
+                if isinstance(card_added, str):
+                    card_added = datetime.fromisoformat(card_added)
+                days_since_card_added = (datetime.utcnow() - card_added).days
+
+            # Get payment history
+            history = []
+            if contract_id:
+                cursor = self.scheduled_payments.find({
+                    "contract_id": contract_id,
+                    "status": {"$in": ["succeeded", "failed"]}
+                }).sort("updated_at", -1).limit(10)
+                history = await cursor.to_list(length=10)
+
+            successful = len([p for p in history if p.get("status") == "succeeded"])
+            failed = len([p for p in history if p.get("status") == "failed"])
+
+            context = {
+                "payment": {
+                    "amount": payment.get("amount"),
+                    "due_date": str(payment.get("due_date")),
+                    "name": payment.get("name")
+                },
+                "card_info": {
+                    "days_since_added": days_since_card_added,
+                    "card_brand": contract.get("card_brand") if contract else None,
+                    "card_last4": contract.get("card_last4") if contract else None
+                },
+                "history_summary": {
+                    "successful_payments": successful,
+                    "failed_payments": failed,
+                    "success_rate": round(successful / max(successful + failed, 1) * 100, 1)
+                },
+                "current_date": datetime.utcnow().isoformat()
+            }
+
+            # Call AI service (no credits - internal feature)
+            result = await ai_service.generate(
+                feature_name="payment_success_prediction",
+                context=context,
+                user_id="system",
+                skip_credit_check=True
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error predicting payment success: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "fallback": "assuming_medium_risk"
+            }
+
+    async def get_payment_risk_assessment(self, payment_id: str) -> Dict[str, Any]:
+        """
+        Get comprehensive risk assessment for a payment.
+
+        Combines AI prediction with historical analysis.
+        """
+        try:
+            payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+            if not payment:
+                return {"success": False, "error": "Payment not found"}
+
+            prediction = await self.predict_payment_success(payment)
+
+            # Add to payment record for dashboard display
+            if prediction.get("success_probability"):
+                await self.scheduled_payments.update_one(
+                    {"_id": ObjectId(payment_id)},
+                    {
+                        "$set": {
+                            "ai_risk_assessment": {
+                                "probability": prediction.get("success_probability"),
+                                "risk_level": prediction.get("risk_level"),
+                                "assessed_at": datetime.utcnow()
+                            }
+                        }
+                    }
+                )
+
+            return {
+                "success": True,
+                "payment_id": payment_id,
+                "prediction": prediction
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting risk assessment: {str(e)}")
+            return {"success": False, "error": str(e)}
 
     # =========================================================================
     # UTILITY METHODS

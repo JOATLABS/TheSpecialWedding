@@ -106,6 +106,9 @@ services:
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
 
+      # Autopilot Cron Configuration
+      - CRON_SECRET=${CRON_SECRET}
+
       # Redis Configuration
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
 
