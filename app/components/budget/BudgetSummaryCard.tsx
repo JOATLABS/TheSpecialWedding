@@ -34,12 +34,12 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
   return (
     <Card className={`p-6 ${className}`}>
       <div className="flex justify-between items-start mb-6">
-        <h2 className="text-2xl font-heading font-bold text-wedding-navy">
+        <h2 className="text-2xl font-heading font-bold text-wedding-navy dark:text-white">
           Budget Overview
         </h2>
         <div className="text-right">
-          <div className="text-sm text-gray-600">Last Updated</div>
-          <div className="text-sm font-medium">
+          <div className="text-sm text-gray-600 dark:text-gray-400">Last Updated</div>
+          <div className="text-sm font-medium dark:text-gray-200">
             {formatDate(summary.last_updated)}
           </div>
         </div>
@@ -56,39 +56,39 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
 
       {/* Key metrics grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-bold text-wedding-navy">
+        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
+          <div className="text-2xl font-bold text-wedding-navy dark:text-blue-400">
             {formatCurrency(summary.total_budget)}
           </div>
-          <div className="text-sm text-gray-600">Total Budget</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">Total Budget</div>
         </div>
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-bold text-wedding-rose">
+        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
+          <div className="text-2xl font-bold text-wedding-rose dark:text-rose-400">
             {formatCurrency(summary.total_spent)}
           </div>
-          <div className="text-sm text-gray-600">Total Spent</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">Total Spent</div>
         </div>
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-bold text-wedding-gold">
+        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
+          <div className="text-2xl font-bold text-wedding-gold dark:text-yellow-400">
             {formatCurrency(summary.total_committed)}
           </div>
-          <div className="text-sm text-gray-600">Committed</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">Committed</div>
         </div>
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
+        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
           <div className={`text-2xl font-bold ${
-            summary.remaining_budget >= 0 ? 'text-green-600' : 'text-red-600'
+            summary.remaining_budget >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
           }`}>
             {formatCurrency(summary.remaining_budget)}
           </div>
-          <div className="text-sm text-gray-600">Remaining</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">Remaining</div>
         </div>
       </div>
 
       {/* Budget variance indicator */}
       {summary.budget_variance !== 0 && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+        <div className="mb-6 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
           <div className="flex items-center justify-between">
-            <span className="font-medium text-wedding-navy">Budget Variance:</span>
+            <span className="font-medium text-wedding-navy dark:text-gray-200">Budget Variance:</span>
             <div className="text-right">
               <div className={`text-lg font-bold ${getVarianceColor(summary.variance_percentage)}`}>
                 {formatCurrency(Math.abs(summary.budget_variance))}
@@ -96,7 +96,7 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
                   ({formatPercentage(summary.variance_percentage)})
                 </span>
               </div>
-              <div className="text-xs text-gray-600">
+              <div className="text-xs text-gray-600 dark:text-gray-400">
                 {summary.budget_variance > 0 ? 'Over Budget' : 'Under Budget'}
               </div>
             </div>
@@ -106,44 +106,44 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
 
       {/* Category and payment status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-        <div className="p-3 bg-blue-50 rounded-lg">
-          <div className="text-xl font-bold text-blue-600">
+        <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-transparent dark:border-blue-800">
+          <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
             {summary.categories_count}
           </div>
-          <div className="text-sm text-gray-600">Categories</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">Categories</div>
         </div>
-        <div className="p-3 bg-green-50 rounded-lg">
-          <div className="text-xl font-bold text-green-600">
+        <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded-lg border border-transparent dark:border-green-800">
+          <div className="text-xl font-bold text-green-600 dark:text-green-400">
             {summary.paid_categories}
           </div>
-          <div className="text-sm text-gray-600">Paid Categories</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">Paid Categories</div>
         </div>
         {summary.overdue_categories > 0 && (
-          <div className="p-3 bg-red-50 rounded-lg">
-            <div className="text-xl font-bold text-red-600">
+          <div className="p-3 bg-red-50 dark:bg-red-900/30 rounded-lg border border-transparent dark:border-red-800">
+            <div className="text-xl font-bold text-red-600 dark:text-red-400">
               {summary.overdue_categories}
             </div>
-            <div className="text-sm text-gray-600">Overdue</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Overdue</div>
           </div>
         )}
         {summary.vendor_quotes_count > 0 && (
-          <div className="p-3 bg-purple-50 rounded-lg">
-            <div className="text-xl font-bold text-purple-600">
+          <div className="p-3 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-transparent dark:border-purple-800">
+            <div className="text-xl font-bold text-purple-600 dark:text-purple-400">
               {summary.vendor_quotes_count}
             </div>
-            <div className="text-sm text-gray-600">Vendor Quotes</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Vendor Quotes</div>
           </div>
         )}
       </div>
 
       {/* Action indicators */}
       {(summary.overdue_categories > 0 || summary.variance_percentage > 10) && (
-        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
           <div className="flex items-center">
-            <svg className="w-5 h-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
-            <span className="text-yellow-800 font-medium">
+            <span className="text-yellow-800 dark:text-yellow-200 font-medium">
               Action Required:
               {summary.overdue_categories > 0 && ' Overdue payments detected.'}
               {summary.variance_percentage > 10 && ' Budget significantly exceeded.'}
