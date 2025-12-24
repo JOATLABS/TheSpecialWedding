@@ -98,7 +98,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
   const [currency, setCurrency] = useState<string>('usd');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stripePromiseState, setStripePromiseState] = useState<Promise<any> | null>(null);
+  const [stripePromiseState, setStripePromiseState] = useState<Promise<Stripe | null> | null>(null);
 
   useEffect(() => {
     // 1. Initialize Stripe
