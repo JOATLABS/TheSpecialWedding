@@ -27,6 +27,8 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
+import StripeConnectCard from './connect';
+import { CollectPaymentModal } from '@/components/payments/CollectPaymentModal';
 
 interface SubscriptionPlan {
   _id: string;
@@ -86,10 +88,21 @@ interface BillingAlert {
   actionLabel?: string;
 }
 
+interface PaymentRequest {
+  _id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  description: string;
+  created_at: string;
+  wedding_title?: string;
+}
+
 export default function PlannerBillingPage() {
   const router = useRouter();
   const { userProfile } = useAdmin();
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [currentPlan, setCurrentPlan] = useState<SubscriptionPlan | null>(null);
@@ -101,8 +114,10 @@ export default function PlannerBillingPage() {
     ai_credits_remaining: 100
   });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [billingAlerts, setBillingAlerts] = useState<BillingAlert[]>([]);
   const [showAllInvoices, setShowAllInvoices] = useState(false);
+  const [showCreatePaymentModal, setShowCreatePaymentModal] = useState(false);
 
   // Access control - only for wedding planners
   useEffect(() => {
@@ -269,6 +284,27 @@ export default function PlannerBillingPage() {
         console.warn('Invoices not available:', error);
       }
 
+      // Load client payment requests
+      try {
+        const requestsResponse = await fetch(
+          `${baseUrl}/stripe/payment-requests`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          }
+        );
+
+        if (requestsResponse.ok) {
+          const requestsData = await requestsResponse.json();
+          setPaymentRequests(requestsData);
+        }
+      } catch (error) {
+        console.warn('Payment requests fetch failed:', error);
+      }
+
     } catch (error) {
       console.error('Error loading billing data:', error);
       toast.error('Failed to load billing information');
@@ -404,6 +440,11 @@ export default function PlannerBillingPage() {
   const handleChangePlan = () => openBillingPortal('subscription_update', 'Opening plan options...');
   const handleUpdatePayment = () => openBillingPortal('payment_method_update', 'Opening payment settings...');
   const handleManageBilling = () => openBillingPortal();
+
+  const handlePaymentCreated = (newPayment: any) => {
+    // Refresh list
+    loadData();
+  };
 
   const handleSubscribe = async (planId: string, interval: 'monthly' | 'yearly' = 'monthly') => {
     try {
@@ -616,8 +657,32 @@ export default function PlannerBillingPage() {
         </p>
       </div>
 
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
+        <button
+          className={`px-4 py-2 font-medium text-sm transition-colors ${
+            activeTab === 'subscription'
+              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+          onClick={() => setActiveTab('subscription')}
+        >
+          My Subscription
+        </button>
+        <button
+          className={`px-4 py-2 font-medium text-sm transition-colors ${
+            activeTab === 'client_payments'
+              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+          onClick={() => setActiveTab('client_payments')}
+        >
+          Client Payments
+        </button>
+      </div>
+
       {/* Billing Alerts */}
-      {billingAlerts.length > 0 && (
+      {activeTab === 'subscription' && billingAlerts.length > 0 && (
         <div className="space-y-3">
           {billingAlerts.map((alert, index) => (
             <div
@@ -679,6 +744,9 @@ export default function PlannerBillingPage() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left Column - Subscription & Payment */}
         <div className="lg:col-span-2 space-y-6">
+
+          {activeTab === 'subscription' ? (
+            <>
           {/* Current Subscription */}
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
             <CardHeader className="pb-4">
@@ -866,10 +934,64 @@ export default function PlannerBillingPage() {
               )}
             </CardContent>
           </Card>
+          </>
+          ) : (
+            // Client Payments Tab Content
+            <>
+              <StripeConnectCard />
+
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                <CardHeader className="pb-4 flex flex-row items-center justify-between">
+                  <CardTitle className="text-gray-900 dark:text-gray-100">Payment Requests</CardTitle>
+                  <Button onClick={() => setShowCreatePaymentModal(true)}>
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    New Request
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {paymentRequests.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      <p>No payment requests created yet.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {paymentRequests.map((req) => (
+                        <div key={req._id} className="flex items-center justify-between py-3">
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-gray-100">
+                              {req.description || 'Payment Request'}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {new Date(req.created_at).toLocaleDateString()}
+                              {req.wedding_title && ` • ${req.wedding_title}`}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium text-gray-900 dark:text-gray-100">
+                              ${req.amount.toFixed(2)} {req.currency.toUpperCase()}
+                            </p>
+                            <Badge className={
+                              req.status === 'succeeded' ? 'bg-green-100 text-green-700' :
+                              req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-700'
+                            }>
+                              {req.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
         </div>
 
         {/* Right Column - Usage & Quick Actions */}
         <div className="space-y-6">
+          {activeTab === 'subscription' && (
+            <>
           {/* Usage This Period */}
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
             <CardHeader className="pb-4">
@@ -998,8 +1120,16 @@ export default function PlannerBillingPage() {
               </div>
             </CardContent>
           </Card>
+          </>
+          )}
         </div>
       </div>
+
+      <CollectPaymentModal
+        open={showCreatePaymentModal}
+        onClose={() => setShowCreatePaymentModal(false)}
+        onPaymentCreated={handlePaymentCreated}
+      />
     </div>
   );
 }
