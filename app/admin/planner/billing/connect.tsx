@@ -6,6 +6,33 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Stripe Connect supported countries for Express accounts
+const SUPPORTED_COUNTRIES = [
+  { code: 'US', name: 'United States' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'IE', name: 'Ireland' },
+  { code: 'AT', name: 'Austria' },
+  { code: 'BE', name: 'Belgium' },
+  { code: 'DK', name: 'Denmark' },
+  { code: 'FI', name: 'Finland' },
+  { code: 'NO', name: 'Norway' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'CH', name: 'Switzerland' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'LU', name: 'Luxembourg' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'SG', name: 'Singapore' },
+  { code: 'HK', name: 'Hong Kong' },
+  { code: 'JP', name: 'Japan' },
+];
+
 export default function StripeConnectCard() {
   const [loading, setLoading] = useState(true);
   const [connectStatus, setConnectStatus] = useState<{
@@ -14,6 +41,7 @@ export default function StripeConnectCard() {
     payouts_enabled: boolean;
     details_submitted: boolean;
   } | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState('US');
 
   useEffect(() => {
     checkStatus();
@@ -53,7 +81,7 @@ export default function StripeConnectCard() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          country: 'US',
+          country: selectedCountry,
           return_url: `${window.location.origin}/admin/planner/billing`,
           refresh_url: `${window.location.origin}/admin/planner/billing`
         })
@@ -137,6 +165,27 @@ export default function StripeConnectCard() {
                  <li>Pay vendors directly from the platform</li>
                  <li>Automated invoicing and receipts</li>
                </ul>
+             </div>
+
+             <div>
+               <label htmlFor="country" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                 Country
+               </label>
+               <select
+                 id="country"
+                 value={selectedCountry}
+                 onChange={(e) => setSelectedCountry(e.target.value)}
+                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#635BFF]"
+               >
+                 {SUPPORTED_COUNTRIES.map((country) => (
+                   <option key={country.code} value={country.code}>
+                     {country.name}
+                   </option>
+                 ))}
+               </select>
+               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                 Select the country where your business is registered
+               </p>
              </div>
 
              <Button
