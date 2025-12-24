@@ -23,11 +23,12 @@ const ConversationView: React.FC<ConversationViewProps> = ({ messages, activeCon
           >
             <div className="flex items-end">
               {message.sender_id !== 'You' && (
-                <img
-                  src={`https://i.pravatar.cc/150?u=${message.sender_id}`} // Placeholder avatar
-                  alt={message.sender_id}
-                  className="w-8 h-8 rounded-full mr-3"
-                />
+                <div
+                  className="w-8 h-8 rounded-full bg-gray-400 flex items-center justify-center text-white text-sm font-semibold mr-3"
+                  aria-label={message.sender_id}
+                >
+                  {(message.sender_id || 'U').charAt(0).toUpperCase()}
+                </div>
               )}
               <div
                 className={`rounded-lg px-4 py-2 max-w-md ${

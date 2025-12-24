@@ -42,11 +42,12 @@ const Inbox: React.FC<InboxProps> = ({ conversations, onSelectConversation, acti
           >
             <div className="flex items-center">
               <div className="relative w-12 h-12 mr-4">
-                <img
-                  className="w-12 h-12 rounded-full object-cover"
-                  src={`https://i.pravatar.cc/150?u=${conversation.conversation_id}`} // Placeholder avatar
-                  alt={conversation.subject}
-                />
+                <div
+                  className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold"
+                  aria-label={conversation.subject}
+                >
+                  {(conversation.subject || 'C').charAt(0).toUpperCase()}
+                </div>
                 <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-500 border-2 border-white"></span>
               </div>
               <div className="flex-1">
