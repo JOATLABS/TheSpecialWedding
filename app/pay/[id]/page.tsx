@@ -102,7 +102,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
 
   useEffect(() => {
     // 1. Initialize Stripe
-    getStripePromise().then(setStripePromiseState);
+    getStripePromise().then((promise) => setStripePromiseState(promise));
 
     // 2. Fetch Payment Intent Details (via public endpoint or just assume ID is valid and retrieve via Stripe SDK if possible,
     //    but usually we need client_secret from backend. The ID in URL is payment_intent_id, but we need client_secret to render Elements)

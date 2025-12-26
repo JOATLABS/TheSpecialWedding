@@ -64,6 +64,7 @@ from app.api.planner_calendar import router as planner_calendar_router
 from app.api.packages import router as packages_router
 from app.api.contracts import router as contracts_router
 from app.api.autopilot import router as autopilot_router
+from app.api.ai import router as ai_router
 
 # Setup logging
 logging.basicConfig(
@@ -278,6 +279,7 @@ admin_routers = [
     (packages_router, "Packages"),
     (contracts_router, "Contracts"),
     (autopilot_router, "Autopilot"),
+    (ai_router, "AI"),
 ]
 
 for router, tag in admin_routers:

@@ -697,6 +697,169 @@ class ContractService:
             logger.error(f"Failed to cancel contract: {str(e)}")
             raise
 
+    async def mark_payment_paid_externally(
+        self,
+        payment_id: str,
+        planner_id: str,
+        payment_method: Optional[str] = None,
+        note: Optional[str] = None
+    ) -> Dict:
+        """
+        Mark a scheduled payment as paid externally (cash, check, wire, etc.)
+
+        Args:
+            payment_id: The scheduled payment ID
+            planner_id: The planner's ID (for verification)
+            payment_method: How the payment was received (cash, check, wire, etc.)
+            note: Optional note about the external payment
+
+        Returns:
+            Updated payment dict
+        """
+        try:
+            # Find the payment and verify ownership
+            payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+
+            if not payment:
+                raise ValueError("Payment not found")
+
+            # Verify the planner owns this payment's contract
+            if payment.get("planner_id") != planner_id:
+                raise ValueError("Payment not found or access denied")
+
+            # Can only mark scheduled or failed payments as paid externally
+            if payment.get("status") not in ["scheduled", "failed"]:
+                raise ValueError(f"Cannot mark payment with status '{payment.get('status')}' as paid externally")
+
+            now = datetime.utcnow()
+
+            # Update the payment
+            await self.scheduled_payments.update_one(
+                {"_id": ObjectId(payment_id)},
+                {
+                    "$set": {
+                        "status": "paid_externally",
+                        "paid_externally": True,
+                        "external_payment_method": payment_method,
+                        "external_payment_note": note,
+                        "paid_at": now,
+                        "updated_at": now
+                    }
+                }
+            )
+
+            logger.info(f"Payment {payment_id} marked as paid externally via {payment_method}")
+
+            # Return updated payment
+            updated = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+            return self._serialize_payment(updated)
+
+        except Exception as e:
+            logger.error(f"Failed to mark payment as paid externally: {str(e)}")
+            raise
+
+    async def process_refund(
+        self,
+        payment_id: str,
+        planner_id: str,
+        amount: Optional[float] = None,
+        reason: Optional[str] = None
+    ) -> Dict:
+        """
+        Process a refund for a succeeded payment.
+
+        Args:
+            payment_id: The scheduled payment ID
+            planner_id: The planner's ID (for verification)
+            amount: Optional refund amount (partial refund). If None, full refund.
+            reason: Optional refund reason
+
+        Returns:
+            Updated payment dict with refund info
+        """
+        try:
+            import stripe
+            from app.core.settings import settings
+
+            stripe.api_key = settings.stripe_secret_key
+
+            # Find the payment and verify ownership
+            payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+
+            if not payment:
+                raise ValueError("Payment not found")
+
+            if payment.get("planner_id") != planner_id:
+                raise ValueError("Payment not found or access denied")
+
+            # Can only refund succeeded payments
+            if payment.get("status") != "succeeded":
+                raise ValueError(f"Cannot refund payment with status '{payment.get('status')}'")
+
+            payment_intent_id = payment.get("stripe_payment_intent_id")
+            if not payment_intent_id:
+                raise ValueError("No Stripe payment intent found for this payment")
+
+            payment_amount = float(payment.get("amount", 0))
+
+            # Validate refund amount
+            if amount is not None:
+                if amount <= 0:
+                    raise ValueError("Refund amount must be positive")
+                if amount > payment_amount:
+                    raise ValueError(f"Refund amount cannot exceed payment amount (${payment_amount})")
+                refund_amount_cents = int(amount * 100)
+                is_partial = amount < payment_amount
+            else:
+                refund_amount_cents = int(payment_amount * 100)
+                amount = payment_amount
+                is_partial = False
+
+            # Create refund in Stripe
+            refund_params = {
+                "payment_intent": payment_intent_id,
+                "amount": refund_amount_cents,
+            }
+            if reason:
+                refund_params["reason"] = "requested_by_customer"
+
+            refund = stripe.Refund.create(**refund_params)
+
+            now = datetime.utcnow()
+
+            # Update payment record
+            update_data = {
+                "refund_id": refund.id,
+                "refund_amount": amount,
+                "refund_reason": reason,
+                "refunded_at": now,
+                "updated_at": now
+            }
+
+            # Update status based on refund type
+            if is_partial:
+                update_data["status"] = "partially_refunded"
+            else:
+                update_data["status"] = "refunded"
+
+            await self.scheduled_payments.update_one(
+                {"_id": ObjectId(payment_id)},
+                {"$set": update_data}
+            )
+
+            logger.info(f"Processed {'partial' if is_partial else 'full'} refund of ${amount} for payment {payment_id}")
+
+            # Return updated payment
+            updated = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+            return self._serialize_payment(updated)
+
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe refund error: {str(e)}")
+            raise ValueError(f"Stripe refund failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Failed to process refund: {str(e)}")
+            raise
+
     async def get_contract_stats(self, planner_id: str) -> Dict[str, Any]:
         """
         Get contract statistics for a planner.

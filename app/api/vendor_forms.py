@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from typing import List
+from datetime import datetime
 from bson import ObjectId
 import secrets
 import string
 from app.services.email_service_resend import ResendEmailService
+import os
 import logging
 
 router = APIRouter()
 email_service = ResendEmailService()
+
 
 class VendorFormService:
     def __init__(self):
@@ -44,6 +46,7 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error creating vendor form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create vendor form: {str(e)}")
+ 
     async def get_vendor_forms_for_planner(self, planner_email: str) -> List[dict]:
         """Get all vendor forms for a specific planner"""
         try:
@@ -66,6 +69,7 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error fetching vendor forms: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
+
     async def get_all_vendor_forms(self) -> List[dict]:
         """Get all vendor forms (ROOT_ADMIN only)"""
         try:
@@ -79,6 +83,7 @@ class VendorFormService:
         except Exception as e:
             logging.error(f"Error fetching all vendor forms: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
+
     async def send_vendor_form(self, form_id: str, planner_email: str) -> dict:
         """Send vendor form via email"""
         try:
@@ -90,11 +95,11 @@ class VendorFormService:
             wedding = await self.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-
             # Generate form link
-            base_url = "http://localhost:3005"  # Update with your frontend URL
+            base_url = os.getenv("FRONTEND_URL", "")  # Update with your frontend URL
             form_link = f"{base_url}/vendor-form/{form_id}?token={form['access_token']}"
 
+            # Prepare email content
             # Prepare email content
             email_subject = f"Wedding Service Request - {wedding['couple_names']}"
             email_html = f"""
@@ -162,7 +167,7 @@ class VendorFormService:
             </html>
             """
             # Send email
-            email_result = email_service.send_email(
+            email_result = await email_service.send_email(
                 to_email=form["vendor_email"],
                 subject=email_subject,
                 html_content=email_html,
@@ -191,12 +196,15 @@ class VendorFormService:
             logging.error(f"Error sending vendor form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to send vendor form: {str(e)}")
 
+
 vendor_service = VendorFormService()
+
 
 @router.post("/vendor-forms", tags=["Vendor Management"])
 async def create_vendor_form(form_data: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new vendor form"""
     return await vendor_service.create_vendor_form(form_data, current_user.email)
+
 
 @router.get("/vendor-forms", tags=["Vendor Management"])
 async def get_vendor_forms(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
@@ -206,10 +214,12 @@ async def get_vendor_forms(current_user: ExtendedAuthUser = Depends(require_admi
     else:
         return await vendor_service.get_vendor_forms_for_planner(current_user.email)
 
+
 @router.post("/vendor-forms/{form_id}/send", tags=["Vendor Management"])
 async def send_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Send vendor form via email"""
     return await vendor_service.send_vendor_form(form_id, current_user.email)
+
 
 @router.get("/vendor-forms/{form_id}", tags=["Vendor Management"])
 async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
@@ -222,6 +232,7 @@ async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends
         return form
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # Public endpoint for vendors to access forms
 @router.get("/vendor-form/{form_id}/public", tags=["Public Vendor Form"])
@@ -255,6 +266,7 @@ async def get_vendor_form_public(form_id: str, token: str):
     except Exception as e:
         logging.error(f"Error getting public vendor form: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to load form")
+
 
 @router.post("/vendor-form/{form_id}/submit", tags=["Public Vendor Form"])
 async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
@@ -303,6 +315,9 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
             planner_email = wedding.get("assigned_planner_email") if wedding else form.get("created_by")
             if planner_email:
                 notification_subject = f"Vendor Submission Received - {form['vendor_name']}"
+                base_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+                dashboard_url = f"{base_url}/admin/vendors"
+
                 notification_html = f"""
                 <html>
                 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -324,7 +339,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                         <p>Please log in to your dashboard to review the vendor's submission and take appropriate action.</p>
 
                         <div style="text-align: center; margin: 30px 0;">
-                            <a href="http://localhost:3005/admin/vendors"
+                            <a href="{dashboard_url}"
                                style="display: inline-block; background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
                                View Vendor Submissions
                             </a>
@@ -333,7 +348,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                 </body>
                 </html>
                 """
-                email_service.send_email(
+                await email_service.send_email(
                     to_email=planner_email,
                     subject=notification_subject,
                     html_content=notification_html,

@@ -167,7 +167,7 @@ export default function PackagePreviewPage() {
         cancellation_policy={packageData.cancellation_policy}
         late_payment_policy={packageData.late_payment_policy}
         custom_terms={packageData.custom_terms}
-        plannerName={userProfile?.business_name || userProfile?.email}
+        plannerName={(userProfile as any)?.business_name || userProfile?.first_name || userProfile?.email}
       />
 
       {/* Share Modal */}

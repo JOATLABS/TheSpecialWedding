@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile
 import boto3
 from botocore.exceptions import ClientError
@@ -27,6 +28,31 @@ from app.models.vendor import (
 )
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# CONFIGURATION CONSTANTS
+# =============================================================================
+TOKEN_EXPIRY_DAYS = int(os.getenv("CONTRACT_TOKEN_EXPIRY_DAYS", "30"))
+DEPOSIT_DUE_DAYS = int(os.getenv("DEPOSIT_DUE_DAYS", "7"))
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_CONTRACT_FILE_SIZE_MB", "10"))
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN", "https://media.thespecialwedding.com")
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+def validate_object_id(id_str: str, field_name: str = "ID") -> ObjectId:
+    """
+    Validate and convert a string to ObjectId.
+    Raises HTTPException with clear error message if invalid.
+    """
+    if not id_str:
+        raise HTTPException(status_code=400, detail=f"Missing {field_name}")
+    try:
+        return ObjectId(id_str)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} format")
 
 
 class VendorService:
@@ -77,15 +103,25 @@ class VendorService:
         random_suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"CON-{timestamp}-{random_suffix}"
 
-    async def _get_wedding(self, wedding_id: str) -> dict:
-        """Get wedding by ID"""
-        wedding = await self.weddings.find_one({"_id": wedding_id})
+    async def _get_wedding(self, wedding_id: str) -> Optional[dict]:
+        """Get wedding by ID, trying both string and ObjectId formats"""
+        wedding = None
+
+        # First try with string ID
+        try:
+            wedding = await self.weddings.find_one({"_id": wedding_id})
+        except Exception as e:
+            logger.debug(f"Failed to find wedding with string ID '{wedding_id}': {e}")
+
+        # If not found, try with ObjectId
         if not wedding:
-            # Try with ObjectId
             try:
                 wedding = await self.weddings.find_one({"_id": ObjectId(wedding_id)})
-            except:
-                pass
+            except InvalidId:
+                logger.debug(f"Invalid ObjectId format for wedding_id: {wedding_id}")
+            except Exception as e:
+                logger.warning(f"Error finding wedding by ObjectId '{wedding_id}': {e}")
+
         return wedding
 
     async def _log_communication(
@@ -99,7 +135,7 @@ class VendorService:
         subject: Optional[str] = None,
         direction: str = "outgoing",
         sent_to: Optional[str] = None,
-        attachments: List[Dict] = None
+        attachments: Optional[List[Dict]] = None
     ):
         """Log a communication with a vendor"""
         comm = {
@@ -263,6 +299,96 @@ class VendorService:
         except Exception as e:
             logger.error(f"Error getting vendor categories: {str(e)}")
             return []
+
+    async def get_dashboard_counts(self, created_by: str, wedding_id: Optional[str] = None) -> dict:
+        """
+        Get dashboard counts efficiently using MongoDB aggregation.
+        Much faster than loading all documents just to count them.
+        """
+        try:
+            # Vendor counts
+            vendor_total = await self.vendor_profiles.count_documents({
+                "created_by": created_by,
+                "is_active": True
+            })
+            vendor_preferred = await self.vendor_profiles.count_documents({
+                "created_by": created_by,
+                "is_active": True,
+                "is_preferred": True
+            })
+
+            # Contract counts
+            contract_query = {"created_by": created_by}
+            if wedding_id:
+                contract_query["wedding_id"] = wedding_id
+
+            contract_total = await self.vendor_contracts.count_documents(contract_query)
+            contract_pending = await self.vendor_contracts.count_documents({
+                **contract_query,
+                "status": {"$in": ["draft", "sent", "viewed"]}
+            })
+            contract_signed = await self.vendor_contracts.count_documents({
+                **contract_query,
+                "status": "signed"
+            })
+
+            # Payment milestone counts and aggregation
+            milestone_query = {}
+            if wedding_id:
+                milestone_query["wedding_id"] = wedding_id
+
+            milestone_pending = await self.payment_milestones.count_documents({
+                **milestone_query,
+                "status": {"$in": ["pending", "due"]}
+            })
+            milestone_overdue = await self.payment_milestones.count_documents({
+                **milestone_query,
+                "status": "overdue"
+            })
+
+            # Get totals using aggregation
+            payment_pipeline = [
+                {"$match": milestone_query} if milestone_query else {"$match": {}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "total_paid": {"$sum": "$paid_amount"},
+                        "total_due": {
+                            "$sum": {
+                                "$cond": [
+                                    {"$in": ["$status", ["pending", "due", "overdue"]]},
+                                    "$amount",
+                                    0
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]
+            payment_totals = await self.payment_milestones.aggregate(payment_pipeline).to_list(1)
+            totals = payment_totals[0] if payment_totals else {"total_paid": 0, "total_due": 0}
+
+            return {
+                "vendors": {
+                    "total": vendor_total,
+                    "preferred": vendor_preferred
+                },
+                "contracts": {
+                    "total": contract_total,
+                    "pending": contract_pending,
+                    "signed": contract_signed
+                },
+                "payments": {
+                    "pending_count": milestone_pending,
+                    "overdue_count": milestone_overdue,
+                    "total_paid": totals.get("total_paid", 0),
+                    "total_due": totals.get("total_due", 0)
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting dashboard counts: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to get dashboard counts")
 
     # =========================================================================
     # VENDOR ASSIGNMENT (Link to Wedding)
@@ -654,12 +780,27 @@ class VendorService:
             logger.error(f"Error fetching contracts: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch contracts")
 
-    async def get_contract(self, contract_id: str) -> dict:
-        """Get a specific contract"""
+    async def get_contract(self, contract_id: str, created_by: Optional[str] = None) -> dict:
+        """
+        Get a specific contract.
+
+        Args:
+            contract_id: The contract ID to fetch
+            created_by: If provided, verifies the contract belongs to this planner (authorization check)
+        """
         try:
-            contract = await self.vendor_contracts.find_one({"_id": ObjectId(contract_id)})
+            obj_id = validate_object_id(contract_id, "contract ID")
+
+            query = {"_id": obj_id}
+            if created_by:
+                query["created_by"] = created_by
+
+            contract = await self.vendor_contracts.find_one(query)
             if not contract:
-                raise HTTPException(status_code=404, detail="Contract not found")
+                raise HTTPException(
+                    status_code=404,
+                    detail="Contract not found" if not created_by else "Contract not found or access denied"
+                )
 
             contract["_id"] = str(contract["_id"])
             return contract
@@ -726,7 +867,7 @@ class VendorService:
             wedding = await self._get_wedding(contract["wedding_id"])
 
             # Generate contract link
-            base_url = os.getenv("FRONTEND_URL", "http://localhost:3001")
+            base_url = os.getenv("FRONTEND_URL", "")
             contract_link = f"{base_url}/vendor-contract/{contract_id}?token={contract['access_token']}"
 
             # Build email
@@ -1257,12 +1398,30 @@ class VendorService:
             cursor = self.payment_milestones.find(query).sort("due_date", 1)
             milestones = await cursor.to_list(length=100)
 
+            # Track IDs of milestones that need status update
+            overdue_milestone_ids = []
+            now = datetime.utcnow()
+
             for m in milestones:
                 m["_id"] = str(m["_id"])
-                # Check if overdue
+                # Check if overdue and persist the status change
                 if m["status"] == PaymentMilestoneStatus.PENDING.value:
-                    if m["due_date"] < datetime.utcnow():
+                    if m.get("due_date") and m["due_date"] < now:
                         m["status"] = PaymentMilestoneStatus.OVERDUE.value
+                        overdue_milestone_ids.append(ObjectId(m["_id"]))
+
+            # Persist overdue status changes to database
+            if overdue_milestone_ids:
+                await self.payment_milestones.update_many(
+                    {"_id": {"$in": overdue_milestone_ids}},
+                    {
+                        "$set": {
+                            "status": PaymentMilestoneStatus.OVERDUE.value,
+                            "updated_at": now
+                        }
+                    }
+                )
+                logger.info(f"Marked {len(overdue_milestone_ids)} milestones as overdue")
 
             return milestones
 
@@ -1340,6 +1499,8 @@ class VendorService:
                 )
 
             updated = await self.payment_milestones.find_one({"_id": ObjectId(milestone_id)})
+            if not updated:
+                raise HTTPException(status_code=404, detail="Milestone not found after update")
             updated["_id"] = str(updated["_id"])
 
             return updated
@@ -1586,14 +1747,14 @@ class VendorService:
                     },
                     after_completion={
                         "type": "redirect",
-                        "redirect": {"url": f"{settings.frontend_url}/payment-success?session_id={{CHECKOUT_SESSION_ID}}"}
+                        "redirect": {"url": f"{os.getenv('FRONTEND_URL', '')}/payment-success?session_id={{CHECKOUT_SESSION_ID}}"}
                     }
                 )
 
                 stripe_payment_link_id = payment_link.id
                 stripe_payment_link_url = payment_link.url
 
-            except stripe.error.StripeError as e:
+            except stripe.StripeError as e:
                 logger.error(f"Stripe error creating payment link: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Payment link creation failed: {str(e)}")
 

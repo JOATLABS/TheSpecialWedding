@@ -5,7 +5,7 @@ Includes both admin endpoints (authenticated) and public endpoints (token-based)
 Public endpoints allow couples to view and sign contracts without authentication.
 """
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel, Field
 from app.services.contract_service import contract_service
 from app.dependencies.auth_extended import (
@@ -40,6 +40,18 @@ class UpdateWeddingDateRequest(BaseModel):
 class CancelContractRequest(BaseModel):
     """Request to cancel a contract."""
     reason: str = Field(..., min_length=1, max_length=500)
+
+
+class MarkPaidExternallyRequest(BaseModel):
+    """Request to mark a payment as paid externally."""
+    payment_method: Optional[str] = Field(None, max_length=50, description="How payment was received: cash, check, wire, etc.")
+    note: Optional[str] = Field(None, max_length=500, description="Optional note about the payment")
+
+
+class RefundPaymentRequest(BaseModel):
+    """Request to refund a payment."""
+    amount: Optional[float] = Field(None, gt=0, description="Refund amount (partial). If not provided, full refund.")
+    reason: Optional[str] = Field(None, max_length=500, description="Reason for refund")
 
 
 # ============================================================================
@@ -222,6 +234,77 @@ async def get_contract_payments(
     except Exception as e:
         logger.error(f"Failed to get payments: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve payments")
+
+
+@router.post("/payments/{payment_id}/mark-paid-externally", tags=["Contracts"])
+async def mark_payment_paid_externally(
+    payment_id: str,
+    request_data: MarkPaidExternallyRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Mark a scheduled payment as paid externally.
+
+    Use this when a couple pays via cash, check, bank transfer, or other
+    method outside of the automated Stripe payment flow.
+    """
+    try:
+        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+
+        payment = await contract_service.mark_payment_paid_externally(
+            payment_id=payment_id,
+            planner_id=planner_id,
+            payment_method=request_data.payment_method,
+            note=request_data.note
+        )
+
+        return {
+            "message": "Payment marked as paid externally",
+            "payment": payment
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to mark payment as paid externally: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update payment")
+
+
+@router.post("/payments/{payment_id}/refund", tags=["Contracts"])
+async def refund_payment(
+    payment_id: str,
+    request_data: RefundPaymentRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Process a refund for a succeeded payment.
+
+    - Full refund: Don't provide amount
+    - Partial refund: Provide the amount to refund
+
+    Only succeeded payments can be refunded.
+    """
+    try:
+        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+
+        payment = await contract_service.process_refund(
+            payment_id=payment_id,
+            planner_id=planner_id,
+            amount=request_data.amount,
+            reason=request_data.reason
+        )
+
+        refund_type = "partial" if request_data.amount else "full"
+        return {
+            "message": f"Payment {refund_type} refund processed successfully",
+            "payment": payment
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to process refund: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to process refund")
 
 
 # ============================================================================
@@ -442,6 +525,11 @@ async def create_contract_setup_intent(token: str):
         couple_email = contract.get("couple", {}).get("email")
         couple_name = contract.get("couple", {}).get("name")
 
+        contract_id = contract.get("id")
+        if not contract_id:
+            raise HTTPException(status_code=500, detail="Contract data is missing an id")
+        contract_id_str = str(contract_id)
+
         # Check if customer already exists for this contract
         existing_customer_id = contract.get("stripe_customer_id")
 
@@ -453,7 +541,7 @@ async def create_contract_setup_intent(token: str):
                 email=couple_email,
                 name=couple_name,
                 metadata={
-                    "contract_id": contract.get("id"),
+                    "contract_id": contract_id_str,
                     "contract_token": token
                 }
             )
@@ -461,7 +549,6 @@ async def create_contract_setup_intent(token: str):
 
             # Save customer ID to contract
             from app.core.database import mongo
-            from bson import ObjectId
 
             await mongo.db["contracts"].update_one(
                 {"token": token},
@@ -473,7 +560,7 @@ async def create_contract_setup_intent(token: str):
             customer=customer_id,
             payment_method_types=["card"],
             metadata={
-                "contract_id": contract.get("id"),
+                "contract_id": contract_id_str,
                 "contract_token": token
             }
         )
@@ -624,6 +711,269 @@ async def send_followup_draft(
     except Exception as e:
         logger.error(f"Failed to send follow-up: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to send email")
+
+
+# ============================================================================
+# COUPLE PORTAL ENDPOINTS (Public, token-based)
+# ============================================================================
+
+@router.get("/public/portal/{token}", tags=["Couple Portal"])
+async def get_portal_data(token: str):
+    """
+    Get complete portal data for couples.
+
+    Returns contract info, payment schedule, and payment history.
+    """
+    try:
+        contract = await contract_service.get_contract_by_token(token)
+
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+
+        # Only allow access to signed contracts
+        if contract.get("status") not in ["signed", "active", "completed"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Portal access is only available for signed contracts"
+            )
+
+        contract_id = contract.get("id")
+        if not contract_id:
+            raise HTTPException(status_code=500, detail="Contract data is missing an id")
+
+        # Get all scheduled payments
+        payments = await contract_service.get_contract_payments(str(contract_id))
+
+        # Calculate summary
+        total_amount = contract.get("package_snapshot", {}).get("total_amount", 0)
+        paid_amount = sum(p.get("amount", 0) for p in payments if p.get("status") == "succeeded")
+        pending_amount = sum(p.get("amount", 0) for p in payments if p.get("status") == "scheduled")
+        failed_amount = sum(p.get("amount", 0) for p in payments if p.get("status") == "failed")
+
+        # Get next payment
+        scheduled_payments = [
+            p for p in payments
+            if p.get("status") == "scheduled"
+        ]
+        scheduled_payments.sort(key=lambda x: x.get("due_date", ""))
+        next_payment = scheduled_payments[0] if scheduled_payments else None
+
+        return {
+            "contract": {
+                "id": contract.get("id"),
+                "status": contract.get("status"),
+                "couple": contract.get("couple"),
+                "wedding_date": contract.get("wedding_date"),
+                "venue": contract.get("venue"),
+                "package_name": contract.get("package_snapshot", {}).get("name"),
+                "signed_at": contract.get("signed_at"),
+                "payment_method_last4": contract.get("payment_method_last4"),
+                "payment_method_brand": contract.get("payment_method_brand"),
+                "planner_name": contract.get("planner_name"),
+                "planner_email": contract.get("planner_email"),
+                "planner_phone": contract.get("planner_phone")
+            },
+            "payments": [
+                {
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "amount": p.get("amount"),
+                    "currency": p.get("currency", "usd"),
+                    "due_date": p.get("due_date"),
+                    "status": p.get("status"),
+                    "paid_at": p.get("paid_at"),
+                    "receipt_url": p.get("receipt_url"),
+                    "failure_reason": p.get("failure_reason")
+                }
+                for p in payments
+            ],
+            "summary": {
+                "total_amount": total_amount,
+                "paid_amount": paid_amount,
+                "pending_amount": pending_amount,
+                "failed_amount": failed_amount,
+                "remaining_amount": total_amount - paid_amount,
+                "payment_count": len(payments),
+                "completed_count": len([p for p in payments if p.get("status") == "succeeded"]),
+                "next_payment": {
+                    "name": next_payment.get("name"),
+                    "amount": next_payment.get("amount"),
+                    "due_date": next_payment.get("due_date")
+                } if next_payment else None
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get portal data: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to load portal")
+
+
+@router.post("/public/portal/{token}/update-payment-method", tags=["Couple Portal"])
+async def update_portal_payment_method(
+    token: str,
+    request: Request
+):
+    """
+    Create a SetupIntent for updating the payment method.
+
+    Returns a client_secret for Stripe Elements.
+    """
+    try:
+        import stripe
+        from app.core.settings import settings
+
+        if not settings.stripe_secret_key:
+            raise HTTPException(status_code=503, detail="Stripe is not configured")
+
+        stripe.api_key = settings.stripe_secret_key
+
+        contract = await contract_service.get_contract_by_token(token)
+
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+
+        if contract.get("status") not in ["signed", "active"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot update payment method for this contract"
+            )
+
+        customer_id = contract.get("stripe_customer_id")
+        if not customer_id:
+            raise HTTPException(
+                status_code=400,
+                detail="No payment method on file"
+            )
+
+        contract_id = contract.get("id")
+        if not contract_id:
+            raise HTTPException(status_code=500, detail="Contract data is missing an id")
+        contract_id_str = str(contract_id)
+
+        # Create SetupIntent for updating payment method
+        setup_intent = stripe.SetupIntent.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            metadata={
+                "contract_id": contract_id_str,
+                "action": "update_payment_method"
+            }
+        )
+
+        return {
+            "client_secret": setup_intent.client_secret,
+            "customer_id": customer_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create update intent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to initialize payment update")
+
+
+class UpdatePaymentMethodRequest(BaseModel):
+    """Request to confirm payment method update."""
+    payment_method_id: str = Field(..., min_length=1)
+    payment_method_last4: Optional[str] = Field(None, max_length=4)
+    payment_method_brand: Optional[str] = Field(None, max_length=20)
+
+
+@router.put("/public/portal/{token}/payment-method", tags=["Couple Portal"])
+async def confirm_payment_method_update(
+    token: str,
+    update_data: UpdatePaymentMethodRequest
+):
+    """
+    Confirm payment method update after Stripe SetupIntent completes.
+
+    Updates the contract with the new payment method and sets it as
+    the default for the customer.
+    """
+    try:
+        import stripe
+        from app.core.settings import settings
+        from app.core.database import mongo
+        from datetime import datetime
+
+        if not settings.stripe_secret_key:
+            raise HTTPException(status_code=503, detail="Stripe is not configured")
+
+        stripe.api_key = settings.stripe_secret_key
+
+        contract = await contract_service.get_contract_by_token(token)
+
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+
+        customer_id = contract.get("stripe_customer_id")
+        if not customer_id:
+            raise HTTPException(status_code=400, detail="No customer on file")
+
+        # Attach the new payment method to the customer
+        stripe.PaymentMethod.attach(
+            update_data.payment_method_id,
+            customer=customer_id
+        )
+
+        # Set as default payment method
+        stripe.Customer.modify(
+            customer_id,
+            invoice_settings={
+                "default_payment_method": update_data.payment_method_id
+            }
+        )
+
+        # Update contract with new payment method
+        await mongo.db["contracts"].update_one(
+            {"token": token},
+            {
+                "$set": {
+                    "stripe_payment_method_id": update_data.payment_method_id,
+                    "payment_method_last4": update_data.payment_method_last4,
+                    "payment_method_brand": update_data.payment_method_brand,
+                    "payment_method_updated_at": datetime.utcnow()
+                }
+            }
+        )
+
+        # Notify planner about the update
+        try:
+            import resend
+            resend.api_key = settings.resend_api_key
+
+            planner_email = contract.get("planner_email")
+            couple_name = contract.get("couple", {}).get("name", "A couple")
+
+            if planner_email:
+                resend.Emails.send({
+                    "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
+                    "to": [planner_email],
+                    "subject": f"Payment Method Updated - {couple_name}",
+                    "html": f"""
+                    <h2>Payment Method Updated</h2>
+                    <p><strong>{couple_name}</strong> has updated their payment method.</p>
+                    <p>New card: {update_data.payment_method_brand or 'Card'} ending in {update_data.payment_method_last4 or '****'}</p>
+                    """
+                })
+        except Exception as email_err:
+            logger.warning(f"Failed to send planner notification: {email_err}")
+
+        return {
+            "message": "Payment method updated successfully",
+            "payment_method": {
+                "last4": update_data.payment_method_last4,
+                "brand": update_data.payment_method_brand
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update payment method: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update payment method")
 
 
 # ============================================================================

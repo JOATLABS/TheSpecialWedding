@@ -1,6 +1,6 @@
 from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
-from typing import List, Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime, timedelta
 from bson import ObjectId
 import secrets
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Root admin email for support notifications
 ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+
 
 class SupportService:
     def __init__(self):
@@ -33,7 +34,7 @@ class SupportService:
             ticket_number = self.generate_ticket_number()
 
             # Ensure unique ticket number
-            while self.tickets_collection.find_one({"ticket_number": ticket_number}):
+            while await self.tickets_collection.find_one({"ticket_number": ticket_number}):
                 ticket_number = self.generate_ticket_number()
 
             # Prepare ticket document
@@ -58,7 +59,7 @@ class SupportService:
             }
 
             # Insert ticket
-            result = self.tickets_collection.insert_one(ticket)
+            result = await self.tickets_collection.insert_one(ticket)
 
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create ticket")
@@ -83,7 +84,7 @@ class SupportService:
             logger.error(f"Error creating ticket: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error creating ticket: {str(e)}")
 
-    async def get_tickets(self, page: int = 1, limit: int = 20, filters: dict = None) -> dict:
+    async def get_tickets(self, page: int = 1, limit: int = 20, filters: Optional[Dict[str, Any]] = None) -> dict:
         """Get tickets with filtering and pagination"""
         try:
             # Build query
@@ -94,7 +95,7 @@ class SupportService:
                         query[key] = value
 
             # Count total documents
-            total = self.tickets_collection.count_documents(query)
+            total = await self.tickets_collection.count_documents(query)
 
             # Calculate pagination
             skip = (page - 1) * limit
@@ -110,7 +111,7 @@ class SupportService:
             ]).skip(skip).limit(limit)
 
             tickets = []
-            for ticket in cursor:
+            async for ticket in cursor:
                 ticket["id"] = str(ticket["_id"])
                 ticket["_id"] = str(ticket["_id"])
 
@@ -120,7 +121,7 @@ class SupportService:
                 ticket["priority_order"] = priority_order.get(ticket.get("priority", "medium"), 2)
 
                 # Get creator info
-                creator = self.users_collection.find_one(
+                creator = await self.users_collection.find_one(
                     {"email": ticket["created_by"]},
                     {"first_name": 1, "last_name": 1, "company_name": 1}
                 )
@@ -145,10 +146,10 @@ class SupportService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(ticket_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
-            ticket = self.tickets_collection.find_one({"_id": obj_id})
+            ticket = await self.tickets_collection.find_one({"_id": obj_id})
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -164,7 +165,7 @@ class SupportService:
             ticket["is_overdue"] = self._is_ticket_overdue(ticket)
 
             # Get creator info
-            creator = self.users_collection.find_one(
+            creator = await self.users_collection.find_one(
                 {"email": ticket["created_by"]},
                 {"first_name": 1, "last_name": 1, "company_name": 1, "email": 1}
             )
@@ -172,7 +173,7 @@ class SupportService:
 
             # Get assignee info if assigned
             if ticket.get("assigned_to"):
-                assignee = self.users_collection.find_one(
+                assignee = await self.users_collection.find_one(
                     {"email": ticket["assigned_to"]},
                     {"first_name": 1, "last_name": 1, "email": 1}
                 )
@@ -199,11 +200,11 @@ class SupportService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(ticket_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             # Check if ticket exists
-            existing = self.tickets_collection.find_one({"_id": obj_id})
+            existing = await self.tickets_collection.find_one({"_id": obj_id})
             if not existing:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -225,7 +226,7 @@ class SupportService:
                     update_data["resolved_at"] = None
 
             # Update ticket
-            result = self.tickets_collection.update_one(
+            result = await self.tickets_collection.update_one(
                 {"_id": obj_id},
                 {"$set": update_data}
             )
@@ -250,11 +251,11 @@ class SupportService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(ticket_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             # Check if ticket exists and user has permission
-            ticket = self.tickets_collection.find_one({"_id": obj_id})
+            ticket = await self.tickets_collection.find_one({"_id": obj_id})
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -276,7 +277,7 @@ class SupportService:
             }
 
             # Add comment to ticket
-            result = self.tickets_collection.update_one(
+            result = await self.tickets_collection.update_one(
                 {"_id": obj_id},
                 {
                     "$push": {"comments": comment},
@@ -315,7 +316,7 @@ class SupportService:
 
             # Add user info to comments
             for comment in comments:
-                user = self.users_collection.find_one(
+                user = await self.users_collection.find_one(
                     {"email": comment["user_id"]},
                     {"first_name": 1, "last_name": 1, "role": 1}
                 )
@@ -338,22 +339,28 @@ class SupportService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(ticket_id)
-            except:
+            except Exception:
                 raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             # Check if agent exists
-            agent = self.users_collection.find_one({"email": agent_email})
+            agent = await self.users_collection.find_one({"email": agent_email})
             if not agent:
                 raise HTTPException(status_code=404, detail="Agent not found")
 
+            ticket = await self.tickets_collection.find_one({"_id": obj_id})
+            if not ticket:
+                raise HTTPException(status_code=404, detail="Ticket not found")
+
+            new_status = "in_progress" if ticket.get("status") == "open" else ticket.get("status", "in_progress")
+
             # Update ticket
-            result = self.tickets_collection.update_one(
+            result = await self.tickets_collection.update_one(
                 {"_id": obj_id},
                 {
                     "$set": {
                         "assigned_to": agent_email,
                         "updated_at": datetime.utcnow(),
-                        "status": "in_progress" if result.get("status") == "open" else result.get("status", "in_progress")
+                        "status": new_status
                     }
                 }
             )
@@ -374,7 +381,6 @@ class SupportService:
     async def get_analytics(self, period: str = "30d") -> dict:
         """Get support analytics"""
         try:
-            # Calculate date range
             now = datetime.utcnow()
             if period == "7d":
                 start_date = now - timedelta(days=7)
@@ -387,64 +393,50 @@ class SupportService:
             else:
                 start_date = now - timedelta(days=30)
 
-            # Get tickets in period
             pipeline = [
                 {"$match": {"created_at": {"$gte": start_date}}},
-                {"$group": {
-                    "_id": {
-                        "status": "$status",
-                        "priority": "$priority",
-                        "category": "$category"
-                    },
-                    "count": {"$sum": 1},
-                    "avg_resolution_time": {
-                        "$avg": {
-                            "$subtract": [
-                                {"$ifNull": ["$resolved_at", now]},
-                                "$created_at"
-                            ]
-                        }
+                {
+                    "$group": {
+                        "_id": {"status": "$status", "priority": "$priority", "category": "$category"},
+                        "count": {"$sum": 1},
+                        "avg_resolution_time": {
+                            "$avg": {
+                                "$subtract": [
+                                    {"$ifNull": ["$resolved_at", now]},
+                                    "$created_at",
+                                ]
+                            }
+                        },
                     }
-                }}
+                },
             ]
 
-            results = list(self.tickets_collection.aggregate(pipeline))
+            results = [doc async for doc in self.tickets_collection.aggregate(pipeline)]
 
-            # Process results
             analytics = {
                 "period": period,
-                "total_tickets": sum(r["count"] for r in results),
+                "total_tickets": sum(r.get("count", 0) for r in results),
                 "by_status": {},
                 "by_priority": {},
                 "by_category": {},
-                "avg_resolution_time_hours": 0
+                "avg_resolution_time_hours": 0,
             }
 
             resolution_times = []
             for result in results:
-                status = result["_id"]["status"]
-                priority = result["_id"]["priority"]
-                category = result["_id"]["category"]
-                count = result["count"]
+                key = result.get("_id") or {}
+                status = key.get("status") or "unknown"
+                priority = key.get("priority") or "unknown"
+                category = key.get("category") or "unknown"
+                count = result.get("count", 0)
 
-                # Group by status
-                if status not in analytics["by_status"]:
-                    analytics["by_status"][status] = 0
-                analytics["by_status"][status] += count
+                analytics["by_status"][status] = analytics["by_status"].get(status, 0) + count
+                analytics["by_priority"][priority] = analytics["by_priority"].get(priority, 0) + count
+                analytics["by_category"][category] = analytics["by_category"].get(category, 0) + count
 
-                # Group by priority
-                if priority not in analytics["by_priority"]:
-                    analytics["by_priority"][priority] = 0
-                analytics["by_priority"][priority] += count
-
-                # Group by category
-                if category not in analytics["by_category"]:
-                    analytics["by_category"][category] = 0
-                analytics["by_category"][category] += count
-
-                # Calculate resolution time
-                if result["avg_resolution_time"]:
-                    resolution_times.append(result["avg_resolution_time"] / 1000 / 3600)  # Convert to hours
+                avg_ms = result.get("avg_resolution_time")
+                if avg_ms:
+                    resolution_times.append(avg_ms / 1000 / 3600)
 
             if resolution_times:
                 analytics["avg_resolution_time_hours"] = sum(resolution_times) / len(resolution_times)
@@ -456,21 +448,19 @@ class SupportService:
             raise HTTPException(status_code=500, detail=f"Error retrieving analytics: {str(e)}")
 
     async def get_support_agents(self) -> dict:
-        """Get list of support agents"""
+        """Get support agents available for assignment"""
         try:
-            # Get all admin users who can be assigned tickets
-            agents = list(self.users_collection.find(
+            agents = []
+            cursor = self.users_collection.find(
                 {"role": {"$in": ["ROOT_ADMIN"]}, "is_active": True},
-                {"email": 1, "first_name": 1, "last_name": 1, "role": 1}
-            ))
-
-            for agent in agents:
+                {"email": 1, "first_name": 1, "last_name": 1, "role": 1},
+            )
+            async for agent in cursor:
                 agent["_id"] = str(agent["_id"])
-                # Get ticket counts for each agent
-                agent["assigned_tickets"] = self.tickets_collection.count_documents({
-                    "assigned_to": agent["email"],
-                    "status": {"$in": ["open", "in_progress"]}
-                })
+                agent["assigned_tickets"] = await self.tickets_collection.count_documents(
+                    {"assigned_to": agent["email"], "status": {"$in": ["open", "in_progress"]}}
+                )
+                agents.append(agent)
 
             return {"agents": agents}
 
@@ -481,45 +471,31 @@ class SupportService:
     async def get_dashboard_metrics(self) -> dict:
         """Get support dashboard metrics"""
         try:
-            now = datetime.utcnow()
-            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            week_ago = today - timedelta(days=7)
+            today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-            # Get various metrics
-            metrics = {
-                "open_tickets": self.tickets_collection.count_documents({"status": "open"}),
-                "in_progress_tickets": self.tickets_collection.count_documents({"status": "in_progress"}),
-                "resolved_today": self.tickets_collection.count_documents({
-                    "status": "resolved",
-                    "resolved_at": {"$gte": today}
-                }),
-                "new_tickets_today": self.tickets_collection.count_documents({
-                    "created_at": {"$gte": today}
-                }),
-                "urgent_tickets": self.tickets_collection.count_documents({
-                    "priority": "urgent",
-                    "status": {"$in": ["open", "in_progress"]}
-                }),
-                "overdue_tickets": 0  # Would need SLA definitions
+            metrics: Dict[str, Any] = {
+                "open_tickets": await self.tickets_collection.count_documents({"status": "open"}),
+                "in_progress_tickets": await self.tickets_collection.count_documents({"status": "in_progress"}),
+                "resolved_today": await self.tickets_collection.count_documents(
+                    {"status": "resolved", "resolved_at": {"$gte": today}}
+                ),
+                "new_tickets_today": await self.tickets_collection.count_documents({"created_at": {"$gte": today}}),
+                "urgent_tickets": await self.tickets_collection.count_documents(
+                    {"priority": "urgent", "status": {"$in": ["open", "in_progress"]}}
+                ),
+                "overdue_tickets": 0,
             }
 
-            # Get weekly trend
             weekly_trend = []
             for i in range(7):
                 day_start = today - timedelta(days=i)
                 day_end = day_start + timedelta(days=1)
-
-                daily_count = self.tickets_collection.count_documents({
-                    "created_at": {"$gte": day_start, "$lt": day_end}
-                })
-
-                weekly_trend.append({
-                    "date": day_start.strftime("%Y-%m-%d"),
-                    "tickets": daily_count
-                })
+                daily_count = await self.tickets_collection.count_documents(
+                    {"created_at": {"$gte": day_start, "$lt": day_end}}
+                )
+                weekly_trend.append({"date": day_start.strftime("%Y-%m-%d"), "tickets": daily_count})
 
             metrics["weekly_trend"] = list(reversed(weekly_trend))
-
             return metrics
 
         except Exception as e:
@@ -529,57 +505,68 @@ class SupportService:
     async def upload_attachment(self, ticket_id: str, file: UploadFile, current_user) -> dict:
         """Upload attachment to ticket"""
         try:
-            # Validate ticket and permissions
-            ticket = await self.get_ticket(ticket_id, current_user)
+            # Validate ticket and permissions (also ensures ticket exists)
+            await self.get_ticket(ticket_id, current_user)
 
-            # Validate file
-            if file.size > 10 * 1024 * 1024:  # 10MB limit
-                raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+            try:
+                obj_id = ObjectId(ticket_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid ticket ID")
 
             allowed_types = [
-                "image/jpeg", "image/png", "image/gif",
-                "application/pdf", "text/plain",
-                "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "application/pdf",
+                "text/plain",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ]
-
             if file.content_type not in allowed_types:
                 raise HTTPException(status_code=400, detail="File type not allowed")
 
-            # Generate unique filename
+            content = await file.read()
+            file_size = len(content)
+            if file_size > 10 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+
+            upload_dir = os.getenv("SUPPORT_ATTACHMENTS_DIR", "uploads/support_attachments")
+            os.makedirs(upload_dir, exist_ok=True)
+
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            filename = f"{ticket_id}_{timestamp}_{file.filename}"
+            safe_name = os.path.basename(file.filename or "attachment")
+            stored_filename = f"{ticket_id}_{timestamp}_{safe_name}"
+            file_path = os.path.join(upload_dir, stored_filename)
 
-            # For now, return a placeholder URL
-            # In production, you would upload to S3/R2 or local storage
-            file_url = f"/uploads/support/{filename}"
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, lambda: open(file_path, "wb").write(content))
 
-            # Add attachment to ticket
-            obj_id = ObjectId(ticket_id)
-            result = self.tickets_collection.update_one(
+            file_url_prefix = os.getenv("SUPPORT_ATTACHMENTS_URL_PREFIX", "/uploads/support_attachments")
+            file_url = f"{file_url_prefix}/{stored_filename}"
+
+            result = await self.tickets_collection.update_one(
                 {"_id": obj_id},
                 {
                     "$push": {
                         "attachments": {
-                            "filename": file.filename,
+                            "filename": safe_name,
+                            "stored_filename": stored_filename,
+                            "path": file_path,
                             "url": file_url,
                             "uploaded_by": current_user.email,
                             "uploaded_at": datetime.utcnow(),
-                            "file_size": file.size,
-                            "content_type": file.content_type
+                            "file_size": file_size,
+                            "content_type": file.content_type,
                         }
                     },
-                    "$set": {"updated_at": datetime.utcnow()}
-                }
+                    "$set": {"updated_at": datetime.utcnow()},
+                },
             )
 
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to attach file")
 
-            return {
-                "message": "File uploaded successfully",
-                "filename": file.filename,
-                "url": file_url
-            }
+            return {"message": "File uploaded successfully", "filename": safe_name, "url": file_url}
 
         except HTTPException:
             raise
@@ -620,14 +607,10 @@ class SupportService:
             from app.services.email_service_resend import ResendEmailService
 
             email_service = ResendEmailService()
-            if not email_service.configured:
-                logger.warning("Email service not configured, skipping ticket notification")
-                return
 
-            # Get creator info
-            creator_info = self.users_collection.find_one(
+            creator_info = await self.users_collection.find_one(
                 {"email": created_by},
-                {"first_name": 1, "last_name": 1, "company_name": 1}
+                {"first_name": 1, "last_name": 1, "company_name": 1},
             )
 
             creator_name = "Unknown User"
@@ -635,94 +618,98 @@ class SupportService:
                 if creator_info.get("company_name"):
                     creator_name = creator_info["company_name"]
                 else:
-                    creator_name = f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip() or created_by
+                    creator_name = (
+                        f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip()
+                        or created_by
+                    )
 
-            # Priority colors
-            priority_colors = {
+            priority = (ticket.get("priority") or "medium").lower()
+            priority_color_map = {
                 "urgent": "#dc2626",
-                "high": "#ea580c",
-                "medium": "#ca8a04",
-                "low": "#16a34a"
+                "high": "#f97316",
+                "medium": "#2563eb",
+                "low": "#16a34a",
             }
-            priority_color = priority_colors.get(ticket.get("priority", "medium"), "#ca8a04")
+            priority_color = priority_color_map.get(priority, "#2563eb")
 
-            # Build email HTML
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <title>New Support Ticket</title>
-            </head>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6; padding: 40px 20px;">
-                <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); overflow: hidden;">
-                    <!-- Header -->
-                    <div style="background: linear-gradient(135deg, #3b82f6, #8b5cf6); padding: 24px; text-align: center;">
-                        <h1 style="color: white; margin: 0; font-size: 24px;">🎫 New Support Ticket</h1>
-                    </div>
+            frontend_url = (os.getenv("FRONTEND_URL") or "").rstrip("/")
+            dashboard_url = f"{frontend_url}/admin/support" if frontend_url else ""
 
-                    <!-- Content -->
-                    <div style="padding: 32px;">
-                        <div style="background-color: #f8fafc; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                            <table style="width: 100%; border-collapse: collapse;">
+            html_content = f"""\
+                    <!doctype html>
+                    <html>
+                        <body style="font-family: Arial, sans-serif; background-color: #ffffff; color: #111827; margin: 0; padding: 0;">
+                        <div style="max-width: 640px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
+                            <div style="background: linear-gradient(135deg, #3b82f6, #8b5cf6); padding: 24px; text-align: center;">
+                            <h1 style="color: white; margin: 0; font-size: 22px;">New Support Ticket</h1>
+                            </div>
+
+                            <div style="padding: 24px;">
+                            <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                                <table style="width: 100%; border-collapse: collapse;">
                                 <tr>
-                                    <td style="padding: 8px 0; color: #6b7280; width: 120px;">Ticket #:</td>
-                                    <td style="padding: 8px 0; font-weight: 600; color: #1f2937;">{ticket.get('ticket_number', 'N/A')}</td>
+                                    <td style="padding: 6px 0; color: #6b7280; width: 120px;">Ticket #:</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{ticket.get('ticket_number', 'N/A')}</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding: 8px 0; color: #6b7280;">From:</td>
-                                    <td style="padding: 8px 0; font-weight: 600; color: #1f2937;">{creator_name}<br><span style="font-weight: normal; color: #6b7280;">{created_by}</span></td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0; color: #6b7280;">Category:</td>
-                                    <td style="padding: 8px 0; color: #1f2937; text-transform: capitalize;">{ticket.get('category', 'general').replace('_', ' ')}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 8px 0; color: #6b7280;">Priority:</td>
-                                    <td style="padding: 8px 0;">
-                                        <span style="background-color: {priority_color}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase;">{ticket.get('priority', 'medium')}</span>
+                                    <td style="padding: 6px 0; color: #6b7280;">From:</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{creator_name}<br>
+                                    <span style="font-weight: normal; color: #6b7280;">{created_by}</span>
                                     </td>
                                 </tr>
-                            </table>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Category:</td>
+                                    <td style="padding: 6px 0; text-transform: capitalize;">{(ticket.get('category') or 'general').replace('_', ' ')}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Priority:</td>
+                                    <td style="padding: 6px 0;">
+                                    <span style="background-color: {priority_color}; color: white; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">
+                                        {priority}
+                                    </span>
+                                    </td>
+                                </tr>
+                                </table>
+                            </div>
+
+                            <h2 style="margin: 0 0 10px 0; font-size: 18px;">{ticket.get('subject', 'No Subject')}</h2>
+
+                            <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 0 8px 8px 0;">
+                                <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{ticket.get('description', 'No description provided')}</p>
+                            </div>
+
+                            {f'''
+                            <div style="text-align: center; margin-top: 20px;">
+                                <a href="{dashboard_url}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 700;">
+                                View in Dashboard
+                                </a>
+                            </div>
+                            ''' if dashboard_url else ''}
+                            </div>
+
+                            <div style="background-color: #f8fafc; padding: 14px; text-align: center; border-top: 1px solid #e5e7eb;">
+                            <p style="color: #6b7280; font-size: 12px; margin: 0;">
+                                This email was sent from WeddingApp Support System
+                            </p>
+                            </div>
                         </div>
+                        </body>
+                    </html>
+                    """
 
-                        <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 12px 0;">{ticket.get('subject', 'No Subject')}</h2>
-
-                        <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
-                            <p style="color: #374151; margin: 0; line-height: 1.6; white-space: pre-wrap;">{ticket.get('description', 'No description provided')}</p>
-                        </div>
-
-                        <div style="text-align: center; margin-top: 32px;">
-                            <a href="{os.getenv('FRONTEND_URL', 'http://localhost:3001')}/admin/support"
-                               style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                View in Dashboard →
-                            </a>
-                        </div>
-                    </div>
-
-                    <!-- Footer -->
-                    <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                            This email was sent from WeddingApp Support System
-                        </p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-
-            # Send email to root admin
-            subject = f"[{ticket.get('priority', 'medium').upper()}] New Support Ticket: {ticket.get('subject', 'No Subject')}"
+            subject = f"[{priority.upper()}] New Support Ticket: {ticket.get('subject', 'No Subject')}"
 
             await email_service.send_email(
                 to_email=ROOT_ADMIN_EMAIL,
                 subject=subject,
                 html_content=html_content,
                 from_name="WeddingApp Support",
-                email_type="support_ticket_notification"
+                email_type="support_ticket_notification",
             )
 
-            logger.info(f"Support ticket notification sent to {ROOT_ADMIN_EMAIL} for ticket {ticket.get('ticket_number')}")
+            logger.info(
+                f"Support ticket notification sent to {ROOT_ADMIN_EMAIL} for ticket {ticket.get('ticket_number')}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to send support ticket notification: {str(e)}")
