@@ -605,7 +605,7 @@ export default function AdminGuestsPage() {
     const weddingSlug = wedding?.slug || '';
 
     // Set default message with personalization
-    const defaultMessage = `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${process.env.NEXT_PUBLIC_FRONTEND_URL || ''}/${weddingSlug}/invite/${guest.token}`;
+    const defaultMessage = `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${process.env.FRONTEND_URL || ''}/${weddingSlug}/invite/${guest.token}`;
 
     setReminderMessage(defaultMessage);
     setReminderModal({ guest, weddingSlug });
@@ -1929,7 +1929,7 @@ export default function AdminGuestsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://thespecialwedding.com';
+                        const frontendUrl = process.env.FRONTEND_URL || '';
                         setReminderMessage(`Hi ${reminderModal.guest.name}, you're invited to our wedding! RSVP here: ${frontendUrl}/${reminderModal.weddingSlug}/invite/${reminderModal.guest.token}`);
                       }}
                       className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-slate-500"

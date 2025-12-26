@@ -923,6 +923,117 @@ class BudgetService:
                                          if cat.get("actual_spent", 0) > cat.get("budgeted_amount", 0)])
         }
 
+    async def record_contract_payment(
+        self,
+        wedding_id: str,
+        contract_id: str,
+        payment_name: str,
+        amount: float,
+        category_name: str = "Wedding Planner",
+        payment_method: str = "card"
+    ) -> Optional[Dict]:
+        """
+        Record a contract payment in the budget module.
+
+        Called when a scheduled payment succeeds to sync with budget tracking.
+        Creates a "Wedding Planner" category if it doesn't exist.
+
+        Args:
+            wedding_id: The wedding ID
+            contract_id: The contract ID
+            payment_name: Payment name/description
+            amount: Payment amount
+            category_name: Budget category name (defaults to "Wedding Planner")
+            payment_method: How payment was made (card, cash, etc.)
+
+        Returns:
+            The created payment record or None if wedding not found
+        """
+        try:
+            # Check if wedding exists
+            wedding = await self.weddings.find_one({"_id": wedding_id})
+            if not wedding:
+                logger.warning(f"Wedding {wedding_id} not found for budget sync")
+                return None
+
+            # Find or create the category
+            category = await self.budget_categories.find_one({
+                "wedding_id": wedding_id,
+                "name": category_name
+            })
+
+            if not category:
+                # Create the category
+                category_data = {
+                    "name": category_name,
+                    "description": f"Payments from contract: {contract_id}",
+                    "budgeted_amount": amount,  # Initialize with first payment
+                    "actual_spent": 0,
+                    "payment_status": "pending",
+                    "priority": 2,
+                    "subcategories": [],
+                    "vendor_quotes": [],
+                    "payments": [],
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+                result = await self.budget_categories.insert_one({
+                    "wedding_id": wedding_id,
+                    **category_data
+                })
+                category = await self.budget_categories.find_one({"_id": result.inserted_id})
+                logger.info(f"Created budget category '{category_name}' for wedding {wedding_id}")
+
+            # Record the payment
+            payment_data = {
+                "vendor_name": category_name,
+                "amount": amount,
+                "payment_method": payment_method,
+                "payment_date": datetime.utcnow(),
+                "description": payment_name,
+                "status": "completed",
+                "notes": f"From contract: {contract_id}"
+            }
+
+            payment = PaymentRecord(
+                category_id=str(category["_id"]),
+                **payment_data
+            )
+
+            result = await self.payment_records.insert_one(payment.dict())
+            payment.id = str(result.inserted_id)
+
+            # Update category actual spending
+            new_actual_spent = category.get("actual_spent", 0) + amount
+            await self.budget_categories.update_one(
+                {"_id": category["_id"]},
+                {"$set": {
+                    "actual_spent": new_actual_spent,
+                    "updated_at": datetime.utcnow()
+                }}
+            )
+
+            # Update payment status
+            budgeted = category.get("budgeted_amount", 0)
+            if new_actual_spent >= budgeted:
+                payment_status = "paid"
+            elif new_actual_spent > 0:
+                payment_status = "partial"
+            else:
+                payment_status = "pending"
+
+            await self.budget_categories.update_one(
+                {"_id": category["_id"]},
+                {"$set": {"payment_status": payment_status}}
+            )
+
+            logger.info(f"Recorded contract payment ${amount} for wedding {wedding_id}")
+            return payment.dict()
+
+        except Exception as e:
+            logger.error(f"Failed to record contract payment in budget: {str(e)}")
+            return None
+
     def _generate_budget_recommendations(self, wedding_id: str, summary: BudgetSummary, categories: List[Dict]) -> List[Dict]:
         """Generate actionable budget recommendations"""
         recommendations = []

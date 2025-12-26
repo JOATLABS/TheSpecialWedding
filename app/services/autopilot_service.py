@@ -311,6 +311,9 @@ class AutopilotService:
         receipt_url: Optional[str] = None
     ):
         """Mark a payment as succeeded."""
+        # Get payment first for budget sync
+        payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+
         await self.scheduled_payments.update_one(
             {"_id": ObjectId(payment_id)},
             {
@@ -332,6 +335,45 @@ class AutopilotService:
         )
 
         logger.info(f"Payment {payment_id} succeeded: {payment_intent_id}")
+
+        # Sync to budget module (WFA-901)
+        if payment:
+            await self._sync_payment_to_budget(payment)
+
+    async def _sync_payment_to_budget(self, payment: Dict):
+        """Sync a successful payment to the budget module."""
+        try:
+            contract_id = payment.get("contract_id")
+            if not contract_id:
+                return
+
+            contract = await self.contracts.find_one({"_id": ObjectId(contract_id)})
+            if not contract:
+                return
+
+            wedding_id = contract.get("wedding_id")
+            if not wedding_id:
+                logger.info(f"Contract {contract_id} not linked to a wedding, skipping budget sync")
+                return
+
+            # Import budget service
+            from app.services.budget_service import BudgetService
+            budget_service = BudgetService()
+
+            await budget_service.record_contract_payment(
+                wedding_id=wedding_id,
+                contract_id=contract_id,
+                payment_name=payment.get("name", "Contract Payment"),
+                amount=float(payment.get("amount", 0)),
+                category_name="Wedding Planner",
+                payment_method="card"
+            )
+
+            logger.info(f"Synced payment to budget for wedding {wedding_id}")
+
+        except Exception as e:
+            # Don't fail the payment if budget sync fails
+            logger.error(f"Failed to sync payment to budget: {str(e)}")
 
     # =========================================================================
     # PAYMENT REMINDERS (WFA-503)

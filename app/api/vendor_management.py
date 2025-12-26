@@ -264,8 +264,8 @@ async def get_contract(
     contract_id: str,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
-    """Get a specific contract"""
-    return await vendor_service.get_contract(contract_id)
+    """Get a specific contract (only contracts created by the current user)"""
+    return await vendor_service.get_contract(contract_id, created_by=current_user.email)
 
 
 @router.put("/contracts/{contract_id}", tags=["Contracts"])
@@ -502,54 +502,38 @@ async def get_vendor_management_dashboard(
     """
     Get vendor management dashboard summary.
     Returns counts, pending items, and recent activity.
+    Uses efficient count queries instead of loading all documents.
     """
-    # Get vendors count
-    vendors = await vendor_service.get_vendor_profiles(
-        created_by=current_user.email,
-        limit=1000
-    )
-
-    # Get contracts
-    contracts = await vendor_service.get_contracts(
+    # Get counts efficiently using aggregation
+    counts = await vendor_service.get_dashboard_counts(
         created_by=current_user.email,
         wedding_id=wedding_id
     )
 
-    # Get milestones
-    milestones = await vendor_service.get_payment_milestones(
-        wedding_id=wedding_id
+    # Only fetch limited recent items for display
+    recent_contracts = await vendor_service.get_contracts(
+        created_by=current_user.email,
+        wedding_id=wedding_id,
+        limit=5
     )
 
-    # Calculate stats
-    total_vendors = len(vendors)
-    preferred_vendors = len([v for v in vendors if v.get("is_preferred")])
-
-    pending_contracts = len([c for c in contracts if c["status"] in ["draft", "sent", "viewed"]])
-    signed_contracts = len([c for c in contracts if c["status"] == "signed"])
-
-    pending_payments = len([m for m in milestones if m["status"] in ["pending", "due"]])
-    overdue_payments = len([m for m in milestones if m["status"] == "overdue"])
-    total_paid = sum(m.get("paid_amount", 0) for m in milestones)
-    total_due = sum(m["amount"] for m in milestones if m["status"] in ["pending", "due", "overdue"])
+    upcoming_milestones = await vendor_service.get_payment_milestones(
+        wedding_id=wedding_id,
+        status="pending"
+    )
 
     return {
         "vendors": {
-            "total": total_vendors,
-            "preferred": preferred_vendors,
-            "by_category": {}  # Could aggregate by category
+            **counts["vendors"],
+            "by_category": {}  # Could aggregate by category if needed
         },
         "contracts": {
-            "total": len(contracts),
-            "pending": pending_contracts,
-            "signed": signed_contracts,
-            "recent": contracts[:5] if contracts else []
+            **counts["contracts"],
+            "recent": recent_contracts[:5]
         },
         "payments": {
-            "pending_count": pending_payments,
-            "overdue_count": overdue_payments,
-            "total_paid": total_paid,
-            "total_due": total_due,
-            "upcoming": [m for m in milestones if m["status"] in ["pending", "due"]][:5]
+            **counts["payments"],
+            "upcoming": upcoming_milestones[:5]
         }
     }
 

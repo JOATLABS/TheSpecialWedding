@@ -35,7 +35,7 @@ services:
       - API_KEY=${API_KEY}
 
       # CORS Configuration
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - CORS_ORIGINS=${CORS_ORIGINS:-''}
 
       # Security Features
       - ENABLE_CSRF_PROTECTION=${ENABLE_CSRF_PROTECTION:-true}

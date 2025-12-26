@@ -690,6 +690,8 @@ class StripeService:
                 return await self._handle_invoice_payment_failed(data)
             elif event_type == "payment_intent.succeeded":
                 return await self._handle_payment_intent_succeeded(data)
+            elif event_type == "payment_intent.payment_failed":
+                return await self._handle_payment_intent_failed(data)
             elif event_type == "account.updated":
                 return await self._handle_account_updated(data)
             else:
@@ -937,12 +939,28 @@ class StripeService:
     async def _handle_payment_intent_succeeded(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle successful payment intent - updates payment_requests collection
-        for couple payments created by planners.
+        for couple payments created by planners, and handles autopilot scheduled payments.
         """
         try:
             payment_intent_id = payment_intent.get("id")
             if not payment_intent_id:
                 return {"status": "ignored", "reason": "no payment_intent_id"}
+
+            # Get receipt URL from charges
+            receipt_url = None
+            if payment_intent.get("charges", {}).get("data"):
+                receipt_url = payment_intent["charges"]["data"][0].get("receipt_url")
+
+            # Check if this is an autopilot scheduled payment
+            metadata = payment_intent.get("metadata", {})
+            if metadata.get("payment_type") == "scheduled":
+                from app.services.autopilot_service import autopilot_service
+                await autopilot_service.handle_payment_succeeded(
+                    payment_intent_id=payment_intent_id,
+                    receipt_url=receipt_url
+                )
+                logger.info(f"Autopilot scheduled payment {payment_intent_id} succeeded")
+                return {"status": "success", "payment_intent_id": payment_intent_id, "type": "scheduled"}
 
             # Update payment request status in our collection
             payment_requests_collection = mongo.db["payment_requests"]
@@ -969,6 +987,58 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error handling payment intent succeeded: {str(e)}")
+            return {"status": "error", "message": str(e)}
+
+    async def _handle_payment_intent_failed(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle failed payment intent - handles autopilot scheduled payment failures
+        with retry logic.
+        """
+        try:
+            payment_intent_id = payment_intent.get("id")
+            if not payment_intent_id:
+                return {"status": "ignored", "reason": "no payment_intent_id"}
+
+            # Get error details
+            last_error = payment_intent.get("last_payment_error", {})
+            error_code = last_error.get("code", "unknown")
+            error_message = last_error.get("message", "Payment failed")
+
+            # Check if this is an autopilot scheduled payment
+            metadata = payment_intent.get("metadata", {})
+            if metadata.get("payment_type") == "scheduled":
+                from app.services.autopilot_service import autopilot_service
+                await autopilot_service.handle_payment_failed(
+                    payment_intent_id=payment_intent_id,
+                    error_code=error_code,
+                    error_message=error_message
+                )
+                logger.info(f"Autopilot scheduled payment {payment_intent_id} failed: {error_message}")
+                return {"status": "handled", "payment_intent_id": payment_intent_id, "type": "scheduled"}
+
+            # Update payment request status for non-autopilot payments
+            payment_requests_collection = mongo.db["payment_requests"]
+            result = await payment_requests_collection.update_one(
+                {"payment_intent_id": payment_intent_id},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "failure_reason": error_message,
+                        "failure_code": error_code,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            if result.modified_count > 0:
+                logger.info(f"Payment request {payment_intent_id} marked as failed")
+                return {"status": "handled", "payment_intent_id": payment_intent_id}
+            else:
+                logger.debug(f"No payment request found for failed {payment_intent_id}")
+                return {"status": "ignored", "reason": "not_a_payment_request"}
+
+        except Exception as e:
+            logger.error(f"Error handling payment intent failed: {str(e)}")
             return {"status": "error", "message": str(e)}
 
     async def _handle_account_updated(self, account: Dict[str, Any]) -> Dict[str, Any]:

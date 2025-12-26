@@ -30,4 +30,5 @@ class Settings:
         "https://www.googleapis.com/auth/calendar.events",
     ]
 
+
 settings = Settings()

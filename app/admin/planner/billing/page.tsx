@@ -938,7 +938,8 @@ export default function PlannerBillingPage() {
           ) : (
             // Client Payments Tab Content
             <>
-              <StripeConnectCard />
+              {/* Hide Connect card for root admin - they don't collect client payments */}
+              {!userProfile?.is_root_admin && <StripeConnectCard />}
 
               <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
                 <CardHeader className="pb-4 flex flex-row items-center justify-between">

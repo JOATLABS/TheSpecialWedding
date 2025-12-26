@@ -8,10 +8,7 @@ load_dotenv()
 
 # Connect to MongoDB using env vars with sensible fallbacks
 mongo_uri = (
-    os.getenv("MONGO_URI")
-    or os.getenv("MONGODB_URI")
-    or os.getenv("MONGO_URL")
-    or "mongodb://localhost:27017"
+    os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017"
 )
 db_name = os.getenv("MONGO_DB", "wedding")
 
@@ -92,18 +89,18 @@ skipped = 0
 for plan in plans:
     existing = collection.find_one({"_id": plan["_id"]})
     if existing:
-        print(f"⏭️  Plan '{plan['name']}' already exists")
+        print(f"⏭ Plan '{plan['name']}' already exists")
         skipped += 1
     else:
         collection.insert_one(plan)
-        print(f"✅ Created: {plan['name']} - ${plan['price_monthly']}/month")
+        print(f"Created: {plan['name']} - ${plan['price_monthly']}/month")
         created += 1
 
-print(f"\n📊 Summary: Created {created}, Skipped {skipped}")
+print(f"\n Summary: Created {created}, Skipped {skipped}")
 
 # Verify
 all_plans = list(collection.find({"is_active": True}).sort("sort_order", 1))
-print(f"\n📋 Total active plans in database: {len(all_plans)}")
+print(f"\n Total active plans in database: {len(all_plans)}")
 for p in all_plans:
     print(f"  • {p['name']}: ${p['price_monthly']}/mo")
 
