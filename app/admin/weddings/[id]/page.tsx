@@ -111,7 +111,7 @@ export default function WeddingDetailsPage() {
    if (!weddingId) return;
    try {
      const baseUrl = getApiBaseUrl();
-     const response = await fetch(`${baseUrl}/admin/guests/${weddingId}`, {
+     const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${weddingId}`, {
        headers: {
          'Authorization': `Bearer ${token}`,
          'Content-Type': 'application/json'
@@ -141,7 +141,7 @@ export default function WeddingDetailsPage() {
    try {
      // Fetch latest guests
      const baseUrl = getApiBaseUrl();
-     const response = await fetch(`${baseUrl}/admin/guests/${weddingId}`, {
+     const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${weddingId}`, {
        headers: {
          'Authorization': `Bearer ${token}`,
          'Content-Type': 'application/json'
@@ -150,6 +150,9 @@ export default function WeddingDetailsPage() {
 
      if (!response.ok) throw new Error('Failed to fetch guests');
      const guestList: Guest[] = await response.json();
+
+     console.log('Fetched guests for sync:', guestList.length);
+     console.log('Guests with group_id:', guestList.filter(g => g.group_id).map(g => ({ name: g.name, group_id: g.group_id })));
 
      // Filter guests with wedding party groups
      const weddingPartyGuests = guestList.filter(guest =>

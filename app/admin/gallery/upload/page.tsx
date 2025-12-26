@@ -192,10 +192,11 @@ export default function AdminGalleryUploadPage() {
   };
 
   return (
-    <main className="min-h-screen dark:bg-transparent p-6">
+    <div className="space-y-6">
       <div className="w-full max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-elegant text-wedding-navy dark:text-gray-100">Gallery Management</h1>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Gallery Management</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">Upload and manage wedding photos</p>
         </div>
 
         {/* Wedding Selection - Global */}
@@ -510,7 +511,7 @@ export default function AdminGalleryUploadPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }
 

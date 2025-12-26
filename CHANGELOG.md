@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Wedding Finance Autopilot (WFA)**: Automated payment collection system for wedding planners
+  - **Package → Contract → Autopilot Flow**: Define packages once, couples sign, money flows automatically
+  - **Data Models** (`app/models/autopilot.py`):
+    - `Package`: Reusable service package templates with payment schedules
+    - `Contract`: Signed agreements with couple info and Stripe payment methods
+    - `ScheduledPayment`: Individual payment instances with retry logic
+  - **AI Service Layer** (`app/services/ai_service.py`, `app/services/ai_cache_service.py`):
+    - Gemini 2.0 Flash integration for budget insights, seating optimization, email drafting
+    - Credit-based system: Boutique (100/mo), Signature (300/mo)
+    - Content-addressed caching with TTL and event-driven invalidation
+  - **Autopilot Engine** (`app/services/autopilot_service.py`):
+    - Automatic payment processing via Stripe
+    - Exponential backoff retry logic (24h → 48h → 96h)
+    - Failed payment notifications
+  - **Money Dashboard** (`app/admin/money/page.tsx`):
+    - Unified financial view for planners
+    - Incoming/outgoing payment tracking
+    - Subscription summary with usage (weddings, AI credits)
+    - Quick actions for payment retry, cancel, mark external, refund
+  - **Contract API** (`app/api/contracts.py`):
+    - Full CRUD for packages and contracts
+    - Public signing endpoints (token-based, no auth)
+    - Payment actions: retry, cancel, mark-paid-externally, refund
+  - **Couple Portal**: Public dashboard for couples to view contracts and payment history
+  - **Cloudflare Cron Workers**: Replaced Vercel crons with Cloudflare Workers
+    - `uptime-cron.js`: Backend health monitoring every 5 minutes
+    - `autopilot-cron.js`: Payment processing (due payments, retries, reminders)
+  - **Cache Invalidation**: Budget and guest changes invalidate AI cache automatically
+
 - **Enhanced Vendor Management System**: Comprehensive CRM for managing vendors, contracts, and payments
   - **PDF Contract Upload**: Planners can upload their own contract PDFs instead of using templates
     - S3 storage integration for secure document hosting
@@ -67,6 +96,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added unique database index on wedding slugs
 - **Gallery Management Dark Mode**: Fixed dark mode styling on Gallery Management page
   - Updated titles, labels, tabs, cards, and badges for proper dark theme support
+- **Wedding Party Sync API**: Fixed guest fetch using wrong API endpoint
+  - Changed from `/admin/guests/{id}` to `/admin/guests?wedding_id={id}`
+  - Added debug logging to help troubleshoot sync issues
 
 ## [1.4.0] - 2024-12-14
 

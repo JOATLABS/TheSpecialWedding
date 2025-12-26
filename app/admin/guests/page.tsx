@@ -816,11 +816,9 @@ export default function AdminGuestsPage() {
     <div className="space-y-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
-          <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
-            <h1 className="text-3xl font-bold text-white">Guest Management</h1>
-            <p className="text-blue-100 mt-2">View and manage all wedding guests, RSVPs, and plus-ones</p>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Guest Management</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">View and manage all wedding guests, RSVPs, and plus-ones</p>
         </div>
 
         {/* Success/Error Messages */}
@@ -1020,10 +1018,10 @@ export default function AdminGuestsPage() {
 
             {/* Import Form */}
             {activeTab === 'import' && (
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden mb-8">
-                <div className="bg-gradient-to-r from-wedding-sage to-wedding-gold px-8 py-6">
-                  <h2 className="text-2xl font-bold text-white">Import Guests from CSV</h2>
-                  <p className="text-white/80 mt-1">Upload a CSV file to bulk import guests</p>
+              <div className="bg-white dark:bg-slate-800/95 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden mb-8">
+                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Import Guests from CSV</h2>
+                  <p className="text-slate-600 dark:text-slate-400 mt-1">Upload a CSV file to bulk import guests</p>
                 </div>
                 <div className="p-6 space-y-6">
                   <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">

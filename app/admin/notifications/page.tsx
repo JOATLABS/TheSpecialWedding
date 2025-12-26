@@ -227,8 +227,8 @@ export default function NotificationsPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-heading text-wedding-rose dark:text-wedding-rose">Notifications</h1>
-          <p className="text-gray-600 dark:text-gray-400">Form submissions, RSVP updates, and activity alerts</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Notifications</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">Form submissions, RSVP updates, and activity alerts</p>
         </div>
 
         {/* Notifications List */}

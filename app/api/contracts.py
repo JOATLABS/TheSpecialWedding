@@ -307,6 +307,81 @@ async def refund_payment(
         raise HTTPException(status_code=500, detail="Failed to process refund")
 
 
+@router.post("/payments/{payment_id}/retry", tags=["Contracts"])
+async def retry_payment(
+    payment_id: str,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Retry a failed scheduled payment.
+
+    Immediately attempts to process the payment again using the
+    saved payment method on the contract.
+
+    Only failed payments can be retried.
+    """
+    try:
+        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+
+        payment = await contract_service.retry_payment(
+            payment_id=payment_id,
+            planner_id=planner_id
+        )
+
+        success = payment.get("status") == "succeeded"
+        return {
+            "message": "Payment retry succeeded" if success else "Payment retry attempted but failed",
+            "success": success,
+            "payment": payment
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to retry payment: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retry payment")
+
+
+class CancelPaymentRequest(BaseModel):
+    """Request to cancel a scheduled payment."""
+    reason: Optional[str] = Field(None, max_length=500, description="Optional cancellation reason")
+
+
+@router.post("/payments/{payment_id}/cancel", tags=["Contracts"])
+async def cancel_payment(
+    payment_id: str,
+    request_data: CancelPaymentRequest = None,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Cancel a scheduled payment.
+
+    Only scheduled or failed payments can be cancelled.
+    Succeeded payments cannot be cancelled (use refund instead).
+    """
+    try:
+        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+
+        reason = request_data.reason if request_data else None
+
+        payment = await contract_service.cancel_payment(
+            payment_id=payment_id,
+            planner_id=planner_id,
+            reason=reason
+        )
+
+        return {
+            "message": "Payment cancelled successfully",
+            "payment": payment
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to cancel payment: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to cancel payment")
+
+
 # ============================================================================
 # PUBLIC ENDPOINTS (Token-based, no authentication required)
 # ============================================================================

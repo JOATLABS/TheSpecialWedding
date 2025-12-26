@@ -415,28 +415,24 @@ export default function AdminWeddingsPage() {
     <div className="space-y-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
-          <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white">
-                  {userProfile?.is_root_admin ? 'All Weddings' : 'My Weddings'}
-                </h1>
-                <p className="text-wedding-ivory opacity-90">
-                  {userProfile?.is_root_admin
-                    ? 'Manage all wedding events and assignments'
-                    : 'Manage your wedding events and client details'
-                  }
-                </p>
-              </div>
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-4 py-2 bg-white text-wedding-navy font-semibold rounded-lg hover:bg-gray-50 dark:bg-transparent transition"
-              >
-                + Add Wedding
-              </button>
-            </div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+              {userProfile?.is_root_admin ? 'All Weddings' : 'My Weddings'}
+            </h1>
+            <p className="text-slate-600 dark:text-slate-400 mt-1">
+              {userProfile?.is_root_admin
+                ? 'Manage all wedding events and assignments'
+                : 'Manage your wedding events and client details'
+              }
+            </p>
           </div>
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition"
+          >
+            + Add Wedding
+          </button>
         </div>
 
         {/* Error Message */}

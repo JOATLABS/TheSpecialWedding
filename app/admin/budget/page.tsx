@@ -406,10 +406,10 @@ export default function BudgetDashboard() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-heading font-bold text-wedding-navy dark:text-white">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
             Budget Management
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
             Manage wedding budgets, track expenses, and compare vendor quotes
           </p>
         </div>
