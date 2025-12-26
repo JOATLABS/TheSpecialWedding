@@ -45,18 +45,25 @@ interface ScheduledPayment {
   amount: number;
   currency: string;
   due_date: string;
-  status: 'scheduled' | 'processing' | 'succeeded' | 'failed';
+  status: 'scheduled' | 'processing' | 'succeeded' | 'failed' | 'paid_externally';
   paid_at?: string;
+  card_last4?: string;
+  card_brand?: string;
+  payment_method_type?: string;
 }
 
 interface VendorPayment {
   id: string;
   vendor_name: string;
+  vendor_email?: string;
   category: string;
+  wedding_title?: string;
+  wedding_id?: string;
   amount: number;
-  due_date?: string;
-  status: 'pending' | 'paid' | 'overdue';
-  paid_at?: string;
+  budgeted?: number;
+  due_date?: string | null;
+  status: 'pending' | 'paid' | 'partial' | 'overdue';
+  paid_at?: string | null;
 }
 
 interface CashFlowEvent {
@@ -69,16 +76,33 @@ interface CashFlowEvent {
 }
 
 type TabType = 'overview' | 'incoming' | 'outgoing' | 'timeline';
+type SortField = 'due_date' | 'amount' | 'couple_name';
+type SortOrder = 'asc' | 'desc';
+type PaymentStatus = 'all' | 'scheduled' | 'processing' | 'succeeded' | 'failed' | 'paid_externally';
 
 export default function MoneyDashboard() {
-  const { token: adminToken, userProfile } = useAdmin();
+  const { token: adminToken } = useAdmin();
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
   const [incomingPayments, setIncomingPayments] = useState<ScheduledPayment[]>([]);
   const [outgoingPayments, setOutgoingPayments] = useState<VendorPayment[]>([]);
   const [cashFlow, setCashFlow] = useState<CashFlowEvent[]>([]);
   const [dateFilter, setDateFilter] = useState<'30d' | '90d' | '1y' | 'all'>('30d');
+
+  // Filter & Sort state for incoming payments
+  const [statusFilter, setStatusFilter] = useState<PaymentStatus>('all');
+  const [coupleFilter, setCoupleFilter] = useState<string>('all');
+  const [sortField, setSortField] = useState<SortField>('due_date');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Mark External Modal state
+  const [showMarkExternalModal, setShowMarkExternalModal] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<ScheduledPayment | null>(null);
+  const [externalPaymentMethod, setExternalPaymentMethod] = useState('cash');
+  const [externalPaymentNote, setExternalPaymentNote] = useState('');
 
   const fetchMoneyData = useCallback(async () => {
     if (!adminToken) return;
@@ -143,8 +167,81 @@ export default function MoneyDashboard() {
         });
       }
 
-      // Build cash flow timeline
-      const events: CashFlowEvent[] = incomingPayments.map(p => ({
+      // Fetch vendor payments from budgets (outgoing)
+      try {
+        const weddingsRes = await fetch(`${baseUrl}/weddings`, { headers });
+        if (weddingsRes.ok) {
+          const weddingsData = await weddingsRes.json();
+          const weddings = weddingsData.weddings || weddingsData || [];
+
+          // Fetch budget data for each wedding to get vendor payments
+          const vendorPaymentsPromises = weddings.map(async (wedding: { _id?: string; id?: string; title?: string }) => {
+            const weddingId = wedding._id || wedding.id;
+            if (!weddingId) return [];
+            try {
+              const budgetRes = await fetch(`${baseUrl}/weddings/${weddingId}/budget`, { headers });
+              if (budgetRes.ok) {
+                const budgetData = await budgetRes.json();
+                const categories = budgetData.categories || [];
+                // Extract vendor payment info from categories
+                return categories
+                  .filter((cat: { vendor_name?: string; actual_spent?: number }) => cat.vendor_name && cat.actual_spent)
+                  .map((cat: {
+                    _id?: string;
+                    id?: string;
+                    vendor_name?: string;
+                    vendor_email?: string;
+                    name?: string;
+                    actual_spent?: number;
+                    budgeted_amount?: number;
+                    payment_status?: string;
+                    payments?: Array<{ payment_date?: string }>;
+                  }) => ({
+                    id: cat._id || cat.id || `${weddingId}-${cat.vendor_name}`,
+                    vendor_name: cat.vendor_name || 'Unknown Vendor',
+                    vendor_email: cat.vendor_email,
+                    category: cat.name || 'Service',
+                    wedding_title: wedding.title || 'Wedding',
+                    wedding_id: weddingId,
+                    amount: cat.actual_spent || 0,
+                    budgeted: cat.budgeted_amount || 0,
+                    status: cat.payment_status || 'pending',
+                    due_date: null, // Budget categories don't have due dates by default
+                    paid_at: cat.payments?.length ? cat.payments[cat.payments.length - 1]?.payment_date : null
+                  }));
+              }
+            } catch {
+              return [];
+            }
+            return [];
+          });
+
+          const allVendorPayments = (await Promise.all(vendorPaymentsPromises)).flat();
+          setOutgoingPayments(allVendorPayments);
+
+          // Update summary with outgoing
+          const totalOutgoing = allVendorPayments
+            .filter((p: VendorPayment) => p.status === 'paid')
+            .reduce((sum: number, p: VendorPayment) => sum + (p.amount || 0), 0);
+
+          const pendingOutgoing = allVendorPayments
+            .filter((p: VendorPayment) => p.status === 'pending' || p.status === 'partial')
+            .reduce((sum: number, p: VendorPayment) => sum + (p.amount || 0), 0);
+
+          setSummary(prev => prev ? {
+            ...prev,
+            total_outgoing: totalOutgoing,
+            pending_outgoing: pendingOutgoing,
+            net_cash_flow: prev.total_incoming - totalOutgoing
+          } : null);
+        }
+      } catch (vendorError) {
+        console.error('Error fetching vendor payments:', vendorError);
+        // Non-fatal, continue without vendor data
+      }
+
+      // Build cash flow timeline (combining incoming and outgoing)
+      const incomingEvents: CashFlowEvent[] = incomingPayments.map(p => ({
         id: p.id,
         date: p.paid_at || p.due_date,
         type: 'incoming' as const,
@@ -153,6 +250,7 @@ export default function MoneyDashboard() {
         status: p.status
       }));
 
+      const events = [...incomingEvents];
       events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setCashFlow(events);
 
@@ -167,6 +265,126 @@ export default function MoneyDashboard() {
   useEffect(() => {
     fetchMoneyData();
   }, [fetchMoneyData]);
+
+  // Get unique couple names for filter dropdown
+  const uniqueCouples = Array.from(new Set(incomingPayments.map(p => p.couple_name))).sort();
+
+  // Filter and sort incoming payments
+  const filteredAndSortedPayments = incomingPayments
+    .filter(p => {
+      if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+      if (coupleFilter !== 'all' && p.couple_name !== coupleFilter) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'due_date':
+          comparison = new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+          break;
+        case 'amount':
+          comparison = a.amount - b.amount;
+          break;
+        case 'couple_name':
+          comparison = a.couple_name.localeCompare(b.couple_name);
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+  // Action handlers
+  const handleRetryPayment = async (payment: ScheduledPayment) => {
+    if (!adminToken) return;
+    setActionLoading(payment.id);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/admin/contracts/${payment.contract_id}/payments/${payment.id}/retry`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${adminToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (res.ok) {
+        toast.success('Payment retry initiated');
+        fetchMoneyData();
+      } else {
+        const error = await res.json();
+        toast.error(error.detail || 'Failed to retry payment');
+      }
+    } catch {
+      toast.error('Failed to retry payment');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCancelPayment = async (payment: ScheduledPayment) => {
+    if (!adminToken) return;
+    if (!confirm(`Cancel scheduled payment of ${formatCurrency(payment.amount)} from ${payment.couple_name}?`)) return;
+
+    setActionLoading(payment.id);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/admin/contracts/${payment.contract_id}/payments/${payment.id}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${adminToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (res.ok) {
+        toast.success('Payment cancelled');
+        fetchMoneyData();
+      } else {
+        const error = await res.json();
+        toast.error(error.detail || 'Failed to cancel payment');
+      }
+    } catch {
+      toast.error('Failed to cancel payment');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleMarkExternalSubmit = async () => {
+    if (!selectedPayment || !adminToken) return;
+    setActionLoading(selectedPayment.id);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/admin/contracts/${selectedPayment.contract_id}/payments/${selectedPayment.id}/mark-external`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${adminToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          payment_method: externalPaymentMethod,
+          note: externalPaymentNote
+        })
+      });
+      if (res.ok) {
+        toast.success('Payment marked as received externally');
+        setShowMarkExternalModal(false);
+        setSelectedPayment(null);
+        setExternalPaymentMethod('cash');
+        setExternalPaymentNote('');
+        fetchMoneyData();
+      } else {
+        const error = await res.json();
+        toast.error(error.detail || 'Failed to mark payment');
+      }
+    } catch {
+      toast.error('Failed to mark payment');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const openMarkExternalModal = (payment: ScheduledPayment) => {
+    setSelectedPayment(payment);
+    setShowMarkExternalModal(true);
+  };
 
   const formatCurrency = (amount: number, currency: string = 'usd') => {
     return new Intl.NumberFormat('en-US', {
@@ -440,21 +658,109 @@ export default function MoneyDashboard() {
 
       {activeTab === 'incoming' && (
         <Card>
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-900 dark:text-white">
-              Incoming Payments from Couples
-            </h2>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm">
-                <Filter size={16} className="mr-2" />
-                Filter
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download size={16} className="mr-2" />
-                Export
-              </Button>
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-slate-900 dark:text-white">
+                Incoming Payments from Couples
+              </h2>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                  <Filter size={16} className="mr-2" />
+                  {showFilters ? 'Hide Filters' : 'Filter'}
+                </Button>
+                <Button variant="outline" size="sm">
+                  <Download size={16} className="mr-2" />
+                  Export
+                </Button>
+              </div>
             </div>
+
+            {/* Filter & Sort Controls */}
+            {showFilters && (
+              <div className="flex flex-wrap gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                {/* Status Filter */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-slate-500 uppercase">Status</label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as PaymentStatus)}
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[140px]"
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="processing">Processing</option>
+                    <option value="succeeded">Succeeded</option>
+                    <option value="failed">Failed</option>
+                    <option value="paid_externally">Paid Externally</option>
+                  </select>
+                </div>
+
+                {/* Couple Filter */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-slate-500 uppercase">Couple</label>
+                  <select
+                    value={coupleFilter}
+                    onChange={(e) => setCoupleFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[160px]"
+                  >
+                    <option value="all">All Couples</option>
+                    {uniqueCouples.map(couple => (
+                      <option key={couple} value={couple}>{couple}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sort Field */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-slate-500 uppercase">Sort By</label>
+                  <select
+                    value={sortField}
+                    onChange={(e) => setSortField(e.target.value as SortField)}
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[140px]"
+                  >
+                    <option value="due_date">Due Date</option>
+                    <option value="amount">Amount</option>
+                    <option value="couple_name">Couple Name</option>
+                  </select>
+                </div>
+
+                {/* Sort Order */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-slate-500 uppercase">Order</label>
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[120px]"
+                  >
+                    <option value="asc">Ascending</option>
+                    <option value="desc">Descending</option>
+                  </select>
+                </div>
+
+                {/* Reset Filters */}
+                <div className="flex flex-col gap-1 justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setStatusFilter('all');
+                      setCoupleFilter('all');
+                      setSortField('due_date');
+                      setSortOrder('asc');
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Results count */}
+            <p className="text-sm text-slate-500 mt-2">
+              Showing {filteredAndSortedPayments.length} of {incomingPayments.length} payments
+            </p>
           </div>
+
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
@@ -463,11 +769,13 @@ export default function MoneyDashboard() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Payment</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Amount</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Due Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Card</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {incomingPayments.map((payment) => (
+                {filteredAndSortedPayments.map((payment) => (
                   <tr key={payment.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                     <td className="px-4 py-4">
                       <p className="font-medium text-slate-900 dark:text-white">{payment.couple_name}</p>
@@ -480,43 +788,247 @@ export default function MoneyDashboard() {
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-400">
                       {formatDate(payment.due_date)}
                     </td>
+                    <td className="px-4 py-4">
+                      {payment.card_last4 ? (
+                        <div className="flex items-center gap-1.5">
+                          <CreditCard size={14} className="text-slate-400" />
+                          <span className="text-sm text-slate-600 dark:text-slate-400">
+                            {payment.card_brand || 'Card'} •••• {payment.card_last4}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-slate-400">No card</span>
+                      )}
+                    </td>
                     <td className="px-4 py-4">{getStatusBadge(payment.status)}</td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-1">
+                        {/* Retry button - only for failed payments */}
+                        {payment.status === 'failed' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRetryPayment(payment)}
+                            disabled={actionLoading === payment.id}
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          >
+                            {actionLoading === payment.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <RefreshCw size={14} />
+                            )}
+                          </Button>
+                        )}
+
+                        {/* Cancel button - only for scheduled payments */}
+                        {payment.status === 'scheduled' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCancelPayment(payment)}
+                            disabled={actionLoading === payment.id}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            {actionLoading === payment.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <XCircle size={14} />
+                            )}
+                          </Button>
+                        )}
+
+                        {/* Mark External button - for scheduled or failed */}
+                        {(payment.status === 'scheduled' || payment.status === 'failed') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openMarkExternalModal(payment)}
+                            disabled={actionLoading === payment.id}
+                            className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                            title="Mark as paid externally"
+                          >
+                            <CheckCircle size={14} />
+                          </Button>
+                        )}
+
+                        {/* No actions for succeeded/paid_externally */}
+                        {(payment.status === 'succeeded' || payment.status === 'paid_externally') && (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {incomingPayments.length === 0 && (
+            {filteredAndSortedPayments.length === 0 && (
               <div className="p-12 text-center text-slate-500">
                 <Receipt className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                <p>No incoming payments</p>
+                <p>No payments match your filters</p>
               </div>
             )}
           </div>
         </Card>
       )}
 
-      {activeTab === 'outgoing' && (
-        <Card>
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-900 dark:text-white">
-              Outgoing Payments to Vendors
-            </h2>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm">
-                <Filter size={16} className="mr-2" />
-                Filter
+      {/* Mark External Payment Modal */}
+      {showMarkExternalModal && selectedPayment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
+              Mark Payment as Received Externally
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+              {selectedPayment.couple_name} - {formatCurrency(selectedPayment.amount)}
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Payment Method
+                </label>
+                <select
+                  value={externalPaymentMethod}
+                  onChange={(e) => setExternalPaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="check">Check</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="venmo">Venmo</option>
+                  <option value="zelle">Zelle</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Note (optional)
+                </label>
+                <textarea
+                  value={externalPaymentNote}
+                  onChange={(e) => setExternalPaymentNote(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 resize-none"
+                  rows={3}
+                  placeholder="e.g., Check #1234, received on 12/25"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowMarkExternalModal(false);
+                  setSelectedPayment(null);
+                  setExternalPaymentMethod('cash');
+                  setExternalPaymentNote('');
+                }}
+              >
+                Cancel
               </Button>
-              <Button variant="outline" size="sm">
-                <Download size={16} className="mr-2" />
-                Export
+              <Button
+                onClick={handleMarkExternalSubmit}
+                disabled={actionLoading === selectedPayment.id}
+              >
+                {actionLoading === selectedPayment.id ? (
+                  <Loader2 size={16} className="animate-spin mr-2" />
+                ) : null}
+                Mark as Paid
               </Button>
             </div>
           </div>
-          <div className="p-12 text-center text-slate-500">
-            <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-            <p>Vendor payment tracking coming soon</p>
-            <p className="text-sm mt-1">Track payments to your wedding vendors</p>
+        </div>
+      )}
+
+      {activeTab === 'outgoing' && (
+        <Card>
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-semibold text-slate-900 dark:text-white">
+                Outgoing Payments to Vendors
+              </h2>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm">
+                  <Filter size={16} className="mr-2" />
+                  Filter
+                </Button>
+                <Button variant="outline" size="sm">
+                  <Download size={16} className="mr-2" />
+                  Export
+                </Button>
+              </div>
+            </div>
+            <p className="text-sm text-slate-500">
+              {outgoingPayments.length} vendor payments tracked
+            </p>
           </div>
+
+          {outgoingPayments.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-slate-50 dark:bg-slate-800/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Vendor</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Service</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Wedding</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Paid</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Budget</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {outgoingPayments.map((payment) => (
+                    <tr key={payment.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                      <td className="px-4 py-4">
+                        <p className="font-medium text-slate-900 dark:text-white">{payment.vendor_name}</p>
+                        {payment.vendor_email && (
+                          <p className="text-sm text-slate-500">{payment.vendor_email}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 text-slate-700 dark:text-slate-300">{payment.category}</td>
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-400">{payment.wedding_title || 'Wedding'}</td>
+                      <td className="px-4 py-4 font-semibold text-slate-900 dark:text-white">
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-400">
+                        {payment.budgeted ? formatCurrency(payment.budgeted) : '—'}
+                      </td>
+                      <td className="px-4 py-4">{getStatusBadge(payment.status)}</td>
+                      <td className="px-4 py-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (payment.wedding_id) {
+                              window.location.href = `/admin/budget?wedding=${payment.wedding_id}`;
+                            }
+                          }}
+                          className="text-slate-600 hover:text-slate-900"
+                        >
+                          <ChevronRight size={14} />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-12 text-center text-slate-500">
+              <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+              <p>No vendor payments tracked yet</p>
+              <p className="text-sm mt-1">Add vendors to your wedding budgets to track payments here</p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => window.location.href = '/admin/budget'}
+              >
+                Go to Budget
+              </Button>
+            </div>
+          )}
         </Card>
       )}
 
