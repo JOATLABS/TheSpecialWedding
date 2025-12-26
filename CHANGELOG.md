@@ -40,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `POST /admin/payment-links/{id}/send` - Send payment link email
     - `GET /admin/payment-links` - List payment links
   - **Subscription Feature Gating**: `vendor_management` feature flag for plans
+  - **Planner-Configurable Contract Settings**: Replaced hardcoded contract configuration with layered settings
+    - Settings flow: `System Defaults (env vars) → Planner Preferences → Contract Creation`
+    - Configurable options:
+      - `token_expiry_days` (7-90): How long contract access links remain valid
+      - `deposit_due_days` (1-60): Days after signing for deposit to be due
+      - `payment_reminder_days`: Array of days before due date to send reminders
+      - `auto_followup_days` (1-14): Days to auto-generate follow-up for unsigned contracts
+      - `default_currency`: Default currency for contracts
+    - New API endpoints:
+      - `GET /vendors/settings/contract` - Get current settings with defaults
+      - `PUT /vendors/settings/contract` - Update planner preferences
+    - Added `ContractSettings` model and `contract_settings` field to `UserModel`
 
 ### Fixed
 

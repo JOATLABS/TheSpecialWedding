@@ -313,7 +313,7 @@ async def get_vendor_form_data_for_contract(
     Get vendor form submission data that can be used in the contract.
     Returns form responses from this vendor that can populate contract placeholders.
     """
-    return await vendor_service.get_form_data_for_contract(contract_id)
+    return await vendor_service.get_form_data_for_contract(contract_id, created_by=current_user.email)
 
 
 @router.post("/contracts/{contract_id}/apply-form-data", tags=["Contracts"])
@@ -675,3 +675,114 @@ async def get_payment_link(
 
     link["_id"] = str(link["_id"])
     return link
+
+
+# =============================================================================
+# PLANNER CONTRACT SETTINGS
+# =============================================================================
+
+@router.get("/settings/contract", tags=["Settings"])
+async def get_contract_settings(
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+):
+    """
+    Get the planner's contract settings.
+
+    These settings control default behaviors for contract creation:
+    - token_expiry_days: How long contract links remain valid
+    - deposit_due_days: Default days after signing for deposit payment
+    - payment_reminder_days: When to send payment reminders
+    - auto_followup_days: When to auto-generate follow-up for unsigned contracts
+    """
+    settings = await vendor_service._get_planner_contract_settings(current_user.email)
+    return {
+        "settings": settings,
+        "defaults": {
+            "token_expiry_days": 30,
+            "deposit_due_days": 7,
+            "payment_reminder_days": [7, 3, 1],
+            "auto_followup_days": 3,
+            "default_currency": "USD"
+        }
+    }
+
+
+@router.put("/settings/contract", tags=["Settings"])
+async def update_contract_settings(
+    settings: dict,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+):
+    """
+    Update the planner's contract settings.
+
+    Allowed fields:
+    - token_expiry_days (7-90): How long contract links remain valid
+    - deposit_due_days (1-60): Default days after signing for deposit payment
+    - payment_reminder_days: Array of days before due date to send reminders
+    - auto_followup_days (1-14): Days to wait before auto-generating follow-up
+    - default_currency: Default currency for contracts (e.g., "USD")
+    """
+    # Validate settings
+    allowed_fields = {
+        "token_expiry_days", "deposit_due_days", "payment_reminder_days",
+        "auto_followup_days", "default_currency"
+    }
+
+    # Filter to only allowed fields
+    validated_settings = {}
+    for key, value in settings.items():
+        if key not in allowed_fields:
+            continue
+
+        # Validate ranges
+        if key == "token_expiry_days":
+            if not isinstance(value, int) or value < 7 or value > 90:
+                raise HTTPException(
+                    status_code=400,
+                    detail="token_expiry_days must be between 7 and 90"
+                )
+        elif key == "deposit_due_days":
+            if not isinstance(value, int) or value < 1 or value > 60:
+                raise HTTPException(
+                    status_code=400,
+                    detail="deposit_due_days must be between 1 and 60"
+                )
+        elif key == "auto_followup_days":
+            if not isinstance(value, int) or value < 1 or value > 14:
+                raise HTTPException(
+                    status_code=400,
+                    detail="auto_followup_days must be between 1 and 14"
+                )
+        elif key == "payment_reminder_days":
+            if not isinstance(value, list) or not all(isinstance(d, int) and d > 0 for d in value):
+                raise HTTPException(
+                    status_code=400,
+                    detail="payment_reminder_days must be an array of positive integers"
+                )
+        elif key == "default_currency":
+            if not isinstance(value, str) or len(value) != 3:
+                raise HTTPException(
+                    status_code=400,
+                    detail="default_currency must be a 3-letter currency code"
+                )
+
+        validated_settings[key] = value
+
+    if not validated_settings:
+        raise HTTPException(status_code=400, detail="No valid settings provided")
+
+    # Update user document
+    from app.core.database import mongo
+
+    result = await mongo.get_users_collection().update_one(
+        {"email": current_user.email},
+        {"$set": {"contract_settings": validated_settings}}
+    )
+
+    if result.modified_count == 0 and result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "message": "Contract settings updated",
+        "settings": validated_settings
+    }

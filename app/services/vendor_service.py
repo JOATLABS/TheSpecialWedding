@@ -103,6 +103,42 @@ class VendorService:
         random_suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"CON-{timestamp}-{random_suffix}"
 
+    async def _get_planner_contract_settings(self, planner_email: str) -> Dict[str, Any]:
+        """
+        Get contract settings for a planner, with graceful fallback to system defaults.
+
+        Implements layered configuration:
+        1. Planner's stored preferences (if set)
+        2. System defaults from environment variables
+
+        Returns:
+            Dict with token_expiry_days, deposit_due_days, etc.
+        """
+        defaults = {
+            "token_expiry_days": TOKEN_EXPIRY_DAYS,
+            "deposit_due_days": DEPOSIT_DUE_DAYS,
+            "payment_reminder_days": [7, 3, 1],
+            "auto_followup_days": 3,
+            "default_currency": "USD"
+        }
+
+        try:
+            planner = await self.users.find_one({"email": planner_email})
+            if planner and planner.get("contract_settings"):
+                # Merge planner settings with defaults (planner overrides defaults)
+                settings = planner["contract_settings"]
+                return {
+                    "token_expiry_days": settings.get("token_expiry_days", defaults["token_expiry_days"]),
+                    "deposit_due_days": settings.get("deposit_due_days", defaults["deposit_due_days"]),
+                    "payment_reminder_days": settings.get("payment_reminder_days", defaults["payment_reminder_days"]),
+                    "auto_followup_days": settings.get("auto_followup_days", defaults["auto_followup_days"]),
+                    "default_currency": settings.get("default_currency", defaults["default_currency"])
+                }
+        except Exception as e:
+            logger.warning(f"Failed to fetch planner settings for {planner_email}: {e}")
+
+        return defaults
+
     async def _get_wedding(self, wedding_id: str) -> Optional[dict]:
         """Get wedding by ID, trying both string and ObjectId formats"""
         wedding = None
@@ -623,6 +659,9 @@ class VendorService:
     ) -> dict:
         """Create a new vendor contract"""
         try:
+            # Get planner's contract settings (with fallback to system defaults)
+            planner_settings = await self._get_planner_contract_settings(created_by)
+
             # Get vendor profile
             vendor = await self.vendor_profiles.find_one({"_id": ObjectId(vendor_profile_id)})
             if not vendor:
@@ -691,13 +730,14 @@ class VendorService:
                         "order": cs.get("order", len(sections))
                     })
 
-            # Calculate deposit
+            # Calculate deposit using planner's configured settings
             deposit_amount = None
             deposit_due_date = None
             if deposit_percentage and total_amount:
                 deposit_amount = total_amount * deposit_percentage / 100
-                # Deposit due in 7 days
-                deposit_due_date = datetime.utcnow() + timedelta(days=7)
+                deposit_due_date = datetime.utcnow() + timedelta(
+                    days=planner_settings["deposit_due_days"]
+                )
 
             contract = {
                 "wedding_id": wedding_id,
@@ -721,7 +761,9 @@ class VendorService:
                 "deposit_due_date": deposit_due_date,
                 "status": ContractStatus.DRAFT.value,
                 "access_token": self._generate_token(),
-                "token_expires_at": datetime.utcnow() + timedelta(days=30),
+                "token_expires_at": datetime.utcnow() + timedelta(
+                    days=planner_settings["token_expiry_days"]
+                ),
                 "service_date": service_date,
                 "service_location": service_location,
                 "created_by": created_by,
@@ -791,7 +833,7 @@ class VendorService:
         try:
             obj_id = validate_object_id(contract_id, "contract ID")
 
-            query = {"_id": obj_id}
+            query: Dict[str, Any] = {"_id": obj_id}
             if created_by:
                 query["created_by"] = created_by
 
@@ -858,13 +900,15 @@ class VendorService:
     ) -> dict:
         """Send contract to vendor via email"""
         try:
-            contract = await self.get_contract(contract_id)
+            # Authorization: verify contract belongs to this user
+            contract = await self.get_contract(contract_id, created_by=created_by)
 
             if contract["status"] not in [ContractStatus.DRAFT.value, ContractStatus.PENDING_REVIEW.value]:
                 raise HTTPException(status_code=400, detail="Contract has already been sent")
 
             # Get wedding info
             wedding = await self._get_wedding(contract["wedding_id"])
+            couple_names = wedding.get('couple_names', 'our clients') if wedding else 'our clients'
 
             # Generate contract link
             base_url = os.getenv("FRONTEND_URL", "")
@@ -892,7 +936,7 @@ class VendorService:
                     <div class="content">
                         <p>Dear {contract['vendor_name']},</p>
 
-                        <p>A contract has been prepared for your services for the wedding of <strong>{wedding.get('couple_names', 'our clients')}</strong>.</p>
+                        <p>A contract has been prepared for your services for the wedding of <strong>{couple_names}</strong>.</p>
 
                         {f'<p>{message}</p>' if message else ''}
 
@@ -1071,7 +1115,8 @@ class VendorService:
     ) -> dict:
         """Update a contract (only draft contracts can be modified)"""
         try:
-            contract = await self.get_contract(contract_id)
+            # Authorization: verify contract belongs to this user
+            contract = await self.get_contract(contract_id, created_by=updated_by)
 
             if contract["status"] not in [ContractStatus.DRAFT.value, ContractStatus.PENDING_REVIEW.value]:
                 raise HTTPException(
@@ -1095,7 +1140,7 @@ class VendorService:
                 {"$set": update_data}
             )
 
-            return await self.get_contract(contract_id)
+            return await self.get_contract(contract_id, created_by=updated_by)
 
         except HTTPException:
             raise
@@ -1111,7 +1156,8 @@ class VendorService:
     ) -> dict:
         """Update contract sections - add, modify, or remove sections"""
         try:
-            contract = await self.get_contract(contract_id)
+            # Authorization: verify contract belongs to this user
+            contract = await self.get_contract(contract_id, created_by=updated_by)
 
             if contract["status"] not in [ContractStatus.DRAFT.value, ContractStatus.PENDING_REVIEW.value]:
                 raise HTTPException(
@@ -1137,7 +1183,7 @@ class VendorService:
                 {"$set": {"sections": processed_sections, "updated_at": datetime.utcnow()}}
             )
 
-            return await self.get_contract(contract_id)
+            return await self.get_contract(contract_id, created_by=updated_by)
 
         except HTTPException:
             raise
@@ -1149,15 +1195,15 @@ class VendorService:
     # FORM DATA INTEGRATION
     # =========================================================================
 
-    async def get_form_data_for_contract(self, contract_id: str) -> dict:
+    async def get_form_data_for_contract(self, contract_id: str, created_by: Optional[str] = None) -> dict:
         """
         Get vendor form submissions that can be used to populate contract fields.
         Looks for form submissions from the same vendor email.
         """
         try:
-            contract = await self.get_contract(contract_id)
+            # Authorization: verify contract belongs to this user if created_by is provided
+            contract = await self.get_contract(contract_id, created_by=created_by)
             vendor_email = contract.get("vendor_email")
-            wedding_id = contract.get("wedding_id")
 
             if not vendor_email:
                 return {"submissions": [], "message": "No vendor email in contract"}
@@ -1250,7 +1296,8 @@ class VendorService:
     ) -> dict:
         """Apply data from a vendor form submission to populate contract sections"""
         try:
-            contract = await self.get_contract(contract_id)
+            # Authorization: verify contract belongs to this user
+            contract = await self.get_contract(contract_id, created_by=applied_by)
 
             if contract["status"] not in [ContractStatus.DRAFT.value, ContractStatus.PENDING_REVIEW.value]:
                 raise HTTPException(
@@ -1345,7 +1392,8 @@ class VendorService:
     ) -> List[dict]:
         """Create payment milestones for a contract"""
         try:
-            contract = await self.get_contract(contract_id)
+            # Authorization: verify contract belongs to this user
+            contract = await self.get_contract(contract_id, created_by=created_by)
 
             created_milestones = []
             for m in milestones:
@@ -1604,6 +1652,9 @@ class VendorService:
         The planner uploads their own contract PDF instead of using templates.
         """
         try:
+            # Get planner's contract settings (with fallback to system defaults)
+            planner_settings = await self._get_planner_contract_settings(created_by)
+
             # Get vendor profile
             vendor = await self.get_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
@@ -1660,7 +1711,9 @@ class VendorService:
                 "deposit_amount": deposit_amount,
                 "status": ContractStatus.DRAFT.value,
                 "access_token": self._generate_token(),
-                "token_expires_at": datetime.utcnow() + timedelta(days=30),
+                "token_expires_at": datetime.utcnow() + timedelta(
+                    days=planner_settings["token_expiry_days"]
+                ),
                 "service_date": service_date,
                 "service_location": service_location,
                 "internal_notes": notes,

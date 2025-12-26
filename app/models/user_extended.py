@@ -1,6 +1,41 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+
+class ContractSettings(BaseModel):
+    """
+    Planner-configurable contract and payment settings.
+
+    These override system defaults, allowing each planner to customize
+    their contract workflow based on their business model.
+    """
+    token_expiry_days: int = Field(
+        default=30,
+        ge=7,
+        le=90,
+        description="Days until contract access token expires (7-90)"
+    )
+    deposit_due_days: int = Field(
+        default=7,
+        ge=1,
+        le=60,
+        description="Days after contract signing for deposit to be due (1-60)"
+    )
+    payment_reminder_days: List[int] = Field(
+        default=[7, 3, 1],
+        description="Days before due date to send payment reminders"
+    )
+    auto_followup_days: int = Field(
+        default=3,
+        ge=1,
+        le=14,
+        description="Days after sending to auto-generate follow-up for unsigned contracts"
+    )
+    default_currency: str = Field(
+        default="USD",
+        description="Default currency for contracts"
+    )
 
 
 class UserModel(BaseModel):
@@ -24,6 +59,13 @@ class UserModel(BaseModel):
     max_weddings: int = Field(default=1, description="Maximum weddings allowed")
     ai_credits_remaining: int = Field(default=10, description="Remaining AI credits this month")
     ai_credits_reset_date: Optional[datetime] = Field(None, description="When AI credits reset")
+
+    # Business preferences (planner-configurable)
+    contract_settings: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Planner's contract preferences (token_expiry_days, deposit_due_days, etc.)"
+    )
+
     # Vendor specific fields (if role is vendor)
     assigned_wedding_ids: List[str] = Field(default_factory=list, description="Weddings this vendor has access to")
     service_type: Optional[str] = Field(None, description="Type of service for vendors")
