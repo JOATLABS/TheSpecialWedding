@@ -35,10 +35,10 @@ export function Button({ variant = 'primary', size = 'default', className = '', 
       variantStyle = 'bg-red-500 text-white hover:bg-red-600 focus:ring-red-400/80';
       break;
     case 'outline':
-      variantStyle = 'border border-gray-300 bg-transparent text-gray-700 hover:bg-gray-50 focus:ring-gray-400/80';
+      variantStyle = 'border border-gray-300 dark:border-slate-600 bg-transparent text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 focus:ring-gray-400/80';
       break;
     case 'ghost':
-      variantStyle = 'bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-400/80';
+      variantStyle = 'bg-transparent text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700 focus:ring-gray-400/80';
       break;
     case 'default':
       variantStyle = 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500';

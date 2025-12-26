@@ -860,6 +860,116 @@ class ContractService:
             logger.error(f"Failed to process refund: {str(e)}")
             raise
 
+    async def retry_payment(
+        self,
+        payment_id: str,
+        planner_id: str
+    ) -> Dict:
+        """
+        Retry a failed scheduled payment.
+
+        Args:
+            payment_id: The scheduled payment ID
+            planner_id: The planner's ID (for verification)
+
+        Returns:
+            Updated payment dict with retry result
+        """
+        try:
+            from app.services.autopilot_service import autopilot_service
+
+            # Find the payment and verify ownership
+            payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+
+            if not payment:
+                raise ValueError("Payment not found")
+
+            if payment.get("planner_id") != planner_id:
+                raise ValueError("Payment not found or access denied")
+
+            # Can only retry failed payments
+            if payment.get("status") != "failed":
+                raise ValueError(f"Cannot retry payment with status '{payment.get('status')}'. Only failed payments can be retried.")
+
+            # Reset status to scheduled for retry
+            await self.scheduled_payments.update_one(
+                {"_id": ObjectId(payment_id)},
+                {"$set": {"status": "scheduled", "updated_at": datetime.utcnow()}}
+            )
+
+            # Process the payment immediately
+            payment_dict = self._serialize_payment(payment)
+            result = await autopilot_service._process_single_payment(payment_dict)
+
+            # Get updated payment
+            updated = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+
+            if result.get("success"):
+                logger.info(f"Payment {payment_id} retry succeeded")
+            else:
+                logger.warning(f"Payment {payment_id} retry failed: {result.get('error')}")
+
+            return self._serialize_payment(updated)
+
+        except Exception as e:
+            logger.error(f"Failed to retry payment: {str(e)}")
+            raise
+
+    async def cancel_payment(
+        self,
+        payment_id: str,
+        planner_id: str,
+        reason: Optional[str] = None
+    ) -> Dict:
+        """
+        Cancel a scheduled payment.
+
+        Args:
+            payment_id: The scheduled payment ID
+            planner_id: The planner's ID (for verification)
+            reason: Optional cancellation reason
+
+        Returns:
+            Updated payment dict
+        """
+        try:
+            # Find the payment and verify ownership
+            payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+
+            if not payment:
+                raise ValueError("Payment not found")
+
+            if payment.get("planner_id") != planner_id:
+                raise ValueError("Payment not found or access denied")
+
+            # Can only cancel scheduled or failed payments
+            if payment.get("status") not in ["scheduled", "failed"]:
+                raise ValueError(f"Cannot cancel payment with status '{payment.get('status')}'. Only scheduled or failed payments can be cancelled.")
+
+            now = datetime.utcnow()
+
+            await self.scheduled_payments.update_one(
+                {"_id": ObjectId(payment_id)},
+                {
+                    "$set": {
+                        "status": "cancelled",
+                        "cancelled_at": now,
+                        "cancellation_reason": reason,
+                        "updated_at": now
+                    }
+                }
+            )
+
+            logger.info(f"Payment {payment_id} cancelled by planner {planner_id}")
+
+            # Return updated payment
+            updated = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+            return self._serialize_payment(updated)
+
+        except Exception as e:
+            logger.error(f"Failed to cancel payment: {str(e)}")
+            raise
+
     async def get_contract_stats(self, planner_id: str) -> Dict[str, Any]:
         """
         Get contract statistics for a planner.

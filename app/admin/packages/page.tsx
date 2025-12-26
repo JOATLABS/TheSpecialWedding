@@ -71,7 +71,10 @@ export default function PackagesPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const fetchPackages = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -90,14 +93,17 @@ export default function PackagesPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch packages');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Packages API error:', response.status, errorData);
+        throw new Error(errorData.detail || `Failed to fetch packages (${response.status})`);
       }
 
       const data = await response.json();
       setPackages(data.packages || []);
     } catch (err) {
-      setError('Failed to load packages');
-      toast.error('Failed to load packages');
+      const message = err instanceof Error ? err.message : 'Failed to load packages';
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }

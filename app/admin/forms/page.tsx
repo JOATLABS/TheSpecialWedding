@@ -328,34 +328,26 @@ export default function FormsManagementPage(): ReactElement {
   }
 
   return (
-    <div className="space-y-10 pb-12">
-      <section className="relative overflow-hidden rounded-[36px] border border-white/40 dark:border-slate-700 bg-gradient-to-br from-white/80 via-white/40 to-wedding-rose/10 dark:from-slate-800 dark:via-slate-800/80 dark:to-slate-900 p-8 shadow-2xl backdrop-blur-xl">
-        <div className="pointer-events-none absolute -top-20 left-1/3 h-64 w-64 rounded-full bg-wedding-rose/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 right-10 h-72 w-72 rounded-full bg-slate-200/40 dark:bg-slate-700/40 blur-3xl" />
+    <div className="space-y-6 pb-12">
+      {/* Header */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Forms</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
+            Create and manage questionnaires, vendor workflows, and feedback forms
+          </p>
+          {forms.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {Object.entries(formCounts).map(([key, count]) => (
+                <FormBadge key={key} tone="neutral">
+                  {key.replace(/_/g, ' ')} · {count}
+                </FormBadge>
+              ))}
+            </div>
+          )}
+        </div>
 
-        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-wedding-rose">Planner form studio</p>
-            <h1 className="max-w-xl text-3xl font-semibold text-wedding-navy dark:text-white md:text-4xl">
-              Curate modern form journeys with glassmorphic polish
-            </h1>
-            <p className="max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-              Build questionnaires, vendor workflows, and couple feedback loops that align with 2025 accessibility and Apple Glass
-              Human Interface fundamentals. Monitor performance with realtime analytics and unread badges that keep your team in
-              sync.
-            </p>
-            {forms.length > 0 && (
-              <div className="flex flex-wrap gap-3">
-                {Object.entries(formCounts).map(([key, count]) => (
-                  <FormBadge key={key} tone="neutral">
-                    {key.replace(/_/g, ' ')} · {count}
-                  </FormBadge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Button
               id="create-form-button"
               onClick={() => setShowCreateModal(true)}
@@ -374,7 +366,6 @@ export default function FormsManagementPage(): ReactElement {
             </Button>
           </div>
         </div>
-      </section>
 
       {error && (
         <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 dark:text-red-300 shadow-sm backdrop-blur">

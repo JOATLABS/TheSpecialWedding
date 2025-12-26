@@ -16,6 +16,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Lazy import to avoid circular dependencies
+_ai_cache_service = None
+
+def _get_ai_cache_service():
+    """Get AI cache service lazily to avoid circular imports."""
+    global _ai_cache_service
+    if _ai_cache_service is None:
+        from app.services.ai_cache_service import ai_cache_service
+        _ai_cache_service = ai_cache_service
+    return _ai_cache_service
+
 class BudgetService:
     def __init__(self):
         self.budget_categories = mongo.db["budget_categories"]
@@ -25,6 +36,16 @@ class BudgetService:
         self.budget_alerts = mongo.db["budget_alerts"]
         self.weddings = mongo.get_weddings_collection()
         self.security_validator = SecurityValidator()
+
+    async def _invalidate_budget_cache(self, wedding_id: str):
+        """Invalidate AI cache when budget data changes."""
+        try:
+            cache_service = _get_ai_cache_service()
+            await cache_service.invalidate_by_feature("budget_insights", wedding_id)
+            logger.debug(f"Invalidated budget_insights cache for wedding {wedding_id}")
+        except Exception as e:
+            # Cache invalidation failures should not break main operations
+            logger.warning(f"Failed to invalidate budget cache: {str(e)}")
 
     # ===== BUDGET CATEGORY MANAGEMENT =====
 
@@ -71,6 +92,9 @@ class BudgetService:
 
             # Check for budget alerts
             await self._check_budget_alerts(wedding_id)
+
+            # Invalidate AI cache for budget insights
+            await self._invalidate_budget_cache(wedding_id)
 
             logger.info(f"Created budget category {category.name} for wedding {wedding_id}")
             return category.dict()
@@ -181,6 +205,9 @@ class BudgetService:
             # Check for alerts
             await self._check_budget_alerts(category["wedding_id"])
 
+            # Invalidate AI cache for budget insights
+            await self._invalidate_budget_cache(category["wedding_id"])
+
             logger.info(f"Updated budget category {category_id}")
             return updated_category
 
@@ -210,6 +237,9 @@ class BudgetService:
 
             # Update wedding totals
             self._update_wedding_budget_total(wedding_id)
+
+            # Invalidate AI cache for budget insights
+            await self._invalidate_budget_cache(wedding_id)
 
             logger.info(f"Deleted budget category {category_id}")
             return True

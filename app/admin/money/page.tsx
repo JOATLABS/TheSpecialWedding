@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
@@ -25,7 +26,9 @@ import {
   CheckCircle,
   Clock,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Zap,
+  ExternalLink
 } from 'lucide-react';
 
 interface PaymentSummary {
@@ -75,12 +78,27 @@ interface CashFlowEvent {
   status: string;
 }
 
+interface SubscriptionSummary {
+  plan_name: string;
+  status: string;
+  billing_interval: string;
+  price: number;
+  current_period_end: string;
+  card_last_four?: string;
+  card_brand?: string;
+  ai_credits_used: number;
+  ai_credits_total: number;
+  weddings_used: number;
+  weddings_total: number;
+}
+
 type TabType = 'overview' | 'incoming' | 'outgoing' | 'timeline';
 type SortField = 'due_date' | 'amount' | 'couple_name';
 type SortOrder = 'asc' | 'desc';
 type PaymentStatus = 'all' | 'scheduled' | 'processing' | 'succeeded' | 'failed' | 'paid_externally';
 
 export default function MoneyDashboard() {
+  const router = useRouter();
   const { token: adminToken } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -103,6 +121,9 @@ export default function MoneyDashboard() {
   const [selectedPayment, setSelectedPayment] = useState<ScheduledPayment | null>(null);
   const [externalPaymentMethod, setExternalPaymentMethod] = useState('cash');
   const [externalPaymentNote, setExternalPaymentNote] = useState('');
+
+  // Subscription state
+  const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
 
   const fetchMoneyData = useCallback(async () => {
     if (!adminToken) return;
@@ -240,19 +261,59 @@ export default function MoneyDashboard() {
         // Non-fatal, continue without vendor data
       }
 
-      // Build cash flow timeline (combining incoming and outgoing)
-      const incomingEvents: CashFlowEvent[] = incomingPayments.map(p => ({
-        id: p.id,
-        date: p.paid_at || p.due_date,
-        type: 'incoming' as const,
-        description: `${p.couple_name} - ${p.name}`,
-        amount: p.amount,
-        status: p.status
-      }));
+      // Fetch subscription summary
+      try {
+        const subRes = await fetch(`${baseUrl}/stripe/subscription`, { headers });
+        if (subRes.ok) {
+          const subData = await subRes.json();
+          if (subData && subData.plan_id) {
+            // Fetch plan details and usage
+            const [plansRes, weddingsRes] = await Promise.all([
+              fetch(`${baseUrl}/public/subscription-plans`),
+              fetch(`${baseUrl}/admin/weddings`, { headers })
+            ]);
 
-      const events = [...incomingEvents];
-      events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setCashFlow(events);
+            let planName = 'Unknown Plan';
+            let aiCreditsTotal = 100;
+            let weddingsTotal = 3;
+            let price = 0;
+
+            if (plansRes.ok) {
+              const plans = await plansRes.json();
+              const plan = plans.find((p: { _id: string; name: string; ai_credits_monthly: number; max_weddings: number; price_monthly: number; price_yearly: number }) => p._id === subData.plan_id);
+              if (plan) {
+                planName = plan.name;
+                aiCreditsTotal = plan.ai_credits_monthly;
+                weddingsTotal = plan.max_weddings;
+                price = subData.billing_interval === 'yearly' ? plan.price_yearly : plan.price_monthly;
+              }
+            }
+
+            let weddingsUsed = 0;
+            if (weddingsRes.ok) {
+              const weddingsData = await weddingsRes.json();
+              weddingsUsed = (weddingsData.weddings || weddingsData || []).length;
+            }
+
+            setSubscription({
+              plan_name: planName,
+              status: subData.status,
+              billing_interval: subData.billing_interval,
+              price,
+              current_period_end: subData.current_period_end,
+              card_last_four: subData.card_last_four,
+              card_brand: subData.card_brand,
+              ai_credits_used: 0, // TODO: Get from AI usage endpoint
+              ai_credits_total: aiCreditsTotal,
+              weddings_used: weddingsUsed,
+              weddings_total: weddingsTotal
+            });
+          }
+        }
+      } catch (subError) {
+        console.error('Error fetching subscription:', subError);
+        // Non-fatal
+      }
 
     } catch (error) {
       console.error('Error fetching money data:', error);
@@ -260,11 +321,25 @@ export default function MoneyDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [adminToken, incomingPayments]);
+  }, [adminToken]);
 
   useEffect(() => {
     fetchMoneyData();
   }, [fetchMoneyData]);
+
+  // Build cash flow timeline when incoming payments change
+  useEffect(() => {
+    const events: CashFlowEvent[] = incomingPayments.map(p => ({
+      id: p.id,
+      date: p.paid_at || p.due_date,
+      type: 'incoming' as const,
+      description: `${p.couple_name} - ${p.name}`,
+      amount: p.amount,
+      status: p.status
+    }));
+    events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setCashFlow(events);
+  }, [incomingPayments]);
 
   // Get unique couple names for filter dropdown
   const uniqueCouples = Array.from(new Set(incomingPayments.map(p => p.couple_name))).sort();
@@ -298,7 +373,7 @@ export default function MoneyDashboard() {
     setActionLoading(payment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/admin/contracts/${payment.contract_id}/payments/${payment.id}/retry`, {
+      const res = await fetch(`${baseUrl}/admin/payments/${payment.id}/retry`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,
@@ -326,7 +401,7 @@ export default function MoneyDashboard() {
     setActionLoading(payment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/admin/contracts/${payment.contract_id}/payments/${payment.id}/cancel`, {
+      const res = await fetch(`${baseUrl}/admin/payments/${payment.id}/cancel`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,
@@ -352,7 +427,7 @@ export default function MoneyDashboard() {
     setActionLoading(selectedPayment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/admin/contracts/${selectedPayment.contract_id}/payments/${selectedPayment.id}/mark-external`, {
+      const res = await fetch(`${baseUrl}/admin/payments/${selectedPayment.id}/mark-paid-externally`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,
@@ -453,7 +528,7 @@ export default function MoneyDashboard() {
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}
-            className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm"
+            className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 text-sm"
           >
             <option value="30d">Last 30 days</option>
             <option value="90d">Last 90 days</option>
@@ -607,8 +682,8 @@ export default function MoneyDashboard() {
                 </div>
               ))}
               {incomingPayments.length === 0 && (
-                <div className="p-8 text-center text-slate-500">
-                  <Users className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+                  <Users className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-500" />
                   <p>No incoming payments yet</p>
                   <p className="text-sm mt-1">Create contracts to receive autopilot payments</p>
                 </div>
@@ -646,8 +721,8 @@ export default function MoneyDashboard() {
                   </div>
                 ))}
               {incomingPayments.filter(p => p.status === 'scheduled').length === 0 && (
-                <div className="p-8 text-center text-slate-500">
-                  <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+                  <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-500" />
                   <p>No upcoming payments</p>
                 </div>
               )}
@@ -684,7 +759,7 @@ export default function MoneyDashboard() {
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as PaymentStatus)}
-                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[140px]"
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 text-sm min-w-[140px]"
                   >
                     <option value="all">All Statuses</option>
                     <option value="scheduled">Scheduled</option>
@@ -701,7 +776,7 @@ export default function MoneyDashboard() {
                   <select
                     value={coupleFilter}
                     onChange={(e) => setCoupleFilter(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[160px]"
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 text-sm min-w-[160px]"
                   >
                     <option value="all">All Couples</option>
                     {uniqueCouples.map(couple => (
@@ -716,7 +791,7 @@ export default function MoneyDashboard() {
                   <select
                     value={sortField}
                     onChange={(e) => setSortField(e.target.value as SortField)}
-                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[140px]"
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 text-sm min-w-[140px]"
                   >
                     <option value="due_date">Due Date</option>
                     <option value="amount">Amount</option>
@@ -730,7 +805,7 @@ export default function MoneyDashboard() {
                   <select
                     value={sortOrder}
                     onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm min-w-[120px]"
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 text-sm min-w-[120px]"
                   >
                     <option value="asc">Ascending</option>
                     <option value="desc">Descending</option>
@@ -862,8 +937,8 @@ export default function MoneyDashboard() {
               </tbody>
             </table>
             {filteredAndSortedPayments.length === 0 && (
-              <div className="p-12 text-center text-slate-500">
-                <Receipt className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+              <div className="p-12 text-center text-slate-500 dark:text-slate-400">
+                <Receipt className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-500" />
                 <p>No payments match your filters</p>
               </div>
             )}
@@ -890,7 +965,7 @@ export default function MoneyDashboard() {
                 <select
                   value={externalPaymentMethod}
                   onChange={(e) => setExternalPaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800"
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200"
                 >
                   <option value="cash">Cash</option>
                   <option value="check">Check</option>
@@ -908,7 +983,7 @@ export default function MoneyDashboard() {
                 <textarea
                   value={externalPaymentNote}
                   onChange={(e) => setExternalPaymentNote(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 resize-none"
+                  className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 resize-none"
                   rows={3}
                   placeholder="e.g., Check #1234, received on 12/25"
                 />
@@ -1002,7 +1077,7 @@ export default function MoneyDashboard() {
                           size="sm"
                           onClick={() => {
                             if (payment.wedding_id) {
-                              window.location.href = `/admin/budget?wedding=${payment.wedding_id}`;
+                              router.push(`/admin/budget?wedding=${payment.wedding_id}`);
                             }
                           }}
                           className="text-slate-600 hover:text-slate-900"
@@ -1016,14 +1091,14 @@ export default function MoneyDashboard() {
               </table>
             </div>
           ) : (
-            <div className="p-12 text-center text-slate-500">
-              <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+            <div className="p-12 text-center text-slate-500 dark:text-slate-400">
+              <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-500" />
               <p>No vendor payments tracked yet</p>
               <p className="text-sm mt-1">Add vendors to your wedding budgets to track payments here</p>
               <Button
                 variant="outline"
                 className="mt-4"
-                onClick={() => window.location.href = '/admin/budget'}
+                onClick={() => router.push('/admin/budget')}
               >
                 Go to Budget
               </Button>
@@ -1080,11 +1155,100 @@ export default function MoneyDashboard() {
               </div>
 
               {cashFlow.length === 0 && (
-                <div className="text-center text-slate-500 py-12">
-                  <Calendar className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                <div className="text-center text-slate-500 dark:text-slate-400 py-12">
+                  <Calendar className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-500" />
                   <p>No transactions yet</p>
                 </div>
               )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Subscription Summary */}
+      {subscription && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <Receipt size={18} className="text-primary-500" />
+              Subscription
+            </h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push('/admin/planner/billing')}
+              className="text-primary-600"
+            >
+              Manage <ExternalLink size={14} className="ml-1" />
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Plan Info */}
+            <div className="space-y-1">
+              <p className="text-sm text-slate-500 dark:text-slate-400">Current Plan</p>
+              <p className="font-semibold text-slate-900 dark:text-white">{subscription.plan_name}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                {formatCurrency(subscription.price)}/{subscription.billing_interval === 'yearly' ? 'year' : 'month'}
+              </p>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                subscription.status === 'active'
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                  : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+              }`}>
+                {subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
+              </span>
+            </div>
+
+            {/* Next Billing */}
+            <div className="space-y-1">
+              <p className="text-sm text-slate-500 dark:text-slate-400">Next Billing</p>
+              <p className="font-semibold text-slate-900 dark:text-white">
+                {subscription.current_period_end ? formatDate(subscription.current_period_end) : '—'}
+              </p>
+              {subscription.card_last_four && (
+                <div className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-400">
+                  <CreditCard size={14} />
+                  {subscription.card_brand || 'Card'} •••• {subscription.card_last_four}
+                </div>
+              )}
+            </div>
+
+            {/* Weddings Usage */}
+            <div className="space-y-1">
+              <p className="text-sm text-slate-500 dark:text-slate-400">Weddings</p>
+              <p className="font-semibold text-slate-900 dark:text-white">
+                {subscription.weddings_used} / {subscription.weddings_total}
+              </p>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                <div
+                  className="bg-primary-500 h-2 rounded-full transition-all"
+                  style={{ width: `${Math.min((subscription.weddings_used / subscription.weddings_total) * 100, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                {subscription.weddings_total - subscription.weddings_used} remaining
+              </p>
+            </div>
+
+            {/* AI Credits Usage */}
+            <div className="space-y-1">
+              <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                <Zap size={14} className="text-yellow-500" />
+                AI Credits
+              </p>
+              <p className="font-semibold text-slate-900 dark:text-white">
+                {subscription.ai_credits_used} / {subscription.ai_credits_total}
+              </p>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                <div
+                  className="bg-yellow-500 h-2 rounded-full transition-all"
+                  style={{ width: `${Math.min((subscription.ai_credits_used / subscription.ai_credits_total) * 100, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                {subscription.ai_credits_total - subscription.ai_credits_used} remaining this month
+              </p>
             </div>
           </div>
         </Card>
@@ -1094,15 +1258,15 @@ export default function MoneyDashboard() {
       <Card className="p-6">
         <h2 className="font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h2>
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={() => window.location.href = '/admin/packages'}>
+          <Button variant="outline" onClick={() => router.push('/admin/packages')}>
             <CreditCard size={18} className="mr-2" />
             Create Package
           </Button>
-          <Button variant="outline" onClick={() => window.location.href = '/admin/vendors'}>
+          <Button variant="outline" onClick={() => router.push('/admin/vendors')}>
             <Building2 size={18} className="mr-2" />
             Manage Vendors
           </Button>
-          <Button variant="outline" onClick={() => window.location.href = '/admin/planner/billing'}>
+          <Button variant="outline" onClick={() => router.push('/admin/planner/billing')}>
             <Receipt size={18} className="mr-2" />
             Subscription Billing
           </Button>

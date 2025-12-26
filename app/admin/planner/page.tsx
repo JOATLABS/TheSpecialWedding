@@ -121,10 +121,10 @@ export default function WeddingPlannerDashboard() {
  <div className="space-y-6">
  {/* Welcome Header */}
  <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+ <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
  Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
  </h1>
-        <p className="text-gray-600 dark:text-gray-400">Here’s what’s happening with your weddings today.</p>
+        <p className="text-slate-600 dark:text-slate-400 mt-1">Here's what's happening with your weddings today.</p>
  </div>
 
  {/* Stats Cards */}

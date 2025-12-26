@@ -6,12 +6,12 @@ type CardProps = {
   children: React.ReactNode;
 };
 
-// Main Card container with glassmorphism and fade-in animation
+// Main Card container with subtle styling
 export function Card({ className = '', children }: CardProps) {
   return (
     <div
       className={
-        `bg-white dark:bg-slate-800 bg-opacity-60 dark:bg-opacity-80 backdrop-blur-lg rounded-2xl shadow-lg p-6 space-y-4 animate-fade-in ${className}`
+        `bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 ${className}`
       }
     >
       {children}

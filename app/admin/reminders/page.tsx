@@ -403,14 +403,12 @@ export default function AdminRemindersPage() {
  console.log('Token exists:', !!token);
 
  return (
- <div className="min-h-screen p-4 sm:p-6">
+ <div className="space-y-6">
  <div className="max-w-7xl mx-auto">
  {/* Header */}
- <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
- <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
- <h1 className="text-3xl font-bold text-white">Reminders & Invites</h1>
- <p className="text-blue-100 dark:text-blue-200 mt-2">Send invitations and reminders via SMS or Email</p>
- </div>
+ <div className="mb-6">
+   <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Reminders & Invites</h1>
+   <p className="text-slate-600 dark:text-slate-400 mt-1">Send invitations and reminders via SMS or Email</p>
  </div>
 
  {/* Wedding Selection and Channel */}

@@ -2,12 +2,39 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from datetime import datetime
 from typing import Optional
+import logging
 from app.utils.token_generator import generate_token
+
+logger = logging.getLogger(__name__)
+
+# Lazy import to avoid circular dependencies
+_ai_cache_service = None
+
+
+def _get_ai_cache_service():
+    """Get AI cache service lazily to avoid circular imports."""
+    global _ai_cache_service
+    if _ai_cache_service is None:
+        from app.services.ai_cache_service import ai_cache_service
+        _ai_cache_service = ai_cache_service
+    return _ai_cache_service
 
 
 class GuestService:
     def __init__(self):
         self.collection = mongo.get_guest_collection()
+
+    async def _invalidate_guest_cache(self, wedding_id: str):
+        """Invalidate AI cache when guest data changes (affects seating optimization)."""
+        try:
+            cache_service = _get_ai_cache_service()
+            # Invalidate all seating-related caches
+            for feature in ["seating_small", "seating_medium", "seating_large"]:
+                await cache_service.invalidate_by_feature(feature, wedding_id)
+            logger.debug(f"Invalidated seating cache for wedding {wedding_id}")
+        except Exception as e:
+            # Cache invalidation failures should not break main operations
+            logger.warning(f"Failed to invalidate guest cache: {str(e)}")
 
     async def get_guest_by_token(self, token: str, wedding_id: str):
         try:
@@ -77,13 +104,19 @@ class GuestService:
             
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Guest not found")
-                
+
             # Return updated guest
             updated_guest = await self.collection.find_one({"_id": ObjectId(guest_id)})
             updated_guest["id"] = str(updated_guest["_id"])
             updated_guest.pop("_id", None)
-            
+
+            # Invalidate AI cache for seating optimization
+            if updated_guest.get("wedding_id"):
+                await self._invalidate_guest_cache(updated_guest["wedding_id"])
+
             return updated_guest
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating guest: {str(e)}")
     
@@ -122,7 +155,12 @@ class GuestService:
             
             # Delete the guest
             guest_result = await self.collection.delete_one({"_id": guest_obj_id})
-            
+
+            # Invalidate AI cache for seating optimization
+            wedding_id = guest.get("wedding_id")
+            if wedding_id:
+                await self._invalidate_guest_cache(wedding_id)
+
             return {
                 "message": "Guest and associated data deleted successfully",
                 "deleted": {
@@ -131,6 +169,8 @@ class GuestService:
                     "plus_ones": plus_one_result.deleted_count
                 }
             }
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error deleting guest: {str(e)}")
 
@@ -189,6 +229,9 @@ class GuestService:
             result = await self.collection.insert_one(doc)
             doc["id"] = str(result.inserted_id)
             doc.pop("_id", None)
+
+            # Invalidate AI cache for seating optimization
+            await self._invalidate_guest_cache(wedding_id)
 
             return doc
         except HTTPException:
