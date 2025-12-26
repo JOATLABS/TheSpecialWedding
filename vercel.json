@@ -1,18 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/cron/:path*",
-      "destination": "/api/cron/:path*"
-    },
-    {
       "source": "/api/:path*",
       "destination": "https://api.thespecialwedding.com/:path*"
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/uptime-check",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
