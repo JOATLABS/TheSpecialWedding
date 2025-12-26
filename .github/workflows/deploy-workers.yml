@@ -49,6 +49,13 @@ jobs:
           cd cloudflare-workers
           wrangler deploy --config backup.wrangler.toml
 
+      - name: Deploy Uptime Cron Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd cloudflare-workers
+          wrangler deploy --config uptime.wrangler.toml
+
       - name: Notify on Success
         if: success()
         run: |
