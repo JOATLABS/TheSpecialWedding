@@ -7,7 +7,7 @@ These models power the Package → Contract → Autopilot payment flow.
 from datetime import datetime, date
 from decimal import Decimal
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, field_serializer
 from app.models.base import MongoModel
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 
@@ -112,7 +112,7 @@ class ContractSignature(BaseModel):
     user_agent: str = Field(..., max_length=500)
 
     @field_serializer('signed_at', when_used='json')
-    def serialize_signed_at(self, value) -> str:
+    def serialize_signed_at(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
 
@@ -131,7 +131,7 @@ class Contract(MongoModel):
     # Access token for public contract viewing
     token: str = Field(..., min_length=32, max_length=64)
 
-    # Couple info (may not be platform users)
+    # TODO - Making sure to remember that the Couple are not the platform users but the customer of the planners)
     couple: CoupleInfo
     wedding_date: Optional[date] = None
     venue: Optional[str] = Field(None, max_length=200)
@@ -219,7 +219,7 @@ class ScheduledPayment(MongoModel):
         return float(value) if value else 0.0
 
     @field_serializer('due_date', when_used='json')
-    def serialize_due_date(self, value) -> str:
+    def serialize_due_date(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
     @field_serializer('last_attempt_at', 'next_retry_at', 'paid_at', 'reminder_sent_at', when_used='json')
@@ -231,7 +231,7 @@ class ScheduledPayment(MongoModel):
 # AI MODELS (for WFA-201, WFA-202)
 # ============================================================================
 
-class AICache(MongoModel):
+class AICache(BaseModel):
     """Cached AI response for deduplication and cost savings."""
     id: str = Field(..., alias="_id")  # ai:{feature}:{tenant_id}:{context_hash}
     feature: str = Field(..., description="AI feature name")
@@ -242,7 +242,7 @@ class AICache(MongoModel):
     hit_count: int = Field(default=0, ge=0)
 
     @field_serializer('expires_at', when_used='json')
-    def serialize_expires_at(self, value) -> str:
+    def serialize_expires_at(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
 
