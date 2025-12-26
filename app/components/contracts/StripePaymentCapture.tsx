@@ -91,7 +91,7 @@ function PaymentCaptureForm({
             const pmData = await response.json();
             setCaptured(true);
             onPaymentMethodCaptured({
-              customerId: setupIntent.customer as string || '',
+              customerId: pmData.customer || '',
               paymentMethodId: paymentMethodId,
               last4: pmData.card?.last4 || '****',
               brand: pmData.card?.brand || 'card'
@@ -100,7 +100,7 @@ function PaymentCaptureForm({
             // Fallback if we can't get details
             setCaptured(true);
             onPaymentMethodCaptured({
-              customerId: setupIntent.customer as string || '',
+              customerId: '',
               paymentMethodId: paymentMethodId,
               last4: '****',
               brand: 'card'

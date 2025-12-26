@@ -9,13 +9,17 @@ import { toast } from 'sonner';
 
 // Helper to get Stripe promise (only initialize once)
 let stripePromise: Promise<Stripe | null> | null = null;
-const getStripePromise = async () => {
+const getStripePromise = (): Promise<Stripe | null> | null => {
   if (!stripePromise) {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/stripe/config`);
-    if (res.ok) {
-      const { publishable_key } = await res.json();
-      stripePromise = loadStripe(publishable_key);
-    }
+    const init = async (): Promise<Stripe | null> => {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/stripe/config`);
+      if (res.ok) {
+        const { publishable_key } = await res.json();
+        return loadStripe(publishable_key);
+      }
+      return null;
+    };
+    stripePromise = init();
   }
   return stripePromise;
 };
@@ -101,8 +105,11 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
   const [stripePromiseState, setStripePromiseState] = useState<Promise<Stripe | null> | null>(null);
 
   useEffect(() => {
-    // 1. Initialize Stripe
-    getStripePromise().then((promise) => setStripePromiseState(promise));
+    // 1. Initialize Stripe - store the promise directly (not awaited)
+    const promise = getStripePromise();
+    if (promise) {
+      setStripePromiseState(promise);
+    }
 
     // 2. Fetch Payment Intent Details (via public endpoint or just assume ID is valid and retrieve via Stripe SDK if possible,
     //    but usually we need client_secret from backend. The ID in URL is payment_intent_id, but we need client_secret to render Elements)
