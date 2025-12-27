@@ -332,7 +332,7 @@ export default function FormsManagementPage(): ReactElement {
       {/* Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Forms</h1>
+          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Forms</h1>
           <p className="text-slate-600 dark:text-slate-400 mt-1">
             Create and manage questionnaires, vendor workflows, and feedback forms
           </p>

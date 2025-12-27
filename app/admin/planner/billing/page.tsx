@@ -651,8 +651,8 @@ export default function PlannerBillingPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Billing</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
+        <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Billing</h1>
+        <p className="text-slate-600 dark:text-slate-400 mt-1">
           Manage your subscription, payment methods, and billing history
         </p>
       </div>

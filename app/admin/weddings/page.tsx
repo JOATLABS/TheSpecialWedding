@@ -417,7 +417,7 @@ export default function AdminWeddingsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">
               {userProfile?.is_root_admin ? 'All Weddings' : 'My Weddings'}
             </h1>
             <p className="text-slate-600 dark:text-slate-400 mt-1">

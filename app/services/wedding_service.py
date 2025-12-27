@@ -3,7 +3,8 @@ from app.core.database import mongo
 from app.models.wedding import WeddingModel
 from typing import List
 from datetime import datetime
-import re
+
+# import re
 
 
 class WeddingService:
@@ -54,14 +55,22 @@ class WeddingService:
 
             # Ensure slug is unique (prevent collisions across planners)
             if "slug" in wedding_dict and wedding_dict["slug"]:
-                wedding_dict["slug"] = await self._ensure_unique_slug(wedding_dict["slug"])
+                wedding_dict["slug"] = await self._ensure_unique_slug(
+                    wedding_dict["slug"]
+                )
 
             await self.collection.insert_one(wedding_dict)
-            return {"message": "Wedding created successfully", "id": wedding_dict["_id"], "slug": wedding_dict.get("slug")}
+            return {
+                "message": "Wedding created successfully",
+                "id": wedding_dict["_id"],
+                "slug": wedding_dict.get("slug"),
+            }
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error creating wedding: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating wedding: {str(e)}"
+            )
 
     async def get_wedding(self, wedding_id: str):
         """Get a wedding by ID"""
@@ -73,7 +82,9 @@ class WeddingService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving wedding: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving wedding: {str(e)}"
+            )
 
     async def get_wedding_by_slug(self, slug: str):
         """Get a wedding by slug"""
@@ -85,7 +96,9 @@ class WeddingService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving wedding: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving wedding: {str(e)}"
+            )
 
     async def list_weddings(self) -> List[dict]:
         """List all weddings"""
@@ -93,15 +106,25 @@ class WeddingService:
             weddings = await self.collection.find().to_list(length=None)
             return weddings
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error listing weddings: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing weddings: {str(e)}"
+            )
 
     async def list_weddings_for_planner(self, planner_email: str) -> List[dict]:
         """List weddings assigned to a specific planner"""
         try:
-            weddings = await self.collection.find({"assigned_planner_email": planner_email}).to_list(length=None)
+            weddings = await self.collection.find(
+                {"assigned_planner_email": planner_email}
+            ).to_list(length=None)
+            # Convert ObjectId to string for JSON serialization
+            for wedding in weddings:
+                wedding["id"] = str(wedding["_id"])
+                wedding["_id"] = str(wedding["_id"])
             return weddings
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error listing weddings for planner: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing weddings for planner: {str(e)}"
+            )
 
     async def list_weddings_with_planner_info(self) -> List[dict]:
         """List all weddings with enhanced planner information for admin interface"""
@@ -127,7 +150,9 @@ class WeddingService:
 
             return weddings
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error listing weddings: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing weddings: {str(e)}"
+            )
 
     async def update_wedding(self, wedding_id: str, wedding_data: dict):
         """Update a wedding"""
@@ -136,8 +161,7 @@ class WeddingService:
             wedding_data.pop("_id", None)
 
             result = await self.collection.update_one(
-                {"_id": wedding_id},
-                {"$set": wedding_data}
+                {"_id": wedding_id}, {"$set": wedding_data}
             )
 
             if result.matched_count == 0:
@@ -147,7 +171,9 @@ class WeddingService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error updating wedding: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating wedding: {str(e)}"
+            )
 
     async def delete_wedding(self, wedding_id: str):
         """Delete a wedding"""
@@ -161,4 +187,6 @@ class WeddingService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error deleting wedding: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting wedding: {str(e)}"
+            )

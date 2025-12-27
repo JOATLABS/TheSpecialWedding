@@ -233,7 +233,7 @@ export default function VendorManagementPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vendor Management</h1>
+          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Vendor Management</h1>
           <p className="text-slate-600 dark:text-slate-400 mt-1">
             Your complete vendor CRM - directory, contracts, and payments in one place
           </p>
