@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Cache Invalidation**: Budget and guest changes invalidate AI cache automatically
 
 - **Enhanced Vendor Management System**: Comprehensive CRM for managing vendors, contracts, and payments
+  - **Linear Tracking**: Epic [JOA-133](https://linear.app/joatlabs/issue/JOA-133) with 10 sub-tasks
+  - **Backend Complete**: JOA-134 to JOA-140 (7 tickets)
+  - **Frontend In Progress**: JOA-141 (Contract Canvas), JOA-142 (Payment Milestones), JOA-143 (VendorPaymentModal)
   - **PDF Contract Upload**: Planners can upload their own contract PDFs instead of using templates
     - S3 storage integration for secure document hosting
     - Full tracking workflow (draft → sent → viewed → signed)

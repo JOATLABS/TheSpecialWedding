@@ -29,6 +29,8 @@ psutil>=5.9.0
 google-api-python-client>=2.111.0
 google-auth-oauthlib>=1.2.0
 google-auth>=2.25.0
+# Google Gemini AI (new SDK - replaces google-generativeai)
+google-genai>=1.0.0
 # Calendar Export (iCal)
 icalendar>=5.0.0
 # Testing

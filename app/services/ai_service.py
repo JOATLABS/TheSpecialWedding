@@ -2,7 +2,17 @@
 AI Service
 
 Centralized AI gateway with credit management, caching, and logging.
-Uses Google Gemini 2.0 Flash for all AI generation.
+Uses Google Gemini API via the new google-genai SDK.
+
+SDK Reference (Context7 validated - https://ai.google.dev/gemini-api/docs):
+- Package: google-genai (pip install google-genai)
+- Import: from google import genai
+- Client: client = genai.Client(api_key=...) or uses GEMINI_API_KEY env var
+- Async: await client.aio.models.generate_content(model='gemini-2.0-flash', contents='...')
+
+Model Strategy:
+- Default: gemini-2.5-flash (best price-performance)
+- Low credits (<10%): gemini-2.0-flash (faster, more economical)
 """
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -141,6 +151,13 @@ Return JSON: {
     }
 }
 
+# Model configuration
+# gemini-2.5-flash: Best price-performance, used when credits are healthy
+# gemini-2.0-flash: Faster and more economical, used when credits are low
+MODEL_PRIMARY = "gemini-2.5-flash"
+MODEL_ECONOMY = "gemini-2.0-flash"
+LOW_CREDIT_THRESHOLD = 0.10  # Switch to economy model when <10% credits remain
+
 
 class InsufficientCreditsError(Exception):
     """Raised when user doesn't have enough AI credits."""
@@ -163,30 +180,45 @@ class AIService:
     - Response caching
     - Usage logging
     - Error handling
+    - Dynamic model selection based on credit levels
+
+    Uses the new google-genai SDK with proper async support.
+    Reference: https://ai.google.dev/gemini-api/docs/migrate
     """
 
     def __init__(self):
         self.usage_log = mongo.db["ai_usage_log"]
         self.subscription_service = SubscriptionService()
-        self._model = None
+        self._client = None
 
-        # Initialize Gemini if API key is available
+        # Initialize Gemini client if API key is available
         if settings.ai_enabled:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=settings.ai_api_key)
-                self._model = genai.GenerativeModel('gemini-2.0-flash-exp')
-                logger.info("Gemini AI initialized successfully with gemini-2.0-flash-exp")
+                from google import genai
+
+                # New SDK: Use Client pattern with explicit API key
+                # The client can also read from GEMINI_API_KEY or GOOGLE_API_KEY env vars
+                api_key = settings.ai_api_key
+                if api_key:
+                    self._client = genai.Client(api_key=api_key)
+                else:
+                    # Try to use environment variable automatically
+                    self._client = genai.Client()
+
+                logger.info(f"Gemini AI initialized successfully. Primary: {MODEL_PRIMARY}, Economy: {MODEL_ECONOMY}")
+            except ImportError as e:
+                logger.error(f"google-genai package not installed: {str(e)}")
+                logger.error("Install with: pip install google-genai")
             except Exception as e:
-                logger.error(f"Failed to initialize Gemini: {str(e)}")
+                logger.error(f"Failed to initialize Gemini client: {str(e)}")
         else:
             logger.warning("AI service disabled - GOOGLE_API_KEY or GEMINI_API_KEY not configured")
 
     def _ensure_initialized(self):
         """Verify AI service is properly configured."""
-        if not self._model:
+        if not self._client:
             raise AIGenerationError(
-                "AI service not initialized. Check GOOGLE_API_KEY configuration."
+                "AI service not initialized. Check GOOGLE_API_KEY configuration and google-genai package."
             )
 
     def get_feature_info(self, feature: str) -> Optional[Dict]:
@@ -203,6 +235,44 @@ class AIService:
             }
             for name, config in AI_FEATURES.items()
         }
+
+    async def _select_model(self, user_id: str) -> str:
+        """
+        Select the appropriate model based on user's credit level.
+
+        Returns gemini-2.5-flash for normal usage, gemini-2.0-flash when
+        credits are running low (<10% remaining).
+        """
+        try:
+            # Get user's subscription and usage stats
+            subscription = await self.subscription_service.get_user_subscription(user_id)
+            if not subscription:
+                return MODEL_PRIMARY
+
+            plan = await self.subscription_service.get_plan(subscription["plan_id"])
+            usage = await self.subscription_service.get_usage_stats(user_id)
+
+            if not plan or not usage:
+                return MODEL_PRIMARY
+
+            # Get AI credits limit and usage
+            limit = plan.get("ai_credits_monthly", 100)
+            used = usage.get("ai_credits_used_month", 0)
+
+            if limit <= 0:
+                return MODEL_PRIMARY
+
+            remaining_ratio = (limit - used) / limit
+
+            if remaining_ratio <= LOW_CREDIT_THRESHOLD:
+                logger.info(f"User {user_id} has {remaining_ratio*100:.1f}% credits remaining, using economy model")
+                return MODEL_ECONOMY
+
+            return MODEL_PRIMARY
+
+        except Exception as e:
+            logger.warning(f"Error checking credit level for model selection: {e}")
+            return MODEL_PRIMARY
 
     async def check_credits(self, user_id: str, feature: str) -> Dict[str, Any]:
         """
@@ -251,7 +321,7 @@ class AIService:
             force_refresh: Bypass cache if True
 
         Returns:
-            Dict with response, cached status, and credits_used
+            Dict with response, cached status, credits_used, and model_used
         """
         self._ensure_initialized()
 
@@ -276,12 +346,14 @@ class AIService:
                     feature=feature,
                     credits_used=0,
                     latency_ms=0,
-                    status="cached"
+                    status="cached",
+                    model="cached"
                 )
                 return {
                     "response": cached["response"],
                     "cached": True,
-                    "credits_used": 0
+                    "credits_used": 0,
+                    "model_used": "cached"
                 }
 
         # Check credits before making API call
@@ -293,9 +365,12 @@ class AIService:
                 available=credits_check["credits_remaining"]
             )
 
+        # Select model based on credit level
+        model = await self._select_model(user_id)
+
         # Make AI API call
         try:
-            response = await self._call_gemini(feature, prompt, context)
+            response = await self._call_gemini(feature, prompt, context, model)
             latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
             # Deduct credits
@@ -322,13 +397,15 @@ class AIService:
                 feature=feature,
                 credits_used=feature_config["credits"],
                 latency_ms=latency_ms,
-                status="success"
+                status="success",
+                model=model
             )
 
             return {
                 "response": response,
                 "cached": False,
-                "credits_used": feature_config["credits"]
+                "credits_used": feature_config["credits"],
+                "model_used": model
             }
 
         except InsufficientCreditsError:
@@ -344,6 +421,7 @@ class AIService:
                 credits_used=0,
                 latency_ms=latency_ms,
                 status="error",
+                model=model,
                 error=str(e)
             )
 
@@ -354,9 +432,15 @@ class AIService:
         self,
         feature: str,
         prompt: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        model: str
     ) -> Dict[str, Any]:
-        """Make the actual Gemini API call."""
+        """
+        Make the actual Gemini API call using the new SDK with proper async.
+
+        Uses: await client.aio.models.generate_content()
+        Reference: https://ai.google.dev/gemini-api/docs/migrate
+        """
         try:
             feature_config = AI_FEATURES.get(feature, {})
             system_prompt = feature_config.get("system_prompt", "")
@@ -365,18 +449,25 @@ class AIService:
             context_str = json.dumps(context, indent=2, default=str)
             full_prompt = f"{system_prompt}\n\nContext:\n{context_str}\n\nRequest:\n{prompt}"
 
-            # Generate response (sync call wrapped for async)
-            response = self._model.generate_content(full_prompt)
+            # Use async client.aio.models.generate_content for proper async
+            # This is the new SDK pattern that doesn't block the event loop
+            response = await self._client.aio.models.generate_content(
+                model=model,
+                contents=full_prompt
+            )
+
+            # Extract text from response
+            response_text = response.text
 
             # Try to parse as JSON if expected
             try:
-                return json.loads(response.text)
+                return json.loads(response_text)
             except json.JSONDecodeError:
                 # Return as text if not valid JSON
-                return {"text": response.text, "raw": True}
+                return {"text": response_text, "raw": True}
 
         except Exception as e:
-            logger.error(f"Gemini API error: {str(e)}")
+            logger.error(f"Gemini API error (model={model}): {str(e)}")
             raise
 
     async def _log_usage(
@@ -387,6 +478,7 @@ class AIService:
         credits_used: int,
         latency_ms: float,
         status: str,
+        model: str,
         error: Optional[str] = None
     ):
         """Log AI usage for analytics and auditing."""
@@ -398,6 +490,7 @@ class AIService:
                 "credits_used": credits_used,
                 "latency_ms": latency_ms,
                 "status": status,
+                "model": model,
                 "error": error,
                 "created_at": datetime.utcnow()
             }
@@ -486,12 +579,31 @@ class AIService:
 
         feature_breakdown = await self.usage_log.aggregate(feature_pipeline).to_list(length=None)
 
+        # Model usage breakdown
+        model_pipeline = [
+            {"$match": {**query, "model": {"$ne": "cached"}}},
+            {
+                "$group": {
+                    "_id": "$model",
+                    "total_requests": {"$sum": 1},
+                    "avg_latency": {"$avg": "$latency_ms"}
+                }
+            }
+        ]
+
+        model_breakdown = await self.usage_log.aggregate(model_pipeline).to_list(length=None)
+
         # Total summary
         total_credits = sum(f.get("total_credits", 0) for f in feature_breakdown)
         total_requests = sum(f.get("total_requests", 0) for f in feature_breakdown)
 
         return {
             "period_days": period_days,
+            "models": {
+                "primary": MODEL_PRIMARY,
+                "economy": MODEL_ECONOMY,
+                "low_credit_threshold": f"{LOW_CREDIT_THRESHOLD*100:.0f}%"
+            },
             "summary": {
                 "total_credits_used": total_credits,
                 "total_requests": total_requests,
@@ -500,6 +612,7 @@ class AIService:
             "daily_usage": daily_usage,
             "top_tenants": top_tenants,
             "feature_breakdown": feature_breakdown,
+            "model_breakdown": model_breakdown,
             "generated_at": datetime.utcnow().isoformat()
         }
 
