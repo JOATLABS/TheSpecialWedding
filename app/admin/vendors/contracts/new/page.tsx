@@ -127,7 +127,8 @@ export default function ContractCanvasPage() {
         });
         if (response.ok) {
           const data = await response.json();
-          setWeddings(data.weddings || []);
+          // Backend returns list directly, not wrapped in {weddings: [...]}
+          setWeddings(Array.isArray(data) ? data : data.weddings || []);
         }
       } catch (error) {
         console.error('Error fetching weddings:', error);
