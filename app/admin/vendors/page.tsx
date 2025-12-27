@@ -22,6 +22,7 @@ import {
 } from '@/services/vendorManagementApi';
 import { toast } from 'sonner';
 import { VendorPaymentModal } from './components/VendorPaymentModal';
+import { PaymentMilestones } from './components/PaymentMilestones';
 
 // Tab type
 type TabId = 'overview' | 'directory' | 'contracts' | 'payments';
@@ -62,7 +63,11 @@ export default function VendorManagementPage() {
 
   // Payment Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedVendorForPayment, setSelectedVendorForPayment] = useState<{id: string, name: string} | null>(null);
+  const [selectedVendorForPayment, setSelectedVendorForPayment] = useState<{
+    id: string;
+    name: string;
+    email: string;
+  } | null>(null);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -495,14 +500,15 @@ export default function VendorManagementPage() {
                       <div className="flex items-center gap-2">
                          <button
                            onClick={() => {
-                             // Assuming vendor._id is what we need, but typically we need the User ID for payment.
-                             // For now, passing vendor._id and we'll handle resolution in modal or backend if needed.
-                             // Ideally vendor profile should link to a User ID.
-                             setSelectedVendorForPayment({ id: vendor._id, name: vendor.business_name });
+                             setSelectedVendorForPayment({
+                               id: vendor._id,
+                               name: vendor.business_name,
+                               email: vendor.email,
+                             });
                              setShowPaymentModal(true);
                            }}
                            className="text-gray-400 hover:text-green-500 transition-colors"
-                           title="Pay Vendor"
+                           title="Create Payment Link"
                          >
                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -630,52 +636,21 @@ export default function VendorManagementPage() {
         )}
 
         {/* Payments Tab */}
-        {activeTab === 'payments' && (
+        {activeTab === 'payments' && token && (
           <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Payment Milestones</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Payment Milestones</h3>
+              <p className="text-sm text-gray-500">
+                Track and manage all vendor payment milestones across your contracts
+              </p>
+            </div>
 
-            {milestones.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">No payment milestones</h3>
-                <p className="text-gray-500 dark:text-gray-400">
-                  Payment milestones will appear here once you create contracts.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {milestones.map((milestone) => (
-                  <div
-                    key={milestone._id}
-                    className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-xl"
-                  >
-                    <div>
-                      <div className="font-medium text-gray-900 dark:text-gray-100">{milestone.description}</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {milestone.vendor_name} - Due {new Date(milestone.due_date).toLocaleDateString()}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="font-semibold text-gray-900 dark:text-gray-100">
-                          ${milestone.amount.toLocaleString()}
-                        </div>
-                        {milestone.paid_amount > 0 && (
-                          <div className="text-xs text-green-600">${milestone.paid_amount.toLocaleString()} paid</div>
-                        )}
-                      </div>
-                      <span className={`px-3 py-1 text-sm rounded-full ${getPaymentStatusColor(milestone.status)}`}>
-                        {milestone.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <PaymentMilestones
+              token={token}
+              plannerEmail={userProfile?.email}
+              plannerName={userProfile?.first_name ? `${userProfile.first_name} ${userProfile.last_name || ''}`.trim() : userProfile?.email}
+              onMilestoneUpdated={fetchData}
+            />
           </div>
         )}
       </div>
@@ -809,6 +784,13 @@ export default function VendorManagementPage() {
           onClose={() => setShowPaymentModal(false)}
           vendorId={selectedVendorForPayment.id}
           vendorName={selectedVendorForPayment.name}
+          vendorEmail={selectedVendorForPayment.email}
+          plannerEmail={userProfile?.email}
+          plannerName={userProfile?.first_name ? `${userProfile.first_name} ${userProfile.last_name || ''}`.trim() : userProfile?.email}
+          onPaymentLinkCreated={() => {
+            fetchData();
+            setShowPaymentModal(false);
+          }}
         />
       )}
     </div>
