@@ -22,6 +22,7 @@ from app.core.settings import settings
 from app.core.database import mongo
 from app.services.ai_cache_service import ai_cache_service
 from app.services.subscription_service import SubscriptionService
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +37,65 @@ AI_FEATURES = {
         "ttl_hours": 48,
         "cacheable": True,
         "description": "Generate budget insights and recommendations",
-        "system_prompt": """You are a wedding budget advisor. Analyze the budget data
-and provide 3 specific, actionable insights. Focus on:
-1. Categories that are over/under typical amounts for this wedding size
-2. Potential savings opportunities
-3. Allocation recommendations
+        "system_prompt": """You are an expert wedding budget advisor with deep knowledge of global wedding traditions and regional pricing.
 
-Return JSON: {"insights": [{"type": "warning|tip|success", "title": "...", "detail": "..."}]}"""
+IMPORTANT CONTEXT FACTORS:
+1. **Cultural Style** - Different cultures have different wedding traditions:
+   - Nigerian weddings: Traditional ceremony (engagement/introduction), church wedding, reception often as separate multi-day events. Aso-oke fabrics, live bands, owambe style. Typically higher food/entertainment costs.
+   - Indian weddings: Multi-day events (Sangeet, Mehndi, Ceremony, Reception). Heavy decor, elaborate catering. Can be 2-3x Western wedding costs.
+   - Jewish weddings: Chuppah, Rabbi, ketubah, specific ceremony elements. Kosher catering requirements can increase food costs 30-50%.
+   - Mexican weddings: Madrinas/padrinos system (sponsors), mariachi, traditional elements. Often larger guest counts.
+   - Western/American: Typically single-day ceremony + reception.
+   - Each culture has unique vendor needs (cultural DJs, specific caterers, traditional attire makers).
+
+2. **Geographic Region** - Pricing varies dramatically:
+   - NYC/LA/SF: 2-3x national average
+   - Oklahoma City: ~80% of national average
+   - Lagos, Nigeria: Different currency, but similar % allocations
+   - Rural areas: Often 40-60% of urban costs
+   - Destination weddings: Add 20-30% for logistics
+
+3. **Season** - Peak vs off-season:
+   - Peak (May-October, December holidays): Premium pricing
+   - Off-peak (January-March, November): 15-30% savings possible
+
+4. **Guest Count** - Scale affects costs:
+   - Per-person costs for catering/rentals
+   - Venue minimums/maximums
+   - Nigerian/Indian weddings often have 300-500+ guests
+
+Analyze the budget considering these cultural, regional, and seasonal factors. A $15K planner fee is normal for Nigerian weddings in the US. A $5K photography budget might be appropriate in Oklahoma but inadequate in LA.
+
+Return ONLY valid JSON in this exact format:
+{"insights": [
+  {"category": "Category Name", "insight": "The main observation", "recommendation": "Actionable advice", "priority": "high"},
+  {"category": "Category Name", "insight": "The main observation", "recommendation": "Actionable advice", "priority": "medium"},
+  {"category": "Category Name", "insight": "The main observation", "recommendation": "Actionable advice", "priority": "low"}
+]}
+
+Priority levels: "high" for urgent budget issues or missing essentials, "medium" for optimization suggestions, "low" for nice-to-know tips.
+Category should match one of the budget categories when applicable, or be "Overall" for general insights.
+Be specific about cultural considerations in your recommendations."""
+    },
+    "chat": {
+        "credits": 1,
+        "ttl_hours": 0,
+        "cacheable": False,
+        "description": "Interactive AI chat assistant for wedding planning",
+        "system_prompt": """You are an expert wedding planning assistant with deep knowledge of:
+- Wedding budgets and vendor pricing across different regions
+- Cultural wedding traditions (Nigerian, Indian, Jewish, Mexican, Western, etc.)
+- Timeline planning and task management
+- Vendor selection and negotiation
+- Guest management and seating
+- Wedding etiquette and customs
+
+You are conversational and helpful. Answer questions directly and concisely.
+When discussing budgets, consider the cultural context and regional pricing.
+When you don't know something specific, say so rather than making up information.
+Keep responses focused and actionable - wedding planners are busy!
+
+If the user provides wedding context (cultural style, location, guest count, budget), use it to give more tailored advice."""
     },
     "seating_small": {
         "credits": 2,
@@ -169,8 +222,69 @@ class InsufficientCreditsError(Exception):
 
 
 class AIGenerationError(Exception):
-    """Raised when AI generation fails."""
-    pass
+    """Base class for AI generation failures."""
+    def __init__(self, message: str, error_code: str = "ai_error", retry_after: Optional[int] = None):
+        self.message = message
+        self.error_code = error_code
+        self.retry_after = retry_after  # Seconds until retry is allowed (for rate limits)
+        super().__init__(message)
+
+
+class AIRateLimitError(AIGenerationError):
+    """Raised when hitting Gemini API rate limits."""
+    def __init__(self, retry_after: int = 60):
+        super().__init__(
+            message="AI service is temporarily busy. Please wait a moment and try again.",
+            error_code="rate_limit",
+            retry_after=retry_after
+        )
+
+
+class AIContentBlockedError(AIGenerationError):
+    """Raised when Gemini safety filters block the content."""
+    def __init__(self, reason: str = "content policy"):
+        super().__init__(
+            message=f"The request was blocked due to {reason}. Please modify your request and try again.",
+            error_code="content_blocked"
+        )
+
+
+class AIServiceUnavailableError(AIGenerationError):
+    """Raised when Gemini service is unavailable."""
+    def __init__(self):
+        super().__init__(
+            message="AI service is temporarily unavailable. Please try again in a few minutes.",
+            error_code="service_unavailable",
+            retry_after=300
+        )
+
+
+class AIQuotaExceededError(AIGenerationError):
+    """Raised when API quota is exceeded."""
+    def __init__(self):
+        super().__init__(
+            message="AI service quota has been reached. Please contact support or try again tomorrow.",
+            error_code="quota_exceeded"
+        )
+
+
+class AIInvalidResponseError(AIGenerationError):
+    """Raised when AI returns an invalid/unparseable response."""
+    def __init__(self):
+        super().__init__(
+            message="AI returned an unexpected response. Please try again.",
+            error_code="invalid_response"
+        )
+
+
+class AITimeoutError(AIGenerationError):
+    """Raised when AI request times out."""
+    def __init__(self):
+        super().__init__(
+            message="AI request timed out. Please try again with a simpler request.",
+            error_code="timeout",
+            retry_after=10
+        )
 
 
 class AIService:
@@ -188,7 +302,9 @@ class AIService:
 
     def __init__(self):
         self.usage_log = mongo.db["ai_usage_log"]
+        self.low_credit_alerts = mongo.db["ai_low_credit_alerts"]  # Track sent alerts
         self.subscription_service = SubscriptionService()
+        self.notification_service = NotificationService()
         self._client = None
 
         # Initialize Gemini client if API key is available
@@ -236,43 +352,65 @@ class AIService:
             for name, config in AI_FEATURES.items()
         }
 
-    async def _select_model(self, user_id: str) -> str:
+    async def _select_model_and_check_credits(self, user_id: str) -> Dict[str, Any]:
         """
-        Select the appropriate model based on user's credit level.
+        Select the appropriate model based on user's credit level and return credit status.
 
-        Returns gemini-2.5-flash for normal usage, gemini-2.0-flash when
-        credits are running low (<10% remaining).
+        Returns dict with:
+        - model: gemini-2.5-flash (normal) or gemini-2.0-flash (low credits)
+        - credits_remaining: number of credits left
+        - credits_limit: monthly limit
+        - credits_percent: percentage remaining
+        - low_credits_warning: alert message if below threshold (for planner to see)
         """
+        result = {
+            "model": MODEL_PRIMARY,
+            "credits_remaining": None,
+            "credits_limit": None,
+            "credits_percent": None,
+            "low_credits_warning": None
+        }
+
         try:
             # Get user's subscription and usage stats
             subscription = await self.subscription_service.get_user_subscription(user_id)
             if not subscription:
-                return MODEL_PRIMARY
+                return result
 
             plan = await self.subscription_service.get_plan(subscription["plan_id"])
             usage = await self.subscription_service.get_usage_stats(user_id)
 
             if not plan or not usage:
-                return MODEL_PRIMARY
+                return result
 
             # Get AI credits limit and usage
             limit = plan.get("ai_credits_monthly", 100)
             used = usage.get("ai_credits_used_month", 0)
+            remaining = limit - used
+
+            result["credits_remaining"] = remaining
+            result["credits_limit"] = limit
 
             if limit <= 0:
-                return MODEL_PRIMARY
+                return result
 
-            remaining_ratio = (limit - used) / limit
+            remaining_ratio = remaining / limit
+            result["credits_percent"] = round(remaining_ratio * 100, 1)
 
             if remaining_ratio <= LOW_CREDIT_THRESHOLD:
-                logger.info(f"User {user_id} has {remaining_ratio*100:.1f}% credits remaining, using economy model")
-                return MODEL_ECONOMY
+                result["model"] = MODEL_ECONOMY
+                result["low_credits_warning"] = (
+                    f"You have {remaining} AI credits remaining ({result['credits_percent']}% of your monthly limit). "
+                    f"Consider upgrading your plan or waiting for credits to reset."
+                )
+                # Send in-app notification (only once per billing cycle)
+                await self._send_low_credit_notification(user_id, remaining, limit)
 
-            return MODEL_PRIMARY
+            return result
 
         except Exception as e:
             logger.warning(f"Error checking credit level for model selection: {e}")
-            return MODEL_PRIMARY
+            return result
 
     async def check_credits(self, user_id: str, feature: str) -> Dict[str, Any]:
         """
@@ -365,8 +503,9 @@ class AIService:
                 available=credits_check["credits_remaining"]
             )
 
-        # Select model based on credit level
-        model = await self._select_model(user_id)
+        # Select model based on credit level and get credit status for warnings
+        credit_status = await self._select_model_and_check_credits(user_id)
+        model = credit_status["model"]
 
         # Make AI API call
         try:
@@ -401,12 +540,20 @@ class AIService:
                 model=model
             )
 
-            return {
+            result = {
                 "response": response,
                 "cached": False,
                 "credits_used": feature_config["credits"],
-                "model_used": model
+                "model_used": model,
+                "credits_remaining": credit_status["credits_remaining"],
+                "credits_percent": credit_status["credits_percent"]
             }
+
+            # Include warning for frontend to display if credits are low
+            if credit_status["low_credits_warning"]:
+                result["warning"] = credit_status["low_credits_warning"]
+
+            return result
 
         except InsufficientCreditsError:
             raise
@@ -440,7 +587,17 @@ class AIService:
 
         Uses: await client.aio.models.generate_content()
         Reference: https://ai.google.dev/gemini-api/docs/migrate
+
+        Handles specific error types:
+        - Rate limiting (429) → AIRateLimitError
+        - Content blocked → AIContentBlockedError
+        - Service unavailable (503) → AIServiceUnavailableError
+        - Quota exceeded (429 with quota message) → AIQuotaExceededError
+        - Timeout → AITimeoutError
+        - Invalid response → AIInvalidResponseError
         """
+        import asyncio
+
         try:
             feature_config = AI_FEATURES.get(feature, {})
             system_prompt = feature_config.get("system_prompt", "")
@@ -451,24 +608,146 @@ class AIService:
 
             # Use async client.aio.models.generate_content for proper async
             # This is the new SDK pattern that doesn't block the event loop
-            response = await self._client.aio.models.generate_content(
-                model=model,
-                contents=full_prompt
-            )
+            # Add timeout protection (60 seconds)
+            try:
+                response = await asyncio.wait_for(
+                    self._client.aio.models.generate_content(
+                        model=model,
+                        contents=full_prompt
+                    ),
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Gemini API timeout (model={model})")
+                raise AITimeoutError()
+
+            # Check if response was blocked by safety filters
+            if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                feedback = response.prompt_feedback
+                if hasattr(feedback, 'block_reason') and feedback.block_reason:
+                    reason = str(feedback.block_reason).lower().replace('_', ' ')
+                    logger.warning(f"Content blocked by Gemini: {reason}")
+                    raise AIContentBlockedError(reason=reason)
+
+            # Check if we got any candidates
+            if not response.candidates or len(response.candidates) == 0:
+                logger.error("Gemini returned no candidates")
+                raise AIInvalidResponseError()
+
+            # Check candidate finish reason
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'finish_reason'):
+                finish_reason = str(candidate.finish_reason).upper()
+                if finish_reason == "SAFETY":
+                    raise AIContentBlockedError(reason="safety filters")
+                elif finish_reason == "RECITATION":
+                    raise AIContentBlockedError(reason="recitation policy")
 
             # Extract text from response
-            response_text = response.text
+            try:
+                response_text = response.text
+            except (AttributeError, ValueError) as e:
+                logger.error(f"Failed to extract text from Gemini response: {e}")
+                raise AIInvalidResponseError()
+
+            if not response_text or not response_text.strip():
+                logger.error("Gemini returned empty response")
+                raise AIInvalidResponseError()
+
+            # Log the raw response for debugging
+            logger.info(f"Gemini raw response (first 500 chars): {response_text[:500]}")
 
             # Try to parse as JSON if expected
             try:
-                return json.loads(response_text)
-            except json.JSONDecodeError:
+                # Sometimes Gemini wraps JSON in markdown code blocks
+                text_to_parse = response_text.strip()
+                if text_to_parse.startswith("```json"):
+                    text_to_parse = text_to_parse[7:]  # Remove ```json
+                if text_to_parse.startswith("```"):
+                    text_to_parse = text_to_parse[3:]  # Remove ```
+                if text_to_parse.endswith("```"):
+                    text_to_parse = text_to_parse[:-3]  # Remove trailing ```
+                text_to_parse = text_to_parse.strip()
+
+                parsed = json.loads(text_to_parse)
+                logger.info(f"Successfully parsed JSON with keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}")
+                return parsed
+            except json.JSONDecodeError as e:
                 # Return as text if not valid JSON
+                logger.warning(f"Failed to parse as JSON: {e}. Returning raw text.")
                 return {"text": response_text, "raw": True}
 
-        except Exception as e:
-            logger.error(f"Gemini API error (model={model}): {str(e)}")
+        except (AIRateLimitError, AIContentBlockedError, AIServiceUnavailableError,
+                AIQuotaExceededError, AITimeoutError, AIInvalidResponseError):
+            # Re-raise our custom errors
             raise
+
+        except Exception as e:
+            # Try to import and handle SDK-specific errors
+            # Reference: https://github.com/googleapis/python-genai - errors.APIError
+            try:
+                from google.genai import errors as genai_errors
+                if isinstance(e, genai_errors.APIError):
+                    error_code = getattr(e, 'code', None)
+                    error_message = getattr(e, 'message', str(e))
+                    logger.error(f"Gemini APIError (code={error_code}): {error_message}")
+
+                    # Handle specific error codes per Context7 docs
+                    if error_code == 429:
+                        if "quota" in error_message.lower():
+                            raise AIQuotaExceededError()
+                        raise AIRateLimitError()
+                    elif error_code == 503:
+                        raise AIServiceUnavailableError()
+                    elif error_code in (401, 403):
+                        raise AIGenerationError(
+                            message="AI service authentication failed. Please contact support.",
+                            error_code="auth_error"
+                        )
+                    elif error_code == 400:
+                        if "safety" in error_message.lower() or "blocked" in error_message.lower():
+                            raise AIContentBlockedError()
+                        raise AIGenerationError(
+                            message=f"Invalid AI request: {error_message}",
+                            error_code="invalid_request"
+                        )
+                    elif error_code == 404:
+                        raise AIGenerationError(
+                            message="AI model not available. Please try again later.",
+                            error_code="model_not_found"
+                        )
+            except ImportError:
+                pass  # SDK not installed, fall through to generic handling
+
+            # Fallback: Parse error string for common patterns
+            error_str = str(e).lower()
+            logger.error(f"Gemini API error (model={model}): {str(e)}")
+
+            if "429" in error_str or "rate limit" in error_str or "resource exhausted" in error_str:
+                if "quota" in error_str:
+                    raise AIQuotaExceededError()
+                raise AIRateLimitError()
+
+            if "503" in error_str or "service unavailable" in error_str or "overloaded" in error_str:
+                raise AIServiceUnavailableError()
+
+            if "401" in error_str or "403" in error_str or "invalid api key" in error_str:
+                raise AIGenerationError(
+                    message="AI service authentication failed. Please contact support.",
+                    error_code="auth_error"
+                )
+
+            if "timeout" in error_str:
+                raise AITimeoutError()
+
+            if "safety" in error_str or "blocked" in error_str:
+                raise AIContentBlockedError()
+
+            # Generic error for unhandled cases
+            raise AIGenerationError(
+                message="AI service encountered an unexpected error. Please try again.",
+                error_code="unknown_error"
+            )
 
     async def _log_usage(
         self,
@@ -497,6 +776,65 @@ class AIService:
             await self.usage_log.insert_one(log_entry)
         except Exception as e:
             logger.error(f"Failed to log AI usage: {str(e)}")
+
+    async def _send_low_credit_notification(
+        self,
+        user_id: str,
+        credits_remaining: int,
+        credits_limit: int
+    ):
+        """
+        Send in-app notification when AI credits are running low.
+        Only sends once per billing cycle to avoid spamming the planner.
+        """
+        try:
+            # Get current billing period (first of the month)
+            now = datetime.utcnow()
+            billing_period = now.strftime("%Y-%m")
+
+            # Check if we already sent a notification this billing cycle
+            existing_alert = await self.low_credit_alerts.find_one({
+                "user_id": user_id,
+                "billing_period": billing_period
+            })
+
+            if existing_alert:
+                # Already notified this billing cycle
+                return
+
+            # Record that we're sending this notification
+            await self.low_credit_alerts.insert_one({
+                "user_id": user_id,
+                "billing_period": billing_period,
+                "credits_remaining": credits_remaining,
+                "credits_limit": credits_limit,
+                "created_at": now
+            })
+
+            # Create in-app notification for the planner
+            percent_remaining = round((credits_remaining / credits_limit) * 100, 1)
+            await self.notification_service.create_notification(
+                notification_data={
+                    "title": "AI Credits Running Low",
+                    "message": (
+                        f"You have {credits_remaining} AI credits remaining ({percent_remaining}% of your {credits_limit} monthly limit). "
+                        f"To continue using AI features without interruption, consider upgrading your plan. "
+                        f"Your credits will reset at the start of your next billing cycle."
+                    ),
+                    "type": "warning",
+                    "target_audience": "wedding_planners",
+                    "user_id": user_id,  # Target this specific planner
+                    "is_dismissible": True,
+                    "priority": "high"
+                },
+                created_by="system"
+            )
+
+            logger.info(f"Sent low credit notification to user {user_id}: {credits_remaining}/{credits_limit} credits remaining")
+
+        except Exception as e:
+            # Don't fail the AI request if notification fails
+            logger.error(f"Failed to send low credit notification: {str(e)}")
 
     async def get_usage_metrics(
         self,
@@ -602,7 +940,7 @@ class AIService:
             "models": {
                 "primary": MODEL_PRIMARY,
                 "economy": MODEL_ECONOMY,
-                "low_credit_threshold": f"{LOW_CREDIT_THRESHOLD*100:.0f}%"
+                "low_credit_threshold": f"{LOW_CREDIT_THRESHOLD * 100:.0f}%"
             },
             "summary": {
                 "total_credits_used": total_credits,

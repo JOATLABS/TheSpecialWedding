@@ -19,6 +19,7 @@ import {
   type VendorAssignment
 } from '../../services/vendorManagementApi';
 import { formatDate } from '@/utils/dateFormat';
+import { Sparkles, X, Loader2, AlertCircle, Lightbulb } from 'lucide-react';
 import type {
   BudgetCategory,
   BudgetSummary,
@@ -34,6 +35,20 @@ interface Wedding {
   couple_names: string;
   date: string;
   slug: string;
+}
+
+interface AIInsight {
+  category?: string;
+  insight: string;
+  recommendation?: string;
+  priority?: 'high' | 'medium' | 'low';
+}
+
+interface AIInsightsResponse {
+  insights: AIInsight[];
+  cached: boolean;
+  credits_used: number;
+  warning?: string;
 }
 
 export default function BudgetDashboard() {
@@ -73,6 +88,68 @@ export default function BudgetDashboard() {
   const [vendorDirectory, setVendorDirectory] = useState<VendorProfile[]>([]);
   const [vendorAssignments, setVendorAssignments] = useState<VendorAssignment[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState<string>('');
+
+  // AI Budget Insights
+  const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
+  const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
+  const [aiInsightsError, setAiInsightsError] = useState<string>('');
+  const [showAiInsights, setShowAiInsights] = useState(false);
+  const [aiCreditsWarning, setAiCreditsWarning] = useState<string>('');
+
+  const fetchAiInsights = useCallback(async (forceRefresh = false) => {
+    if (!token || !selectedWedding) return;
+
+    setAiInsightsLoading(true);
+    setAiInsightsError('');
+    setAiCreditsWarning('');
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const url = new URL(`${baseUrl}/admin/ai/weddings/${selectedWedding}/budget-insights`);
+      if (forceRefresh) {
+        url.searchParams.set('force_refresh', 'true');
+      }
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 402) {
+          throw new Error(errorData.detail?.message || 'Insufficient AI credits. Please upgrade your plan.');
+        } else if (response.status === 429) {
+          throw new Error(errorData.detail?.message || 'AI service is busy. Please try again in a moment.');
+        } else if (response.status === 503) {
+          throw new Error(errorData.detail?.message || 'AI service is temporarily unavailable.');
+        }
+        throw new Error(errorData.detail?.message || errorData.detail || 'Failed to generate AI insights');
+      }
+
+      const data: AIInsightsResponse = await response.json();
+      setAiInsights(data.insights || []);
+      setShowAiInsights(true);
+
+      if (data.warning) {
+        setAiCreditsWarning(data.warning);
+      }
+
+      if (data.cached) {
+        toast.info('Showing cached insights. Click refresh for new analysis.');
+      } else {
+        toast.success(`AI insights generated (${data.credits_used} credits used)`);
+      }
+    } catch (err: any) {
+      const message = err.message || 'Failed to get AI insights';
+      setAiInsightsError(message);
+      toast.error(message);
+    } finally {
+      setAiInsightsLoading(false);
+    }
+  }, [token, selectedWedding]);
 
   const fetchWeddings = useCallback(async () => {
     if (!token) {
@@ -414,6 +491,20 @@ export default function BudgetDashboard() {
           </p>
         </div>
         <div className="flex gap-3">
+          {selectedWedding && (
+            <Button
+              onClick={() => fetchAiInsights(false)}
+              disabled={aiInsightsLoading}
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+            >
+              {aiInsightsLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              AI Insights
+            </Button>
+          )}
           <Button onClick={() => exportBudgetReport('pdf')}>
             Export PDF
           </Button>
@@ -447,6 +538,103 @@ export default function BudgetDashboard() {
       {/* Budget Summary */}
       {budgetSummary && (
         <BudgetSummaryCard summary={budgetSummary} />
+      )}
+
+      {/* AI Budget Insights Panel */}
+      {showAiInsights && (
+        <Card className="p-6 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border-purple-200 dark:border-purple-800">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <h2 className="text-lg font-semibold text-purple-900 dark:text-purple-100">
+                AI Budget Insights
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => fetchAiInsights(true)}
+                disabled={aiInsightsLoading}
+                className="text-sm px-3 py-1"
+              >
+                {aiInsightsLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  'Refresh'
+                )}
+              </Button>
+              <button
+                onClick={() => setShowAiInsights(false)}
+                className="p-1 hover:bg-purple-200 dark:hover:bg-purple-800 rounded"
+              >
+                <X className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              </button>
+            </div>
+          </div>
+
+          {/* Credits Warning */}
+          {aiCreditsWarning && (
+            <div className="mb-4 p-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800 dark:text-amber-200">{aiCreditsWarning}</p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {aiInsightsError && (
+            <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg">
+              <p className="text-red-800 dark:text-red-200">{aiInsightsError}</p>
+            </div>
+          )}
+
+          {/* Insights List */}
+          {!aiInsightsError && aiInsights.length > 0 && (
+            <div className="space-y-4">
+              {aiInsights.map((insight, index) => (
+                <div
+                  key={index}
+                  className={`p-4 rounded-lg border ${
+                    insight.priority === 'high'
+                      ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                      : insight.priority === 'medium'
+                      ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                      : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Lightbulb className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                      insight.priority === 'high'
+                        ? 'text-red-600 dark:text-red-400'
+                        : insight.priority === 'medium'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-purple-600 dark:text-purple-400'
+                    }`} />
+                    <div className="flex-1">
+                      {insight.category && (
+                        <span className="inline-block px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-200 rounded mb-2">
+                          {insight.category}
+                        </span>
+                      )}
+                      <p className="text-slate-800 dark:text-slate-200">{insight.insight}</p>
+                      {insight.recommendation && (
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 italic">
+                          Recommendation: {insight.recommendation}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* No Insights */}
+          {!aiInsightsError && aiInsights.length === 0 && !aiInsightsLoading && (
+            <div className="text-center py-8 text-slate-600 dark:text-slate-400">
+              <Lightbulb className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No insights available yet. Add more budget data to get AI-powered recommendations.</p>
+            </div>
+          )}
+        </Card>
       )}
 
       {/* Categories Section */}

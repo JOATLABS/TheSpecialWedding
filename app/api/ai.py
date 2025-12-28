@@ -13,7 +13,17 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import logging
 
-from app.services.ai_service import ai_service, InsufficientCreditsError, AIGenerationError
+from app.services.ai_service import (
+    ai_service,
+    InsufficientCreditsError,
+    AIGenerationError,
+    AIRateLimitError,
+    AIContentBlockedError,
+    AIServiceUnavailableError,
+    AIQuotaExceededError,
+    AITimeoutError,
+    AIInvalidResponseError
+)
 from app.dependencies.auth_extended import require_admin_or_planner
 from app.core.database import mongo
 from bson import ObjectId
@@ -21,6 +31,103 @@ from bson import ObjectId
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["AI"])
+
+
+def handle_ai_error(e: Exception):
+    """
+    Convert AI service errors to appropriate HTTP responses.
+
+    Error types and their HTTP status codes:
+    - InsufficientCreditsError → 402 (Payment Required)
+    - AIRateLimitError → 429 (Too Many Requests)
+    - AIQuotaExceededError → 429 (Too Many Requests)
+    - AIServiceUnavailableError → 503 (Service Unavailable)
+    - AITimeoutError → 504 (Gateway Timeout)
+    - AIContentBlockedError → 400 (Bad Request)
+    - AIInvalidResponseError → 502 (Bad Gateway)
+    - AIGenerationError → 500 (Internal Server Error)
+    """
+    if isinstance(e, InsufficientCreditsError):
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "insufficient_credits",
+                "message": e.message,
+                "required": e.required,
+                "available": e.available
+            }
+        )
+    elif isinstance(e, AIRateLimitError):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": e.error_code,
+                "message": e.message,
+                "retry_after": e.retry_after
+            },
+            headers={"Retry-After": str(e.retry_after)} if e.retry_after else None
+        )
+    elif isinstance(e, AIQuotaExceededError):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": e.error_code,
+                "message": e.message
+            }
+        )
+    elif isinstance(e, AIServiceUnavailableError):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": e.error_code,
+                "message": e.message,
+                "retry_after": e.retry_after
+            },
+            headers={"Retry-After": str(e.retry_after)} if e.retry_after else None
+        )
+    elif isinstance(e, AITimeoutError):
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "error": e.error_code,
+                "message": e.message,
+                "retry_after": e.retry_after
+            }
+        )
+    elif isinstance(e, AIContentBlockedError):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": e.error_code,
+                "message": e.message
+            }
+        )
+    elif isinstance(e, AIInvalidResponseError):
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": e.error_code,
+                "message": e.message
+            }
+        )
+    elif isinstance(e, AIGenerationError):
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": e.error_code,
+                "message": e.message
+            }
+        )
+    else:
+        # Unknown error
+        logger.error(f"Unexpected AI error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "unknown_error",
+                "message": "An unexpected error occurred. Please try again."
+            }
+        )
 
 
 # =========================================================================
@@ -64,10 +171,57 @@ class PricingSuggestionRequest(BaseModel):
 # UTILITY FUNCTIONS
 # =========================================================================
 
-async def get_wedding_by_id(wedding_id: str) -> Optional[Dict]:
-    """Get wedding data by ID."""
+def get_season_from_date(date_str: Optional[str]) -> Optional[str]:
+    """
+    Derive the wedding season from the date string.
+    Returns: 'peak', 'off_peak', or None
+    """
+    if not date_str:
+        return None
     try:
-        wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(wedding_id)})
+        from datetime import datetime as dt
+        # Parse YYYY-MM-DD format
+        wedding_date = dt.strptime(date_str, "%Y-%m-%d")
+        month = wedding_date.month
+
+        # Peak season: May-October plus December holidays
+        if month in [5, 6, 7, 8, 9, 10, 12]:
+            return "peak"
+        # Off-peak: January-April, November
+        else:
+            return "off_peak"
+    except Exception:
+        return None
+
+
+def detect_cultural_style_from_events(events: List[Dict]) -> Optional[str]:
+    """
+    Try to infer cultural style from event types if not explicitly set.
+    """
+    if not events:
+        return None
+
+    event_types = [e.get("type", "").lower() for e in events]
+
+    # Nigerian weddings often have "traditional" ceremony
+    if "traditional" in event_types and "white_wedding" in event_types:
+        return "nigerian"
+
+    # Could add more detection logic for other cultures
+    return None
+
+
+async def get_wedding_by_id(wedding_id: str) -> Optional[Dict]:
+    """Get wedding data by ID. Handles both ObjectId and string IDs."""
+    try:
+        # Try finding by string _id first (e.g., "wedding_1765336536839")
+        wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
+        if not wedding:
+            # Try ObjectId if string lookup failed
+            try:
+                wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(wedding_id)})
+            except Exception:
+                pass
         if wedding:
             wedding["id"] = str(wedding["_id"])
         return wedding
@@ -76,13 +230,27 @@ async def get_wedding_by_id(wedding_id: str) -> Optional[Dict]:
 
 
 async def get_budget_data(wedding_id: str) -> Dict[str, Any]:
-    """Get budget data for a wedding."""
+    """Get budget data for a wedding from budget_categories collection."""
     try:
-        budget = await mongo.db["budgets"].find_one({"wedding_id": wedding_id})
-        if not budget:
+        # Get budget categories from the budget_categories collection
+        categories_cursor = mongo.db["budget_categories"].find({"wedding_id": wedding_id})
+        categories_list = await categories_cursor.to_list(length=100)
+
+        if not categories_list:
             return {"categories": [], "total_budget": 0, "total_spent": 0}
 
-        categories = budget.get("categories", [])
+        # Format categories for AI consumption
+        categories = []
+        for cat in categories_list:
+            categories.append({
+                "name": cat.get("name", "Unknown"),
+                "budget": cat.get("budgeted_amount", 0),
+                "spent": cat.get("actual_spent", 0),
+                "status": cat.get("payment_status", "pending"),
+                "priority": cat.get("priority", 3),
+                "percentage": cat.get("percentage_of_total", 0)
+            })
+
         total_budget = sum(c.get("budget", 0) for c in categories)
         total_spent = sum(c.get("spent", 0) for c in categories)
 
@@ -135,7 +303,7 @@ async def get_budget_insights(
     Cost: 3 credits
     """
     try:
-        user_id = str(current_user["_id"])
+        user_id = str(current_user.user_data.get("_id", ""))
 
         # Verify wedding exists and user has access
         wedding = await get_wedding_by_id(wedding_id)
@@ -152,21 +320,49 @@ async def get_budget_insights(
                 "credits_used": 0
             }
 
-        # Build context
+        # Build context with cultural and regional awareness
+        venue = wedding.get("venue")
+        location = None
+        if isinstance(venue, dict):
+            location = venue.get("city")
+        elif isinstance(venue, str):
+            location = venue
+        location = location or wedding.get("region") or wedding.get("city") or wedding.get("location")
+
+        # Get cultural style - explicit or inferred from events
+        cultural_style = wedding.get("cultural_style")
+        if not cultural_style:
+            events = wedding.get("events", [])
+            cultural_style = detect_cultural_style_from_events(events)
+
+        # Get season from wedding date
+        wedding_date = wedding.get("date")
+        season = get_season_from_date(wedding_date)
+
         context = {
             "wedding_id": wedding_id,
-            "wedding_date": wedding.get("date"),
+            "wedding_date": wedding_date,
             "guest_count": wedding.get("guest_count", 100),
-            "location": wedding.get("venue", {}).get("city") or wedding.get("city"),
+            "location": location,
+            "cultural_style": cultural_style or "western",  # Default to western if not specified
+            "season": season or "unknown",
+            "total_budget": wedding.get("total_budget"),
             "budget": budget_data
         }
 
-        # Generate insights
+        # Generate insights with cultural context in prompt
+        cultural_prompt = f"Analyze this {cultural_style or 'wedding'} budget"
+        if location:
+            cultural_prompt += f" for a wedding in {location}"
+        if season:
+            cultural_prompt += f" ({season.replace('_', '-')} season)"
+        cultural_prompt += ". Provide culturally-aware insights considering typical costs and traditions for this wedding style."
+
         result = await ai_service.generate(
             user_id=user_id,
             tenant_id=wedding_id,
             feature="budget_insights",
-            prompt="Analyze this wedding budget and provide insights.",
+            prompt=cultural_prompt,
             context=context,
             force_refresh=force_refresh
         )
@@ -177,18 +373,10 @@ async def get_budget_insights(
             "credits_used": result["credits_used"]
         }
 
-    except InsufficientCreditsError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "insufficient_credits",
-                "message": e.message,
-                "required": e.required,
-                "available": e.available
-            }
-        )
-    except AIGenerationError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating budget insights: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate budget insights")
@@ -213,7 +401,7 @@ async def optimize_seating(
     - 150+ guests: 10 credits
     """
     try:
-        user_id = str(current_user["_id"])
+        user_id = str(current_user.user_data.get("_id", ""))
 
         # Verify wedding exists
         wedding = await get_wedding_by_id(wedding_id)
@@ -258,18 +446,10 @@ async def optimize_seating(
             "credits_used": result["credits_used"]
         }
 
-    except InsufficientCreditsError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "insufficient_credits",
-                "message": e.message,
-                "required": e.required,
-                "available": e.available
-            }
-        )
-    except AIGenerationError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error optimizing seating: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to optimize seating")
@@ -291,7 +471,7 @@ async def draft_communication(
     Cost: 1 credit (not cached - context-dependent)
     """
     try:
-        user_id = str(current_user["_id"])
+        user_id = str(current_user.user_data.get("_id", ""))
 
         valid_types = ["follow_up", "reminder", "thank_you", "progress_update"]
         if request.communication_type not in valid_types:
@@ -334,18 +514,10 @@ async def draft_communication(
             "credits_used": result["credits_used"]
         }
 
-    except InsufficientCreditsError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "insufficient_credits",
-                "message": e.message,
-                "required": e.required,
-                "available": e.available
-            }
-        )
-    except AIGenerationError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error drafting communication: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to draft communication")
@@ -370,7 +542,7 @@ async def generate_progress_report(
     Cost: 2 credits
     """
     try:
-        user_id = str(current_user["_id"])
+        user_id = str(current_user.user_data.get("_id", ""))
 
         # Verify wedding exists
         wedding = await get_wedding_by_id(wedding_id)
@@ -431,18 +603,10 @@ async def generate_progress_report(
             "credits_used": result["credits_used"]
         }
 
-    except InsufficientCreditsError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "insufficient_credits",
-                "message": e.message,
-                "required": e.required,
-                "available": e.available
-            }
-        )
-    except AIGenerationError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating progress report: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate progress report")
@@ -463,7 +627,7 @@ async def suggest_pricing(
     Cost: 3 credits
     """
     try:
-        user_id = str(current_user["_id"])
+        user_id = str(current_user.user_data.get("_id", ""))
 
         if not request.services:
             raise HTTPException(status_code=400, detail="At least one service is required")
@@ -500,18 +664,10 @@ async def suggest_pricing(
             "credits_used": result["credits_used"]
         }
 
-    except InsufficientCreditsError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "insufficient_credits",
-                "message": e.message,
-                "required": e.required,
-                "available": e.available
-            }
-        )
-    except AIGenerationError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error suggesting pricing: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to suggest pricing")
@@ -541,7 +697,7 @@ async def check_ai_credits(
     """
     Check AI credit balance and feature availability.
     """
-    user_id = str(current_user["_id"])
+    user_id = str(current_user.user_data.get("_id", ""))
 
     if feature:
         try:
@@ -572,7 +728,7 @@ async def get_ai_usage(
     """
     Get AI usage metrics for the current user.
     """
-    user_id = str(current_user["_id"])
+    user_id = str(current_user.user_data.get("_id", ""))
 
     metrics = await ai_service.get_usage_metrics(
         period_days=period_days,
@@ -580,3 +736,112 @@ async def get_ai_usage(
     )
 
     return metrics
+
+
+# =========================================================================
+# INTERACTIVE AI CHAT (Conversational Assistant)
+# =========================================================================
+
+class ChatMessageRequest(BaseModel):
+    message: str
+    wedding_id: Optional[str] = None
+    conversation_history: Optional[List[Dict[str, str]]] = None  # [{role: "user"/"assistant", content: "..."}]
+
+
+class ChatResponse(BaseModel):
+    response: str
+    credits_used: int
+    credits_remaining: Optional[int] = None
+    warning: Optional[str] = None
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_with_ai(
+    request: ChatMessageRequest,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Interactive chat with the AI wedding planning assistant.
+
+    Features:
+    - Maintains conversation context via conversation_history
+    - Optionally scoped to a specific wedding for contextual answers
+    - 1 credit per message
+    - Culturally-aware responses when wedding context is provided
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Build context with wedding data if provided
+        context = {
+            "user_message": request.message,
+            "planner_email": current_user.email
+        }
+
+        # Add conversation history for context
+        if request.conversation_history:
+            # Only include last 10 messages to avoid token limits
+            context["conversation_history"] = request.conversation_history[-10:]
+
+        # If wedding_id provided, add wedding context
+        if request.wedding_id:
+            wedding = await get_wedding_by_id(request.wedding_id)
+            if wedding:
+                # Get budget data for context
+                budget_data = await get_budget_data(request.wedding_id)
+
+                context["wedding"] = {
+                    "couple_names": wedding.get("couple_names"),
+                    "date": wedding.get("date"),
+                    "guest_count": wedding.get("guest_count"),
+                    "cultural_style": wedding.get("cultural_style", "western"),
+                    "region": wedding.get("region") or wedding.get("venue"),
+                    "total_budget": wedding.get("total_budget"),
+                    "budget_summary": {
+                        "total_budgeted": budget_data.get("total_budget", 0),
+                        "total_spent": budget_data.get("total_spent", 0),
+                        "remaining": budget_data.get("remaining", 0),
+                        "categories_count": len(budget_data.get("categories", []))
+                    }
+                }
+
+        # Build the prompt with conversation context
+        prompt = request.message
+        if request.conversation_history:
+            history_text = "\n".join([
+                f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+                for msg in request.conversation_history[-10:]
+            ])
+            prompt = f"Previous conversation:\n{history_text}\n\nUser's new message: {request.message}"
+
+        # Generate response
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=request.wedding_id or user_id,
+            feature="chat",
+            prompt=prompt,
+            context=context,
+            force_refresh=True  # Chat is never cached
+        )
+
+        # Extract response text
+        response_content = result["response"]
+        if isinstance(response_content, dict):
+            response_text = response_content.get("text", str(response_content))
+        else:
+            response_text = str(response_content)
+
+        return ChatResponse(
+            response=response_text,
+            credits_used=result["credits_used"],
+            credits_remaining=result.get("credits_remaining"),
+            warning=result.get("warning")
+        )
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error in AI chat: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to process chat message")
