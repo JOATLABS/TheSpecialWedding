@@ -165,29 +165,46 @@ export const WeddingDarkModeToggle: React.FC<WeddingDarkModeToggleProps> = ({
         </div>
       )}
 
-      {/* Toggle button */}
-      <button
-        ref={buttonRef}
-        onClick={toggleDarkMode}
-        disabled={isAnimating}
-        className={`
-          relative w-14 h-14 rounded-full
-          bg-white/90 dark:bg-gray-800/90
-          backdrop-blur-md shadow-lg
-          border-2 transition-all duration-300
-          hover:scale-110 hover:shadow-xl
-          active:scale-95
-          disabled:cursor-wait
-          overflow-hidden
-        `}
-        style={{
-          borderColor: colors.primary,
-          boxShadow: isAnimating
-            ? `0 0 30px ${colors.primary}80`
-            : `0 4px 20px rgba(0,0,0,0.15)`,
-        }}
-        aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      >
+      {/* Toggle button with label */}
+      <div className="flex items-center gap-3">
+        {/* Label */}
+        <span
+          className="
+            hidden sm:block
+            text-sm font-medium
+            bg-white/90 dark:bg-gray-800/90
+            backdrop-blur-md
+            px-3 py-2 rounded-full
+            shadow-lg border-2
+            transition-all duration-300
+          "
+          style={{ borderColor: colors.primary }}
+        >
+          {isDark ? '☀️ Light' : '🌙 Dark'}
+        </span>
+        <button
+          ref={buttonRef}
+          onClick={toggleDarkMode}
+          disabled={isAnimating}
+          className={`
+            relative w-14 h-14 rounded-full
+            bg-white/90 dark:bg-gray-800/90
+            backdrop-blur-md shadow-lg
+            border-2 transition-all duration-300
+            hover:scale-110 hover:shadow-xl
+            active:scale-95
+            disabled:cursor-wait
+            overflow-hidden
+            ring-4 ring-white/50 dark:ring-gray-700/50
+          `}
+          style={{
+            borderColor: colors.primary,
+            boxShadow: isAnimating
+              ? `0 0 30px ${colors.primary}80`
+              : `0 4px 20px rgba(0,0,0,0.25), 0 0 0 4px ${colors.primary}20`,
+          }}
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
         {/* Sun icon */}
         <div
           className={`
@@ -224,6 +241,7 @@ export const WeddingDarkModeToggle: React.FC<WeddingDarkModeToggleProps> = ({
           </svg>
         </div>
       </button>
+      </div>
     </div>
   );
 };

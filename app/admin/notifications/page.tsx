@@ -95,13 +95,29 @@ export default function NotificationsPage() {
           setSentNotifications([]);
         }
       } else {
-        // Planner view: fetch received notifications
+        // Planner view: fetch platform announcements + activity notifications
         try {
-          const response = await apiRequest<{ notifications: PlannerNotification[] }>('/admin/planner/notifications', 'GET');
-          setPlannerNotifications(response?.notifications ?? []);
+          // Platform announcements (from root admin)
+          const platformResponse = await apiRequest<{ notifications: PlannerNotification[] }>('/admin/user/notifications', 'GET');
+
+          // Activity notifications (form submissions, RSVPs, etc.) - will be implemented
+          let activityNotifications: PlannerNotification[] = [];
+          try {
+            const activityResponse = await apiRequest<{ notifications: PlannerNotification[] }>('/admin/planner/activity-notifications', 'GET');
+            activityNotifications = activityResponse?.notifications ?? [];
+          } catch {
+            // Activity notifications endpoint not yet implemented - that's okay
+          }
+
+          // Combine and sort by date (newest first)
+          const combined = [
+            ...(platformResponse?.notifications ?? []).map(n => ({ ...n, source: 'platform' as const })),
+            ...activityNotifications.map(n => ({ ...n, source: 'activity' as const }))
+          ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+          setPlannerNotifications(combined);
         } catch (error) {
-          console.warn('Planner notifications endpoint not available');
-          // Generate sample notifications for now
+          console.warn('Error fetching notifications:', error);
           setPlannerNotifications([]);
         }
       }

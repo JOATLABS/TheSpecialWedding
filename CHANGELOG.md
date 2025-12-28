@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Planner Activity Notifications System**: Real-time activity notifications for wedding planners
+  - **New MongoDB Collection**: `planner_notifications` for storing activity events
+  - **Model** (`app/models/planner_notification.py`):
+    - Notification types: `form_submission`, `rsvp_update`, `guest_message`, `payment_received`, `payment_failed`, `contract_signed`, `vendor_response`, `reminder`, `system`
+    - Priority levels: low, medium, high
+    - Deep links to relevant pages (action_url)
+  - **Service** (`app/services/planner_notification_service.py`):
+    - CRUD operations for planner notifications
+    - Trigger helpers: `notify_form_submission()`, `notify_rsvp_update()`, `notify_payment_received()`, `notify_payment_failed()`, `notify_contract_signed()`, `notify_vendor_response()`
+  - **API** (`app/api/planner_notifications.py`):
+    - `GET /admin/planner/activity-notifications` - List notifications with filtering
+    - `GET /admin/planner/activity-notifications/count` - Get unread count
+    - `PUT /admin/planner/activity-notifications/{id}/read` - Mark as read
+    - `PUT /admin/planner/activity-notifications/read-all` - Mark all as read
+    - `DELETE /admin/planner/activity-notifications/{id}` - Delete notification
+  - **Event Triggers**: Automatic notifications on:
+    - RSVP submission → "John Doe confirmed attendance for 2 guests"
+    - Form submission → "Jane Smith submitted a Contact Form"
+    - Payment received → "$500.00 received from Customer"
+    - Contract signed → "John Smith signed the contract"
+  - **Bell Count**: Combined platform announcements + activity notifications
+  - **Notifications Page**: Shows both platform and activity notifications, sorted by date
+
+- **Multi-Tenant Frontend Isolation**: Proper role-based access control
+  - **Platform Page Consolidation**: Merged `/admin/platform/metrics` and `/admin/platform/errors` into single `/admin/platform` with tabs (Health, Errors, Performance, Backups)
+  - **Root Admin Guards**: Added frontend access guards to `/admin/metrics`, `/admin/users`, `/admin/platform`
+  - **Best Practices**: Toast notifications, loading states, `Promise.allSettled` for batch operations
+
 - **Wedding Finance Autopilot (WFA)**: Automated payment collection system for wedding planners
   - **Package → Contract → Autopilot Flow**: Define packages once, couples sign, money flows automatically
   - **Data Models** (`app/models/autopilot.py`):

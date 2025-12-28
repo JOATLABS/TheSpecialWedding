@@ -17,25 +17,44 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const { userProfile, token } = useAdmin();
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
-  // Fetch notification count
+  // Fetch combined notification count (platform announcements + activity notifications)
   const fetchNotificationCount = useCallback(async () => {
     if (!token) return;
 
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/admin/user/notifications/count`,
-        {
+      // Fetch both counts in parallel
+      const [platformRes, activityRes] = await Promise.allSettled([
+        // Platform announcements (from root admin)
+        fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-        }
-      );
+        }),
+        // Activity notifications (RSVPs, forms, payments - for planners)
+        fetch(`${getApiBaseUrl()}/admin/planner/activity-notifications/count`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+      ]);
 
-      if (response.ok) {
-        const data = await response.json();
-        setUnreadCount(data.unread || 0);
+      let totalUnread = 0;
+
+      // Add platform notification count
+      if (platformRes.status === 'fulfilled' && platformRes.value.ok) {
+        const platformData = await platformRes.value.json();
+        totalUnread += platformData.unread || 0;
       }
+
+      // Add activity notification count (may fail for root admin - that's okay)
+      if (activityRes.status === 'fulfilled' && activityRes.value.ok) {
+        const activityData = await activityRes.value.json();
+        totalUnread += activityData.unread || 0;
+      }
+
+      setUnreadCount(totalUnread);
     } catch (error) {
       console.error('Failed to fetch notification count:', error);
     }

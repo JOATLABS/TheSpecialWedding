@@ -260,6 +260,18 @@ class ContractService:
                             result,
                             planner.get("email")
                         )
+
+                        # Send activity notification to planner's bell
+                        try:
+                            from app.services.planner_notification_service import planner_notification_service
+                            await planner_notification_service.notify_contract_signed(
+                                planner_id=planner.get("email"),
+                                wedding_id=contract.get("wedding_id", ""),
+                                signer_name=signature_name,
+                                contract_id=str(contract.get("_id", ""))
+                            )
+                        except Exception as notif_err:
+                            logger.warning(f"Activity notification failed: {str(notif_err)}")
             except Exception as e:
                 logger.warning(f"Email notification failed (non-blocking): {str(e)}")
 

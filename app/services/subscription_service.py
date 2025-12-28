@@ -341,13 +341,22 @@ class SubscriptionService:
             elif resource_type == "ai_credits":
                 current = usage.get("ai_credits_used_month", 0)
                 limit = plan.get("ai_credits_monthly", 10)
+                remaining = max(0, limit - current)
                 if current + requested_amount > limit:
                     return {
                         "allowed": False,
                         "current_usage": current,
                         "limit": limit,
+                        "remaining": remaining,
                         "message": f"AI credits limit exceeded. Plan allows {limit} credits per month, you have used {current}"
                     }
+                # Return early with remaining and limit for ai_credits
+                return {
+                    "allowed": True,
+                    "current_usage": current,
+                    "limit": limit,
+                    "remaining": remaining
+                }
 
 
             elif resource_type == "staff_seats":
