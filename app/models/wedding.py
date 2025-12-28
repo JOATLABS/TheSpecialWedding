@@ -97,6 +97,12 @@ class WeddingModel(BaseModel):
     guest_count: Optional[int] = Field(None, description="Total number of guests invited", ge=0)
     total_budget: Optional[float] = Field(None, description="Total wedding budget amount", ge=0)
     venue: Optional[str] = Field(None, description="Main venue name or location")
+    # Cultural and regional context
+    cultural_style: Optional[str] = Field(
+        None,
+        description="Cultural wedding style: nigerian, indian, jewish, mexican, chinese, korean, filipino, greek, italian, western, interfaith, or custom"
+    )
+    region: Optional[str] = Field(None, description="Geographic region for pricing context (e.g., 'Oklahoma City, OK', 'Lagos, Nigeria')")
     # Billing fields
     last_billed_at: Optional[datetime] = Field(None, description="Timestamp of last metered usage report")
     billed_period: Optional[str] = Field(None, description="YYYY-MM period when last metered")

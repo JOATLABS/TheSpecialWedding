@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
+import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { Toaster } from 'sonner';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
@@ -88,6 +89,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
            {children}
         </main>
       </motion.div>
+
+      {/* AI Chat Widget - Available on all admin pages */}
+      <AIChatWidget />
 
       <Toaster position="top-right" richColors theme="system" />
     </div>

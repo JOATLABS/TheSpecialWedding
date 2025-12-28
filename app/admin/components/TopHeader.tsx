@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Menu, Sun, Moon, Bell, User } from 'lucide-react';
 import Link from 'next/link';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface TopHeaderProps {
   onMenuClick: () => void;
@@ -13,7 +14,40 @@ interface TopHeaderProps {
 
 export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const { theme, setTheme, resolvedTheme } = useTheme();
-  const { userProfile } = useAdmin();
+  const { userProfile, token } = useAdmin();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Fetch notification count
+  const fetchNotificationCount = useCallback(async () => {
+    if (!token) return;
+
+    try {
+      const response = await fetch(
+        `${getApiBaseUrl()}/admin/user/notifications/count`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setUnreadCount(data.unread || 0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch notification count:', error);
+    }
+  }, [token]);
+
+  // Fetch on mount and every 60 seconds
+  useEffect(() => {
+    fetchNotificationCount();
+
+    const interval = setInterval(fetchNotificationCount, 60000);
+    return () => clearInterval(interval);
+  }, [fetchNotificationCount]);
 
   const toggleTheme = () => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
@@ -58,9 +92,14 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
           <Link
             href="/admin/notifications"
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
+            aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
           >
             <Bell size={20} className="text-slate-600 dark:text-slate-400" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-primary-500 rounded-full" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full shadow-sm">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Link>
 
           {/* User Profile */}
