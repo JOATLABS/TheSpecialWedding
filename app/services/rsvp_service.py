@@ -4,6 +4,9 @@ from app.models.rsvp import RSVPModel
 from app.models.plus_one import PlusOneModel
 from bson import ObjectId
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RSVPService:
@@ -11,6 +14,7 @@ class RSVPService:
         self.guest_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
+        self.wedding_collection = mongo.db["weddings"]
 
     async def submit_rsvp(self, token: str, rsvp_data: RSVPModel):
         try:
@@ -101,9 +105,56 @@ class RSVPService:
                         {"$set": {"plus_one_submitted": True}}
                     )
 
+            # Notify planner about the RSVP update
+            await self._notify_planner_rsvp(
+                wedding_id=wedding_id_str,
+                guest_name=guest.get("name", "A guest"),
+                status="confirmed" if rsvp_data.attending else "declined",
+                guest_count=1 + len(rsvp_data.plus_ones) if rsvp_data.plus_ones else 1,
+                guest_id=guest_id_str
+            )
+
             return {"message": "RSVP submitted successfully"}
 
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error submitting RSVP: {}".format(str(e)))
+
+    async def _notify_planner_rsvp(
+        self,
+        wedding_id: str,
+        guest_name: str,
+        status: str,
+        guest_count: int = 1,
+        guest_id: str = None
+    ):
+        """Notify the planner about an RSVP update"""
+        try:
+            # Get wedding to find planner
+            wedding = await self.wedding_collection.find_one({"wedding_id": wedding_id})
+            if not wedding:
+                logger.warning(f"Wedding {wedding_id} not found for RSVP notification")
+                return
+
+            planner_email = wedding.get("assigned_planner_email")
+            if not planner_email:
+                logger.debug(f"No planner assigned to wedding {wedding_id}")
+                return
+
+            # Import here to avoid circular imports
+            from app.services.planner_notification_service import planner_notification_service
+
+            await planner_notification_service.notify_rsvp_update(
+                planner_id=planner_email,
+                wedding_id=wedding_id,
+                guest_name=guest_name,
+                status=status,
+                guest_count=guest_count,
+                guest_id=guest_id
+            )
+            logger.info(f"RSVP notification sent to {planner_email} for wedding {wedding_id}")
+
+        except Exception as e:
+            # Don't fail the RSVP submission if notification fails
+            logger.error(f"Failed to send RSVP notification: {str(e)}")

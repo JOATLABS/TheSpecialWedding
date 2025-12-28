@@ -24,7 +24,7 @@ from app.services.ai_service import (
     AITimeoutError,
     AIInvalidResponseError
 )
-from app.dependencies.auth_extended import require_admin_or_planner
+from app.dependencies.auth_extended import require_admin_or_planner, check_wedding_access
 from app.core.database import mongo
 from bson import ObjectId
 
@@ -305,7 +305,14 @@ async def get_budget_insights(
     try:
         user_id = str(current_user.user_data.get("_id", ""))
 
-        # Verify wedding exists and user has access
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
+
+        # Verify wedding exists
         wedding = await get_wedding_by_id(wedding_id)
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
@@ -402,6 +409,13 @@ async def optimize_seating(
     """
     try:
         user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
 
         # Verify wedding exists
         wedding = await get_wedding_by_id(wedding_id)
@@ -543,6 +557,13 @@ async def generate_progress_report(
     """
     try:
         user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
 
         # Verify wedding exists
         wedding = await get_wedding_by_id(wedding_id)
@@ -783,8 +804,15 @@ async def chat_with_ai(
             # Only include last 10 messages to avoid token limits
             context["conversation_history"] = request.conversation_history[-10:]
 
-        # If wedding_id provided, add wedding context
+        # If wedding_id provided, verify access and add wedding context
         if request.wedding_id:
+            # Verify planner has access to this wedding
+            if not await check_wedding_access(current_user, request.wedding_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You don't have access to this wedding"
+                )
+
             wedding = await get_wedding_by_id(request.wedding_id)
             if wedding:
                 # Get budget data for context

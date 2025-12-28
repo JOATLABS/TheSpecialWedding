@@ -31,6 +31,7 @@ class FormService:
         self.forms_collection = mongo.get_forms_collection()
         self.responses_collection = mongo.db["form_responses"]
         self.distributions_collection = mongo.db["form_distributions"]
+        self.wedding_collection = mongo.db["weddings"]
         self.email_service = ResendEmailService()
 
     @staticmethod
@@ -575,6 +576,13 @@ class FormService:
                     f"email={submitted_by_email}, ip={safe_ip}"
                 )
 
+                # Notify planner about the form submission
+                await self._notify_planner_form_submission(
+                    form=form,
+                    submitter_name=submitted_by_name or submitted_by_email or "Anonymous",
+                    form_id=form_id
+                )
+
                 # Sanitize response message to prevent XSS
                 success_message = form["settings"].get(
                     "success_message", "Thank you for your submission!"
@@ -969,3 +977,46 @@ class FormService:
                 status_code=500,
                 detail="Failed to export form responses. Please try again later."
             )
+
+    async def _notify_planner_form_submission(
+        self,
+        form: Dict[str, Any],
+        submitter_name: str,
+        form_id: str
+    ):
+        """Notify the planner about a form submission"""
+        try:
+            wedding_id = form.get("wedding_id")
+            form_title = form.get("settings", {}).get("title", form.get("name", "Unknown Form"))
+
+            # If no wedding_id, try to find planner from the form creator
+            planner_email = None
+
+            if wedding_id:
+                # Get wedding to find planner
+                wedding = await self.wedding_collection.find_one({"wedding_id": wedding_id})
+                if wedding:
+                    planner_email = wedding.get("assigned_planner_email")
+            else:
+                # Use form creator as fallback
+                planner_email = form.get("created_by")
+
+            if not planner_email:
+                logger.debug(f"No planner found for form {form_id}")
+                return
+
+            # Import here to avoid circular imports
+            from app.services.planner_notification_service import planner_notification_service
+
+            await planner_notification_service.notify_form_submission(
+                planner_id=planner_email,
+                wedding_id=wedding_id or "",
+                form_type=form_title,
+                submitter_name=submitter_name,
+                form_id=form_id
+            )
+            logger.info(f"Form submission notification sent to {planner_email}")
+
+        except Exception as e:
+            # Don't fail the form submission if notification fails
+            logger.error(f"Failed to send form submission notification: {str(e)}")

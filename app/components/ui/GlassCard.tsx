@@ -26,24 +26,24 @@ export const GlassCard: React.FC<GlassCardProps> = ({
     zIndex: string;
   }> = {
     near: {
-      shadow: 'shadow-2xl',
+      shadow: 'shadow-2xl dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)]',
       scale: 'scale-[1.02]',
       blur: 'backdrop-blur-xl',
-      bg: 'bg-white/40',
+      bg: 'bg-white/40 dark:bg-gray-900/60',
       zIndex: 'z-30'
     },
     mid: {
-      shadow: 'shadow-xl',
+      shadow: 'shadow-xl dark:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.4)]',
       scale: 'scale-100',
       blur: 'backdrop-blur-lg',
-      bg: 'bg-white/30',
+      bg: 'bg-white/30 dark:bg-gray-900/50',
       zIndex: 'z-20'
     },
     far: {
-      shadow: 'shadow-lg',
+      shadow: 'shadow-lg dark:shadow-[0_15px_30px_-12px_rgba(0,0,0,0.3)]',
       scale: 'scale-[0.98]',
       blur: 'backdrop-blur-md',
-      bg: 'bg-white/20',
+      bg: 'bg-white/20 dark:bg-gray-900/40',
       zIndex: 'z-10'
     }
   };
@@ -74,7 +74,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
         ${resolvedDepth.scale}
         ${resolvedDepth.zIndex}
         ${resolvedBlur}
-        border border-white/20
+        border border-white/20 dark:border-white/10
         rounded-2xl
         overflow-hidden
         transition-all duration-500
@@ -84,7 +84,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
         ${className}
       `}
     >
-      <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-tr from-white/10 dark:from-white/5 via-transparent to-transparent pointer-events-none" />
 
       <div className="relative z-10">
         {children}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -54,7 +55,8 @@ interface InviteFormData {
 }
 
 export default function AdminUsersPage() {
-  const { token } = useAdmin();
+  const router = useRouter();
+  const { token, userProfile } = useAdmin();
   const [planners, setPlanners] = useState<Planner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -69,6 +71,13 @@ export default function AdminUsersPage() {
     organization: ''
   });
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
+
+  // Access control - ROOT ADMIN only
+  useEffect(() => {
+    if (userProfile && !userProfile.is_root_admin) {
+      router.push('/admin/planner');
+    }
+  }, [userProfile, router]);
 
   const fetchPlanners = useCallback(async () => {
     if (!token) return;

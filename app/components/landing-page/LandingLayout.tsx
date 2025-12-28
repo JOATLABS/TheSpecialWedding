@@ -15,7 +15,6 @@ import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
-import { WeddingDarkModeToggle, WeddingDarkModeStyles } from '@/components/landing-page/WeddingDarkModeToggle';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
@@ -26,20 +25,11 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
-    ? `https://media.thespecialwedding.com/${wedding.featured_image}`
+    ? `${process.env.MEDIA_DOMAIN}/${wedding.featured_image}`
     : images.length > 0 ? images[0].url : undefined;
 
   return (
     <>
-      {/* Dark mode animation styles */}
-      <WeddingDarkModeStyles />
-
-      {/* Dark mode toggle - fixed position */}
-      <WeddingDarkModeToggle
-        className="fixed bottom-6 right-6 z-50"
-        themeColor={wedding.theme_config?.primary_color || 'rose'}
-      />
-
       <main className="relative w-full">
       {/* Modern 3D Background */}
       <Modern3DBackground 
@@ -262,7 +252,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         </div>
         
         <div className="text-sm text-gray-300">
-          <p>Developed by Emmanuel Akinwale</p>
+          <p>Developed by JOAT LABS</p>
           <a 
             href="mailto:thedeveloper@thespecialwedding.com" 
             className="hover:text-white transition-colors"

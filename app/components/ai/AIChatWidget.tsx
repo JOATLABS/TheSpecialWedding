@@ -15,6 +15,48 @@ import {
   Coins
 } from 'lucide-react';
 
+// Simple markdown renderer for AI responses
+function renderMarkdown(text: string): React.ReactNode {
+  // Split by double newlines to get paragraphs
+  const paragraphs = text.split(/\n\n+/);
+
+  return paragraphs.map((paragraph, pIdx) => {
+    // Check if it's a bullet list
+    if (paragraph.match(/^[\*\-]\s/m)) {
+      const items = paragraph.split(/\n/).filter(line => line.trim());
+      return (
+        <ul key={pIdx} className="list-disc list-inside space-y-1 my-2">
+          {items.map((item, iIdx) => (
+            <li key={iIdx} className="text-sm">
+              {renderInlineMarkdown(item.replace(/^[\*\-]\s+/, ''))}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    // Regular paragraph
+    return (
+      <p key={pIdx} className="text-sm mb-2 last:mb-0">
+        {renderInlineMarkdown(paragraph)}
+      </p>
+    );
+  });
+}
+
+// Render inline markdown (bold, italic)
+function renderInlineMarkdown(text: string): React.ReactNode {
+  // Replace **bold** with <strong>
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={idx} className="font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -175,7 +217,7 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
         title="Chat with AI Assistant"
       >
         <Sparkles className="h-6 w-6" />
@@ -185,15 +227,15 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
 
   // Chat panel when open
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex h-[600px] w-[400px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-gray-200">
+    <div className="fixed bottom-6 right-6 z-50 flex h-[600px] w-[400px] flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-800 shadow-2xl ring-1 ring-gray-200 dark:ring-slate-700">
       {/* Header */}
-      <div className="flex items-center justify-between bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-3 text-white">
+      <div className="flex items-center justify-between bg-gradient-to-r from-slate-700 to-slate-900 px-4 py-3 text-white">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5" />
           <div>
             <h3 className="font-semibold">AI Wedding Assistant</h3>
             {weddingName && (
-              <p className="text-xs text-purple-200">{weddingName}</p>
+              <p className="text-xs text-slate-300">{weddingName}</p>
             )}
           </div>
         </div>
@@ -223,7 +265,7 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
 
       {/* Credits warning */}
       {creditsWarning && (
-        <div className="bg-amber-50 px-4 py-2 text-xs text-amber-800 border-b border-amber-100">
+        <div className="bg-amber-50 dark:bg-amber-900/30 px-4 py-2 text-xs text-amber-800 dark:text-amber-200 border-b border-amber-100 dark:border-amber-800">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
             <p>{creditsWarning}</p>
@@ -232,16 +274,16 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white dark:bg-slate-800">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
-            <Sparkles className="h-12 w-12 mb-4 text-purple-300" />
-            <h4 className="font-medium text-gray-700">How can I help you today?</h4>
-            <p className="text-sm mt-2 max-w-[280px]">
+          <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400">
+            <Sparkles className="h-12 w-12 mb-4 text-slate-400 dark:text-slate-500" />
+            <h4 className="font-medium text-gray-700 dark:text-gray-200">How can I help you today?</h4>
+            <p className="text-sm mt-2 max-w-[280px] dark:text-gray-400">
               Ask me anything about wedding planning, budgets, vendors, or cultural traditions.
             </p>
             {weddingName && (
-              <p className="text-xs mt-4 text-purple-600">
+              <p className="text-xs mt-4 text-slate-600 dark:text-slate-400">
                 Context: {weddingName}
               </p>
             )}
@@ -256,13 +298,15 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
             <div
               className={`max-w-[85%] rounded-2xl px-4 py-2 ${
                 message.role === 'user'
-                  ? 'bg-purple-600 text-white rounded-br-md'
-                  : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                  ? 'bg-slate-700 text-white rounded-br-md'
+                  : 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-100 rounded-bl-md'
               }`}
             >
-              <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+              <div className="text-sm">
+                {message.role === 'assistant' ? renderMarkdown(message.content) : message.content}
+              </div>
               <div className={`flex items-center gap-2 mt-1 text-xs ${
-                message.role === 'user' ? 'text-purple-200' : 'text-gray-400'
+                message.role === 'user' ? 'text-slate-300' : 'text-gray-400 dark:text-gray-500'
               }`}>
                 <span>
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -280,8 +324,8 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
 
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3">
-              <div className="flex items-center gap-2 text-gray-500">
+            <div className="bg-gray-100 dark:bg-slate-700 rounded-2xl rounded-bl-md px-4 py-3">
+              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-300">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span className="text-sm">Thinking...</span>
               </div>
@@ -291,7 +335,7 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
 
         {error && (
           <div className="flex justify-center">
-            <div className="bg-red-50 text-red-700 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
+            <div className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
               {error}
             </div>
@@ -302,7 +346,7 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-200 p-4">
+      <div className="border-t border-gray-200 dark:border-slate-600 p-4 bg-white dark:bg-slate-800">
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
@@ -310,14 +354,14 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask about budgets, vendors, traditions..."
-            className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 max-h-24"
+            className="flex-1 resize-none rounded-xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-4 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 max-h-24 placeholder:text-gray-400 dark:placeholder:text-gray-500"
             rows={1}
             disabled={isLoading}
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim() || isLoading}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600 text-white transition-colors hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-700 dark:bg-slate-600 text-white transition-colors hover:bg-slate-800 dark:hover:bg-slate-500 disabled:bg-gray-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -326,7 +370,7 @@ export function AIChatWidget({ weddingId, weddingName }: AIChatWidgetProps) {
             )}
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-2 text-center">
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
           1 credit per message
         </p>
       </div>

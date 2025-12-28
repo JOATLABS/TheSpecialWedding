@@ -51,11 +51,13 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
     return (
       <div className="fixed inset-0 -z-10">
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 transition-colors duration-500"
           style={{
             background: `linear-gradient(135deg, ${primaryColor}15, ${secondaryColor}20, ${accentColor}15)`,
           }}
         />
+        {/* Dark mode base background */}
+        <div className="absolute inset-0 bg-transparent dark:bg-gray-900/80 transition-colors duration-500" />
       </div>
     );
   }
@@ -65,7 +67,7 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
 
   return (
     <>
-      {/* Fixed background container - NO dark background, matches production */}
+      {/* Fixed background container */}
       <div className="fixed inset-0 -z-10 overflow-hidden">
         {/* Parallax image layer */}
         <div

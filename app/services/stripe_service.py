@@ -979,6 +979,14 @@ class StripeService:
 
             if result.modified_count > 0:
                 logger.info(f"Payment request {payment_intent_id} marked as succeeded")
+
+                # Notify planner about the payment
+                await self._notify_planner_payment_received(
+                    payment_intent_id=payment_intent_id,
+                    amount=payment_intent.get("amount_received", 0) / 100,
+                    payer_name=metadata.get("customer_name", "Customer")
+                )
+
                 return {"status": "success", "payment_intent_id": payment_intent_id}
             else:
                 # This payment intent might not be from our payment requests (could be subscription)
@@ -1280,6 +1288,54 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error creating in-app notification: {str(e)}")
+
+    async def _notify_planner_payment_received(
+        self,
+        payment_intent_id: str,
+        amount: float,
+        payer_name: str
+    ):
+        """Notify planner about a received payment from couple/vendor"""
+        try:
+            # Get the payment request to find the wedding and planner
+            payment_requests_collection = mongo.db["payment_requests"]
+            payment_request = await payment_requests_collection.find_one({
+                "payment_intent_id": payment_intent_id
+            })
+
+            if not payment_request:
+                logger.debug(f"No payment request found for {payment_intent_id}")
+                return
+
+            wedding_id = payment_request.get("wedding_id")
+            planner_email = payment_request.get("created_by")
+
+            if not planner_email:
+                # Try to get planner from wedding
+                if wedding_id:
+                    wedding = await mongo.db["weddings"].find_one({"wedding_id": wedding_id})
+                    if wedding:
+                        planner_email = wedding.get("assigned_planner_email")
+
+            if not planner_email:
+                logger.debug(f"No planner found for payment {payment_intent_id}")
+                return
+
+            # Import here to avoid circular imports
+            from app.services.planner_notification_service import planner_notification_service
+
+            await planner_notification_service.notify_payment_received(
+                planner_id=planner_email,
+                wedding_id=wedding_id or "",
+                amount=amount,
+                payer_name=payer_name,
+                payment_id=payment_intent_id
+            )
+            logger.info(f"Payment notification sent to planner {planner_email}")
+
+        except Exception as e:
+            # Don't fail the webhook if notification fails
+            logger.error(f"Error sending planner payment notification: {str(e)}")
 
     def _render_payment_success_email(
         self,

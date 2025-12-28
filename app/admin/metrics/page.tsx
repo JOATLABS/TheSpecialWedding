@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import type { ReactElement } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -94,11 +95,19 @@ function formatPercentage(value: number): string {
 }
 
 export default function PlatformMetricsPage(): ReactElement {
-  const { token } = useAdmin();
+  const router = useRouter();
+  const { token, userProfile } = useAdmin();
   const [metrics, setMetrics] = useState<PlatformMetricsResponse | null>(null);
   const [timeframe, setTimeframe] = useState<TimeframeKey>('30d');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Access control - ROOT ADMIN only
+  useEffect(() => {
+    if (userProfile && !userProfile.is_root_admin) {
+      router.push('/admin/planner');
+    }
+  }, [userProfile, router]);
 
   const fetchWithAuth = useCallback(
     async (path: string) => {
