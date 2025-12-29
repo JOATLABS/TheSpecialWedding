@@ -38,7 +38,7 @@ interface SentNotification {
 // Planner notification (received notifications like form submissions, RSVPs)
 interface PlannerNotification {
   _id: string;
-  type: 'form_submission' | 'rsvp_update' | 'guest_message' | 'system' | 'reminder';
+  type: 'form_submission' | 'rsvp_update' | 'guest_message' | 'payment_received' | 'payment_failed' | 'contract_signed' | 'vendor_response' | 'system' | 'reminder';
   title: string;
   message: string;
   wedding_id?: string;
@@ -46,6 +46,7 @@ interface PlannerNotification {
   is_read: boolean;
   created_at: string;
   metadata?: Record<string, unknown>;
+  source?: 'platform' | 'activity';
 }
 
 export default function NotificationsPage() {
@@ -135,6 +136,52 @@ export default function NotificationsPage() {
     fetchData();
   }, [fetchData]);
 
+  // Dispatch custom event to update bell count in TopHeader
+  const dispatchNotificationUpdate = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('notifications-updated'));
+    }
+  };
+
+  // Mark a single activity notification as read
+  const markNotificationAsRead = async (notificationId: string, source?: 'platform' | 'activity') => {
+    try {
+      if (source === 'activity') {
+        await apiRequest(`/admin/planner/activity-notifications/${notificationId}/read`, 'PUT');
+      } else {
+        await apiRequest(`/admin/user/notifications/${notificationId}/read`, 'PUT');
+      }
+
+      // Update local state
+      setPlannerNotifications(prev =>
+        prev.map(n => n._id === notificationId ? { ...n, is_read: true } : n)
+      );
+
+      // Dispatch event to update bell
+      dispatchNotificationUpdate();
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  // Mark all notifications as read
+  const markAllAsRead = async () => {
+    try {
+      // Mark both platform and activity notifications as read
+      await Promise.allSettled([
+        apiRequest('/admin/user/notifications/read-all', 'PUT'),
+        apiRequest('/admin/planner/activity-notifications/read-all', 'PUT')
+      ]);
+
+      // Update local state
+      setPlannerNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+
+      // Dispatch event to update bell
+      dispatchNotificationUpdate();
+    } catch (error) {
+      console.error('Failed to mark all as read:', error);
+    }
+  };
 
   const handleCreateTemplate = async () => {
     if (!templateName || !templateSubject || !templateContent) {
@@ -242,9 +289,19 @@ export default function NotificationsPage() {
     return (
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Notifications</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">Form submissions, RSVP updates, and activity alerts</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Notifications</h1>
+            <p className="text-slate-600 dark:text-slate-400 mt-1">Form submissions, RSVP updates, and activity alerts</p>
+          </div>
+          {plannerNotifications.some(n => !n.is_read) && (
+            <button
+              onClick={markAllAsRead}
+              className="px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-200 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg transition-colors"
+            >
+              Mark all as read
+            </button>
+          )}
         </div>
 
         {/* Notifications List */}
@@ -254,8 +311,9 @@ export default function NotificationsPage() {
               {plannerNotifications.map((notification) => (
                 <div
                   key={notification._id}
+                  onClick={() => !notification.is_read && markNotificationAsRead(notification._id, notification.source)}
                   className={`p-4 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors ${
-                    !notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    !notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20 cursor-pointer' : ''
                   }`}
                 >
                   <div className="flex items-start justify-between">
@@ -265,6 +323,10 @@ export default function NotificationsPage() {
                           notification.type === 'form_submission' ? 'bg-green-500' :
                           notification.type === 'rsvp_update' ? 'bg-blue-500' :
                           notification.type === 'guest_message' ? 'bg-purple-500' :
+                          notification.type === 'payment_received' ? 'bg-emerald-500' :
+                          notification.type === 'payment_failed' ? 'bg-red-500' :
+                          notification.type === 'contract_signed' ? 'bg-indigo-500' :
+                          notification.type === 'vendor_response' ? 'bg-amber-500' :
                           notification.type === 'reminder' ? 'bg-orange-500' :
                           'bg-gray-500'
                         }`} />
@@ -319,6 +381,22 @@ export default function NotificationsPage() {
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-blue-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">RSVP Updates</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Payments Received</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-red-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Failed Payments</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-indigo-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Contracts Signed</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-amber-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Vendor Responses</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-purple-500" />

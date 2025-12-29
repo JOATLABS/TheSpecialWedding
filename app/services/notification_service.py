@@ -392,6 +392,34 @@ class NotificationService:
             logger.error(f"Error marking notification as read: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error marking notification as read: {str(e)}")
 
+    async def mark_all_notifications_read(self, user_id: str) -> dict:
+        """Mark all notifications as read for a user"""
+        try:
+            # Find all notifications that haven't been read by this user yet
+            result = await self.notifications_collection.update_many(
+                {
+                    "status": "active",
+                    "read_by.user_id": {"$ne": user_id}
+                },
+                {
+                    "$addToSet": {
+                        "read_by": {
+                            "user_id": user_id,
+                            "read_at": datetime.utcnow()
+                        }
+                    }
+                }
+            )
+
+            return {
+                "message": f"Marked {result.modified_count} notifications as read",
+                "count": result.modified_count
+            }
+
+        except Exception as e:
+            logger.error(f"Error marking all notifications as read: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error marking all as read: {str(e)}")
+
     async def dismiss_notification(self, notification_id: str, user_id: str) -> dict:
         """Dismiss notification for user"""
         try:

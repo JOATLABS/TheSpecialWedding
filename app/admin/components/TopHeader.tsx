@@ -60,12 +60,30 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
     }
   }, [token]);
 
-  // Fetch on mount and every 60 seconds
+  // Fetch on mount, every 60 seconds, on window focus, and on custom events
   useEffect(() => {
     fetchNotificationCount();
 
     const interval = setInterval(fetchNotificationCount, 60000);
-    return () => clearInterval(interval);
+
+    // Refetch when window gains focus (user returns from notifications page)
+    const handleFocus = () => {
+      fetchNotificationCount();
+    };
+
+    // Listen for custom event when notifications are marked as read
+    const handleNotificationsRead = () => {
+      fetchNotificationCount();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('notifications-updated', handleNotificationsRead);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('notifications-updated', handleNotificationsRead);
+    };
   }, [fetchNotificationCount]);
 
   const toggleTheme = () => {
