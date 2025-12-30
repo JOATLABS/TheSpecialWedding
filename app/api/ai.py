@@ -390,6 +390,138 @@ async def get_budget_insights(
 
 
 # =========================================================================
+# DASHBOARD INSIGHTS (AI-002)
+# =========================================================================
+
+@router.get("/weddings/{wedding_id}/insights")
+async def get_dashboard_insights(
+    wedding_id: str,
+    force_refresh: bool = False,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Get AI-powered actionable insights for a wedding dashboard.
+
+    Returns 3-5 prioritized insights about:
+    - RSVP status and follow-ups needed
+    - Budget health and spending patterns
+    - Upcoming deadlines and tasks
+    - Vendor payments due
+    - Timeline concerns
+
+    Cost: 2 credits
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
+
+        # Verify wedding exists
+        wedding = await get_wedding_by_id(wedding_id)
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        # Gather comprehensive wedding data for analysis
+        budget_data = await get_budget_data(wedding_id)
+        rsvp_data = await get_rsvp_data(wedding_id)
+
+        # Get upcoming tasks
+        tasks = await mongo.db["tasks"].find({
+            "wedding_id": wedding_id,
+            "status": {"$ne": "completed"}
+        }).sort("due_date", 1).limit(10).to_list(length=10)
+
+        upcoming_tasks = [
+            {
+                "title": t.get("title"),
+                "due_date": str(t.get("due_date")) if t.get("due_date") else None,
+                "priority": t.get("priority", "medium"),
+                "category": t.get("category")
+            }
+            for t in tasks
+        ]
+
+        # Get upcoming vendor payments
+        from datetime import datetime, timedelta
+        upcoming_deadline = datetime.utcnow() + timedelta(days=30)
+
+        scheduled_payments = await mongo.db["scheduled_payments"].find({
+            "wedding_id": wedding_id,
+            "status": {"$in": ["scheduled", "pending"]},
+            "due_date": {"$lte": upcoming_deadline}
+        }).sort("due_date", 1).limit(5).to_list(length=5)
+
+        vendor_payments = [
+            {
+                "vendor": p.get("vendor_name", "Unknown Vendor"),
+                "amount": p.get("amount", 0),
+                "due_date": str(p.get("due_date")) if p.get("due_date") else None,
+                "status": p.get("status")
+            }
+            for p in scheduled_payments
+        ]
+
+        # Calculate days until wedding
+        days_until_wedding = None
+        if wedding.get("date"):
+            try:
+                from datetime import datetime as dt
+                wedding_date = dt.strptime(wedding.get("date"), "%Y-%m-%d")
+                days_until_wedding = (wedding_date - dt.utcnow()).days
+            except Exception:
+                pass
+
+        # Build context for AI
+        context = {
+            "wedding_id": wedding_id,
+            "couple_names": wedding.get("couple_names"),
+            "wedding_date": wedding.get("date"),
+            "days_until_wedding": days_until_wedding,
+            "guest_count": wedding.get("guest_count"),
+            "cultural_style": wedding.get("cultural_style", "western"),
+            "total_budget": wedding.get("total_budget"),
+            "budget": budget_data,
+            "rsvp": rsvp_data,
+            "upcoming_tasks": upcoming_tasks,
+            "vendor_payments": vendor_payments
+        }
+
+        # Generate insights
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=wedding_id,
+            feature="dashboard_insights",
+            prompt="Analyze this wedding's current status and generate actionable insights for the planner.",
+            context=context,
+            force_refresh=force_refresh
+        )
+
+        response = result["response"]
+        insights = response.get("insights", []) if isinstance(response, dict) else []
+
+        return {
+            "insights": insights,
+            "wedding_id": wedding_id,
+            "cached": result["cached"],
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error generating dashboard insights: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate insights")
+
+
+# =========================================================================
 # SEATING OPTIMIZATION (WFA-702, WFA-703, WFA-704)
 # =========================================================================
 
@@ -695,6 +827,686 @@ async def suggest_pricing(
 
 
 # =========================================================================
+# CONTRACT SECTION GENERATION (AI-005)
+# =========================================================================
+
+class ContractSectionRequest(BaseModel):
+    section_type: str  # payment_terms, cancellation_policy, scope_of_work, liability, force_majeure, custom
+    vendor_type: Optional[str] = None  # photographer, caterer, florist, dj, venue, etc.
+    wedding_id: Optional[str] = None
+    custom_prompt: Optional[str] = None
+
+
+@router.post("/generate-contract-section")
+async def generate_contract_section(
+    request: ContractSectionRequest,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Generate contract clause content using AI.
+
+    Section types:
+    - payment_terms: Payment schedule, methods, late fees
+    - cancellation_policy: Cancellation terms, refunds, notice periods
+    - scope_of_work: Detailed deliverables and services
+    - liability: Liability limitations, insurance
+    - force_majeure: Force majeure clauses
+    - custom: Based on custom_prompt
+
+    Cost: 1 credit per generation
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        valid_sections = ["payment_terms", "cancellation_policy", "scope_of_work", "liability", "force_majeure", "custom"]
+        if request.section_type not in valid_sections:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid section_type. Must be one of: {valid_sections}"
+            )
+
+        # If custom section, require custom_prompt
+        if request.section_type == "custom" and not request.custom_prompt:
+            raise HTTPException(
+                status_code=400,
+                detail="custom_prompt is required when section_type is 'custom'"
+            )
+
+        # Build context
+        context = {
+            "section_type": request.section_type,
+            "vendor_type": request.vendor_type or "general vendor"
+        }
+
+        # Add wedding context if provided
+        if request.wedding_id:
+            if not await check_wedding_access(current_user, request.wedding_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You don't have access to this wedding"
+                )
+
+            wedding = await get_wedding_by_id(request.wedding_id)
+            if wedding:
+                context["wedding"] = {
+                    "couple_names": wedding.get("couple_names"),
+                    "date": wedding.get("date"),
+                    "cultural_style": wedding.get("cultural_style"),
+                    "region": wedding.get("region")
+                }
+
+        # Build prompt based on section type
+        section_prompts = {
+            "payment_terms": f"Generate payment terms for a {request.vendor_type or 'wedding vendor'} contract. Include payment schedule, accepted methods, deposit requirements, and late payment policies.",
+            "cancellation_policy": f"Generate a cancellation policy for a {request.vendor_type or 'wedding vendor'} contract. Include cancellation windows, refund schedules, and notice requirements.",
+            "scope_of_work": f"Generate a scope of work section for a {request.vendor_type or 'wedding vendor'} contract. Detail the services, deliverables, timeline, and what is/isn't included.",
+            "liability": f"Generate a liability clause for a {request.vendor_type or 'wedding vendor'} contract. Include limitation of liability, insurance requirements, and indemnification.",
+            "force_majeure": f"Generate a force majeure clause for a {request.vendor_type or 'wedding vendor'} contract. Include covered events, notification requirements, and remedies.",
+            "custom": request.custom_prompt
+        }
+
+        prompt = section_prompts[request.section_type]
+
+        # Add custom instructions if provided for non-custom sections
+        if request.custom_prompt and request.section_type != "custom":
+            prompt += f"\n\nAdditional requirements: {request.custom_prompt}"
+
+        # Generate content
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=request.wedding_id or user_id,
+            feature="contract_section",
+            prompt=prompt,
+            context=context,
+            force_refresh=True  # Never cache - each generation is unique
+        )
+
+        # Extract text from response
+        response = result["response"]
+        if isinstance(response, dict):
+            content = response.get("text", str(response))
+        else:
+            content = str(response)
+
+        return {
+            "content": content,
+            "section_type": request.section_type,
+            "vendor_type": request.vendor_type,
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error generating contract section: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate contract section")
+
+
+# =========================================================================
+# VENDOR RECOMMENDATIONS (AI-011)
+# =========================================================================
+
+class VendorRecommendationRequest(BaseModel):
+    vendor_type: str  # photographer, caterer, florist, dj, venue, etc.
+    budget_range: Optional[Dict[str, float]] = None  # {"min": 0, "max": 0}
+    wedding_style: Optional[str] = None  # western, nigerian, indian, jewish, etc.
+    region: Optional[str] = None  # City, State or Country
+    guest_count: Optional[int] = None
+    wedding_id: Optional[str] = None  # For more context
+
+
+@router.post("/vendor-recommendations")
+async def get_vendor_recommendations(
+    request: VendorRecommendationRequest,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Get AI-powered vendor selection criteria and recommendations.
+
+    Returns:
+    - Selection criteria for the vendor type
+    - Questions to ask during consultations
+    - Red flags to watch for
+    - Budget assessment for the region
+    - Pro tips
+
+    Cost: 2 credits
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Build context
+        context = {
+            "vendor_type": request.vendor_type,
+            "budget_range": request.budget_range or {"min": None, "max": None},
+            "wedding_style": request.wedding_style or "western",
+            "region": request.region or "USA",
+            "guest_count": request.guest_count or 100
+        }
+
+        # Add wedding context if provided
+        if request.wedding_id:
+            if not await check_wedding_access(current_user, request.wedding_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You don't have access to this wedding"
+                )
+
+            wedding = await get_wedding_by_id(request.wedding_id)
+            if wedding:
+                # Override with wedding data if not explicitly provided
+                context["wedding_style"] = request.wedding_style or wedding.get("cultural_style", "western")
+                context["region"] = request.region or wedding.get("region") or wedding.get("venue")
+                context["guest_count"] = request.guest_count or wedding.get("guest_count", 100)
+                context["wedding_date"] = wedding.get("date")
+
+        prompt = f"Provide vendor selection guidance for hiring a {request.vendor_type} for a {context['wedding_style']} wedding in {context['region']} with approximately {context['guest_count']} guests."
+
+        if request.budget_range:
+            if request.budget_range.get("min") and request.budget_range.get("max"):
+                prompt += f" The budget range is ${request.budget_range['min']:,.0f} - ${request.budget_range['max']:,.0f}."
+            elif request.budget_range.get("max"):
+                prompt += f" The budget is up to ${request.budget_range['max']:,.0f}."
+
+        # Generate recommendations
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=request.wedding_id or user_id,
+            feature="vendor_recommendations",
+            prompt=prompt,
+            context=context,
+            force_refresh=False
+        )
+
+        response = result["response"]
+
+        return {
+            "recommendations": response if isinstance(response, dict) else {"raw": response},
+            "vendor_type": request.vendor_type,
+            "cached": result["cached"],
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error generating vendor recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate vendor recommendations")
+
+
+# =========================================================================
+# TASK PRIORITIZATION (AI-013)
+# =========================================================================
+
+@router.post("/weddings/{wedding_id}/prioritize-tasks")
+async def prioritize_tasks(
+    wedding_id: str,
+    force_refresh: bool = False,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Get AI-powered task prioritization for a wedding.
+
+    Analyzes:
+    - Wedding date and time remaining
+    - Pending tasks
+    - Vendor deadlines
+    - Cultural considerations
+
+    Returns prioritized task list with urgency levels.
+    Cost: 2 credits
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
+
+        # Verify wedding exists
+        wedding = await get_wedding_by_id(wedding_id)
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        # Calculate days until wedding
+        from datetime import datetime as dt, timedelta
+        days_until_wedding = None
+        if wedding.get("date"):
+            try:
+                wedding_date = dt.strptime(wedding.get("date"), "%Y-%m-%d")
+                days_until_wedding = (wedding_date - dt.utcnow()).days
+            except Exception:
+                pass
+
+        # Get all pending tasks
+        tasks = await mongo.db["tasks"].find({
+            "wedding_id": wedding_id,
+            "status": {"$ne": "completed"}
+        }).sort("due_date", 1).to_list(length=50)
+
+        pending_tasks = [
+            {
+                "title": t.get("title"),
+                "description": t.get("description"),
+                "due_date": str(t.get("due_date")) if t.get("due_date") else None,
+                "priority": t.get("priority", "medium"),
+                "category": t.get("category"),
+                "status": t.get("status", "pending")
+            }
+            for t in tasks
+        ]
+
+        # Get upcoming vendor payments/deadlines
+        upcoming_deadline = dt.utcnow() + timedelta(days=60)
+        vendor_deadlines = await mongo.db["scheduled_payments"].find({
+            "wedding_id": wedding_id,
+            "status": {"$in": ["scheduled", "pending"]},
+            "due_date": {"$lte": upcoming_deadline}
+        }).sort("due_date", 1).limit(10).to_list(length=10)
+
+        deadlines = [
+            {
+                "vendor": p.get("vendor_name", "Vendor"),
+                "type": "payment",
+                "amount": p.get("amount", 0),
+                "due_date": str(p.get("due_date")) if p.get("due_date") else None
+            }
+            for p in vendor_deadlines
+        ]
+
+        # Build context
+        context = {
+            "wedding_id": wedding_id,
+            "couple_names": wedding.get("couple_names"),
+            "wedding_date": wedding.get("date"),
+            "days_until_wedding": days_until_wedding,
+            "cultural_style": wedding.get("cultural_style", "western"),
+            "guest_count": wedding.get("guest_count"),
+            "current_date": dt.utcnow().strftime("%Y-%m-%d"),
+            "pending_tasks": pending_tasks,
+            "vendor_deadlines": deadlines
+        }
+
+        prompt = "Analyze these wedding planning tasks and vendor deadlines. Prioritize them based on the wedding date, dependencies, and urgency. Identify what should be done this week."
+
+        # Generate prioritization
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=wedding_id,
+            feature="task_prioritization",
+            prompt=prompt,
+            context=context,
+            force_refresh=force_refresh
+        )
+
+        response = result["response"]
+
+        return {
+            "prioritization": response if isinstance(response, dict) else {"raw": response},
+            "wedding_id": wedding_id,
+            "days_until_wedding": days_until_wedding,
+            "tasks_analyzed": len(pending_tasks),
+            "cached": result["cached"],
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error prioritizing tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to prioritize tasks")
+
+
+# =========================================================================
+# TIMELINE GENERATOR (AI-015)
+# =========================================================================
+
+class TimelineGeneratorRequest(BaseModel):
+    wedding_id: str
+    force_refresh: bool = False
+
+
+@router.post("/generate-timeline")
+async def generate_timeline(
+    request: TimelineGeneratorRequest,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Generate a comprehensive wedding planning timeline.
+
+    Creates milestone-based timeline from now to the wedding date.
+    Considers cultural style, guest count, and budget.
+
+    Cost: 2 credits
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, request.wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
+
+        # Verify wedding exists
+        wedding = await get_wedding_by_id(request.wedding_id)
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        if not wedding.get("date"):
+            raise HTTPException(
+                status_code=400,
+                detail="Wedding date is required to generate a timeline"
+            )
+
+        # Calculate timeline parameters
+        from datetime import datetime as dt
+        wedding_date = dt.strptime(wedding.get("date"), "%Y-%m-%d")
+        current_date = dt.utcnow()
+        days_until_wedding = (wedding_date - current_date).days
+        months_until_wedding = days_until_wedding / 30
+
+        # Get existing tasks to avoid duplicates in suggestions
+        existing_tasks = await mongo.db["tasks"].find({
+            "wedding_id": request.wedding_id
+        }).to_list(length=100)
+
+        existing_task_titles = [t.get("title", "").lower() for t in existing_tasks]
+
+        # Build context
+        context = {
+            "wedding_id": request.wedding_id,
+            "couple_names": wedding.get("couple_names"),
+            "wedding_date": wedding.get("date"),
+            "current_date": current_date.strftime("%Y-%m-%d"),
+            "days_until_wedding": days_until_wedding,
+            "months_until_wedding": round(months_until_wedding, 1),
+            "cultural_style": wedding.get("cultural_style", "western"),
+            "guest_count": wedding.get("guest_count", 100),
+            "total_budget": wedding.get("total_budget"),
+            "region": wedding.get("region") or wedding.get("venue"),
+            "existing_tasks_count": len(existing_tasks),
+            "existing_task_samples": existing_task_titles[:10]  # First 10 for context
+        }
+
+        prompt = f"Generate a wedding planning timeline for a {context['cultural_style']} wedding with {context['guest_count']} guests. The wedding is on {wedding.get('date')}, which is {days_until_wedding} days ({round(months_until_wedding, 1)} months) away. Create realistic milestones starting from today ({current_date.strftime('%Y-%m-%d')})."
+
+        # Generate timeline
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=request.wedding_id,
+            feature="timeline_generator",
+            prompt=prompt,
+            context=context,
+            force_refresh=request.force_refresh
+        )
+
+        response = result["response"]
+
+        return {
+            "timeline": response if isinstance(response, dict) else {"raw": response},
+            "wedding_id": request.wedding_id,
+            "wedding_date": wedding.get("date"),
+            "days_until_wedding": days_until_wedding,
+            "cached": result["cached"],
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error generating timeline: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate timeline")
+
+
+# =========================================================================
+# PAYMENT FORECAST (AI-016)
+# =========================================================================
+
+@router.get("/weddings/{wedding_id}/payment-forecast")
+async def get_payment_forecast(
+    wedding_id: str,
+    force_refresh: bool = False,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Get AI-powered payment forecast and cash flow analysis.
+
+    Analyzes scheduled payments and provides:
+    - 30/60/90 day forecast
+    - Peak payment dates
+    - Cash flow warnings
+    - Recommendations
+
+    Cost: 2 credits
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
+
+        # Verify wedding exists
+        wedding = await get_wedding_by_id(wedding_id)
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        from datetime import datetime as dt, timedelta
+
+        # Get all scheduled payments
+        scheduled_payments = await mongo.db["scheduled_payments"].find({
+            "wedding_id": wedding_id
+        }).sort("due_date", 1).to_list(length=100)
+
+        # Get paid payments for historical context
+        paid_payments = await mongo.db["payment_records"].find({
+            "wedding_id": wedding_id,
+            "status": "succeeded"
+        }).to_list(length=100)
+
+        # Format payments data
+        now = dt.utcnow()
+        payments_data = []
+        for p in scheduled_payments:
+            due_date = p.get("due_date")
+            status = p.get("status", "scheduled")
+
+            # Calculate if overdue
+            if due_date and due_date < now and status not in ["paid", "completed"]:
+                status = "overdue"
+
+            payments_data.append({
+                "vendor": p.get("vendor_name", "Unknown Vendor"),
+                "amount": p.get("amount", 0),
+                "due_date": str(due_date) if due_date else None,
+                "status": status,
+                "description": p.get("description", "")
+            })
+
+        # Calculate totals
+        total_due = sum(p.get("amount", 0) for p in scheduled_payments if p.get("status") not in ["paid", "completed"])
+        total_paid = sum(p.get("amount", 0) for p in paid_payments)
+
+        # Build context
+        context = {
+            "wedding_id": wedding_id,
+            "couple_names": wedding.get("couple_names"),
+            "wedding_date": wedding.get("date"),
+            "total_budget": wedding.get("total_budget"),
+            "current_date": now.strftime("%Y-%m-%d"),
+            "scheduled_payments": payments_data,
+            "total_due": total_due,
+            "total_paid": total_paid,
+            "payment_count": len(payments_data)
+        }
+
+        if not payments_data:
+            return {
+                "forecast": {
+                    "forecast_periods": [],
+                    "cash_flow_warning": None,
+                    "peak_payment_dates": [],
+                    "recommendations": [],
+                    "summary": {
+                        "total_remaining": 0,
+                        "total_paid": total_paid,
+                        "next_payment_date": None,
+                        "largest_upcoming": None
+                    }
+                },
+                "wedding_id": wedding_id,
+                "message": "No scheduled payments found",
+                "cached": False,
+                "credits_used": 0
+            }
+
+        prompt = "Analyze this wedding's payment schedule and provide a cash flow forecast. Identify any concerns, peak payment periods, and recommendations for managing payments."
+
+        # Generate forecast
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=wedding_id,
+            feature="payment_forecast",
+            prompt=prompt,
+            context=context,
+            force_refresh=force_refresh
+        )
+
+        response = result["response"]
+
+        return {
+            "forecast": response if isinstance(response, dict) else {"raw": response},
+            "wedding_id": wedding_id,
+            "total_payments": len(payments_data),
+            "cached": result["cached"],
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error generating payment forecast: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate payment forecast")
+
+
+# =========================================================================
+# VENDOR PRICE ANALYSIS (AI-018)
+# =========================================================================
+
+class VendorPriceAnalysisRequest(BaseModel):
+    vendor_type: str  # photographer, caterer, florist, dj, venue, etc.
+    quoted_price: float
+    region: Optional[str] = None
+    wedding_style: Optional[str] = None
+    guest_count: Optional[int] = None
+    service_description: Optional[str] = None  # What's included in the quote
+    wedding_id: Optional[str] = None
+
+
+@router.post("/analyze-vendor-price")
+async def analyze_vendor_price(
+    request: VendorPriceAnalysisRequest,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Analyze if a vendor quote is fair for the region and service type.
+
+    Returns:
+    - Market comparison verdict
+    - Typical price range for the region
+    - Factors affecting the price
+    - Negotiation recommendations
+
+    Cost: 1 credit
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Build context
+        context = {
+            "vendor_type": request.vendor_type,
+            "quoted_price": request.quoted_price,
+            "region": request.region or "USA",
+            "wedding_style": request.wedding_style or "western",
+            "guest_count": request.guest_count or 100,
+            "service_description": request.service_description
+        }
+
+        # Add wedding context if provided
+        if request.wedding_id:
+            if not await check_wedding_access(current_user, request.wedding_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You don't have access to this wedding"
+                )
+
+            wedding = await get_wedding_by_id(request.wedding_id)
+            if wedding:
+                context["wedding_style"] = request.wedding_style or wedding.get("cultural_style", "western")
+                context["region"] = request.region or wedding.get("region") or wedding.get("venue")
+                context["guest_count"] = request.guest_count or wedding.get("guest_count", 100)
+
+        prompt = f"Analyze this vendor quote: A {request.vendor_type} in {context['region']} is quoting ${request.quoted_price:,.2f} for a {context['wedding_style']} wedding with {context['guest_count']} guests."
+
+        if request.service_description:
+            prompt += f" The quote includes: {request.service_description}"
+
+        prompt += " Is this a fair price? How does it compare to market rates?"
+
+        # Generate analysis
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=request.wedding_id or user_id,
+            feature="vendor_price_analysis",
+            prompt=prompt,
+            context=context,
+            force_refresh=False
+        )
+
+        response = result["response"]
+
+        return {
+            "analysis": response if isinstance(response, dict) else {"raw": response},
+            "vendor_type": request.vendor_type,
+            "quoted_price": request.quoted_price,
+            "cached": result["cached"],
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error analyzing vendor price: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to analyze vendor price")
+
+
+# =========================================================================
 # UTILITY ENDPOINTS
 # =========================================================================
 
@@ -763,10 +1575,17 @@ async def get_ai_usage(
 # INTERACTIVE AI CHAT (Conversational Assistant)
 # =========================================================================
 
+class PageContextModel(BaseModel):
+    """Page context for enhanced AI responses based on current page."""
+    page: str  # e.g., "contract_canvas", "budget", "guests"
+    hint: str  # System hint for AI context
+
+
 class ChatMessageRequest(BaseModel):
     message: str
     wedding_id: Optional[str] = None
     conversation_history: Optional[List[Dict[str, str]]] = None  # [{role: "user"/"assistant", content: "..."}]
+    page_context: Optional[PageContextModel] = None  # Current page context for enhanced responses
 
 
 class ChatResponse(BaseModel):
@@ -798,6 +1617,13 @@ async def chat_with_ai(
             "user_message": request.message,
             "planner_email": current_user.email
         }
+
+        # Add page context for enhanced responses
+        if request.page_context:
+            context["page_context"] = {
+                "page": request.page_context.page,
+                "hint": request.page_context.hint
+            }
 
         # Add conversation history for context
         if request.conversation_history:
@@ -833,14 +1659,25 @@ async def chat_with_ai(
                     }
                 }
 
-        # Build the prompt with conversation context
-        prompt = request.message
+        # Build the prompt with conversation context and page hint
+        prompt_parts = []
+
+        # Add page context hint as system guidance
+        if request.page_context and request.page_context.hint:
+            prompt_parts.append(f"[Context: {request.page_context.hint}]")
+
+        # Add conversation history
         if request.conversation_history:
             history_text = "\n".join([
                 f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
                 for msg in request.conversation_history[-10:]
             ])
-            prompt = f"Previous conversation:\n{history_text}\n\nUser's new message: {request.message}"
+            prompt_parts.append(f"Previous conversation:\n{history_text}")
+
+        # Add the user's message
+        prompt_parts.append(f"User's message: {request.message}")
+
+        prompt = "\n\n".join(prompt_parts)
 
         # Generate response
         result = await ai_service.generate(

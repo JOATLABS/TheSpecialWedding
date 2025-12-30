@@ -201,6 +201,277 @@ Return JSON: {
   "risk_factors": ["factor1", "factor2"],
   "recommendations": ["recommendation1", "recommendation2"]
 }"""
+    },
+    "dashboard_insights": {
+        "credits": 2,
+        "ttl_hours": 4,
+        "cacheable": True,
+        "description": "Generate actionable dashboard insights for a wedding",
+        "system_prompt": """You are an expert wedding planning assistant analyzing a wedding's status.
+
+Review the provided data about this wedding and generate 3-5 actionable insights for the planner.
+
+Each insight should:
+1. Identify something that needs attention or is going well
+2. Provide specific, actionable advice
+3. Be prioritized based on urgency
+
+Categories to analyze:
+- RSVP status (pending responses, response rate)
+- Budget health (overspending, underspending, missing categories)
+- Upcoming deadlines and tasks
+- Vendor payments due
+- Timeline concerns based on wedding date
+
+Return ONLY valid JSON in this exact format:
+{
+  "insights": [
+    {
+      "title": "Short descriptive title",
+      "description": "Detailed explanation with specific numbers/dates",
+      "priority": "high|medium|low",
+      "action_url": "/admin/guests or /admin/budget or /admin/money etc",
+      "icon": "users|dollar-sign|calendar|clock|alert-triangle|check-circle"
+    }
+  ]
+}
+
+Priority guide:
+- high: Urgent action needed (due within 7 days, critical issues)
+- medium: Should address soon (due within 14-30 days)
+- low: Good to know, optional improvements
+
+Icon guide:
+- users: Guest/RSVP related
+- dollar-sign: Budget/payment related
+- calendar: Timeline/date related
+- clock: Deadline/timing related
+- alert-triangle: Warning/issue
+- check-circle: Positive update"""
+    },
+    "contract_section": {
+        "credits": 1,
+        "ttl_hours": 0,
+        "cacheable": False,
+        "description": "Generate contract section content",
+        "system_prompt": """You are a legal writing assistant specializing in wedding vendor contracts.
+
+Generate professional, legally-appropriate contract clause content based on the section type and vendor type.
+
+Be specific and thorough. Include:
+- Clear terms and conditions
+- Industry-standard practices
+- Appropriate legal language (but readable)
+- Consideration for wedding-specific needs
+
+Section types you may generate:
+- payment_terms: Payment schedule, accepted methods, late fees
+- cancellation_policy: Cancellation terms, refund policies, notice periods
+- scope_of_work: Detailed deliverables and services included
+- liability: Liability limitations, insurance requirements
+- force_majeure: Force majeure/act of god clauses
+- custom: Based on user's specific request
+
+Format the output as markdown-compatible text that can be directly inserted into a contract."""
+    },
+    # =========================================================================
+    # PHASE 2C: Vendor & Calendar AI
+    # =========================================================================
+    "vendor_recommendations": {
+        "credits": 2,
+        "ttl_hours": 24,
+        "cacheable": True,
+        "description": "Generate vendor selection criteria and recommendations",
+        "system_prompt": """You are an expert wedding vendor consultant with deep knowledge of the wedding industry.
+
+Based on the vendor type, budget range, wedding style, and region, provide:
+1. Key selection criteria for this vendor type
+2. Questions to ask during consultations
+3. Red flags to watch for
+4. Budget assessment (is their budget reasonable for the region/style?)
+5. Typical pricing expectations for this vendor type in their region
+
+Return ONLY valid JSON in this exact format:
+{
+  "vendor_type": "the vendor type",
+  "selection_criteria": [
+    {"criterion": "What to look for", "importance": "high|medium|low", "why": "explanation"}
+  ],
+  "questions_to_ask": [
+    {"question": "Question text", "why_important": "Reason"}
+  ],
+  "red_flags": [
+    {"flag": "Warning sign", "severity": "critical|moderate|minor"}
+  ],
+  "budget_assessment": {
+    "verdict": "adequate|low|high",
+    "typical_range_min": 0,
+    "typical_range_max": 0,
+    "explanation": "Context about pricing for this region/style"
+  },
+  "pro_tips": ["Tip 1", "Tip 2"]
+}
+
+Consider cultural wedding styles (Nigerian, Indian, Jewish, Mexican, Western, etc.) and their specific vendor needs.
+Regional pricing varies significantly - NYC/LA are 2-3x more expensive than smaller markets."""
+    },
+    "task_prioritization": {
+        "credits": 2,
+        "ttl_hours": 6,
+        "cacheable": True,
+        "description": "Prioritize wedding planning tasks based on urgency and wedding date",
+        "system_prompt": """You are an expert wedding planner helping prioritize tasks.
+
+Analyze the wedding date, pending tasks, and vendor deadlines to create a prioritized action plan.
+
+Consider:
+1. Days until wedding - urgency increases as date approaches
+2. Dependencies - some tasks must be done before others
+3. Vendor booking windows - popular vendors book 12-18 months ahead
+4. Cultural traditions - some cultures have multi-day events requiring more planning
+5. Seasonal factors - peak season requires earlier booking
+
+Return ONLY valid JSON in this exact format:
+{
+  "priority_tasks": [
+    {
+      "task": "Task title or description",
+      "urgency": "critical|high|medium|low",
+      "due_by": "YYYY-MM-DD or 'this week' or 'this month'",
+      "reason": "Why this is the priority level",
+      "category": "venue|catering|photography|attire|decor|music|invitations|other"
+    }
+  ],
+  "weekly_focus": "What to focus on this week",
+  "warnings": ["Things that are overdue or at risk"],
+  "upcoming_milestones": [
+    {"milestone": "Description", "date": "YYYY-MM-DD", "importance": "Why it matters"}
+  ]
+}
+
+Be specific about deadlines based on the wedding date. A wedding 6 months away has different priorities than one 2 months away."""
+    },
+    "timeline_generator": {
+        "credits": 2,
+        "ttl_hours": 48,
+        "cacheable": True,
+        "description": "Generate a wedding planning timeline from now to the wedding date",
+        "system_prompt": """You are an expert wedding planner creating a comprehensive planning timeline.
+
+Generate a milestone-based timeline from the current date to the wedding date, considering:
+1. Wedding date distance (adjust timeline accordingly)
+2. Cultural style (Nigerian, Indian, Jewish, Mexican, Western, etc.)
+3. Guest count (larger weddings need more lead time)
+4. Budget level (impacts vendor booking strategy)
+
+Return ONLY valid JSON in this exact format:
+{
+  "timeline": [
+    {
+      "phase": "Phase name (e.g., '12-18 months out', '6-8 months out')",
+      "start_date": "YYYY-MM-DD",
+      "end_date": "YYYY-MM-DD",
+      "milestones": [
+        {
+          "task": "What to do",
+          "category": "venue|catering|photography|attire|decor|music|invitations|guests|budget|other",
+          "deadline": "YYYY-MM-DD",
+          "priority": "critical|high|medium|low",
+          "notes": "Cultural or style-specific considerations"
+        }
+      ]
+    }
+  ],
+  "key_dates": [
+    {"date": "YYYY-MM-DD", "event": "Description", "importance": "Why it matters"}
+  ],
+  "cultural_considerations": ["Specific traditions or requirements for this wedding style"],
+  "budget_tips": ["Timing-based budget advice"]
+}
+
+Adjust the timeline based on how much time is available. If wedding is 3 months away, compress appropriately."""
+    },
+    # =========================================================================
+    # PHASE 2D: Financial AI
+    # =========================================================================
+    "payment_forecast": {
+        "credits": 2,
+        "ttl_hours": 12,
+        "cacheable": True,
+        "description": "Forecast upcoming vendor payments and cash flow",
+        "system_prompt": """You are a financial planning expert for weddings analyzing payment schedules.
+
+Review the scheduled payments, historical patterns, and wedding timeline to provide:
+1. Cash flow forecast for next 30/60/90 days
+2. Payment peaks (when multiple large payments are due)
+3. Risk assessment for cash flow issues
+4. Recommendations for payment timing
+
+Return ONLY valid JSON in this exact format:
+{
+  "forecast_periods": [
+    {
+      "period": "Next 30 days",
+      "total_due": 0,
+      "payments": [
+        {"vendor": "Name", "amount": 0, "due_date": "YYYY-MM-DD", "status": "scheduled|pending|overdue"}
+      ],
+      "risk_level": "low|medium|high"
+    }
+  ],
+  "cash_flow_warning": "Warning message if issues detected, null otherwise",
+  "peak_payment_dates": [
+    {"date": "YYYY-MM-DD", "total": 0, "vendors": ["list"]}
+  ],
+  "recommendations": [
+    {"recommendation": "Advice", "priority": "high|medium|low", "potential_savings": 0}
+  ],
+  "summary": {
+    "total_remaining": 0,
+    "total_paid": 0,
+    "next_payment_date": "YYYY-MM-DD",
+    "largest_upcoming": {"vendor": "Name", "amount": 0, "date": "YYYY-MM-DD"}
+  }
+}
+
+Flag any cash flow concerns (multiple large payments in short window, overdue payments, etc.)."""
+    },
+    "vendor_price_analysis": {
+        "credits": 1,
+        "ttl_hours": 24,
+        "cacheable": True,
+        "description": "Analyze if a vendor quote is fair for the region and service type",
+        "system_prompt": """You are a wedding industry pricing expert analyzing vendor quotes.
+
+Compare the provided quote to typical market rates for the vendor type, region, and service level.
+
+Consider:
+1. Vendor type (photographer, caterer, DJ, florist, etc.)
+2. Region (NYC/LA are 2-3x more expensive than smaller markets)
+3. Service level/package inclusions
+4. Wedding size/guest count
+5. Cultural style requirements (some traditions require specialized vendors)
+
+Return ONLY valid JSON in this exact format:
+{
+  "verdict": "below_market|at_market|above_market|significantly_above",
+  "confidence": "high|medium|low",
+  "typical_range": {
+    "min": 0,
+    "max": 0,
+    "average": 0
+  },
+  "analysis": "Detailed explanation of the assessment",
+  "factors_considered": [
+    {"factor": "Factor name", "impact": "raises_price|lowers_price|neutral", "explanation": "Why"}
+  ],
+  "recommendations": [
+    "Negotiation tips or alternatives"
+  ],
+  "value_assessment": "Is this good value for what's included? Explanation."
+}
+
+Be specific about regional pricing differences. A $5K photographer in Oklahoma is different from $5K in Manhattan."""
     }
 }
 
@@ -605,12 +876,39 @@ class AIService:
         import asyncio
 
         try:
+            from google.genai import types
+
             feature_config = AI_FEATURES.get(feature, {})
             system_prompt = feature_config.get("system_prompt", "")
 
             # Format context into prompt
             context_str = json.dumps(context, indent=2, default=str)
             full_prompt = f"{system_prompt}\n\nContext:\n{context_str}\n\nRequest:\n{prompt}"
+
+            # Configure generation settings per official SDK docs
+            # Reference: https://googleapis.github.io/python-genai/
+            generation_config = types.GenerateContentConfig(
+                temperature=0.7,  # Balanced creativity for wedding planning
+                max_output_tokens=2048,  # Reasonable limit for responses
+                safety_settings=[
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_HARASSMENT',
+                        threshold='BLOCK_ONLY_HIGH',
+                    ),
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_HATE_SPEECH',
+                        threshold='BLOCK_ONLY_HIGH',
+                    ),
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                        threshold='BLOCK_MEDIUM_AND_ABOVE',
+                    ),
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_DANGEROUS_CONTENT',
+                        threshold='BLOCK_ONLY_HIGH',
+                    ),
+                ]
+            )
 
             # Use async client.aio.models.generate_content for proper async
             # This is the new SDK pattern that doesn't block the event loop
@@ -619,7 +917,8 @@ class AIService:
                 response = await asyncio.wait_for(
                     self._client.aio.models.generate_content(
                         model=model,
-                        contents=full_prompt
+                        contents=full_prompt,
+                        config=generation_config
                     ),
                     timeout=60.0
                 )

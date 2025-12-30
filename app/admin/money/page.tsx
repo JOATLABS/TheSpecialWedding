@@ -28,8 +28,45 @@ import {
   XCircle,
   AlertTriangle,
   Zap,
-  ExternalLink
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
+
+// AI Forecast types
+interface PaymentForecast {
+  forecast_periods: Array<{
+    period: string;
+    total_due: number;
+    payments: Array<{
+      vendor: string;
+      amount: number;
+      due_date: string;
+      status: string;
+    }>;
+    risk_level: string;
+  }>;
+  cash_flow_warning: string | null;
+  peak_payment_dates: Array<{
+    date: string;
+    total: number;
+    vendors: string[];
+  }>;
+  recommendations: Array<{
+    recommendation: string;
+    priority: string;
+    potential_savings: number;
+  }>;
+  summary: {
+    total_remaining: number;
+    total_paid: number;
+    next_payment_date: string;
+    largest_upcoming: {
+      vendor: string;
+      amount: number;
+      date: string;
+    } | null;
+  };
+}
 
 interface PaymentSummary {
   total_incoming: number;
@@ -125,6 +162,44 @@ export default function MoneyDashboard() {
   // Subscription state
   const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
 
+  // AI Forecast state
+  const [showAiForecast, setShowAiForecast] = useState(false);
+  const [aiForecast, setAiForecast] = useState<PaymentForecast | null>(null);
+  const [aiForecastLoading, setAiForecastLoading] = useState(false);
+  const [selectedWeddingForForecast, setSelectedWeddingForForecast] = useState<string>('');
+  const [weddingsList, setWeddingsList] = useState<Array<{ id: string; title: string }>>([]);
+
+  // Fetch AI payment forecast
+  const fetchAiForecast = useCallback(async (weddingId: string) => {
+    if (!adminToken || !weddingId) return;
+
+    setAiForecastLoading(true);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/ai/weddings/${weddingId}/payment-forecast`, {
+        headers: {
+          'Authorization': `Bearer ${adminToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.status === 402) {
+        toast.error('Insufficient AI credits');
+        return;
+      }
+
+      if (!response.ok) throw new Error('Failed to get forecast');
+
+      const data = await response.json();
+      setAiForecast(data.forecast);
+      toast.success(`Got forecast! Used ${data.credits_used} credits`);
+    } catch {
+      toast.error('Failed to get payment forecast');
+    } finally {
+      setAiForecastLoading(false);
+    }
+  }, [adminToken]);
+
   const fetchMoneyData = useCallback(async () => {
     if (!adminToken) return;
 
@@ -194,6 +269,12 @@ export default function MoneyDashboard() {
         if (weddingsRes.ok) {
           const weddingsData = await weddingsRes.json();
           const weddings = weddingsData.weddings || weddingsData || [];
+
+          // Populate weddings list for AI forecast
+          setWeddingsList(weddings.map((w: { _id?: string; id?: string; title?: string; couple_names?: string }) => ({
+            id: w._id || w.id,
+            title: w.title || w.couple_names || 'Wedding'
+          })));
 
           // Fetch budget data for each wedding to get vendor payments
           const vendorPaymentsPromises = weddings.map(async (wedding: { _id?: string; id?: string; title?: string }) => {
@@ -728,6 +809,254 @@ export default function MoneyDashboard() {
               )}
             </div>
           </Card>
+        </div>
+
+        {/* AI Cash Flow Forecast Card */}
+        <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 border-indigo-200 dark:border-indigo-800">
+          <div className="p-4 border-b border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <Sparkles size={20} className="text-white" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-slate-900 dark:text-white">AI Cash Flow Forecast</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Get AI-powered payment analysis</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAiForecast(true)}
+              className="border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30"
+            >
+              <Sparkles size={16} className="mr-2" />
+              View Forecast
+            </Button>
+          </div>
+          <div className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+              <div className="p-3 bg-white/50 dark:bg-slate-800/50 rounded-lg">
+                <p className="text-sm text-slate-500">What You&apos;ll Get</p>
+                <p className="font-medium text-slate-900 dark:text-white">30/60/90 Day Forecast</p>
+              </div>
+              <div className="p-3 bg-white/50 dark:bg-slate-800/50 rounded-lg">
+                <p className="text-sm text-slate-500">Identifies</p>
+                <p className="font-medium text-slate-900 dark:text-white">Cash Flow Risks</p>
+              </div>
+              <div className="p-3 bg-white/50 dark:bg-slate-800/50 rounded-lg">
+                <p className="text-sm text-slate-500">Cost</p>
+                <p className="font-medium text-slate-900 dark:text-white">2 AI Credits</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* AI Forecast Modal */}
+      {showAiForecast && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500 to-purple-600">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                    <Sparkles size={24} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">AI Cash Flow Forecast</h3>
+                    <p className="text-sm text-indigo-100">Payment forecast and recommendations</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAiForecast(false);
+                    setAiForecast(null);
+                  }}
+                  className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {!aiForecast && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Select Wedding
+                    </label>
+                    <select
+                      value={selectedWeddingForForecast}
+                      onChange={(e) => setSelectedWeddingForForecast(e.target.value)}
+                      className="w-full px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                    >
+                      <option value="">Select a wedding...</option>
+                      {weddingsList.map((w) => (
+                        <option key={w.id} value={w.id}>{w.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    onClick={() => selectedWeddingForForecast && fetchAiForecast(selectedWeddingForForecast)}
+                    disabled={aiForecastLoading || !selectedWeddingForForecast}
+                    className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90"
+                  >
+                    {aiForecastLoading ? (
+                      <>
+                        <Loader2 size={20} className="mr-2 animate-spin" />
+                        Analyzing payments...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={20} className="mr-2" />
+                        Generate Forecast (2 credits)
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {aiForecast && (
+                <div className="space-y-6">
+                  {/* Cash Flow Warning */}
+                  {aiForecast.cash_flow_warning && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5" />
+                        <div>
+                          <h4 className="font-semibold text-red-700 dark:text-red-400">Cash Flow Warning</h4>
+                          <p className="text-sm text-red-600 dark:text-red-300">{aiForecast.cash_flow_warning}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  {aiForecast.summary && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
+                        <p className="text-xs text-slate-500">Total Paid</p>
+                        <p className="text-lg font-bold text-green-600">${aiForecast.summary.total_paid?.toLocaleString() || 0}</p>
+                      </div>
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
+                        <p className="text-xs text-slate-500">Remaining</p>
+                        <p className="text-lg font-bold text-blue-600">${aiForecast.summary.total_remaining?.toLocaleString() || 0}</p>
+                      </div>
+                      <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-center">
+                        <p className="text-xs text-slate-500">Next Payment</p>
+                        <p className="text-sm font-medium text-purple-600">{aiForecast.summary.next_payment_date ? formatDate(aiForecast.summary.next_payment_date) : 'None'}</p>
+                      </div>
+                      {aiForecast.summary.largest_upcoming && (
+                        <div className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-center">
+                          <p className="text-xs text-slate-500">Largest Upcoming</p>
+                          <p className="text-lg font-bold text-orange-600">${aiForecast.summary.largest_upcoming.amount?.toLocaleString()}</p>
+                          <p className="text-xs text-slate-500">{aiForecast.summary.largest_upcoming.vendor}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Forecast Periods */}
+                  {aiForecast.forecast_periods?.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-slate-900 dark:text-white mb-3">Payment Forecast</h4>
+                      <div className="space-y-3">
+                        {aiForecast.forecast_periods.map((period, i) => (
+                          <div key={i} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            <div className={`px-4 py-2 flex items-center justify-between ${
+                              period.risk_level === 'high' ? 'bg-red-50 dark:bg-red-900/20' :
+                              period.risk_level === 'medium' ? 'bg-yellow-50 dark:bg-yellow-900/20' :
+                              'bg-green-50 dark:bg-green-900/20'
+                            }`}>
+                              <span className="font-medium text-slate-900 dark:text-white">{period.period}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="font-semibold">${period.total_due?.toLocaleString()}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  period.risk_level === 'high' ? 'bg-red-200 text-red-800' :
+                                  period.risk_level === 'medium' ? 'bg-yellow-200 text-yellow-800' :
+                                  'bg-green-200 text-green-800'
+                                }`}>
+                                  {period.risk_level} risk
+                                </span>
+                              </div>
+                            </div>
+                            {period.payments?.length > 0 && (
+                              <div className="p-3 space-y-1 bg-white dark:bg-slate-800">
+                                {period.payments.slice(0, 3).map((p, j) => (
+                                  <div key={j} className="flex items-center justify-between text-sm">
+                                    <span className="text-slate-700 dark:text-slate-300">{p.vendor}</span>
+                                    <span className="text-slate-900 dark:text-white">${p.amount?.toLocaleString()}</span>
+                                  </div>
+                                ))}
+                                {period.payments.length > 3 && (
+                                  <p className="text-xs text-slate-500">+{period.payments.length - 3} more</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Peak Payment Dates */}
+                  {aiForecast.peak_payment_dates?.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-slate-900 dark:text-white mb-3">Peak Payment Dates</h4>
+                      <div className="space-y-2">
+                        {aiForecast.peak_payment_dates.map((peak, i) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                            <div>
+                              <p className="font-medium text-slate-900 dark:text-white">{formatDate(peak.date)}</p>
+                              <p className="text-xs text-slate-500">{peak.vendors.join(', ')}</p>
+                            </div>
+                            <p className="font-bold text-orange-600">${peak.total?.toLocaleString()}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recommendations */}
+                  {aiForecast.recommendations?.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-slate-900 dark:text-white mb-3">Recommendations</h4>
+                      <div className="space-y-2">
+                        {aiForecast.recommendations.map((rec, i) => (
+                          <div key={i} className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                            <div className="flex items-start justify-between">
+                              <p className="text-slate-700 dark:text-slate-300">{rec.recommendation}</p>
+                              <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                                rec.priority === 'high' ? 'bg-red-100 text-red-700' :
+                                rec.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-green-100 text-green-700'
+                              }`}>
+                                {rec.priority}
+                              </span>
+                            </div>
+                            {rec.potential_savings > 0 && (
+                              <p className="text-sm text-green-600 mt-1">Potential savings: ${rec.potential_savings.toLocaleString()}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    onClick={() => setAiForecast(null)}
+                    className="w-full"
+                  >
+                    Run New Forecast
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
