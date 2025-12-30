@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/utils/env';
 import {
   getVendorDirectory,
   getContractTemplates,
@@ -97,6 +98,13 @@ export default function ContractCanvasPage() {
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [showPlaceholders, setShowPlaceholders] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
+
+  // AI Generation state
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiSectionType, setAiSectionType] = useState<string>('');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiGeneratedContent, setAiGeneratedContent] = useState('');
 
   // Fetch vendors
   useEffect(() => {
@@ -332,6 +340,76 @@ Contract Reference: {{contract_number}}`,
       textarea.focus();
       textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
     }, 0);
+  };
+
+  // AI section generation
+  const openAiModal = (sectionType: string) => {
+    // Set default prompts based on section type
+    const defaultPrompts: Record<string, string> = {
+      payment_terms: `Generate payment terms for a ${draft.vendor?.service_category || 'wedding vendor'} contract.`,
+      cancellation_policy: `Generate a cancellation policy for a ${draft.vendor?.service_category || 'wedding vendor'} contract.`,
+      scope_of_work: `Generate a scope of work for ${draft.vendor?.business_name || 'a vendor'}.`,
+      liability: `Generate a liability clause for a ${draft.vendor?.service_category || 'wedding vendor'} contract.`,
+      custom: '',
+    };
+
+    setAiSectionType(sectionType);
+    setAiPrompt(defaultPrompts[sectionType] || '');
+    setAiGeneratedContent('');
+    setAiModalOpen(true);
+  };
+
+  const handleAiGenerate = async () => {
+    if (!token || !aiPrompt.trim()) return;
+
+    setAiGenerating(true);
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/admin/ai/generate-contract-section`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          section_type: aiSectionType,
+          vendor_type: draft.vendor?.service_category || 'general',
+          wedding_id: draft.weddingId || undefined,
+          custom_prompt: aiPrompt,
+        }),
+      });
+
+      if (response.status === 402) {
+        toast.error('Insufficient AI credits');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to generate content');
+      }
+
+      const data = await response.json();
+      setAiGeneratedContent(data.content || '');
+      toast.success(`Generated! Used ${data.credits_used} credit(s)`);
+    } catch {
+      toast.error('Failed to generate content');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const applyAiContent = () => {
+    if (!aiGeneratedContent) return;
+
+    if (activeSection === 'terms') {
+      setDraft((prev) => ({ ...prev, termsAndConditions: aiGeneratedContent }));
+    } else if (activeSection === 'cancellation') {
+      setDraft((prev) => ({ ...prev, cancellationPolicy: aiGeneratedContent }));
+    } else if (activeSection) {
+      handleUpdateSection(activeSection, 'content', aiGeneratedContent);
+    }
+
+    setAiModalOpen(false);
+    toast.success('Content applied!');
   };
 
   // Preview with placeholders replaced
@@ -816,6 +894,26 @@ Contract Reference: {{contract_number}}`,
                       : draft.sections.find((s) => s.id === activeSection)?.title || 'Select a section'}
                   </h3>
                   <div className="flex items-center gap-2">
+                    {/* AI Generate Button */}
+                    {activeSection && (
+                      <button
+                        onClick={() => {
+                          const sectionType = activeSection === 'terms' ? 'payment_terms' :
+                            activeSection === 'cancellation' ? 'cancellation_policy' :
+                            draft.sections.find((s) => s.id === activeSection)?.title?.toLowerCase().includes('payment') ? 'payment_terms' :
+                            draft.sections.find((s) => s.id === activeSection)?.title?.toLowerCase().includes('scope') ? 'scope_of_work' :
+                            draft.sections.find((s) => s.id === activeSection)?.title?.toLowerCase().includes('liability') ? 'liability' :
+                            'custom';
+                          openAiModal(sectionType);
+                        }}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:opacity-90 transition-opacity flex items-center gap-1.5"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
+                        AI Generate
+                      </button>
+                    )}
                     <button
                       onClick={() => setShowPlaceholders(!showPlaceholders)}
                       className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
@@ -1086,6 +1184,138 @@ Contract Reference: {{contract_number}}`,
           </div>
         )}
       </div>
+
+      {/* AI Generation Modal */}
+      {aiModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500 to-purple-600">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">AI Content Generator</h3>
+                    <p className="text-sm text-indigo-100">Generate professional contract content</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAiModalOpen(false)}
+                  className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {/* Prompt Input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  What would you like to generate?
+                </label>
+                <textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 resize-none"
+                  placeholder="Describe what you want to generate..."
+                />
+              </div>
+
+              {/* Section Type */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Section Type
+                </label>
+                <select
+                  value={aiSectionType}
+                  onChange={(e) => setAiSectionType(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="payment_terms">Payment Terms</option>
+                  <option value="cancellation_policy">Cancellation Policy</option>
+                  <option value="scope_of_work">Scope of Work</option>
+                  <option value="liability">Liability Clause</option>
+                  <option value="force_majeure">Force Majeure</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+
+              {/* Generate Button */}
+              <button
+                onClick={handleAiGenerate}
+                disabled={aiGenerating || !aiPrompt.trim()}
+                className="w-full px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mb-4"
+              >
+                {aiGenerating ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Generate (1 credit)
+                  </>
+                )}
+              </button>
+
+              {/* Generated Content Preview */}
+              {aiGeneratedContent && (
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 dark:bg-slate-700 px-4 py-2 border-b border-gray-200 dark:border-gray-600 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Generated Content</span>
+                    <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Ready to apply
+                    </span>
+                  </div>
+                  <div className="p-4 max-h-[200px] overflow-y-auto">
+                    <div className="prose dark:prose-invert max-w-none text-sm whitespace-pre-wrap">
+                      {aiGeneratedContent}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-800/50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setAiModalOpen(false)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyAiContent}
+                disabled={!aiGeneratedContent}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Apply to Section
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
