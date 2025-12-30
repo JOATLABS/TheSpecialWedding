@@ -1,93 +1,52 @@
-# =============================================================================
-# FULL-STACK DOCKER BUILD CONFIGURATION (COOLIFY)
-# Includes both Python backend AND Next.js frontend
-# Used for: thespecialwedding.io single-server deployment
-# =============================================================================
+# =========================
+# General Docker Ignore
+# (Full-stack: keep source)
+# =========================
 
-# === DEVELOPMENT FILES - EXCLUDE ===
-.git/
-.github/
-.vscode/
-.idea/
+# Git / editor
+.git
+.github
+.vscode
+.idea
 *.swp
 *.swo
 *~
 .DS_Store
 Thumbs.db
 
-# === NOT NEEDED IN DOCKER - EXCLUDE ===
-cloudflare-workers/
-service-manager/
-nginx-*.conf
-docker-compose*.yml
-venv/
+# Node artifacts
+node_modules
+.next
+out
+dist
+build
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# === TESTING - EXCLUDE ===
-tests/
-test/
-__tests__/
-*.test.py
-*.test.js
-*.test.ts
-*.spec.ts
-*.spec.js
-coverage/
-.coverage
-htmlcov/
-.pytest_cache/
-playwright-report/
-test-results/
-
-# === DOCUMENTATION - EXCLUDE ===
-*.md
-docs/
-app/docs/
-
-# === PYTHON CACHE - EXCLUDE ===
-__pycache__/
+# Python artifacts
+__pycache__
 *.pyc
 *.pyo
 *.pyd
-.Python
-*.egg-info/
-*.egg
+*.egg-info
+.eggs
+.pytest_cache
+htmlcov
+.coverage
 
-# === NODE BUILD ARTIFACTS - EXCLUDE ===
-# (will be built fresh in Docker)
-node_modules/
-.next/
-out/
-build/
-dist/
+# Tests / docs (optional)
+tests
+test
+__tests__
+playwright-report
+test-results
+docs
+*.md
 
-# === ENVIRONMENT FILES - EXCLUDE ===
+# Env (do not bake secrets)
 .env
 .env.*
 !.env.example
-
-# === GIT/EDITOR CONFIG - EXCLUDE ===
-.gitignore
-.gitattributes
-.editorconfig
-.prettierrc*
-
-# === DOCKER FILES - EXCLUDE FROM CONTEXT ===
-Dockerfile
-Dockerfile.*
-!Dockerfile.coolify
-
-# === WHAT GETS INCLUDED ===
-# Frontend (Next.js):
-# ✅ app/ (all React components, pages, hooks, contexts, styles, types)
-# ✅ public/ (static assets)
-# ✅ package.json, package-lock.json
-# ✅ next.config.js, tsconfig.json
-# ✅ tailwind.config.ts, postcss.config.js
-# ✅ middleware.ts
-# ✅ .eslintrc.json (needed for build)
-
-# Backend (FastAPI):
-# ✅ app/main.py, app/api/, app/models/, app/services/
-# ✅ app/core/, app/middleware/, app/dependencies/, app/utils/
-# ✅ scripts/ (setup_admin_user.py)
-# ✅ requirements.txt
