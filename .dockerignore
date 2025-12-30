@@ -15,6 +15,13 @@
 .DS_Store
 Thumbs.db
 
+# === NOT NEEDED IN DOCKER - EXCLUDE ===
+cloudflare-workers/
+service-manager/
+nginx-*.conf
+docker-compose*.yml
+venv/
+
 # === TESTING - EXCLUDE ===
 tests/
 test/
@@ -22,6 +29,8 @@ __tests__/
 *.test.py
 *.test.js
 *.test.ts
+*.spec.ts
+*.spec.js
 coverage/
 .coverage
 htmlcov/
@@ -45,6 +54,7 @@ __pycache__/
 
 # === NODE BUILD ARTIFACTS - EXCLUDE ===
 # (will be built fresh in Docker)
+node_modules/
 .next/
 out/
 build/
@@ -55,34 +65,29 @@ dist/
 .env.*
 !.env.example
 
-# === MISC - EXCLUDE ===
+# === GIT/EDITOR CONFIG - EXCLUDE ===
 .gitignore
 .gitattributes
 .editorconfig
-.eslintrc*
 .prettierrc*
-.dockerignore.backend
-Dockerfile.coolify
+
+# === DOCKER FILES - EXCLUDE FROM CONTEXT ===
+Dockerfile
+Dockerfile.*
+!Dockerfile.coolify
 
 # === WHAT GETS INCLUDED ===
-# Frontend:
-# ✅ app/admin/ (Next.js admin pages)
-# ✅ app/components/ (React components)
-# ✅ app/contexts/ (React contexts)
-# ✅ app/hooks/ (React hooks)
-# ✅ app/styles/ (CSS/styles)
-# ✅ app/types/ (TypeScript types)
-# ✅ public/ (Static assets)
-# ✅ package.json, tsconfig.json, etc.
+# Frontend (Next.js):
+# ✅ app/ (all React components, pages, hooks, contexts, styles, types)
+# ✅ public/ (static assets)
+# ✅ package.json, package-lock.json
+# ✅ next.config.js, tsconfig.json
+# ✅ tailwind.config.ts, postcss.config.js
+# ✅ middleware.ts
+# ✅ .eslintrc.json (needed for build)
 
-# Backend:
-# ✅ app/main.py (FastAPI entry)
-# ✅ app/api/ (API routers)
-# ✅ app/models/ (Database models)
-# ✅ app/services/ (Business logic)
-# ✅ app/core/ (Core config)
-# ✅ app/middleware/ (Middleware)
-# ✅ app/dependencies/ (DI)
-# ✅ app/utils/ (Utilities)
-# ✅ scripts/ (Database scripts)
-# ✅ requirements.txt (Python deps)
+# Backend (FastAPI):
+# ✅ app/main.py, app/api/, app/models/, app/services/
+# ✅ app/core/, app/middleware/, app/dependencies/, app/utils/
+# ✅ scripts/ (setup_admin_user.py)
+# ✅ requirements.txt
