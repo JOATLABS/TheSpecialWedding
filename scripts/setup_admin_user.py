@@ -40,8 +40,7 @@ async def setup_admin_user(auto_create: bool = False):
     print(f"[INFO] Checking for root admin user: {admin_email}")
 
     try:
-        # Connect to database
-        await mongo.connect()
+        # Get collection (Motor connects lazily on first query)
         users_collection = mongo.get_users_collection()
 
         # Check if admin already exists
@@ -55,7 +54,7 @@ async def setup_admin_user(auto_create: bool = False):
                     {"email": admin_email},
                     {"$set": {"role": "ROOT_ADMIN", "updated_at": datetime.utcnow()}}
                 )
-                print(f"[UPDATED] Upgraded user role to ROOT_ADMIN")
+                print("[UPDATED] Upgraded user role to ROOT_ADMIN")
             return True
 
         # Confirm creation in interactive mode
@@ -92,9 +91,9 @@ async def setup_admin_user(auto_create: bool = False):
         # Don't fail the entire startup - log and continue
         return True
     finally:
-        # Close connection
+        # Close connection (sync method)
         try:
-            await mongo.close()
+            mongo.close()
         except Exception:
             pass
 
