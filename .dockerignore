@@ -1,33 +1,55 @@
-# node / next build artifacts
-node_modules
-.next
-out
-dist
-build
+# ---- node / next build artifacts ----
+node_modules/
+.next/
+out/
+dist/
+build/
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# python cache
-__pycache__
+# ---- python artifacts ----
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.egg-info
+.Python
+*.egg-info/
+.venv/
+venv/
 
-# git/editor
-.git
-.github
-.vscode
-.idea
+# ---- tests / coverage ----
+tests/
+test/
+__tests__/
+coverage/
+htmlcov/
+.pytest_cache/
+playwright-report/
+test-results/
+
+# ---- git / editor ----
+.git/
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+Thumbs.db
 
-# env files (use Coolify env vars)
+# ---- env files (use Coolify env vars instead) ----
 .env
 .env.*
 !.env.example
 
-# tests/docs (optional)
-tests
-test
-__tests__
-docs
+# ---- docs / misc ----
+docs/
 *.md
+
+# ---- optional: exclude local tooling ----
+docker-compose*.yml
+nginx-*.conf
