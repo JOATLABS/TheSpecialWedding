@@ -540,13 +540,19 @@ class AIService:
                 model=model
             )
 
+            # Calculate updated credits after deduction
+            updated_remaining = (credit_status["credits_remaining"] or 0) - feature_config["credits"]
+            updated_percent = None
+            if credit_status["credits_limit"] and credit_status["credits_limit"] > 0:
+                updated_percent = round((updated_remaining / credit_status["credits_limit"]) * 100, 1)
+
             result = {
                 "response": response,
                 "cached": False,
                 "credits_used": feature_config["credits"],
                 "model_used": model,
-                "credits_remaining": credit_status["credits_remaining"],
-                "credits_percent": credit_status["credits_percent"]
+                "credits_remaining": max(0, updated_remaining),
+                "credits_percent": updated_percent
             }
 
             # Include warning for frontend to display if credits are low
