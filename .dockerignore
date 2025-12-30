@@ -1,52 +1,33 @@
-# =========================
-# General Docker Ignore
-# (Full-stack: keep source)
-# =========================
-
-# Git / editor
-.git
-.github
-.vscode
-.idea
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
-
-# Node artifacts
+# node / next build artifacts
 node_modules
 .next
 out
 dist
 build
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
 
-# Python artifacts
+# python cache
 __pycache__
 *.pyc
 *.pyo
 *.pyd
 *.egg-info
-.eggs
-.pytest_cache
-htmlcov
-.coverage
 
-# Tests / docs (optional)
-tests
-test
-__tests__
-playwright-report
-test-results
-docs
-*.md
+# git/editor
+.git
+.github
+.vscode
+.idea
+.DS_Store
 
-# Env (do not bake secrets)
+# env files (use Coolify env vars)
 .env
 .env.*
 !.env.example
+
+# tests/docs (optional)
+tests
+test
+__tests__
+docs
+*.md
