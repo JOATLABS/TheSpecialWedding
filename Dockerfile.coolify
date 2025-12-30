@@ -1,7 +1,7 @@
 # =============================================================================
 # FULL-STACK DOCKERFILE FOR COOLIFY DEPLOYMENT
 # Builds both Next.js frontend and FastAPI backend in a single container
-# Used for: thespecialwedding.io (development/testing environment)
+# Used for: thespecialwedding.io (production - migrating from Vercel/DigitalOcean)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
