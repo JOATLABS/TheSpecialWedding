@@ -1,0 +1,115 @@
+# =============================================================================
+# FULL-STACK DOCKERFILE FOR COOLIFY DEPLOYMENT
+# Builds both Next.js frontend and FastAPI backend in a single container
+# Used for: thespecialwedding.io (development/testing environment)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build Next.js Frontend
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app
+
+# Copy package files first for better layer caching
+COPY package.json package-lock.json* ./
+
+# Install dependencies with legacy peer deps for React 19 compatibility
+RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+# Copy all source files (controlled by .dockerignore)
+COPY . .
+
+# Set build-time environment variables
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+
+# Build Next.js application
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 2: Production Runtime
+# -----------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS runtime
+
+WORKDIR /app
+
+# Install Node.js 20.x and system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    apt-get -y upgrade && \
+    apt-get -y autoremove && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install supervisord to manage both processes
+RUN pip install --no-cache-dir supervisor
+
+# Copy Python requirements and install dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy backend application code (entire app/ folder)
+COPY app/ ./app/
+
+# Copy scripts (including setup_admin_user.py)
+COPY scripts/ ./scripts/
+
+# Copy Next.js build output from frontend-builder stage
+COPY --from=frontend-builder /app/.next ./.next
+COPY --from=frontend-builder /app/public ./public
+COPY --from=frontend-builder /app/node_modules ./node_modules
+COPY --from=frontend-builder /app/package.json ./package.json
+COPY --from=frontend-builder /app/next.config.js ./next.config.js
+
+# Create non-root user for security
+RUN useradd -u 10001 -m appuser && \
+    mkdir -p /var/log/supervisor && \
+    chown -R appuser:appuser /app /var/log/supervisor
+
+# Create supervisord configuration
+RUN mkdir -p /etc/supervisor/conf.d
+COPY <<EOF /etc/supervisor/conf.d/supervisord.conf
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:backend]
+command=sh -c "python scripts/setup_admin_user.py --auto-create && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+directory=/app
+user=appuser
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/supervisor/backend.err.log
+stdout_logfile=/var/log/supervisor/backend.out.log
+priority=1
+
+[program:frontend]
+command=npm start
+directory=/app
+user=appuser
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/supervisor/frontend.err.log
+stdout_logfile=/var/log/supervisor/frontend.out.log
+environment=PORT=3000,NODE_ENV=production
+priority=2
+EOF
+
+# Health check - verify backend is responding
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV NODE_ENV=production
+
+# Expose both ports
+EXPOSE 3000 8000
+
+# Start supervisord to manage both processes
+CMD ["/usr/local/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
