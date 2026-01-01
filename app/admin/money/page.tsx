@@ -735,6 +735,7 @@ export default function MoneyDashboard() {
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent Incoming */}
           <Card>
