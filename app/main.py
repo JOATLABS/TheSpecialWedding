@@ -66,6 +66,7 @@ from app.api.contracts import router as contracts_router
 from app.api.autopilot import router as autopilot_router
 from app.api.ai import router as ai_router
 from app.api.planner_notifications import router as planner_notifications_router
+from app.api.tables import router as tables_router
 
 # Setup logging
 logging.basicConfig(
@@ -282,6 +283,7 @@ admin_routers = [
     (autopilot_router, "Autopilot"),
     (ai_router, "AI"),
     (planner_notifications_router, "Planner Notifications"),
+    (tables_router, "Seating"),
 ]
 
 for router, tag in admin_routers:
