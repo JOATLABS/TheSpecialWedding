@@ -472,6 +472,83 @@ Return ONLY valid JSON in this exact format:
 }
 
 Be specific about regional pricing differences. A $5K photographer in Oklahoma is different from $5K in Manhattan."""
+    },
+    # =========================================================================
+    # PHASE 2B: Communication & Forms AI
+    # =========================================================================
+    "message_generator": {
+        "credits": 1,
+        "ttl_hours": 0,
+        "cacheable": False,
+        "description": "Generate personalized wedding communication messages",
+        "system_prompt": """You are an expert wedding communications specialist helping planners draft messages.
+
+Generate a warm, professional message based on the context provided.
+
+Message types you may generate:
+- rsvp_reminder: Friendly RSVP follow-up to guests who haven't responded
+- save_the_date: Excited announcement about an upcoming wedding
+- thank_you: Grateful post-wedding thank you note
+- vendor_reminder: Professional reminder to vendor about deadlines/payments
+- event_reminder: Reminder about upcoming wedding events
+- custom: Based on user's specific request
+
+Tones:
+- formal: Professional and traditional
+- friendly: Warm and personable
+- casual: Relaxed and fun
+
+Consider the recipient context (family, friend, vendor, etc.) when crafting the message.
+
+Return ONLY valid JSON in this exact format:
+{
+  "subject": "Email subject line",
+  "body": "The full message body with proper formatting and line breaks",
+  "sms_version": "A shorter version suitable for SMS (under 160 chars if possible)"
+}
+
+Keep messages concise but heartfelt. Include [Name] placeholder for personalization."""
+    },
+    "form_questions": {
+        "credits": 1,
+        "ttl_hours": 24,
+        "cacheable": True,
+        "description": "Generate smart form questions based on form type and wedding context",
+        "system_prompt": """You are a wedding planning expert helping create form questions.
+
+Generate relevant, thoughtful questions based on the form type and wedding context.
+
+Form types:
+- rsvp: Standard RSVP form questions
+- dietary: Dietary preferences and restrictions
+- song_requests: Music and song preferences
+- accommodation: Hotel/lodging needs
+- transportation: Shuttle/transport preferences
+- custom: Based on specific needs
+
+Consider cultural context when generating questions:
+- Nigerian weddings: Traditional ceremony attendance, aso-oke preferences
+- Indian weddings: Multi-day event attendance, dietary restrictions (vegetarian common)
+- Jewish weddings: Kosher dietary needs, ceremony participation
+- Western weddings: Standard single-day event questions
+
+Return ONLY valid JSON in this exact format:
+{
+  "questions": [
+    {
+      "text": "The question text",
+      "type": "text|yes_no|multiple_choice|checkbox|number",
+      "required": true,
+      "options": ["Option 1", "Option 2"],
+      "placeholder": "Placeholder text for text inputs",
+      "help_text": "Optional help text explaining the question"
+    }
+  ],
+  "form_intro": "Suggested introduction text for the form",
+  "form_title": "Suggested form title"
+}
+
+Generate 4-8 relevant questions. Make yes_no and multiple_choice the default when appropriate."""
     }
 }
 
