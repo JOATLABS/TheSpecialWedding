@@ -16,15 +16,14 @@ from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile
 import boto3
 from botocore.exceptions import ClientError
+import stripe
 
 from app.core.database import mongo
+from app.core.settings import settings
 from app.services.email_service_resend import ResendEmailService
 from app.models.vendor import (
-    VendorProfile, VendorCategory, ContractStatus, ContractType,
-    PaymentMilestoneStatus, QuoteStatus, VendorContract,
-    VendorPaymentMilestone, VendorAssignment, ContractTemplate,
-    VendorCommunication, PaymentLink, PaymentLinkStatus,
-    PayerType, RecipientType
+    ContractStatus, ContractType, PaymentMilestoneStatus,
+    QuoteStatus, PaymentLinkStatus
 )
 
 logger = logging.getLogger(__name__)
@@ -163,7 +162,7 @@ class VendorService:
     async def _log_communication(
         self,
         vendor_profile_id: str,
-        type: str,
+        comm_type: str,
         content: str,
         created_by: str,
         wedding_id: Optional[str] = None,
@@ -178,7 +177,7 @@ class VendorService:
             "vendor_profile_id": vendor_profile_id,
             "wedding_id": wedding_id,
             "contract_id": contract_id,
-            "type": type,
+            "type": comm_type,
             "subject": subject,
             "content": content,
             "direction": direction,
@@ -992,7 +991,7 @@ class VendorService:
                 # Log communication
                 await self._log_communication(
                     vendor_profile_id=contract["vendor_profile_id"],
-                    type="contract_sent",
+                    comm_type="contract_sent",
                     content=f"Contract sent: {contract['contract_title']}",
                     created_by=created_by,
                     wedding_id=contract["wedding_id"],
@@ -1019,7 +1018,13 @@ class VendorService:
         signer_email: str,
         signature_ip: Optional[str] = None
     ) -> dict:
-        """Sign a contract (vendor action)"""
+        """
+        Sign a contract (vendor action).
+
+        Note: This method updates multiple collections (vendor_contracts, vendor_assignments)
+        without using MongoDB transactions. In rare cases of partial failure, manual
+        reconciliation may be needed. Consider using MongoDB transactions for critical operations.
+        """
         try:
             contract = await self.vendor_contracts.find_one({
                 "_id": ObjectId(contract_id),
@@ -1488,7 +1493,14 @@ class VendorService:
         receipt_url: Optional[str] = None,
         stripe_payment_intent_id: Optional[str] = None
     ) -> dict:
-        """Record a payment against a milestone"""
+        """
+        Record a payment against a milestone.
+
+        Note: This method updates multiple collections (payment_milestones, vendor_assignments,
+        vendor_profiles, budget_categories) without using MongoDB transactions. In rare cases
+        of partial failure, manual reconciliation may be needed. Consider using MongoDB
+        transactions for critical operations.
+        """
         try:
             milestone = await self.payment_milestones.find_one({"_id": ObjectId(milestone_id)})
             if not milestone:
@@ -1628,7 +1640,7 @@ class VendorService:
 
         except Exception as e:
             logger.error(f"Error fetching communications: {str(e)}")
-            return []
+            raise HTTPException(status_code=500, detail="Failed to fetch communications")
 
     # =========================================================================
     # PDF UPLOAD CONTRACT
@@ -1766,9 +1778,6 @@ class VendorService:
         Integrates with Stripe for payment processing.
         """
         try:
-            import stripe
-            from app.core.settings import settings
-
             if not settings.stripe_enabled:
                 raise HTTPException(status_code=503, detail="Payment processing not available")
 
@@ -1811,6 +1820,12 @@ class VendorService:
                 logger.error(f"Stripe error creating payment link: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Payment link creation failed: {str(e)}")
 
+            # Calculate expiration date (due_date + 7 days buffer, or 30 days from now)
+            if due_date:
+                expires_at = due_date + timedelta(days=7)
+            else:
+                expires_at = datetime.utcnow() + timedelta(days=TOKEN_EXPIRY_DAYS)
+
             # Create payment link record
             payment_link_doc = {
                 "wedding_id": wedding_id,
@@ -1828,6 +1843,7 @@ class VendorService:
                 "currency": currency,
                 "description": description,
                 "due_date": due_date,
+                "expires_at": expires_at,
                 "stripe_payment_link_id": stripe_payment_link_id,
                 "stripe_payment_link_url": stripe_payment_link_url,
                 "status": PaymentLinkStatus.DRAFT.value,
@@ -1974,7 +1990,7 @@ class VendorService:
 
         except Exception as e:
             logger.error(f"Error fetching payment links: {str(e)}")
-            return []
+            raise HTTPException(status_code=500, detail="Failed to fetch payment links")
 
     async def handle_payment_link_webhook(
         self,
