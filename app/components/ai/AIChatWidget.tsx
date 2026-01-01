@@ -325,14 +325,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
     }
   }, [pathname, propWeddingId, propWeddingName, weddings]);
 
-  // Fetch planner's weddings for selector
-  useEffect(() => {
-    if (token && isOpen && weddings.length === 0) {
-      fetchWeddings();
-    }
-  }, [token, isOpen]);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     setWeddingsLoading(true);
     try {
       const baseUrl = getApiBaseUrl();
@@ -356,7 +349,14 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
     } finally {
       setWeddingsLoading(false);
     }
-  };
+  }, [token, selectedWeddingId, selectedWeddingName]);
+
+  // Fetch planner's weddings for selector
+  useEffect(() => {
+    if (token && isOpen && weddings.length === 0) {
+      fetchWeddings();
+    }
+  }, [token, isOpen, weddings.length, fetchWeddings]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -370,14 +370,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
     }
   }, [isOpen]);
 
-  // Fetch initial credits
-  useEffect(() => {
-    if (token && isOpen) {
-      fetchCredits();
-    }
-  }, [token, isOpen]);
-
-  const fetchCredits = async () => {
+  const fetchCredits = useCallback(async () => {
     try {
       const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/ai/credits`, {
@@ -390,7 +383,14 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
     } catch (err) {
       // Silently fail - not critical
     }
-  };
+  }, [token]);
+
+  // Fetch initial credits
+  useEffect(() => {
+    if (token && isOpen) {
+      fetchCredits();
+    }
+  }, [token, isOpen, fetchCredits]);
 
   const sendMessage = useCallback(async (messageText?: string) => {
     const textToSend = messageText || input.trim();
@@ -480,7 +480,7 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, token, messages, selectedWeddingId]);
+  }, [input, isLoading, token, messages, selectedWeddingId, pathname]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

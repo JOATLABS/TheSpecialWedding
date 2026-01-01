@@ -343,6 +343,12 @@ export default function WeddingDetailsPage() {
  >
  Back
  </Link>
+ <Link
+ href={`/admin/weddings/${weddingId}/seating`}
+ className="bg-wedding-sage/80 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-wedding-sage transition-colors text-sm sm:text-base flex-1 sm:flex-initial text-center"
+ >
+ Seating Plan
+ </Link>
  <button
  onClick={saveWedding}
  disabled={saving}

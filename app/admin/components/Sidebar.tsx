@@ -24,7 +24,8 @@ import {
   Server,
   Calendar,
   Image,
-  Package
+  Package,
+  type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -36,7 +37,7 @@ interface SidebarProps {
 interface NavItem {
   name: string;
   href: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   adminOnly?: boolean;
   plannerOnly?: boolean;
 }

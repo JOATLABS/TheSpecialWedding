@@ -21,6 +21,9 @@ const nextConfig = {
   // Configure build behavior
   staticPageGenerationTimeout: 180,
 
+  // Empty turbopack config to acknowledge we're using webpack config with Turbopack
+  turbopack: {},
+
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {

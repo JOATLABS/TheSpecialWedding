@@ -79,6 +79,7 @@ export default function SupportPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      let fetchedTickets: SupportTicket[] = [];
 
       // Fetch support tickets
       try {
@@ -86,7 +87,8 @@ export default function SupportPage() {
           isRootAdmin ? '/admin/tickets' : '/admin/my-tickets',
           'GET'
         );
-        setTickets(ticketsResponse?.tickets ?? []);
+        fetchedTickets = ticketsResponse?.tickets ?? [];
+        setTickets(fetchedTickets);
       } catch (error) {
         console.warn('Support tickets endpoint not available');
         setTickets([]);
@@ -106,8 +108,8 @@ export default function SupportPage() {
         } catch (error) {
           console.warn('Support metrics endpoint not available');
           setMetrics({
-            total_tickets: tickets.length,
-            open_tickets: tickets.filter(t => t.status === 'open').length,
+            total_tickets: fetchedTickets.length,
+            open_tickets: fetchedTickets.filter(t => t.status === 'open').length,
             resolved_today: 0,
             avg_response_time: 0,
             satisfaction_score: 0

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
@@ -69,12 +69,7 @@ export function PaymentMilestones({
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentNotes, setPaymentNotes] = useState('');
 
-  // Fetch milestones
-  useEffect(() => {
-    fetchMilestones();
-  }, [token, contractId, weddingId]);
-
-  const fetchMilestones = async () => {
+  const fetchMilestones = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getPaymentMilestones(token, { contract_id: contractId, wedding_id: weddingId });
@@ -84,7 +79,12 @@ export function PaymentMilestones({
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, contractId, weddingId]);
+
+  // Fetch milestones
+  useEffect(() => {
+    fetchMilestones();
+  }, [fetchMilestones]);
 
   const handleAddMilestone = () => {
     setNewMilestones([...newMilestones, { description: '', amount: '', due_date: '' }]);

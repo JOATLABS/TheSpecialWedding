@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   getGoogleCalendarStatus,
   getGoogleAuthUrl,
@@ -22,13 +22,7 @@ export default function GoogleCalendarConnect({
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (token) {
-      fetchStatus();
-    }
-  }, [token]);
-
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     if (!token) return;
 
     try {
@@ -41,7 +35,13 @@ export default function GoogleCalendarConnect({
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, onStatusChange]);
+
+  useEffect(() => {
+    if (token) {
+      fetchStatus();
+    }
+  }, [token, fetchStatus]);
 
   const handleConnect = async () => {
     if (!token) return;
