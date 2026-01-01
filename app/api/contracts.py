@@ -74,7 +74,7 @@ async def list_contracts(
     - **status**: Filter by contract status
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         contracts = await contract_service.list_contracts(
             planner_id=planner_id,
@@ -99,7 +99,7 @@ async def get_contract_stats(
 ):
     """Get contract statistics for the planner."""
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         stats = await contract_service.get_contract_stats(planner_id)
         return stats
 
@@ -115,7 +115,7 @@ async def get_contract(
 ):
     """Get a specific contract by ID (admin view)."""
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         contract = await contract_service.get_contract(contract_id, planner_id)
         if not contract:
@@ -147,7 +147,7 @@ async def update_wedding_date(
     """
     try:
         from datetime import date
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         wedding_date = date.fromisoformat(update_data.wedding_date)
 
@@ -181,7 +181,7 @@ async def cancel_contract(
     This will also cancel all pending scheduled payments.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         contract = await contract_service.cancel_contract(
             contract_id=contract_id,
@@ -213,7 +213,7 @@ async def get_contract_payments(
     """Get scheduled payments for a contract."""
     try:
         # Verify ownership by getting contract first
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         contract = await contract_service.get_contract(contract_id, planner_id)
 
         if not contract:
@@ -249,7 +249,7 @@ async def mark_payment_paid_externally(
     method outside of the automated Stripe payment flow.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         payment = await contract_service.mark_payment_paid_externally(
             payment_id=payment_id,
@@ -285,7 +285,7 @@ async def refund_payment(
     Only succeeded payments can be refunded.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         payment = await contract_service.process_refund(
             payment_id=payment_id,
@@ -321,7 +321,7 @@ async def retry_payment(
     Only failed payments can be retried.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         payment = await contract_service.retry_payment(
             payment_id=payment_id,
@@ -350,7 +350,7 @@ class CancelPaymentRequest(BaseModel):
 @router.post("/payments/{payment_id}/cancel", tags=["Contracts"])
 async def cancel_payment(
     payment_id: str,
-    request_data: CancelPaymentRequest = None,
+    request_data: Optional[CancelPaymentRequest] = None,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
@@ -360,7 +360,7 @@ async def cancel_payment(
     Succeeded payments cannot be cancelled (use refund instead).
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         reason = request_data.reason if request_data else None
 
@@ -702,7 +702,7 @@ async def get_followup_drafts(
     try:
         from app.services.contract_followup_service import contract_followup_service
 
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         drafts = await contract_followup_service.get_pending_drafts(planner_id)
 
         return {
@@ -734,7 +734,7 @@ async def update_followup_draft(
     try:
         from app.services.contract_followup_service import contract_followup_service
 
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         updates = update_data.model_dump(exclude_none=True)
         if not updates:
@@ -769,7 +769,7 @@ async def send_followup_draft(
     try:
         from app.services.contract_followup_service import contract_followup_service
 
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         success = await contract_followup_service.send_draft(
             draft_id=draft_id,

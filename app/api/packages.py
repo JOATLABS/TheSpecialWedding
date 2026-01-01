@@ -104,7 +104,7 @@ async def list_packages(
     - **status**: Filter by status (draft, active, archived)
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         packages = await package_service.list_packages(
             planner_id=planner_id,
@@ -135,7 +135,7 @@ async def create_package(
     Packages start in 'draft' status. Activate them before sending to couples.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         package = await package_service.create_package(
             planner_id=planner_id,
@@ -160,7 +160,7 @@ async def get_package_stats(
 ):
     """Get package statistics for the planner."""
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         stats = await package_service.get_package_stats(planner_id)
         return stats
 
@@ -176,7 +176,7 @@ async def get_package(
 ):
     """Get a specific package by ID."""
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         package = await package_service.get_package(package_id, planner_id)
         if not package:
@@ -203,7 +203,7 @@ async def update_package(
     Note: Active packages have limited editable fields.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         package = await package_service.update_package(
             package_id=package_id,
@@ -234,7 +234,7 @@ async def delete_package(
     Only packages in 'draft' status without contracts can be deleted.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         await package_service.delete_package(package_id, planner_id)
 
@@ -260,7 +260,7 @@ async def duplicate_package(
     Creates a copy of the package, optionally as a template.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         package = await package_service.duplicate_package(
             package_id=package_id,
@@ -294,7 +294,7 @@ async def send_package_to_couple(
     with a unique token for the couple to view and sign.
     """
     try:
-        planner_id = str(current_user.user_data.get("_id") or current_user.email)
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         contract = await package_service.send_to_couple(
             package_id=package_id,
@@ -340,17 +340,17 @@ async def get_ai_pricing_suggestion(
 
     Cost: 3 AI credits
     """
-    try:
-        from app.services.ai_service import ai_service, InsufficientCreditsError, AIGenerationError
-        from app.core.settings import settings
+    from app.services.ai_service import ai_service, InsufficientCreditsError, AIGenerationError
+    from app.core.settings import settings
 
+    try:
         if not settings.ai_enabled:
             raise HTTPException(
                 status_code=503,
                 detail="AI features are not available. Please configure GOOGLE_API_KEY."
             )
 
-        user_id = str(current_user.user_data.get("_id") or current_user.email)
+        user_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         # Build context for AI
         services_list = [
