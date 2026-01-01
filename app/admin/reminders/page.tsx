@@ -6,6 +6,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
+import { Sparkles, X } from 'lucide-react';
 
 interface Wedding {
  id?: string;
@@ -68,6 +69,14 @@ export default function AdminRemindersPage() {
  const [customMessage, setCustomMessage] = useState<string>('');
  const [inviteMessage, setInviteMessage] = useState<string>('');
  const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
+
+ // AI Drafting states
+ const [showAiDraftModal, setShowAiDraftModal] = useState(false);
+ const [aiDraftLoading, setAiDraftLoading] = useState(false);
+ const [aiDraftTone, setAiDraftTone] = useState<'formal' | 'friendly' | 'casual'>('friendly');
+ const [aiDraftType, setAiDraftType] = useState<string>('rsvp_reminder');
+ const [aiDraftTarget, setAiDraftTarget] = useState<'customMessage' | 'inviteMessage'>('customMessage');
+ const [aiDraftError, setAiDraftError] = useState<string | null>(null);
 
  const formatLogTimestamp = (timestamp: string) =>
    formatDateTime(timestamp, {
@@ -389,6 +398,72 @@ export default function AdminRemindersPage() {
  } finally {
  setLoading(false);
  }
+ };
+
+ // AI Draft handler
+ const handleAiDraft = async () => {
+   if (!selectedWedding) {
+     setAiDraftError('Please select a wedding first');
+     return;
+   }
+
+   setAiDraftLoading(true);
+   setAiDraftError(null);
+
+   try {
+     const baseUrl = getApiBaseUrl();
+     const response = await fetch(`${baseUrl}/admin/ai/generate-message`, {
+       method: 'POST',
+       headers: {
+         'Authorization': `Bearer ${token}`,
+         'Content-Type': 'application/json',
+       },
+       body: JSON.stringify({
+         message_type: aiDraftType,
+         wedding_id: selectedWedding,
+         tone: aiDraftTone,
+         recipient_context: targetGroup === 'guests' ? 'wedding guest' : 'plus one',
+         couple_names: selectedWeddingData?.couple_names,
+         wedding_date: selectedWeddingData?.date,
+         event_name: eventType.replace('_', ' '),
+       }),
+     });
+
+     if (!response.ok) {
+       const error = await response.json();
+       throw new Error(error.detail || 'Failed to generate message');
+     }
+
+     const data = await response.json();
+     const messageContent = data.message;
+
+     // Apply the generated message to the appropriate field
+     if (aiDraftTarget === 'customMessage') {
+       if (channel === 'sms' || channel === 'both') {
+         setCustomMessage(messageContent.sms_version || messageContent.body || '');
+       } else {
+         setCustomMessage(messageContent.body || '');
+       }
+       if ((channel === 'email' || channel === 'both') && messageContent.subject) {
+         setEmailSubject(messageContent.subject);
+       }
+     } else {
+       setInviteMessage(messageContent.sms_version || messageContent.body || '');
+     }
+
+     setShowAiDraftModal(false);
+     setSuccess('AI message generated! Review and edit as needed.');
+   } catch (err) {
+     setAiDraftError(err instanceof Error ? err.message : 'Failed to generate message');
+   } finally {
+     setAiDraftLoading(false);
+   }
+ };
+
+ const openAiDraftModal = (target: 'customMessage' | 'inviteMessage') => {
+   setAiDraftTarget(target);
+   setAiDraftError(null);
+   setShowAiDraftModal(true);
  };
 
  const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
@@ -756,13 +831,23 @@ export default function AdminRemindersPage() {
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">Custom Message</label>
+ <div className="flex items-center justify-between mb-2">
+   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Custom Message</label>
+   <button
+     type="button"
+     onClick={() => openAiDraftModal('customMessage')}
+     className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+   >
+     <Sparkles className="w-4 h-4" />
+     Draft with AI
+   </button>
+ </div>
  <textarea
  value={customMessage}
  onChange={(e) => setCustomMessage(e.target.value)}
  placeholder="Enter your reminder message..."
  rows={4}
- className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
         This will be sent to guests who have RSVP’d for the {eventType.replace('_', ' ')} event.
@@ -952,6 +1037,101 @@ export default function AdminRemindersPage() {
  </div>
  )}
  </div>
+
+ {/* AI Draft Modal */}
+ {showAiDraftModal && (
+   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+     <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
+         <div className="flex items-center gap-2">
+           <Sparkles className="w-5 h-5 text-white" />
+           <h2 className="text-lg font-semibold text-white">AI Message Draft</h2>
+         </div>
+         <button onClick={() => setShowAiDraftModal(false)} className="text-white/80 hover:text-white">
+           <X className="w-5 h-5" />
+         </button>
+       </div>
+
+       <div className="p-6 space-y-4">
+         {aiDraftError && (
+           <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+             {aiDraftError}
+           </div>
+         )}
+
+         <div>
+           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+             Message Type
+           </label>
+           <select
+             value={aiDraftType}
+             onChange={(e) => setAiDraftType(e.target.value)}
+             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+           >
+             <option value="rsvp_reminder">RSVP Reminder</option>
+             <option value="event_reminder">Event Reminder</option>
+             <option value="save_the_date">Save the Date</option>
+             <option value="thank_you">Thank You</option>
+             <option value="vendor_reminder">Vendor Reminder</option>
+             <option value="custom">Custom Message</option>
+           </select>
+         </div>
+
+         <div>
+           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+             Tone
+           </label>
+           <div className="flex gap-2">
+             {(['formal', 'friendly', 'casual'] as const).map((tone) => (
+               <button
+                 key={tone}
+                 type="button"
+                 onClick={() => setAiDraftTone(tone)}
+                 className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium capitalize transition-colors ${
+                   aiDraftTone === tone
+                     ? 'bg-purple-600 text-white'
+                     : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                 }`}
+               >
+                 {tone}
+               </button>
+             ))}
+           </div>
+         </div>
+
+         <p className="text-sm text-gray-500 dark:text-gray-400">
+           AI will generate a message based on your wedding details and selected options.
+         </p>
+       </div>
+
+       <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end gap-3">
+         <button
+           onClick={() => setShowAiDraftModal(false)}
+           className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+         >
+           Cancel
+         </button>
+         <button
+           onClick={handleAiDraft}
+           disabled={aiDraftLoading}
+           className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+         >
+           {aiDraftLoading ? (
+             <>
+               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+               Generating...
+             </>
+           ) : (
+             <>
+               <Sparkles className="w-4 h-4" />
+               Generate
+             </>
+           )}
+         </button>
+       </div>
+     </div>
+   </div>
+ )}
  </div>
  );
 }

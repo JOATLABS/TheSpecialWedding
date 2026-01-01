@@ -115,6 +115,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Vendor Service Security & Code Quality Fixes** (`app/services/vendor_service.py`):
+  - **Authorization Hardening**: Added `created_by` parameter to `get_contract()` for ownership verification
+    - All internal callers now pass `created_by` to enforce authorization: `send_contract()`, `update_contract()`, `update_contract_sections()`, `get_form_data_for_contract()`, `apply_form_data_to_contract()`, `create_payment_milestones()`
+  - **Performance**: Added `get_dashboard_counts()` method using MongoDB aggregation
+    - Replaced full document loads with efficient `count_documents()` and `$group` pipelines
+    - Dashboard now fetches counts separately from limited recent items
+  - **Data Integrity**: Fixed `get_payment_milestones()` to persist overdue status to database
+    - Previously only marked milestones as overdue in memory, not persisted
+    - Now updates MongoDB when milestones become overdue
+  - **Code Quality**:
+    - Added `validate_object_id()` utility function for consistent ObjectId validation
+    - Added configuration constants: `TOKEN_EXPIRY_DAYS`, `DEPOSIT_DUE_DAYS`, `MAX_FILE_SIZE_MB`, `MEDIA_DOMAIN`
+    - Renamed `type` parameter to `comm_type` in `_log_communication()` to avoid shadowing Python builtin
+    - Moved `stripe` and `settings` imports to top-level (were inside functions)
+    - Fixed silent error swallowing in `get_vendor_communications()` and `get_payment_links()` - now raise `HTTPException` instead of returning empty list
+  - **Payment Links Expiration**: Added `expires_at` field to payment links
+    - Expires 7 days after `due_date` or 30 days from creation if no due date
+  - **Documentation**: Added docstring notes about atomic transaction limitations in `sign_contract()` and `record_payment()`
+  - **Cleanup**: Removed unused model imports (`VendorProfile`, `VendorCategory`, etc.)
+
 - **Budget Tracker API**: Fixed ObjectId serialization error causing "Failed to fetch budget summary"
   - Added proper serialization for MongoDB ObjectId fields in categories and alerts
   - Removed `ge=0` constraint on `remaining_budget` field to allow negative values when overspent

@@ -1785,3 +1785,168 @@ async def chat_with_ai(
     except Exception as e:
         logger.error(f"Error in AI chat: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process chat message")
+
+
+# =========================================================================
+# MESSAGE GENERATOR (JOA-151 / AI-008)
+# =========================================================================
+
+class GenerateMessageRequest(BaseModel):
+    message_type: str  # rsvp_reminder, save_the_date, thank_you, vendor_reminder, event_reminder, custom
+    wedding_id: str
+    tone: str = "friendly"  # formal, friendly, casual
+    recipient_context: Optional[str] = None  # family, friend, vendor, etc.
+    custom_instructions: Optional[str] = None
+    couple_names: Optional[str] = None
+    wedding_date: Optional[str] = None
+    event_name: Optional[str] = None
+
+
+@router.post("/generate-message")
+async def generate_message(
+    request: GenerateMessageRequest,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Generate a personalized wedding communication message.
+
+    Cost: 1 credit
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, request.wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
+
+        # Get wedding details for context
+        wedding = await get_wedding_by_id(request.wedding_id)
+
+        context = {
+            "message_type": request.message_type,
+            "tone": request.tone,
+            "recipient_context": request.recipient_context,
+            "couple_names": request.couple_names or (wedding.get("couple_names") if wedding else None),
+            "wedding_date": request.wedding_date or (wedding.get("date") if wedding else None),
+            "event_name": request.event_name,
+            "custom_instructions": request.custom_instructions
+        }
+
+        prompt = f"Generate a {request.tone} {request.message_type} message"
+        if request.recipient_context:
+            prompt += f" for a {request.recipient_context}"
+        if request.custom_instructions:
+            prompt += f". Special instructions: {request.custom_instructions}"
+
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=request.wedding_id,
+            feature="message_generator",
+            prompt=prompt,
+            context=context,
+            force_refresh=True  # Messages should always be fresh
+        )
+
+        response = result["response"]
+
+        return {
+            "message": response if isinstance(response, dict) else {"body": str(response)},
+            "message_type": request.message_type,
+            "tone": request.tone,
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error generating message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate message")
+
+
+# =========================================================================
+# FORM QUESTIONS GENERATOR (JOA-153 / AI-010)
+# =========================================================================
+
+class GenerateFormQuestionsRequest(BaseModel):
+    form_type: str  # rsvp, dietary, song_requests, accommodation, transportation, custom
+    wedding_id: str
+    cultural_style: Optional[str] = None  # nigerian, indian, jewish, western, etc.
+    custom_context: Optional[str] = None
+    existing_questions: Optional[List[str]] = None  # To avoid duplicates
+
+
+@router.post("/generate-form-questions")
+async def generate_form_questions(
+    request: GenerateFormQuestionsRequest,
+    current_user: dict = Depends(require_admin_or_planner)
+):
+    """
+    Generate smart form questions based on form type and wedding context.
+
+    Cost: 1 credit
+    """
+    try:
+        user_id = str(current_user.user_data.get("_id", ""))
+
+        # Verify planner has access to this wedding
+        if not await check_wedding_access(current_user, request.wedding_id):
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have access to this wedding"
+            )
+
+        # Get wedding details for context
+        wedding = await get_wedding_by_id(request.wedding_id)
+
+        context = {
+            "form_type": request.form_type,
+            "cultural_style": request.cultural_style or (wedding.get("cultural_style") if wedding else "western"),
+            "couple_names": wedding.get("couple_names") if wedding else None,
+            "wedding_date": wedding.get("date") if wedding else None,
+            "guest_count": wedding.get("guest_count") if wedding else None,
+            "custom_context": request.custom_context,
+            "existing_questions": request.existing_questions
+        }
+
+        prompt = f"Generate {request.form_type} form questions"
+        if request.cultural_style:
+            prompt += f" for a {request.cultural_style} wedding"
+        if request.custom_context:
+            prompt += f". Additional context: {request.custom_context}"
+        if request.existing_questions:
+            prompt += f". Avoid duplicating these existing questions: {', '.join(request.existing_questions)}"
+
+        result = await ai_service.generate(
+            user_id=user_id,
+            tenant_id=request.wedding_id,
+            feature="form_questions",
+            prompt=prompt,
+            context=context,
+            force_refresh=False  # Can cache form questions
+        )
+
+        response = result["response"]
+
+        return {
+            "questions": response.get("questions", []) if isinstance(response, dict) else [],
+            "form_title": response.get("form_title") if isinstance(response, dict) else None,
+            "form_intro": response.get("form_intro") if isinstance(response, dict) else None,
+            "form_type": request.form_type,
+            "cached": result["cached"],
+            "credits_used": result["credits_used"],
+            "credits_remaining": result.get("credits_remaining")
+        }
+
+    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
+            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
+            AITimeoutError, AIInvalidResponseError) as e:
+        handle_ai_error(e)
+    except Exception as e:
+        logger.error(f"Error generating form questions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate form questions")
