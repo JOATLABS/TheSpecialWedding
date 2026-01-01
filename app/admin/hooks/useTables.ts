@@ -8,9 +8,10 @@ export function useTables(weddingId: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const getAuthHeader = () => {
-    // Assuming token is stored in localStorage as 'admin_token' based on memory
-    const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+  const getAuthHeader = (): Record<string, string> => {
+    const token = typeof window !== 'undefined'
+      ? localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token')
+      : null;
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 

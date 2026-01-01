@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -39,14 +39,7 @@ export default function AdminGalleryUploadPage() {
     if (!token) router.push('/admin/login');
   }, [token, router]);
 
-  // fetch weddings when token is available
-  useEffect(() => {
-    if (token) {
-      fetchWeddings();
-    }
-  }, [token]);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
     if (!token) return;
     try {
       const baseUrl = getApiBaseUrl();
@@ -62,7 +55,14 @@ export default function AdminGalleryUploadPage() {
     } catch (err) {
       setStatus('Failed to load weddings');
     }
-  };
+  }, [token]);
+
+  // fetch weddings when token is available
+  useEffect(() => {
+    if (token) {
+      fetchWeddings();
+    }
+  }, [token, fetchWeddings]);
 
   const handleWeddingChange = (weddingId: string) => {
     setSelectedWedding(weddingId);
@@ -514,4 +514,3 @@ export default function AdminGalleryUploadPage() {
     </div>
   );
 }
-

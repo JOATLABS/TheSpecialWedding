@@ -271,10 +271,10 @@ export default function AdminGuestsPage() {
     return rsvps.find(r => normalizeId(r.guest_id) === normalizedGuestId);
   };
 
-  const getPlusOnesForGuest = (guestId: string) => {
+  const getPlusOnesForGuest = useCallback((guestId: string) => {
     const normalizedGuestId = normalizeId(guestId);
     return plusOnes.filter(p => normalizeId(p.guest_id) === normalizedGuestId);
-  };
+  }, [plusOnes]);
 
   const getGroupLabel = (groupId: string | undefined) => {
     if (!groupId) return '-';
@@ -407,7 +407,7 @@ export default function AdminGuestsPage() {
     });
 
     return result;
-  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvps, plusOnes]);
+  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvps, plusOnes, getPlusOnesForGuest]);
 
   // ==================== SELECTION HANDLERS ====================
 
