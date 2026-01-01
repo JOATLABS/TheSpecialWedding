@@ -90,16 +90,22 @@ async def handle_resend_webhook(
             import json
             verified_payload = json.loads(body_str)
 
+        if not isinstance(verified_payload, dict):
+            raise HTTPException(status_code=400, detail="Invalid payload format")
+
         # Extract event data
         event_type = verified_payload.get("type")
         event_data = verified_payload.get("data", {})
         created_at_str = verified_payload.get("created_at")
 
         # Parse timestamp
-        try:
-            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-        except:
-            created_at = datetime.utcnow()
+        created_at = datetime.utcnow()
+        if created_at_str and isinstance(created_at_str, str):
+            try:
+                created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+            except (ValueError, TypeError):
+                logger.warning(f"Could not parse timestamp from webhook: {created_at_str}")
+                # Fallback to utcnow() is already set
 
         # Store raw event in database for audit trail
         email_events_collection = mongo.db["email_events"]
@@ -146,7 +152,8 @@ async def handle_resend_webhook(
         event_id = str(result.inserted_id)
 
         # Update notification delivery status
-        await _update_notification_status(event_type, event_data, event_id)
+        if event_type:
+            await _update_notification_status(event_type, event_data, event_id)
 
         # Mark event as processed
         await email_events_collection.update_one(
@@ -186,9 +193,8 @@ def _verify_resend_webhook(
     Returns the verified payload dict if valid, None if invalid.
     """
     try:
-        import resend
-        import json
-
+        from svix.webhooks import Webhook
+        
         # Prepare headers dict for verification
         headers = {
             "svix-id": svix_id or "",
@@ -196,8 +202,9 @@ def _verify_resend_webhook(
             "svix-signature": svix_signature or ""
         }
 
-        # Use Resend's built-in verification (wraps Svix)
-        verified = resend.Webhooks.verify(payload, headers, secret)
+        # Use Svix for webhook verification (Resend uses Svix under the hood)
+        wh = Webhook(secret)
+        verified = wh.verify(payload, headers)
 
         # Return the parsed payload if verification succeeded
         return verified

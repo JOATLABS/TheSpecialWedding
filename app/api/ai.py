@@ -24,7 +24,7 @@ from app.services.ai_service import (
     AITimeoutError,
     AIInvalidResponseError
 )
-from app.dependencies.auth_extended import require_admin_or_planner, check_wedding_access
+from app.dependencies.auth_extended import require_admin_or_planner, check_wedding_access, ExtendedAuthUser
 from app.core.database import mongo
 from bson import ObjectId
 
@@ -211,6 +211,29 @@ def detect_cultural_style_from_events(events: List[Dict]) -> Optional[str]:
     return None
 
 
+def _calculate_rsvp_status(rsvp: dict) -> str:
+    """
+    Determine RSVP status based on attending field.
+
+    The 'attending' field is a List[str] of event names the guest is attending.
+    - If list has items: guest is confirmed (attending at least one event)
+    - If list is empty: guest declined all events
+    - If field is missing/None: should not happen for submitted RSVPs
+    """
+    attending = rsvp.get("attending")
+
+    if attending is None:
+        return "pending"
+
+    if isinstance(attending, list):
+        return "confirmed" if len(attending) > 0 else "declined"
+
+    if isinstance(attending, dict):
+        return "confirmed" if any(attending.values()) else "declined"
+
+    return "pending"
+
+
 async def get_wedding_by_id(wedding_id: str) -> Optional[Dict]:
     """Get wedding data by ID. Handles both ObjectId and string IDs."""
     try:
@@ -268,22 +291,36 @@ async def get_budget_data(wedding_id: str) -> Dict[str, Any]:
 async def get_rsvp_data(wedding_id: str) -> Dict[str, Any]:
     """Get RSVP summary for a wedding."""
     try:
-        guests = await mongo.db["guests"].find({"wedding_id": wedding_id}).to_list(length=500)
+        guest_count = await mongo.db["guests"].count_documents({"wedding_id": wedding_id})
 
-        accepted = sum(1 for g in guests if g.get("rsvp_status") == "accepted")
-        declined = sum(1 for g in guests if g.get("rsvp_status") == "declined")
-        pending = sum(1 for g in guests if g.get("rsvp_status") in ["pending", None])
+        if guest_count == 0:
+            return {"total_guests": 0, "accepted": 0, "declined": 0, "pending": 0, "response_rate": 0}
+
+        rsvps_cursor = mongo.db["rsvps"].find({"wedding_id": wedding_id})
+        rsvps = await rsvps_cursor.to_list(length=None)
+
+        accepted = 0
+        declined = 0
+
+        for rsvp in rsvps:
+            status = _calculate_rsvp_status(rsvp)
+            if status == "confirmed":
+                accepted += 1
+            elif status == "declined":
+                declined += 1
+
+        pending = guest_count - len(rsvps)
 
         return {
-            "total_guests": len(guests),
+            "total_guests": guest_count,
             "accepted": accepted,
             "declined": declined,
             "pending": pending,
-            "response_rate": round((accepted + declined) / len(guests) * 100, 1) if guests else 0
+            "response_rate": round((len(rsvps) / guest_count * 100), 1) if guest_count > 0 else 0
         }
     except Exception as e:
-        logger.error(f"Error fetching RSVP data: {str(e)}")
-        return {"total_guests": 0, "accepted": 0, "declined": 0, "pending": 0}
+        logger.error(f"Error fetching RSVP data for wedding {wedding_id}: {str(e)}")
+        return {"total_guests": 0, "accepted": 0, "declined": 0, "pending": 0, "response_rate": 0}
 
 
 # =========================================================================
@@ -294,7 +331,7 @@ async def get_rsvp_data(wedding_id: str) -> Dict[str, Any]:
 async def get_budget_insights(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get AI-powered budget insights for a wedding.
@@ -303,7 +340,7 @@ async def get_budget_insights(
     Cost: 3 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
@@ -397,7 +434,7 @@ async def get_budget_insights(
 async def get_dashboard_insights(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get AI-powered actionable insights for a wedding dashboard.
@@ -412,7 +449,7 @@ async def get_dashboard_insights(
     Cost: 2 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
@@ -468,12 +505,14 @@ async def get_dashboard_insights(
 
         # Calculate days until wedding
         days_until_wedding = None
-        if wedding.get("date"):
+        wedding_date_str = wedding.get("date")
+        if wedding_date_str and isinstance(wedding_date_str, str):
             try:
                 from datetime import datetime as dt
-                wedding_date = dt.strptime(wedding.get("date"), "%Y-%m-%d")
+                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d")
                 days_until_wedding = (wedding_date - dt.utcnow()).days
-            except Exception:
+            except (ValueError, TypeError):
+                # Ignore if date format is wrong
                 pass
 
         # Build context for AI
@@ -529,7 +568,7 @@ async def get_dashboard_insights(
 async def optimize_seating(
     wedding_id: str,
     request: SeatingOptimizeRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     AI-powered seating optimization.
@@ -540,7 +579,7 @@ async def optimize_seating(
     - 150+ guests: 10 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
@@ -554,6 +593,12 @@ async def optimize_seating(
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 
+        if not request.guests or not request.tables:
+            raise HTTPException(
+                status_code=400, 
+                detail="Guests and tables are required for optimization"
+            )
+
         guest_count = len(request.guests)
 
         # Determine feature based on guest count
@@ -564,22 +609,43 @@ async def optimize_seating(
         else:
             feature = "seating_large"
 
+        # Sanitize guest data to remove PII (email, phone) and reduce token usage
+        # Only send fields relevant to seating logic
+        sanitized_guests = [
+            {
+                "id": g.get("id") or g.get("_id"),
+                "name": g.get("name"),
+                "group": g.get("group_id"),
+                "role": g.get("role"),
+                "plus_one": g.get("plus_one_allowed"),
+                "party_size": 1 + (g.get("number_of_plus_ones_allowed", 0) if g.get("plus_one_allowed") else 0)
+            }
+            for g in request.guests
+        ]
+
         # Build context
         context = {
             "wedding_id": wedding_id,
             "guest_count": guest_count,
             "table_count": len(request.tables),
-            "guests": request.guests,
+            "guests": sanitized_guests,
             "tables": request.tables,
             "constraints": request.constraints or {}
         }
+
+        # Enhanced prompt with explicit constraints
+        system_prompt = (
+            "Create an optimal seating arrangement. Rules: 1. Keep guests with the same 'group' together where possible. "
+            "2. Ensure VIPs/Family are at appropriate tables. 3. Strictly respect table capacity limits. "
+            "4. Keep plus-ones with their primary guest."
+        )
 
         # Generate seating arrangement
         result = await ai_service.generate(
             user_id=user_id,
             tenant_id=wedding_id,
             feature=feature,
-            prompt="Create an optimal seating arrangement for this wedding.",
+            prompt=system_prompt,
             context=context,
             force_refresh=request.force_refresh
         )
@@ -608,7 +674,7 @@ async def optimize_seating(
 @router.post("/draft-communication")
 async def draft_communication(
     request: DraftCommunicationRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     AI-powered email/message drafting.
@@ -617,7 +683,8 @@ async def draft_communication(
     Cost: 1 credit (not cached - context-dependent)
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
+        user_data = current_user.user_data or {}
 
         valid_types = ["follow_up", "reminder", "thank_you", "progress_update"]
         if request.communication_type not in valid_types:
@@ -632,7 +699,7 @@ async def draft_communication(
             "couple_name": request.couple_name,
             "wedding_date": request.wedding_date,
             "additional_context": request.context,
-            "planner_name": current_user.get("first_name") or current_user.get("company_name")
+            "planner_name": user_data.get("first_name") or user_data.get("company_name")
         }
 
         prompt = request.custom_instructions or f"Draft a {request.communication_type.replace('_', ' ')} message."
@@ -680,7 +747,7 @@ async def generate_progress_report(
     include_rsvp: bool = True,
     include_timeline: bool = True,
     force_refresh: bool = False,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Generate a wedding progress report for the couple.
@@ -688,7 +755,7 @@ async def generate_progress_report(
     Cost: 2 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
@@ -772,7 +839,7 @@ async def generate_progress_report(
 @router.post("/suggest-pricing")
 async def suggest_pricing(
     request: PricingSuggestionRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     AI-powered pricing suggestions for service packages.
@@ -780,7 +847,8 @@ async def suggest_pricing(
     Cost: 3 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
+        user_data = current_user.user_data or {}
 
         if not request.services:
             raise HTTPException(status_code=400, detail="At least one service is required")
@@ -790,7 +858,7 @@ async def suggest_pricing(
             "services": request.services,
             "location": request.location or "USA",
             "wedding_size": request.wedding_size or 100,
-            "planner_experience": current_user.get("years_experience", "unknown")
+            "planner_experience": user_data.get("years_experience", "unknown")
         }
 
         # Generate pricing suggestion
@@ -840,7 +908,7 @@ class ContractSectionRequest(BaseModel):
 @router.post("/generate-contract-section")
 async def generate_contract_section(
     request: ContractSectionRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Generate contract clause content using AI.
@@ -856,7 +924,7 @@ async def generate_contract_section(
     Cost: 1 credit per generation
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         valid_sections = ["payment_terms", "cancellation_policy", "scope_of_work", "liability", "force_majeure", "custom"]
         if request.section_type not in valid_sections:
@@ -888,12 +956,10 @@ async def generate_contract_section(
 
             wedding = await get_wedding_by_id(request.wedding_id)
             if wedding:
-                context["wedding"] = {
-                    "couple_names": wedding.get("couple_names"),
-                    "date": wedding.get("date"),
-                    "cultural_style": wedding.get("cultural_style"),
-                    "region": wedding.get("region")
-                }
+                context["wedding_couple_names"] = wedding.get("couple_names", "")
+                context["wedding_date"] = wedding.get("date", "")
+                context["wedding_cultural_style"] = wedding.get("cultural_style", "")
+                context["wedding_region"] = wedding.get("region", "")
 
         # Build prompt based on section type
         section_prompts = {
@@ -906,6 +972,13 @@ async def generate_contract_section(
         }
 
         prompt = section_prompts[request.section_type]
+
+        # Ensure prompt is not None (should not happen due to earlier validation, but for type safety)
+        if prompt is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to generate prompt for the specified section type"
+            )
 
         # Add custom instructions if provided for non-custom sections
         if request.custom_prompt and request.section_type != "custom":
@@ -961,7 +1034,7 @@ class VendorRecommendationRequest(BaseModel):
 @router.post("/vendor-recommendations")
 async def get_vendor_recommendations(
     request: VendorRecommendationRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get AI-powered vendor selection criteria and recommendations.
@@ -976,12 +1049,12 @@ async def get_vendor_recommendations(
     Cost: 2 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Build context
         context = {
             "vendor_type": request.vendor_type,
-            "budget_range": request.budget_range or {"min": None, "max": None},
+            "budget_range": request.budget_range or {"min": 0.0, "max": 0.0},
             "wedding_style": request.wedding_style or "western",
             "region": request.region or "USA",
             "guest_count": request.guest_count or 100
@@ -1048,7 +1121,7 @@ async def get_vendor_recommendations(
 async def prioritize_tasks(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get AI-powered task prioritization for a wedding.
@@ -1063,7 +1136,7 @@ async def prioritize_tasks(
     Cost: 2 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
@@ -1080,9 +1153,10 @@ async def prioritize_tasks(
         # Calculate days until wedding
         from datetime import datetime as dt, timedelta
         days_until_wedding = None
-        if wedding.get("date"):
+        wedding_date_str = wedding.get("date")
+        if wedding_date_str and isinstance(wedding_date_str, str):
             try:
-                wedding_date = dt.strptime(wedding.get("date"), "%Y-%m-%d")
+                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d")
                 days_until_wedding = (wedding_date - dt.utcnow()).days
             except Exception:
                 pass
@@ -1181,7 +1255,7 @@ class TimelineGeneratorRequest(BaseModel):
 @router.post("/generate-timeline")
 async def generate_timeline(
     request: TimelineGeneratorRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Generate a comprehensive wedding planning timeline.
@@ -1192,7 +1266,7 @@ async def generate_timeline(
     Cost: 2 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, request.wedding_id):
@@ -1206,7 +1280,8 @@ async def generate_timeline(
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 
-        if not wedding.get("date"):
+        wedding_date_str = wedding.get("date")
+        if not wedding_date_str:
             raise HTTPException(
                 status_code=400,
                 detail="Wedding date is required to generate a timeline"
@@ -1214,7 +1289,7 @@ async def generate_timeline(
 
         # Calculate timeline parameters
         from datetime import datetime as dt
-        wedding_date = dt.strptime(wedding.get("date"), "%Y-%m-%d")
+        wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d")
         current_date = dt.utcnow()
         days_until_wedding = (wedding_date - current_date).days
         months_until_wedding = days_until_wedding / 30
@@ -1283,7 +1358,7 @@ async def generate_timeline(
 async def get_payment_forecast(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get AI-powered payment forecast and cash flow analysis.
@@ -1297,7 +1372,7 @@ async def get_payment_forecast(
     Cost: 2 credits
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
@@ -1311,7 +1386,7 @@ async def get_payment_forecast(
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 
-        from datetime import datetime as dt, timedelta
+        from datetime import datetime as dt
 
         # Get all scheduled payments
         scheduled_payments = await mongo.db["scheduled_payments"].find({
@@ -1429,7 +1504,7 @@ class VendorPriceAnalysisRequest(BaseModel):
 @router.post("/analyze-vendor-price")
 async def analyze_vendor_price(
     request: VendorPriceAnalysisRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Analyze if a vendor quote is fair for the region and service type.
@@ -1443,7 +1518,7 @@ async def analyze_vendor_price(
     Cost: 1 credit
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Build context
         context = {
@@ -1512,7 +1587,7 @@ async def analyze_vendor_price(
 
 @router.get("/features")
 async def list_ai_features(
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     List all available AI features with their credit costs.
@@ -1525,12 +1600,12 @@ async def list_ai_features(
 @router.get("/credits")
 async def check_ai_credits(
     feature: Optional[str] = None,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Check AI credit balance and feature availability.
     """
-    user_id = str(current_user.user_data.get("_id", ""))
+    user_id = str((current_user.user_data or {}).get("_id", ""))
 
     if feature:
         try:
@@ -1556,12 +1631,12 @@ async def check_ai_credits(
 @router.get("/usage")
 async def get_ai_usage(
     period_days: int = 7,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get AI usage metrics for the current user.
     """
-    user_id = str(current_user.user_data.get("_id", ""))
+    user_id = str((current_user.user_data or {}).get("_id", ""))
 
     metrics = await ai_service.get_usage_metrics(
         period_days=period_days,
@@ -1598,7 +1673,7 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(
     request: ChatMessageRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Interactive chat with the AI wedding planning assistant.
@@ -1610,10 +1685,10 @@ async def chat_with_ai(
     - Culturally-aware responses when wedding context is provided
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Build context with wedding data if provided
-        context = {
+        context: Dict[str, Any] = {
             "user_message": request.message,
             "planner_email": current_user.email
         }
