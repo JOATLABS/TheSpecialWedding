@@ -194,7 +194,7 @@ def _verify_resend_webhook(
     """
     try:
         from svix.webhooks import Webhook
-        
+
         # Prepare headers dict for verification
         headers = {
             "svix-id": svix_id or "",
@@ -231,13 +231,18 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
         if not recipient_email:
             return
 
-        # Initialize delivery_summary counters if they don't exist
-        initialization = {
-            "delivery_summary.delivered_count": {"$exists": False},
-        }
-
         # Map event types to counter updates and delivery event logs
         event_mapping = {
+            "email.sent": {
+                "counter": "sent_count",
+                "event_data": {
+                    "type": "sent",
+                    "recipient": recipient_email,
+                    "email_id": event_data.get("email_id"),
+                    "event_id": event_id,
+                    "timestamp": datetime.utcnow()
+                }
+            },
             "email.delivered": {
                 "counter": "delivered_count",
                 "event_data": {
@@ -256,6 +261,18 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
                     "bounce_type": event_data.get("bounce_type"),
+                    "reason": event_data.get("reason"),
+                    "timestamp": datetime.utcnow()
+                }
+            },
+            "email.delivery_delayed": {
+                "counter": "delayed_count",
+                "event_data": {
+                    "type": "delayed",
+                    "recipient": recipient_email,
+                    "email_id": event_data.get("email_id"),
+                    "event_id": event_id,
+                    "attempt": event_data.get("attempt"),
                     "reason": event_data.get("reason"),
                     "timestamp": datetime.utcnow()
                 }
@@ -288,6 +305,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "recipient": recipient_email,
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
+                    "feedback_type": event_data.get("feedback_type"),
                     "timestamp": datetime.utcnow()
                 }
             }
