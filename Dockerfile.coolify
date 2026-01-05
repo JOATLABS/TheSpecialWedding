@@ -20,12 +20,13 @@ RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 # Copy all source files (controlled by .dockerignore)
 COPY . .
 
-# Set build-time environment variables
-ARG NEXT_PUBLIC_API_BASE_URL
-ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
-
-# Build Next.js application
-RUN npm run build
+# Build Next.js application with API URL from Coolify secrets
+# Coolify passes environment variables via --secret, so we mount and export them
+# This ensures NEXT_PUBLIC_API_BASE_URL is properly baked into the JS bundle
+RUN --mount=type=secret,id=NEXT_PUBLIC_API_BASE_URL \
+    export NEXT_PUBLIC_API_BASE_URL=$(cat /run/secrets/NEXT_PUBLIC_API_BASE_URL 2>/dev/null || echo "https://api.thespecialwedding.io") && \
+    echo "Building with NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL" && \
+    npm run build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Production Runtime

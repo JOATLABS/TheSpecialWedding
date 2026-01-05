@@ -30,5 +30,8 @@ class Settings:
         "https://www.googleapis.com/auth/calendar.events",
     ]
 
+    # Ntfy Push Notification Service
+    SERVICE_URL_NTFY: Optional[str] = os.getenv("SERVICE_URL_NTFY")
+
 
 settings = Settings()
