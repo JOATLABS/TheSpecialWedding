@@ -7,10 +7,29 @@
 
 /**
  * Get the API base URL
- * @throws {Error} if NEXT_PUBLIC_API_BASE_URL is not set
+ *
+ * For Coolify single-container deployments:
+ * - Returns '/api/proxy' to use Next.js rewrites that proxy to localhost:8000
+ *
+ * For development or separate API deployments:
+ * - Returns NEXT_PUBLIC_API_BASE_URL (e.g., http://localhost:8000 or https://api.thespecialwedding.com)
  */
 export function getApiBaseUrl(): string {
   const url = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  // In production without a configured API URL, use proxy path
+  // This handles Coolify single-container deployments where frontend proxies to backend
+  if (!url || url === 'http://localhost:8000') {
+    // Check if we're in browser and on a production domain
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      // If on production domain without separate API subdomain, use proxy
+      if (hostname.includes('thespecialwedding') && !url?.includes('api.thespecialwedding')) {
+        return '/api/proxy';
+      }
+    }
+  }
+
   if (!url) {
     throw new Error(
       'NEXT_PUBLIC_API_BASE_URL environment variable is required. ' +

@@ -47,8 +47,8 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
     const end = new Date(`${eventDate}T${endTime}:00Z`);
 
     const ics = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nSUMMARY:${wedding.couple_names} Wedding\n` +
-      `DTSTART:${start.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n` +
-      `DTEND:${end.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n` +
+      `DTSTART:${start.toISOString().replace(/[:\-]/g, '').split('.')[0]}Z\n` +
+      `DTEND:${end.toISOString().replace(/[:\-]/g, '').split('.')[0]}Z\n` +
       `LOCATION:${event?.details?.venue_name || 'Wedding Venue'}\nDESCRIPTION:You are invited!\nEND:VEVENT\nEND:VCALENDAR`;
 
     const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
