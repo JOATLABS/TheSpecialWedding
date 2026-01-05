@@ -3,6 +3,8 @@ Planner Activity Notifications Service
 
 Handles CRUD operations and triggers for planner-specific notifications.
 These are wedding activity notifications (RSVPs, forms, payments), NOT platform announcements.
+
+Now with Ntfy push notification support!
 """
 
 from fastapi import HTTPException
@@ -16,6 +18,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from bson import ObjectId
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,46 @@ class PlannerNotificationService:
         self.weddings_collection = mongo.db["weddings"]
 
     # ==================== CRUD OPERATIONS ====================
+
+    async def _get_wedding_name(self, wedding_id: Optional[str]) -> Optional[str]:
+        """Get wedding name for push notification context"""
+        if not wedding_id:
+            return None
+        try:
+            wedding = await self.weddings_collection.find_one(
+                {"wedding_id": wedding_id},
+                {"couple_names": 1}
+            )
+            return wedding.get("couple_names") if wedding else None
+        except Exception:
+            return None
+
+    async def _send_push_notification(
+        self,
+        planner_id: str,
+        notification_type: str,
+        title: str,
+        message: str,
+        wedding_name: Optional[str] = None,
+        action_url: Optional[str] = None
+    ):
+        """Send push notification via Ntfy (non-blocking)"""
+        try:
+            # Late import to avoid circular dependencies
+            from app.services.ntfy_service import ntfy_service
+
+            if ntfy_service.enabled:
+                await ntfy_service.send_notification(
+                    planner_id=planner_id,
+                    title=title,
+                    message=message,
+                    notification_type=notification_type,
+                    wedding_name=wedding_name,
+                    click_url=action_url
+                )
+        except Exception as e:
+            # Don't fail the main notification if push fails
+            logger.warning(f"Failed to send push notification: {str(e)}")
 
     async def create_notification(
         self,
@@ -59,6 +102,19 @@ class PlannerNotificationService:
                 raise HTTPException(status_code=500, detail="Failed to create notification")
 
             logger.info(f"Created {notification_type} notification for planner {planner_id}")
+
+            # Send push notification (non-blocking)
+            wedding_name = await self._get_wedding_name(wedding_id)
+            asyncio.create_task(
+                self._send_push_notification(
+                    planner_id=planner_id,
+                    notification_type=notification_type,
+                    title=title,
+                    message=message,
+                    wedding_name=wedding_name,
+                    action_url=action_url
+                )
+            )
 
             return {
                 "id": str(result.inserted_id),

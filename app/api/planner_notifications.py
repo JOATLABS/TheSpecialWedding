@@ -90,3 +90,75 @@ async def delete_activity_notification(
         notification_id=notification_id,
         planner_id=current_user.email
     )
+
+
+# ==================== PUSH NOTIFICATIONS (NTFY) ====================
+
+@router.get("/planner/push-subscription", tags=["Planner Notifications"])
+async def get_push_subscription_info(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get push notification subscription info for the current planner.
+
+    Returns the Ntfy topic URL that the planner can subscribe to
+    using the Ntfy mobile app or web interface.
+
+    Instructions:
+    1. Download the Ntfy app (iOS/Android) or use https://ntfy.sh web
+    2. Subscribe to the topic URL returned by this endpoint
+    3. You'll receive instant push notifications for wedding activities
+    """
+    from app.services.ntfy_service import ntfy_service
+
+    if not ntfy_service.enabled:
+        return {
+            "enabled": False,
+            "message": "Push notifications are not configured on this server"
+        }
+
+    subscription_url = ntfy_service.get_subscription_url(current_user.email)
+    topic = ntfy_service._get_planner_topic(current_user.email)
+
+    return {
+        "enabled": True,
+        "subscription_url": subscription_url,
+        "topic": topic,
+        "server_url": ntfy_service.server_url,
+        "instructions": {
+            "mobile": f"1. Download the Ntfy app\n2. Add subscription: {subscription_url}",
+            "web": f"Visit {subscription_url} in your browser to subscribe",
+            "cli": f"ntfy subscribe {subscription_url}"
+        }
+    }
+
+
+@router.post("/planner/push-test", tags=["Planner Notifications"])
+async def send_test_push_notification(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Send a test push notification to verify your subscription is working.
+
+    Make sure you've subscribed to your topic first (see /planner/push-subscription).
+    """
+    from app.services.ntfy_service import ntfy_service
+
+    if not ntfy_service.enabled:
+        return {
+            "success": False,
+            "message": "Push notifications are not configured on this server"
+        }
+
+    success = await ntfy_service.send_notification(
+        planner_id=current_user.email,
+        title="Test Notification",
+        message="If you see this, push notifications are working!",
+        tags=["white_check_mark", "tada"],
+        priority="default"
+    )
+
+    return {
+        "success": success,
+        "message": "Test notification sent!" if success else "Failed to send test notification"
+    }

@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ntfy Push Notifications**: Instant mobile/desktop push notifications for wedding planners via self-hosted Ntfy server
+  - **New Service** (`app/services/ntfy_service.py`):
+    - Self-hosted Ntfy integration (deployed on Coolify)
+    - Unique topic per planner (hashed for privacy)
+    - Emoji tags and priority levels per notification type
+    - Helper methods: `send_rsvp_notification()`, `send_form_notification()`, `send_payment_notification()`, `send_contract_notification()`
+  - **Config** (`app/core/config.py`): Added `SERVICE_URL_NTFY` environment variable
+  - **Auto-Push**: Every planner activity notification also sends a push notification (non-blocking)
+  - **New API Endpoints**:
+    - `GET /admin/planner/push-subscription` - Get planner's unique Ntfy subscription URL
+    - `POST /admin/planner/push-test` - Send test push notification
+  - **Notification Types with Emoji Tags**:
+    - Form submission: page_facing_up, inbox_tray
+    - RSVP update: white_check_mark, busts_in_silhouette
+    - Payment received: money_with_wings (high priority)
+    - Payment failed: x, credit_card (urgent priority)
+    - Contract signed: memo, black_nib (high priority)
+    - Vendor response: package, handshake
+  - **How Planners Subscribe**:
+    1. Call `GET /admin/planner/push-subscription` to get unique topic URL
+    2. Subscribe in Ntfy app (iOS/Android) or web browser
+    3. Receive instant push notifications for all wedding activities
+
 - **Planner Activity Notifications System**: Real-time activity notifications for wedding planners
   - **New MongoDB Collection**: `planner_notifications` for storing activity events
   - **Model** (`app/models/planner_notification.py`):
@@ -31,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Contract signed → "John Smith signed the contract"
   - **Bell Count**: Combined platform announcements + activity notifications
   - **Notifications Page**: Shows both platform and activity notifications, sorted by date
+  - **Mark as Read**: Click notification to mark as read, "Mark all as read" button
+  - **Real-time Bell Updates**: Bell refreshes on window focus and custom `notifications-updated` event
+  - **New Notification Types**: Added colors for payment_received (emerald), payment_failed (red), contract_signed (indigo), vendor_response (amber)
 
 - **Multi-Tenant Frontend Isolation**: Proper role-based access control
   - **Platform Page Consolidation**: Merged `/admin/platform/metrics` and `/admin/platform/errors` into single `/admin/platform` with tabs (Health, Errors, Performance, Backups)
