@@ -1,5 +1,25 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Proxy API requests to backend in Coolify single-container deployment
+  // The backend runs on port 8000 inside the container
+  async rewrites() {
+    // In production (Coolify), proxy to localhost:8000 inside container
+    // In development, NEXT_PUBLIC_API_BASE_URL handles direct requests
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+
+    // Only enable rewrites for production single-container deployment
+    if (process.env.NODE_ENV === 'production' && !apiBaseUrl.includes('api.thespecialwedding')) {
+      return [
+        {
+          source: '/api/proxy/:path*',
+          destination: 'http://localhost:8000/:path*',
+        },
+      ];
+    }
+
+    return [];
+  },
+
   images: {
     remotePatterns: [
       {
@@ -10,7 +30,7 @@ const nextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'media.thespecialwedding.com',
+        hostname: process.env.MEDIA_DOMAIN || '',
         port: '',
         pathname: '/**',
       },
