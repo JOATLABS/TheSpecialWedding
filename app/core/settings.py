@@ -86,12 +86,12 @@ class Settings(BaseSettings):
     telnyx_api_key: Optional[str] = Field(default=None, alias="TELNYX_API_KEY")
     telnyx_from_number: Optional[str] = Field(default=None, alias="TELNYX_FROM_NUMBER")
 
-    # AWS S3 / Cloudflare R2
+    # AWS S3 / Cloudflare R2 - variable names match .env exactly
     s3_enabled: bool = Field(default=False, alias="S3_ENABLED")
-    s3_access_key: Optional[str] = Field(default=None, alias="S3_ACCESS_KEY")
-    s3_secret_key: Optional[str] = Field(default=None, alias="S3_SECRET_KEY")
+    s3_access_key_id: Optional[str] = Field(default=None, alias="S3_ACCESS_KEY_ID")
+    s3_secret_access_key: Optional[str] = Field(default=None, alias="S3_SECRET_ACCESS_KEY")
     s3_bucket_name: Optional[str] = Field(default=None, alias="S3_BUCKET_NAME")
-    s3_region: str = Field(default="us-east-1", alias="S3_REGION")
+    s3_region: str = Field(default="auto", alias="S3_REGION")
     s3_endpoint_url: Optional[str] = Field(default=None, alias="S3_ENDPOINT_URL")
     # Security Features
     csrf_enabled: bool = Field(default=True, alias="CSRF_ENABLED")

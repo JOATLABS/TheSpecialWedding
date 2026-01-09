@@ -286,10 +286,15 @@ class NtfyNotificationService:
         """
         if not self.enabled:
             logger.warning(f"Ntfy disabled - cannot send admin alert: {title}")
+            await self._fallback_email_alert(title, message)
             return False
 
-        # Admin topic from settings (configurable via NTFY_ADMIN_TOPIC env var)
-        admin_topic = getattr(settings, 'NTFY_ADMIN_TOPIC', 'wedding-platform-admin')
+        admin_topic = getattr(settings, 'NTFY_ADMIN_TOPIC', None)
+        if not admin_topic:
+            logger.warning(f"NTFY_ADMIN_TOPIC not configured - using email fallback: {title}")
+            await self._fallback_email_alert(title, message)
+            return False
+
         url = f"{self.server_url}/{admin_topic}"
 
         if tags is None:
@@ -319,6 +324,76 @@ class NtfyNotificationService:
         except Exception as e:
             logger.error(f"Error sending admin alert: {str(e)}")
             return False
+
+    async def _fallback_email_alert(self, title: str, message: str) -> None:
+        """Send email, create support ticket, and log to errors collection when Ntfy is unavailable."""
+        import os
+        import uuid
+        from datetime import datetime
+
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL")
+
+        # Log to errors collection (shows in /admin/platform)
+        try:
+            from app.core.database import mongo
+            error_doc = {
+                "error_id": str(uuid.uuid4()),
+                "timestamp": datetime.utcnow(),
+                "error_type": "SystemAlert",
+                "error_message": message,
+                "severity": "critical",
+                "acknowledged": False,
+                "source": "ntfy_fallback",
+                "request": {
+                    "method": "SYSTEM",
+                    "path": title,
+                },
+                "metadata": {
+                    "alert_title": title,
+                    "ntfy_disabled": not self.enabled,
+                    "admin_topic_missing": not getattr(settings, 'NTFY_ADMIN_TOPIC', None),
+                }
+            }
+            await mongo.db["errors"].insert_one(error_doc)
+        except Exception as e:
+            logger.error(f"Failed to log alert to errors collection: {e}")
+
+        if not root_admin_email:
+            logger.error(f"ROOT_ADMIN_EMAIL not configured. Alert: {title}")
+            return
+
+        try:
+            from app.services.email_service_resend import EmailService
+            from app.services.support_service import SupportService
+
+            email_service = EmailService()
+            support_service = SupportService()
+
+            html_content = f"""
+            <h2>System Alert: {title}</h2>
+            <p>{message}</p>
+            <hr>
+            <p><small>This alert was sent because Ntfy push notifications are not configured.</small></p>
+            """
+            await email_service.send_email(
+                to_email=root_admin_email,
+                subject=f"[CRITICAL] {title}",
+                html_content=html_content
+            )
+            logger.info(f"Fallback email sent to {root_admin_email}: {title}")
+
+            ticket_data = {
+                "subject": f"[System Alert] {title}",
+                "description": message,
+                "category": "system",
+                "priority": "urgent",
+                "status": "open"
+            }
+            await support_service.create_ticket(ticket_data, created_by="system")
+            logger.info(f"Support ticket created for alert: {title}")
+
+        except Exception as e:
+            logger.error(f"Failed to send fallback alert: {e}")
 
 
 # Singleton instance

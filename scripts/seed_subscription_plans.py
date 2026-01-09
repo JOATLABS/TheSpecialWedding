@@ -267,37 +267,59 @@ skipped = 0
 
 for plan in plans:
     plan_id = plan["_id"]
-    existing = collection.find_one({"_id": plan_id})
+    print(f"\n📦 Processing: {plan['name']} - ${plan['price_monthly']}/month")
 
-    if existing:
-        # Check if Stripe IDs need to be added
-        if STRIPE_CONFIGURED and not existing.get("stripe_product_id"):
-            print(f"\n📦 {plan['name']}: Exists but needs Stripe products")
-            stripe_ids = create_stripe_product_and_prices(plan)
-            if stripe_ids:
-                collection.update_one(
-                    {"_id": plan_id},
-                    {"$set": {**stripe_ids, "updated_at": datetime.now(timezone.utc)}}
-                )
-                print("  ✅ Updated with Stripe IDs")
-                updated += 1
-            else:
-                skipped += 1
-        else:
-            print(f"⏭  {plan['name']}: Already exists with Stripe products")
-            skipped += 1
-    else:
-        print(f"\n📦 Creating: {plan['name']} - ${plan['price_monthly']}/month")
+    # Create Stripe products if configured (idempotent - checks existing first)
+    stripe_ids = create_stripe_product_and_prices(plan) if STRIPE_CONFIGURED else {}
 
-        # Create Stripe products first
-        stripe_ids = create_stripe_product_and_prices(plan)
+    # Merge Stripe IDs into plan
+    plan_with_stripe = {**plan, **stripe_ids}
 
-        # Merge Stripe IDs into plan
-        plan_with_stripe = {**plan, **stripe_ids}
+    # ATOMIC upsert: prevents race conditions when multiple containers start simultaneously
+    # $setOnInsert: only set these fields if document is newly created
+    # $set: always update these fields
+    result = collection.update_one(
+        {"_id": plan_id},
+        {
+            "$setOnInsert": {
+                "created_at": plan_with_stripe.get("created_at", datetime.now(timezone.utc)),
+                "created_by": plan_with_stripe.get("created_by", "system"),
+            },
+            "$set": {
+                "name": plan_with_stripe["name"],
+                "description": plan_with_stripe.get("description"),
+                "price_monthly": plan_with_stripe["price_monthly"],
+                "price_yearly": plan_with_stripe.get("price_yearly"),
+                "is_metered": plan_with_stripe.get("is_metered", False),
+                "max_weddings": plan_with_stripe.get("max_weddings"),
+                "max_guests_per_wedding": plan_with_stripe.get("max_guests_per_wedding"),
+                "ai_credits_monthly": plan_with_stripe.get("ai_credits_monthly"),
+                "storage_gb": plan_with_stripe.get("storage_gb"),
+                "staff_seats": plan_with_stripe.get("staff_seats"),
+                "features": plan_with_stripe.get("features", {}),
+                "features_list": plan_with_stripe.get("features_list", []),
+                "is_active": plan_with_stripe.get("is_active", True),
+                "is_featured": plan_with_stripe.get("is_featured", False),
+                "sort_order": plan_with_stripe.get("sort_order", 0),
+                "updated_at": datetime.now(timezone.utc),
+                # Only update Stripe IDs if we have them
+                **({"stripe_product_id": stripe_ids["stripe_product_id"]} if stripe_ids.get("stripe_product_id") else {}),
+                **({"stripe_monthly_price_id": stripe_ids["stripe_monthly_price_id"]} if stripe_ids.get("stripe_monthly_price_id") else {}),
+                **({"stripe_yearly_price_id": stripe_ids["stripe_yearly_price_id"]} if stripe_ids.get("stripe_yearly_price_id") else {}),
+            }
+        },
+        upsert=True  # Atomic: creates if not exists, updates if exists
+    )
 
-        collection.insert_one(plan_with_stripe)
-        print("  ✅ Created in database")
+    if result.upserted_id:
+        print(f"  ✅ Created in database")
         created += 1
+    elif result.modified_count > 0:
+        print(f"  ✅ Updated in database")
+        updated += 1
+    else:
+        print(f"  ⏭  No changes needed")
+        skipped += 1
 
 print("\n" + "=" * 50)
 print(f"📊 Summary: Created {created}, Updated {updated}, Skipped {skipped}")

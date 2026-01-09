@@ -95,12 +95,17 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                     )
 
                     if not already_billed_this_period:
+                        # Idempotency key: prevents double-billing on retries
+                        billing_period = datetime.utcnow().strftime("%Y-%m")
+                        idempotency_key = f"wedding_create_{wedding_data['_id']}_{sub['stripe_customer_id']}_{billing_period}"
+
                         meter_result = stripe_service.report_meter_event(
                             event_name=plan["meter_event_name"],
                             payload={
                                 "stripe_customer_id": sub["stripe_customer_id"],
                                 "value": "1"
-                            }
+                            },
+                            identifier=idempotency_key
                         )
                         if meter_result.get("status") == "success":
                             await mongo.db["weddings"].update_one(
@@ -166,12 +171,16 @@ async def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser =
                     already_reversed = wedding.get("meter_reversed_period") == current_period
 
                     if not already_reversed:
+                        # Idempotency key for reversal: prevents double-crediting on retries
+                        idempotency_key = f"wedding_delete_{wedding_id}_{sub['stripe_customer_id']}_{current_period}"
+
                         reverse_result = stripe_service.report_meter_event(
                             event_name=plan["meter_event_name"],
                             payload={
                                 "stripe_customer_id": sub["stripe_customer_id"],
                                 "value": "-1"
-                            }
+                            },
+                            identifier=idempotency_key
                         )
                         reversal_success = reverse_result.get("status") == "success"
                         await mongo.db["weddings"].update_one(

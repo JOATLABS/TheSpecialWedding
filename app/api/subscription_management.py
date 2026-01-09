@@ -366,8 +366,36 @@ async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depen
 
 @router.get("/public/subscription-plans", tags=["Public"])
 async def get_public_subscription_plans():
-    """Get active subscription plans for public pricing page"""
-    return await subscription_service.list_plans(include_inactive=False)
+    """Get active subscription plans for public pricing page.
+
+    Returns sanitized plan data - excludes internal IDs (Stripe, MongoDB metadata)
+    to prevent data leakage to competitors or malicious actors.
+    """
+    plans = await subscription_service.list_plans(include_inactive=False)
+
+    # Sanitize: only return public-safe fields
+    public_plans = []
+    for plan in plans:
+        public_plans.append({
+            "_id": plan["_id"],  # Plan ID needed for selection
+            "name": plan.get("name"),
+            "description": plan.get("description"),
+            "price_monthly": plan.get("price_monthly", 0),
+            "price_yearly": plan.get("price_yearly"),
+            "max_weddings": plan.get("max_weddings", 1),
+            "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
+            "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
+            "storage_gb": plan.get("storage_gb", 1),
+            "staff_seats": plan.get("staff_seats", 0),
+            "features": plan.get("features", {}),
+            "features_list": plan.get("features_list", []),
+            "is_featured": plan.get("is_featured", False),
+            "is_active": plan.get("is_active", True),
+            "display_order": plan.get("display_order", plan.get("sort_order", 0)),
+            # Explicitly EXCLUDE: stripe_product_id, stripe_price_id_*, created_by, etc.
+        })
+
+    return public_plans
 
 @router.get("/public/subscription-plans/{plan_id}", tags=["Public"])
 async def get_public_subscription_plan(plan_id: str):

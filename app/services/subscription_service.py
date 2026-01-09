@@ -184,11 +184,29 @@ class SubscriptionService:
                     period_end = now.replace(year=now.year + 1, month=1)
                 else:
                     period_end = now.replace(month=now.month + 1)
+            # Create plan snapshot for grandfathering - locks limits at subscription time
+            # User keeps these limits even if plan is later modified
+            plan_snapshot = {
+                "plan_name": plan.get("name"),
+                "max_weddings": plan.get("max_weddings", 1),
+                "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
+                "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
+                "storage_gb": plan.get("storage_gb", 1),
+                "staff_seats": plan.get("staff_seats", 0),
+                "features": plan.get("features", {}),
+                "price_monthly": plan.get("price_monthly", 0),
+                "price_yearly": plan.get("price_yearly"),
+                "stripe_price_id_monthly": plan.get("stripe_price_id_monthly"),
+                "stripe_price_id_yearly": plan.get("stripe_price_id_yearly"),
+                "snapshot_date": now,
+            }
+
             subscription_data = {
                 "_id": f"sub_{user_id}_{plan_id}_{int(now.timestamp())}",
                 "user_id": user_id,
                 "user_email": user["email"],
                 "plan_id": plan_id,
+                "plan_snapshot": plan_snapshot,  # Grandfathered limits
                 "status": "trial" if trial_days > 0 else "active",
                 "billing_interval": billing_interval,
                 "start_date": now,
@@ -332,19 +350,31 @@ class SubscriptionService:
             raise HTTPException(status_code=500, detail=f"Error retrieving usage stats: {str(e)}")
 
     async def check_usage_limits(self, user_id: str, resource_type: str, requested_amount: int = 1) -> dict:
-        """Check if user can use more of a resource without exceeding limits"""
+        """Check if user can use more of a resource without exceeding limits
+
+        Uses plan_snapshot (grandfathered limits) if available, falls back to current plan for
+        backwards compatibility with subscriptions created before snapshots were added.
+        """
         try:
             subscription = await self.get_user_subscription(user_id)
             if not subscription:
                 raise HTTPException(status_code=403, detail="No active subscription found")
 
-            plan = await self.get_plan(subscription["plan_id"])
+            # Use grandfathered plan_snapshot if available, otherwise fetch current plan
+            # This ensures users keep the limits they signed up for even if plan changes
+            plan_snapshot = subscription.get("plan_snapshot")
+            if plan_snapshot:
+                limits_source = plan_snapshot
+            else:
+                # Backwards compatibility for subscriptions without snapshot
+                limits_source = await self.get_plan(subscription["plan_id"])
+
             usage = await self.get_usage_stats(user_id)
 
             # Check limits based on resource type
             if resource_type == "weddings":
                 current = usage.get("weddings_count", 0)
-                limit = plan.get("max_weddings", 1)
+                limit = limits_source.get("max_weddings", 1)
                 if limit != -1 and current + requested_amount > limit:
                     return {
                         "allowed": False,
@@ -354,7 +384,7 @@ class SubscriptionService:
                     }
             elif resource_type == "ai_credits":
                 current = usage.get("ai_credits_used_month", 0)
-                limit = plan.get("ai_credits_monthly", 10)
+                limit = limits_source.get("ai_credits_monthly", 10)
                 remaining = max(0, limit - current)
                 if current + requested_amount > limit:
                     return {
@@ -372,10 +402,9 @@ class SubscriptionService:
                     "remaining": remaining
                 }
 
-
             elif resource_type == "staff_seats":
                 current = usage.get("staff_seats_used", 0)
-                limit = plan.get("staff_seats", 0)
+                limit = limits_source.get("staff_seats", 0)
                 if current + requested_amount > limit:
                     return {
                         "allowed": False,
