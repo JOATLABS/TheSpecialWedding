@@ -115,6 +115,7 @@ class ProfileInfoModel(BaseModel):
     last_name: Optional[str] = None
     company_name: Optional[str] = None
     phone: Optional[str] = None
+    support_phone: Optional[str] = None  # Phone number guests see when they text HELP
 
 
 @router.post("/users/invite", tags=["ROOT_ADMIN"])
