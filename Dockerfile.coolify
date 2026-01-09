@@ -24,10 +24,13 @@ COPY . .
 # Build Next.js application with API URL from Coolify secrets
 # Coolify passes environment variables via --secret, so we mount and export them
 # This ensures NEXT_PUBLIC_API_BASE_URL is properly baked into the JS bundle
-# NO FALLBACKS - build will fail if secret is not provided
+# Falls back to .env if the secret is not provided
 RUN --mount=type=secret,id=NEXT_PUBLIC_API_BASE_URL \
-    NEXT_PUBLIC_API_BASE_URL=$(cat /run/secrets/NEXT_PUBLIC_API_BASE_URL) && \
-    if [ -z "$NEXT_PUBLIC_API_BASE_URL" ]; then echo "ERROR: NEXT_PUBLIC_API_BASE_URL secret is required" && exit 1; fi && \
+    NEXT_PUBLIC_API_BASE_URL="$(cat /run/secrets/NEXT_PUBLIC_API_BASE_URL 2>/dev/null || true)" && \
+    if [ -z "$NEXT_PUBLIC_API_BASE_URL" ] && [ -f .env ]; then \
+        NEXT_PUBLIC_API_BASE_URL="$(sed -n 's/^NEXT_PUBLIC_API_BASE_URL=//p' .env | tail -n 1 | sed -e 's/^\"//' -e 's/\"$//' -e "s/^'//" -e "s/'$//")"; \
+    fi && \
+    if [ -z "$NEXT_PUBLIC_API_BASE_URL" ]; then echo "ERROR: NEXT_PUBLIC_API_BASE_URL secret or .env value is required" && exit 1; fi && \
     export NEXT_PUBLIC_API_BASE_URL && \
     echo "Building with NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL" && \
     npm run build
