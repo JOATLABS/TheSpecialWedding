@@ -67,6 +67,7 @@ from app.api.autopilot import router as autopilot_router
 from app.api.ai import router as ai_router
 from app.api.planner_notifications import router as planner_notifications_router
 from app.api.tables import router as tables_router
+from app.api.config_errors import router as config_errors_router
 
 # Setup logging
 logging.basicConfig(
@@ -102,6 +103,16 @@ async def lifespan(app: FastAPI):
         migrations = migration_registry.get_all_migrations()
         await migration_manager.run_migrations(migrations)
         logger.info("Database migrations completed")
+
+        # Validate environment configuration and notify root admin of issues
+        from app.services.config_validator import validate_environment_and_notify
+        config_result = await validate_environment_and_notify()
+        if config_result["missing_critical"]:
+            logger.critical(f"CRITICAL: {len(config_result['missing_critical'])} required environment variables are missing!")
+        elif config_result["missing_recommended"]:
+            logger.warning(f"WARNING: {len(config_result['missing_recommended'])} recommended environment variables are missing")
+        else:
+            logger.info("Environment configuration validated successfully")
 
         logger.info("Application startup complete")
 
@@ -249,6 +260,7 @@ app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email web
 app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
 app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
 app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
+app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
 
 # Admin routes (authentication required)
 admin_routers = [

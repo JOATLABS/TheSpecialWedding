@@ -305,7 +305,7 @@ export const SaasLandingPage: React.FC = () => {
     benefits_enabled: true,
     testimonials_enabled: true,
     statistics_enabled: true,
-    demo_url: process.env.NEXT_PUBLIC_SAAS_DEMO_URL || "https://demo.thespecialwedding.com",
+    demo_url: process.env.NEXT_PUBLIC_SAAS_DEMO_URL || "",
     primary_color: process.env.NEXT_PUBLIC_DEFAULT_PRIMARY_COLOR || "#1e3a5f",
     secondary_color: process.env.NEXT_PUBLIC_DEFAULT_SECONDARY_COLOR || "#d4af37"
   });

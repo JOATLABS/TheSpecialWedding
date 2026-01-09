@@ -3,39 +3,62 @@
  *
  * This module provides type-safe access to environment variables with required validation.
  * All environment variables are validated at runtime to ensure they are set.
+ * NO FALLBACKS - missing variables will throw errors and notify root admin.
  */
+
+async function reportConfigError(errorType: string, message: string, variableName: string, currentValue?: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  try {
+    await fetch('/report-config-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error_type: errorType,
+        message,
+        variable_name: variableName,
+        current_value: currentValue,
+        hostname: window.location.hostname,
+        user_agent: navigator.userAgent,
+      }),
+    });
+  } catch {
+    // Silent fail - error already logged to console
+  }
+}
 
 /**
  * Get the API base URL
  *
- * For Coolify single-container deployments:
- * - Returns '/api/proxy' to use Next.js rewrites that proxy to localhost:8000
- *
- * For development or separate API deployments:
- * - Returns NEXT_PUBLIC_API_BASE_URL (e.g., http://localhost:8000 or https://api.thespecialwedding.com)
+ * @throws {Error} if NEXT_PUBLIC_API_BASE_URL is not set or misconfigured
+ * NO FALLBACKS - the build must have this variable properly baked in
  */
 export function getApiBaseUrl(): string {
   const url = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-  // In production without a configured API URL, use proxy path
-  // This handles Coolify single-container deployments where frontend proxies to backend
-  if (!url || url === 'http://localhost:8000') {
-    // Check if we're in browser and on a production domain
-    if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname;
-      // If on production domain without separate API subdomain, use proxy
-      if (hostname.includes('thespecialwedding') && !url?.includes('api.thespecialwedding')) {
-        return '/api/proxy';
-      }
+  if (!url) {
+    const errorMsg = 'CRITICAL: NEXT_PUBLIC_API_BASE_URL environment variable is not set. ' +
+      'This must be configured in your deployment environment. ' +
+      'Check Coolify secrets or .env file.';
+    console.error(errorMsg);
+    reportConfigError('MissingEnvVar', errorMsg, 'NEXT_PUBLIC_API_BASE_URL');
+    throw new Error(errorMsg);
+  }
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1';
+
+    if (!isLocalDev && url.includes('localhost')) {
+      const errorMsg = `CRITICAL: NEXT_PUBLIC_API_BASE_URL is set to "${url}" but app is running on "${hostname}". ` +
+        'The API URL was not properly configured during build. ' +
+        'Ensure Coolify secrets are set correctly and rebuild.';
+      console.error(errorMsg);
+      reportConfigError('MisconfiguredEnvVar', errorMsg, 'NEXT_PUBLIC_API_BASE_URL', url);
+      throw new Error(errorMsg);
     }
   }
 
-  if (!url) {
-    throw new Error(
-      'NEXT_PUBLIC_API_BASE_URL environment variable is required. ' +
-      'Please set it in your .env file.'
-    );
-  }
   return url;
 }
 

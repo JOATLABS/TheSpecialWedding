@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.reminder_service import ReminderService
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
+from app.core.config import settings
 from datetime import datetime, timezone
 import logging
 
@@ -299,6 +300,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         from app.services.email_service_resend import ResendEmailService
         email_service = ResendEmailService()
 
+        frontend_url = settings.get_required_url("FRONTEND_URL")
         subject = f"New Guest Message: {ticket['wedding_name']}"
 
         html_content = f"""
@@ -318,7 +320,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             <p>Please respond to your guest as soon as possible.</p>
 
             <div style="margin: 30px 0;">
-                <a href="https://thespecialwedding.com/admin/support?ticket={str(ticket.get('_id', ''))}"
+                <a href="{frontend_url}/admin/support?ticket={str(ticket.get('_id', ''))}"
                    style="background-color: #2c3e50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
                     View & Respond in Dashboard
                 </a>

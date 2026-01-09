@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, 
 from app.services.email_service_resend import ResendEmailService
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner
 from app.services.wedding_service import WeddingService
+from app.core.config import settings
 from pydantic import BaseModel
 from typing import Optional, List
 import base64
@@ -179,11 +180,12 @@ def preview_invitation_email(current_user: ExtendedAuthUser = Depends(require_ad
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
     
+    frontend_url = settings.get_required_url("FRONTEND_URL")
     html = email_service._generate_default_invitation_html(
         guest_name=guest_name,
         couple_names=couple_names,
         wedding_date=wedding_date,
-        rsvp_url="https://thespecialwedding.com/wedding/invite/preview-token"
+        rsvp_url=f"{frontend_url}/wedding/invite/preview-token" if frontend_url else ""
     )
     
     return {"html": html}

@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     app_name: str = Field(default="Wedding WebApp API", alias="APP_NAME")
     app_version: str = Field(default="1.3.0", alias="APP_VERSION")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
+
+    # URL Configuration - Single source of truth, NO FALLBACKS
+    frontend_url: Optional[str] = Field(default=None, alias="FRONTEND_URL")
+    api_base_url: Optional[str] = Field(default=None, alias="NEXT_PUBLIC_API_BASE_URL")
+    media_domain: Optional[str] = Field(default=None, alias="MEDIA_DOMAIN")
+
     # Security
     secret_key: str = Field(default="changeme", alias="SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")

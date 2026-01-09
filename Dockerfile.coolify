@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # =============================================================================
 # FULL-STACK DOCKERFILE FOR COOLIFY DEPLOYMENT
 # Builds both Next.js frontend and FastAPI backend in a single container
@@ -23,8 +24,11 @@ COPY . .
 # Build Next.js application with API URL from Coolify secrets
 # Coolify passes environment variables via --secret, so we mount and export them
 # This ensures NEXT_PUBLIC_API_BASE_URL is properly baked into the JS bundle
+# NO FALLBACKS - build will fail if secret is not provided
 RUN --mount=type=secret,id=NEXT_PUBLIC_API_BASE_URL \
-    export NEXT_PUBLIC_API_BASE_URL=$(cat /run/secrets/NEXT_PUBLIC_API_BASE_URL 2>/dev/null || echo "https://api.thespecialwedding.io") && \
+    NEXT_PUBLIC_API_BASE_URL=$(cat /run/secrets/NEXT_PUBLIC_API_BASE_URL) && \
+    if [ -z "$NEXT_PUBLIC_API_BASE_URL" ]; then echo "ERROR: NEXT_PUBLIC_API_BASE_URL secret is required" && exit 1; fi && \
+    export NEXT_PUBLIC_API_BASE_URL && \
     echo "Building with NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL" && \
     npm run build
 
