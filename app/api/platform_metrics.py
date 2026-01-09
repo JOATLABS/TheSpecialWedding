@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.core.config import settings
-from app.dependencies.auth_extended import require_root_admin
+from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.platform_metrics_service import service as metrics_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -47,12 +50,46 @@ async def ingest_metrics_snapshot(payload: Dict[str, Any]):
     return _serialize_snapshot_response(document)
 
 
-@router.get("/admin/platform/metrics", tags=["Admin"], dependencies=[Depends(require_root_admin)])
-async def get_admin_metrics_overview():
+@router.get("/admin/platform/metrics", tags=["Admin"])
+async def get_admin_metrics_overview(
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """
+    Get platform metrics for the admin dashboard.
+
+    Returns stored snapshot if available, otherwise generates live health data.
+    """
+    # Try to get a stored snapshot first
     snapshot = await metrics_service.get_latest_snapshot()
-    if not snapshot:
-        raise HTTPException(status_code=404, detail="No metrics snapshots available")
-    return _serialize_snapshot_response(snapshot)
+
+    if snapshot:
+        return _serialize_snapshot_response(snapshot)
+
+    # No snapshot exists - generate live health data
+    logger.info("No metrics snapshots found, generating live health data")
+
+    try:
+        # Import here to avoid circular imports
+        from app.api.admin_platform_metrics import get_platform_health
+
+        # Get live health data from the comprehensive health endpoint
+        live_health = await get_platform_health(current_user)
+
+        # Format as a snapshot response for dashboard compatibility
+        now = datetime.now(timezone.utc)
+        return {
+            "id": None,
+            "timestamp": now.isoformat(),
+            "snapshot_time": now.isoformat(),
+            "ingested_at": now.isoformat(),
+            "metrics": live_health,
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate live health data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="No metrics snapshots available and failed to generate live data"
+        )
 
 
 @router.get("/admin/platform/metrics/history", tags=["Admin"], dependencies=[Depends(require_root_admin)])
