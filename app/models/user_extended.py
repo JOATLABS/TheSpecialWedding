@@ -33,6 +33,9 @@ class UserModel(BaseModel):
     last_name: Optional[str] = Field(None, description="User's last name")
     profile_image_url: Optional[str] = Field(None, description="S3/R2 URL for profile image")
 
+    # SMS Support Configuration (for wedding planners)
+    support_phone: Optional[str] = Field(None, description="Phone number for guests to call when they need help (shown in HELP responses)")
+
     # System fields
     is_active: bool = Field(default=True, description="Whether account is active")
     email_verified: bool = Field(default=False, description="Whether email is verified")
