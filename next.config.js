@@ -1,4 +1,27 @@
 /** @type {import('next').NextConfig} */
+const buildRemotePattern = (value, defaultProtocol = 'https') => {
+  if (!value) return null
+
+  const normalized = /^https?:\/\//i.test(value) ? value : `${defaultProtocol}://${value}`
+
+  try {
+    const url = new URL(normalized)
+    return {
+      protocol: url.protocol.replace(':', ''),
+      hostname: url.hostname,
+      port: url.port,
+      pathname: '/**',
+    }
+  } catch {
+    return null
+  }
+}
+
+const remotePatterns = [
+  buildRemotePattern(process.env.S3_ENDPOINT_URL),
+  buildRemotePattern(process.env.MEDIA_DOMAIN),
+].filter(Boolean)
+
 const nextConfig = {
   // Proxy API requests to backend in Coolify single-container deployment
   // The backend runs on port 8000 inside the container
@@ -20,20 +43,7 @@ const nextConfig = {
   },
 
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: process.env.S3_ENDPOINT_URL,
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: process.env.MEDIA_DOMAIN,
-        port: '',
-        pathname: '/**',
-      },
-    ],
+    remotePatterns,
   },
   transpilePackages: ['@hello-pangea/dnd'],
 
