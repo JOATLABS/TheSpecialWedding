@@ -93,6 +93,13 @@ class UserSubscriptionModel(BaseModel):
     user_email: str = Field(..., description="User email for reference")
     plan_id: str = Field(..., description="Subscription plan ID")
 
+    # Plan snapshot at subscription time (grandfathering support)
+    # These limits are LOCKED at subscription creation - don't change when plan is modified
+    plan_snapshot: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Snapshot of plan limits at subscription time for grandfathering"
+    )
+
     # Subscription details
     status: SubscriptionStatus = Field(SubscriptionStatus.TRIAL, description="Current subscription status")
     billing_interval: BillingInterval = Field(BillingInterval.MONTHLY, description="Billing frequency")

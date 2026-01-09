@@ -6,24 +6,30 @@
  * NO FALLBACKS - missing variables will throw errors and notify root admin.
  */
 
-async function reportConfigError(errorType: string, message: string, variableName: string, currentValue?: string): Promise<void> {
+function reportConfigError(errorType: string, message: string, variableName: string, currentValue?: string): void {
   if (typeof window === 'undefined') return;
 
-  try {
-    await fetch('/report-config-error', {
+  const payload = JSON.stringify({
+    error_type: errorType,
+    message,
+    variable_name: variableName,
+    current_value: currentValue,
+    hostname: window.location.hostname,
+    user_agent: navigator.userAgent,
+  });
+
+  // Use sendBeacon for reliable delivery even if page crashes/navigates
+  if (navigator.sendBeacon) {
+    const blob = new Blob([payload], { type: 'application/json' });
+    navigator.sendBeacon('/report-config-error', blob);
+  } else {
+    // Fallback to fetch (fire-and-forget)
+    fetch('/report-config-error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error_type: errorType,
-        message,
-        variable_name: variableName,
-        current_value: currentValue,
-        hostname: window.location.hostname,
-        user_agent: navigator.userAgent,
-      }),
-    });
-  } catch {
-    // Silent fail - error already logged to console
+      body: payload,
+      keepalive: true, // Ensures request completes even if page unloads
+    }).catch(() => {});
   }
 }
 

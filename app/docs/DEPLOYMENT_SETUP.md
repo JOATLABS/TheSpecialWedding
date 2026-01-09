@@ -139,15 +139,13 @@ These secrets will be used to build your production `.env` file:
 - `RESEND_FROM_EMAIL`: From email address
 - `FROM_EMAIL`: Default from email
 
-#### Storage (Cloudflare R2 or S3)
+#### Storage (Cloudflare R2 or AWS S3)
 
-- `S3_ENDPOINT_URL`: S3/R2 endpoint URL
+- `S3_ENDPOINT_URL`: S3/R2 endpoint URL (for R2: `https://<account_id>.r2.cloudflarestorage.com`)
 - `S3_BUCKET_NAME`: Bucket name
 - `S3_ACCESS_KEY_ID`: Access key ID
 - `S3_SECRET_ACCESS_KEY`: Secret access key
-- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account ID (if using R2)
-- `CLOUDFLARE_ACCESS_KEY_ID`: R2 access key
-- `CLOUDFLARE_SECRET_ACCESS_KEY`: R2 secret key
+- `S3_REGION`: Region (use `auto` for Cloudflare R2)
 
 #### Stripe (if using SaaS features)
 

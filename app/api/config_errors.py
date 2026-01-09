@@ -2,22 +2,29 @@
 Configuration Error Reporting API
 
 Public endpoint for frontend to report critical configuration errors.
-No auth required since the app may be broken due to misconfiguration.
+Rate-limited and deduplicated to prevent abuse.
 """
 
 import logging
 import uuid
-from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel
-from fastapi import APIRouter, Request
+import re
+import hashlib
+from datetime import datetime, timedelta
+from typing import Optional, Dict
+from pydantic import BaseModel, field_validator
+from fastapi import APIRouter, Request, HTTPException
 
 from app.core.database import mongo
-from app.services.config_validator import ROOT_ADMIN_EMAIL
+from app.core.settings import settings
+from app.utils.security_utils import rate_limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Deduplication: track recent error hashes (in-memory)
+_recent_errors: Dict[str, datetime] = {}
+DEDUP_WINDOW = 300  # 5 minutes
 
 _ntfy_service = None
 
@@ -33,6 +40,13 @@ def _get_ntfy_service():
     return _ntfy_service if _ntfy_service else None
 
 
+def _sanitize(value: Optional[str], max_len: int = 500) -> Optional[str]:
+    if not value:
+        return None
+    value = re.sub(r'<[^>]+>', '', value)
+    return value[:max_len]
+
+
 class ConfigErrorReport(BaseModel):
     error_type: str
     message: str
@@ -41,44 +55,95 @@ class ConfigErrorReport(BaseModel):
     hostname: Optional[str] = None
     user_agent: Optional[str] = None
 
+    @field_validator('error_type', 'message', 'variable_name', 'hostname', mode='before')
+    @classmethod
+    def sanitize_strings(cls, v):
+        if isinstance(v, str):
+            return re.sub(r'<[^>]+>', '', v)[:500]
+        return v
+
+    @field_validator('current_value', mode='before')
+    @classmethod
+    def sanitize_value(cls, v):
+        if isinstance(v, str):
+            return re.sub(r'<[^>]+>', '', v)[:200]
+        return v
+
+
+def _is_duplicate(report: ConfigErrorReport) -> bool:
+    now = datetime.utcnow()
+    cutoff = now - timedelta(seconds=DEDUP_WINDOW)
+
+    expired = [k for k, v in _recent_errors.items() if v < cutoff]
+    for k in expired:
+        del _recent_errors[k]
+
+    error_hash = hashlib.md5(
+        f"{report.error_type}:{report.variable_name}:{report.hostname}".encode()
+    ).hexdigest()
+
+    if error_hash in _recent_errors:
+        return True
+
+    _recent_errors[error_hash] = now
+    return False
+
 
 @router.post("/report-config-error")
 async def report_config_error(report: ConfigErrorReport, request: Request):
-    """
-    Report a frontend configuration error.
-    Logs to errors collection, creates notification, sends Ntfy alert.
-    """
+    client_ip = _get_client_ip(request)
+
+    # Use existing rate limiter
+    if not rate_limiter.check_rate_limit(
+        f"config_error:{client_ip}",
+        limit=settings.rate_limit_auth_calls,
+        window_seconds=settings.rate_limit_auth_period
+    ):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    if _is_duplicate(report):
+        return {"error_id": None, "reported": False, "reason": "duplicate"}
+
     error_id = str(uuid.uuid4())
     now = datetime.utcnow()
 
-    client_ip = _get_client_ip(request)
+    # Check for existing unacknowledged error
+    existing = await mongo.db["errors"].find_one({
+        "error_type": "ConfigurationError",
+        "metadata.variable_name": report.variable_name,
+        "acknowledged": False,
+        "timestamp": {"$gte": now - timedelta(hours=24)}
+    })
+
+    if existing:
+        return {"error_id": str(existing.get("error_id")), "reported": False, "reason": "exists"}
 
     error_doc = {
         "error_id": error_id,
         "timestamp": now,
         "error_type": "ConfigurationError",
-        "error_message": report.message,
+        "error_message": _sanitize(report.message),
         "severity": "critical",
         "acknowledged": False,
         "source": "frontend",
         "request": {
             "method": "FRONTEND_CONFIG",
-            "path": report.hostname or "unknown",
+            "path": _sanitize(report.hostname, 100) or "unknown",
             "client_ip": client_ip,
         },
         "metadata": {
-            "variable_name": report.variable_name,
-            "current_value": report.current_value,
-            "hostname": report.hostname,
-            "user_agent": report.user_agent,
+            "variable_name": _sanitize(report.variable_name, 100),
+            "current_value": _sanitize(report.current_value, 200),
+            "hostname": _sanitize(report.hostname, 100),
         }
     }
 
     try:
         await mongo.db["errors"].insert_one(error_doc)
-        logger.error(f"Config error logged: {error_id} - {report.message}")
+        logger.error(f"Config error: {error_id} - {report.variable_name}")
     except Exception as e:
         logger.error(f"Failed to log config error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to log error")
 
     await _create_notification(error_id, report, now)
     await _send_ntfy_alert(report)
@@ -87,11 +152,23 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
 
 
 async def _create_notification(error_id: str, report: ConfigErrorReport, timestamp: datetime):
-    """Create in-app notification for root admin."""
     try:
+        existing = await mongo.db["notifications"].find_one({
+            "type": "system_config",
+            "status": "active",
+            "metadata.variable_name": report.variable_name
+        })
+
+        if existing:
+            await mongo.db["notifications"].update_one(
+                {"_id": existing["_id"]},
+                {"$set": {"updated_at": timestamp}}
+            )
+            return
+
         notification = {
-            "title": f"CRITICAL: {report.error_type}",
-            "message": report.message,
+            "title": f"CRITICAL: {_sanitize(report.error_type, 50)}",
+            "message": _sanitize(report.message, 500),
             "type": "system_config",
             "target_audience": "root_admin",
             "created_by": "system",
@@ -104,41 +181,27 @@ async def _create_notification(error_id: str, report: ConfigErrorReport, timesta
             "dismissed_by": [],
             "metadata": {
                 "error_id": error_id,
-                "variable_name": report.variable_name,
-                "hostname": report.hostname,
+                "variable_name": _sanitize(report.variable_name, 100),
+                "hostname": _sanitize(report.hostname, 100),
             }
         }
 
-        existing = await mongo.db["notifications"].find_one({
-            "type": "system_config",
-            "status": "active",
-            "metadata.variable_name": report.variable_name
-        })
-
-        if existing:
-            await mongo.db["notifications"].update_one(
-                {"_id": existing["_id"]},
-                {"$set": {"message": report.message, "updated_at": timestamp}}
-            )
-        else:
-            await mongo.db["notifications"].insert_one(notification)
-
+        await mongo.db["notifications"].insert_one(notification)
     except Exception as e:
         logger.error(f"Failed to create notification: {e}")
 
 
 async def _send_ntfy_alert(report: ConfigErrorReport):
-    """Send Ntfy push notification."""
     ntfy = _get_ntfy_service()
     if not ntfy:
         return
 
     try:
         await ntfy.send_admin_alert(
-            title=f"CRITICAL: {report.error_type}",
-            message=f"{report.message}\n\nVariable: {report.variable_name}\nHost: {report.hostname}",
+            title=f"Config Error: {_sanitize(report.variable_name, 50)}",
+            message=f"{_sanitize(report.message, 200)}\nHost: {_sanitize(report.hostname, 50)}",
             priority="urgent",
-            tags=["rotating_light", "warning", "gear"]
+            tags=["rotating_light", "gear"]
         )
     except Exception as e:
         logger.error(f"Failed to send Ntfy alert: {e}")
@@ -148,5 +211,5 @@ def _get_client_ip(request: Request) -> str:
     for header in ["X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP"]:
         ip = request.headers.get(header)
         if ip:
-            return ip.split(",")[0].strip()
-    return getattr(request.client, "host", "unknown")
+            return ip.split(",")[0].strip()[:45]
+    return getattr(request.client, "host", "unknown")[:45]

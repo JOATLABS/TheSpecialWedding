@@ -299,9 +299,26 @@ class StripeService:
             logger.error(f"Stripe error archiving product: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Archive Error: {str(e)}")
 
-    def report_meter_event(self, event_name: str, payload: Dict[str, Any], timestamp: Optional[datetime] = None) -> Dict[str, Any]:
+    def report_meter_event(
+        self,
+        event_name: str,
+        payload: Dict[str, Any],
+        timestamp: Optional[datetime] = None,
+        identifier: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Send a usage event to Stripe Billing Meter.
+
+        Args:
+            event_name: Meter event name (must match Stripe meter config)
+            payload: Dict with stripe_customer_id and value
+            timestamp: Optional timestamp (defaults to now)
+            identifier: CRITICAL idempotency key to prevent double-billing.
+                       Should be deterministic: f"{customer_id}_{resource_id}_{period}"
+                       Stripe enforces uniqueness within 24 hours. Max 100 chars.
+
+        Returns:
+            Dict with status and event_id or error message
         """
         self._ensure_stripe_enabled()
 
@@ -310,17 +327,27 @@ class StripeService:
             if not timestamp:
                 timestamp = datetime.utcnow()
 
-            event = stripe.billing.MeterEvent.create(
-                event_name=event_name,
-                payload=payload,
-                timestamp=int(timestamp.timestamp())
-            )
-            # Use identifier as the ID for meter events
+            # Build meter event params
+            meter_params: Dict[str, Any] = {
+                "event_name": event_name,
+                "payload": payload,
+                "timestamp": int(timestamp.timestamp())
+            }
+
+            # Add idempotency identifier if provided - prevents duplicate billing on retries
+            if identifier:
+                meter_params["identifier"] = identifier[:100]  # Max 100 chars
+
+            event = stripe.billing.MeterEvent.create(**meter_params)
             return {"status": "success", "event_id": event.identifier}
         except stripe.error.StripeError as e:
-            logger.error(f"Stripe error reporting usage: {str(e)}")
-            # Don't crash the app for metrics, but log it
-            return {"status": "error", "message": str(e)}
+            error_msg = str(e)
+            # Duplicate identifier = already recorded (this is success, not error)
+            if "identifier" in error_msg.lower() and ("already" in error_msg.lower() or "duplicate" in error_msg.lower()):
+                logger.info(f"Meter event already recorded (idempotent): {identifier}")
+                return {"status": "success", "event_id": identifier, "already_recorded": True}
+            logger.error(f"Stripe error reporting usage: {error_msg}")
+            return {"status": "error", "message": error_msg}
 
 
     async def create_checkout_session(

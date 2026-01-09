@@ -49,12 +49,17 @@ async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(re
                 continue
 
             retried += 1
+            # Idempotency key for retry: uses billed_period to match original attempt
+            billing_period = wedding.get("billed_period") or datetime.utcnow().strftime("%Y-%m")
+            idempotency_key = f"meter_retry_{wedding.get('_id')}_{sub['stripe_customer_id']}_{billing_period}"
+
             meter_result = stripe_service.report_meter_event(
                 event_name=plan["meter_event_name"],
                 payload={
                     "stripe_customer_id": sub["stripe_customer_id"],
                     "value": "1"
-                }
+                },
+                identifier=idempotency_key
             )
             if meter_result.get("status") == "success":
                 succeeded += 1

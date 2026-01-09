@@ -36,9 +36,9 @@ class Settings:
         "https://www.googleapis.com/auth/calendar.events",
     ]
 
-    # Ntfy Push Notification Service
+    # Ntfy Push Notification Service - NO FALLBACKS
     SERVICE_URL_NTFY: Optional[str] = os.getenv("SERVICE_URL_NTFY")
-    NTFY_ADMIN_TOPIC: str = os.getenv("NTFY_ADMIN_TOPIC", "wedding-platform-admin")
+    NTFY_ADMIN_TOPIC: Optional[str] = os.getenv("NTFY_ADMIN_TOPIC")
 
 
 settings = Settings()

@@ -107,12 +107,14 @@ async def process_daily_usage_check():
                         "value": "1"
                     }
 
-                    # You can add dimensions if your meter supports it
-                    # payload["wedding_id"] = str(wedding["_id"])
+                    # Idempotency key: prevents double-billing on job retries
+                    billing_period = current_period_start.strftime("%Y-%m")
+                    idempotency_key = f"billing_job_{wedding['_id']}_{stripe_customer_id}_{billing_period}"
 
                     result = stripe_service.report_meter_event(
                         event_name=meter_event_name,
-                        payload=payload
+                        payload=payload,
+                        identifier=idempotency_key
                     )
 
                     if result.get("status") == "success":
