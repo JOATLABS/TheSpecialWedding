@@ -181,6 +181,10 @@ class StripeService:
             # Logic: If we have a price ID, check if it matches current amount. If not, create new.
 
             # Helper to check/create price
+            # Per Stripe docs: prices are immutable. To change amount:
+            # 1. Create new price with new amount
+            # 2. Switch to new price ID
+            # 3. Deactivate old price
             def ensure_price(current_price_id, amount, interval):
                 if amount is None:
                     return None
@@ -215,8 +219,10 @@ class StripeService:
 
                         if matches:
                             return current_price_id
+
+                        # Price exists but doesn't match - will create new, deactivate old below
                     except stripe.error.InvalidRequestError:
-                        pass # Price not found, create new
+                        current_price_id = None  # Price not found, just create new
 
                 price_kwargs = {
                     "product": product_id,
@@ -231,6 +237,15 @@ class StripeService:
                     price_kwargs["recurring"]["usage_type"] = "metered"
 
                 new_price = stripe.Price.create(**price_kwargs)
+
+                # Deactivate old price if it existed (Stripe best practice)
+                if current_price_id:
+                    try:
+                        stripe.Price.modify(current_price_id, active=False)
+                        logger.info(f"Deactivated old price {current_price_id} after creating new price {new_price.id}")
+                    except stripe.error.StripeError as e:
+                        logger.warning(f"Could not deactivate old price {current_price_id}: {e}")
+
                 return new_price.id
 
             new_price_id_monthly = ensure_price(price_id_monthly, plan.get("price_monthly"), "month")
@@ -251,6 +266,38 @@ class StripeService:
         except stripe.error.StripeError as e:
             logger.error(f"Stripe error syncing plan: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Sync Error: {str(e)}")
+
+    def archive_stripe_product(self, stripe_product_id: str) -> bool:
+        """
+        Archive a Stripe product when a subscription plan is deleted.
+        This deactivates the product and its prices without permanently deleting them.
+        Returns True if successful, raises exception on failure.
+        """
+        self._ensure_stripe_enabled()
+
+        if not stripe_product_id:
+            logger.warning("No Stripe product ID provided for archival")
+            return False
+
+        try:
+            # Deactivate all prices for this product first
+            prices = stripe.Price.list(product=stripe_product_id, active=True)
+            for price in prices.data:
+                stripe.Price.modify(price.id, active=False)
+                logger.info(f"Deactivated Stripe price: {price.id}")
+
+            # Archive the product (set active=False)
+            stripe.Product.modify(stripe_product_id, active=False)
+            logger.info(f"Archived Stripe product: {stripe_product_id}")
+            return True
+
+        except stripe.error.InvalidRequestError as e:
+            # Product might not exist in Stripe
+            logger.warning(f"Could not archive Stripe product {stripe_product_id}: {str(e)}")
+            return False
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error archiving product: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Stripe Archive Error: {str(e)}")
 
     def report_meter_event(self, event_name: str, payload: Dict[str, Any], timestamp: Optional[datetime] = None) -> Dict[str, Any]:
         """
@@ -1452,7 +1499,7 @@ class StripeService:
                     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
                       <tr>
                         <td style="background:#2563eb;border-radius:8px;">
-                          <a href="https://app.thespecialwedding.com/admin/planner/billing" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
+                          <a href="{settings.frontend_url or ''}/admin/planner/billing" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
                         </td>
                       </tr>
                     </table>

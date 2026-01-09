@@ -4,7 +4,6 @@ const nextConfig = {
   // The backend runs on port 8000 inside the container
   async rewrites() {
     // In production (Coolify), proxy to localhost:8000 inside container
-    // In development, NEXT_PUBLIC_API_BASE_URL handles direct requests
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
     // Only enable rewrites for production single-container deployment
@@ -24,13 +23,13 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '78885567ce761574f5914f46808cde6a.r2.cloudflarestorage.com',
+        hostname: process.env.S3_ENDPOINT_URL,
         port: '',
         pathname: '/**',
       },
       {
         protocol: 'https',
-        hostname: process.env.MEDIA_DOMAIN || '',
+        hostname: process.env.MEDIA_DOMAIN,
         port: '',
         pathname: '/**',
       },

@@ -134,7 +134,9 @@ class ResendEmailService:
         if not custom_subject:
             custom_subject = f"You're Invited - {from_name}"
         
-        base_url = os.getenv("FRONTEND_URL", "https://www.thespecialwedding.com")
+        base_url = os.getenv("FRONTEND_URL") or ""
+        if not base_url:
+            logger.warning("FRONTEND_URL environment variable is not set - email links may not work")
         sent = 0
         failed = 0
         

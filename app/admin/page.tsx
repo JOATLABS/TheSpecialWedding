@@ -201,9 +201,11 @@ export default function AdminMetricsDashboard() {
 
   const cpuLoad = useMemo(() => {
     const value = getValueFromPaths(metrics, [
+      ['health', 'cpu', 'percent'],
       ['health', 'cpu', 'load_percent'],
       ['health', 'cpu', 'usage_percent'],
       ['health', 'cpu_load_percent'],
+      ['cpu', 'percent'],
       ['cpu', 'usage_percent'],
       ['cpu_usage_percent'],
     ]);

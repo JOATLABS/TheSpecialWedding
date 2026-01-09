@@ -271,6 +271,55 @@ class NtfyNotificationService:
             click_url=click_url,
         )
 
+    async def send_admin_alert(
+        self,
+        title: str,
+        message: str,
+        priority: PriorityLevel = "urgent",
+        tags: Optional[list[str]] = None,
+    ) -> bool:
+        """
+        Send an urgent alert to the admin notification topic.
+        Used for critical system alerts like missing configuration.
+
+        Uses a fixed admin topic so root admin can subscribe once.
+        """
+        if not self.enabled:
+            logger.warning(f"Ntfy disabled - cannot send admin alert: {title}")
+            return False
+
+        # Admin topic from settings (configurable via NTFY_ADMIN_TOPIC env var)
+        admin_topic = getattr(settings, 'NTFY_ADMIN_TOPIC', 'wedding-platform-admin')
+        url = f"{self.server_url}/{admin_topic}"
+
+        if tags is None:
+            tags = ["rotating_light", "warning"]
+
+        headers: dict[str, str] = {
+            "Title": title,
+            "Priority": priority,
+            "Tags": ",".join(tags),
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    url,
+                    content=message,
+                    headers=headers,
+                )
+
+                if response.status_code == 200:
+                    logger.info(f"Admin alert sent: {title}")
+                    return True
+                else:
+                    logger.error(f"Ntfy admin alert failed {response.status_code}: {response.text}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error sending admin alert: {str(e)}")
+            return False
+
 
 # Singleton instance
 ntfy_service = NtfyNotificationService()

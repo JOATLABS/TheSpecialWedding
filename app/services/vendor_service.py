@@ -35,7 +35,9 @@ TOKEN_EXPIRY_DAYS = int(os.getenv("CONTRACT_TOKEN_EXPIRY_DAYS", "30"))
 DEPOSIT_DUE_DAYS = int(os.getenv("DEPOSIT_DUE_DAYS", "7"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_CONTRACT_FILE_SIZE_MB", "10"))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN", "https://media.thespecialwedding.com")
+MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN")
+if not MEDIA_DOMAIN:
+    logging.getLogger(__name__).warning("MEDIA_DOMAIN environment variable is not set")
 
 
 # =============================================================================
@@ -86,7 +88,7 @@ class VendorService:
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
         )
         self.bucket_name = os.getenv("S3_BUCKET_NAME")
-        self.media_domain = "https://media.thespecialwedding.com"
+        self.media_domain = MEDIA_DOMAIN or ""
 
     # =========================================================================
     # UTILITY METHODS

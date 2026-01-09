@@ -124,12 +124,26 @@ class SubscriptionService:
                     detail=f"Cannot delete plan: {active_subs} active subscriptions exist"
                 )
 
+            # Get the plan first to retrieve Stripe product ID
+            plan = await self.plans_collection.find_one({"_id": plan_id})
+            if not plan:
+                raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+            # Archive the Stripe product (deactivate, don't delete)
+            stripe_product_id = plan.get("stripe_product_id")
+            if stripe_product_id:
+                try:
+                    stripe_service.archive_stripe_product(stripe_product_id)
+                except Exception as e:
+                    # Log but don't block deletion - Stripe sync can be fixed manually
+                    print(f"Warning: Failed to archive Stripe product {stripe_product_id}: {e}")
+
             result = await self.plans_collection.delete_one({"_id": plan_id})
 
             if result.deleted_count == 0:
                 raise HTTPException(status_code=404, detail="Subscription plan not found")
 
-            return {"message": "Subscription plan deleted successfully"}
+            return {"message": "Subscription plan deleted successfully", "stripe_archived": bool(stripe_product_id)}
 
         except HTTPException:
             raise

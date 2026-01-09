@@ -1,11 +1,8 @@
 import os
-import logging
 from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
-
-logger = logging.getLogger(__name__)
 
 
 class Settings:
@@ -13,7 +10,7 @@ class Settings:
     VERSION: str = "0.1.0"
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://mongo:27017")
     MONGO_DB: str = os.getenv("MONGO_DB", "wedding")
-    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    SECRET_KEY: Optional[str] = os.getenv("SECRET_KEY")
     API_KEY: str = os.getenv("API_KEY", "default-api-key")
     PLATFORM_METRICS_TOKEN: str = (
         os.getenv("PLATFORM_METRICS_TOKEN")
@@ -23,8 +20,9 @@ class Settings:
 
     # ==================== URL Configuration ====================
     # Single source of truth - NO FALLBACKS
+    # Missing vars will trigger root admin notification at startup
     FRONTEND_URL: Optional[str] = os.getenv("FRONTEND_URL")
-    API_BASE_URL: Optional[str] = os.getenv("API_BASE_URL")
+    NEXT_PUBLIC_API_BASE_URL: Optional[str] = os.getenv("NEXT_PUBLIC_API_BASE_URL")
     MEDIA_DOMAIN: Optional[str] = os.getenv("MEDIA_DOMAIN")
 
     # Google Calendar Integration
@@ -40,23 +38,7 @@ class Settings:
 
     # Ntfy Push Notification Service
     SERVICE_URL_NTFY: Optional[str] = os.getenv("SERVICE_URL_NTFY")
-
-    def get_required_url(self, url_name: str) -> str:
-        """
-        Get a required URL from settings.
-        Logs an error if missing - root admin should be notified via monitoring.
-        """
-        url = getattr(self, url_name, None)
-        if not url:
-            logger.error(f"CRITICAL: Required environment variable {url_name} is not configured!")
-            return ""
-        return url
+    NTFY_ADMIN_TOPIC: str = os.getenv("NTFY_ADMIN_TOPIC", "wedding-platform-admin")
 
 
 settings = Settings()
-
-# Log warnings for missing critical URLs at startup
-_critical_urls = ["FRONTEND_URL", "API_BASE_URL", "MEDIA_DOMAIN"]
-for _url_name in _critical_urls:
-    if not getattr(settings, _url_name, None):
-        logger.warning(f"Environment variable {_url_name} is not set - some features may not work correctly")
