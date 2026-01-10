@@ -11,6 +11,7 @@ class GuestModel(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     group_id: Optional[str] = None
+    table_id: Optional[str] = Field(None, description="ID of assigned seating table")
     role: Optional[str] = Field("guest")
     plus_one_allowed: Optional[bool] = Field(default=False)
     number_of_plus_ones_allowed: Optional[int] = Field(default=0, ge=0, le=10)
@@ -61,6 +62,7 @@ class UpdateGuestRequest(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     group_id: Optional[str] = None
+    table_id: Optional[str] = Field(None, description="ID of assigned seating table")
     role: Optional[str] = None
     plus_one_allowed: Optional[bool] = None
     number_of_plus_ones_allowed: Optional[int] = Field(None, ge=0, le=10)

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **SaaS Landing Page Hero**: Cleaned up broken demo functionality
+  - Removed secondary CTA button ("Watch Demo") that opened non-existent demo_url
+  - Changed header button from "Watch product tour" to "Explore features" linking to #features section
+  - Made `hero_cta_secondary` optional in IntegratedHeroSection interface
+
+- **Environment Variable Configuration**: Single source of truth policy
+  - Removed all hardcoded URL fallbacks from `app/core/config.py` and `app/core/settings.py`
+  - Missing critical env vars now trigger root admin notification at startup
+  - Config validator (`app/services/config_validator.py`) notifies via Ntfy push + in-app notification
+
+### Fixed
+
+- **S3 Variable Naming Mismatch**: Aligned code with `.env` file naming
+  - Fixed `settings.py` aliases: `S3_ACCESS_KEY` → `S3_ACCESS_KEY_ID`, `S3_SECRET_KEY` → `S3_SECRET_ACCESS_KEY`
+  - Added S3 variables to config_validator.py recommended list
+  - Updated `DEPLOYMENT_SETUP.md` to use correct `S3_` prefix instead of `CLOUDFLARE_`
+
+- **Stripe Webhook Secret**: Added `STRIPE_WEBHOOK_SECRET` to recommended environment variables in config validator
+
 ### Added
 
 - **Ntfy Push Notifications**: Instant mobile/desktop push notifications for wedding planners via self-hosted Ntfy server

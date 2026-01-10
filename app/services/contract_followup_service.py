@@ -26,6 +26,7 @@ class ContractFollowupService:
         self.contracts = mongo.db["contracts"]
         self.followup_drafts = mongo.db["contract_followup_drafts"]
         self.users = mongo.db["users"]
+        self.weddings = mongo.db["weddings"]
 
     async def check_unsigned_contracts(
         self,
@@ -106,16 +107,33 @@ class ContractFollowupService:
             couple = contract.get("couple", {})
             package = contract.get("package_snapshot", {})
 
+            # Fetch wedding details for richer context
+            wedding_id = contract.get("wedding_id")
+            wedding = None
+            if wedding_id:
+                wedding = await self.weddings.find_one({"_id": ObjectId(wedding_id)})
+
+            # Calculate days since sent for urgency context
+            sent_at = contract.get("sent_at")
+            days_since_sent = (datetime.utcnow() - sent_at).days if sent_at else 0
+
             context = {
                 "couple_name": couple.get("name", ""),
                 "partner_name": couple.get("partner_name"),
                 "package_name": package.get("name", "Wedding Package"),
                 "total_amount": package.get("total_amount", 0),
                 "sent_date": contract.get("sent_at"),
+                "days_since_sent": days_since_sent,
                 "viewed": contract.get("status") == "viewed",
                 "viewed_at": contract.get("viewed_at"),
-                "wedding_date": contract.get("wedding_date"),
-                "planner_name": planner.get("business_name") or planner.get("name", "Your Wedding Planner")
+                "wedding_date": contract.get("wedding_date") or (wedding.get("wedding_date") if wedding else None),
+                "planner_name": planner.get("business_name") or planner.get("name", "Your Wedding Planner"),
+                # Enhanced wedding context
+                "venue_name": wedding.get("venue", {}).get("name") if wedding else None,
+                "venue_location": wedding.get("venue", {}).get("location") if wedding else None,
+                "cultural_style": wedding.get("cultural_style") if wedding else None,
+                "guest_count": wedding.get("guest_count") if wedding else None,
+                "wedding_title": wedding.get("title") if wedding else None,
             }
 
             prompt = """
@@ -128,11 +146,16 @@ class ContractFollowupService:
             - Create gentle urgency without pressure
 
             Include:
-            1. A friendly greeting
-            2. Reference to the contract/package
-            3. Offer to clarify any concerns
-            4. A soft call-to-action
-            5. Professional closing
+            1. A friendly greeting using the couple's names
+            2. Reference to the contract/package by name
+            3. If wedding details are available (venue, date, cultural style), subtly reference to show you remember their special day
+            4. Offer to clarify any concerns or adjust the package
+            5. A soft call-to-action
+            6. Professional closing
+
+            Cultural considerations:
+            - If cultural_style indicates a specific tradition (Nigerian, Indian, Jewish, etc.), be culturally aware in your tone
+            - Reference the wedding date if it's approaching to create appropriate urgency
 
             Keep it concise (2-3 short paragraphs).
             """

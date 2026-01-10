@@ -18,12 +18,11 @@ interface SubscriptionPlan {
   is_featured: boolean;
 }
 
-// Fallback plans if API fails (matching database structure)
 const FALLBACK_PLANS: SubscriptionPlan[] = [
   {
     _id: 'plan_boutique',
     name: 'Boutique',
-    description: 'For new planners onboarding their first weddings',
+    description: 'For new planners',
     price_monthly: 29,
     price_yearly: 348,
     max_weddings: 3,
@@ -34,12 +33,12 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
   {
     _id: 'plan_signature',
     name: 'Signature',
-    description: 'Most popular plan with automation',
+    description: 'Most popular',
     price_monthly: 59,
     price_yearly: 708,
     max_weddings: 10,
     max_guests_per_wedding: 350,
-    features: ['Seating orchestration', 'QR check-in & live counts', 'Automated reminders', 'Vendor collaboration'],
+    features: ['Seating orchestration', 'QR check-in', 'Automated reminders', 'Vendor collaboration'],
     is_featured: true
   }
 ];
@@ -62,22 +61,34 @@ type FormValues = {
   acceptTerms: boolean;
 };
 
-export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selectedPlanId, theme }) => {
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
+export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selectedPlanId }) => {
+  const [plans, setPlans] = useState<SubscriptionPlan[]>(FALLBACK_PLANS);
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(FALLBACK_PLANS[1]);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
 
   const {
     register,
     handleSubmit,
-    setError,
     formState: { errors, isSubmitting },
     watch,
-    reset
+    reset,
+    trigger
   } = useForm<FormValues>();
 
-  // Fetch plans from API
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     const fetchPlans = async () => {
       try {
@@ -87,30 +98,16 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
           const activePlans = data.filter((p: SubscriptionPlan) => p).sort((a: SubscriptionPlan, b: SubscriptionPlan) =>
             (a.price_monthly || 0) - (b.price_monthly || 0)
           );
-          setPlans(activePlans.length > 0 ? activePlans : FALLBACK_PLANS);
-
-          // Set initially selected plan
-          const plansToUse = activePlans.length > 0 ? activePlans : FALLBACK_PLANS;
-          const initialPlan = selectedPlanId
-            ? plansToUse.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
-            : plansToUse.find((p: SubscriptionPlan) => p.is_featured) || plansToUse[1] || plansToUse[0];
-          setSelectedPlan(initialPlan);
-        } else {
-          // API call failed, use fallback
-          setPlans(FALLBACK_PLANS);
-          const initialPlan = selectedPlanId
-            ? FALLBACK_PLANS.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
-            : FALLBACK_PLANS.find((p: SubscriptionPlan) => p.is_featured) || FALLBACK_PLANS[1] || FALLBACK_PLANS[0];
-          setSelectedPlan(initialPlan || null);
+          if (activePlans.length > 0) {
+            setPlans(activePlans);
+            const initialPlan = selectedPlanId
+              ? activePlans.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
+              : activePlans.find((p: SubscriptionPlan) => p.is_featured) || activePlans[1] || activePlans[0];
+            setSelectedPlan(initialPlan);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch plans:', error);
-        // Use fallback on error
-        setPlans(FALLBACK_PLANS);
-        const initialPlan = selectedPlanId
-          ? FALLBACK_PLANS.find((p: SubscriptionPlan) => p._id === selectedPlanId || p.name.toLowerCase() === selectedPlanId.toLowerCase())
-          : FALLBACK_PLANS.find((p: SubscriptionPlan) => p.is_featured) || FALLBACK_PLANS[1] || FALLBACK_PLANS[0];
-        setSelectedPlan(initialPlan || null);
       } finally {
         setLoading(false);
       }
@@ -119,6 +116,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     if (isOpen) {
       fetchPlans();
       reset();
+      setStep(1);
     }
   }, [isOpen, selectedPlanId, reset]);
 
@@ -128,6 +126,17 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     ? (billingInterval === 'yearly' ? selectedPlan.price_yearly : selectedPlan.price_monthly)
     : 0;
 
+  const handleNext = async () => {
+    const fieldsToValidate: (keyof FormValues)[] = step === 1
+      ? ['email', 'password', 'confirmPassword']
+      : ['firstName', 'lastName', 'companyName', 'phone', 'acceptTerms'];
+
+    const isValid = await trigger(fieldsToValidate);
+    if (isValid) {
+      if (step === 1) setStep(2);
+    }
+  };
+
   const onSubmit = handleSubmit(async (data) => {
     if (data.password !== data.confirmPassword) {
       toast.error('Passwords do not match');
@@ -135,7 +144,6 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     }
 
     try {
-      // Step 1: Register user
       const registerResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/public/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,36 +160,20 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       });
 
       if (!registerResponse.ok) {
-        let message = 'Registration failed';
-        try {
-          const error = await registerResponse.json();
-          if (error?.detail) {
-            if (Array.isArray(error.detail)) {
-              message = error.detail.map((d: any) => d.msg || d.detail || d.loc?.join('.') || 'Validation error').join('; ');
-            } else if (typeof error.detail === 'string') {
-              message = error.detail;
-            }
-          }
-        } catch {
-          // ignore parse issues
-        }
+        const error = await registerResponse.json().catch(() => ({}));
+        const message = typeof error?.detail === 'string' ? error.detail : 'Registration failed';
         toast.error(message);
         return;
       }
 
       const registerData = await registerResponse.json();
-      const userId = registerData?.user_id;
+      toast.success('Account created! Redirecting to checkout...');
 
-      toast.success('Account created! Redirecting to secure checkout...');
-
-      // Step 2: Create Stripe Checkout (no login until webhook activation)
       const checkoutResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/public/create-checkout-session`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: userId,
+          user_id: registerData?.user_id,
           email: data.email,
           plan_id: selectedPlan?._id,
           billing_interval: billingInterval,
@@ -191,27 +183,14 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
         })
       });
 
-      if (!checkoutResponse.ok) {
-        let message = 'Account created! Please continue from the payment link we emailed you.';
-        try {
-          const error = await checkoutResponse.json();
-          if (error?.detail) {
-            message = typeof error.detail === 'string' ? error.detail : JSON.stringify(error.detail);
-          }
-        } catch {
-          // ignore
+      if (checkoutResponse.ok) {
+        const { checkout_session } = await checkoutResponse.json();
+        if (checkout_session?.url) {
+          window.location.href = checkout_session.url;
+          return;
         }
-        toast.warning(message);
-        return;
       }
-
-      const { checkout_session } = await checkoutResponse.json();
-      if (checkout_session?.url) {
-        window.location.href = checkout_session.url;
-      } else {
-        toast.error('Could not start payment checkout. Please try again from your email link.');
-      }
-
+      toast.warning('Account created! Check your email for payment link.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Signup failed');
     }
@@ -219,199 +198,273 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-6xl rounded-3xl border border-white/20 bg-white shadow-2xl"
+        className="relative w-full max-w-[360px] sm:max-w-md lg:max-w-4xl bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl border border-slate-700/50 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute right-6 top-6 z-10 rounded-full bg-slate-100 p-2 text-slate-600 transition-all hover:bg-slate-200"
+          className="absolute right-3 top-3 z-10 rounded-full bg-slate-700/50 p-2 text-slate-400 hover:text-white hover:bg-slate-600/50 transition-all"
           aria-label="Close"
         >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
 
-        <div className="grid lg:grid-cols-[380px_1fr]">
-          {/* Left: Plan Selection */}
-          <div className="border-r border-slate-200 bg-slate-50 p-8">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Selected Plan</h3>
-                <h2 className="mt-2 text-2xl font-bold text-slate-900">{selectedPlan?.name || 'Loading...'}</h2>
+        <div className="lg:grid lg:grid-cols-[280px_1fr]">
+          {/* Left sidebar - desktop only */}
+          <div className="hidden lg:flex flex-col justify-between bg-gradient-to-b from-indigo-600 to-purple-700 p-6 text-white">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-indigo-200 mb-1">Selected Plan</div>
+              <div className="text-2xl font-bold mb-4">{selectedPlan?.name}</div>
+
+              <div className="flex gap-1 mb-4">
+                {['monthly', 'yearly'].map((interval) => (
+                  <button
+                    key={interval}
+                    type="button"
+                    onClick={() => setBillingInterval(interval as 'monthly' | 'yearly')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                      billingInterval === interval
+                        ? 'bg-white text-indigo-600'
+                        : 'bg-white/20 text-white hover:bg-white/30'
+                    }`}
+                  >
+                    {interval === 'monthly' ? 'Monthly' : 'Yearly'}
+                    {interval === 'yearly' && <span className="ml-1 text-emerald-300">-15%</span>}
+                  </button>
+                ))}
               </div>
 
-              {/* Billing Toggle */}
-              <div className="inline-flex rounded-full bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setBillingInterval('monthly')}
-                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                    billingInterval === 'monthly' ? 'bg-slate-900 text-white' : 'text-slate-600'
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBillingInterval('yearly')}
-                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                    billingInterval === 'yearly' ? 'bg-slate-900 text-white' : 'text-slate-600'
-                  }`}
-                >
-                  Yearly <span className="text-xs text-emerald-600">-15%</span>
-                </button>
+              <div className="bg-white/10 rounded-xl p-4 mb-4">
+                <div className="text-3xl font-bold">${displayPrice}</div>
+                <div className="text-sm text-indigo-200">per {billingInterval === 'yearly' ? 'year' : 'month'}</div>
               </div>
 
-              {/* Price */}
-              <div className="rounded-xl bg-white p-5 shadow-sm">
-                <div className="text-3xl font-bold text-slate-900">${displayPrice}</div>
-                <div className="text-sm text-slate-600">{billingInterval === 'yearly' ? 'per year' : 'per month'}</div>
+              <div className="space-y-2">
+                {(selectedPlan?.features || selectedPlan?.features_list || []).slice(0, 4).map((feature, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-sm text-indigo-100">
+                    <svg className="h-4 w-4 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span>{feature}</span>
+                  </div>
+                ))}
               </div>
+            </div>
 
-              {/* Features */}
-              {selectedPlan?.features_list && (
-                <div className="space-y-2">
-                  {selectedPlan.features_list.slice(0, 4).map((feature, idx) => (
-                    <div key={idx} className="flex items-start gap-2 text-sm">
-                      <svg className="mt-0.5 h-5 w-5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      <span className="text-slate-700">{feature}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <select
+              value={selectedPlan?._id || ''}
+              onChange={(e) => setSelectedPlan(plans.find(p => p._id === e.target.value) || null)}
+              className="w-full mt-4 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
+            >
+              {plans.map(plan => (
+                <option key={plan._id} value={plan._id} className="text-slate-900">{plan.name} - ${plan.price_monthly}/mo</option>
+              ))}
+            </select>
+          </div>
 
-              {/* Change Plan */}
+          {/* Form area */}
+          <div className="p-5 sm:p-6">
+            {/* Mobile: Plan selector bar */}
+            <div className="lg:hidden flex items-center justify-between gap-3 mb-5 p-3 rounded-xl bg-slate-700/50 border border-slate-600/50">
               <select
                 value={selectedPlan?._id || ''}
                 onChange={(e) => setSelectedPlan(plans.find(p => p._id === e.target.value) || null)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                className="flex-1 px-3 py-2 rounded-lg bg-slate-600 border-0 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {plans.map(plan => (
-                  <option key={plan._id} value={plan._id}>{plan.name} - ${plan.price_monthly}/mo</option>
+                  <option key={plan._id} value={plan._id}>{plan.name}</option>
                 ))}
               </select>
-
-              <div className="rounded-xl bg-blue-50 p-4">
-                <p className="text-sm font-semibold text-blue-900">Secure Payment</p>
-                <p className="text-xs text-blue-700">Powered by Stripe</p>
+              <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                {['monthly', 'yearly'].map((interval) => (
+                  <button
+                    key={interval}
+                    type="button"
+                    onClick={() => setBillingInterval(interval as 'monthly' | 'yearly')}
+                    className={`px-3 py-2 text-xs font-medium transition ${
+                      billingInterval === interval
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {interval === 'monthly' ? 'Mo' : 'Yr'}
+                  </button>
+                ))}
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-bold text-white">${displayPrice}</div>
+                <div className="text-[10px] text-slate-400">/{billingInterval === 'yearly' ? 'yr' : 'mo'}</div>
               </div>
             </div>
-          </div>
 
-          {/* Right: Form */}
-          <div className="max-h-[85vh] overflow-y-auto p-8 lg:p-10">
-            <form onSubmit={onSubmit} className="space-y-5">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">Create your account</h2>
-                <p className="mt-1 text-slate-600">Complete your subscription signup</p>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">First name</label>
-                  <input
-                    {...register('firstName', { required: 'Required' })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                  {errors.firstName && <p className="mt-1 text-xs text-red-600">{errors.firstName.message}</p>}
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 mb-5">
+              {[1, 2].map((s) => (
+                <div key={s} className="flex items-center">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                    step >= s ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'
+                  }`}>
+                    {step > s ? '✓' : s}
+                  </div>
+                  {s < 2 && <div className={`w-8 h-0.5 mx-1 ${step > 1 ? 'bg-indigo-600' : 'bg-slate-700'}`} />}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Last name</label>
-                  <input
-                    {...register('lastName', { required: 'Required' })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                  {errors.lastName && <p className="mt-1 text-xs text-red-600">{errors.lastName.message}</p>}
-                </div>
-              </div>
+              ))}
+              <span className="text-xs text-slate-400 ml-2">
+                {step === 1 ? 'Account' : 'Details'}
+              </span>
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700">Company name</label>
-                <input
-                  {...register('companyName', { required: 'Required' })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                />
-                {errors.companyName && <p className="mt-1 text-xs text-red-600">{errors.companyName.message}</p>}
-              </div>
+            <form onSubmit={onSubmit} className="space-y-4">
+              {step === 1 ? (
+                <>
+                  <div>
+                    <h2 className="text-xl font-bold text-white mb-1">Create your account</h2>
+                    <p className="text-sm text-slate-400">Enter your email and create a password</p>
+                  </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Email</label>
-                  <input
-                    type="email"
-                    {...register('email', { required: 'Required' })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                  {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Phone</label>
-                  <input
-                    type="tel"
-                    {...register('phone', { required: 'Required' })}
-                    placeholder="405-708-1076"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                  {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone.message}</p>}
-                </div>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
+                    <input
+                      type="email"
+                      {...register('email', { required: 'Email is required' })}
+                      className="w-full px-4 py-3 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="you@company.com"
+                    />
+                    {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email.message}</p>}
+                  </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Password</label>
-                  <input
-                    type="password"
-                    {...register('password', {
-                      required: 'Required',
-                      minLength: { value: 8, message: 'Minimum 8 characters' },
-                      pattern: {
-                        value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-[\]{}|;:,.<>?]).{8,}$/,
-                        message: 'Must include upper, lower, number, and special character'
-                      }
-                    })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                  {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Confirm password</label>
-                  <input
-                    type="password"
-                    {...register('confirmPassword', {
-                      required: 'Required',
-                      validate: (value) => value === watch('password') || 'Passwords must match'
-                    })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
-                  {errors.confirmPassword && <p className="mt-1 text-xs text-red-600">{errors.confirmPassword.message}</p>}
-                </div>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
+                    <input
+                      type="password"
+                      {...register('password', {
+                        required: 'Password is required',
+                        minLength: { value: 8, message: 'Min 8 characters' },
+                        pattern: {
+                          value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-[\]{}|;:,.<>?]).{8,}$/,
+                          message: 'Include upper, lower, number & special char'
+                        }
+                      })}
+                      className="w-full px-4 py-3 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="••••••••"
+                    />
+                    {errors.password && <p className="mt-1 text-xs text-red-400">{errors.password.message}</p>}
+                  </div>
 
-              <label className="flex items-start gap-2 text-sm">
-                <input type="checkbox" {...register('acceptTerms', { required: 'Please accept the terms to continue' })} className="mt-1" />
-                <span className="text-slate-600">I agree to the Terms and Privacy Policy</span>
-              </label>
-              {errors.acceptTerms && <p className="text-xs text-red-600">{errors.acceptTerms.message as string}</p>}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Confirm Password</label>
+                    <input
+                      type="password"
+                      {...register('confirmPassword', {
+                        required: 'Please confirm password',
+                        validate: (value) => value === watch('password') || 'Passwords must match'
+                      })}
+                      className="w-full px-4 py-3 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      placeholder="••••••••"
+                    />
+                    {errors.confirmPassword && <p className="mt-1 text-xs text-red-400">{errors.confirmPassword.message}</p>}
+                  </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting || loading}
-                className="w-full rounded-xl bg-slate-900 px-6 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-              >
-                {isSubmitting ? 'Creating account...' : 'Continue to payment →'}
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all"
+                  >
+                    Continue
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <div>
+                      <h2 className="text-xl font-bold text-white">Your details</h2>
+                      <p className="text-sm text-slate-400">Almost there! Just a few more details.</p>
+                    </div>
+                  </div>
 
-              <p className="text-center text-xs text-slate-500">
-                You'll be redirected to Stripe's secure checkout
-              </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1">First name</label>
+                      <input
+                        {...register('firstName', { required: 'Required' })}
+                        className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                        placeholder="Jane"
+                      />
+                      {errors.firstName && <p className="mt-1 text-xs text-red-400">{errors.firstName.message}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1">Last name</label>
+                      <input
+                        {...register('lastName', { required: 'Required' })}
+                        className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                        placeholder="Smith"
+                      />
+                      {errors.lastName && <p className="mt-1 text-xs text-red-400">{errors.lastName.message}</p>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Company name</label>
+                    <input
+                      {...register('companyName', { required: 'Required' })}
+                      className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                      placeholder="Your Planning Co."
+                    />
+                    {errors.companyName && <p className="mt-1 text-xs text-red-400">{errors.companyName.message}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Phone</label>
+                    <input
+                      type="tel"
+                      {...register('phone', { required: 'Required' })}
+                      className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                      placeholder="(555) 123-4567"
+                    />
+                    {errors.phone && <p className="mt-1 text-xs text-red-400">{errors.phone.message}</p>}
+                  </div>
+
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      {...register('acceptTerms', { required: 'You must accept the terms' })}
+                      className="mt-0.5 rounded border-slate-600 bg-slate-700 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-xs text-slate-400">
+                      I agree to the <a href="#" className="text-indigo-400 hover:underline">Terms</a> and <a href="#" className="text-indigo-400 hover:underline">Privacy Policy</a>
+                    </span>
+                  </label>
+                  {errors.acceptTerms && <p className="text-xs text-red-400">{errors.acceptTerms.message as string}</p>}
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || loading}
+                    className="w-full py-3 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold transition-all disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Creating account...' : 'Continue to payment →'}
+                  </button>
+
+                  <p className="text-center text-xs text-slate-500">
+                    Secure checkout powered by Stripe
+                  </p>
+                </>
+              )}
             </form>
           </div>
         </div>

@@ -277,9 +277,14 @@ DEBUG=false
 RESEND_API_KEY=your-resend-api-key
 TWILIO_ACCOUNT_SID=your-twilio-sid
 TWILIO_AUTH_TOKEN=your-twilio-token
-CLOUDFLARE_ACCOUNT_ID=your-cloudflare-id
-CLOUDFLARE_ACCESS_KEY_ID=your-access-key
-CLOUDFLARE_SECRET_ACCESS_KEY=your-secret-key
+
+# Storage (Cloudflare R2 or AWS S3)
+S3_ENDPOINT_URL=https://your-account-id.r2.cloudflarestorage.com
+S3_BUCKET_NAME=your-bucket-name
+S3_ACCESS_KEY_ID=your-access-key
+S3_SECRET_ACCESS_KEY=your-secret-key
+S3_REGION=auto
+
 STRIPE_SECRET_KEY=your-stripe-secret
 ```
 

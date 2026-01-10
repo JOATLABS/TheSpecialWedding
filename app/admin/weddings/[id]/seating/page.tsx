@@ -3,45 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTables } from '@/admin/hooks/useTables';
+import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
 import { Sidebar } from '@/admin/components/seating/Sidebar';
 import { GlassButton } from '@/admin/components/ui/glass/GlassButton';
 import { Plus, Download, Printer, Sparkles, X, Check } from 'lucide-react';
-import { Guest, Table } from '@/types/table';
-
-// Minimal mock for guest fetching hook (should use real one)
-function useGuests(weddingId: string) {
-  const [guests, setGuests] = useState<Guest[]>([]);
-
-  useEffect(() => {
-    if (!weddingId) return;
-    const fetchGuests = async () => {
-      const token = localStorage.getItem('admin_token');
-      try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/guests/${weddingId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setGuests(data.map((g: any) => ({
-            id: g._id,
-            wedding_id: g.wedding_id,
-            name: g.name,
-            email: g.email,
-            group_id: g.group_id,
-            table_id: g.table_id || null,
-            role: g.role
-          })));
-        }
-      } catch (e) {
-        console.error("Failed to fetch guests", e);
-      }
-    };
-    fetchGuests();
-  }, [weddingId]);
-
-  return { guests, setGuests };
-}
+import { Table } from '@/types/table';
 
 interface AISuggestion {
   tables: Array<{

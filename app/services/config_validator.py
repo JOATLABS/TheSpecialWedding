@@ -50,6 +50,10 @@ RECOMMENDED_ENV_VARS = {
     "STRIPE_SECRET_KEY": "Payment processing API key",
     "STRIPE_WEBHOOK_SECRET": "Stripe webhook signature verification",
     "TWILIO_ACCOUNT_SID": "SMS service credentials",
+    "S3_ENDPOINT_URL": "S3/R2 storage endpoint URL",
+    "S3_ACCESS_KEY_ID": "S3/R2 access key ID",
+    "S3_SECRET_ACCESS_KEY": "S3/R2 secret access key",
+    "S3_BUCKET_NAME": "S3/R2 bucket name for file uploads",
 }
 
 
