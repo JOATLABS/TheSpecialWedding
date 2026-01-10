@@ -450,6 +450,9 @@ class ContractService:
                 return {"success": False, "error": "Invalid payment amount"}
 
             # Create PaymentIntent and charge immediately
+            # Use idempotency key to prevent double-charging on retries/duplicate requests
+            idempotency_key = f"deposit_{contract_id}_{str(payment['_id'])}"
+
             payment_intent_params = {
                 "amount": amount_cents,
                 "currency": currency,
@@ -462,7 +465,8 @@ class ContractService:
                     "contract_id": contract_id,
                     "payment_id": str(payment["_id"]),
                     "payment_type": "deposit"
-                }
+                },
+                "idempotency_key": idempotency_key
             }
 
             # Add destination for Connect if planner has account
@@ -903,11 +907,19 @@ class ContractService:
             if payment.get("status") != "failed":
                 raise ValueError(f"Cannot retry payment with status '{payment.get('status')}'. Only failed payments can be retried.")
 
-            # Reset status to scheduled for retry
-            await self.scheduled_payments.update_one(
-                {"_id": ObjectId(payment_id)},
+            # Reset status to scheduled for retry (atomic - only if still failed)
+            # This prevents race conditions if multiple retry requests come in
+            update_result = await self.scheduled_payments.update_one(
+                {
+                    "_id": ObjectId(payment_id),
+                    "status": "failed"  # Only update if still in failed state
+                },
                 {"$set": {"status": "scheduled", "updated_at": datetime.utcnow()}}
             )
+
+            # Check if another process already started retrying
+            if update_result.modified_count == 0:
+                raise ValueError("Payment is already being retried by another process")
 
             # Process the payment immediately
             payment_dict = self._serialize_payment(payment)

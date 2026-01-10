@@ -127,7 +127,7 @@ class Settings(BaseSettings):
     stripe_publishable_key: Optional[str] = Field(default=None, alias="STRIPE_PUBLISHABLE_KEY")
     stripe_webhook_secret: Optional[str] = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
 
-    free_trial_days: int = Field(default=14, alias="FREE_TRIAL_DAYS")
+    free_trial_days: int = Field(default=0, alias="FREE_TRIAL_DAYS")  # 0 = no free trial
 
     # Admin Settings
     root_admin_email: Optional[str] = Field(default=None, alias="ROOT_ADMIN_EMAIL")

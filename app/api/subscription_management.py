@@ -69,7 +69,7 @@ async def assign_subscription_to_user(
         user_id=user_id,
         plan_id=subscription_data.plan_id,
         billing_interval=subscription_data.billing_interval,
-        trial_days=subscription_data.trial_days or 14,
+        trial_days=subscription_data.trial_days,  # Default is 0 (no trial)
         creator_email=current_user.email
     )
 
