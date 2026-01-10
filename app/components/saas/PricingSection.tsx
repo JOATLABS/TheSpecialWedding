@@ -154,6 +154,12 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
     }
   };
 
+  // Derive selected plan object from activePlanId
+  const selectedPlan = useMemo(() => {
+    if (!activePlanId) return null;
+    return plans.find(p => p._id === activePlanId) || null;
+  }, [activePlanId, plans]);
+
   const getPriceLabel = (plan: SubscriptionPlan) => {
     if (plan.price_monthly === 0) {
       return 'Free';
