@@ -131,6 +131,119 @@ def handle_ai_error(e: Exception):
 
 
 # =========================================================================
+# VALIDATION HELPERS
+# =========================================================================
+
+def validate_seating_suggestions(
+    ai_tables: List[Dict[str, Any]],
+    original_guests: List[Dict[str, Any]],
+    original_tables: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Validate AI-generated seating suggestions for correctness.
+
+    Checks:
+    1. All guest IDs in suggestions exist in the original request
+    2. Table assignments don't exceed capacity
+    3. Tracks unassigned guests
+
+    Returns:
+        Dict with validated tables, warnings, and any corrections made
+    """
+    # Build lookup maps
+    valid_guest_ids = {
+        str(g.get("id") or g.get("_id")) for g in original_guests
+    }
+    table_capacities = {
+        str(t.get("id") or t.get("_id")): t.get("capacity", 10)
+        for t in original_tables
+    }
+    table_names = {
+        str(t.get("id") or t.get("_id")): t.get("name", f"Table {i+1}")
+        for i, t in enumerate(original_tables)
+    }
+
+    validated_tables = []
+    warnings = []
+    assigned_guest_ids = set()
+
+    for table in ai_tables:
+        table_id = str(table.get("id") or table.get("table_id", ""))
+        table_guests = table.get("guests", [])
+        capacity = table_capacities.get(table_id, 10)
+
+        # Filter out invalid guest IDs
+        valid_guests = []
+        invalid_guests = []
+
+        for guest in table_guests:
+            guest_id = str(guest.get("id") or guest.get("guest_id", ""))
+            if guest_id in valid_guest_ids:
+                valid_guests.append(guest)
+                assigned_guest_ids.add(guest_id)
+            else:
+                invalid_guests.append(guest_id)
+
+        if invalid_guests:
+            warnings.append({
+                "type": "invalid_guest_ids",
+                "table": table_names.get(table_id, table_id),
+                "invalid_ids": invalid_guests,
+                "message": f"Removed {len(invalid_guests)} invalid guest ID(s) from {table_names.get(table_id, table_id)}"
+            })
+
+        # Check capacity (account for party sizes if available)
+        total_seats_used = 0
+        for guest in valid_guests:
+            party_size = guest.get("party_size", 1)
+            total_seats_used += party_size
+
+        if total_seats_used > capacity:
+            warnings.append({
+                "type": "over_capacity",
+                "table": table_names.get(table_id, table_id),
+                "capacity": capacity,
+                "assigned": total_seats_used,
+                "message": f"{table_names.get(table_id, table_id)} is over capacity ({total_seats_used}/{capacity})"
+            })
+
+        validated_tables.append({
+            **table,
+            "guests": valid_guests,
+            "capacity": capacity,
+            "seats_used": total_seats_used
+        })
+
+    # Find unassigned guests
+    unassigned = valid_guest_ids - assigned_guest_ids
+    if unassigned:
+        # Get names of unassigned guests
+        unassigned_names = [
+            g.get("name", "Unknown")
+            for g in original_guests
+            if str(g.get("id") or g.get("_id")) in unassigned
+        ]
+        warnings.append({
+            "type": "unassigned_guests",
+            "count": len(unassigned),
+            "guest_ids": list(unassigned),
+            "guest_names": unassigned_names[:10],  # Limit to first 10 names
+            "message": f"{len(unassigned)} guest(s) not assigned to any table"
+        })
+
+    return {
+        "tables": validated_tables,
+        "warnings": warnings,
+        "stats": {
+            "total_guests": len(valid_guest_ids),
+            "assigned_guests": len(assigned_guest_ids),
+            "unassigned_guests": len(unassigned),
+            "tables_over_capacity": sum(1 for w in warnings if w.get("type") == "over_capacity")
+        }
+    }
+
+
+# =========================================================================
 # REQUEST/RESPONSE MODELS
 # =========================================================================
 
@@ -650,12 +763,33 @@ async def optimize_seating(
             force_refresh=request.force_refresh
         )
 
+        # Validate AI response
+        ai_tables = result["response"].get("tables", [])
+        validation = validate_seating_suggestions(
+            ai_tables=ai_tables,
+            original_guests=request.guests,
+            original_tables=request.tables
+        )
+
+        # Log any warnings for monitoring
+        if validation["warnings"]:
+            logger.warning(
+                f"Seating validation warnings for wedding {wedding_id}: "
+                f"{len(validation['warnings'])} issue(s) found"
+            )
+            for warning in validation["warnings"]:
+                logger.warning(f"  - {warning['message']}")
+
         return {
-            "tables": result["response"].get("tables", []),
+            "tables": validation["tables"],
             "guest_count": guest_count,
             "feature_used": feature,
             "cached": result["cached"],
-            "credits_used": result["credits_used"]
+            "credits_used": result["credits_used"],
+            "validation": {
+                "warnings": validation["warnings"],
+                "stats": validation["stats"]
+            }
         }
 
     except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,

@@ -33,7 +33,7 @@ interface IntegratedHeroSectionProps {
     hero_solution_statement?: string;
     hero_description?: string;
     hero_cta_primary: string;
-    hero_cta_secondary: string;
+    hero_cta_secondary?: string;
     demo_url?: string;
     primary_color?: string;
     statistics?: Statistic[];
@@ -136,14 +136,13 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
             ))}
           </nav>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => config.demo_url && window.open(config.demo_url, '_blank')}
+            <a
+              href="#features"
               className="hidden rounded-full border border-white/25 px-5 py-2 text-sm font-semibold text-white/80 transition hover:border-white hover:text-white lg:inline-flex"
               style={transitionStyle}
             >
-              Watch product tour
-            </button>
+              Explore features
+            </a>
             <button
               type="button"
               onClick={onAuthModalOpen}
@@ -184,14 +183,6 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
                 style={transitionStyle}
               >
                 {config.hero_cta_primary}
-              </button>
-              <button
-                type="button"
-                onClick={() => config.demo_url && window.open(config.demo_url, '_blank')}
-                className="inline-flex w-full items-center justify-center rounded-full border border-white/25 bg-white/5 px-8 py-3 text-base font-semibold text-white/90 transition hover:bg-white/10 hover:text-white sm:w-auto"
-                style={transitionStyle}
-              >
-                {config.hero_cta_secondary}
               </button>
             </div>
 

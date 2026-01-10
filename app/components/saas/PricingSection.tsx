@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 
@@ -25,12 +25,23 @@ interface SubscriptionPlan {
   display_order: number;
 }
 
+interface CachedPlans {
+  plans: SubscriptionPlan[];
+  timestamp: number;
+}
+
 interface PricingSectionProps {
   theme: ThemeConfig;
   onPlanSelect?: (plan: { id: string; name: string }) => void;
 }
 
 const formatLimit = (value: number) => (value === -1 ? 'Unlimited' : value.toString());
+
+// Cache configuration
+const CACHE_KEY = 'pricing_plans_cache';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1000; // 1 second, doubles each retry
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSelect }) => {
   const router = useRouter();
@@ -39,32 +50,52 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
   const [error, setError] = useState('');
   const [isYearly, setIsYearly] = useState(false);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
 
-  useEffect(() => {
-    fetchPlans();
+  // Get cached plans from localStorage
+  const getCachedPlans = useCallback((): SubscriptionPlan[] | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (!cached) return null;
+
+      const { plans: cachedPlans, timestamp }: CachedPlans = JSON.parse(cached);
+      const isExpired = Date.now() - timestamp > CACHE_TTL_MS;
+
+      if (isExpired) {
+        localStorage.removeItem(CACHE_KEY);
+        return null;
+      }
+
+      return cachedPlans;
+    } catch {
+      return null;
+    }
   }, []);
 
-  useEffect(() => {
-    if (plans.length === 0 || activePlanId) {
-      return;
+  // Save plans to localStorage cache
+  const setCachedPlans = useCallback((plansToCache: SubscriptionPlan[]) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const cacheData: CachedPlans = {
+        plans: plansToCache,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+    } catch {
+      // localStorage might be full or disabled - ignore
     }
-    const featured = plans.find((plan) => plan.is_featured) ?? plans[0];
-    setActivePlanId(featured._id);
-  }, [plans, activePlanId]);
+  }, []);
 
-  const selectedPlan = useMemo(
-    () => plans.find((plan) => plan._id === activePlanId) ?? null,
-    [plans, activePlanId]
-  );
-
-  const fetchPlans = async () => {
+  // Fetch with exponential backoff retry
+  const fetchPlans = useCallback(async (attempt: number = 0): Promise<void> => {
     try {
       const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/public/subscription-plans`);
 
       if (!response.ok) {
-        setError('Pricing is temporarily unavailable. Please try again shortly or contact us for details.');
-        return;
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -74,17 +105,42 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
 
       if (sortedPlans.length > 0) {
         setPlans(sortedPlans);
+        setCachedPlans(sortedPlans); // Cache successful response
         setError('');
+        setRetryCount(0);
+        setIsRetrying(false);
       } else {
         setError('No pricing plans are currently available. Please contact us for custom pricing.');
       }
     } catch (fetchError) {
-      console.error('Failed to load pricing plans', fetchError);
-      setError('Unable to load pricing. Please refresh the page or contact us directly.');
+      console.error(`Failed to load pricing plans (attempt ${attempt + 1}/${MAX_RETRIES})`, fetchError);
+
+      // Try to use cached data first
+      const cachedPlans = getCachedPlans();
+      if (cachedPlans && cachedPlans.length > 0) {
+        setPlans(cachedPlans);
+        setError(''); // Don't show error if we have cached data
+        setRetryCount(0);
+        setIsRetrying(false);
+        return;
+      }
+
+      // Retry with exponential backoff
+      if (attempt < MAX_RETRIES - 1) {
+        setIsRetrying(true);
+        setRetryCount(attempt + 1);
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchPlans(attempt + 1);
+      }
+
+      // All retries exhausted
+      setIsRetrying(false);
+      setError('Pricing is temporarily unavailable. Please try again shortly or contact us for details.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [getCachedPlans, setCachedPlans]);
 
   const handleSelectPlan = (plan: SubscriptionPlan) => {
     setActivePlanId(plan._id);
@@ -113,7 +169,12 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
       <section className="px-4 py-16">
         <div className="mx-auto max-w-6xl text-center">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2" style={{ borderColor: theme.primary_color }} />
-          <p className="text-slate-200">Loading pricing plans…</p>
+          <p className="text-slate-200">
+            {isRetrying
+              ? `Retrying... (attempt ${retryCount + 1}/${MAX_RETRIES})`
+              : 'Loading pricing plans…'
+            }
+          </p>
         </div>
       </section>
     );

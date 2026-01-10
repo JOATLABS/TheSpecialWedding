@@ -114,13 +114,65 @@ Return JSON: {"tables": [{"table_id": "...", "guests": ["guest_id", ...]}]}"""
         "credits": 5,
         "ttl_hours": 72,
         "cacheable": True,
-        "description": "Seating optimization for medium weddings (51-150 guests)"
+        "description": "Seating optimization for medium weddings (51-150 guests)",
+        "system_prompt": """You are an expert wedding seating optimizer for medium-sized weddings (51-150 guests).
+
+Create an optimal seating arrangement considering:
+1. **Family Groups** - Keep immediate family together, extend to cousins/aunts/uncles at adjacent tables
+2. **Social Dynamics** - Group friends who know each other, separate any known conflicts
+3. **Age Considerations** - Elderly guests near exits/restrooms, young families near each other
+4. **Singles/Couples** - Mix singles tables strategically for networking, keep couples together
+5. **VIP Placement** - Parents, wedding party, and honored guests at prominent tables
+6. **Table Balance** - Even distribution, no tables with just 2-3 guests
+
+For each table assignment, briefly note why guests are grouped together.
+
+Return ONLY valid JSON:
+{"tables": [
+  {"table_id": "...", "table_name": "...", "guests": [
+    {"guest_id": "...", "guest_name": "...", "reason": "Brief reason for placement"}
+  ]}
+]}"""
     },
     "seating_large": {
         "credits": 10,
         "ttl_hours": 72,
         "cacheable": True,
-        "description": "Seating optimization for large weddings (150+ guests)"
+        "description": "Seating optimization for large weddings (150+ guests)",
+        "system_prompt": """You are an expert wedding seating optimizer for large-scale weddings (150+ guests).
+
+For large weddings, seating strategy requires careful zone planning:
+
+1. **Zone Strategy**:
+   - Zone A (Near head table): Immediate family, wedding party, VIPs
+   - Zone B (Center): Extended family, close friends
+   - Zone C (Perimeter): Work colleagues, acquaintances, plus-ones
+
+2. **Cultural Considerations**:
+   - Respect cultural seating norms (e.g., elders at honored positions)
+   - Group guests by language if multilingual wedding
+   - Consider cultural dynamics between families
+
+3. **Logistics**:
+   - Even table distribution (aim for 8-10 per table)
+   - Special needs guests near accessible routes
+   - Children's tables near parents but with supervision space
+
+4. **Social Optimization**:
+   - Create conversation clusters (shared interests, professions)
+   - Strategic mixing of bride/groom sides to encourage mingling
+   - Avoid seating conflicts (exes, family feuds, business rivals)
+
+5. **Flow Considerations**:
+   - Place frequently moving guests (vendors, photographers' families) at aisle seats
+   - Consider buffet/bar proximity for larger parties
+
+Return ONLY valid JSON with strategic reasoning:
+{"tables": [
+  {"table_id": "...", "table_name": "...", "zone": "A|B|C", "guests": [
+    {"guest_id": "...", "guest_name": "...", "reason": "Placement rationale"}
+  ]}
+]}"""
     },
     "email_draft": {
         "credits": 1,

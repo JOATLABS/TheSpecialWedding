@@ -36,7 +36,6 @@ interface SaasConfig {
   hero_subtitle: string;
   hero_description: string;
   hero_cta_primary: string;
-  hero_cta_secondary: string;
   contact_cta_label?: string;
   contact_url?: string;
   trust_indicators: string[];

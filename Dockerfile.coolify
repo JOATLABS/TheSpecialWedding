@@ -21,12 +21,13 @@ RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 # Copy all source files (controlled by .dockerignore)
 COPY . .
 
-# Build Next.js application with a default API URL (override via build arg)
-# This ensures NEXT_PUBLIC_API_BASE_URL is properly baked into the JS bundle
-ARG NEXT_PUBLIC_API_BASE_URL=https://api.thespecialwedding.io
-ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
-RUN echo "Building with NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL" && \
-    npm run build
+# Set build-time environment variables
+# ARG must be declared AFTER FROM due to Coolify bug #7118 (comments before FROM cause injection issues)
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+
+# Build Next.js application
+RUN npm run build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Production Runtime
