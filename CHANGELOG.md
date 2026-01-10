@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Subscription System Hardening**: Production-ready improvements for billing reliability
+  - **Plan Grandfathering** (`app/services/subscription_service.py`):
+    - Snapshot plan limits at subscription creation time
+    - Users keep their original limits even if plan pricing/limits are modified later
+    - Backwards compatible with existing subscriptions (falls back to current plan)
+  - **Pricing Page Resilience** (`app/components/saas/PricingSection.tsx`):
+    - Retry with exponential backoff (3 attempts: 1s → 2s → 4s)
+    - localStorage cache (5-minute TTL) for offline resilience
+    - User-friendly "Retrying..." status during fetch failures
+    - Falls back to cached data if API is temporarily unavailable
+  - **Atomic Seed Script** (`scripts/seed_subscription_plans.py`):
+    - MongoDB upsert prevents race conditions on multi-container startup
+    - `$setOnInsert` for created_at/created_by, `$set` for updateable fields
+    - Idempotent Stripe product/price creation
+
+### Fixed
+
+- **Coolify Docker Build ARG Injection Bug** (`Dockerfile.coolify`):
+  - Fixed CORS/API unreachable issue after Coolify deployment
+  - Root cause: Coolify bug #7118 injects ARG statements at line 2, but Dockerfile starts with comments
+  - ARG was being placed before `FROM` instruction, making it unavailable in build stage
+  - Solution: Explicitly declare `ARG NEXT_PUBLIC_API_BASE_URL` after `FROM` instruction
+  - Removed hardcoded default value - relies on Coolify's "Build Variable" setting
+  - Reference: [Coolify Issue #7118](https://github.com/coollabsio/coolify/issues/7118)
+
+- **Public API Security** (`app/api/subscription_management.py`):
+  - Sanitized `/public/subscription-plans` response to exclude sensitive fields
+  - Removed: `stripe_product_id`, `stripe_price_id_*`, `created_by`, `created_at`
+  - Only returns public-safe fields needed for pricing display
+
 ### Changed
 
 - **SaaS Landing Page Hero**: Cleaned up broken demo functionality
