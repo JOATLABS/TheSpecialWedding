@@ -146,7 +146,6 @@ export const SaasLandingPage: React.FC = () => {
     hero_subtitle: "Wedding Planning Made Simple",
     hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
     hero_cta_primary: "Start Free Trial",
-    hero_cta_secondary: "Watch Demo",
     contact_cta_label: 'Contact Sales',
     contact_url: process.env.NEXT_PUBLIC_CONTACT_URL || 'mailto:sales@specialwedding.com',
     trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],

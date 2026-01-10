@@ -134,10 +134,28 @@ def handle_ai_error(e: Exception):
 # VALIDATION HELPERS
 # =========================================================================
 
+def _extract_guest_id(guest: Any) -> Optional[str]:
+    """
+    Extract guest ID from various formats AI might return.
+    Handles: string IDs, objects with id/guest_id/_id fields.
+    """
+    if guest is None:
+        return None
+    # AI might return plain string IDs (seating_small format)
+    if isinstance(guest, str):
+        return guest if guest and guest != "None" else None
+    # AI might return objects with various ID fields
+    if isinstance(guest, dict):
+        guest_id = guest.get("id") or guest.get("guest_id") or guest.get("_id")
+        if guest_id and str(guest_id) != "None":
+            return str(guest_id)
+    return None
+
+
 def validate_seating_suggestions(
     ai_tables: List[Dict[str, Any]],
-    original_guests: List[Dict[str, Any]],
-    original_tables: List[Dict[str, Any]]
+    original_guests: Optional[List[Dict[str, Any]]],
+    original_tables: Optional[List[Dict[str, Any]]]
 ) -> Dict[str, Any]:
     """
     Validate AI-generated seating suggestions for correctness.
@@ -150,18 +168,53 @@ def validate_seating_suggestions(
     Returns:
         Dict with validated tables, warnings, and any corrections made
     """
-    # Build lookup maps
-    valid_guest_ids = {
-        str(g.get("id") or g.get("_id")) for g in original_guests
-    }
-    table_capacities = {
-        str(t.get("id") or t.get("_id")): t.get("capacity", 10)
-        for t in original_tables
-    }
-    table_names = {
-        str(t.get("id") or t.get("_id")): t.get("name", f"Table {i+1}")
-        for i, t in enumerate(original_tables)
-    }
+    # Handle null/empty inputs
+    if not original_guests or not original_tables:
+        return {
+            "tables": [],
+            "warnings": [{
+                "type": "invalid_input",
+                "message": "No guests or tables provided for validation"
+            }],
+            "stats": {
+                "total_guests": 0,
+                "assigned_guests": 0,
+                "unassigned_guests": 0,
+                "tables_over_capacity": 0
+            }
+        }
+
+    if not ai_tables:
+        return {
+            "tables": [],
+            "warnings": [{
+                "type": "empty_response",
+                "message": "AI returned no seating suggestions"
+            }],
+            "stats": {
+                "total_guests": len(original_guests),
+                "assigned_guests": 0,
+                "unassigned_guests": len(original_guests),
+                "tables_over_capacity": 0
+            }
+        }
+
+    # Build lookup maps - filter out guests without valid IDs
+    valid_guest_ids = set()
+    guest_id_to_name = {}
+    for g in original_guests:
+        gid = g.get("id") or g.get("_id")
+        if gid and str(gid) != "None":
+            valid_guest_ids.add(str(gid))
+            guest_id_to_name[str(gid)] = g.get("name", "Unknown")
+
+    table_capacities = {}
+    table_names = {}
+    for i, t in enumerate(original_tables):
+        tid = t.get("id") or t.get("_id")
+        if tid and str(tid) != "None":
+            table_capacities[str(tid)] = t.get("capacity", 10)
+            table_names[str(tid)] = t.get("name", f"Table {i+1}")
 
     validated_tables = []
     warnings = []
@@ -172,17 +225,22 @@ def validate_seating_suggestions(
         table_guests = table.get("guests", [])
         capacity = table_capacities.get(table_id, 10)
 
-        # Filter out invalid guest IDs
+        # Filter out invalid guest IDs - handle both string and object formats
         valid_guests = []
         invalid_guests = []
 
         for guest in table_guests:
-            guest_id = str(guest.get("id") or guest.get("guest_id", ""))
-            if guest_id in valid_guest_ids:
-                valid_guests.append(guest)
+            guest_id = _extract_guest_id(guest)
+            if guest_id and guest_id in valid_guest_ids:
+                # Normalize to object format for consistent output
+                if isinstance(guest, str):
+                    valid_guests.append({"id": guest_id, "name": guest_id_to_name.get(guest_id, "Unknown")})
+                else:
+                    valid_guests.append(guest)
                 assigned_guest_ids.add(guest_id)
-            else:
+            elif guest_id:
                 invalid_guests.append(guest_id)
+            # Skip None/invalid entries silently
 
         if invalid_guests:
             warnings.append({
@@ -195,7 +253,10 @@ def validate_seating_suggestions(
         # Check capacity (account for party sizes if available)
         total_seats_used = 0
         for guest in valid_guests:
-            party_size = guest.get("party_size", 1)
+            if isinstance(guest, dict):
+                party_size = guest.get("party_size", 1)
+            else:
+                party_size = 1
             total_seats_used += party_size
 
         if total_seats_used > capacity:
@@ -216,19 +277,18 @@ def validate_seating_suggestions(
 
     # Find unassigned guests
     unassigned = valid_guest_ids - assigned_guest_ids
+    unassigned_count = len(unassigned)
     if unassigned:
-        # Get names of unassigned guests
         unassigned_names = [
-            g.get("name", "Unknown")
-            for g in original_guests
-            if str(g.get("id") or g.get("_id")) in unassigned
+            guest_id_to_name.get(gid, "Unknown")
+            for gid in list(unassigned)[:10]  # Limit to first 10
         ]
         warnings.append({
             "type": "unassigned_guests",
-            "count": len(unassigned),
-            "guest_ids": list(unassigned),
-            "guest_names": unassigned_names[:10],  # Limit to first 10 names
-            "message": f"{len(unassigned)} guest(s) not assigned to any table"
+            "count": unassigned_count,
+            "guest_ids": list(unassigned)[:50],  # Limit stored IDs
+            "guest_names": unassigned_names,
+            "message": f"{unassigned_count} guest(s) not assigned to any table"
         })
 
     return {
@@ -237,7 +297,7 @@ def validate_seating_suggestions(
         "stats": {
             "total_guests": len(valid_guest_ids),
             "assigned_guests": len(assigned_guest_ids),
-            "unassigned_guests": len(unassigned),
+            "unassigned_guests": unassigned_count,
             "tables_over_capacity": sum(1 for w in warnings if w.get("type") == "over_capacity")
         }
     }

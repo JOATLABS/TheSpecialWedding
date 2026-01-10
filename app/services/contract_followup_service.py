@@ -79,13 +79,17 @@ class ContractFollowupService:
 
     async def generate_followup_draft(
         self,
-        contract: Dict
+        contract: Dict,
+        prefetched_wedding: Optional[Dict] = None,
+        prefetched_planner: Optional[Dict] = None
     ) -> Optional[Dict]:
         """
         Generate an AI-drafted follow-up email for an unsigned contract.
 
         Args:
             contract: The unsigned contract data
+            prefetched_wedding: Pre-loaded wedding data (for batch processing)
+            prefetched_planner: Pre-loaded planner data (for batch processing)
 
         Returns:
             The created draft dict or None if generation failed
@@ -98,8 +102,10 @@ class ContractFollowupService:
                 logger.warning(f"No planner_id for contract {contract.get('_id')}")
                 return None
 
-            # Get planner info
-            planner = await self.users.find_one({"_id": ObjectId(planner_id)})
+            # Use prefetched planner or fetch if not provided
+            planner = prefetched_planner
+            if not planner:
+                planner = await self.users.find_one({"_id": ObjectId(planner_id)})
             if not planner:
                 logger.warning(f"Planner not found: {planner_id}")
                 return None
@@ -107,10 +113,10 @@ class ContractFollowupService:
             couple = contract.get("couple", {})
             package = contract.get("package_snapshot", {})
 
-            # Fetch wedding details for richer context
+            # Use prefetched wedding or fetch if not provided
+            wedding = prefetched_wedding
             wedding_id = contract.get("wedding_id")
-            wedding = None
-            if wedding_id:
+            if not wedding and wedding_id:
                 wedding = await self.weddings.find_one({"_id": ObjectId(wedding_id)})
 
             # Calculate days since sent for urgency context
@@ -224,6 +230,7 @@ Warm regards,
         Process all stale unsigned contracts and generate follow-up drafts.
 
         This is the main entry point for the cron job.
+        Uses batch lookups to avoid N+1 query patterns.
 
         Args:
             days_threshold: Days after which contracts are considered stale
@@ -241,9 +248,48 @@ Warm regards,
                 "processed_at": datetime.utcnow().isoformat()
             }
 
+            if not contracts:
+                return results
+
+            # Batch fetch all weddings and planners to avoid N+1 queries
+            wedding_ids = [
+                ObjectId(c.get("wedding_id"))
+                for c in contracts
+                if c.get("wedding_id")
+            ]
+            planner_ids = [
+                ObjectId(c.get("planner_id"))
+                for c in contracts
+                if c.get("planner_id")
+            ]
+
+            # Fetch all weddings in one query
+            weddings_map = {}
+            if wedding_ids:
+                cursor = self.weddings.find({"_id": {"$in": wedding_ids}})
+                weddings = await cursor.to_list(length=None)
+                weddings_map = {str(w["_id"]): w for w in weddings}
+
+            # Fetch all planners in one query
+            planners_map = {}
+            if planner_ids:
+                cursor = self.users.find({"_id": {"$in": planner_ids}})
+                planners = await cursor.to_list(length=None)
+                planners_map = {str(p["_id"]): p for p in planners}
+
+            logger.info(f"Batch loaded {len(weddings_map)} weddings, {len(planners_map)} planners")
+
             for contract in contracts:
                 try:
-                    draft = await self.generate_followup_draft(contract)
+                    # Pass pre-fetched data to avoid individual lookups
+                    wedding = weddings_map.get(contract.get("wedding_id"))
+                    planner = planners_map.get(contract.get("planner_id"))
+
+                    draft = await self.generate_followup_draft(
+                        contract,
+                        prefetched_wedding=wedding,
+                        prefetched_planner=planner
+                    )
                     if draft:
                         results["drafts_created"] += 1
 

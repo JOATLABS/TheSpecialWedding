@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Guest } from '@/types/table';
 
 interface UseGuestsOptions {
@@ -14,6 +14,7 @@ interface UseGuestsReturn {
   error: string | null;
   fetchGuests: () => Promise<void>;
   updateGuestTable: (guestId: string, tableId: string | null) => void;
+  refetch: () => Promise<void>;
 }
 
 export function useGuests(weddingId: string, options: UseGuestsOptions = {}): UseGuestsReturn {
@@ -22,8 +23,24 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchGuests = useCallback(async () => {
+  // Track current request to prevent race conditions
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const currentWeddingIdRef = useRef<string>(weddingId);
+
+  const fetchGuests = useCallback(async (signal?: AbortSignal) => {
     if (!weddingId) return;
+
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller if not provided
+    const controller = signal ? null : new AbortController();
+    const fetchSignal = signal || controller?.signal;
+    if (controller) {
+      abortControllerRef.current = controller;
+    }
 
     setLoading(true);
     setError(null);
@@ -33,7 +50,8 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/guests/${weddingId}`,
         {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
+          signal: fetchSignal
         }
       );
 
@@ -42,25 +60,37 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
       }
 
       const data = await res.json();
-      setGuests(data.map((g: any) => ({
-        id: g._id,
-        wedding_id: g.wedding_id,
-        name: g.name,
-        email: g.email,
-        phone: g.phone,
-        group_id: g.group_id,
-        table_id: g.table_id || null,
-        role: g.role,
-        rsvp_status: g.rsvp_status,
-        dietary_restrictions: g.dietary_restrictions,
-        notes: g.notes
-      })));
+
+      // Only update state if this is still the current wedding
+      if (currentWeddingIdRef.current === weddingId) {
+        setGuests(data.map((g: any) => ({
+          id: g._id,
+          wedding_id: g.wedding_id,
+          name: g.name,
+          email: g.email,
+          phone: g.phone,
+          group_id: g.group_id,
+          table_id: g.table_id || null,
+          role: g.role,
+          rsvp_status: g.rsvp_status,
+          dietary_restrictions: g.dietary_restrictions,
+          notes: g.notes
+        })));
+      }
     } catch (e) {
+      // Ignore abort errors - they're expected when switching weddings
+      if (e instanceof Error && e.name === 'AbortError') {
+        return;
+      }
       const message = e instanceof Error ? e.message : 'Failed to fetch guests';
-      setError(message);
+      if (currentWeddingIdRef.current === weddingId) {
+        setError(message);
+      }
       console.error('Failed to fetch guests:', e);
     } finally {
-      setLoading(false);
+      if (currentWeddingIdRef.current === weddingId) {
+        setLoading(false);
+      }
     }
   }, [weddingId]);
 
@@ -71,9 +101,26 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
     ));
   }, []);
 
+  // Manual refetch function
+  const refetch = useCallback(() => fetchGuests(), [fetchGuests]);
+
   useEffect(() => {
+    // Update ref when weddingId changes
+    currentWeddingIdRef.current = weddingId;
+
+    // Clear guests when switching weddings to prevent stale data flash
+    setGuests([]);
+    setError(null);
+
     if (autoFetch && weddingId) {
-      fetchGuests();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      fetchGuests(controller.signal);
+
+      // Cleanup: abort on unmount or weddingId change
+      return () => {
+        controller.abort();
+      };
     }
   }, [autoFetch, weddingId, fetchGuests]);
 
@@ -83,7 +130,8 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
     loading,
     error,
     fetchGuests,
-    updateGuestTable
+    updateGuestTable,
+    refetch
   };
 }
 
