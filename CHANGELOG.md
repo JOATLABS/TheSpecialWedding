@@ -5,9 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2025-01-10
 
 ### Added
+
+- **Payment Processing Safety**: Critical fixes for payment reliability
+  - **Idempotency Keys**: All Stripe PaymentIntent.create calls now include idempotency keys to prevent double-charging
+    - `autopilot_service.py`: Uses `autopilot_{payment_id}_attempt_{attempt_count}` format
+    - `contract_service.py`: Uses `deposit_{contract_id}_{payment_id}` format
+  - **Atomic Status Checks**: Payment retry and processing operations now use atomic MongoDB updates with status guards
+    - Prevents race conditions when multiple cron instances or retry requests process the same payment
+    - Both `retry_failed_payments()` and `_process_single_payment()` check status before proceeding
 
 - **Subscription System Hardening**: Production-ready improvements for billing reliability
   - **Plan Grandfathering** (`app/services/subscription_service.py`):
@@ -39,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed: `stripe_product_id`, `stripe_price_id_*`, `created_by`, `created_at`
   - Only returns public-safe fields needed for pricing display
 
+- **S3 Variable Naming Mismatch**: Aligned code with `.env` file naming
+  - Fixed `settings.py` aliases: `S3_ACCESS_KEY` → `S3_ACCESS_KEY_ID`, `S3_SECRET_KEY` → `S3_SECRET_ACCESS_KEY`
+  - Added S3 variables to config_validator.py recommended list
+  - Updated `DEPLOYMENT_SETUP.md` to use correct `S3_` prefix instead of `CLOUDFLARE_`
+
+- **Stripe Webhook Secret**: Added `STRIPE_WEBHOOK_SECRET` to recommended environment variables in config validator
+
 ### Changed
 
 - **SaaS Landing Page Hero**: Cleaned up broken demo functionality
@@ -50,15 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed all hardcoded URL fallbacks from `app/core/config.py` and `app/core/settings.py`
   - Missing critical env vars now trigger root admin notification at startup
   - Config validator (`app/services/config_validator.py`) notifies via Ntfy push + in-app notification
-
-### Fixed
-
-- **S3 Variable Naming Mismatch**: Aligned code with `.env` file naming
-  - Fixed `settings.py` aliases: `S3_ACCESS_KEY` → `S3_ACCESS_KEY_ID`, `S3_SECRET_KEY` → `S3_SECRET_ACCESS_KEY`
-  - Added S3 variables to config_validator.py recommended list
-  - Updated `DEPLOYMENT_SETUP.md` to use correct `S3_` prefix instead of `CLOUDFLARE_`
-
-- **Stripe Webhook Secret**: Added `STRIPE_WEBHOOK_SECRET` to recommended environment variables in config validator
 
 ### Added
 

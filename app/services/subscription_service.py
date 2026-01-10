@@ -152,7 +152,7 @@ class SubscriptionService:
 
     # User Subscription Management
     async def assign_subscription(self, user_id: str, plan_id: str, billing_interval: str = "monthly",
-                          trial_days: int = 14, creator_email: str = "") -> dict:
+                          trial_days: int = 0, creator_email: str = "") -> dict:
         """Assign subscription plan to user"""
         try:
             # Verify user exists

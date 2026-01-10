@@ -237,13 +237,26 @@ class AutopilotService:
                 destination_account = planner.get("stripe_connect_id")
 
         try:
-            # Update status to processing
-            await self.scheduled_payments.update_one(
-                {"_id": ObjectId(payment_id)},
+            # Update status to processing (atomic - only if still scheduled)
+            # This prevents race conditions if another cron instance picks up the same payment
+            update_result = await self.scheduled_payments.update_one(
+                {
+                    "_id": ObjectId(payment_id),
+                    "status": "scheduled"  # Only process if still in scheduled state
+                },
                 {"$set": {"status": "processing", "updated_at": datetime.utcnow()}}
             )
 
+            # Skip if another process already grabbed this payment
+            if update_result.modified_count == 0:
+                logger.info(f"Payment {payment_id} already being processed, skipping")
+                return {"success": False, "error": "Payment already being processed"}
+
             # Create and confirm PaymentIntent
+            # Use idempotency key to prevent double-charging on retries/duplicate requests
+            attempt_count = payment.get("attempt_count", 1)
+            idempotency_key = f"autopilot_{payment_id}_attempt_{attempt_count}"
+
             payment_intent_params = {
                 "amount": amount_cents,
                 "currency": currency,
@@ -255,8 +268,10 @@ class AutopilotService:
                 "metadata": {
                     "contract_id": contract_id,
                     "scheduled_payment_id": payment_id,
-                    "payment_type": "scheduled"
-                }
+                    "payment_type": "scheduled",
+                    "attempt_count": str(attempt_count)
+                },
+                "idempotency_key": idempotency_key
             }
 
             if destination_account:
@@ -598,11 +613,20 @@ class AutopilotService:
         }
 
         for payment in payments_to_retry:
-            # Reset status to scheduled for retry
-            await self.scheduled_payments.update_one(
-                {"_id": ObjectId(payment.get("id"))},
+            # Reset status to scheduled for retry (atomic - only if still failed)
+            # This prevents race conditions if another cron instance is processing
+            update_result = await self.scheduled_payments.update_one(
+                {
+                    "_id": ObjectId(payment.get("id")),
+                    "status": "failed"  # Only update if still in failed state
+                },
                 {"$set": {"status": "scheduled", "updated_at": datetime.utcnow()}}
             )
+
+            # Skip if another process already grabbed this payment
+            if update_result.modified_count == 0:
+                logger.info(f"Payment {payment.get('id')} already being processed, skipping")
+                continue
 
             result = await self._process_single_payment(payment)
             results["retried"] += 1

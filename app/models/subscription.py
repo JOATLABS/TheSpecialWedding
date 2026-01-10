@@ -220,4 +220,4 @@ class AssignSubscriptionRequest(BaseModel):
     """Request model for assigning subscription to user"""
     plan_id: str
     billing_interval: BillingInterval = BillingInterval.MONTHLY
-    trial_days: Optional[int] = 14
+    trial_days: int = Field(default=0, ge=0, description="Trial days (0 = no trial)")
