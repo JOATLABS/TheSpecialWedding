@@ -49,9 +49,13 @@ async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(re
                 continue
 
             retried += 1
-            # Idempotency key for retry: uses billed_period to match original attempt
-            billing_period = wedding.get("billed_period") or datetime.utcnow().strftime("%Y-%m")
-            idempotency_key = f"meter_retry_{wedding.get('_id')}_{sub['stripe_customer_id']}_{billing_period}"
+            # Idempotency key for retry: ALWAYS use current period since we're billing for NOW
+            # Note: billed_period stores the LAST successful billing, not the target period
+            # Using current period ensures:
+            # 1. Retries for THIS month are idempotent (won't double-bill this month)
+            # 2. If last month failed and we're now in a new month, we bill for new month
+            current_billing_period = datetime.utcnow().strftime("%Y-%m")
+            idempotency_key = f"meter_retry_{wedding.get('_id')}_{sub['stripe_customer_id']}_{current_billing_period}"
 
             meter_result = stripe_service.report_meter_event(
                 event_name=plan["meter_event_name"],
