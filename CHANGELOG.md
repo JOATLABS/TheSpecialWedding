@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-01-10
+
+### Added
+
+- **Plan Switching Endpoint** (`app/api/subscription_management.py`):
+  - New endpoint `PATCH /users/{user_id}/subscription/billing-interval`
+  - Allows users to switch between monthly and yearly billing with automatic proration
+  - Users can only change their own subscription; ROOT_ADMIN can change any user's
+  - Comment: "Proration is applied automatically: Switching to yearly credits unused monthly time"
+
+- **AI Seating Validation** (`app/api/ai.py`):
+  - New `validate_seating_suggestions()` function validates AI-generated table assignments
+  - New `_extract_guest_id()` helper handles mixed string/object guest formats from different AI tiers
+  - Validates guest IDs exist in original data, checks table capacity limits
+  - Returns validation results with unassigned guests and over-capacity warnings
+  - Comment: "Extract guest ID from various formats AI might return"
+
+- **Enhanced Contract Follow-up Context** (`app/services/contract_followup_service.py`):
+  - Added wedding context fields: venue_name, venue_location, cultural_style, guest_count, wedding_title
+  - AI prompts now reference cultural considerations and wedding details
+  - Batch fetch optimization to avoid N+1 queries (reduced from 100+ to ~3 queries)
+  - Comment: "Batch fetch all weddings and planners to avoid N+1 queries"
+
+- **AI System Prompts** (`app/services/ai_service.py`):
+  - Added missing system prompts for `seating_medium` and `seating_large` AI tiers
+  - Medium tier (150-300 guests): Focuses on family dynamics and relationship patterns
+  - Large tier (300+ guests): Handles multiple sections, VIP tables, dietary clustering
+
+- **Guest Table Assignment Field** (`app/models/guest.py`):
+  - Added `table_id: Optional[str]` field to GuestModel and UpdateGuestRequest
+  - Comment: "ID of assigned seating table"
+
+### Fixed
+
+- **MRR Calculation** (`app/services/subscription_service.py`):
+  - Fixed Monthly Recurring Revenue to include BOTH monthly AND yearly subscriptions
+  - Yearly subscriptions now calculated as `price_yearly / 12` (monthly equivalent)
+  - Added MRR breakdown: from_monthly_billing, from_yearly_billing, subscriber counts
+  - Added Annual Recurring Revenue (ARR) calculation
+  - Comment: "MRR calculation - includes both monthly AND yearly. For yearly subscriptions, we calculate the monthly equivalent (price_yearly / 12)"
+
+- **Stale Metering Retry Keys** (`app/api/metering.py`):
+  - Fixed idempotency key generation to ALWAYS use current billing period
+  - Previous bug used stale `billed_period` from wedding record which could be months old
+  - Comment: "Idempotency key for retry: ALWAYS use current period since we're billing for NOW. Note: billed_period stores the LAST successful billing, not the target period"
+
+- **Trial Days Default** (Multiple files):
+  - Removed unintended 14-day trial default (user has no free trials)
+  - `app/models/subscription.py`: AssignSubscriptionRequest.trial_days default 14→0
+  - `app/api/subscription_management.py`: Removed `or 14` fallback in trial_days
+  - `app/services/subscription_service.py`: assign_subscription trial_days default 14→0
+  - `app/core/settings.py`: free_trial_days default 14→0
+  - Comment: "Trial days (0 = no trial)"
+
+- **useGuests Hook Race Condition** (`app/admin/hooks/useGuests.ts`):
+  - Added AbortController to cancel in-flight requests when wedding changes
+  - Added currentWeddingIdRef to prevent stale state updates
+  - Clears guests on wedding switch to prevent stale data flash
+  - Comment: "Track current request to prevent race conditions"
+
+- **SignupModal Body Scroll** (`app/components/saas/SignupModal.tsx`):
+  - Added body scroll lock when modal is open
+  - Prevents background page scrolling while signup modal is displayed
+
+- **CSS @import Order** (`app/styles/globals.css`):
+  - Moved font @import to top of file (before @tailwind directives)
+  - Fixes CSS rule ordering error: "@import rules must precede all rules"
+
+### Changed
+
+- **Stripe Service** (`app/services/stripe_service.py`):
+  - Added `change_subscription_billing_interval()` method for plan switching
+  - Uses Stripe's subscription modification with `proration_behavior: "create_prorations"`
+  - Updates local database with new billing interval and period dates
+
 ## [1.5.0] - 2025-01-10
 
 ### Added

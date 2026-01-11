@@ -53,24 +53,28 @@ def _is_upcoming(date_value: Any, reference: datetime) -> bool:
 # ==================== SAAS CONFIGURATION MANAGEMENT ====================
 
 def _get_default_saas_config():
-    """Shared default configuration used by both admin and public endpoints"""
+    """Shared default configuration used by both admin and public endpoints.
+
+    These defaults match the hardcoded content from app/page.tsx to ensure
+    consistency when the dynamic SaasLandingPage component is used.
+    """
     return {
-        # Legacy hero fields (backward compatibility)
-        "hero_title": "Welcome to Special Wedding",
-        "hero_subtitle": "Wedding Planning Made Simple",
-        "hero_description": "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
+        # Hero fields - matches page.tsx hero section
+        "hero_title": "The Special Wedding",
+        "hero_subtitle": "A stage-set platform where every wedding feels like a cinematic premiere",
+        "hero_description": "Sculpt invitations, RSVP journeys, wedding websites, seating, timelines, and on-site orchestration—woven together with romantic motion and intelligent automation.",
 
         # Modern hero fields (benefit-driven)
-        "hero_headline": "Manage 10+ Weddings Simultaneously",
-        "hero_subheadline": "For Professional Wedding Planners",
+        "hero_headline": "A stage-set platform where every wedding feels like a cinematic premiere",
+        "hero_subheadline": "The Special Wedding",
         "hero_problem_statement": "Stop juggling spreadsheets, email chains, and vendor chaos",
-        "hero_solution_statement": "One platform to manage guests, vendors, timelines, and budgets—all in sync",
+        "hero_solution_statement": "Sculpt invitations, RSVP journeys, wedding websites, seating, timelines, and on-site orchestration—woven together with romantic motion and intelligent automation.",
 
         # CTA buttons
-        "hero_cta_primary": "Start Free Trial",
-        "hero_cta_secondary": "Watch Demo",
+        "hero_cta_primary": "Explore pricing",
+        "hero_cta_secondary": "Launch console",
         "contact_cta_label": "Contact Sales",
-        "contact_url": "mailto:sales@specialwedding.com",
+        "contact_url": "mailto:sales@thespecialwedding.com",
 
         # Product showcase
         "hero_screenshot_primary": None,
@@ -81,103 +85,198 @@ def _get_default_saas_config():
         # Layout settings
         "hero_layout": "split",
         "hero_image_position": "right",
-        "show_decorative_logo": True,  # Keep legacy design by default
+        "show_decorative_logo": True,
 
-        # Trust indicators
-        "trust_indicators": ["Free 30-day trial", "No setup fees", "Cancel anytime"],
+        # Trust indicators - partners from page.tsx
+        "trust_indicators": ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"],
 
-        # Legacy statistics (generic)
+        # Statistics/metrics - from page.tsx metrics array
         "statistics": [
-            {"label": "Wedding Planners Trust Us", "value": "500+"},
-            {"label": "Weddings Managed", "value": "10K+"},
-            {"label": "Uptime Guarantee", "value": "99.9%"}
+            {"label": "Guest records managed across active weddings", "value": "48k"},
+            {"label": "Average RSVP window to reach 90% response", "value": "5 days"},
+            {"label": "Median scan-to-confirm check-in speed", "value": "2.8s"},
+            {"label": "Automation reliability across reminders", "value": "99.9%"}
         ],
         "statistics_enabled": True,
 
-        # Modern impact metrics (specific, measurable)
+        # Modern impact metrics
         "impact_metrics": [
-            {"metric": "15 hours/week", "label": "Average time saved per planner"},
-            {"metric": "80%", "label": "Reduction in vendor miscommunication"},
-            {"metric": "2.5x", "label": "Increase in weddings managed per year"}
+            {"metric": "48k", "label": "Guest records managed across active weddings"},
+            {"metric": "5 days", "label": "Average RSVP window to reach 90% response"},
+            {"metric": "2.8s", "label": "Median scan-to-confirm check-in speed"},
+            {"metric": "99.9%", "label": "Automation reliability across reminders"}
         ],
-        "show_impact_metrics": False,  # Disabled by default, admin can enable
+        "show_impact_metrics": True,
 
         # Customer logos (social proof)
-        "customer_logos": [],
-        "show_customer_logos": False,
+        "customer_logos": ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"],
+        "show_customer_logos": True,
 
-        # Content sections
+        # Features - all 10 from page.tsx
         "features": [
             {
-                "title": "Complete Wedding Management",
-                "description": "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
+                "title": "Guest lists & households",
+                "description": "Unify invites, plus-ones, and households with filters for VIPs, vendors, and families.",
+                "category": "Planning",
                 "status": "available",
                 "order": 1
             },
             {
-                "title": "AI Presentation Generator",
-                "description": "Create stunning wedding presentations in minutes with our AI-powered design tools.",
-                "status": "coming_soon",
-                "order": 5
-            }
-        ],
-        "benefits": [
-            {
-                "title": "Save Time",
-                "description": "Automate repetitive tasks and streamline wedding planning operations",
-                "order": 1
+                "title": "Signature invitations",
+                "description": "Send branded email invitations, track bounces, and personalize every RSVP link.",
+                "category": "Engagement",
+                "status": "available",
+                "order": 2
             },
             {
-                "title": "Scale Your Business",
-                "description": "Manage multiple weddings efficiently and grow your planning business",
-                "order": 2
-            }
-        ],
-        "testimonials": [
+                "title": "Wedding websites",
+                "description": "Launch a stunning site for every celebration—custom domains, schedules, travel, and galleries.",
+                "category": "Experience",
+                "status": "available",
+                "order": 3
+            },
             {
-                "name": "Sarah Johnson",
-                "company": "Elegant Events Planning",
-                "role": "Senior Wedding Planner",
-                "content": "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
-                "order": 1
+                "title": "RSVP & meal selections",
+                "description": "Capture attendance, meal preferences, allergies, and notes in real time.",
+                "category": "Engagement",
+                "status": "available",
+                "order": 4
+            },
+            {
+                "title": "Seating orchestration",
+                "description": "Drag-and-drop tables, respect family groupings, and export final charts instantly.",
+                "category": "Planning",
+                "status": "available",
+                "order": 5
+            },
+            {
+                "title": "Ceremony & reception timeline",
+                "description": "Publish schedules for planners, vendors, and couples with role-based visibility.",
+                "category": "Execution",
+                "status": "available",
+                "order": 6
+            },
+            {
+                "title": "Moments gallery",
+                "description": "Collect guest photos, curate galleries, and share highlights after the celebration.",
+                "category": "Celebration",
+                "status": "available",
+                "order": 7
+            },
+            {
+                "title": "Smart reminders",
+                "description": "Automate nudges for RSVP deadlines, travel updates, and day-of changes.",
+                "category": "Communication",
+                "status": "available",
+                "order": 8
+            },
+            {
+                "title": "Touchless check-in",
+                "description": "Scan QR codes, monitor arrivals, and keep lines moving with live capacity counts.",
+                "category": "Execution",
+                "status": "available",
+                "order": 9
+            },
+            {
+                "title": "Maps & travel",
+                "description": "Share venues, shuttles, and hotel blocks with smart directions for every guest.",
+                "category": "Communication",
+                "status": "available",
+                "order": 10
             }
         ],
 
-        # Guided workflow & FAQs
-        "workflow_steps": [
+        # Benefits/Suites - from page.tsx suites array
+        "benefits": [
             {
-                "title": "Discovery & onboarding",
-                "description": "Collect couple questionnaires, import spreadsheets, and set expectations in minutes.",
-                "badge": "Week 1"
+                "title": "Multi-tenant oversight",
+                "description": "Serve every planner, partner, or franchise in isolated workspaces with shared brand standards.",
+                "stat": "Scale to 100+ concurrent weddings with centralized governance.",
+                "order": 1
             },
             {
-                "title": "Vendor alignment",
-                "description": "Invite vendors to collaborative timelines with guardrails so every deliverable has an owner.",
-                "badge": "Week 2"
+                "title": "Vendor collaboration",
+                "description": "Loop photographers, caterers, and venues into dedicated timelines and file exchanges.",
+                "stat": "Reduce coordination rounds by 68% through unified updates.",
+                "order": 2
             },
             {
-                "title": "Guest communication",
-                "description": "Centralize RSVPs, table assignments, and messaging without endless email threads.",
-                "badge": "Week 3"
-            },
-            {
-                "title": "Event execution",
-                "description": "Run the wedding from live dashboards that surface contingencies before they become fire drills.",
-                "badge": "Wedding week"
+                "title": "Insights & compliance",
+                "description": "Audit-ready exports cover guest consent, messaging logs, and accessibility notes.",
+                "stat": "SOC 2 aligned infrastructure keeps client data secure.",
+                "order": 3
             }
         ],
+
+        # Testimonials - from page.tsx
+        "testimonials": [
+            {
+                "name": "Maya Glenn",
+                "company": "Aurora Collective",
+                "role": "Director of Events",
+                "content": "The Special Wedding gives our planners and couples a shared language. Every guest touchpoint feels intentional and elegant.",
+                "order": 1
+            },
+            {
+                "name": "Elias Romero",
+                "company": "Harbor & Bloom",
+                "role": "Lead Coordinator",
+                "content": "Check-in lines disappeared. The live dashboards let us choreograph the day like a performance instead of fighting fires.",
+                "order": 2
+            }
+        ],
+
+        # Workflow steps - from page.tsx workflow array
+        "workflow_steps": [
+            {
+                "title": "Design the experience",
+                "description": "Collaborative planning canvas",
+                "badge": "Step 1",
+                "bullets": [
+                    "Launch weddings in minutes with reusable templates",
+                    "Assign visibility by planner, couple, or vendor team",
+                    "Model budgets, seating, and timelines side by side"
+                ]
+            },
+            {
+                "title": "Invite & delight",
+                "description": "Intelligent guest journeys",
+                "badge": "Step 2",
+                "bullets": [
+                    "Personalized wedding websites with per-wedding slugs",
+                    "Automated reminders that adapt to RSVP behavior",
+                    "Guest portal with travel guidance and gallery teasers"
+                ]
+            },
+            {
+                "title": "Execute flawlessly",
+                "description": "Day-of command center",
+                "badge": "Step 3",
+                "bullets": [
+                    "Touchless check-in with live headcounts and alerts",
+                    "Role-based run of show for coordinators and crew",
+                    "Instant galleries and thank-you follow ups post event"
+                ]
+            }
+        ],
+
+        # FAQs - from page.tsx faqs array
         "faqs": [
             {
-                "question": "How quickly can I onboard my team?",
-                "answer": "Most planners launch their first collaborative workspace within a week. We include guided templates and concierge migration for legacy spreadsheets."
+                "question": "Can I manage multiple weddings at once?",
+                "answer": "Yes. Workspaces let you run simultaneous weddings, each with their own permissions, branding, and analytics while maintaining agency-wide oversight."
             },
             {
-                "question": "Do you support client-facing wedding websites?",
-                "answer": "Yes. Every plan includes customizable wedding microsites with RSVP tracking, gallery support, and password protection."
+                "question": "How do couples collaborate with planners?",
+                "answer": "Invite couples to a curated dashboard where they approve guest lists, monitor RSVPs, and review timelines without seeing internal notes."
             },
             {
-                "question": "Can vendors access only their assigned tasks?",
-                "answer": "Role-based permissions keep vendor updates scoped to their deliverables while giving you full visibility and audit logs."
+                "question": "Is there support on the wedding day?",
+                "answer": "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments."
+            },
+            {
+                "question": "What's next for messaging?",
+                "answer": "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon."
             }
         ],
 
@@ -186,10 +285,12 @@ def _get_default_saas_config():
         "benefits_enabled": True,
         "testimonials_enabled": True,
 
-        # Theme configuration
+        # Theme configuration - matches page.tsx defaultTheme colors
         "theme": {
-            "primary_color": "#1e3a5f",
-            "secondary_color": "#d4af37",
+            "primary_color": "#D4A5A5",
+            "secondary_color": "#E8C46A",
+            "background_style": "gradient",
+            "font_style": "elegant",
             "fallback_images": [
                 "/wedding-images/wedding-ceremony.jpg",
                 "/wedding-images/wedding-reception.jpg"

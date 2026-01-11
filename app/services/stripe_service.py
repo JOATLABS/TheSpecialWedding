@@ -646,6 +646,135 @@ class StripeService:
             "stripe_subscription_id": stripe_subscription_id,
         }
 
+    # ==================== SUBSCRIPTION MODIFICATIONS ====================
+
+    async def change_subscription_billing_interval(
+        self,
+        user_id: str,
+        new_billing_interval: str  # "monthly" or "yearly"
+    ) -> Dict[str, Any]:
+        """
+        Change a user's subscription billing interval (monthly <-> yearly).
+
+        Uses Stripe's subscription modification with proration.
+
+        Args:
+            user_id: Internal user ID
+            new_billing_interval: Target interval - "monthly" or "yearly"
+
+        Returns:
+            Dictionary with update result and proration details
+        """
+        self._ensure_stripe_enabled()
+
+        if new_billing_interval not in ("monthly", "yearly"):
+            raise HTTPException(status_code=400, detail="Billing interval must be 'monthly' or 'yearly'")
+
+        try:
+            # Get current subscription
+            subscription = await self.subscriptions_collection.find_one({
+                "user_id": user_id,
+                "status": {"$in": ["active", "trial"]}
+            })
+
+            if not subscription:
+                raise HTTPException(status_code=404, detail="No active subscription found")
+
+            stripe_subscription_id = subscription.get("stripe_subscription_id")
+            if not stripe_subscription_id:
+                raise HTTPException(status_code=400, detail="Subscription not linked to Stripe")
+
+            current_interval = subscription.get("billing_interval", "monthly")
+            if current_interval == new_billing_interval:
+                raise HTTPException(status_code=400, detail=f"Already on {new_billing_interval} billing")
+
+            # Get the plan to find the new price ID
+            plan_id = subscription.get("plan_id")
+            plan = await self.plans_collection.find_one({"_id": plan_id})
+            if not plan:
+                raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+            # Get the new price ID
+            new_price_field = f"stripe_{new_billing_interval}_price_id"
+            new_price_id = plan.get(new_price_field)
+
+            if not new_price_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No {new_billing_interval} pricing available for this plan"
+                )
+
+            # Retrieve current Stripe subscription to get item ID
+            stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
+
+            if not stripe_sub.get("items") or not stripe_sub["items"].get("data"):
+                raise HTTPException(status_code=500, detail="Unable to retrieve subscription items")
+
+            subscription_item_id = stripe_sub["items"]["data"][0]["id"]
+
+            # Modify the subscription with proration
+            # proration_behavior: 'create_prorations' applies credit/charge for unused time
+            updated_stripe_sub = stripe.Subscription.modify(
+                stripe_subscription_id,
+                items=[{
+                    "id": subscription_item_id,
+                    "price": new_price_id,
+                }],
+                proration_behavior="create_prorations",
+                metadata={
+                    "billing_interval": new_billing_interval,
+                    "changed_from": current_interval,
+                    "changed_at": datetime.utcnow().isoformat()
+                }
+            )
+
+            # Calculate new period end based on interval
+            now = datetime.utcnow()
+            if new_billing_interval == "yearly":
+                from datetime import timedelta
+                period_end = now + timedelta(days=365)
+            else:
+                if now.month == 12:
+                    period_end = now.replace(year=now.year + 1, month=1)
+                else:
+                    period_end = now.replace(month=now.month + 1)
+
+            # Update local subscription record
+            await self.subscriptions_collection.update_one(
+                {"_id": subscription["_id"]},
+                {
+                    "$set": {
+                        "billing_interval": new_billing_interval,
+                        "current_period_start": now,
+                        "current_period_end": period_end,
+                        "updated_at": now,
+                    }
+                }
+            )
+
+            logger.info(
+                f"Changed subscription billing for user {user_id}: "
+                f"{current_interval} -> {new_billing_interval}"
+            )
+
+            return {
+                "success": True,
+                "previous_interval": current_interval,
+                "new_interval": new_billing_interval,
+                "stripe_subscription_id": stripe_subscription_id,
+                "new_period_end": period_end.isoformat(),
+                "proration_applied": True
+            }
+
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error changing billing interval: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error changing billing interval: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to change billing interval: {str(e)}")
+
     # ==================== CUSTOMER PORTAL ====================
 
     async def create_portal_session(

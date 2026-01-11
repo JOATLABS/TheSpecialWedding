@@ -513,20 +513,48 @@ class SubscriptionService:
             ]
             plan_counts_cursor = self.subscriptions_collection.aggregate(plan_pipeline)
             plan_counts = await plan_counts_cursor.to_list(length=None)
-            # Monthly recurring revenue (MRR) calculation
+            # Monthly recurring revenue (MRR) calculation - includes both monthly AND yearly
+            # For yearly subscriptions, we calculate the monthly equivalent (price_yearly / 12)
             active_subs = await self.subscriptions_collection.find({
-                "status": "active",
-                "billing_interval": "monthly"
+                "status": "active"
             }).to_list(length=None)
+
             mrr = 0
+            mrr_from_monthly = 0
+            mrr_from_yearly = 0
+            monthly_sub_count = 0
+            yearly_sub_count = 0
+
             for sub in active_subs:
                 plan = await self.get_plan(sub["plan_id"])
-                mrr += plan.get("price_monthly", 0)
+                billing_interval = sub.get("billing_interval", "monthly")
+
+                if billing_interval == "yearly":
+                    # Convert yearly to monthly equivalent
+                    yearly_price = plan.get("price_yearly", 0)
+                    monthly_equivalent = yearly_price / 12 if yearly_price else 0
+                    mrr_from_yearly += monthly_equivalent
+                    yearly_sub_count += 1
+                else:
+                    # Monthly billing
+                    mrr_from_monthly += plan.get("price_monthly", 0)
+                    monthly_sub_count += 1
+
+            mrr = mrr_from_monthly + mrr_from_yearly
+            arr = mrr * 12  # Annual Recurring Revenue
+
             return {
                 "total_subscriptions": sum(status_counts.values()),
                 "status_breakdown": status_counts,
                 "plan_breakdown": {item["_id"]: item["count"] for item in plan_counts},
-                "monthly_recurring_revenue": mrr,
+                "monthly_recurring_revenue": round(mrr, 2),
+                "annual_recurring_revenue": round(arr, 2),
+                "mrr_breakdown": {
+                    "from_monthly_billing": round(mrr_from_monthly, 2),
+                    "from_yearly_billing": round(mrr_from_yearly, 2),
+                    "monthly_subscribers": monthly_sub_count,
+                    "yearly_subscribers": yearly_sub_count
+                },
                 "generated_at": datetime.utcnow()
             }
         except Exception as e:

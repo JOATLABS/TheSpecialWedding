@@ -317,16 +317,6 @@ export const SaasLandingPage: React.FC = () => {
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
       {
-        _id: 'studio-growth',
-        name: 'Studio Growth',
-        description: 'Everything established planners need for 10 active weddings.',
-        price_monthly: 179,
-        price_yearly: 1890,
-        is_featured: true,
-        is_active: true,
-        display_order: 1,
-      },
-      {
         _id: 'signature',
         name: 'Signature',
         description: 'Collaborate with unlimited vendors and automate client touchpoints.',

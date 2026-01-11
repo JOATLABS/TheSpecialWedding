@@ -98,6 +98,31 @@ async def cancel_user_subscription(
     """Cancel user subscription - ROOT_ADMIN only"""
     return await subscription_service.cancel_subscription(user_id, reason)
 
+
+@router.patch("/users/{user_id}/subscription/billing-interval", tags=["ROOT_ADMIN", "User"])
+async def change_billing_interval(
+    user_id: str,
+    new_interval: str = Query(..., description="New billing interval: monthly or yearly"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Change subscription billing interval with proration.
+
+    Users can switch their own subscription between monthly and yearly billing.
+    ROOT_ADMIN can change any user's billing interval.
+
+    Proration is applied automatically:
+    - Switching to yearly: Credit for unused monthly time, charge for yearly
+    - Switching to monthly: Credit for unused yearly time, charge for monthly
+    """
+    # Users can only change their own billing interval unless they're ROOT_ADMIN
+    if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
+        raise HTTPException(status_code=403, detail="Can only change your own billing interval")
+
+    from app.services.stripe_service import stripe_service
+    return await stripe_service.change_subscription_billing_interval(user_id, new_interval)
+
+
 # ==================== USAGE TRACKING & LIMITS ====================
 
 @router.get("/users/{user_id}/usage", tags=["ROOT_ADMIN", "User"])
