@@ -30,16 +30,21 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
   const fetchGuests = useCallback(async (signal?: AbortSignal) => {
     if (!weddingId) return;
 
-    // Cancel any in-flight request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    // Determine the signal to use for this request
+    let fetchSignal: AbortSignal;
 
-    // Create new abort controller if not provided
-    const controller = signal ? null : new AbortController();
-    const fetchSignal = signal || controller?.signal;
-    if (controller) {
+    if (signal) {
+      // Caller provided a signal (e.g., from useEffect) — use it directly.
+      // The caller is responsible for setting abortControllerRef before calling.
+      fetchSignal = signal;
+    } else {
+      // Manual call (refetch) — abort any in-flight request and create new controller
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
       abortControllerRef.current = controller;
+      fetchSignal = controller.signal;
     }
 
     setLoading(true);
