@@ -195,7 +195,7 @@ export default function AdminGalleryUploadPage() {
     <div className="space-y-6">
       <div className="w-full max-w-6xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Gallery Management</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Gallery Management</h1>
           <p className="text-slate-600 dark:text-slate-400 mt-1">Upload and manage wedding photos</p>
         </div>
 

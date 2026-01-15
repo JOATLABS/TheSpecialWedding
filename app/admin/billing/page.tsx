@@ -244,7 +244,7 @@ export default function AdminBillingDashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Billing & Revenue</h1>
+              <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Billing & Revenue</h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1">Platform-wide subscription and revenue analytics</p>
             </div>
             <div className="flex items-center gap-3">

@@ -346,7 +346,7 @@ export default function PlatformInfrastructurePage() {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white flex items-center gap-3">
             <Server className="w-7 h-7 text-primary-500" />
             Platform Infrastructure
           </h1>

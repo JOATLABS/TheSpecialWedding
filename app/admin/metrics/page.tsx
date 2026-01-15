@@ -215,7 +215,7 @@ export default function PlatformMetricsPage(): ReactElement {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-heading text-gray-900 dark:text-white">Platform Analytics</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Platform Analytics</h1>
           <p className="text-gray-600 dark:text-gray-400">
             Updated {formatDateTime(metrics.generated_at, {
               month: 'short',

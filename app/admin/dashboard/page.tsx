@@ -244,7 +244,7 @@ export default function AdminMetricsDashboard() {
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
-            <h1 className="font-heading text-3xl font-bold text-slate-800 dark:text-white">Platform Health</h1>
+            <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Platform Health</h1>
             <p className="text-slate-500 dark:text-slate-400 mt-1">
               {latestSnapshot
                 ? `System status updated ${formatTimestamp(latestSnapshot.snapshot_time || latestSnapshot.timestamp)}`

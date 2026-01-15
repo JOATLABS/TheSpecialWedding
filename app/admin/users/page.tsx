@@ -290,7 +290,7 @@ export default function AdminUsersPage() {
                 <Users className="w-8 h-8 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl md:text-4xl font-bold text-white">
+                <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
                   Planner Management
                 </h1>
                 <p className="text-slate-400 mt-1 flex items-center gap-2">

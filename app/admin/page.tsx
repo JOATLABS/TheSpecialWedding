@@ -226,7 +226,7 @@ export default function AdminMetricsDashboard() {
       <div className="bg-white dark:bg-slate-800 shadow-xl rounded-2xl p-8 border border-rose-100 dark:border-slate-700">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-wedding-navy dark:text-white">Platform Health Overview</h1>
+            <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Platform Health Overview</h1>
             <p className="text-wedding-muted dark:text-gray-400 mt-1">
               {latestSnapshot
                 ? `Last updated ${formatTimestamp(latestSnapshot.snapshot_time || latestSnapshot.timestamp)}`

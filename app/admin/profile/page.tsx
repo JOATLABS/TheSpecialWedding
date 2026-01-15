@@ -307,7 +307,7 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-heading text-gray-900 dark:text-white mb-8">Account Settings</h1>
+        <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white mb-6">Account Settings</h1>
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
           {/* Tab Navigation */}
           <div className="flex space-x-1 mb-6 border-b border-gray-200 dark:border-slate-700">

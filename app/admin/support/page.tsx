@@ -262,7 +262,7 @@ export default function SupportPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Support Center</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Support Center</h1>
           <p className="text-gray-600 dark:text-gray-400">
             {isRootAdmin ? 'Manage user support tickets and help resources' : 'View and manage your support tickets'}
           </p>

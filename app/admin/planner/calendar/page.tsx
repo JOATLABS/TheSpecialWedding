@@ -401,7 +401,7 @@ export default function PlannerCalendarPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">
+          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
             Planning Calendar
           </h1>
           <p className="text-slate-600 dark:text-slate-400 mt-1">
