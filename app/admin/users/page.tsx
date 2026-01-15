@@ -91,6 +91,7 @@ export default function AdminUsersPage() {
   });
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
   const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
+  const [defaultTrialDays, setDefaultTrialDays] = useState<number>(14); // Fallback, fetched from SAAS config
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
@@ -128,6 +129,24 @@ export default function AdminUsersPage() {
     }
   }, [token]);
 
+  const fetchTrialSettings = useCallback(async () => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/saas/trial-settings`);
+
+      if (response.ok) {
+        const data = await response.json();
+        const trialDays = data.default_trial_days || 30;
+        setDefaultTrialDays(trialDays);
+        // Update invite form with fetched default
+        setInviteForm(prev => ({ ...prev, trial_days: trialDays }));
+      }
+    } catch (err) {
+      console.error('Error fetching trial settings:', err);
+      // Keep fallback default of 14
+    }
+  }, []);
+
   const fetchPlans = useCallback(async () => {
     if (!token) return;
 
@@ -163,7 +182,8 @@ export default function AdminUsersPage() {
   useEffect(() => {
     fetchPlanners();
     fetchPlans();
-  }, [fetchPlanners, fetchPlans]);
+    fetchTrialSettings();
+  }, [fetchPlanners, fetchPlans, fetchTrialSettings]);
 
   // Close action menu when clicking outside
   useEffect(() => {
@@ -220,7 +240,7 @@ export default function AdminUsersPage() {
         phone: '',
         organization: '',
         plan_id: availablePlans[0]?._id || '',
-        trial_days: 14,
+        trial_days: defaultTrialDays,
         trial_end_behavior: 'pause',
         admin_notes: ''
       });
