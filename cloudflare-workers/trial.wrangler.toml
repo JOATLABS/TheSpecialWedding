@@ -1,0 +1,32 @@
+# Wrangler configuration for the Trial Management Cron Worker
+# This Worker handles automated trial expiration and warning emails
+#
+# Deploy with:
+# wrangler deploy --config cloudflare-workers/trial.wrangler.toml
+#
+# Set secrets (use same CRON_SECRET as autopilot):
+# wrangler secret put CRON_SECRET --config cloudflare-workers/trial.wrangler.toml
+# wrangler secret put RESEND_API_KEY --config cloudflare-workers/trial.wrangler.toml
+
+name = "trial-cron"
+main = "trial-cron.js"
+compatibility_date = "2024-10-01"
+
+[triggers]
+# Run trial maintenance daily at 8:00 AM UTC
+# This sends warning emails and expires trials that have ended
+crons = ["0 8 * * *"]
+
+[vars]
+# Base URL for the FastAPI backend
+API_URL = "https://api.thespecialwedding.com"
+
+# Email for job status alerts
+ALERT_EMAIL = "thedeveloper@thespecialwedding.com"
+
+# Note: CRON_SECRET must be set via wrangler secret or Cloudflare dashboard
+# Use the SAME secret as autopilot-cron for consistency
+# wrangler secret put CRON_SECRET --config cloudflare-workers/trial.wrangler.toml
+
+# Note: RESEND_API_KEY must be set via wrangler secret or Cloudflare dashboard
+# wrangler secret put RESEND_API_KEY --config cloudflare-workers/trial.wrangler.toml

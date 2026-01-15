@@ -85,10 +85,18 @@ class UserManagementService:
             return False
 
     async def invite_user(self, invite_data: dict, inviter_email: str) -> dict:
-        """Invite a new user to the platform"""
+        """
+        Invite a new user to the platform.
+
+        If trial_days > 0, pre-creates a Stripe Customer so usage can be tracked
+        and a subscription with trial can be created when user completes setup.
+        """
         try:
             email = invite_data["email"]
             role = invite_data["role"]
+            trial_days = invite_data.get("trial_days", 0)
+            plan_id = invite_data.get("plan_id")
+
             # Check if user already exists
             existing_user = await self.users_collection.find_one({"email": email})
             if existing_user:
@@ -102,6 +110,36 @@ class UserManagementService:
             })
             if existing_invitation:
                 raise HTTPException(status_code=400, detail="Pending invitation already exists for this email")
+
+            # Pre-create Stripe Customer if trial is configured (best practice per Stripe docs)
+            stripe_customer_id = None
+            if trial_days > 0 and plan_id:
+                try:
+                    from app.services.stripe_service import stripe_service
+                    from app.core.settings import settings
+
+                    if settings.stripe_enabled and settings.stripe_secret_key:
+                        import stripe
+                        stripe.api_key = settings.stripe_secret_key
+
+                        # Create Stripe Customer ahead of time
+                        customer = stripe.Customer.create(
+                            email=email,
+                            name=invite_data.get("company_name") or email,
+                            metadata={
+                                "invited_by": inviter_email,
+                                "role": role,
+                                "plan_id": plan_id,
+                                "trial_days": str(trial_days),
+                                "pre_subscription": "true"
+                            }
+                        )
+                        stripe_customer_id = customer.id
+                        self.logger.info(f"Pre-created Stripe customer {stripe_customer_id} for invited user {email}")
+                except Exception as stripe_error:
+                    # Log but don't fail invitation if Stripe customer creation fails
+                    self.logger.warning(f"Failed to pre-create Stripe customer for {email}: {str(stripe_error)}")
+
             # Create invitation record
             invitation_token = self.generate_invitation_token()
             invitation = {
@@ -112,26 +150,38 @@ class UserManagementService:
                 "invited_by": inviter_email,
                 "created_at": datetime.utcnow(),
                 "expires_at": datetime.utcnow() + timedelta(days=7),
-                "status": "pending"
+                "status": "pending",
+                # Store Stripe customer ID for use during account setup
+                "stripe_customer_id": stripe_customer_id
             }
 
             await self.invitations_collection.insert_one(invitation)
 
-            # Send invitation email
-            await self.send_invitation_email(email, invitation_token, role, inviter_email, invite_data.get("company_name") or "")
+            # Send invitation email with trial info if applicable
+            trial_info = f" with a {trial_days}-day free trial" if trial_days > 0 else ""
+            await self.send_invitation_email(
+                email,
+                invitation_token,
+                role,
+                inviter_email,
+                invite_data.get("company_name") or "",
+                trial_days=trial_days
+            )
 
             return {
-                "message": f"Invitation sent to {email}",
+                "message": f"Invitation sent to {email}{trial_info}",
                 "invitation_id": str(invitation["_id"]),
-                "expires_at": invitation["expires_at"]
+                "expires_at": invitation["expires_at"],
+                "trial_days": trial_days,
+                "stripe_customer_created": stripe_customer_id is not None
             }
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error sending invitation: {str(e)}")
 
-    async def send_invitation_email(self, email: str, token: str, role: str, invited_by: str, company_name: Optional[str] = None):
-        """Send invitation email to user"""
+    async def send_invitation_email(self, email: str, token: str, role: str, invited_by: str, company_name: Optional[str] = None, trial_days: int = 0):
+        """Send invitation email to user with optional trial information"""
         try:
             # Note: This would integrate with your email service
             # For now, we'll just log it or use a simple email service
@@ -359,7 +409,13 @@ class UserManagementService:
             raise HTTPException(status_code=500, detail=f"Error validating token: {str(e)}")
 
     async def complete_account_setup(self, token: str, password: str) -> dict:
-        """Complete account setup with password"""
+        """
+        Complete account setup with password.
+
+        If the invitation includes trial_days > 0, creates a Stripe Subscription
+        with trial period so usage can be tracked and billing starts automatically
+        when the trial ends.
+        """
         try:
             # Validate token first
             invitation = await self.invitations_collection.find_one({
@@ -375,33 +431,158 @@ class UserManagementService:
             existing_user = await self.users_collection.find_one({"email": invitation["email"]})
             if existing_user:
                 raise HTTPException(status_code=400, detail="User account already exists")
+
+            # Extract trial configuration from invitation
+            invite_data = invitation.get("invite_data", {})
+            trial_days = invite_data.get("trial_days", 0)
+            plan_id = invite_data.get("plan_id")
+            trial_end_behavior = invite_data.get("trial_end_behavior", "pause")
+            stripe_customer_id = invitation.get("stripe_customer_id")
+
+            # Determine subscription status based on trial configuration
+            subscription_status = "trial" if trial_days > 0 else "inactive"
+            trial_end_date = datetime.utcnow() + timedelta(days=trial_days) if trial_days > 0 else None
+            stripe_subscription_id = None
+
+            # Create Stripe Subscription with trial if configured
+            if trial_days > 0 and plan_id:
+                try:
+                    from app.core.settings import settings
+
+                    if settings.stripe_enabled and settings.stripe_secret_key:
+                        import stripe
+                        stripe.api_key = settings.stripe_secret_key
+
+                        # Get or create Stripe Customer
+                        if not stripe_customer_id:
+                            customer = stripe.Customer.create(
+                                email=invitation["email"],
+                                name=invite_data.get("company_name") or invitation["email"],
+                                metadata={
+                                    "invited_by": invitation.get("invited_by"),
+                                    "role": invitation["role"],
+                                    "plan_id": plan_id
+                                }
+                            )
+                            stripe_customer_id = customer.id
+
+                        # Get the plan's Stripe price ID
+                        plans_collection = mongo.db["subscription_plans"]
+                        plan = await plans_collection.find_one({"_id": plan_id})
+
+                        if plan and plan.get("stripe_price_id_monthly"):
+                            # Create Stripe Subscription with trial
+                            # No payment method required during trial
+                            subscription = stripe.Subscription.create(
+                                customer=stripe_customer_id,
+                                items=[{"price": plan["stripe_price_id_monthly"]}],
+                                trial_period_days=trial_days,
+                                payment_behavior="default_incomplete",
+                                payment_settings={
+                                    "save_default_payment_method": "on_subscription"
+                                },
+                                trial_settings={
+                                    "end_behavior": {
+                                        "missing_payment_method": trial_end_behavior
+                                    }
+                                },
+                                metadata={
+                                    "invited_by": invitation.get("invited_by"),
+                                    "plan_id": plan_id,
+                                    "admin_granted_trial": "true"
+                                }
+                            )
+                            stripe_subscription_id = subscription.id
+                            trial_end_date = datetime.fromtimestamp(subscription.trial_end)
+                            self.logger.info(
+                                f"Created Stripe subscription {stripe_subscription_id} with "
+                                f"{trial_days}-day trial for {invitation['email']}"
+                            )
+
+                            # Store customer mapping in stripe_customers collection
+                            stripe_customers = mongo.db["stripe_customers"]
+                            await stripe_customers.update_one(
+                                {"email": invitation["email"]},
+                                {
+                                    "$set": {
+                                        "stripe_customer_id": stripe_customer_id,
+                                        "email": invitation["email"],
+                                        "updated_at": datetime.utcnow()
+                                    },
+                                    "$setOnInsert": {"created_at": datetime.utcnow()}
+                                },
+                                upsert=True
+                            )
+                        else:
+                            self.logger.warning(
+                                f"Plan {plan_id} not found or missing stripe_price_id_monthly. "
+                                f"Trial granted locally only."
+                            )
+
+                except Exception as stripe_error:
+                    # Log but don't fail account setup if Stripe subscription creation fails
+                    # User will still get local trial, just won't have Stripe integration
+                    self.logger.error(f"Failed to create Stripe subscription for {invitation['email']}: {str(stripe_error)}")
+
             # Create user account
             password_hash = get_password_hash(password)
             user_data = {
                 "email": invitation["email"],
                 "password_hash": password_hash,
                 "role": invitation["role"],
-                "company_name": invitation["invite_data"].get("company_name", ""),
-                "plan_id": invitation["invite_data"].get("plan_id"),
-                "subscription_status": "inactive",
+                "company_name": invite_data.get("company_name", ""),
+                "plan_id": plan_id,
+                "subscription_status": subscription_status,
+                "trial_end_date": trial_end_date,
+                "stripe_customer_id": stripe_customer_id,
+                "stripe_subscription_id": stripe_subscription_id,
                 "is_active": True,
+                "email_verified": True,  # Invited users are pre-verified by admin
+                "invited_by": invitation.get("invited_by"),
+                "admin_notes": invite_data.get("admin_notes"),
                 "created_at": datetime.utcnow(),
                 "setup_completed_at": datetime.utcnow()
             }
 
             result = await self.users_collection.insert_one(user_data)
+            user_id = str(result.inserted_id)
+
+            # Create subscription record if trial granted
+            if trial_days > 0 and plan_id:
+                try:
+                    from app.services.subscription_service import subscription_service
+                    await subscription_service.assign_subscription(
+                        user_id=user_id,
+                        plan_id=plan_id,
+                        billing_interval="monthly",
+                        trial_days=trial_days,
+                        creator_email=invitation.get("invited_by", "system")
+                    )
+                except Exception as sub_error:
+                    self.logger.error(f"Failed to create subscription record: {str(sub_error)}")
 
             # Mark invitation as completed
             await self.invitations_collection.update_one(
                 {"token": token},
                 {"$set": {"status": "completed", "completed_at": datetime.utcnow()}}
             )
-            return {
+
+            # Build response
+            response = {
                 "message": "Account setup completed successfully",
-                "user_id": str(result.inserted_id),
+                "user_id": user_id,
                 "email": invitation["email"],
-                "role": invitation["role"]
+                "role": invitation["role"],
+                "subscription_status": subscription_status
             }
+
+            if trial_days > 0:
+                response["trial_days"] = trial_days
+                response["trial_end_date"] = trial_end_date.isoformat() if trial_end_date else None
+                response["stripe_subscription_created"] = stripe_subscription_id is not None
+
+            return response
+
         except HTTPException:
             raise
         except Exception as e:

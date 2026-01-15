@@ -25,7 +25,10 @@ import {
   UserX,
   Trash2,
   RefreshCw,
-  X
+  X,
+  Clock,
+  CreditCard,
+  Gift
 } from 'lucide-react';
 
 interface Planner {
@@ -47,11 +50,23 @@ interface Planner {
   organization?: string;
 }
 
+interface SubscriptionPlan {
+  _id: string;
+  name: string;
+  description?: string;
+  price_monthly: number;
+  is_active: boolean;
+}
+
 interface InviteFormData {
   email: string;
   name: string;
   phone: string;
   organization: string;
+  plan_id: string;
+  trial_days: number;
+  trial_end_behavior: 'pause' | 'cancel';
+  admin_notes: string;
 }
 
 export default function AdminUsersPage() {
@@ -68,9 +83,15 @@ export default function AdminUsersPage() {
     email: '',
     name: '',
     phone: '',
-    organization: ''
+    organization: '',
+    plan_id: '',
+    trial_days: 14,
+    trial_end_behavior: 'pause',
+    admin_notes: ''
   });
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
+  const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
+  const [defaultTrialDays, setDefaultTrialDays] = useState<number>(14); // Fallback, fetched from SAAS config
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
@@ -108,9 +129,61 @@ export default function AdminUsersPage() {
     }
   }, [token]);
 
+  const fetchTrialSettings = useCallback(async () => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/saas/trial-settings`);
+
+      if (response.ok) {
+        const data = await response.json();
+        const trialDays = data.default_trial_days || 30;
+        setDefaultTrialDays(trialDays);
+        // Update invite form with fetched default
+        setInviteForm(prev => ({ ...prev, trial_days: trialDays }));
+      }
+    } catch (err) {
+      console.error('Error fetching trial settings:', err);
+      // Keep fallback default of 14
+    }
+  }, []);
+
+  const fetchPlans = useCallback(async () => {
+    if (!token) return;
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/subscription-plans`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch plans');
+      }
+
+      const data = await response.json();
+      // Filter to only active plans
+      const activePlans = Array.isArray(data)
+        ? data.filter((plan: SubscriptionPlan) => plan.is_active)
+        : [];
+      setAvailablePlans(activePlans);
+
+      // Set default plan_id to first available plan if not set
+      if (activePlans.length > 0 && !inviteForm.plan_id) {
+        setInviteForm(prev => ({ ...prev, plan_id: activePlans[0]._id }));
+      }
+    } catch (err) {
+      console.error('Error fetching plans:', err);
+    }
+  }, [token, inviteForm.plan_id]);
+
   useEffect(() => {
     fetchPlanners();
-  }, [fetchPlanners]);
+    fetchPlans();
+    fetchTrialSettings();
+  }, [fetchPlanners, fetchPlans, fetchTrialSettings]);
 
   // Close action menu when clicking outside
   useEffect(() => {
@@ -127,16 +200,25 @@ export default function AdminUsersPage() {
 
     try {
       const baseUrl = getApiBaseUrl();
+
+      // Build request body with proper field names for backend
+      const requestBody = {
+        email: inviteForm.email,
+        role: 'wedding_planner',
+        company_name: inviteForm.organization || inviteForm.name,
+        plan_id: inviteForm.plan_id || undefined,
+        trial_days: inviteForm.trial_days,
+        trial_end_behavior: inviteForm.trial_end_behavior,
+        admin_notes: inviteForm.admin_notes || undefined
+      };
+
       const response = await fetch(`${baseUrl}/users/invite`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...inviteForm,
-          role: 'wedding_planner'
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -144,9 +226,28 @@ export default function AdminUsersPage() {
         throw new Error(errorData.detail || 'Failed to invite planner');
       }
 
+      const result = await response.json();
+
+      // Show success message with trial info
+      const successMessage = result.trial_days > 0
+        ? `Invitation sent to ${inviteForm.email} with ${result.trial_days}-day trial`
+        : `Invitation sent to ${inviteForm.email}`;
+
       setShowInviteModal(false);
-      setInviteForm({ email: '', name: '', phone: '', organization: '' });
+      setInviteForm({
+        email: '',
+        name: '',
+        phone: '',
+        organization: '',
+        plan_id: availablePlans[0]?._id || '',
+        trial_days: defaultTrialDays,
+        trial_end_behavior: 'pause',
+        admin_notes: ''
+      });
       fetchPlanners();
+
+      // Optionally show success toast (if you have a toast system)
+      console.log(successMessage);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to invite planner');
     } finally {
@@ -723,67 +824,195 @@ export default function AdminUsersPage() {
                 </div>
 
                 {/* Modal Body */}
-                <form onSubmit={handleInvitePlanner} className="p-6 pt-2 space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Full Name <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={inviteForm.name}
-                      onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
-                      placeholder="Jane Smith"
-                      required
-                    />
+                <form onSubmit={handleInvitePlanner} className="p-6 pt-2 space-y-4 max-h-[70vh] overflow-y-auto">
+                  {/* Basic Info Section */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Email Address <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={inviteForm.email}
+                        onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                        placeholder="jane@company.com"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={inviteForm.name}
+                        onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                        placeholder="Jane Smith"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Company
+                      </label>
+                      <input
+                        type="text"
+                        value={inviteForm.organization}
+                        onChange={(e) => setInviteForm({ ...inviteForm, organization: e.target.value })}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                        placeholder="Wedding Co."
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Email Address <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={inviteForm.email}
-                      onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
-                      placeholder="jane@company.com"
-                      required
-                    />
+                  {/* Trial Configuration Section */}
+                  <div className="pt-4 border-t border-white/10">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Gift className="w-5 h-5 text-primary-400" />
+                      <h3 className="text-lg font-semibold text-white">Trial Configuration</h3>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Plan Selection */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                          <CreditCard className="w-4 h-4 inline mr-1" />
+                          Subscription Plan <span className="text-red-400">*</span>
+                        </label>
+                        <select
+                          value={inviteForm.plan_id}
+                          onChange={(e) => setInviteForm({ ...inviteForm, plan_id: e.target.value })}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                          required
+                        >
+                          <option value="" className="bg-slate-800">Select a plan...</option>
+                          {availablePlans.map((plan) => (
+                            <option key={plan._id} value={plan._id} className="bg-slate-800">
+                              {plan.name} - ${plan.price_monthly}/mo
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Trial Days */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                          <Clock className="w-4 h-4 inline mr-1" />
+                          Trial Duration (days)
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="0"
+                            max="180"
+                            step="7"
+                            value={inviteForm.trial_days}
+                            onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) })}
+                            className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            max="730"
+                            value={inviteForm.trial_days}
+                            onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) || 0 })}
+                            className="w-20 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {inviteForm.trial_days === 0 ? 'No trial - user must pay immediately' :
+                           inviteForm.trial_days === 1 ? '1 day trial' :
+                           `${inviteForm.trial_days} days trial (${Math.round(inviteForm.trial_days / 30)} months)`}
+                        </p>
+                      </div>
+
+                      {/* Trial End Behavior */}
+                      {inviteForm.trial_days > 0 && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-300 mb-2">
+                            When Trial Ends Without Payment
+                          </label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setInviteForm({ ...inviteForm, trial_end_behavior: 'pause' })}
+                              className={`p-3 rounded-xl border transition-all ${
+                                inviteForm.trial_end_behavior === 'pause'
+                                  ? 'bg-primary-500/20 border-primary-500 text-white'
+                                  : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                              }`}
+                            >
+                              <div className="font-medium">Pause</div>
+                              <div className="text-xs opacity-70">User can resume later</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setInviteForm({ ...inviteForm, trial_end_behavior: 'cancel' })}
+                              className={`p-3 rounded-xl border transition-all ${
+                                inviteForm.trial_end_behavior === 'cancel'
+                                  ? 'bg-amber-500/20 border-amber-500 text-white'
+                                  : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                              }`}
+                            >
+                              <div className="font-medium">Cancel</div>
+                              <div className="text-xs opacity-70">Subscription ends</div>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Admin Notes */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                          Internal Notes (optional)
+                        </label>
+                        <textarea
+                          value={inviteForm.admin_notes}
+                          onChange={(e) => setInviteForm({ ...inviteForm, admin_notes: e.target.value })}
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all resize-none"
+                          placeholder="Partnership deal, beta tester, etc."
+                          rows={2}
+                          maxLength={500}
+                        />
+                      </div>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Phone Number
-                    </label>
-                    <input
-                      type="tel"
-                      value={inviteForm.phone}
-                      onChange={(e) => setInviteForm({ ...inviteForm, phone: e.target.value })}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
-                      placeholder="+1 (555) 000-0000"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Company / Organization
-                    </label>
-                    <input
-                      type="text"
-                      value={inviteForm.organization}
-                      onChange={(e) => setInviteForm({ ...inviteForm, organization: e.target.value })}
-                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
-                      placeholder="Wedding Planning Co."
-                    />
-                  </div>
+                  {/* Summary */}
+                  {inviteForm.plan_id && inviteForm.trial_days > 0 && (
+                    <div className="p-4 bg-primary-500/10 border border-primary-500/20 rounded-xl">
+                      <div className="flex items-start gap-3">
+                        <Gift className="w-5 h-5 text-primary-400 mt-0.5" />
+                        <div className="text-sm">
+                          <p className="text-white font-medium">Trial Summary</p>
+                          <p className="text-slate-400">
+                            User will receive a <span className="text-primary-400">{inviteForm.trial_days}-day</span> free trial
+                            on the <span className="text-primary-400">{availablePlans.find(p => p._id === inviteForm.plan_id)?.name}</span> plan.
+                            After trial ends, subscription will <span className="text-primary-400">{inviteForm.trial_end_behavior}</span> if no payment method is added.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex gap-3 pt-4">
                     <button
                       type="button"
                       onClick={() => {
                         setShowInviteModal(false);
-                        setInviteForm({ email: '', name: '', phone: '', organization: '' });
+                        setInviteForm({
+                          email: '',
+                          name: '',
+                          phone: '',
+                          organization: '',
+                          plan_id: availablePlans[0]?._id || '',
+                          trial_days: 14,
+                          trial_end_behavior: 'pause',
+                          admin_notes: ''
+                        });
                       }}
                       className="flex-1 px-4 py-3 bg-white/5 border border-white/10 text-slate-300 rounded-xl font-medium hover:bg-white/10 transition-all"
                     >
