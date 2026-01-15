@@ -3,7 +3,8 @@ from typing import List, Optional
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.user_management_service import UserManagementService
 from app.services.gallery_upload_service import GalleryUploadService
-from pydantic import BaseModel, validator, EmailStr
+from pydantic import BaseModel, Field, validator, EmailStr
+from typing import Dict
 import os
 
 router = APIRouter()
@@ -18,6 +19,29 @@ class UserInviteModel(BaseModel):
     plan_id: Optional[str] = None
     service_type: Optional[str] = None  # For vendors
     assigned_wedding_ids: List[str] = []  # For vendors
+
+    # Trial configuration (Option B: Full Stripe Integration)
+    trial_days: int = Field(
+        default=0,
+        ge=0,
+        le=730,  # Stripe max trial is 730 days (2 years)
+        description="Trial period in days. 0 = no trial, user must pay immediately."
+    )
+    trial_end_behavior: str = Field(
+        default="pause",
+        description="What happens when trial ends without payment method: 'pause' or 'cancel'"
+    )
+    admin_notes: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Internal notes about this invitation (not shown to user)"
+    )
+
+    @validator('trial_end_behavior')
+    def validate_trial_end_behavior(cls, v):
+        if v not in ('pause', 'cancel'):
+            raise ValueError("trial_end_behavior must be 'pause' or 'cancel'")
+        return v
 
 
 class UserUpdateModel(BaseModel):
