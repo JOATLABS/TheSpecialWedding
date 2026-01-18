@@ -1142,6 +1142,9 @@ class UserManagementService:
                 update_data["company_name"] = profile_data["company_name"].strip()
             if profile_data.get("phone") is not None:
                 update_data["phone"] = profile_data["phone"].strip()
+            # Handle support phone for SMS HELP responses (wedding planners)
+            if profile_data.get("support_phone") is not None:
+                update_data["support_phone"] = profile_data["support_phone"].strip() if profile_data["support_phone"] else None
             # Handle profile image URL (can be set to None to remove)
             if "profile_image_url" in profile_data:
                 update_data["profile_image_url"] = profile_data["profile_image_url"]
