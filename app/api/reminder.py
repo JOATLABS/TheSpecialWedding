@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.reminder_service import ReminderService
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
+from app.core.config import settings
 from datetime import datetime, timezone
 import logging
 
@@ -15,8 +16,8 @@ def send_reminder(event_type: str, message: str, target_group: str, current_user
     return reminder_service.send_reminders(event_type, message, target_group)
 
 @router.get("/reminders/logs", tags=["Admin"])
-def get_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    return reminder_service.get_logs()
+async def get_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    return await reminder_service.get_logs()
 
 @router.get("/reminders/sms-callback", tags=["Webhooks"])
 async def verify_sms_callback():
@@ -299,6 +300,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         from app.services.email_service_resend import ResendEmailService
         email_service = ResendEmailService()
 
+        frontend_url = settings.get_required_url("FRONTEND_URL")
         subject = f"New Guest Message: {ticket['wedding_name']}"
 
         html_content = f"""
@@ -318,7 +320,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             <p>Please respond to your guest as soon as possible.</p>
 
             <div style="margin: 30px 0;">
-                <a href="https://thespecialwedding.com/admin/support?ticket={str(ticket.get('_id', ''))}"
+                <a href="{frontend_url}/admin/support?ticket={str(ticket.get('_id', ''))}"
                    style="background-color: #2c3e50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
                     View & Respond in Dashboard
                 </a>

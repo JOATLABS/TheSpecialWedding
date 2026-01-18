@@ -94,7 +94,7 @@ class GuestVerificationService:
             # Don't fail the main flow if logging fails
             security_logger.error(f"Failed to log security event: {str(e)}")
 
-    def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Verify guest access to a wedding based on different authentication methods.
         Returns wedding data and guest info if access is granted.
@@ -118,8 +118,11 @@ class GuestVerificationService:
             )
 
         try:
+            # Debug logging
+            security_logger.info(f"Verification attempt for slug: {slug}, data: {verification_data}")
+
             # Get wedding by slug
-            wedding = self.wedding_service.get_wedding_by_slug(slug)
+            wedding = await self.wedding_service.get_wedding_by_slug(slug)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -170,7 +173,7 @@ class GuestVerificationService:
                     # Sanitize token
                     token = self._sanitize_input(token, "token", max_length=255)
                     try:
-                        guest = self.guest_service.get_guest_by_token(token, wedding["_id"])
+                        guest = await self.guest_service.get_guest_by_token(token, wedding["_id"])
                         if guest:
                             self._reset_failed_attempts(rate_limit_key)
                             self._log_security_event("TOKEN_AUTH_SUCCESS", {
@@ -203,7 +206,7 @@ class GuestVerificationService:
 
                     # Verify OTP
                     try:
-                        otp_result = self.otp_service.verify_otp(
+                        otp_result = await self.otp_service.verify_otp(
                             wedding_id=wedding["_id"],
                             contact=contact,
                             otp_code=otp_code
@@ -227,15 +230,16 @@ class GuestVerificationService:
                     except Exception as e:
                         security_logger.warning(f"OTP verification error: {str(e)}")
                         self._record_failed_attempt(rate_limit_key)
-                
+
                 # Method 3: Request OTP (when phone/email provided without code)
                 phone = verification_data.get("phone", "").strip()
                 email = verification_data.get("email", "").strip()
-                
+
                 if phone or email:
                     # Return special response indicating OTP should be sent
                     return {
                         "access": False,
+                        "wedding_id": str(wedding.get("_id")),
                         "wedding": None,
                         "guest": None,
                         "otp_required": True,
@@ -243,6 +247,9 @@ class GuestVerificationService:
                         "contact_type": "phone" if phone else "email",
                         "message": "Verification code will be sent to your contact"
                     }
+
+            # Access denied - log why
+            security_logger.warning(f"Access denied for slug: {slug}, privacy_mode: {privacy_mode}, provided: {list(verification_data.keys())}")
 
             # Access denied
             return {
@@ -276,10 +283,10 @@ class GuestVerificationService:
         """Normalize phone number for comparison"""
         if not phone:
             return ""
-        
+
         # Remove all non-digit characters
         digits_only = re.sub(r'\D', '', phone)
-        
+
         # Handle US phone numbers
         if len(digits_only) == 10:
             return f"+1{digits_only}"
@@ -287,11 +294,11 @@ class GuestVerificationService:
             return f"+{digits_only}"
         elif digits_only.startswith('1') and len(digits_only) > 11:
             return f"+{digits_only}"
-        
+
         # For other formats, just prepend + if not present
         if not phone.startswith('+'):
             return f"+{digits_only}"
-        
+
         return phone
 
     def _log_guest_verification(self, wedding_id: str, guest_id: str, method: str):
@@ -309,26 +316,49 @@ class GuestVerificationService:
             # Silently fail - logging shouldn't break the main flow
             pass
 
-    def get_wedding_privacy_info(self, slug: str) -> Dict[str, Any]:
+    async def get_wedding_privacy_info(self, slug: str) -> Dict[str, Any]:
         """Get privacy information about a wedding without granting access"""
         try:
-            wedding = self.wedding_service.get_wedding_by_slug(slug)
+            wedding = await self.wedding_service.get_wedding_by_slug(slug)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             privacy_settings = wedding.get("privacy_settings", {})
-            
-            return {
+            privacy_mode = privacy_settings.get("privacy_mode", "private")
+
+            # Log privacy mode for debugging
+            security_logger.info(f"Privacy info for {slug}: mode={privacy_mode}, settings={privacy_settings}")
+
+            # Base response with privacy info
+            response = {
+                "id": str(wedding.get("_id")),
                 "couple_names": wedding.get("couple_names"),
-                "privacy_mode": privacy_settings.get("privacy_mode", "private"),
-                "requires_password": privacy_settings.get("privacy_mode") == "password",
-                "requires_guest_verification": privacy_settings.get("privacy_mode") == "private",
+                "date": wedding.get("date"),
+                "privacy_mode": privacy_mode,
+                "requires_password": privacy_mode == "password",
+                "requires_guest_verification": privacy_mode == "private",
+                "featured_image": wedding.get("featured_image"),
+                "theme_config": wedding.get("theme_config"),
+                "rsvp_config": wedding.get("rsvp_config"),
+                "events": wedding.get("events", []),
                 "verification_requirements": {
                     "otp_enabled": True,
                     "supports_phone": True,
                     "supports_email": True
                 }
             }
+
+            # For public weddings, include full wedding data since no verification needed
+            if privacy_mode == "public":
+                response.update({
+                    "registries": wedding.get("registries", []),
+                    "faqs": wedding.get("faqs", []),
+                    "our_story": wedding.get("our_story"),
+                    "venue": wedding.get("venue"),
+                    "wedding_party": wedding.get("wedding_party", []),
+                })
+
+            return response
 
         except HTTPException:
             raise

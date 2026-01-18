@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 
 import { GlassCard } from '../ui/GlassCard';
@@ -24,6 +25,11 @@ interface SubscriptionPlan {
   display_order: number;
 }
 
+interface CachedPlans {
+  plans: SubscriptionPlan[];
+  timestamp: number;
+}
+
 interface PricingSectionProps {
   theme: ThemeConfig;
   onPlanSelect?: (plan: { id: string; name: string }) => void;
@@ -31,81 +37,11 @@ interface PricingSectionProps {
 
 const formatLimit = (value: number) => (value === -1 ? 'Unlimited' : value.toString());
 
-// Fallback plans matching backend schema
-const fallbackPlans: SubscriptionPlan[] = [
-  {
-    _id: 'plan_boutique',
-    name: 'Boutique',
-    description: 'For new planners onboarding their first weddings with concierge support.',
-    price_monthly: 89,
-    price_yearly: 930,
-    max_weddings: 3,
-    max_guests_per_wedding: 150,
-    ai_credits_monthly: 400,
-    storage_gb: 150,
-    staff_seats: 1,
-    features: {
-      basic_website_builder: true,
-      guest_management: true,
-      rsvp_system: true,
-      multi_user_collaboration: true,
-    },
-    features_list: ['Client-ready wedding websites', 'Unlimited vendor invites', 'Shared task boards', 'Automated payment reminders'],
-    is_featured: false,
-    is_active: true,
-    display_order: 0,
-  },
-  {
-    _id: 'plan_studio_growth',
-    name: 'Studio Growth',
-    description: 'Everything established planners need for 10 active weddings.',
-    price_monthly: 179,
-    price_yearly: 1890,
-    max_weddings: 10,
-    max_guests_per_wedding: 350,
-    ai_credits_monthly: 900,
-    storage_gb: 400,
-    staff_seats: 3,
-    features: {
-      basic_website_builder: true,
-      guest_management: true,
-      ai_tools: true,
-      advanced_reporting: true,
-      multi_user_collaboration: true,
-      priority_support: true,
-    },
-    features_list: ['AI timeline builder', 'Branded dashboards', 'Team permissions', 'Priority concierge support'],
-    is_featured: true,
-    is_active: true,
-    display_order: 1,
-  },
-  {
-    _id: 'plan_signature',
-    name: 'Signature',
-    description: 'Collaborate with unlimited vendors and automate client touchpoints.',
-    price_monthly: 289,
-    price_yearly: 3090,
-    max_weddings: -1,
-    max_guests_per_wedding: -1,
-    ai_credits_monthly: 2000,
-    storage_gb: 1024,
-    staff_seats: -1,
-    features: {
-      basic_website_builder: true,
-      guest_management: true,
-      ai_tools: true,
-      advanced_reporting: true,
-      white_label: true,
-      custom_integrations: true,
-      multi_user_collaboration: true,
-      priority_support: true,
-    },
-    features_list: ['Unlimited automations', 'White-glove onboarding', 'Advanced analytics', 'Dedicated success manager'],
-    is_featured: false,
-    is_active: true,
-    display_order: 2,
-  },
-];
+// Cache configuration
+const CACHE_KEY = 'pricing_plans_cache';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1000; // 1 second, doubles each retry
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSelect }) => {
   const router = useRouter();
@@ -114,33 +50,52 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
   const [error, setError] = useState('');
   const [isYearly, setIsYearly] = useState(false);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
 
-  useEffect(() => {
-    fetchPlans();
+  // Get cached plans from localStorage
+  const getCachedPlans = useCallback((): SubscriptionPlan[] | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (!cached) return null;
+
+      const { plans: cachedPlans, timestamp }: CachedPlans = JSON.parse(cached);
+      const isExpired = Date.now() - timestamp > CACHE_TTL_MS;
+
+      if (isExpired) {
+        localStorage.removeItem(CACHE_KEY);
+        return null;
+      }
+
+      return cachedPlans;
+    } catch {
+      return null;
+    }
   }, []);
 
-  useEffect(() => {
-    if (plans.length === 0 || activePlanId) {
-      return;
-    }
-    const featured = plans.find((plan) => plan.is_featured) ?? plans[0];
-    setActivePlanId(featured._id);
-  }, [plans, activePlanId]);
-
-  const selectedPlan = useMemo(
-    () => plans.find((plan) => plan._id === activePlanId) ?? null,
-    [plans, activePlanId]
-  );
-
-  const fetchPlans = async () => {
+  // Save plans to localStorage cache
+  const setCachedPlans = useCallback((plansToCache: SubscriptionPlan[]) => {
+    if (typeof window === 'undefined') return;
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const cacheData: CachedPlans = {
+        plans: plansToCache,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+    } catch {
+      // localStorage might be full or disabled - ignore
+    }
+  }, []);
+
+  // Fetch with exponential backoff retry
+  const fetchPlans = useCallback(async (attempt: number = 0): Promise<void> => {
+    try {
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/public/subscription-plans`);
 
       if (!response.ok) {
-        setPlans(fallbackPlans);
-        setError('We are showing signature tiers while live pricing reconnects. Your choice will sync during onboarding.');
-        return;
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -150,19 +105,42 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
 
       if (sortedPlans.length > 0) {
         setPlans(sortedPlans);
+        setCachedPlans(sortedPlans); // Cache successful response
         setError('');
+        setRetryCount(0);
+        setIsRetrying(false);
       } else {
-        setPlans(fallbackPlans);
-        setError('Live plans are temporarily unavailable. Showing our standard tiers.');
+        setError('No pricing plans are currently available. Please contact us for custom pricing.');
       }
     } catch (fetchError) {
-      console.error('Failed to load pricing plans', fetchError);
-      setPlans(fallbackPlans);
-      setError('We could not connect to pricing services. Showing the latest available details.');
+      console.error(`Failed to load pricing plans (attempt ${attempt + 1}/${MAX_RETRIES})`, fetchError);
+
+      // Try to use cached data first
+      const cachedPlans = getCachedPlans();
+      if (cachedPlans && cachedPlans.length > 0) {
+        setPlans(cachedPlans);
+        setError(''); // Don't show error if we have cached data
+        setRetryCount(0);
+        setIsRetrying(false);
+        return;
+      }
+
+      // Retry with exponential backoff
+      if (attempt < MAX_RETRIES - 1) {
+        setIsRetrying(true);
+        setRetryCount(attempt + 1);
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchPlans(attempt + 1);
+      }
+
+      // All retries exhausted
+      setIsRetrying(false);
+      setError('Pricing is temporarily unavailable. Please try again shortly or contact us for details.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [getCachedPlans, setCachedPlans]);
 
   const handleSelectPlan = (plan: SubscriptionPlan) => {
     setActivePlanId(plan._id);
@@ -175,6 +153,12 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
       router.push(`/admin/billing?plan=${encodeURIComponent(plan._id)}&interval=${billingInterval}`);
     }
   };
+
+  // Derive selected plan object from activePlanId
+  const selectedPlan = useMemo(() => {
+    if (!activePlanId) return null;
+    return plans.find(p => p._id === activePlanId) || null;
+  }, [activePlanId, plans]);
 
   const getPriceLabel = (plan: SubscriptionPlan) => {
     if (plan.price_monthly === 0) {
@@ -191,7 +175,12 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
       <section className="px-4 py-16">
         <div className="mx-auto max-w-6xl text-center">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2" style={{ borderColor: theme.primary_color }} />
-          <p className="text-slate-200">Loading pricing plans…</p>
+          <p className="text-slate-200">
+            {isRetrying
+              ? `Retrying... (attempt ${retryCount + 1}/${MAX_RETRIES})`
+              : 'Loading pricing plans…'
+            }
+          </p>
         </div>
       </section>
     );
@@ -200,8 +189,25 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
   if (error && plans.length === 0) {
     return (
       <section className="px-4 py-16">
-        <div className="mx-auto max-w-6xl text-center">
-          <p className="text-sm text-red-200">{error}</p>
+        <div className="mx-auto max-w-2xl text-center">
+          <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-8">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/20">
+              <svg className="h-6 w-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">Pricing Temporarily Unavailable</h3>
+            <p className="text-slate-300 mb-6">{error}</p>
+            <a
+              href="mailto:hello@thespecialwedding.com"
+              className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100 transition"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Contact Us for Pricing
+            </a>
+          </div>
         </div>
       </section>
     );
@@ -238,7 +244,6 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
             {isYearly && <span className="rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-semibold text-white">Save 2 months</span>}
           </div>
 
-          {error && plans.length > 0 && <p className="text-sm text-amber-200/90">{error}</p>}
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">

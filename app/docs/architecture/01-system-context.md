@@ -196,5 +196,5 @@ The Wedding WebApp serves as a comprehensive platform for professional wedding p
 
 ---
 
-**Next**: [Container Architecture](./02-container-architecture.md) 
+**Next**: [Container Architecture](./02-container-architecture.md)
 **Related**: [Security Architecture](./06-security-architecture.md)

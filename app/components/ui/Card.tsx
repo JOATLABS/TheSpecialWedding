@@ -6,12 +6,12 @@ type CardProps = {
   children: React.ReactNode;
 };
 
-// Main Card container with glassmorphism and fade-in animation
+// Main Card container with subtle styling
 export function Card({ className = '', children }: CardProps) {
   return (
     <div
       className={
-        `bg-white bg-opacity-60 backdrop-blur-lg rounded-2xl shadow-lg p-6 space-y-4 animate-fade-in ${className}`
+        `bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 ${className}`
       }
     >
       {children}
@@ -30,7 +30,7 @@ export function CardHeader({ className = '', children }: CardProps) {
 export function CardTitle({ className = '', children }: CardProps) {
   return (
     <h2
-      className={`text-2xl font-elegant text-wedding-navy ${className}`}
+      className={`text-2xl font-elegant text-wedding-navy dark:text-white ${className}`}
     >
       {children}
     </h2>
@@ -45,7 +45,7 @@ export function CardContent({ className = '', children }: CardProps) {
 // Description text in card header
 export function CardDescription({ className = '', children }: CardProps) {
   return (
-    <p className={`text-sm text-gray-600 ${className}`}>
+    <p className={`text-sm text-gray-600 dark:text-gray-400 ${className}`}>
       {children}
     </p>
   );

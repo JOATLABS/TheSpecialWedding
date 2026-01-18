@@ -1,31 +1,18 @@
 #!/usr/bin/env node
-import { createRequire } from 'module';
+/**
+ * Simple dependency checker for development environment
+ * Ensures node_modules exists before starting the dev server
+ */
 
-const require = createRequire(import.meta.url);
+import { existsSync } from 'fs';
+import { join } from 'path';
 
-const requiredDependencies = ['tiny-invariant'];
-const missingDependencies = [];
+const nodeModulesPath = join(process.cwd(), 'node_modules');
 
-for (const pkg of requiredDependencies) {
-  try {
-    require.resolve(pkg);
-  } catch (error) {
-    if (error?.code === 'MODULE_NOT_FOUND') {
-      missingDependencies.push(pkg);
-    } else {
-      throw error;
-    }
-  }
-}
-
-if (missingDependencies.length > 0) {
-  // eslint-disable-next-line no-console
-  console.error(
-    `Missing required npm package${missingDependencies.length > 1 ? 's' : ''}: ${missingDependencies.join(', ')}`
-  );
-  // eslint-disable-next-line no-console
-  console.error(
-    'Run "npm install" (or "npm install ' + missingDependencies.join(' ') + '") before starting the development server.'
-  );
+if (!existsSync(nodeModulesPath)) {
+  console.error('❌ Error: node_modules not found!');
+  console.error('Please run: npm install');
   process.exit(1);
 }
+
+console.log('✅ Dependencies verified');

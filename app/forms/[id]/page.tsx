@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useRouter, useParams } from 'next/navigation';
 
 interface FormField {
@@ -33,7 +34,6 @@ export default function PublicFormPage() {
  const params = useParams();
  const router = useRouter();
  const formId = params.id as string;
- 
  const [form, setForm] = useState<Form | null>(null);
  const [responses, setResponses] = useState<{ [key: string]: any }>({});
  const [loading, setLoading] = useState(true);
@@ -44,13 +44,12 @@ export default function PublicFormPage() {
 
  const fetchForm = useCallback(async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/public/forms/${formId}`);
 
  if (response.ok) {
  const data = await response.json();
  setForm(data);
- 
  if (!data.is_active) {
  setError('This form is no longer accepting responses.');
  }
@@ -97,8 +96,7 @@ export default function PublicFormPage() {
  setError('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- 
+ const baseUrl = getApiBaseUrl();
  // Prepare submission data
  const submissionData = {
  responses,
@@ -118,7 +116,6 @@ export default function PublicFormPage() {
  const data = await response.json();
  setSuccessMessage(data.message || form?.settings.success_message || 'Thank you for your submission!');
  setSubmitted(true);
- 
  // Redirect if URL is provided
  if (data.redirect_url) {
  setTimeout(() => {
@@ -140,7 +137,7 @@ export default function PublicFormPage() {
  const commonProps = {
  id: field.id,
  required: field.required,
- onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => 
+ onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
  handleInputChange(field.id, e.target.value)
  };
 
@@ -253,7 +250,6 @@ export default function PublicFormPage() {
  responses[field.id] >= rating ? 'text-yellow-400' : 'text-gray-300'
  } hover:text-yellow-400 transition-colors`}
  >
- 
  </button>
  ))}
  <span className="ml-2 text-sm text-gray-600">

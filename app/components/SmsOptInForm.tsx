@@ -52,7 +52,7 @@ export function SmsOptInForm({
           Successfully Subscribed!
         </h3>
         <p className="text-green-700">
-          You have been subscribed to SMS notifications from JOAT Labs for {weddingName}. 
+          You have been subscribed to SMS notifications from JOAT Labs for {weddingName}.
           You will receive a confirmation message shortly.
         </p>
         <p className="text-sm text-green-600 mt-2">
@@ -116,13 +116,13 @@ export function SmsOptInForm({
 
         <div className="mt-6 p-4 bg-gray-50 rounded-md">
           <p className="text-xs text-gray-600 leading-relaxed">
-            <strong>IMPORTANT:</strong> You are subscribing to wedding reminders from JOAT Labs. 
+            <strong>IMPORTANT:</strong> You are subscribing to wedding reminders from JOAT Labs.
             Reply STOP to opt out. Reply HELP for help. Standard message and data rates may apply. 
             Message frequency may vary.
           </p>
           <p className="text-xs text-gray-600 mt-2">
             By checking the box(es) above and submitting this form, you consent to receive 
-            automated text messages from JOAT Labs for the couple: {weddingName} at the phone number provided. 
+            automated text messages from JOAT Labs for the couple: {weddingName} at the phone number provided.
             Consent is not a condition of any purchase.
           </p>
           <div className="mt-2 text-xs">

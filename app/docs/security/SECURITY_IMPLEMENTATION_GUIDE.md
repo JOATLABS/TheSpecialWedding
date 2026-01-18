@@ -13,7 +13,6 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  ```bash
  # Backup database
  mongodump --host localhost --port 27017 --db wedding_app --out backup_$(date +%Y%m%d)
- 
  # Backup application files
  cp -r /path/to/WeddingWebApp /path/to/backup/WeddingWebApp_backup_$(date +%Y%m%d)
  ```
@@ -23,8 +22,8 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  - [ ] `app/utils/secure_error_handler.py` - Secure error handling
  - [ ] `app/services/guest_verification_service_secure.py` - Secure guest verification
  - [ ] `app/api/guest_verification_secure.py` - Secure API endpoints
- - [ ] `app/middleware/error_handler_secure.py` - Secure error middleware
- - [ ] `app/middleware/security_headers_enhanced.py` - Security headers
+ - [ ] `app/middleware/error_handler.py` - Unified secure error middleware
+ - [ ] `app/middleware/security_headers.py` - Security headers
  - [ ] `app/utils/path_validator.py` - Path traversal prevention
 
 ### Phase 2: Environment Configuration
@@ -54,13 +53,11 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  ```javascript
  // Run in MongoDB shell
  use wedding_app;
- 
  // Create security audit logs collection
  db.createCollection("security_audit_logs");
  db.security_audit_logs.createIndex({"timestamp": 1}, {"expireAfterSeconds": 2592000}); // 30 days
  db.security_audit_logs.createIndex({"client_ip": 1});
  db.security_audit_logs.createIndex({"event_type": 1});
- 
  // Create access logs collection with indexes
  db.access_logs.createIndex({"wedding_id": 1});
  db.access_logs.createIndex({"timestamp": 1});
@@ -70,40 +67,35 @@ This guide provides step-by-step instructions for deploying the comprehensive se
 ### Phase 4: Application Updates
 
 6. **Update Import Statements**
- 
  **In `main_optimized.py` (or your main application file):**
- ```python
- # Add secure middleware imports
- from app.middleware.error_handler_secure import SecureErrorHandlerMiddleware
- from app.middleware.security_headers_enhanced import EnhancedSecurityHeadersMiddleware
- 
- # Replace existing middleware
- app.add_middleware(SecureErrorHandlerMiddleware)
- app.add_middleware(EnhancedSecurityHeadersMiddleware, 
- hsts_max_age=31536000,
- enable_csp_reporting=True,
- debug_mode=os.getenv("DEBUG", "false").lower() == "true")
- ```
+```python
+# Add secure middleware imports
+from app.middleware.error_handler import ErrorHandlerMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
+
+# Replace existing middleware
+app.add_middleware(ErrorHandlerMiddleware)
+app.add_middleware(SecurityHeadersMiddleware,
+hsts_max_age=31536000,
+enable_csp_reporting=True,
+debug_mode=os.getenv("DEBUG", "false").lower() == "true")
+```
 
 7. **Update Router Imports**
- 
  **In your main router configuration:**
  ```python
  # Replace guest verification routes
  from app.api.guest_verification_secure import router as secure_guest_router
- 
  # Add secure routes
  app.include_router(secure_guest_router, prefix="/api")
  ```
 
 8. **Update Service Usage**
- 
  **Replace existing guest verification service calls:**
  ```python
  # Replace this:
  from app.services.guest_verification_service import GuestVerificationService
  verification_service = GuestVerificationService()
- 
  # With this:
  from app.services.guest_verification_service_secure import secure_guest_verification_service
  verification_service = secure_guest_verification_service
@@ -112,11 +104,11 @@ This guide provides step-by-step instructions for deploying the comprehensive se
 ### Phase 5: Security Configuration
 
 9. **Configure Logging**
- 
+
  **Add to your logging configuration:**
  ```python
  import logging.config
- 
+
  LOGGING_CONFIG = {
  'version': 1,
  'disable_existing_loggers': False,
@@ -154,14 +146,12 @@ This guide provides step-by-step instructions for deploying the comprehensive se
  },
  },
  }
- 
  logging.config.dictConfig(LOGGING_CONFIG)
  ```
 
 10. **Update CORS Configuration**
  ```python
  from fastapi.middleware.cors import CORSMiddleware
- 
  # Update CORS with secure defaults
  app.add_middleware(
  CORSMiddleware,
@@ -272,7 +262,7 @@ CSP_POLICY = {
 
 Monitor these key metrics:
 - Failed authentication attempts per hour
-- Rate limiting triggers per day 
+- Rate limiting triggers per day
 - Injection attempt detections
 - Error rates by endpoint
 - Geographic distribution of failed attempts
@@ -284,7 +274,7 @@ Monitor these key metrics:
 grep "$(date +%Y-%m-%d)" /var/log/wedding_security/security.log | \
  grep -c "BLOCKED\|FAILED\|SUSPICIOUS"
 
-# Top IPs with failed attempts 
+# Top IPs with failed attempts
 grep "failed_attempt" /var/log/wedding_security/security.log | \
  grep "$(date +%Y-%m-%d)" | \
  awk '{print $8}' | sort | uniq -c | sort -nr | head -10
@@ -318,7 +308,6 @@ logrotate -f /etc/logrotate.d/wedding_security
  ```bash
  # Block suspicious IP
  iptables -A INPUT -s SUSPICIOUS_IP -j DROP
- 
  # Review recent logs
  grep -i "SUSPICIOUS_IP" /var/log/wedding_security/security.log
  ```
@@ -372,8 +361,8 @@ Your deployment is successful when:
 ```python
 # Solution: Check middleware order in main_optimized.py
 # SecurityHeaders must be before ErrorHandler
-app.add_middleware(EnhancedSecurityHeadersMiddleware)
-app.add_middleware(SecureErrorHandlerMiddleware) 
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SecureErrorHandlerMiddleware)
 ```
 
 **Issue**: Database connection errors in security logs

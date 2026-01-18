@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, 
 from app.services.email_service_resend import ResendEmailService
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner
 from app.services.wedding_service import WeddingService
+from app.core.config import settings
 from pydantic import BaseModel
 from typing import Optional, List
 import base64
@@ -51,10 +52,10 @@ async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAu
     wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
-    
-    if not check_wedding_access(current_user, wedding["_id"]):
+
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
+
     result = email_service.send_rsvp_invitations(
         wedding_slug=payload.wedding_slug,
         custom_html=payload.custom_html,
@@ -80,10 +81,10 @@ async def send_email_invites_with_attachment(
     wedding = wedding_service.get_wedding_by_slug(wedding_slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
-    
-    if not check_wedding_access(current_user, wedding["_id"]):
+
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
+
     # Handle attachment
     attachments = []
     try:
@@ -105,7 +106,7 @@ async def send_email_invites_with_attachment(
     return result
 
 @router.post("/email/send-reminders", tags=["Admin"])
-def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Send event reminder emails"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
@@ -114,10 +115,10 @@ def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuth
     wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
-    
-    if not check_wedding_access(current_user, wedding["_id"]):
+
+    if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    
+
     result = email_service.send_reminders(
         wedding_slug=payload.wedding_slug,
         event_type=payload.event_type,
@@ -129,16 +130,45 @@ def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuth
     return result
 
 @router.get("/email/logs", tags=["Admin"])
-def get_email_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+async def get_email_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     limit: int = Query(100, description="Number of logs to return")
 ):
-    """Get email send logs"""
+    """Get email send logs - filtered by wedding for planners"""
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
-    
-    logs = email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
-    return {"logs": logs, "count": len(logs)}
+
+    # Root admin can see all logs or filter by specific wedding
+    if current_user.is_root_admin:
+        logs = await email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
+        return {"logs": logs, "count": len(logs)}
+
+    # Wedding planners can only see logs for their assigned weddings
+    if current_user.is_wedding_planner:
+        from app.core.database import mongo
+        # Get weddings assigned to this planner
+        weddings_cursor = mongo.db["weddings"].find(
+            {"assigned_planner_email": current_user.email},
+            {"_id": 1}
+        )
+        weddings = await weddings_cursor.to_list(length=None)
+        wedding_ids = [w["_id"] for w in weddings]
+
+        if not wedding_ids:
+            return {"logs": [], "count": 0}
+
+        # Filter by wedding_id if provided, but ensure it's one of planner's weddings
+        if wedding_id:
+            if wedding_id not in wedding_ids:
+                return {"logs": [], "count": 0}
+            logs = await email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
+        else:
+            # Get logs for all planner's weddings
+            logs = await email_service.get_email_logs_for_weddings(wedding_ids=wedding_ids, limit=limit)
+
+        return {"logs": logs, "count": len(logs)}
+
+    return {"logs": [], "count": 0}
 
 @router.get("/email/preview-invitation", tags=["Admin"])
 def preview_invitation_email(current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
@@ -150,11 +180,12 @@ def preview_invitation_email(current_user: ExtendedAuthUser = Depends(require_ad
     if not email_available:
         raise HTTPException(status_code=503, detail="Email service not configured")
     
+    frontend_url = settings.get_required_url("FRONTEND_URL")
     html = email_service._generate_default_invitation_html(
         guest_name=guest_name,
         couple_names=couple_names,
         wedding_date=wedding_date,
-        rsvp_url="https://thespecialwedding.com/wedding/invite/preview-token"
+        rsvp_url=f"{frontend_url}/wedding/invite/preview-token" if frontend_url else ""
     )
     
     return {"html": html}

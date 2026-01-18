@@ -11,7 +11,7 @@ interface OurStorySectionProps {
 
 export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => {
   const theme = wedding.theme_config;
-  
+
   if (!wedding.our_story && (!wedding.wedding_party || wedding.wedding_party.length === 0)) {
     return null;
   }
@@ -81,18 +81,18 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
               {wedding.our_story.image_url && (
                 <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
                   <Image
-                    src={wedding.our_story.image_url.startsWith('http')
-                      ? wedding.our_story.image_url
-                      : `https://media.thespecialwedding.com/${wedding.our_story.image_url}`}
-                    alt="Couple"
-                    fill
-                    className="object-cover"
-                    sizes="192px"
+                  src={wedding.our_story.image_url.startsWith('http')
+                    ? wedding.our_story.image_url
+                    : `${process.env.MEDIA_DOMAIN}/${wedding.our_story.image_url}`}
+                  alt="Couple"
+                  fill
+                  className="object-cover"
+                  sizes="192px"
                   />
                 </div>
               )}
               
-              <p className="text-lg text-gray-700 text-center max-w-3xl leading-relaxed">
+              <p className="text-lg text-gray-700 dark:text-gray-200 text-center max-w-3xl leading-relaxed transition-colors duration-300">
                 {wedding.our_story.text}
               </p>
             </div>
@@ -116,59 +116,59 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                   <div className="flex flex-wrap justify-center gap-6">
                     {bridesSide.map((member) => (
                       <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
+                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                           {member.image_url ? (
                             <Image
-                              src={`https://media.thespecialwedding.com/${member.image_url}`}
+                              src={`${process.env.MEDIA_DOMAIN}/${member.image_url}`}
                               alt={member.name}
                               fill
                               className="object-cover"
                               sizes="128px"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20">
+                            <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20 dark:bg-opacity-30">
                               <span className="text-3xl font-bold" style={{ color: theme?.accent_color || '#c8847e' }}>
                                 {member.name.charAt(0)}
                               </span>
                             </div>
                           )}
                         </div>
-                        <h4 className="font-semibold text-gray-800">{member.name}</h4>
-                        <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
+                        <h4 className="font-semibold text-gray-800 dark:text-gray-100">{member.name}</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Groom’s Side */}
+              {/* Groom's Side */}
               {groomsSide.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold text-center mb-4" style={{ color: theme?.secondary_color || '#d4af37' }}>
-                    Groom’s Side
+                    Groom's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-6">
                     {groomsSide.map((member) => (
                       <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200">
-                          {member.image_url ? (
+                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                            {member.image_url ? (
                             <Image
-                              src={`https://media.thespecialwedding.com/${member.image_url}`}
+                              src={`${process.env.MEDIA_DOMAIN}/${member.image_url}`}
                               alt={member.name}
                               fill
                               className="object-cover"
                               sizes="128px"
                             />
-                          ) : (
+                            ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
                               <span className="text-3xl font-bold" style={{ color: theme?.primary_color || '#1e3a5f' }}>
-                                {member.name.charAt(0)}
+                              {member.name.charAt(0)}
                               </span>
                             </div>
-                          )}
+                            )}
                         </div>
-                        <h4 className="font-semibold text-gray-800">{member.name}</h4>
-                        <p className="text-sm text-gray-600">{formatRole(member.role)}</p>
+                        <h4 className="font-semibold text-gray-800 dark:text-gray-100">{member.name}</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
                       </div>
                     ))}
                   </div>

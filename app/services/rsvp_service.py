@@ -4,16 +4,21 @@ from app.models.rsvp import RSVPModel
 from app.models.plus_one import PlusOneModel
 from bson import ObjectId
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class RSVPService:
     def __init__(self):
         self.guest_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
+        self.wedding_collection = mongo.db["weddings"]
 
-    def submit_rsvp(self, token: str, rsvp_data: RSVPModel):
+    async def submit_rsvp(self, token: str, rsvp_data: RSVPModel):
         try:
-            guest = self.guest_collection.find_one({"token": token})
+            guest = await self.guest_collection.find_one({"token": token})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
@@ -21,7 +26,7 @@ class RSVPService:
             guest_id_str = str(guest_id)
             wedding_id_str = str(guest.get("wedding_id", ""))
 
-            self.rsvp_collection.update_one(
+            await self.rsvp_collection.update_one(
                 {"guest_id": guest_id_str},
                 {"$set": {
                     "guest_id": guest_id_str,
@@ -33,7 +38,7 @@ class RSVPService:
                 upsert=True
             )
 
-            update_data = {
+            update_data: dict[str, object] = {
                 "phone": rsvp_data.phone, 
                 "updated_at": datetime.utcnow()
             }
@@ -43,8 +48,18 @@ class RSVPService:
                 update_data["sms_opt_in"] = rsvp_data.sms_opt_in
                 if rsvp_data.sms_opt_in:
                     update_data["sms_opt_in_date"] = datetime.utcnow()
-            
-            self.guest_collection.update_one(
+                elif rsvp_data.sms_opt_in is False:
+                    update_data["sms_opt_out_date"] = datetime.utcnow()
+
+            # Handle Email opt-in
+            if hasattr(rsvp_data, 'email_opt_in'):
+                update_data["email_opt_in"] = rsvp_data.email_opt_in
+                if rsvp_data.email_opt_in:
+                    update_data["email_opt_in_date"] = datetime.utcnow()
+                elif rsvp_data.email_opt_in is False:
+                    update_data["email_opt_out_date"] = datetime.utcnow()
+
+            await self.guest_collection.update_one(
                 {"_id": guest_id},
                 {"$set": update_data}
             )
@@ -59,12 +74,12 @@ class RSVPService:
                     raise HTTPException(status_code=403, detail="No plus-ones allowed for this guest")
                 
                 # Count existing plus-ones
-                existing_count = self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
+                existing_count = await self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
                 new_plus_ones_count = len(rsvp_data.plus_ones)
-                
+
                 if existing_count + new_plus_ones_count > max_plus_ones:
                     raise HTTPException(
-                        status_code=400, 
+                        status_code=400,
                         detail=f"Cannot add {new_plus_ones_count} plus-ones. Maximum allowed: {max_plus_ones}, already have: {existing_count}"
                     )
 
@@ -79,16 +94,25 @@ class RSVPService:
                         dietary=plus_one_data.dietary
                     )
                     plus_ones_to_insert.append(plus_one.dict())
-                
+
                 if plus_ones_to_insert:
-                    self.plus_one_collection.insert_many(plus_ones_to_insert)
+                    await self.plus_one_collection.insert_many(plus_ones_to_insert)
                 
-                # Update guest to mark plus_one_submitted as True only if all slots are filled
-                if existing_count + new_plus_ones_count >= max_plus_ones:
-                    self.guest_collection.update_one(
+                # Update guest to mark plus_one_submitted as True if at least one plus-one is submitted
+                if new_plus_ones_count > 0:
+                    await self.guest_collection.update_one(
                         {"_id": guest_id},
                         {"$set": {"plus_one_submitted": True}}
                     )
+
+            # Notify planner about the RSVP update
+            await self._notify_planner_rsvp(
+                wedding_id=wedding_id_str,
+                guest_name=guest.get("name", "A guest"),
+                status="confirmed" if rsvp_data.attending else "declined",
+                guest_count=1 + len(rsvp_data.plus_ones) if rsvp_data.plus_ones else 1,
+                guest_id=guest_id_str
+            )
 
             return {"message": "RSVP submitted successfully"}
 
@@ -96,3 +120,41 @@ class RSVPService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error submitting RSVP: {}".format(str(e)))
+
+    async def _notify_planner_rsvp(
+        self,
+        wedding_id: str,
+        guest_name: str,
+        status: str,
+        guest_count: int = 1,
+        guest_id: str = None
+    ):
+        """Notify the planner about an RSVP update"""
+        try:
+            # Get wedding to find planner
+            wedding = await self.wedding_collection.find_one({"wedding_id": wedding_id})
+            if not wedding:
+                logger.warning(f"Wedding {wedding_id} not found for RSVP notification")
+                return
+
+            planner_email = wedding.get("assigned_planner_email")
+            if not planner_email:
+                logger.debug(f"No planner assigned to wedding {wedding_id}")
+                return
+
+            # Import here to avoid circular imports
+            from app.services.planner_notification_service import planner_notification_service
+
+            await planner_notification_service.notify_rsvp_update(
+                planner_id=planner_email,
+                wedding_id=wedding_id,
+                guest_name=guest_name,
+                status=status,
+                guest_count=guest_count,
+                guest_id=guest_id
+            )
+            logger.info(f"RSVP notification sent to {planner_email} for wedding {wedding_id}")
+
+        except Exception as e:
+            # Don't fail the RSVP submission if notification fails
+            logger.error(f"Failed to send RSVP notification: {str(e)}")

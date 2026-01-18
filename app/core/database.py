@@ -8,6 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class MongoConnector:
     def __init__(self, uri, db_name):
         """Initialize with URI and DB name - maintains backward compatibility"""
@@ -32,12 +33,26 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["guests"]
 
-    # SAAS collections (backward compatible additions)
+    def get_platform_metrics_collection(self):
+        return self.db["platform_metrics"]
+
+    def get_collection(self, name: str):
+        return self.db[name]
+
+    # SAAS collections - User management abstraction layer
     def get_users_collection(self):
-        """Extended users collection for wedding planners and vendors"""
+        """Unified users collection for all user types (ROOT_ADMIN, wedding_planner, vendor)
+
+        This is the single source of truth for user data access. All services should use
+        this method instead of directly accessing mongo.db["users"] to maintain abstraction
+        and enable future optimizations (caching, read replicas, monitoring).
+
+        Returns:
+            AsyncIOMotorCollection: The users collection
+        """
         if self.db is None:
             raise RuntimeError("Database not connected")
-        return self.db["users"]
+        return self.db["users"]  # Unified collection for all user types
 
     def get_subscription_plans_collection(self):
         """Subscription plans configurable by ROOT_ADMIN"""
@@ -69,13 +84,30 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["wedding_checklist"]
 
-    # Existing collections (keeping for backward compatibility)
-    def get_admin_users_collection(self):
-        """Legacy admin users collection - keeping existing functionality"""
+    def get_calendar_tokens_collection(self):
+        """Google Calendar OAuth tokens for planners"""
         if self.db is None:
             raise RuntimeError("Database not connected")
-        return self.db["admin_users"]
+        return self.db["calendar_tokens"]
 
+    def get_planner_tasks_collection(self):
+        """Planner-specific tasks and calendar events"""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["planner_tasks"]
+
+    def get_admin_users_collection(self):
+        """Legacy admin_users collection - returns users collection for backward compatibility
+
+        Note: The admin_users collection no longer exists. All users (ROOT_ADMIN, wedding_planner, vendor)
+        are now stored in the unified 'users' collection. This method is kept for backward compatibility
+        with authentication code that still references it.
+        """
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["users"]  # Redirect to unified users collection
+
+    # Existing collections
     def get_weddings_collection(self):
         """Weddings collection - existing functionality"""
         if self.db is None:
@@ -134,7 +166,7 @@ class MongoConnector:
             self.client.close()
             logger.info("MongoDB connection closed")
 
-# Global instance - maintains backward compatibility
+
 mongo = MongoConnector(settings.MONGO_URI, settings.MONGO_DB)
 
 

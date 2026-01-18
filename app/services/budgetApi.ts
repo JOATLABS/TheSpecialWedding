@@ -1,4 +1,5 @@
 // Budget API service functions
+import { getApiBaseUrl } from '@/utils/env';
 import type {
   BudgetCategory,
   BudgetSummary,
@@ -13,7 +14,7 @@ import type {
   CreateBudgetTemplatePayload
 } from '../types/budget';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const BASE_URL = getApiBaseUrl();
 
 class BudgetApiService {
   private getHeaders(token: string) {
@@ -44,7 +45,9 @@ class BudgetApiService {
       }
     );
     if (!response.ok) throw new Error('Failed to create budget category');
-    return response.json();
+    const payload = await response.json();
+    // Backend returns {message, category}, extract just the category
+    return payload.category || payload;
   }
 
   async updateBudgetCategory(token: string, categoryId: string, data: UpdateBudgetCategoryRequest): Promise<BudgetCategory> {
@@ -57,7 +60,9 @@ class BudgetApiService {
       }
     );
     if (!response.ok) throw new Error('Failed to update budget category');
-    return response.json();
+    const payload = await response.json();
+    // Backend returns {message, category}, extract just the category
+    return payload.category || payload;
   }
 
   async deleteBudgetCategory(token: string, categoryId: string): Promise<void> {
@@ -74,19 +79,20 @@ class BudgetApiService {
   // Budget Summary
   async getBudgetSummary(token: string, weddingId: string): Promise<BudgetSummary> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/summary`,
+      `${BASE_URL}/admin/weddings/${weddingId}/budget`,
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget summary');
-    return response.json();
+    const budgetData = await response.json();
+    return budgetData.summary || budgetData;
   }
 
   // Vendor Quotes
   async getVendorQuotes(token: string, weddingId: string, category?: string): Promise<VendorQuote[]> {
-    const url = category 
+    const url = category
       ? `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes?category=${category}`
       : `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes`;
-    
+
     const response = await fetch(url, { headers: this.getHeaders(token) });
     if (!response.ok) throw new Error('Failed to fetch vendor quotes');
     return response.json();

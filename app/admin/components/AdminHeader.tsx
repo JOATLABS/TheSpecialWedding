@@ -63,8 +63,8 @@ export default function AdminHeader() {
       <header className="glass px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between relative">
         <div>
           <h1 className="font-heading text-xl sm:text-2xl text-wedding-rose">
-            {userProfile?.is_root_admin ? 'Admin Panel' : 
-             userProfile?.is_wedding_planner ? 'Wedding Planner' : 
+            {userProfile?.is_root_admin ? 'Admin Panel' :
+             userProfile?.is_wedding_planner ? 'Wedding Planner' :
              userProfile?.is_vendor ? 'Vendor Portal' : 'Admin Panel'}
           </h1>
           {userProfile && (

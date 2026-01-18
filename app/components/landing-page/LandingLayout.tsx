@@ -17,13 +17,15 @@ import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
-  const theme = useTheme(wedding);
+  // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
+  useTheme(wedding);
+
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
-  
+
   // Get featured image from wedding or use first gallery image
-  const featuredImage = wedding.featured_image 
-    ? `https://media.thespecialwedding.com/${wedding.featured_image}`
+  const featuredImage = wedding.featured_image
+    ? `${process.env.MEDIA_DOMAIN}/${wedding.featured_image}`
     : images.length > 0 ? images[0].url : undefined;
 
   return (
@@ -49,17 +51,17 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         <SectionWrapper id="rsvp">
           <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold mb-4 text-center theme-primary">RSVP</h2>
-            <p className="text-lg text-gray-700 mb-6 text-center">
+            <p className="text-lg text-gray-700 dark:text-gray-200 mb-6 text-center">
               {wedding.rsvp_config?.greeting || "Join us in celebrating our special day! Please let us know if you'll be attending."}
             </p>
             <div className="space-y-4 text-center">
-              <p className="text-gray-600">
-                {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact us directly."}
+              <p className="text-gray-600 dark:text-gray-300">
+                {wedding.rsvp_config?.help_text || "Check your phone for your personal invitation link, or contact the couple directly."}
               </p>
               <div className="inline-flex text-white px-6 py-3 rounded-lg theme-bg-accent">
                 <div>
                   <p className="font-semibold">Need help?</p>
-                  <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "(319) 529-6088 or (405) 708-1076"}</p>
+                  <p className="text-sm">Call us at {wedding.rsvp_config?.phone_numbers?.join(' or ') || "+1 877-780-4236"}</p>
                 </div>
               </div>
             </div>
@@ -91,7 +93,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                 ))}
               </div>
             ) : (
-              <p className="text-center text-gray-600 mb-6">Photos will be added soon!</p>
+              <p className="text-center text-gray-600 dark:text-gray-300 mb-6">Photos will be added soon!</p>
             )}
             <div className="text-center">
               <Link
@@ -108,14 +110,14 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         <SectionWrapper id="registry">
           <GlassCard className="max-w-4xl mx-auto p-8 text-center" depth="far" theme={wedding.theme_config}>
             <h2 className="text-4xl font-bold mb-6 theme-primary">Wedding Registry</h2>
-            <p className="text-lg text-gray-700 mb-8">
-              Your presence is the greatest gift, but if you’d like to celebrate with us, we’re registered at:
+            <p className="text-lg text-gray-700 dark:text-gray-200 mb-8">
+              Your presence is the greatest gift, but if you'd like to celebrate with us, we're registered at:
             </p>
             {wedding.registries && wedding.registries.length > 0 ? (
               <div className="grid md:grid-cols-2 gap-6">
                 {wedding.registries.map((registry, index) => (
-                  <div key={index} className="bg-gray-50 p-6 rounded-lg">
-                    <h3 className="text-xl font-semibold mb-4">{registry.name}</h3>
+                  <div key={index} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-4 dark:text-gray-100">{registry.name}</h3>
                     <a
                       href={registry.url}
                       target="_blank"
@@ -129,8 +131,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
               </div>
             ) : (
               <div className="grid md:grid-cols-2 gap-6">
-                <div className="bg-gray-50 p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold mb-4">Target</h3>
+                <div className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                  <h3 className="text-xl font-semibold mb-4 dark:text-gray-100">Target</h3>
                   <a
                     href="https://www.target.com"
                     target="_blank"
@@ -140,8 +142,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                     View Registry
                   </a>
                 </div>
-                <div className="bg-gray-50 p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold mb-4">Amazon</h3>
+                <div className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                  <h3 className="text-xl font-semibold mb-4 dark:text-gray-100">Amazon</h3>
                   <a
                     href="https://www.amazon.com"
                     target="_blank"
@@ -171,9 +173,22 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
             <div className="space-y-8">
               {wedding.faqs && wedding.faqs.length > 0 ? (
                 wedding.faqs.map((faq, index) => (
-                  <div key={index} className="bg-gray-50 p-6 rounded-lg">
-                    <h3 className="text-xl font-semibold mb-2">{faq.question}</h3>
-                    <p className="text-gray-700">{faq.answer}</p>
+                  <div key={index} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">{faq.question}</h3>
+                    <p className="text-gray-700 dark:text-gray-300">{faq.answer}</p>
+                    {faq.link_url && faq.link_label && (
+                      <a
+                        href={faq.link_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-wedding-rose hover:bg-wedding-rose/90 text-white font-medium rounded-lg transition-colors shadow-sm"
+                      >
+                        {faq.link_label}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    )}
                   </div>
                 ))
               ) : (
@@ -199,9 +214,9 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
                     a: "Yes, complimentary parking is available at the venue. Details with your RSVP confirmation."
                   }
                 ].map(({ q, a }) => (
-                  <div key={q} className="bg-gray-50 p-6 rounded-lg">
-                    <h3 className="text-xl font-semibold mb-2">{q}</h3>
-                    <p className="text-gray-700">{a}</p>
+                  <div key={q} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
+                    <h3 className="text-xl font-semibold mb-2 dark:text-gray-100">{q}</h3>
+                    <p className="text-gray-700 dark:text-gray-300">{a}</p>
                   </div>
                 ))
               )}
@@ -237,7 +252,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         </div>
         
         <div className="text-sm text-gray-300">
-          <p>Developed by Emmanuel Akinwale</p>
+          <p>Developed by JOAT LABS</p>
           <a 
             href="mailto:thedeveloper@thespecialwedding.com" 
             className="hover:text-white transition-colors"

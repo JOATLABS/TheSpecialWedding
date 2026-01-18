@@ -7,20 +7,28 @@ import BudgetProgressBar from './BudgetProgressBar';
 import type { BudgetCategory } from '../../types/budget';
 import { formatDate } from '@/utils/dateFormat';
 
+interface AssignedVendor {
+  vendor_name: string;
+  vendor_email: string;
+  status: string;
+}
+
 interface BudgetCategoryCardProps {
   category: BudgetCategory;
+  assignedVendor?: AssignedVendor;
   onEdit: (category: BudgetCategory) => void;
   onDelete: (categoryId: string) => void;
   onAddPayment: (category: BudgetCategory) => void;
   className?: string;
 }
 
-export default function BudgetCategoryCard({ 
-  category, 
-  onEdit, 
-  onDelete, 
-  onAddPayment, 
-  className = '' 
+export default function BudgetCategoryCard({
+  category,
+  assignedVendor,
+  onEdit,
+  onDelete,
+  onAddPayment,
+  className = ''
 }: BudgetCategoryCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -35,17 +43,17 @@ export default function BudgetCategoryCard({
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'paid': return 'text-green-600 bg-green-100';
-      case 'partial': return 'text-yellow-600 bg-yellow-100';
-      case 'overdue': return 'text-red-600 bg-red-100';
-      default: return 'text-gray-600 bg-gray-100';
+      case 'paid': return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/40';
+      case 'partial': return 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/40';
+      case 'overdue': return 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/40';
+      default: return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-700';
     }
   };
 
   const getPriorityIcon = (priority: number) => {
     const colors = {
       1: 'text-red-500',
-      2: 'text-orange-500', 
+      2: 'text-orange-500',
       3: 'text-yellow-500',
       4: 'text-blue-500',
       5: 'text-gray-500'
@@ -63,10 +71,9 @@ export default function BudgetCategoryCard({
       <div className="flex justify-between items-start mb-3">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-wedding-navy text-lg">
+            <h3 className="font-semibold text-wedding-navy dark:text-white text-lg">
               {category.name}
             </h3>
-            
             {/* Priority indicator */}
             <div className={`flex items-center ${getPriorityIcon(category.priority)}`}>
               {Array.from({ length: category.priority }, (_, i) => (
@@ -76,12 +83,30 @@ export default function BudgetCategoryCard({
               ))}
             </div>
           </div>
-          
           {category.description && (
-            <p className="text-sm text-gray-600 mb-2">{category.description}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{category.description}</p>
+          )}
+          {/* Assigned Vendor */}
+          {assignedVendor && (
+            <div className="flex items-center gap-1.5 text-sm">
+              <svg className="w-4 h-4 text-indigo-500 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="text-indigo-600 dark:text-indigo-400 font-medium">
+                {assignedVendor.vendor_name}
+              </span>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                assignedVendor.status === 'confirmed' || assignedVendor.status === 'contracted'
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                  : assignedVendor.status === 'inquiry'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                    : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400'
+              }`}>
+                {assignedVendor.status}
+              </span>
+            </div>
           )}
         </div>
-        
         {/* Status badge */}
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(category.payment_status)}`}>
           {category.payment_status.charAt(0).toUpperCase() + category.payment_status.slice(1)}
@@ -100,24 +125,24 @@ export default function BudgetCategoryCard({
       {/* Key metrics */}
       <div className="grid grid-cols-3 gap-2 mb-4 text-center text-sm">
         <div>
-          <div className="font-semibold text-wedding-navy">
+          <div className="font-semibold text-wedding-navy dark:text-blue-400">
             {formatCurrency(category.budgeted_amount)}
           </div>
-          <div className="text-gray-600">Budget</div>
+          <div className="text-gray-600 dark:text-gray-400">Budget</div>
         </div>
         <div>
-          <div className="font-semibold text-wedding-rose">
+          <div className="font-semibold text-wedding-rose dark:text-rose-400">
             {formatCurrency(category.actual_spent)}
           </div>
-          <div className="text-gray-600">Spent</div>
+          <div className="text-gray-600 dark:text-gray-400">Spent</div>
         </div>
         <div>
           <div className={`font-semibold ${
-            category.budgeted_amount - category.actual_spent >= 0 ? 'text-green-600' : 'text-red-600'
+            category.budgeted_amount - category.actual_spent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
           }`}>
             {formatCurrency(category.budgeted_amount - category.actual_spent)}
           </div>
-          <div className="text-gray-600">Remaining</div>
+          <div className="text-gray-600 dark:text-gray-400">Remaining</div>
         </div>
       </div>
 
@@ -128,11 +153,11 @@ export default function BudgetCategoryCard({
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center text-sm text-wedding-rose hover:text-wedding-gold transition-colors"
           >
-            <svg 
+            <svg
               className={`w-4 h-4 mr-1 transform transition-transform ${
                 isExpanded ? 'rotate-90' : ''
-              }`} 
-              fill="currentColor" 
+              }`}
+              fill="currentColor"
               viewBox="0 0 20 20"
             >
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
@@ -144,21 +169,21 @@ export default function BudgetCategoryCard({
 
       {/* Expanded subcategories */}
       {isExpanded && category.subcategories.length > 0 && (
-        <div className="mb-4 pl-4 border-l-2 border-gray-200">
+        <div className="mb-4 pl-4 border-l-2 border-gray-200 dark:border-gray-600">
           <div className="space-y-2">
             {category.subcategories.map((subcategory) => (
               <div key={subcategory.id} className="flex justify-between items-center text-sm">
                 <div className="flex-1">
-                  <span className="font-medium">{subcategory.name}</span>
+                  <span className="font-medium dark:text-gray-200">{subcategory.name}</span>
                   {subcategory.notes && (
-                    <span className="text-gray-500 ml-2">({subcategory.notes})</span>
+                    <span className="text-gray-500 dark:text-gray-400 ml-2">({subcategory.notes})</span>
                   )}
                 </div>
                 <div className="text-right">
-                  <div className="font-medium">
+                  <div className="font-medium dark:text-gray-200">
                     {formatCurrency(subcategory.actual_spent)} / {formatCurrency(subcategory.budgeted_amount)}
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
                     {((subcategory.actual_spent / subcategory.budgeted_amount) * 100).toFixed(0)}%
                   </div>
                 </div>
@@ -170,8 +195,8 @@ export default function BudgetCategoryCard({
 
       {/* Vendor quotes indicator */}
       {category.vendor_quotes.length > 0 && (
-        <div className="mb-4 p-2 bg-purple-50 rounded-lg">
-          <div className="flex items-center text-sm text-purple-700">
+        <div className="mb-4 p-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-transparent dark:border-purple-800">
+          <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
             <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
               <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -182,30 +207,29 @@ export default function BudgetCategoryCard({
 
       {/* Recent payments indicator */}
       {category.payments.length > 0 && (
-        <div className="mb-4 p-2 bg-green-50 rounded-lg">
-          <div className="text-sm text-green-700">
+        <div className="mb-4 p-2 bg-green-50 dark:bg-green-900/30 rounded-lg border border-transparent dark:border-green-800">
+          <div className="text-sm text-green-700 dark:text-green-300">
             {category.payments.length} payment{category.payments.length !== 1 ? 's' : ''} recorded
           </div>
         </div>
       )}
 
       {/* Action buttons */}
-      <div className="flex gap-2 pt-2 border-t border-gray-200">
-        <Button 
+      <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+        <Button
           onClick={() => onEdit(category)}
           className="flex-1 text-sm"
         >
           Edit
         </Button>
-        
         <Button
           onClick={() => onAddPayment(category)}
           className="flex-1 text-sm"
         >
           Add Payment
         </Button>
-        
-        <Button 
+
+        <Button
           variant="danger"
           onClick={() => onDelete(category.id)}
           className="text-sm px-3"
@@ -215,7 +239,7 @@ export default function BudgetCategoryCard({
       </div>
 
       {/* Additional info */}
-      <div className="mt-2 text-xs text-gray-500 text-center">
+      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
         Last updated: {formatDate(category.updated_at)}
         {category.percentage_of_total && (
           <span className="ml-2">• {category.percentage_of_total.toFixed(1)}% of total budget</span>

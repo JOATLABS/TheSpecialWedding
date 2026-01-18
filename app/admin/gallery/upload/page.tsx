@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -38,21 +39,30 @@ export default function AdminGalleryUploadPage() {
     if (!token) router.push('/admin/login');
   }, [token, router]);
 
-  // fetch weddings
-  useEffect(() => {
-    fetchWeddings();
-  }, []);
-
-  const fetchWeddings = async () => {
+  const fetchWeddings = useCallback(async () => {
+    if (!token) return;
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/weddings`);
+      const baseUrl = getApiBaseUrl();
+      // Use the authenticated planner endpoint to get assigned weddings
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
       setStatus('Failed to load weddings');
     }
-  };
+  }, [token]);
+
+  // fetch weddings when token is available
+  useEffect(() => {
+    if (token) {
+      fetchWeddings();
+    }
+  }, [token, fetchWeddings]);
 
   const handleWeddingChange = (weddingId: string) => {
     setSelectedWedding(weddingId);
@@ -67,7 +77,7 @@ export default function AdminGalleryUploadPage() {
   const fetchUploadedImages = async (weddingSlug: string) => {
     setLoadingImages(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       
       // Fetch from all folders
       const folders = ['gallery', 'our-story', 'wedding-party'];
@@ -100,7 +110,7 @@ export default function AdminGalleryUploadPage() {
     if (!confirm('Are you sure you want to delete this image?')) return;
     
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       console.log('Deleting image with key:', imageKey);
       
       const response = await fetch(
@@ -153,7 +163,7 @@ export default function AdminGalleryUploadPage() {
         fd.append('wedding_slug', selectedWeddingSlug);
         fd.append('folder', selectedFolder);
         
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const baseUrl = getApiBaseUrl();
         const res = await fetch(
           `${baseUrl}/admin/gallery/upload`,
           {
@@ -182,22 +192,23 @@ export default function AdminGalleryUploadPage() {
   };
 
   return (
-    <main className="min-h-screen bg-wedding-ivory p-6">
+    <div className="space-y-6">
       <div className="w-full max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-elegant text-wedding-navy">Gallery Management</h1>
+        <div className="mb-6">
+          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Gallery Management</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">Upload and manage wedding photos</p>
         </div>
 
         {/* Wedding Selection - Global */}
         <Card className="mb-6">
           <div className="p-6">
-            <label className="block text-sm font-medium text-wedding-navy mb-2">
+            <label className="block text-sm font-medium text-wedding-navy dark:text-gray-300 mb-2">
               Select Wedding
             </label>
             <select
               value={selectedWedding}
               onChange={(e) => handleWeddingChange(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
               required
             >
               <option value="">Choose a wedding...</option>
@@ -219,7 +230,7 @@ export default function AdminGalleryUploadPage() {
                 className={`px-6 py-3 rounded-lg font-medium transition-colors ${
                   activeTab === 'upload'
                     ? 'bg-wedding-sage text-white'
-                    : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+                    : 'bg-white dark:bg-slate-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-slate-600'
                 }`}
               >
                 Upload Images
@@ -229,7 +240,7 @@ export default function AdminGalleryUploadPage() {
                 className={`px-6 py-3 rounded-lg font-medium transition-colors ${
                   activeTab === 'manage'
                     ? 'bg-wedding-sage text-white'
-                    : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+                    : 'bg-white dark:bg-slate-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-slate-600'
                 }`}
               >
                 Manage Gallery ({uploadedImages.length})
@@ -238,23 +249,23 @@ export default function AdminGalleryUploadPage() {
 
             {/* Upload Tab */}
             {activeTab === 'upload' && (
-              <Card className="backdrop-blur-sm bg-white/60">
+              <Card className="backdrop-blur-sm bg-white/60 dark:bg-slate-800/60">
                 <div className="space-y-4 p-6">
                   {/* Folder Selection */}
                   <div>
-                    <label className="block text-sm font-medium text-wedding-navy mb-2">
+                    <label className="block text-sm font-medium text-wedding-navy dark:text-gray-300 mb-2">
                       Upload to Folder
                     </label>
                     <select
                       value={selectedFolder}
                       onChange={(e) => setSelectedFolder(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
                     >
                       <option value="gallery">Public Gallery</option>
                       <option value="our-story">Our Story</option>
                       <option value="wedding-party">Wedding Party</option>
                     </select>
-                    <p className="mt-2 text-sm text-gray-600">
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                       • <strong>Public Gallery</strong>: Photos visible to all guests
                       <br />
                       • <strong>Our Story</strong>: Couple photos for the story section
@@ -296,7 +307,7 @@ export default function AdminGalleryUploadPage() {
                                 url.split('/').pop() || ''
                               );
                               try {
-                                const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+                                const base = getApiBaseUrl();
                                 const res = await fetch(
                                   `${base}/gallery?key=${encodeURIComponent(
                                     'gallery/' + key
@@ -333,13 +344,13 @@ export default function AdminGalleryUploadPage() {
                   </Button>
 
                   {!selectedWedding && (
-                    <p className="text-sm text-gray-600 text-center">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
                       Please select a wedding before uploading images
                     </p>
                   )}
 
                   {status && (
-                    <pre className="mt-2 text-sm whitespace-pre-wrap text-wedding-navy">
+                    <pre className="mt-2 text-sm whitespace-pre-wrap text-wedding-navy dark:text-gray-300">
                       {status}
                     </pre>
                   )}
@@ -349,19 +360,19 @@ export default function AdminGalleryUploadPage() {
 
             {/* Gallery Management Tab */}
             {activeTab === 'manage' && (
-              <Card className="backdrop-blur-sm bg-white/60">
+              <Card className="backdrop-blur-sm bg-white/60 dark:bg-slate-800/60">
                 <div className="p-6">
-                  <h2 className="text-xl font-semibold text-wedding-navy mb-4">
+                  <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">
                     Uploaded Images for {weddings.find(w => (w.id || w._id) === selectedWedding)?.couple_names}
                   </h2>
-                  
+
                   {loadingImages ? (
                     <div className="flex items-center justify-center py-12">
                       <div className="animate-spin h-8 w-8 border-4 border-wedding-sage border-t-transparent rounded-full"></div>
-                      <span className="ml-3 text-wedding-navy">Loading images...</span>
+                      <span className="ml-3 text-wedding-navy dark:text-gray-300">Loading images...</span>
                     </div>
                   ) : uploadedImages.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
+                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                       <p className="text-lg">No images uploaded yet</p>
                       <p className="text-sm mt-2">Switch to Upload tab to add some images</p>
                     </div>
@@ -371,7 +382,7 @@ export default function AdminGalleryUploadPage() {
                         const isFeatured = currentFeaturedImage === (image.key || image.filename);
                         return (
                           <div key={index} className="relative group">
-                            <div className={`relative aspect-square overflow-hidden rounded-lg shadow-lg bg-gray-100 ${isFeatured ? 'ring-4 ring-purple-600' : ''}`}>
+                            <div className={`relative aspect-square overflow-hidden rounded-lg shadow-lg bg-gray-100 dark:bg-slate-700 ${isFeatured ? 'ring-4 ring-purple-600' : ''}`}>
                               <Image
                                 src={image.url || image.file_url || '#'}
                                 alt={`Gallery image ${index + 1}`}
@@ -396,16 +407,16 @@ export default function AdminGalleryUploadPage() {
                           
                           {/* Image Info */}
                           <div className="mt-2">
-                            <p className="text-xs text-gray-600 truncate">
+                            <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
                               {image.key || image.filename || `image-${index + 1}`}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
                               {/* Folder Badge */}
                               <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                image.key?.startsWith('gallery/') ? 'bg-blue-100 text-blue-700' :
-                                image.key?.startsWith('our-story/') ? 'bg-pink-100 text-pink-700' :
-                                image.key?.startsWith('wedding-party/') ? 'bg-purple-100 text-purple-700' :
-                                'bg-gray-100 text-gray-700'
+                                image.key?.startsWith('gallery/') ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' :
+                                image.key?.startsWith('our-story/') ? 'bg-pink-100 dark:bg-pink-900/50 text-pink-700 dark:text-pink-300' :
+                                image.key?.startsWith('wedding-party/') ? 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300' :
+                                'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                               }`}>
                                 {image.key?.startsWith('gallery/') ? 'Gallery' :
                                  image.key?.startsWith('our-story/') ? 'Our Story' :
@@ -413,7 +424,7 @@ export default function AdminGalleryUploadPage() {
                                  'Unknown'}
                               </span>
                               {image.size && (
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
                                   {(image.size / 1024).toFixed(1)} KB
                                 </span>
                               )}
@@ -449,7 +460,7 @@ export default function AdminGalleryUploadPage() {
                               console.log('Set as Background clicked for:', image.key || image.filename);
                               console.log('Selected wedding ID:', selectedWedding);
                               try {
-                                const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+                                const baseUrl = getApiBaseUrl();
                                 const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
                                   method: 'PUT',
                                   headers: {
@@ -487,8 +498,8 @@ export default function AdminGalleryUploadPage() {
 
                   {/* Gallery Stats */}
                   {uploadedImages.length > 0 && (
-                    <div className="mt-6 p-4 bg-wedding-ivory rounded-lg">
-                      <div className="flex justify-between items-center text-sm text-wedding-navy">
+                    <div className="mt-6 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+                      <div className="flex justify-between items-center text-sm text-wedding-navy dark:text-gray-300">
                         <span>Total Images: {uploadedImages.length}</span>
                         <span>Wedding: {selectedWeddingSlug}</span>
                       </div>
@@ -500,7 +511,6 @@ export default function AdminGalleryUploadPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }
-

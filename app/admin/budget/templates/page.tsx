@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
@@ -111,7 +112,7 @@ export default function BudgetTemplatesPage() {
 
   const fetchWeddings = useCallback(async () => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/weddings`);
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
@@ -190,11 +191,10 @@ export default function BudgetTemplatesPage() {
           <h1 className="text-3xl font-heading font-bold text-wedding-navy">
             Budget Templates
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
             Pre-built budget templates for different wedding types and sizes
           </p>
         </div>
-        
         <div className="flex gap-3">
           <Button
             className="bg-purple-600 hover:bg-purple-700"
@@ -212,16 +212,16 @@ export default function BudgetTemplatesPage() {
       {loading ? (
         <div className="text-center py-12">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
-          <p className="mt-2 text-gray-600">Loading budget templates...</p>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">Loading budget templates...</p>
         </div>
       ) : error ? (
         <Card className="p-8 text-center">
-          <p className="text-red-600 mb-4">{error}</p>
+          <p className="text-red-600 dark:text-red-300 mb-4">{error}</p>
           <Button onClick={fetchTemplates}>Retry</Button>
         </Card>
       ) : templates.length === 0 ? (
         <Card className="p-8 text-center">
-          <p className="text-gray-600 mb-4">
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
             No budget templates available at this time.
           </p>
         </Card>
@@ -239,7 +239,6 @@ export default function BudgetTemplatesPage() {
                     {template.wedding_type.charAt(0).toUpperCase() + template.wedding_type.slice(1)}
                   </span>
                 </div>
-                
                 {template.is_public && (
                   <div className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
                     Public
@@ -249,14 +248,14 @@ export default function BudgetTemplatesPage() {
 
               {/* Description */}
               {template.description && (
-                <p className="text-gray-600 text-sm mb-4">
+                <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
                   {template.description}
                 </p>
               )}
 
               {/* Budget Range */}
-              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                <div className="text-sm text-gray-600 mb-1">Recommended Budget Range</div>
+              <div className="mb-4 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Recommended Budget Range</div>
                 <div className="font-semibold text-wedding-navy">
                   {formatCurrency(template.target_budget_min)} - {formatCurrency(template.target_budget_max)}
                 </div>
@@ -264,8 +263,8 @@ export default function BudgetTemplatesPage() {
 
               {/* Guest Count Range */}
               <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                <div className="text-sm text-gray-600 mb-1">Guest Count Range</div>
-                <div className="font-semibold text-blue-700">
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Guest Count Range</div>
+                <div className="font-semibold text-blue-700 dark:text-blue-300">
                   {template.guest_count_range.min} - {template.guest_count_range.max} guests
                 </div>
               </div>
@@ -276,7 +275,7 @@ export default function BudgetTemplatesPage() {
                 <div className="space-y-2">
                   {template.categories.slice(0, 4).map((category, index) => (
                     <div key={index} className="flex justify-between items-center text-sm">
-                      <span className="text-gray-700">{category.name}</span>
+                      <span className="text-gray-700 dark:text-gray-300">{category.name}</span>
                       <div className="flex items-center">
                         <span className="font-medium text-wedding-rose mr-2">
                           {category.percentage}%
@@ -292,7 +291,7 @@ export default function BudgetTemplatesPage() {
                     </div>
                   ))}
                   {template.categories.length > 4 && (
-                    <div className="text-xs text-gray-500 text-center">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
                       +{template.categories.length - 4} more categories
                     </div>
                   )}
@@ -311,7 +310,7 @@ export default function BudgetTemplatesPage() {
               </Button>
 
               {/* Template Info */}
-              <div className="mt-4 text-xs text-gray-500 text-center border-t border-gray-200 pt-3">
+              <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center border-t border-gray-200 dark:border-gray-700 pt-3">
                 {template.created_by && (
                   <div>Created by: {template.created_by}</div>
                 )}
@@ -325,20 +324,19 @@ export default function BudgetTemplatesPage() {
       {/* Apply Template Modal */}
       {showApplyModal && selectedTemplate && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full">
             <h2 className="text-xl font-bold mb-4 text-wedding-navy">
               Apply Template: {selectedTemplate.name}
             </h2>
-            
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                   Select Wedding *
                 </label>
                 <select
                   value={selectedWedding}
                   onChange={(e) => setSelectedWedding(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   required
                 >
                   <option value="">Choose a wedding...</option>
@@ -349,9 +347,8 @@ export default function BudgetTemplatesPage() {
                   ))}
                 </select>
               </div>
-              
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                   Total Budget Amount *
                 </label>
                 <input
@@ -360,18 +357,17 @@ export default function BudgetTemplatesPage() {
                   step="0.01"
                   value={totalBudget}
                   onChange={(e) => setTotalBudget(parseFloat(e.target.value) || 0)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   placeholder="Enter total budget amount..."
                   required
                 />
-                <div className="text-xs text-gray-500 mt-1">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Recommended: {formatCurrency(selectedTemplate.target_budget_min)} - {formatCurrency(selectedTemplate.target_budget_max)}
                 </div>
               </div>
-              
               {/* Template Preview */}
-              <div className="border border-gray-200 rounded-lg p-3">
-                <div className="text-sm font-medium text-gray-700 mb-2">Budget Breakdown Preview:</div>
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Budget Breakdown Preview:</div>
                 <div className="space-y-1 text-xs">
                   {selectedTemplate.categories.map((category, index) => (
                     <div key={index} className="flex justify-between">
@@ -383,30 +379,29 @@ export default function BudgetTemplatesPage() {
                   ))}
                 </div>
               </div>
-              
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
                 <div className="flex items-start">
                   <svg className="w-5 h-5 text-yellow-600 mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
                   <div className="text-yellow-800 text-sm">
-                    <strong>Note:</strong> This will create new budget categories for the selected wedding. 
+                    <strong>Note:</strong> This will create new budget categories for the selected wedding.
                     Existing categories will not be affected.
                   </div>
                 </div>
               </div>
             </div>
-            
+
             <div className="flex gap-3 mt-6">
-              <Button 
-                onClick={handleApplyTemplate} 
+              <Button
+                onClick={handleApplyTemplate}
                 className="flex-1"
                 disabled={!selectedWedding || !totalBudget}
               >
                 Apply Template
               </Button>
-              <Button 
-                variant="danger" 
+              <Button
+                variant="danger"
                 onClick={() => {
                   setShowApplyModal(false);
                   resetApplyForm();

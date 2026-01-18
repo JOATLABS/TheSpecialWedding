@@ -1,0 +1,26 @@
+# Wrangler configuration for the Uptime Monitor Cron Worker
+# This Worker monitors backend API health and sends alerts if down
+#
+# Deploy with:
+# wrangler deploy --config cloudflare-workers/uptime.wrangler.toml
+#
+# Set secrets:
+# wrangler secret put RESEND_API_KEY --config cloudflare-workers/uptime.wrangler.toml
+
+name = "uptime-cron"
+main = "uptime-cron.js"
+compatibility_date = "2024-10-01"
+
+[triggers]
+# Check every 5 minutes
+crons = ["*/5 * * * *"]
+
+[vars]
+# Base URL for the FastAPI backend
+API_URL = "https://api.thespecialwedding.com"
+
+# Email for downtime alerts
+ALERT_EMAIL = "thedeveloper@thespecialwedding.com"
+
+# Note: RESEND_API_KEY must be set via wrangler secret or Cloudflare dashboard
+# wrangler secret put RESEND_API_KEY --config cloudflare-workers/uptime.wrangler.toml

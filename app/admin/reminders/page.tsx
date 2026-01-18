@@ -1,8 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
+import { MultiSelect } from '@/components/ui/MultiSelect';
+import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
+import { Sparkles, X } from 'lucide-react';
 
 interface Wedding {
  id?: string;
@@ -66,6 +70,14 @@ export default function AdminRemindersPage() {
  const [inviteMessage, setInviteMessage] = useState<string>('');
  const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
 
+ // AI Drafting states
+ const [showAiDraftModal, setShowAiDraftModal] = useState(false);
+ const [aiDraftLoading, setAiDraftLoading] = useState(false);
+ const [aiDraftTone, setAiDraftTone] = useState<'formal' | 'friendly' | 'casual'>('friendly');
+ const [aiDraftType, setAiDraftType] = useState<string>('rsvp_reminder');
+ const [aiDraftTarget, setAiDraftTarget] = useState<'customMessage' | 'inviteMessage'>('customMessage');
+ const [aiDraftError, setAiDraftError] = useState<string | null>(null);
+
  const formatLogTimestamp = (timestamp: string) =>
    formatDateTime(timestamp, {
      month: 'short',
@@ -76,21 +88,28 @@ export default function AdminRemindersPage() {
    });
 
  const fetchWeddings = useCallback(async () => {
+ if (!token) return;
+
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- const response = await fetch(`${baseUrl}/weddings`);
+ const baseUrl = getApiBaseUrl();
+ const response = await fetch(`${baseUrl}/admin/weddings`, {
+   headers: {
+     'Authorization': `Bearer ${token}`,
+     'Content-Type': 'application/json',
+   },
+ });
  const data = await response.json();
  setWeddings(Array.isArray(data) ? data : []);
  } catch (err) {
  setError('Failed to load weddings');
  }
- }, []);
+ }, [token]);
 
  const fetchGuests = useCallback(async () => {
  if (!selectedWedding || !token) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(
  `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
  {
@@ -115,7 +134,7 @@ export default function AdminRemindersPage() {
  if (!token) return;
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
 
  // Fetch both SMS and Email logs
  const [smsResponse, emailResponse] = await Promise.all([
@@ -172,19 +191,19 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  let totalSent = 0;
  let totalFailed = 0;
 
  // Send SMS invites
  if (channel === 'sms' || channel === 'both') {
- const response = await fetch(`${baseUrl}/admin/admin/reminders/send-personalized-links`, {
+ const response = await fetch(`${baseUrl}/admin/reminders/send-personalized-links`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
- body: JSON.stringify({ 
+ body: JSON.stringify({
  slug: selectedWeddingData.slug,
  custom_message: inviteMessage.trim() || null
  }),
@@ -199,7 +218,7 @@ export default function AdminRemindersPage() {
  // Send Email invites
  if (channel === 'email' || channel === 'both') {
  let response;
- 
+
  if (emailAttachment) {
  // Use multipart/form-data endpoint when attachment is present
  const formData = new FormData();
@@ -207,7 +226,7 @@ export default function AdminRemindersPage() {
  if (emailSubject) formData.append('custom_subject', emailSubject);
  if (emailHtml) formData.append('custom_html', emailHtml);
  formData.append('attachment', emailAttachment);
- 
+
  response = await fetch(`${baseUrl}/admin/email/send-invites-with-attachment`, {
  method: 'POST',
  headers: {
@@ -223,7 +242,7 @@ export default function AdminRemindersPage() {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
- body: JSON.stringify({ 
+ body: JSON.stringify({
  wedding_slug: selectedWeddingData.slug,
  custom_subject: emailSubject || null,
  custom_html: emailHtml || null
@@ -270,7 +289,7 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  let totalSent = 0;
  let totalFailed = 0;
 
@@ -347,8 +366,8 @@ export default function AdminRemindersPage() {
  setSuccess('');
 
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- const response = await fetch(`${baseUrl}/admin/reminders/send`, {
+ const baseUrl = getApiBaseUrl();
+ const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -365,7 +384,12 @@ export default function AdminRemindersPage() {
  throw new Error(errorData.detail || 'Failed to send messages');
  }
 
- setSuccess(`Successfully sent messages to ${selectedGuests.length} guests!`);
+ const result = await response.json();
+ if (result.sent > 0) {
+ setSuccess(`Successfully sent messages to ${result.sent} guests!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`);
+ } else {
+ setError('No messages sent. Guests may have opted out or have no phone numbers.');
+ }
  setCustomMessage('');
  setSelectedGuests([]);
  fetchMessageHistory();
@@ -376,10 +400,76 @@ export default function AdminRemindersPage() {
  }
  };
 
+ // AI Draft handler
+ const handleAiDraft = async () => {
+   if (!selectedWedding) {
+     setAiDraftError('Please select a wedding first');
+     return;
+   }
+
+   setAiDraftLoading(true);
+   setAiDraftError(null);
+
+   try {
+     const baseUrl = getApiBaseUrl();
+     const response = await fetch(`${baseUrl}/admin/ai/generate-message`, {
+       method: 'POST',
+       headers: {
+         'Authorization': `Bearer ${token}`,
+         'Content-Type': 'application/json',
+       },
+       body: JSON.stringify({
+         message_type: aiDraftType,
+         wedding_id: selectedWedding,
+         tone: aiDraftTone,
+         recipient_context: targetGroup === 'guests' ? 'wedding guest' : 'plus one',
+         couple_names: selectedWeddingData?.couple_names,
+         wedding_date: selectedWeddingData?.date,
+         event_name: eventType.replace('_', ' '),
+       }),
+     });
+
+     if (!response.ok) {
+       const error = await response.json();
+       throw new Error(error.detail || 'Failed to generate message');
+     }
+
+     const data = await response.json();
+     const messageContent = data.message;
+
+     // Apply the generated message to the appropriate field
+     if (aiDraftTarget === 'customMessage') {
+       if (channel === 'sms' || channel === 'both') {
+         setCustomMessage(messageContent.sms_version || messageContent.body || '');
+       } else {
+         setCustomMessage(messageContent.body || '');
+       }
+       if ((channel === 'email' || channel === 'both') && messageContent.subject) {
+         setEmailSubject(messageContent.subject);
+       }
+     } else {
+       setInviteMessage(messageContent.sms_version || messageContent.body || '');
+     }
+
+     setShowAiDraftModal(false);
+     setSuccess('AI message generated! Review and edit as needed.');
+   } catch (err) {
+     setAiDraftError(err instanceof Error ? err.message : 'Failed to generate message');
+   } finally {
+     setAiDraftLoading(false);
+   }
+ };
+
+ const openAiDraftModal = (target: 'customMessage' | 'inviteMessage') => {
+   setAiDraftTarget(target);
+   setAiDraftError(null);
+   setShowAiDraftModal(true);
+ };
+
  const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
  const guestsWithPhone = guests.filter(g => g.phone && g.phone.trim() !== '');
  const guestsWithEmail = guests.filter(g => g.email && g.email.trim() !== '');
- const guestsWithPhoneOrEmail = guests.filter(g => 
+ const guestsWithPhoneOrEmail = guests.filter(g =>
  (g.phone && g.phone.trim() !== '') || (g.email && g.email.trim() !== '')
  );
  console.log('All guests:', guests);
@@ -388,28 +478,26 @@ export default function AdminRemindersPage() {
  console.log('Token exists:', !!token);
 
  return (
- <div className="min-h-screen bg-wedding-ivory p-4 sm:p-6">
+ <div className="space-y-6">
  <div className="max-w-7xl mx-auto">
  {/* Header */}
- <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-8">
- <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-8 py-6">
- <h1 className="text-3xl font-bold text-white">Reminders & Invites</h1>
- <p className="text-blue-100 mt-2">Send invitations and reminders via SMS or Email</p>
- </div>
+ <div className="mb-6">
+   <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Reminders & Invites</h1>
+   <p className="text-slate-600 dark:text-slate-400 mt-1">Send invitations and reminders via SMS or Email</p>
  </div>
 
  {/* Wedding Selection and Channel */}
- <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+ <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
  <div>
- <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 mb-2">
+ <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
  Select Wedding
  </label>
  <select
  id="wedding"
  value={selectedWedding}
  onChange={(e) => setSelectedWedding(e.target.value)}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  >
  <option value="">Choose a wedding...</option>
  {weddings.map((wedding) => (
@@ -419,9 +507,9 @@ export default function AdminRemindersPage() {
  ))}
  </select>
  </div>
- 
+
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
  Communication Channel
  </label>
  <div className="flex gap-4">
@@ -462,13 +550,13 @@ export default function AdminRemindersPage() {
 
  {/* Status Messages */}
  {error && (
- <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
- <p className="text-red-700">{error}</p>
+ <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+ <p className="text-red-700 dark:text-red-300 dark:text-red-300">{error}</p>
  </div>
  )}
  {success && (
- <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
- <p className="text-green-700">{success}</p>
+ <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+ <p className="text-green-700 dark:text-green-300 dark:text-green-300">{success}</p>
  </div>
  )}
 
@@ -479,7 +567,7 @@ export default function AdminRemindersPage() {
  className={`px-6 py-3 rounded-lg font-medium transition-colors ${
  activeTab === 'invites'
  ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+ : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
  }`}
  >
  Send Invites
@@ -489,7 +577,7 @@ export default function AdminRemindersPage() {
  className={`px-6 py-3 rounded-lg font-medium transition-colors ${
  activeTab === 'reminders'
  ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+ : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
  }`}
  >
  Event Reminders
@@ -499,7 +587,7 @@ export default function AdminRemindersPage() {
  className={`px-6 py-3 rounded-lg font-medium transition-colors ${
  activeTab === 'individual'
  ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+ : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
  }`}
  >
  Individual Messages
@@ -509,7 +597,7 @@ export default function AdminRemindersPage() {
  className={`px-6 py-3 rounded-lg font-medium transition-colors ${
  activeTab === 'history'
  ? 'bg-wedding-navy text-white'
- : 'bg-white text-wedding-navy hover:bg-wedding-ivory'
+ : 'bg-white text-wedding-navy dark:text-gray-100 hover:bg-gray-100 dark:bg-transparent'
  }`}
  >
  Message History ({messageHistory.length})
@@ -518,24 +606,24 @@ export default function AdminRemindersPage() {
 
  {/* Send Invite Links Tab */}
  {activeTab === 'invites' && (
- <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Wedding Invitations</h2>
- 
+ <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Wedding Invitations</h2>
+
  {selectedWedding ? (
  <div className="space-y-6">
- <div className="p-6 bg-wedding-ivory rounded-lg">
- <h3 className="font-semibold text-wedding-navy mb-2">Wedding Details:</h3>
- <p className="text-wedding-navy">{selectedWeddingData?.couple_names}</p>
- <p className="text-sm text-gray-600">Date: {selectedWeddingData?.date}</p>
- <p className="text-sm text-gray-600">Slug: {selectedWeddingData?.slug}</p>
+ <div className="p-6 bg-gray-100 dark:bg-slate-700 dark:bg-transparent rounded-lg">
+ <h3 className="font-semibold text-wedding-navy dark:text-gray-100 mb-2">Wedding Details:</h3>
+ <p className="text-wedding-navy dark:text-gray-100">{selectedWeddingData?.couple_names}</p>
+ <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-400">Date: {selectedWeddingData?.date}</p>
+ <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-400">Slug: {selectedWeddingData?.slug}</p>
  <div className="mt-2 space-y-1">
- <p className="text-sm text-gray-600">
+ <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-400">
  Guests with phone numbers: {guestsWithPhone.length}
  </p>
- <p className="text-sm text-gray-600">
+ <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-400">
  Guests with email addresses: {guestsWithEmail.length}
  </p>
- <p className="text-sm text-gray-600">
+ <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-400">
  Total reachable guests: {guestsWithPhoneOrEmail.length}
  </p>
  </div>
@@ -544,7 +632,7 @@ export default function AdminRemindersPage() {
  {/* SMS Message Fields */}
  {(channel === 'sms' || channel === 'both') && (
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
  SMS Invitation Message (Optional)
  </label>
  <textarea
@@ -552,9 +640,9 @@ export default function AdminRemindersPage() {
  onChange={(e) => setInviteMessage(e.target.value)}
  placeholder="Enter custom SMS message..."
  rows={3}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
- <p className="text-sm text-gray-500 mt-1">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Use {"{url}"} for the RSVP link and {"{name}"} for the guest’s name. Leave empty to use default message.
  </p>
  </div>
@@ -564,7 +652,7 @@ export default function AdminRemindersPage() {
  {(channel === 'email' || channel === 'both') && (
  <>
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
  Email Subject (Optional)
  </label>
  <input
@@ -572,12 +660,12 @@ export default function AdminRemindersPage() {
  value={emailSubject}
  onChange={(e) => setEmailSubject(e.target.value)}
           placeholder={`You’re Invited - ${selectedWeddingData?.couple_names}`}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
  Custom Email HTML (Optional)
  </label>
  <textarea
@@ -585,16 +673,16 @@ export default function AdminRemindersPage() {
  onChange={(e) => setEmailHtml(e.target.value)}
  placeholder="Enter custom HTML for email body. Leave empty to use beautiful default template..."
  rows={6}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent font-mono text-sm"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent font-mono text-sm"
  />
- <p className="text-sm text-gray-500 mt-1">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  Available placeholders: {"{name}"}, {"{guest_name}"}, {"{url}"}, {"{rsvp_url}"}, {"{couple_names}"}, {"{wedding_date}"}
  </p>
  <div className="mt-2">
  <button
  type="button"
  onClick={async () => {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/email/preview-invitation?guest_name=John Doe&couple_names=${selectedWeddingData?.couple_names}&wedding_date=${selectedWeddingData?.date}`, {
  headers: { 'Authorization': `Bearer ${token}` },
  });
@@ -604,7 +692,7 @@ export default function AdminRemindersPage() {
  setShowEmailPreview(true);
  }
  }}
- className="text-sm text-wedding-rose hover:text-wedding-navy"
+ className="text-sm text-wedding-rose hover:text-wedding-navy dark:text-gray-100"
  >
  Preview Default Email Template →
  </button>
@@ -612,7 +700,7 @@ export default function AdminRemindersPage() {
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
  Email Attachment (Optional)
  </label>
  <div className="mt-1 flex items-center">
@@ -639,20 +727,20 @@ export default function AdminRemindersPage() {
  />
  </div>
  {emailAttachment && (
- <div className="mt-2 flex items-center justify-between bg-gray-50 p-2 rounded">
- <span className="text-sm text-gray-600">
+ <div className="mt-2 flex items-center justify-between bg-gray-50 dark:bg-slate-700 p-2 rounded">
+ <span className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-400">
  {emailAttachment.name} ({(emailAttachment.size / 1024 / 1024).toFixed(2)} MB)
  </span>
  <button
  type="button"
  onClick={() => setEmailAttachment(null)}
- className="text-red-500 hover:text-red-700 text-sm"
+ className="text-red-500 hover:text-red-700 dark:text-red-300 text-sm"
  >
  Remove
  </button>
  </div>
  )}
- <p className="text-sm text-gray-500 mt-1">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
  Accepted formats: PDF, Word documents, or images (max 10MB)
  </p>
  </div>
@@ -663,8 +751,8 @@ export default function AdminRemindersPage() {
  {channel === 'sms' && inviteMessage.trim() && (
  <div className="p-6 bg-blue-50 rounded-lg">
  <h4 className="font-medium text-blue-900 mb-2">SMS Preview:</h4>
- <p className="text-blue-700 text-sm">
-        “{inviteMessage.replace('{url}', `https://thespecialwedding.com/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}”
+ <p className="text-blue-700 dark:text-blue-300 text-sm">
+        “{inviteMessage.replace('{url}', `${process.env.NEXT_PUBLIC_FRONTEND_URL || ''}/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}”
  </p>
  </div>
  )}
@@ -672,18 +760,18 @@ export default function AdminRemindersPage() {
  {/* Email Preview Modal */}
  {showEmailPreview && (
  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
- <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-hidden">
+ <div className="bg-white dark:bg-slate-800 rounded-lg max-w-4xl max-h-[90vh] overflow-hidden">
  <div className="p-4 border-b flex justify-between items-center">
  <h3 className="text-lg font-semibold">Email Preview</h3>
  <button
  onClick={() => setShowEmailPreview(false)}
- className="text-gray-500 hover:text-gray-700"
+ className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300"
  >
- 
+
  </button>
  </div>
  <div className="p-4 overflow-y-auto max-h-[70vh]">
- <iframe 
+ <iframe
  srcDoc={emailPreviewHtml}
  className="w-full h-[600px] border rounded"
  />
@@ -705,37 +793,35 @@ export default function AdminRemindersPage() {
  </button>
  </div>
  ) : (
- <p className="text-gray-500">Please select a wedding to send invitations.</p>
+ <p className="text-gray-500 dark:text-gray-400 dark:text-gray-400">Please select a wedding to send invitations.</p>
  )}
  </div>
  )}
 
  {/* Event Reminders Tab */}
  {activeTab === 'reminders' && (
- <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Event Reminders</h2>
- 
+ <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Event Reminders</h2>
  <div className="space-y-6">
  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Event Type</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">Event Type</label>
  <select
  value={eventType}
  onChange={(e) => setEventType(e.target.value)}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  >
  <option value="traditional">Traditional</option>
  <option value="white_wedding">White Wedding</option>
  <option value="reception">Reception</option>
  </select>
  </div>
- 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">Target Audience</label>
  <select
  value={targetGroup}
  onChange={(e) => setTargetGroup(e.target.value)}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  >
  <option value="guests">Guests Only</option>
  <option value="plus-ones">Plus-Ones Only</option>
@@ -745,15 +831,25 @@ export default function AdminRemindersPage() {
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Custom Message</label>
+ <div className="flex items-center justify-between mb-2">
+   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Custom Message</label>
+   <button
+     type="button"
+     onClick={() => openAiDraftModal('customMessage')}
+     className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+   >
+     <Sparkles className="w-4 h-4" />
+     Draft with AI
+   </button>
+ </div>
  <textarea
  value={customMessage}
  onChange={(e) => setCustomMessage(e.target.value)}
  placeholder="Enter your reminder message..."
  rows={4}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
- <p className="text-sm text-gray-500 mt-1">
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
         This will be sent to guests who have RSVP’d for the {eventType.replace('_', ' ')} event.
  </p>
  <p className="text-sm text-yellow-600 mt-1">
@@ -774,47 +870,50 @@ export default function AdminRemindersPage() {
 
  {/* Individual Messages Tab */}
  {activeTab === 'individual' && (
- <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Send Individual Messages</h2>
- 
+ <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Individual Messages</h2>
  {selectedWedding ? (
  <div className="space-y-6">
- <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">
- Select Guests ({selectedGuests.length} selected)
- </label>
- <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg p-4">
- {guestsWithPhone.map((guest) => (
- <label key={guest.id || guest._id} className="flex items-center space-x-3 py-2">
- <input
- type="checkbox"
- checked={selectedGuests.includes(guest.token)}
- onChange={(e) => {
- if (e.target.checked) {
- setSelectedGuests([...selectedGuests, guest.token]);
- } else {
- setSelectedGuests(selectedGuests.filter(token => token !== guest.token));
- }
- }}
- className="rounded border-gray-300 text-wedding-rose focus:ring-wedding-rose"
+ {/* Modern Multi-Select Dropdown */}
+ <MultiSelect
+ label={`Select Guests (${selectedGuests.length} selected)`}
+ options={guestsWithPhone.map((guest) => ({
+ value: guest.token,
+ label: guest.name,
+ sublabel: guest.phone || undefined,
+ }))}
+ selected={selectedGuests}
+ onChange={setSelectedGuests}
+ placeholder="Click to select guests..."
+ searchPlaceholder="Search by name or phone..."
+ emptyMessage="No guests with phone numbers found"
  />
- <span className="text-sm">
- {guest.name} ({guest.phone})
- </span>
+
+ {/* Message Enrichment Options */}
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+ Add to Message
  </label>
- ))}
- </div>
+ <MessageEnrichment
+ onInsert={(text) => {
+ setCustomMessage((prev) => prev ? `${prev}\n${text}` : text);
+ }}
+ />
  </div>
 
+ {/* Message Textarea */}
  <div>
- <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Message</label>
  <textarea
  value={customMessage}
  onChange={(e) => setCustomMessage(e.target.value)}
  placeholder="Enter your custom message..."
- rows={4}
- className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ rows={5}
+ className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent resize-none"
  />
+ <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+ Tip: Use the buttons above to quickly add links, locations, or form references to your message.
+ </p>
  </div>
 
  <button
@@ -826,26 +925,25 @@ export default function AdminRemindersPage() {
  </button>
  </div>
  ) : (
- <p className="text-gray-500">Please select a wedding to send individual messages.</p>
+ <p className="text-gray-500 dark:text-gray-400">Please select a wedding to send individual messages.</p>
  )}
  </div>
  )}
 
  {/* Message History Tab */}
  {activeTab === 'history' && (
- <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
- <h2 className="text-2xl font-bold text-wedding-navy mb-6">Message History</h2>
- 
+ <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Message History</h2>
  {messageHistory.length === 0 ? (
- <p className="text-gray-500">No messages sent yet.</p>
+ <p className="text-gray-500 dark:text-gray-400 dark:text-gray-400">No messages sent yet.</p>
  ) : (
  <>
  {/* Mobile Card View */}
  <div className="md:hidden space-y-4">
  {messageHistory.map((log, index) => (
- <div key={index} className="bg-gray-50 rounded-lg p-4 space-y-2">
+ <div key={index} className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 space-y-2">
  <div className="flex justify-between items-start">
- <div className="text-xs text-gray-500">
+ <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-400">
  {formatLogTimestamp(log.sent_at)}
  </div>
  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -868,45 +966,45 @@ export default function AdminRemindersPage() {
  {log.target_type}
  </span>
  )}
- <span className="text-xs text-gray-600">{log.event_type || log.email_type || ''}</span>
+ <span className="text-xs text-gray-600 dark:text-gray-400 dark:text-gray-400">{log.event_type || log.email_type || ''}</span>
  </div>
- <div className="text-sm text-gray-700 break-words">{log.message || log.subject || ''}</div>
+ <div className="text-sm text-gray-700 dark:text-gray-300 break-words">{log.message || log.subject || ''}</div>
  </div>
  ))}
  </div>
 
  {/* Desktop Table View */}
  <div className="hidden md:block overflow-x-auto">
- <table className="min-w-full divide-y divide-gray-200">
- <thead className="bg-gray-50">
+ <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+ <thead className="bg-gray-50 dark:bg-slate-700">
  <tr>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Date/Time
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  To
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Channel
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Type
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Status
  </th>
- <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Content
  </th>
  </tr>
  </thead>
- <tbody className="bg-white divide-y divide-gray-200">
+ <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
  {messageHistory.map((log, index) => (
  <tr key={index}>
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 dark:text-gray-100">
  {formatLogTimestamp(log.sent_at)}
  </td>
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 dark:text-gray-100">
  {log.phone || log.to || 'N/A'}
  </td>
  <td className="px-6 py-4 whitespace-nowrap">
@@ -916,7 +1014,7 @@ export default function AdminRemindersPage() {
  {log.provider === 'resend' ? 'Email' : 'SMS'}
  </span>
  </td>
- <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+ <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 dark:text-gray-100">
  {log.target_type || log.email_type || log.event_type || '-'}
  </td>
  <td className="px-6 py-4 whitespace-nowrap">
@@ -926,7 +1024,7 @@ export default function AdminRemindersPage() {
  {log.status}
  </span>
  </td>
- <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
+ <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
  {log.message || log.subject || ''}
  </td>
  </tr>
@@ -939,6 +1037,101 @@ export default function AdminRemindersPage() {
  </div>
  )}
  </div>
+
+ {/* AI Draft Modal */}
+ {showAiDraftModal && (
+   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+     <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
+         <div className="flex items-center gap-2">
+           <Sparkles className="w-5 h-5 text-white" />
+           <h2 className="text-lg font-semibold text-white">AI Message Draft</h2>
+         </div>
+         <button onClick={() => setShowAiDraftModal(false)} className="text-white/80 hover:text-white">
+           <X className="w-5 h-5" />
+         </button>
+       </div>
+
+       <div className="p-6 space-y-4">
+         {aiDraftError && (
+           <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+             {aiDraftError}
+           </div>
+         )}
+
+         <div>
+           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+             Message Type
+           </label>
+           <select
+             value={aiDraftType}
+             onChange={(e) => setAiDraftType(e.target.value)}
+             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+           >
+             <option value="rsvp_reminder">RSVP Reminder</option>
+             <option value="event_reminder">Event Reminder</option>
+             <option value="save_the_date">Save the Date</option>
+             <option value="thank_you">Thank You</option>
+             <option value="vendor_reminder">Vendor Reminder</option>
+             <option value="custom">Custom Message</option>
+           </select>
+         </div>
+
+         <div>
+           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+             Tone
+           </label>
+           <div className="flex gap-2">
+             {(['formal', 'friendly', 'casual'] as const).map((tone) => (
+               <button
+                 key={tone}
+                 type="button"
+                 onClick={() => setAiDraftTone(tone)}
+                 className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium capitalize transition-colors ${
+                   aiDraftTone === tone
+                     ? 'bg-purple-600 text-white'
+                     : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                 }`}
+               >
+                 {tone}
+               </button>
+             ))}
+           </div>
+         </div>
+
+         <p className="text-sm text-gray-500 dark:text-gray-400">
+           AI will generate a message based on your wedding details and selected options.
+         </p>
+       </div>
+
+       <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end gap-3">
+         <button
+           onClick={() => setShowAiDraftModal(false)}
+           className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+         >
+           Cancel
+         </button>
+         <button
+           onClick={handleAiDraft}
+           disabled={aiDraftLoading}
+           className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+         >
+           {aiDraftLoading ? (
+             <>
+               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+               Generating...
+             </>
+           ) : (
+             <>
+               <Sparkles className="w-4 h-4" />
+               Generate
+             </>
+           )}
+         </button>
+       </div>
+     </div>
+   </div>
+ )}
  </div>
  );
 }

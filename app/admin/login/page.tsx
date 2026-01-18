@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { FormEvent, useMemo, useState } from 'react';
 
-import { SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
 import { Button } from '@/components/ui/Button';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -157,19 +156,6 @@ export default function AdminLoginPage() {
                 </div>
 
                 <div className="mt-6 space-y-5">
-                  <div>
-                    <SocialAuthButtons flow="login" redirectPath="/admin" />
-                    <p className="mt-3 text-xs text-wedding-navy/60">
-                      Use your organisation&apos;s Google Workspace or Apple ID to keep access fast, secure, and passwordless on any device.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-xs font-medium uppercase tracking-[0.3em] text-wedding-navy/40">
-                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-wedding-navy/30 to-transparent" aria-hidden="true" />
-                    <span>Or email</span>
-                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-wedding-navy/30 to-transparent" aria-hidden="true" />
-                  </div>
-
                   <form className="space-y-4" onSubmit={handleSubmit} noValidate>
                     <div className="space-y-2">
                       <label htmlFor="email" className="text-sm font-medium text-wedding-navy">

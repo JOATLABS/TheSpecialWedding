@@ -98,8 +98,8 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const petals = useRef<Petal[]>([]);
   const sprites = useRef<HTMLCanvasElement[]>([]);
-  const rafRef = useRef<number | null>(null);
-  const resizeRef = useRef<number | null>(null);
+  const rafRef = useRef<number | undefined>(undefined);
+  const resizeRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const canvas = canvasRef.current;

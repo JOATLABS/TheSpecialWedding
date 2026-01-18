@@ -1,24 +1,58 @@
-const path = require('path');
-
 /** @type {import('next').NextConfig} */
+const buildRemotePattern = (value, defaultProtocol = 'https') => {
+  if (!value) return null
+
+  const normalized = /^https?:\/\//i.test(value) ? value : `${defaultProtocol}://${value}`
+
+  try {
+    const url = new URL(normalized)
+    return {
+      protocol: url.protocol.replace(':', ''),
+      hostname: url.hostname,
+      port: url.port,
+      pathname: '/**',
+    }
+  } catch {
+    return null
+  }
+}
+
+const remotePatterns = [
+  buildRemotePattern(process.env.S3_ENDPOINT_URL),
+  buildRemotePattern(process.env.MEDIA_DOMAIN),
+].filter(Boolean)
+
 const nextConfig = {
+  // Proxy API requests to backend in Coolify single-container deployment
+  // The backend runs on port 8000 inside the container
+  async rewrites() {
+    // In production (Coolify), proxy to localhost:8000 inside container
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+
+    // Only enable rewrites for production single-container deployment
+    if (process.env.NODE_ENV === 'production' && !apiBaseUrl.includes('api.thespecialwedding')) {
+      return [
+        {
+          source: '/api/proxy/:path*',
+          destination: 'http://localhost:8000/:path*',
+        },
+      ];
+    }
+
+    return [];
+  },
+
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '78885567ce761574f5914f46808cde6a.r2.cloudflarestorage.com',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'media.thespecialwedding.com',
-        port: '',
-        pathname: '/**',
-      },
-    ],
+    remotePatterns,
   },
   transpilePackages: ['@hello-pangea/dnd'],
+
+  // Configure build behavior
+  staticPageGenerationTimeout: 180,
+
+  // Empty turbopack config to acknowledge we're using webpack config with Turbopack
+  turbopack: {},
+
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {

@@ -112,7 +112,7 @@ feature_flags = settings.get_feature_flags()
 
 **Key Files Created:**
 
-- `app/core/database_async.py` - Async MongoDB with connection pooling
+- `app/core/database.py` - Async MongoDB with connection pooling
 - `app/core/cache.py` - Redis caching layer with async support
 - `app/middleware/performance_monitoring.py` - Performance metrics collection
 
@@ -156,9 +156,7 @@ subscription_key = CacheKeys.user_subscription(user_id)
 - `app/core/events.py` - Event sourcing and domain events
 - `app/core/container.py` - Dependency injection container
 - `app/core/observability.py` - Comprehensive monitoring system
-- `app/main_optimized.py` - Updated FastAPI app with all optimizations
-
-**Event Sourcing Usage:**
+- **Event Sourcing Usage:**
 
 ```python
 from app.core.events import event_bus, EventFactory
@@ -211,12 +209,12 @@ health_report = await observability.get_full_health_report()
 
 ### 1. Update Main Application
 
-Replace `app/main.py` with `app/main_optimized.py` or integrate the improvements:
+integrate the improvements:
 
 ```python
 # Key additions to main.py
 from app.core.settings import settings
-from app.core.database_async import init_database, close_database
+from app.core.database import init_database, close_database
 from app.core.cache import init_cache, close_cache
 from app.core.events import setup_event_handlers
 from app.core.container import setup_services
@@ -229,9 +227,9 @@ async def lifespan(app: FastAPI):
     await init_cache()
     await setup_event_handlers()
     setup_services()
-  
+
     yield
-  
+
     # Shutdown
     await close_database()
     await close_cache()
