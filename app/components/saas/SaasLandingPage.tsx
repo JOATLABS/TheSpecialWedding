@@ -151,6 +151,8 @@ const DEFAULT_FAQS = [
 export const SaasLandingPage: React.FC = () => {
   const [authMode, setAuthMode] = useState<'signup' | 'login'>('signup');
   const [selectedPlan, setSelectedPlan] = useState<{ id: string; name?: string } | null>(null);
+  // Track if user has explicitly selected a plan to prevent auto-selection override
+  const userSelectedPlanRef = React.useRef(false);
   const [planNotice, setPlanNotice] = useState('');
   const [config, setConfig] = useState<SaasConfig>({
     hero_title: "Welcome to Special Wedding",
@@ -392,10 +394,10 @@ export const SaasLandingPage: React.FC = () => {
           return;
         }
       } else {
-        console.warn('Received non-ok response when loading subscription plans', response.statusText);
+        // Non-ok response - will fall back to default plans in finally block
       }
-    } catch (error) {
-      console.error('Failed to load subscription plans', error);
+    } catch {
+      // Network/fetch error - will fall back to default plans in finally block
     } finally {
       if (!resolvedPlans) {
         setPlans(defaultPlans);
@@ -415,7 +417,11 @@ export const SaasLandingPage: React.FC = () => {
   }, [fetchSubscriptionPlans]);
 
   useEffect(() => {
-    if (!planLoading && plans.length > 0 && !selectedPlan) {
+    // Only auto-select default plan if:
+    // 1. Plans have loaded
+    // 2. No plan is currently selected
+    // 3. User hasn't explicitly selected a plan (prevents race condition)
+    if (!planLoading && plans.length > 0 && !selectedPlan && !userSelectedPlanRef.current) {
       const featuredPlan = plans.find((plan) => plan.is_featured) ?? plans[0];
       setSelectedPlan({ id: featuredPlan._id, name: featuredPlan.name });
     }
@@ -692,6 +698,7 @@ export const SaasLandingPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
+                      userSelectedPlanRef.current = true;
                       setSelectedPlan({ id: plan._id, name: plan.name });
                       setAuthMode('signup');
                       setIsAuthModalOpen(true);
@@ -810,6 +817,7 @@ export const SaasLandingPage: React.FC = () => {
         plansNotice={planNotice}
         selectedPlan={selectedPlan}
         onSelectPlan={(plan) => {
+          userSelectedPlanRef.current = true;
           setSelectedPlan(plan);
           setAuthMode('signup');
         }}

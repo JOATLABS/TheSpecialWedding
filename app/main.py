@@ -198,17 +198,8 @@ if settings.enable_metrics:
         enable_detailed_logging=not settings.is_production()
     )
 
-# 6. Rate limiting
-if settings.rate_limit_enabled:
-    app.add_middleware(
-        RateLimitMiddleware,
-        calls=settings.rate_limit_calls,
-        period=settings.rate_limit_period,
-        auth_calls=settings.rate_limit_auth_calls,
-        auth_period=settings.rate_limit_auth_period
-    )
-
-# 7. CORS
+# 6. CORS - MUST come before RateLimiting so preflight OPTIONS requests
+# get proper CORS headers before being rate-limited
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -224,6 +215,16 @@ app.add_middleware(
     ],
     max_age=3600,
 )
+
+# 7. Rate limiting - after CORS so preflight requests aren't unfairly limited
+if settings.rate_limit_enabled:
+    app.add_middleware(
+        RateLimitMiddleware,
+        calls=settings.rate_limit_calls,
+        period=settings.rate_limit_period,
+        auth_calls=settings.rate_limit_auth_calls,
+        auth_period=settings.rate_limit_auth_period
+    )
 
 # 8. Compression (innermost)
 if settings.enable_compression:

@@ -216,29 +216,21 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // Fetch plus ones for the wedding (per-guest lookup)
+      // Fetch all plus-ones for the wedding in a single batch request
       try {
-        const plusOnesResponse = await Promise.all(
-          normalizedGuests.map(async (guest) => {
-            try {
-              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-              });
-              if (response.ok) {
-                const guestPlusOnes = await response.json();
-                return guestPlusOnes.map((po: PlusOne) => ({
-                  ...po,
-                  guest_id: guest.id,
-                }));
-              }
-              return [];
-            } catch {
-              return [];
-            }
-          })
+        const plusOnesResponse = await fetch(
+          `${baseUrl}/admin/plus_ones?wedding_id=${selectedWedding}`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
         );
-        setPlusOnes(plusOnesResponse.flat());
+        if (plusOnesResponse.ok) {
+          const plusOnesData = await plusOnesResponse.json();
+          setPlusOnes(Array.isArray(plusOnesData) ? plusOnesData : []);
+        } else {
+          // Non-OK response - plus-ones won't be shown but page still functions
+          setPlusOnes([]);
+        }
       } catch {
+        // Network error - plus-ones won't be shown but page still functions
         setPlusOnes([]);
       }
 
@@ -563,7 +555,11 @@ export default function AdminGuestsPage() {
         });
 
         if (!rsvpResponse.ok) {
-          console.warn('Failed to update RSVP, but guest was updated');
+          // Guest was updated but RSVP update failed
+          setEditingGuest(null);
+          fetchGuestData();
+          showSuccess('Guest updated, but RSVP changes may not have saved. Please try editing again.');
+          return;
         }
       }
 

@@ -3,7 +3,7 @@ Centralized configuration management using Pydantic Settings
 """
 # Use pydantic-settings for proper Pydantic v2 compatibility
 from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
 from enum import Enum
@@ -210,6 +210,46 @@ class Settings(BaseSettings):
             elif info.data["environment"] == Environment.DEVELOPMENT:
                 return True
         return v
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        """
+        Fail-fast validation for critical security settings in production.
+        Prevents deployment with insecure defaults.
+        """
+        if self.environment == Environment.PRODUCTION:
+            errors = []
+
+            # SECRET_KEY must not be the default placeholder
+            if self.secret_key == "changeme":
+                errors.append(
+                    "SECRET_KEY cannot be 'changeme' in production. "
+                    "Set a secure random key via SECRET_KEY environment variable."
+                )
+
+            # CORS_ORIGINS must be explicitly configured
+            if not self.cors_origins:
+                errors.append(
+                    "CORS_ORIGINS cannot be empty in production. "
+                    "Set allowed origins via CORS_ORIGINS environment variable "
+                    "(comma-separated list of allowed domains)."
+                )
+
+            # Warn about wildcard CORS with credentials (security risk)
+            if "*" in self.cors_origins and self.cors_credentials:
+                errors.append(
+                    "CORS_ORIGINS contains '*' with CORS_CREDENTIALS=true. "
+                    "This is forbidden by CORS spec and will fail in browsers. "
+                    "Specify explicit origins or set CORS_CREDENTIALS=false."
+                )
+
+            if errors:
+                raise ValueError(
+                    f"Production security validation failed:\n" +
+                    "\n".join(f"  - {e}" for e in errors)
+                )
+
+        return self
 
     def get_database_url(self) -> str:
         """Get full database URL with options"""
