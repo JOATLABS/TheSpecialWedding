@@ -13,7 +13,7 @@ interface Modern3DBackgroundProps {
 export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
   imageUrl,
   fallbackImages = [],
-  theme
+  theme,
 }) => {
   const [scrollY, setScrollY] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -41,26 +41,34 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
 
   // Use featured image or first fallback image
   const backgroundImage = imageUrl || fallbackImages[0];
-  
+
   if (!backgroundImage) {
-    // Gradient fallback if no images
+    // Gradient fallback using theme colors if no images
+    const primaryColor = theme?.primary_color || '#1e3a5f';
+    const secondaryColor = theme?.secondary_color || '#d4af37';
+    const accentColor = theme?.accent_color || '#c8847e';
+
     return (
       <div className="fixed inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-br from-wedding-ivory via-rose-50 to-wedding-sage/20" />
+        <div
+          className="absolute inset-0 transition-colors duration-500"
+          style={{
+            background: `linear-gradient(135deg, ${primaryColor}15, ${secondaryColor}20, ${accentColor}15)`,
+          }}
+        />
+        {/* Dark mode base background */}
+        <div className="absolute inset-0 bg-transparent dark:bg-gray-900/80 transition-colors duration-500" />
       </div>
     );
   }
 
   // Deep parallax effect - background moves slower and opposite to scroll
-  // Negative value makes it move down as you scroll down (stays visible longer)
   const parallaxOffset = prefersReducedMotion ? 0 : scrollY * -0.22;
-  const accentOffset = prefersReducedMotion ? 0 : scrollY * 0.12;
-  const highlightOffset = prefersReducedMotion ? 0 : scrollY * -0.08;
 
   return (
     <>
       {/* Fixed background container */}
-      <div className="fixed inset-0 -z-10 overflow-hidden bg-slate-950">
+      <div className="fixed inset-0 -z-10 overflow-hidden">
         {/* Parallax image layer */}
         <div
           className="absolute inset-0"
@@ -68,7 +76,6 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
             transform: `translate3d(0, ${parallaxOffset}px, 0) scale(1.08)`,
             willChange: 'transform',
             height: '155%',
-            perspective: '1200px'
           }}
         >
           <Image
@@ -81,78 +88,7 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
             sizes="100vw"
           />
         </div>
-        
-        {/* Theme-based overlay */}
-        {theme?.background_style === 'gradient' && (
-          <div 
-            className="absolute inset-0"
-            style={{
-              background: `linear-gradient(135deg, ${theme.primary_color}CC, ${theme.secondary_color}CC)`
-            }}
-          />
-        )}
-        
-        {theme?.background_style === 'solid' && (
-          <div 
-            className="absolute inset-0"
-            style={{
-              backgroundColor: `${theme.primary_color}CC`
-            }}
-          />
-        )}
-        
-        {/* Frost effect for glass style (default) */}
-        {(!theme?.background_style || theme.background_style === 'gradient') && (
-          <>
-            {/* Dark overlay for better text contrast */}
-            <div className="absolute inset-0 bg-slate-900/35" />
 
-            {/* Blur overlay for depth */}
-            <div className="absolute inset-0 backdrop-blur-[2px]" />
-          </>
-        )}
-
-        {/* Central glow to lift foreground cards */}
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background: 'radial-gradient(circle at center, rgba(255,255,255,0.26), rgba(195,255,255,0) 62%)',
-            transform: `translate3d(0, ${highlightOffset}px, 0)`
-          }}
-        />
-
-        {/* Subtle vignette for depth perception */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(15,23,42,0),rgba(15,23,42,0.55))] opacity-70" />
-
-        {/* Directional depth gradient - darker at base */}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/25 to-slate-950/70" />
-
-        {/* Highlight streak to simulate light pass */}
-        <div
-          className="pointer-events-none absolute inset-x-0 top-[12%] h-2/5 opacity-70"
-          style={{
-            background: 'radial-gradient(circle at top, rgba(255,255,255,0.42), rgba(255,255,255,0))',
-            transform: `translate3d(0, ${accentOffset}px, 0)`
-          }}
-        />
-
-        {/* Floating glass orbs for added depth */}
-        {!prefersReducedMotion && (
-          <>
-            <div
-              className="pointer-events-none absolute -left-40 top-[18%] hidden h-72 w-72 rounded-full bg-white/12 blur-3xl md:block"
-              style={{ transform: `translate3d(0, ${accentOffset * 0.6}px, 0)` }}
-            />
-            <div
-              className="pointer-events-none absolute -right-32 bottom-[14%] hidden h-80 w-80 rounded-full bg-emerald-200/20 blur-3xl lg:block"
-              style={{ transform: `translate3d(0, ${accentOffset * -0.4}px, 0)` }}
-            />
-            <div
-              className="pointer-events-none absolute left-1/2 top-1/4 h-52 w-52 -translate-x-1/2 rounded-full border border-white/10 bg-white/8 shadow-[0_40px_120px_-60px_rgba(15,23,42,0.7)] backdrop-blur"
-              style={{ transform: `translate3d(-50%, ${accentOffset * 0.3}px, 0)` }}
-            />
-          </>
-        )}
       </div>
     </>
   );

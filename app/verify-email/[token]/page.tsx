@@ -1,14 +1,14 @@
 'use client';
 import { useParams, useRouter } from 'next/navigation';
+import { getApiBaseUrl } from '@/utils/env';
 import { useEffect, useState } from 'react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = getApiBaseUrl();
 
 export default function VerifyEmailPage() {
   const params = useParams();
   const router = useRouter();
   const token = params.token as string;
-  
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
 
@@ -33,7 +33,6 @@ export default function VerifyEmailPage() {
         if (response.ok) {
           setStatus('success');
           setMessage(data.message || 'Email verified successfully!');
-          
           // Redirect to login after 3 seconds
           setTimeout(() => {
             router.push('/admin/login');

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { GlassCard } from '../components/ui/GlassCard';
 
@@ -35,14 +36,13 @@ function SetupAccountContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
   const [formData, setFormData] = useState({
     password: '',
     confirmPassword: ''
   });
 
   const validateToken = useCallback(async (invitationToken: string) => {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/admin/setup/validate-token/${invitationToken}`);
 
     if (!response.ok) {
@@ -93,7 +93,6 @@ function SetupAccountContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -108,7 +107,7 @@ function SetupAccountContent() {
     setError('');
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/admin/setup/complete`, {
         method: 'POST',
         headers: {

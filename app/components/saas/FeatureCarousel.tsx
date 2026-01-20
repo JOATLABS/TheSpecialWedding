@@ -46,7 +46,7 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
   }, [isPaused, sortedFeatures.length]);
 
   const handlePrevious = () => {
-    setCurrentIndex((prev) => 
+    setCurrentIndex((prev) =>
       prev === 0 ? sortedFeatures.length - 1 : prev - 1
     );
   };
@@ -70,7 +70,6 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
 
   const handleTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
-    
     const distance = touchStart - touchEnd;
     const isLeftSwipe = distance > 50;
     const isRightSwipe = distance < -50;
@@ -98,7 +97,7 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
   };
 
   return (
-    <div 
+    <div
       className="relative"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
@@ -121,7 +120,7 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
         {/* Desktop View - Show 3 cards */}
         <div className="hidden md:grid md:grid-cols-3 gap-6 transition-all duration-500">
           {getVisibleFeatures().map((feature, index) => (
-            <GlassCard 
+            <GlassCard
               key={`${feature.title}-${index}`}
               depth={index === 0 ? "near" : index === 1 ? "mid" : "far"}
               className="p-6 transform transition-all duration-500"
@@ -129,7 +128,7 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
               {/* Status Badge */}
               <div className="flex justify-between items-start mb-4">
                 <div className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
-                  feature.status === 'available' 
+                  feature.status === 'available'
                     ? 'bg-green-100 text-green-800'
                     : 'bg-amber-100 text-amber-800'
                 }`}>
@@ -166,7 +165,7 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
             {/* Status Badge */}
             <div className="flex justify-between items-start mb-4">
               <div className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
-                sortedFeatures[currentIndex].status === 'available' 
+                sortedFeatures[currentIndex].status === 'available'
                   ? 'bg-green-100 text-green-800'
                   : 'bg-amber-100 text-amber-800'
               }`}>
@@ -217,7 +216,7 @@ export const FeatureCarousel: React.FC<FeatureCarouselProps> = ({ features = [],
               key={index}
               onClick={() => handleDotClick(index)}
               className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                index === currentIndex 
+                index === currentIndex
                   ? 'w-8 bg-gradient-to-r from-indigo-600 to-emerald-600'
                   : 'bg-gray-300 hover:bg-gray-400'
               }`}

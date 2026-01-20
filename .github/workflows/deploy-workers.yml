@@ -1,0 +1,74 @@
+name: Deploy Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+      - 'development/**'
+    paths:
+      - 'cloudflare-workers/**'
+  workflow_dispatch:  # Allow manual deployment
+
+jobs:
+  deploy-workers:
+    name: Deploy Cloudflare Workers
+    runs-on: ubuntu-latest
+    # Only run if pushing to main or configured deployment branch
+    if: github.ref == 'refs/heads/main' || github.ref == format('refs/heads/{0}', vars.DEPLOY_BRANCH || 'development/saas-features')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy Autopilot Cron Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd cloudflare-workers
+          wrangler deploy --config autopilot.wrangler.toml
+
+      - name: Deploy Metrics Snapshot Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd cloudflare-workers
+          wrangler deploy --config metrics-snapshot.wrangler.toml
+
+      - name: Deploy Backup Cron Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd cloudflare-workers
+          wrangler deploy --config backup.wrangler.toml
+
+      - name: Deploy Uptime Cron Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd cloudflare-workers
+          wrangler deploy --config uptime.wrangler.toml
+
+      - name: Deploy Trial Cron Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd cloudflare-workers
+          wrangler deploy --config trial.wrangler.toml
+
+      - name: Notify on Success
+        if: success()
+        run: |
+          echo "✅ All Cloudflare Workers deployed successfully"
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Cloudflare Workers deployment failed"

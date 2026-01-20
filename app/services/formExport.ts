@@ -45,7 +45,8 @@ function extractFilename(contentDisposition: string | null, formId: string): str
     }
   }
 
-  const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15);
+  // Note: regex reordered to avoid Tailwind CSS scanner false positive
+  const timestamp = new Date().toISOString().replace(/[T:\-]/g, '').slice(0, 15);
   return `form_${formId}_responses_${timestamp}.csv`;
 }
 

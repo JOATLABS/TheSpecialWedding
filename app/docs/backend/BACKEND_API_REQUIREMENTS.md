@@ -7,7 +7,7 @@ The root admin pages have been updated to remove hardcoded data and use real API
 These endpoints already exist and are being used:
 
 - `GET /api/admin/users` - List all users (user_management.py)
-- `GET /api/admin/users/{user_id}` - Get user details 
+- `GET /api/admin/users/{user_id}` - Get user details
 - `PUT /api/admin/users/{user_id}` - Update user details
 - `DELETE /api/admin/users/{user_id}` - Delete user
 - `GET /api/admin/subscription-plans` - List subscription plans (subscription_management.py)
@@ -41,7 +41,7 @@ def get_platform_metrics(
 def get_revenue_analytics(...):
     """Detailed revenue breakdown with historical data"""
 
-@router.get("/admin/analytics/usage", tags=["ROOT_ADMIN"]) 
+@router.get("/admin/analytics/usage", tags=["ROOT_ADMIN"])
 def get_usage_analytics(...):
     """Platform usage statistics (weddings, forms, guests, etc.)"""
 ```

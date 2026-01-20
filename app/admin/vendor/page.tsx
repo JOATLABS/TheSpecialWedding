@@ -142,7 +142,7 @@ export default function VendorDashboardPage(): ReactElement {
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
         <div className="max-w-md space-y-4 rounded-3xl border border-red-300/40 bg-red-50/80 px-8 py-6 text-red-900 shadow-xl backdrop-blur-lg">
           <h1 className="text-xl font-semibold">We couldn’t open your workspace</h1>
-          <p className="text-sm leading-relaxed text-red-700/90">{error}</p>
+          <p className="text-sm leading-relaxed text-red-700 dark:text-red-300/90">{error}</p>
           <button
             onClick={() => {
               if (!token) return;

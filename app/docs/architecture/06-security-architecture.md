@@ -57,7 +57,6 @@ graph TB
  VAL --> ENC
  VAL --> TLS
  VAL --> DB_AUTH
- 
  MW --> LOG
  AUTH --> LOG
  LOG --> MON
@@ -364,11 +363,11 @@ const weddingSchema = yup.object({
  .min(1, 'Title must be at least 1 character')
  .max(200, 'Title cannot exceed 200 characters')
  .matches(/^[a-zA-Z0-9\s\-'.,!]+$/, 'Invalid characters in title'),
- 
+
  date: yup.date()
  .required('Date is required')
  .min(new Date(), 'Date must be in the future'),
- 
+
  email: yup.string()
  .email('Invalid email format')
  .required('Email is required')
@@ -382,7 +381,6 @@ class WeddingCreate(BaseModel):
  title: str = Field(..., min_length=1, max_length=200, regex=r'^[a-zA-Z0-9\s\-\'.,!]+$')
  date: date = Field(..., gt=datetime.now().date())
  email: EmailStr
- 
  @validator('title')
  def validate_title(cls, v):
  # Additional business logic validation
@@ -573,12 +571,10 @@ security_scan:
  - bandit (Python security linter)
  - semgrep (Multi-language analysis)
  - npm audit (Dependency vulnerabilities)
- 
  dependency_scanning:
  - safety (Python dependencies)
  - audit-ci (Node.js dependencies)
  - container_scanning (Docker images)
- 
  secrets_detection:
  - truffleHog (Git history scanning)
  - detect-secrets (Baseline scanning)
@@ -633,6 +629,6 @@ def test_authorization_security():
 
 ---
 
-**Next**: [Performance Architecture](./08-performance-architecture.md) 
-**Previous**: [Data Architecture](./05-data-architecture.md) 
+**Next**: [Performance Architecture](./08-performance-architecture.md)
+**Previous**: [Data Architecture](./05-data-architecture.md)
 **Related**: [ADR-004: Choose JWT for Authentication](./adr/ADR-004-jwt-authentication.md)

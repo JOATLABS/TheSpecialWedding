@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
@@ -39,7 +40,7 @@ export default function VendorSubmissionPage() {
 
  const fetchSubmission = useCallback(async () => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/vendor-forms/${formId}`, {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -52,9 +53,8 @@ export default function VendorSubmissionPage() {
  }
 
  const data = await response.json();
- 
- // Get wedding details
- const weddingResponse = await fetch(`${baseUrl}/admin/weddings`, {
+ // Get wedding details - use planner endpoint for assigned weddings
+ const weddingResponse = await fetch(`${baseUrl}/admin/planner/weddings`, {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
@@ -64,7 +64,6 @@ export default function VendorSubmissionPage() {
  if (weddingResponse.ok) {
  const weddings = await weddingResponse.json();
  const wedding = weddings.find((w: any) => w._id === data.wedding_id);
- 
  setSubmission({
  ...data,
  wedding: {
@@ -97,7 +96,7 @@ export default function VendorSubmissionPage() {
 
  const updateSubmissionStatus = async (newStatus: string) => {
  try {
- const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+ const baseUrl = getApiBaseUrl();
  const response = await fetch(`${baseUrl}/admin/vendor-forms/${formId}/status`, {
  method: 'PUT',
  headers: {
@@ -198,7 +197,7 @@ export default function VendorSubmissionPage() {
  </div>
  <h2 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Submission</h2>
  <p className="text-gray-600 mb-4">{error}</p>
- <button 
+ <button
  onClick={() => router.back()}
  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
  >
@@ -215,7 +214,7 @@ export default function VendorSubmissionPage() {
  <div className="text-center">
  <h2 className="text-lg font-semibold text-gray-900 mb-2">No Submission Found</h2>
  <p className="text-gray-600 mb-4">This form has not been submitted yet.</p>
- <button 
+ <button
  onClick={() => router.back()}
  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
  >
@@ -334,11 +333,11 @@ export default function VendorSubmissionPage() {
  {/* Submission Content */}
  <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 print:shadow-none">
  <h2 className="text-xl font-bold text-gray-900 mb-6">Vendor Information</h2>
- 
+
  <div className="space-y-6">
  {submission.fields.map((field) => {
  const value = submission.submission_data[field.id];
- 
+
  return (
  <div key={field.id} className="border-b border-gray-200 pb-4 last:border-b-0">
  <div className="flex flex-col sm:flex-row sm:items-start">

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formsApi } from '@/services/formsApi';
@@ -49,8 +50,7 @@ export default function FormAnalyticsPage() {
       return;
     }
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      
+      const baseUrl = getApiBaseUrl();
       // Fetch form details and analytics in parallel
       const [formResponse, analyticsResponse] = await Promise.all([
         fetch(`${baseUrl}/admin/forms/${formId}`, {
@@ -94,17 +94,17 @@ export default function FormAnalyticsPage() {
     fetchFormAndAnalytics();
   }, [fetchFormAndAnalytics, formId, token]);
 
-  const AnalyticsCard = ({ 
-    title, 
-    value, 
-    subtitle, 
-    icon, 
-    color = 'blue' 
-  }: { 
-    title: string; 
-    value: string | number; 
-    subtitle?: string; 
-    icon: React.ReactNode; 
+  const AnalyticsCard = ({
+    title,
+    value,
+    subtitle,
+    icon,
+    color = 'blue'
+  }: {
+    title: string;
+    value: string | number;
+    subtitle?: string;
+    icon: React.ReactNode;
     color?: 'blue' | 'green' | 'purple' | 'orange' | 'red';
   }) => {
     const colorClasses = {
@@ -116,15 +116,15 @@ export default function FormAnalyticsPage() {
     };
 
     return (
-      <div className="bg-white rounded-lg shadow-sm border p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-6">
         <div className="flex items-center">
           <div className={`p-3 rounded-lg ${colorClasses[color]} mr-4`}>
             {icon}
           </div>
           <div className="flex-1">
-            <p className="text-sm font-medium text-gray-600">{title}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
-            {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-300">{title}</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
+            {subtitle && <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>}
           </div>
         </div>
       </div>
@@ -140,8 +140,8 @@ export default function FormAnalyticsPage() {
     };
 
     return (
-      <div className="w-full bg-gray-200 rounded-full h-2">
-        <div 
+      <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2">
+        <div
           className={`h-2 rounded-full transition-all duration-300 ${colorClasses[color as keyof typeof colorClasses]}`}
           style={{ width: `${Math.min(percentage, 100)}%` }}
         ></div>
@@ -154,7 +154,7 @@ export default function FormAnalyticsPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading analytics...</p>
+          <p className="text-gray-600 dark:text-gray-300">Loading analytics...</p>
         </div>
       </div>
     );
@@ -177,21 +177,20 @@ export default function FormAnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       <div className="max-w-7xl mx-auto py-8 px-4">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => router.push('/admin/forms')}
-              className="flex items-center text-gray-600 hover:text-gray-800"
+              className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white"
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
               Back to Forms
             </button>
-            
             <div className="flex space-x-3">
               <button
                 onClick={() => router.push(`/admin/forms/${formId}/responses`)}
@@ -207,16 +206,15 @@ export default function FormAnalyticsPage() {
               </button>
             </div>
           </div>
-          
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Form Analytics</h1>
-            <div className="flex items-center text-gray-600">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-6">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Form Analytics</h1>
+            <div className="flex items-center text-gray-600 dark:text-gray-300">
               <span className="text-lg font-medium">{form.name}</span>
               <span className="mx-2">•</span>
               <span>{form.settings.title}</span>
             </div>
             {form.settings.description && (
-              <p className="text-gray-500 mt-2">{form.settings.description}</p>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">{form.settings.description}</p>
             )}
           </div>
         </div>
@@ -233,7 +231,6 @@ export default function FormAnalyticsPage() {
             }
             color="green"
           />
-          
           <AnalyticsCard
             title="Forms Sent"
             value={analytics.distribution_stats.sent}
@@ -245,7 +242,6 @@ export default function FormAnalyticsPage() {
             }
             color="blue"
           />
-          
           <AnalyticsCard
             title="Completion Rate"
             value={`${analytics.distribution_stats.completion_rate}%`}
@@ -257,7 +253,6 @@ export default function FormAnalyticsPage() {
             }
             color="purple"
           />
-          
           <AnalyticsCard
             title="Open Rate"
             value={`${analytics.distribution_stats.open_rate}%`}
@@ -274,84 +269,80 @@ export default function FormAnalyticsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Email Performance */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Email Performance</h3>
-            
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Email Performance</h3>
             <div className="space-y-6">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Emails Sent</span>
-                  <span className="text-sm text-gray-900">{analytics.distribution_stats.sent}</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Emails Sent</span>
+                  <span className="text-sm text-gray-900 dark:text-white">{analytics.distribution_stats.sent}</span>
                 </div>
                 <ProgressBar percentage={100} color="blue" />
               </div>
-              
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Emails Opened</span>
-                  <span className="text-sm text-gray-900">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Emails Opened</span>
+                  <span className="text-sm text-gray-900 dark:text-white">
                     {analytics.distribution_stats.opened} ({analytics.distribution_stats.open_rate}%)
                   </span>
                 </div>
-                <ProgressBar 
-                  percentage={analytics.distribution_stats.open_rate} 
-                  color="orange" 
+                <ProgressBar
+                  percentage={analytics.distribution_stats.open_rate}
+                  color="orange"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Form Link Clicked</span>
-                  <span className="text-sm text-gray-900">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Form Link Clicked</span>
+                  <span className="text-sm text-gray-900 dark:text-white">
                     {analytics.distribution_stats.clicked} ({analytics.distribution_stats.click_rate}%)
                   </span>
                 </div>
-                <ProgressBar 
-                  percentage={analytics.distribution_stats.click_rate} 
-                  color="purple" 
+                <ProgressBar
+                  percentage={analytics.distribution_stats.click_rate}
+                  color="purple"
                 />
               </div>
-              
+
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Form Completed</span>
-                  <span className="text-sm text-gray-900">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Form Completed</span>
+                  <span className="text-sm text-gray-900 dark:text-white">
                     {analytics.distribution_stats.submitted} ({analytics.distribution_stats.completion_rate}%)
                   </span>
                 </div>
-                <ProgressBar 
-                  percentage={analytics.distribution_stats.completion_rate} 
-                  color="green" 
+                <ProgressBar
+                  percentage={analytics.distribution_stats.completion_rate}
+                  color="green"
                 />
               </div>
             </div>
           </div>
 
           {/* Form Insights */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Form Insights</h3>
-            
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Form Insights</h3>
             <div className="space-y-4">
-              <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+              <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-slate-900 rounded-lg">
                 <div>
-                  <p className="font-medium text-gray-900">Form Fields</p>
-                  <p className="text-sm text-gray-600">Total questions in form</p>
+                  <p className="font-medium text-gray-900 dark:text-white">Form Fields</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">Total questions in form</p>
                 </div>
-                <div className="text-2xl font-bold text-gray-900">
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">
                   {form.fields.length}
                 </div>
               </div>
-              
-              <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+              <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-slate-900 rounded-lg">
                 <div>
-                  <p className="font-medium text-gray-900">Form Created</p>
-                  <p className="text-sm text-gray-600">Initial creation date</p>
+                  <p className="font-medium text-gray-900 dark:text-white">Form Created</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">Initial creation date</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-gray-900">
+                  <p className="font-bold text-gray-900 dark:text-white">
                     {formatDate(analytics.created_at)}
                   </p>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
                     {formatDate(analytics.created_at, {
                       weekday: 'long',
                       year: 'numeric',
@@ -363,16 +354,16 @@ export default function FormAnalyticsPage() {
               </div>
 
               {analytics.last_response && (
-                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-slate-900 rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">Last Response</p>
-                    <p className="text-sm text-gray-600">Most recent submission</p>
+                    <p className="font-medium text-gray-900 dark:text-white">Last Response</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">Most recent submission</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-gray-900">
+                    <p className="font-bold text-gray-900 dark:text-white">
                       {formatDate(analytics.last_response)}
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
                       {formatDateTime(analytics.last_response, {
                         hour: 'numeric',
                         minute: '2-digit',
@@ -386,60 +377,60 @@ export default function FormAnalyticsPage() {
         </div>
 
         {/* Performance Tips */}
-        <div className="mt-8 bg-white rounded-lg shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Tips</h3>
+        <div className="mt-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm border dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Performance Tips</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {analytics.distribution_stats.open_rate < 50 && (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <div className="flex items-start">
-                  <svg className="w-5 h-5 text-yellow-600 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
                   <div>
-                    <h4 className="font-medium text-yellow-800">Low Open Rate</h4>
-                    <p className="text-sm text-yellow-700">Consider improving your email subject line to increase opens.</p>
+                    <h4 className="font-medium text-yellow-800 dark:text-yellow-300">Low Open Rate</h4>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-400">Consider improving your email subject line to increase opens.</p>
                   </div>
                 </div>
               </div>
             )}
 
             {analytics.distribution_stats.click_rate < 30 && analytics.distribution_stats.open_rate > 0 && (
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
                 <div className="flex items-start">
-                  <svg className="w-5 h-5 text-orange-600 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-5 h-5 text-orange-600 dark:text-orange-400 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                   </svg>
                   <div>
-                    <h4 className="font-medium text-orange-800">Low Click Rate</h4>
-                    <p className="text-sm text-orange-700">Your email message could be more compelling to encourage clicks.</p>
+                    <h4 className="font-medium text-orange-800 dark:text-orange-300">Low Click Rate</h4>
+                    <p className="text-sm text-orange-700 dark:text-orange-400">Your email message could be more compelling to encourage clicks.</p>
                   </div>
                 </div>
               </div>
             )}
 
             {analytics.distribution_stats.completion_rate < 50 && analytics.distribution_stats.click_rate > 0 && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <div className="flex items-start">
-                  <svg className="w-5 h-5 text-red-600 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-5 h-5 text-red-600 dark:text-red-400 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
                   <div>
-                    <h4 className="font-medium text-red-800">Low Completion Rate</h4>
-                    <p className="text-sm text-red-700">Consider shortening your form or making fields optional to improve completion.</p>
+                    <h4 className="font-medium text-red-800 dark:text-red-300">Low Completion Rate</h4>
+                    <p className="text-sm text-red-700 dark:text-red-400">Consider shortening your form or making fields optional to improve completion.</p>
                   </div>
                 </div>
               </div>
             )}
 
             {analytics.distribution_stats.completion_rate >= 70 && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                 <div className="flex items-start">
-                  <svg className="w-5 h-5 text-green-600 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-5 h-5 text-green-600 dark:text-green-400 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
                   <div>
-                    <h4 className="font-medium text-green-800">Great Performance!</h4>
-                    <p className="text-sm text-green-700">Your form has an excellent completion rate. Keep up the good work!</p>
+                    <h4 className="font-medium text-green-800 dark:text-green-300">Great Performance!</h4>
+                    <p className="text-sm text-green-700 dark:text-green-400">Your form has an excellent completion rate. Keep up the good work!</p>
                   </div>
                 </div>
               </div>

@@ -35,7 +35,6 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
     """
     Audit logging middleware for tracking security-relevant events
     """
-    
     def __init__(
         self,
         app,
@@ -59,24 +58,24 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "/openapi.json",
             "/static/"
         ]
-        
+
         # Audit collection in database
         if self.log_to_db:
             self.audit_collection = mongo.db["audit_logs"]
-    
+
     def _should_log(self, path: str) -> bool:
         """Determine if request should be logged"""
         # Skip excluded paths
         if any(excluded in path for excluded in self.excluded_paths):
             return False
-        
+
         # Always log sensitive paths
         if any(sensitive in path for sensitive in self.sensitive_paths):
             return True
-        
+
         # Log all POST, PUT, DELETE, PATCH requests
         return True
-    
+
     def _get_client_info(self, request: Request) -> Dict[str, Any]:
         """Extract client information from request"""
         # Get IP address
@@ -85,14 +84,14 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             ip_address = forwarded.split(",")[0].strip()
         else:
             ip_address = request.headers.get("X-Real-IP") or request.client.host
-        
+
         # Get user agent
         user_agent = request.headers.get("User-Agent", "Unknown")
-        
+
         # Get authentication info
         auth_header = request.headers.get("Authorization", "")
         is_authenticated = bool(auth_header)
-        
+
         return {
             "ip_address": ip_address,
             "user_agent": user_agent,
@@ -101,7 +100,6 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "path": request.url.path,
             "query_params": dict(request.query_params)
         }
-    
     def _sanitize_data(self, data: Any) -> Any:
         """Sanitize sensitive data before logging"""
         if isinstance(data, dict):
@@ -110,7 +108,6 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
                 "password", "token", "secret", "api_key", "credit_card",
                 "ssn", "social_security", "bank_account", "private_key"
             ]
-            
             for key, value in data.items():
                 if any(sensitive in key.lower() for sensitive in sensitive_keys):
                     sanitized[key] = "***REDACTED***"
@@ -120,13 +117,11 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
                     sanitized[key] = [self._sanitize_data(item) for item in value]
                 else:
                     sanitized[key] = value
-            
             return sanitized
         elif isinstance(data, list):
             return [self._sanitize_data(item) for item in data]
         else:
             return data
-    
     def _create_audit_entry(
         self,
         request_info: Dict[str, Any],
@@ -151,7 +146,6 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "error_message": error_message,
             "session_hash": self._generate_session_hash(request_info)
         }
-    
     def _determine_event_type(self, method: str, path: str) -> str:
         """Determine the type of event for categorization"""
         if "login" in path or "token" in path:
@@ -172,12 +166,10 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             return "data_access"
         else:
             return "other"
-    
     def _generate_session_hash(self, request_info: Dict[str, Any]) -> str:
         """Generate a session hash for correlating requests"""
         session_data = f"{request_info['ip_address']}:{request_info['user_agent']}"
         return hashlib.md5(session_data.encode()).hexdigest()[:16]
-    
     async def _log_to_database(self, audit_entry: Dict[str, Any]):
         """Log audit entry to database"""
         try:
@@ -188,57 +180,55 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             )
         except Exception as e:
             audit_logger.error(f"Failed to log to database: {str(e)}")
-    
     def _log_to_file(self, audit_entry: Dict[str, Any]):
         """Log audit entry to file"""
         # Convert datetime to string for JSON serialization
         audit_entry_copy = audit_entry.copy()
         audit_entry_copy["timestamp"] = audit_entry_copy["timestamp"].isoformat()
-        
+
         log_message = json.dumps(audit_entry_copy)
-        
+
         # Log based on event severity
         if audit_entry["success"]:
             audit_logger.info(log_message)
         else:
             audit_logger.warning(log_message)
-    
+
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process request with audit logging"""
-        
+
         # Check if request should be logged
         if not self._should_log(request.url.path):
             return await call_next(request)
-        
+
         # Capture request information
         request_info = self._get_client_info(request)
         start_time = time.time()
-        
+
         # Process request
         try:
             response = await call_next(request)
             response_time = time.time() - start_time
-            
             # Create audit entry
             audit_entry = self._create_audit_entry(
                 request_info,
                 response.status_code,
                 response_time
             )
-            
+
             # Log to database (async)
             if self.log_to_db:
                 asyncio.create_task(self._log_to_database(audit_entry))
-            
+
             # Log to file
             if self.log_to_file:
                 self._log_to_file(audit_entry)
-            
+
             return response
-            
+
         except Exception as e:
             response_time = time.time() - start_time
-            
+
             # Create error audit entry
             audit_entry = self._create_audit_entry(
                 request_info,
@@ -246,14 +236,14 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
                 response_time,
                 error_message=str(e)
             )
-            
+
             # Log error
             if self.log_to_db:
                 asyncio.create_task(self._log_to_database(audit_entry))
-            
+
             if self.log_to_file:
                 self._log_to_file(audit_entry)
-            
+
             # Re-raise the exception
             raise
 
@@ -262,10 +252,10 @@ class AuditEventLogger:
     """
     Utility class for logging specific audit events
     """
-    
+
     def __init__(self):
         self.audit_collection = mongo.db["audit_logs"]
-    
+
     async def log_login_attempt(
         self,
         email: str,
@@ -282,7 +272,6 @@ class AuditEventLogger:
             "ip_address": ip_address,
             "error_message": error_message
         })
-    
     async def log_data_access(
         self,
         user_id: str,
@@ -301,7 +290,6 @@ class AuditEventLogger:
             "action": action,
             "ip_address": ip_address
         })
-    
     async def log_security_event(
         self,
         event_type: str,

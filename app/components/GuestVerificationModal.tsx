@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { Button } from '@/components/ui/Button';
 
 interface GuestVerificationModalProps {
@@ -21,10 +22,10 @@ interface PrivacyInfo {
   };
 }
 
-export default function GuestVerificationModal({ 
-  slug, 
-  onVerified, 
-  onCancel 
+export default function GuestVerificationModal({
+  slug,
+  onVerified,
+  onCancel
 }: GuestVerificationModalProps) {
   const [privacyInfo, setPrivacyInfo] = useState<PrivacyInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,8 +43,9 @@ export default function GuestVerificationModal({
   const [otpContact, setOtpContact] = useState('');
   const [otpContactType, setOtpContactType] = useState('');
   const [otpCountdown, setOtpCountdown] = useState(0);
+  const [weddingId, setWeddingId] = useState('');
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const API_BASE_URL = getApiBaseUrl();
   const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
   const fetchPrivacyInfo = useCallback(async () => {
@@ -78,7 +80,6 @@ export default function GuestVerificationModal({
 
     try {
       const verificationData: any = {};
-      
       if (privacyInfo?.privacy_mode === 'password' && password) {
         verificationData.password = password;
       } else if (privacyInfo?.privacy_mode === 'private') {
@@ -112,13 +113,12 @@ export default function GuestVerificationModal({
       }
 
       const result = await response.json();
-      
       // Check if OTP is required
       if (result.otp_required) {
-        await sendOtp(result.contact, result.contact_type);
+        setWeddingId(result.wedding_id); // Capture wedding_id from response
+        await sendOtp(result.wedding_id, result.contact, result.contact_type);
         return;
       }
-      
       onVerified(result.wedding, result.guest);
 
     } catch (err: any) {
@@ -128,20 +128,18 @@ export default function GuestVerificationModal({
     }
   };
 
-  const sendOtp = async (contact: string, contactType: string) => {
+  const sendOtp = async (weddingId: string, contact: string, contactType: string) => {
     setSendingOtp(true);
     setError('');
-    
     try {
-      const response = await fetch(`${API_URL}/api/otp/send`, {
+      const response = await fetch(`${API_URL}/otp/send-by-contact`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          wedding_id: slug, // Use slug as wedding_id for now
-          contact: contact,
-          contact_type: contactType
+          wedding_id: weddingId,
+          contact: contact
         }),
       });
 
@@ -155,7 +153,6 @@ export default function GuestVerificationModal({
       setOtpContact(contact);
       setOtpContactType(contactType);
       setOtpCountdown(result.expires_in_minutes * 60); // Convert to seconds
-      
       // Start countdown
       const countdown = setInterval(() => {
         setOtpCountdown((prev) => {
@@ -175,8 +172,8 @@ export default function GuestVerificationModal({
   };
 
   const resendOtp = async () => {
-    if (otpContact && otpContactType) {
-      await sendOtp(otpContact, otpContactType);
+    if (weddingId && otpContact && otpContactType) {
+      await sendOtp(weddingId, otpContact, otpContactType);
     }
   };
 
@@ -304,7 +301,6 @@ export default function GuestVerificationModal({
                     {sendingOtp ? 'Sending...' : 'Send new code'}
                   </button>
                 )}
-                
                 <button
                   type="button"
                   onClick={goBackToContact}
@@ -331,7 +327,7 @@ export default function GuestVerificationModal({
             </h2>
             <div className="w-16 h-1 bg-rose-400 mx-auto mb-4"></div>
             <p className="text-gray-600">
-              {privacyInfo.privacy_mode === 'password' 
+              {privacyInfo.privacy_mode === 'password'
                 ? 'This wedding is password protected'
                 : 'Guest verification required'
               }

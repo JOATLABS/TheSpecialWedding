@@ -1,113 +1,118 @@
-# scripts/setup_admin_user.py
+#!/usr/bin/env python3
+"""
+Setup Root Admin User Script
 
-from passlib.context import CryptContext
-import pymongo
+Creates the root admin user on application startup if it doesn't exist.
+Uses environment variables ROOT_ADMIN_EMAIL and ROOT_ADMIN_PASSWORD.
+
+Usage:
+    python scripts/setup_admin_user.py --auto-create
+
+Flags:
+    --auto-create: Skip confirmation prompts (for Docker/CI environments)
+"""
+
 import os
+import sys
 import argparse
+import asyncio
+from datetime import datetime
 
-from dotenv import load_dotenv
-load_dotenv()
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Hashing setup
-pwd_context = CryptContext(schemes=["bcrypt"], bcrypt__rounds=12, deprecated="auto")
 
-# Load environment variables
-PRIMARY_ADMIN_EMAIL = os.getenv("PRIMARY_ADMIN_EMAIL")
-if not PRIMARY_ADMIN_EMAIL:
-    raise ValueError("PRIMARY_ADMIN_EMAIL not set in environment variables. Please set it.")
+async def setup_admin_user(auto_create: bool = False):
+    """Create root admin user if it doesn't exist."""
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+    # Import after path setup
+    from app.core.database import mongo
+    from app.utils.auth_utils import get_password_hash
 
-def auto_create_from_env(collection):
-    email = os.getenv("PRIMARY_ADMIN_EMAIL")
-    password = os.getenv("PRIMARY_ADMIN_PASSWORD")
-    role = os.getenv("PRIMARY_ADMIN_ROLE", "admin")
+    # Get credentials from environment
+    admin_email = os.environ.get("ROOT_ADMIN_EMAIL")
+    admin_password = os.environ.get("ROOT_ADMIN_PASSWORD")
 
-    if not email or not password:
-        print("Missing PRIMARY_ADMIN_EMAIL or PRIMARY_ADMIN_PASSWORD in environment.")
-        return
+    if not admin_email or not admin_password:
+        print("[SKIP] ROOT_ADMIN_EMAIL or ROOT_ADMIN_PASSWORD not set. Skipping admin setup.")
+        return True
 
-    if collection.find_one({"email": email}):
-        print(f"Admin {email} already exists.")
-        return
+    print(f"[INFO] Checking for root admin user: {admin_email}")
 
-    hashed_password = get_password_hash(password)
-    collection.insert_one({
-        "email": email,
-        "hashed_password": hashed_password,
-        "role": role
-    })
-    print(f"Admin user {email} created from environment variables.")
+    try:
+        # Get collection (Motor connects lazily on first query)
+        users_collection = mongo.get_users_collection()
+
+        # Check if admin already exists
+        existing_user = await users_collection.find_one({"email": admin_email})
+
+        if existing_user:
+            print(f"[OK] Root admin user already exists: {admin_email}")
+            # Ensure role is ROOT_ADMIN (upgrade if needed)
+            if existing_user.get("role") != "ROOT_ADMIN":
+                await users_collection.update_one(
+                    {"email": admin_email},
+                    {"$set": {"role": "ROOT_ADMIN", "updated_at": datetime.utcnow()}}
+                )
+                print("[UPDATED] Upgraded user role to ROOT_ADMIN")
+            return True
+
+        # Confirm creation in interactive mode
+        if not auto_create:
+            confirm = input(f"Create root admin user '{admin_email}'? [y/N]: ")
+            if confirm.lower() != 'y':
+                print("[SKIP] Admin creation cancelled by user.")
+                return True
+
+        # Create the root admin user
+        password_hash = get_password_hash(admin_password)
+
+        admin_doc = {
+            "_id": f"user_{int(datetime.utcnow().timestamp() * 1000)}",
+            "email": admin_email,
+            "password_hash": password_hash,
+            "role": "ROOT_ADMIN",
+            "is_active": True,
+            "email_verified": True,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "registration_source": "system_init",
+            # Root admin has unlimited access
+            "max_weddings": 999,
+            "ai_credits_remaining": 9999,
+        }
+
+        await users_collection.insert_one(admin_doc)
+        print(f"[CREATED] Root admin user created successfully: {admin_email}")
+        return True
+
+    except Exception as e:
+        print(f"[ERROR] Failed to setup admin user: {str(e)}")
+        # Don't fail the entire startup - log and continue
+        return True
+    finally:
+        # Close connection (sync method)
+        try:
+            mongo.close()
+        except Exception:
+            pass
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Admin user setup tool")
-    parser.add_argument("--auto-create", action="store_true", help="Auto create user from environment variables")
+    parser = argparse.ArgumentParser(description="Setup root admin user")
+    parser.add_argument(
+        "--auto-create",
+        action="store_true",
+        help="Automatically create admin without confirmation (for Docker/CI)"
+    )
     args = parser.parse_args()
-    mongodb_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-    mongo_name = os.getenv("MONGO_NAME", "wedding")
-    # Check if MONGODB_URI is set
-    if not mongodb_uri:
-        raise ValueError("MONGODB_URI not set in environment variables. Please set it.")
-    # Connect to MongoDB
-    client = pymongo.MongoClient(mongodb_uri)
-    db = client[mongo_name]
-    collection = db["admin_users"]
 
-    if args.auto_create:
-        auto_create_from_env(collection)
-        return
+    # Run async function
+    result = asyncio.run(setup_admin_user(auto_create=args.auto_create))
 
-    print("Options: [create], [update], [delete]")
-    action = input("Action: ").strip().lower()
+    # Exit with appropriate code
+    sys.exit(0 if result else 1)
 
-    email = input("Admin email: ").strip()
-
-    if action not in {"create", "update", "delete"}:
-        print("Invalid action.")
-        return
-
-    if action == "create":
-        if collection.find_one({"email": email}):
-            print("Admin already exists.")
-            return
-        password = input("Admin password: ").strip()
-        role = input("Admin role [default: admin]: ").strip() or "admin"
-        hashed_password = get_password_hash(password)
-        collection.insert_one({
-            "email": email,
-            "hashed_password": hashed_password,
-            "role": role
-        })
-        print("Admin created successfully.")
-
-    elif action == "update":
-        user = collection.find_one({"email": email})
-        if not user:
-            print("User not found.")
-            return
-        password = input("New password (leave blank to keep current): ").strip()
-        role = input("New role (leave blank to keep current): ").strip()
-        updates = {}
-        if password:
-            updates["hashed_password"] = get_password_hash(password)
-        if role:
-            updates["role"] = role
-        if updates:
-            collection.update_one({"email": email}, {"$set": updates})
-            print("User updated.")
-        else:
-            print("No updates provided.")
-
-    elif action == "delete":
-        if email == PRIMARY_ADMIN_EMAIL:
-            print("You cannot delete the primary developer admin.")
-            return
-        result = collection.delete_one({"email": email})
-        if result.deleted_count:
-            print("User deleted.")
-        else:
-            print("User not found.")
 
 if __name__ == "__main__":
     main()

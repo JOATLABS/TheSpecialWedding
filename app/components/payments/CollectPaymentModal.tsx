@@ -9,11 +9,16 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Loader2, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 
+interface Wedding {
+  _id: string;
+  title: string;
+}
+
 interface CollectPaymentModalProps {
   open: boolean;
   onClose: () => void;
-  weddingId: string;
-  weddingTitle: string;
+  weddingId?: string;
+  weddingTitle?: string;
   onPaymentCreated?: (paymentIntent: any) => void;
 }
 
@@ -28,6 +33,33 @@ export function CollectPaymentModal({
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [paymentLink, setPaymentLink] = useState('');
+  const [weddings, setWeddings] = useState<Wedding[]>([]);
+  const [selectedWeddingId, setSelectedWeddingId] = useState<string>(weddingId || '');
+  const [fetchingWeddings, setFetchingWeddings] = useState(false);
+
+  // Fetch weddings if not provided
+  React.useEffect(() => {
+    if (!weddingId && open) {
+      const fetchWeddings = async () => {
+        setFetchingWeddings(true);
+        try {
+          const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/weddings`, {
+             headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setWeddings(data.weddings || data);
+          }
+        } catch (e) {
+          console.error("Failed to fetch weddings", e);
+        } finally {
+          setFetchingWeddings(false);
+        }
+      };
+      fetchWeddings();
+    }
+  }, [weddingId, open]);
 
   const handleCreatePayment = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -35,10 +67,17 @@ export function CollectPaymentModal({
       return;
     }
 
+    const finalWeddingId = weddingId || selectedWeddingId;
+    // Wedding ID is optional for payment intent if just a generic charge, but recommended.
+    // If not selected, we proceed without it.
+
+    const selectedWedding = weddings.find(w => w._id === finalWeddingId);
+    const finalWeddingTitle = weddingTitle || selectedWedding?.title || 'Wedding Services';
+
     try {
       setLoading(true);
 
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       if (!token) {
         toast.error('Please log in to create payment requests');
         return;
@@ -56,10 +95,10 @@ export function CollectPaymentModal({
           body: JSON.stringify({
             amount: parseFloat(amount),
             currency: 'usd',
-            wedding_id: weddingId,
-            description: description || `Payment for ${weddingTitle}`,
+            wedding_id: finalWeddingId || undefined,
+            description: description || `Payment for ${finalWeddingTitle}`,
             metadata: {
-              wedding_title: weddingTitle,
+              wedding_title: finalWeddingTitle,
               payment_type: 'wedding_services',
             },
           }),
@@ -115,6 +154,26 @@ export function CollectPaymentModal({
         <div className="space-y-4 py-4">
           {!paymentLink ? (
             <>
+              {!weddingId && (
+                <div className="space-y-2">
+                  <Label htmlFor="wedding">Wedding (Optional)</Label>
+                  <select
+                    id="wedding"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={selectedWeddingId}
+                    onChange={(e) => setSelectedWeddingId(e.target.value)}
+                    disabled={fetchingWeddings}
+                  >
+                    <option value="">-- Select Wedding --</option>
+                    {weddings.map((w) => (
+                      <option key={w._id} value={w._id}>
+                        {w.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="amount">Amount (USD)</Label>
                 <div className="relative">

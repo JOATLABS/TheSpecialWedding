@@ -270,6 +270,9 @@ jobs:
             STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
             STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
 
+            # Autopilot Cron Configuration
+            CRON_SECRET=${{ secrets.CRON_SECRET }}
+
             # ================================
             # CACHING CONFIGURATION
             # ================================

@@ -1,11 +1,20 @@
 import os
 import boto3
 import qrcode
+import logging
 from io import BytesIO
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, UploadFile
 from datetime import datetime
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger(__name__)
+
+# Get MEDIA_DOMAIN from environment - no fallback
+MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN")
+if not MEDIA_DOMAIN:
+    logger.warning("MEDIA_DOMAIN environment variable is not set")
+
 
 class GalleryUploadService:
     def __init__(self):
@@ -54,12 +63,10 @@ class GalleryUploadService:
                 return []
             
             # Use custom domain for public access instead of presigned URLs
-            custom_domain = "https://media.thespecialwedding.com"
-            
             files = [
                 {
                     "key": obj["Key"],
-                    "url": f"{custom_domain}/{obj['Key']}"
+                    "url": f"{MEDIA_DOMAIN}/{obj['Key']}" if MEDIA_DOMAIN else obj["Key"]
                 }
                 for obj in response["Contents"]
             ]

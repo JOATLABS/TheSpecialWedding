@@ -6,10 +6,10 @@ interface LoadingSpinnerProps {
   className?: string;
 }
 
-export default function LoadingSpinner({ 
-  size = 'md', 
-  message = 'Loading...', 
-  className = '' 
+export default function LoadingSpinner({
+  size = 'md',
+  message = 'Loading...',
+  className = ''
 }: LoadingSpinnerProps) {
   const sizeClasses = {
     sm: 'h-4 w-4',
@@ -19,14 +19,12 @@ export default function LoadingSpinner({
 
   return (
     <div className={`flex flex-col items-center justify-center py-12 ${className}`}>
-      <div 
+      <div
         className={`inline-block animate-spin rounded-full border-2 border-solid border-wedding-rose border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite] ${sizeClasses[size]} mb-4`}
         role="status"
         aria-label="Loading"
       >
-        <span className="!absolute !-m-px !h-px !w-px !overflow-hidden !whitespace-nowrap !border-0 !p-0 ![clip:rect(0,0,0,0)]">
-          Loading...
-        </span>
+        <span className="sr-only">Loading...</span>
       </div>
       {message && (
         <p className="text-gray-600 text-center">{message}</p>

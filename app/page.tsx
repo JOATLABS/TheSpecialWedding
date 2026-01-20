@@ -1,5 +1,6 @@
 "use client";
 
+import { getApiBaseUrl } from '@/utils/env';
 import {
   BellAlertIcon,
   CalendarDaysIcon,
@@ -12,12 +13,14 @@ import {
   SparklesIcon,
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import React from "react";
 
 import HeroAurora from "./components/ui/HeroAurora";
 import HeroCanvas from "./components/ui/HeroCanvas";
 import PetalCanvas from "./components/ui/PetalCanvas";
+import { SignupModal } from "./components/saas/SignupModal";
+import { ThemeConfig } from "./types/wedding";
 
 type Feature = {
   title: string;
@@ -198,7 +201,8 @@ const testimonials: Testimonial[] = [
   },
 ];
 
-const pricing: PricingTier[] = [
+// Fallback pricing if API fails
+const fallbackPricing: PricingTier[] = [
   {
     name: "Boutique",
     price: "$29",
@@ -239,6 +243,20 @@ const pricing: PricingTier[] = [
   },
 ];
 
+// Agency tier (always hardcoded - contact sales only)
+const agencyTier: PricingTier = {
+  name: "Agency",
+  price: "Custom",
+  cadence: "multi-tenant deployments",
+  features: [
+    "Dedicated success architect",
+    "Custom domains & branding",
+    "SSO + role provisioning",
+    "Compliance reporting",
+  ],
+  cta: "Talk with sales",
+};
+
 const faqs: FAQ[] = [
   {
     question: "Can I manage multiple weddings at once?",
@@ -264,7 +282,80 @@ const faqs: FAQ[] = [
 
 const partners = ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"];
 
+// Default theme for the signup modal
+const defaultTheme: ThemeConfig = {
+  primary_color: "#D4A5A5",
+  secondary_color: "#E8C46A",
+  accent_color: "#FFE4D6",
+  background_style: "gradient",
+  font_style: "elegant",
+};
+
+interface ApiPlan {
+  _id: string;
+  name: string;
+  description: string;
+  price_monthly: number;
+  price_yearly: number;
+  features_list?: string[];
+  is_featured: boolean;
+  sort_order: number;
+}
+
 export default function HomePage() {
+  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
+  const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+
+  // Fetch subscription plans from API
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const response = await fetch(`${getApiBaseUrl()}/public/subscription-plans`);
+        if (response.ok) {
+          const data = await response.json();
+          setApiPlans(data.sort((a: ApiPlan, b: ApiPlan) => a.sort_order - b.sort_order));
+        }
+      } catch (error) {
+        console.error('Failed to fetch subscription plans:', error);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+    fetchPlans();
+  }, []);
+
+  const handlePricingCTAClick = (planId: string) => {
+    // Handle Agency plan - open mailto instead of signup modal
+    if (planId === 'agency') {
+      window.location.href = 'mailto:sales@thespecialwedding.com?subject=Agency Plan Inquiry';
+      return;
+    }
+    setSelectedPlanId(planId);
+    setIsSignupModalOpen(true);
+  };
+
+  // Map API plans to PricingTier format and add Agency tier
+  const pricing: PricingTier[] = React.useMemo(() => {
+    if (plansLoading || apiPlans.length === 0) {
+      return fallbackPricing;
+    }
+
+    const apiTiers: PricingTier[] = apiPlans.map((plan) => ({
+      name: plan.name,
+      price: `$${plan.price_monthly}`,
+      cadence: "per wedding / month",
+      features: plan.features_list || [],
+      cta: plan.name === "Boutique" ? "Start planning" : `Upgrade to ${plan.name}`,
+      badge: plan.is_featured ? "Popular" : undefined,
+      emphasized: plan.is_featured,
+    }));
+
+    // Add Agency tier at the end
+    return [...apiTiers, agencyTier];
+  }, [apiPlans, plansLoading]);
+
   return (
     <main className="bg-slate-950 text-white">
       {/* HERO */}
@@ -525,8 +616,9 @@ export default function HomePage() {
                     </li>
                   ))}
                 </ul>
-                <Link
-                  href="/admin/login"
+                <button
+                  type="button"
+                  onClick={() => handlePricingCTAClick(tier.name.toLowerCase())}
                   className={`mt-9 flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold uppercase tracking-[0.3em] transition ${
                     tier.emphasized
                       ? "bg-wedding-rose text-slate-900 shadow-lg hover:bg-wedding-blush"
@@ -534,7 +626,7 @@ export default function HomePage() {
                   }`}
                 >
                   {tier.cta}
-                </Link>
+                </button>
               </div>
             ))}
           </div>
@@ -590,12 +682,18 @@ export default function HomePage() {
           <nav className="flex flex-wrap items-center gap-6 text-xs uppercase tracking-[0.3em]">
             <a href="#platform" className="hover:text-white">Platform</a>
             <a href="#pricing" className="hover:text-white">Pricing</a>
-            <Link href="/admin/login" className="hover:text-white">
-              Admin login
-            </Link>
+            <Link href="/admin/login" className="hover:text-white">Admin login</Link>
           </nav>
         </div>
       </footer>
+
+      {/* Signup Modal */}
+      <SignupModal
+        isOpen={isSignupModalOpen}
+        onClose={() => setIsSignupModalOpen(false)}
+        selectedPlanId={selectedPlanId}
+        theme={defaultTheme}
+      />
     </main>
   );
 }

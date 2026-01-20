@@ -10,7 +10,7 @@ import logging
 # Import settings and core components
 from app.core.settings import settings
 from app.core.database import init_database, close_database
-from app.core.cache import init_cache, close_cache
+from app.core.cache import init_cache, close_cache, cache
 from app.core.database_indexes import create_all_indexes
 
 # Import middleware
@@ -31,13 +31,14 @@ from app.api.admin_rsvp import router as admin_rsvp_router
 from app.api.admin_auth import router as auth_router
 from app.api.reminder import router as reminder_router
 from app.api.reminder_telnyx import router as reminder_telnyx_router
+from app.api.reminder_twilio import router as reminder_twilio_router
 from app.api.email_reminders import router as email_reminder_router
 from app.api.checkin import router as checkin_router
 from app.api.gallery_public import router as gallery_public_router
 from app.api.gallery_admin import router as gallery_admin_router
 from app.api.wedding import router as wedding_router
 from app.api.reminder_utilities import router as reminder_utils_router
-from app.api.messaging import router as messaging_router
+from app.api.platform_metrics import router as platform_metrics_router
 from app.api.user_management import router as user_management_router
 from app.api.subscription_management import router as subscription_router
 from app.api.saas_config import router as saas_config_router
@@ -47,6 +48,7 @@ from app.api.guest_verification import router as guest_verification_router
 from app.api.trial_management import router as trial_management_router
 from app.api.vendor_forms import router as vendor_forms_router
 from app.api.vendor_dashboard import router as vendor_dashboard_router
+from app.api.vendor_management import router as vendor_management_router
 from app.api.budget import router as budget_router
 from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
@@ -56,7 +58,19 @@ from app.api.public_contact import router as public_contact_router
 from app.api.stripe_payment import router as stripe_router
 from app.api.plus_ones_route import router as plus_ones_admin_router
 from app.api.checklist_route import router as checklist_admin_router
-
+from app.api.admin_platform_metrics import router as admin_platform_metrics_router
+from app.api.admin_backup import router as backup_router
+from app.api.email_webhooks import router as email_webhooks_router
+from app.api.billing_jobs import router as billing_jobs_router
+from app.api.metering import router as metering_router
+from app.api.planner_calendar import router as planner_calendar_router
+from app.api.packages import router as packages_router
+from app.api.contracts import router as contracts_router
+from app.api.autopilot import router as autopilot_router
+from app.api.ai import router as ai_router
+from app.api.planner_notifications import router as planner_notifications_router
+from app.api.tables import router as tables_router
+from app.api.config_errors import router as config_errors_router
 
 # Setup logging
 logging.basicConfig(
@@ -72,33 +86,49 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
-    
+
     try:
         # Initialize database connection
         await init_database()
         logger.info("Database initialized")
-        
+
         # Initialize cache if enabled
         if settings.redis_enabled:
             await init_cache()
             logger.info("Cache initialized")
 
         # Create database indexes
-        create_all_indexes()
+        await create_all_indexes()
         logger.info("Database indexes created/verified")
 
+        # Run database migrations
+        from app.utils.migrations import migration_manager, migration_registry
+        migrations = migration_registry.get_all_migrations()
+        await migration_manager.run_migrations(migrations)
+        logger.info("Database migrations completed")
+
+        # Validate environment configuration and notify root admin of issues
+        from app.services.config_validator import validate_environment_and_notify
+        config_result = await validate_environment_and_notify()
+        if config_result["missing_critical"]:
+            logger.critical(f"CRITICAL: {len(config_result['missing_critical'])} required environment variables are missing!")
+        elif config_result["missing_recommended"]:
+            logger.warning(f"WARNING: {len(config_result['missing_recommended'])} recommended environment variables are missing")
+        else:
+            logger.info("Environment configuration validated successfully")
+
         logger.info("Application startup complete")
-        
+
         yield  # Application runs here
-        
+
     finally:
         # Shutdown
         logger.info("Shutting down application")
-        
+
         # Close database connection
         await close_database()
         logger.info("Database connection closed")
-        
+
         # Close cache connection
         if settings.redis_enabled:
             await close_cache()
@@ -129,8 +159,11 @@ app = FastAPI(
 # ==================== MIDDLEWARE STACK ====================
 # Order matters! Add from outermost to innermost
 
-# 1. Error handling (outermost)
-app.add_middleware(ErrorHandlerMiddleware)
+# 1. Error handling (outermost) - Enhanced with MongoDB logging and email alerts
+app.add_middleware(
+    ErrorHandlerMiddleware,
+    enable_email_alerts=settings.is_production()  # Only send emails in production
+)
 
 # 2. Security headers
 if settings.security_headers_enabled:
@@ -165,7 +198,25 @@ if settings.enable_metrics:
         enable_detailed_logging=not settings.is_production()
     )
 
-# 6. Rate limiting
+# 6. CORS - MUST come before RateLimiting so preflight OPTIONS requests
+# get proper CORS headers before being rate-limited
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=settings.cors_credentials,
+    allow_methods=settings.cors_methods,
+    allow_headers=settings.cors_headers,
+    expose_headers=[
+        "Content-Length",
+        "Content-Type",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "X-Response-Time"
+    ],
+    max_age=3600,
+)
+
+# 7. Rate limiting - after CORS so preflight requests aren't unfairly limited
 if settings.rate_limit_enabled:
     app.add_middleware(
         RateLimitMiddleware,
@@ -174,23 +225,6 @@ if settings.rate_limit_enabled:
         auth_calls=settings.rate_limit_auth_calls,
         auth_period=settings.rate_limit_auth_period
     )
-
-# 7. CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=settings.cors_credentials,
-    allow_methods=settings.cors_methods,
-    allow_headers=settings.cors_headers,
-    expose_headers=[
-        "Content-Length", 
-        "Content-Type", 
-        "X-RateLimit-Remaining", 
-        "X-RateLimit-Reset",
-        "X-Response-Time"
-    ],
-    max_age=3600,
-)
 
 # 8. Compression (innermost)
 if settings.enable_compression:
@@ -224,8 +258,14 @@ app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
+app.include_router(vendor_management_router, prefix="/vendor-contract", tags=["Vendor Contracts"])  # Public contract access
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
+app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
+app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
+app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
+app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
+app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
 
 # Admin routes (authentication required)
 admin_routers = [
@@ -234,6 +274,7 @@ admin_routers = [
     (admin_rsvp_router, "RSVP"),
     (reminder_router, "Admin"),
     (reminder_telnyx_router, "Admin"),
+    (reminder_twilio_router, "Admin"),
     (email_reminder_router, "Admin"),
     (checkin_router, "Admin"),
     (gallery_admin_router, "Gallery"),
@@ -241,15 +282,28 @@ admin_routers = [
     (user_management_router, "Admin"),
     (subscription_router, "Subscription"),
     (saas_config_router, "Subscription"),
+    (budget_router, "Budget"),
     (planner_metrics_router, "Metrics"),
     (forms_router, "Forms"),
     (trial_management_router, "Admin"),
-    (vendor_forms_router, "Vendor Management"),
+    (vendor_forms_router, "Vendor Forms"),
+    (vendor_management_router, "Vendor Management"),
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (messaging_router, "Messaging"),
     (plus_ones_admin_router, "Admin"),
     (checklist_admin_router, "Admin"),
+    (admin_platform_metrics_router, "ROOT_ADMIN"),
+    (backup_router, "ROOT_ADMIN"),
+    (billing_jobs_router, "Admin"),
+    (metering_router, "ROOT_ADMIN"),
+    (planner_calendar_router, "Planner Calendar"),
+    (packages_router, "Packages"),
+    (contracts_router, "Contracts"),
+    (autopilot_router, "Autopilot"),
+    (ai_router, "AI"),
+    (planner_notifications_router, "Planner Notifications"),
+    (tables_router, "Seating"),
 ]
 
 for router, tag in admin_routers:
@@ -293,18 +347,17 @@ async def app_info():
 async def add_cache_headers(request: Request, call_next):
     """Add appropriate cache headers"""
     response = await call_next(request)
-    
+
     # Add cache headers for static content
     if settings.enable_cache_headers:
         path = request.url.path
-        
+
         if any(path.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2']):
             response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}"
         elif path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         else:
             response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes for other content
-    
     return response
 
 
@@ -313,7 +366,6 @@ if settings.is_development():
     @app.get("/dev/cache-stats", tags=["Metrics"])
     async def cache_stats():
         """Get cache statistics (development only)"""
-        from app.core.cache import cache
         if cache.enabled and cache.redis_client:
             try:
                 # Get Redis info
@@ -325,7 +377,7 @@ if settings.is_development():
                         "keyspace_hits": info.get("keyspace_hits", 0),
                         "keyspace_misses": info.get("keyspace_misses", 0),
                         "hit_rate": (
-                            info.get("keyspace_hits", 0) / 
+                            info.get("keyspace_hits", 0) /
                             (info.get("keyspace_hits", 0) + info.get("keyspace_misses", 1))
                         )
                     }
@@ -339,7 +391,7 @@ if settings.is_development():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "app.main_optimized:app",
+        "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=settings.is_development(),

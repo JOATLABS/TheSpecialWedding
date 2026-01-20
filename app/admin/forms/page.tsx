@@ -72,8 +72,8 @@ function CreationOptionCard({
   onSelect: () => void;
 }): ReactElement {
   const stateClass = isActive
-    ? 'border-wedding-rose/80 bg-white/80 shadow-xl'
-    : 'border-white/40 bg-white/40 hover:border-white/70 hover:bg-white/60';
+    ? 'border-wedding-rose/80 bg-white/80 dark:bg-slate-700/80 shadow-xl'
+    : 'border-white/40 dark:border-slate-600 bg-white/40 dark:bg-slate-800/60 hover:border-white/70 dark:hover:border-slate-500 hover:bg-white/60 dark:hover:bg-slate-700/60';
 
   return (
     <label
@@ -88,15 +88,15 @@ function CreationOptionCard({
         className="sr-only"
         aria-label={option.title}
       />
-      <div className="flex items-center justify-between gap-3 text-wedding-navy">
-        <div className={`rounded-2xl p-3 ${isActive ? 'bg-wedding-rose/10 text-wedding-rose' : 'bg-white/50 text-wedding-navy/70'}`}>
+      <div className="flex items-center justify-between gap-3 text-wedding-navy dark:text-white">
+        <div className={`rounded-2xl p-3 ${isActive ? 'bg-wedding-rose/10 text-wedding-rose' : 'bg-white/50 dark:bg-slate-600/50 text-wedding-navy/70 dark:text-white/70'}`}>
           {option.icon}
         </div>
         {isActive && <span className="rounded-full bg-wedding-rose/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">Selected</span>}
       </div>
       <div className="space-y-2">
-        <p className="text-sm font-semibold text-wedding-navy">{option.title}</p>
-        <p className="text-xs text-gray-600">{option.description}</p>
+        <p className="text-sm font-semibold text-wedding-navy dark:text-white">{option.title}</p>
+        <p className="text-xs text-gray-600 dark:text-gray-300">{option.description}</p>
       </div>
     </label>
   );
@@ -122,7 +122,7 @@ function FormBadge({
   children: ReactNode;
 }) {
   const toneStyles: Record<BadgeTone, string> = {
-    neutral: 'bg-white/70 text-wedding-navy border-white/40',
+    neutral: 'bg-white/70 dark:bg-slate-700 text-wedding-navy dark:text-white border-white/40 dark:border-slate-600',
     accent: 'bg-wedding-rose/90 text-white border-wedding-rose/40 shadow-sm',
     success: 'bg-emerald-500/90 text-white border-emerald-400/60 shadow-sm',
   };
@@ -318,44 +318,36 @@ export default function FormsManagementPage(): ReactElement {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900/5 via-white to-wedding-rose/20">
-        <div className="rounded-3xl border border-white/60 bg-white/70 px-8 py-10 text-center shadow-xl backdrop-blur">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900/5 via-white to-wedding-rose/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+        <div className="rounded-3xl border border-white/60 dark:border-slate-700 bg-white/70 dark:bg-slate-800/90 px-8 py-10 text-center shadow-xl backdrop-blur">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-wedding-rose"></div>
-          <p className="text-sm font-medium text-wedding-navy">Loading your glass workspace…</p>
+          <p className="text-sm font-medium text-wedding-navy dark:text-white">Loading your glass workspace…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-10 pb-12">
-      <section className="relative overflow-hidden rounded-[36px] border border-white/40 bg-gradient-to-br from-white/80 via-white/40 to-wedding-rose/10 p-8 shadow-2xl backdrop-blur-xl">
-        <div className="pointer-events-none absolute -top-20 left-1/3 h-64 w-64 rounded-full bg-wedding-rose/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 right-10 h-72 w-72 rounded-full bg-slate-200/40 blur-3xl" />
+    <div className="space-y-6 pb-12">
+      {/* Header */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Forms</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
+            Create and manage questionnaires, vendor workflows, and feedback forms
+          </p>
+          {forms.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {Object.entries(formCounts).map(([key, count]) => (
+                <FormBadge key={key} tone="neutral">
+                  {key.replace(/_/g, ' ')} · {count}
+                </FormBadge>
+              ))}
+            </div>
+          )}
+        </div>
 
-        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-wedding-rose">Planner form studio</p>
-            <h1 className="max-w-xl text-3xl font-semibold text-wedding-navy md:text-4xl">
-              Curate modern form journeys with glassmorphic polish
-            </h1>
-            <p className="max-w-2xl text-sm text-slate-600">
-              Build questionnaires, vendor workflows, and couple feedback loops that align with 2025 accessibility and Apple Glass
-              Human Interface fundamentals. Monitor performance with realtime analytics and unread badges that keep your team in
-              sync.
-            </p>
-            {forms.length > 0 && (
-              <div className="flex flex-wrap gap-3">
-                {Object.entries(formCounts).map(([key, count]) => (
-                  <FormBadge key={key} tone="neutral">
-                    {key.replace(/_/g, ' ')} · {count}
-                  </FormBadge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Button
               id="create-form-button"
               onClick={() => setShowCreateModal(true)}
@@ -374,20 +366,19 @@ export default function FormsManagementPage(): ReactElement {
             </Button>
           </div>
         </div>
-      </section>
 
       {error && (
-        <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 shadow-sm backdrop-blur">
+        <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 dark:text-red-300 shadow-sm backdrop-blur">
           {error}
         </div>
       )}
 
-      <section className="rounded-[36px] border border-white/40 bg-white/70 shadow-xl backdrop-blur">
-        <header className="flex flex-col gap-4 border-b border-white/40 px-8 py-6 md:flex-row md:items-center md:justify-between">
+      <section className="rounded-[36px] border border-white/40 dark:border-slate-700 bg-white/70 dark:bg-slate-800/90 shadow-xl backdrop-blur">
+        <header className="flex flex-col gap-4 border-b border-white/40 dark:border-slate-700 px-8 py-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-wedding-navy">Forms library</h2>
-            <p className="text-sm text-gray-600">
-              Track what’s live, spot unread insights, and jump into analytics without breaking focus.
+            <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Forms library</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Track what&apos;s live, spot unread insights, and jump into analytics without breaking focus.
             </p>
           </div>
           <FormBadge tone="neutral">{forms.length} total</FormBadge>
@@ -396,8 +387,8 @@ export default function FormsManagementPage(): ReactElement {
         {forms.length === 0 ? (
           <div className="px-8 py-20 text-center">
             <div className="mx-auto max-w-md space-y-3">
-              <h3 className="text-lg font-semibold text-wedding-navy">Design your first form</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className="text-lg font-semibold text-wedding-navy dark:text-white">Design your first form</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
                 Start from the curated template gallery or open a blank canvas to craft a bespoke workflow.
               </p>
               <Button onClick={() => setShowCreateModal(true)} className="shadow-md shadow-wedding-rose/30">
@@ -414,32 +405,32 @@ export default function FormsManagementPage(): ReactElement {
               return (
                 <article
                   key={form.id}
-                  className="group relative flex h-full flex-col justify-between rounded-3xl border border-white/50 bg-gradient-to-br from-white/70 via-white/40 to-wedding-rose/10 p-6 shadow-lg backdrop-blur transition hover:-translate-y-1 hover:border-wedding-rose/60 hover:shadow-2xl"
+                  className="group relative flex h-full flex-col justify-between rounded-3xl border border-white/50 dark:border-slate-700 bg-gradient-to-br from-white/70 via-white/40 to-wedding-rose/10 dark:from-slate-800 dark:via-slate-800/80 dark:to-slate-900 p-6 shadow-lg backdrop-blur transition hover:-translate-y-1 hover:border-wedding-rose/60 hover:shadow-2xl"
                 >
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-lg font-semibold text-wedding-navy">{form.name}</h3>
+                      <h3 className="text-lg font-semibold text-wedding-navy dark:text-white">{form.name}</h3>
                       {form.unread_responses > 0 && <FormBadge tone="accent">{form.unread_responses} unread</FormBadge>}
                     </div>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
                       {form.settings.description || form.settings.title}
                     </p>
-                    <dl className="grid grid-cols-2 gap-3 text-xs text-gray-500">
+                    <dl className="grid grid-cols-2 gap-3 text-xs text-gray-500 dark:text-gray-400">
                       <div className="space-y-1">
-                        <dt className="font-semibold text-wedding-navy/80">Visibility</dt>
+                        <dt className="font-semibold text-wedding-navy/80 dark:text-white/80">Visibility</dt>
                         <dd>{form.settings.is_public ? 'Public link' : 'Planner only'}</dd>
                       </div>
                       <div className="space-y-1">
-                        <dt className="font-semibold text-wedding-navy/80">Responses</dt>
+                        <dt className="font-semibold text-wedding-navy/80 dark:text-white/80">Responses</dt>
                         <dd>{form.submission_count}</dd>
                       </div>
                       <div className="space-y-1">
-                        <dt className="font-semibold text-wedding-navy/80">Created</dt>
+                        <dt className="font-semibold text-wedding-navy/80 dark:text-white/80">Created</dt>
                         <dd>{formatDate(form.created_at)}</dd>
                       </div>
                       {form.template_type && (
                         <div className="space-y-1">
-                          <dt className="font-semibold text-wedding-navy/80">Template</dt>
+                          <dt className="font-semibold text-wedding-navy/80 dark:text-white/80">Template</dt>
                           <dd>{form.template_type.replace(/_/g, ' ')}</dd>
                         </div>
                       )}
@@ -518,7 +509,7 @@ export default function FormsManagementPage(): ReactElement {
                 leaveFrom="opacity-100 translate-y-0"
                 leaveTo="opacity-0 translate-y-6"
               >
-                <Dialog.Panel className="w-full max-w-5xl overflow-hidden rounded-[36px] border border-white/50 bg-white/80 shadow-2xl backdrop-blur-xl">
+                <Dialog.Panel className="w-full max-w-5xl overflow-hidden rounded-[36px] border border-white/50 dark:border-slate-700 bg-white/80 dark:bg-slate-800/95 shadow-2xl backdrop-blur-xl">
                   <div className="grid gap-0 lg:grid-cols-[320px,minmax(0,1fr)]">
                     <aside className="relative hidden overflow-hidden border-b border-white/30 bg-gradient-to-br from-wedding-rose/30 via-wedding-rose/10 to-slate-100/40 p-8 text-white lg:block lg:border-r">
                       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_60%)]" />
@@ -552,8 +543,8 @@ export default function FormsManagementPage(): ReactElement {
 
                     <form className="space-y-7 p-8" onSubmit={handleCreateForm}>
                       <div className="space-y-2">
-                        <Dialog.Title className="text-2xl font-semibold text-wedding-navy">Create a new form</Dialog.Title>
-                        <Dialog.Description className="text-sm text-gray-600">
+                        <Dialog.Title className="text-2xl font-semibold text-wedding-navy dark:text-white">Create a new form</Dialog.Title>
+                        <Dialog.Description className="text-sm text-gray-600 dark:text-gray-300">
                           Pick a starting point and configure visibility. The creation studio applies Apple glass design primitives automatically.
                         </Dialog.Description>
                       </div>
@@ -570,7 +561,7 @@ export default function FormsManagementPage(): ReactElement {
                       </div>
 
                       <div className="space-y-3">
-                        <label htmlFor="form-name-input" className="text-sm font-medium text-wedding-navy">
+                        <label htmlFor="form-name-input" className="text-sm font-medium text-wedding-navy dark:text-white">
                           Form name
                         </label>
                         <input
@@ -579,20 +570,20 @@ export default function FormsManagementPage(): ReactElement {
                           value={formName}
                           onChange={(event) => setFormName(event.target.value)}
                           placeholder="e.g. Post-event guest feedback"
-                          className="w-full rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
+                          className="w-full rounded-2xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-4 py-3 text-sm text-wedding-navy dark:text-white shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                         />
                       </div>
 
                       {creationMode === 'template' && (
                         <div className="space-y-3">
-                          <label htmlFor="template-select" className="text-sm font-medium text-wedding-navy">
+                          <label htmlFor="template-select" className="text-sm font-medium text-wedding-navy dark:text-white">
                             Template
                           </label>
                           <select
                             id="template-select"
                             value={selectedTemplate}
                             onChange={(event) => setSelectedTemplate(event.target.value)}
-                            className="w-full rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
+                            className="w-full rounded-2xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-4 py-3 text-sm text-wedding-navy dark:text-white shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
                           >
                             <option value="">Select a template…</option>
                             {templates.map((template) => (
@@ -607,7 +598,7 @@ export default function FormsManagementPage(): ReactElement {
                       {creationMode === 'blank' && (
                         <div className="space-y-4">
                           <div className="space-y-3">
-                            <label htmlFor="form-description" className="text-sm font-medium text-wedding-navy">
+                            <label htmlFor="form-description" className="text-sm font-medium text-wedding-navy dark:text-white">
                               Description (optional)
                             </label>
                             <textarea
@@ -615,15 +606,15 @@ export default function FormsManagementPage(): ReactElement {
                               value={formDescription}
                               onChange={(event) => setFormDescription(event.target.value)}
                               rows={3}
-                              placeholder="Explain what information you’re collecting. This appears below the title."
-                              className="w-full rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
+                              placeholder="Explain what information you're collecting. This appears below the title."
+                              className="w-full rounded-2xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-4 py-3 text-sm text-wedding-navy dark:text-white shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                             />
                           </div>
                           <div className="grid gap-3 md:grid-cols-2">
-                            <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner">
+                            <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-4 py-3 text-sm text-wedding-navy dark:text-white shadow-inner">
                               <span className="flex flex-col">
                                 <span className="font-medium">Public access</span>
-                                <span className="text-xs text-gray-500">Generate a link anyone can view.</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Generate a link anyone can view.</span>
                               </span>
                               <input
                                 type="checkbox"
@@ -632,10 +623,10 @@ export default function FormsManagementPage(): ReactElement {
                                 className="h-4 w-4 rounded border-gray-300 text-wedding-rose focus:ring-wedding-rose/60"
                               />
                             </label>
-                            <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner">
+                            <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-4 py-3 text-sm text-wedding-navy dark:text-white shadow-inner">
                               <span className="flex flex-col">
                                 <span className="font-medium">Collect emails</span>
-                                <span className="text-xs text-gray-500">Capture respondent contact details for follow-ups.</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Capture respondent contact details for follow-ups.</span>
                               </span>
                               <input
                                 type="checkbox"
@@ -650,14 +641,14 @@ export default function FormsManagementPage(): ReactElement {
 
                       {creationMode === 'duplicate' && (
                         <div className="space-y-3">
-                          <label htmlFor="duplicate-form-select" className="text-sm font-medium text-wedding-navy">
+                          <label htmlFor="duplicate-form-select" className="text-sm font-medium text-wedding-navy dark:text-white">
                             Choose a form to duplicate
                           </label>
                           <select
                             id="duplicate-form-select"
                             value={duplicateSource}
                             onChange={(event) => setDuplicateSource(event.target.value)}
-                            className="w-full rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm text-wedding-navy shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
+                            className="w-full rounded-2xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 px-4 py-3 text-sm text-wedding-navy dark:text-white shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
                           >
                             <option value="">Select one of your forms…</option>
                             {forms.map((form) => (
@@ -670,7 +661,7 @@ export default function FormsManagementPage(): ReactElement {
                       )}
 
                       {creationError && (
-                        <p className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-2 text-sm text-red-700 shadow-inner">
+                        <p className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-2 text-sm text-red-700 dark:text-red-300 shadow-inner">
                           {creationError}
                         </p>
                       )}

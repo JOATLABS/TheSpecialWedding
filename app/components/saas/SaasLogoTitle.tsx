@@ -15,7 +15,7 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
     <div className="flex flex-col items-center justify-center w-full max-w-5xl mx-auto">
       {/* Logo on Top with Glass Glow */}
       <div className="mb-6 md:mb-8">
-        <div 
+        <div
           className="relative w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48"
           style={{
             filter: `
@@ -38,12 +38,11 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
           />
         </div>
       </div>
-      
       {/* Title Text with Enhanced Glass Glow for Visibility */}
       <div className="text-center">
         {/* Welcome - Sans Serif, Bigger with stronger glow */}
         <div className="relative">
-          <span 
+          <span
             className="block text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-medium tracking-wider"
             style={{
               fontFamily: "'Poppins', sans-serif",
@@ -63,10 +62,10 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
             Welcome
           </span>
         </div>
-        
+
         {/* TO The - Sans Serif, Indented with glow */}
         <div className="relative -mt-2 ml-16 sm:ml-20 md:ml-24 lg:ml-32">
-          <span 
+          <span
             className="inline-block text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-medium tracking-widest mr-4"
             style={{
               fontFamily: "'Poppins', sans-serif",
@@ -83,7 +82,7 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
           >
             TO
           </span>
-          <span 
+          <span
             className="inline-block text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-semibold"
             style={{
               fontFamily: "'Dancing Script', cursive",
@@ -101,10 +100,10 @@ export const SaasLogoTitle: React.FC<SaasLogoTitleProps> = ({ theme }) => {
             The
           </span>
         </div>
-        
+
         {/* Special Wedding - Script Font, Much Larger with strongest glow */}
         <div className="relative -mt-6 ml-24 sm:ml-32 md:ml-40 lg:ml-48">
-          <span 
+          <span
             className="block text-6xl sm:text-7xl md:text-8xl lg:text-[8rem] font-bold"
             style={{
               fontFamily: "'Dancing Script', cursive",

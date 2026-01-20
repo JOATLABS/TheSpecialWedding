@@ -37,7 +37,7 @@ export const WEDDING_TEMPLATES: WeddingTemplate[] = [
     category: 'classic',
     default_theme: {
       primary_color: '#1e3a5f', // Navy blue - matches current
-      secondary_color: '#d4af37', // Gold - matches current  
+      secondary_color: '#d4af37', // Gold - matches current
       accent_color: '#c8847e', // Rose - matches current
       background_style: 'gradient',
       font_style: 'elegant' // Playfair Display + Lora

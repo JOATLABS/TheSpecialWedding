@@ -63,7 +63,7 @@ export default function BillingSuccessPage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Verifying your payment...</p>
+          <p className="text-gray-600 dark:text-gray-400 dark:text-gray-400">Verifying your payment...</p>
         </div>
       </div>
     );
@@ -74,13 +74,13 @@ export default function BillingSuccessPage() {
       <div className="container max-w-2xl mx-auto py-16 px-4">
         <Card>
           <CardHeader>
-            <CardTitle className="text-red-600">Payment Verification Failed</CardTitle>
+            <CardTitle className="text-red-600 dark:text-red-300">Payment Verification Failed</CardTitle>
             <CardDescription>
               We encountered an issue verifying your payment
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-gray-600 dark:text-gray-400">{error}</p>
+            <p className="text-gray-600 dark:text-gray-400 dark:text-gray-400">{error}</p>
           </CardContent>
           <CardFooter>
             <Button onClick={() => router.push('/admin/billing')}>
@@ -97,9 +97,9 @@ export default function BillingSuccessPage() {
       <Card className="border-green-200 dark:border-green-800">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
-            <CheckCircle2 className="w-10 h-10 text-green-600 dark:text-green-400" />
+            <CheckCircle2 className="w-10 h-10 text-green-600 dark:text-green-300 dark:text-green-400" />
           </div>
-          <CardTitle className="text-2xl text-green-600 dark:text-green-400">
+          <CardTitle className="text-2xl text-green-600 dark:text-green-300 dark:text-green-400">
             Payment Successful!
           </CardTitle>
           <CardDescription>
@@ -109,21 +109,21 @@ export default function BillingSuccessPage() {
         <CardContent className="space-y-6">
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 space-y-4">
             <div className="flex justify-between items-center">
-              <span className="text-gray-600 dark:text-gray-400">Payment Status</span>
+              <span className="text-gray-600 dark:text-gray-400 dark:text-gray-400">Payment Status</span>
               <span className="font-semibold capitalize">
                 {session?.payment_status || 'Paid'}
               </span>
             </div>
             {session?.amount_total && (
               <div className="flex justify-between items-center">
-                <span className="text-gray-600 dark:text-gray-400">Amount Paid</span>
+                <span className="text-gray-600 dark:text-gray-400 dark:text-gray-400">Amount Paid</span>
                 <span className="font-semibold">
                   ${session.amount_total.toFixed(2)} {session.currency?.toUpperCase()}
                 </span>
               </div>
             )}
             <div className="flex justify-between items-center">
-              <span className="text-gray-600 dark:text-gray-400">Subscription ID</span>
+              <span className="text-gray-600 dark:text-gray-400 dark:text-gray-400">Subscription ID</span>
               <span className="font-mono text-sm">
                 {session?.subscription || 'Processing...'}
               </span>
@@ -132,21 +132,21 @@ export default function BillingSuccessPage() {
 
           <div className="space-y-2">
             <h3 className="font-semibold">What happens next?</h3>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400">
               <li className="flex items-start">
-                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />
+                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600 dark:text-green-300" />
                 Your subscription is now active and ready to use
               </li>
               <li className="flex items-start">
-                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />
+                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600 dark:text-green-300" />
                 You&apos;ll receive a confirmation email shortly
               </li>
               <li className="flex items-start">
-                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />
+                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600 dark:text-green-300" />
                 You can now access all features included in your plan
               </li>
               <li className="flex items-start">
-                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600" />
+                <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-green-600 dark:text-green-300" />
                 Manage your subscription anytime from the billing page
               </li>
             </ul>

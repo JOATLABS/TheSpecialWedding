@@ -6,7 +6,8 @@ import sys
 
 import mongomock
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -16,7 +17,12 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.api.saas_config as saas_config
+import app.api.saas_config as saas_config  # noqa: E402
+import app.api.platform_metrics as platform_metrics_api  # noqa: E402
+from app.core.config import settings  # noqa: E402
+from app.dependencies.auth import require_admin  # noqa: E402
+from app.services.platform_metrics_service import PlatformMetricsService  # noqa: E402
+import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
 
 
 class FakeMongo:
@@ -30,6 +36,9 @@ class FakeMongo:
 
     def get_subscription_plans_collection(self):
         return self.db["subscription_plans"]
+
+    def get_platform_metrics_collection(self):
+        return self.db["platform_metrics"]
 
     def get_guest_collection(self):
         return self.db["guests"]
@@ -59,7 +68,36 @@ def mongo_fixture(monkeypatch):
     return fake, database
 
 
-def test_platform_metrics_compiles_expected_totals(mongo_fixture):
+@pytest.fixture
+def anyio_backend():
+    """Constrain anyio-backed tests to asyncio only."""
+    return "asyncio"
+
+
+@pytest.fixture
+def snapshot_test_client(monkeypatch):
+    client = mongomock.MongoClient()
+    database = client["wedding_webapp"]
+    fake = FakeMongo(database)
+
+    service = PlatformMetricsService(fake)
+    monkeypatch.setattr(platform_metrics_service, "service", service)
+    monkeypatch.setattr(platform_metrics_api, "metrics_service", service)
+    monkeypatch.setattr(settings, "PLATFORM_METRICS_TOKEN", "metrics-test-token")
+
+    app = FastAPI()
+    app.include_router(platform_metrics_api.router)
+
+    async def override_require_admin():
+        return SimpleNamespace(role="admin")
+
+    app.dependency_overrides[require_admin] = override_require_admin
+
+    return TestClient(app)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
     fake_mongo, db = mongo_fixture
     now = datetime.utcnow()
 
@@ -155,7 +193,9 @@ def test_platform_metrics_compiles_expected_totals(mongo_fixture):
         {"_id": "ai1", "created_at": now - timedelta(hours=4)}
     )
 
-    metrics = saas_config.get_platform_metrics(timeframe="7d", current_user=SimpleNamespace())
+    metrics = await saas_config.get_platform_metrics(
+        timeframe="7d", current_user=SimpleNamespace()
+    )
 
     assert metrics["users"]["total"] == 3
     assert metrics["users"]["new_in_period"] == 2
@@ -170,9 +210,61 @@ def test_platform_metrics_compiles_expected_totals(mongo_fixture):
     assert metrics["operations"]["communications"]["ai_events_in_period"] == 1
 
 
-def test_platform_metrics_rejects_invalid_timeframe(monkeypatch):
+@pytest.mark.anyio("asyncio")
+async def test_platform_metrics_rejects_invalid_timeframe(monkeypatch):
     fake = FakeMongo(mongomock.MongoClient()["test"])
     monkeypatch.setattr(saas_config, "mongo", fake)
 
     with pytest.raises(HTTPException):
-        saas_config.get_platform_metrics(timeframe="15d", current_user=SimpleNamespace())
+        await saas_config.get_platform_metrics(
+            timeframe="15d", current_user=SimpleNamespace()
+        )
+
+
+def test_metrics_snapshot_endpoints_roundtrip(snapshot_test_client):
+    client = snapshot_test_client
+    headers = {"Authorization": "Bearer metrics-test-token"}
+
+    payload = {
+        "snapshot_time": "2024-01-01T12:00:00Z",
+        "metrics": {"users": {"total": 5}},
+    }
+
+    ingest_response = client.post("/metrics/snapshot", json=payload, headers=headers)
+    assert ingest_response.status_code == 200
+    body = ingest_response.json()
+    assert body["metrics"]["users"]["total"] == 5
+    assert body["snapshot_time"].startswith("2024-01-01T12:00:00")
+    assert body["ingested_at"]
+
+    snapshot_response = client.get("/metrics/snapshot", headers=headers)
+    assert snapshot_response.status_code == 200
+    latest = snapshot_response.json()
+    assert latest["id"] == body["id"]
+
+    admin_response = client.get("/admin/platform/metrics")
+    assert admin_response.status_code == 200
+    assert admin_response.json()["id"] == body["id"]
+
+    history_response = client.get(
+        "/admin/platform/metrics/history",
+        params={"start_date": "2023-12-01T00:00:00Z"},
+    )
+    assert history_response.status_code == 200
+    history = history_response.json()
+    assert history and history[0]["id"] == body["id"]
+
+
+def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client):
+    client = snapshot_test_client
+    headers = {"Authorization": "Bearer metrics-test-token"}
+
+    response = client.get("/metrics/snapshot", headers=headers)
+    assert response.status_code == 404
+
+    admin_response = client.get("/admin/platform/metrics")
+    assert admin_response.status_code == 404
+
+    history_response = client.get("/admin/platform/metrics/history")
+    assert history_response.status_code == 200
+    assert history_response.json() == []

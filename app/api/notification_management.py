@@ -158,6 +158,13 @@ async def mark_notification_read(notification_id: str, current_user: ExtendedAut
         user_id=current_user.email
     )
 
+@router.put("/user/notifications/read-all", tags=["User Notifications"])
+async def mark_all_notifications_read(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    """Mark all notifications as read for current user"""
+    return await notification_service.mark_all_notifications_read(
+        user_id=current_user.email
+    )
+
 @router.put("/user/notifications/{notification_id}/dismiss", tags=["User Notifications"])
 async def dismiss_notification(notification_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Dismiss a notification for current user"""
@@ -173,3 +180,89 @@ async def get_notification_count(current_user: ExtendedAuthUser = Depends(requir
         user_email=current_user.email,
         user_role=current_user.role
     )
+
+# ==================== NOTIFICATION TEMPLATES ====================
+
+class NotificationTemplateModel(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200, description="Template name")
+    subject: str = Field(..., min_length=1, max_length=200, description="Email subject / SMS preview")
+    content: str = Field(..., min_length=1, description="Template content (supports variables like {guest_name})")
+    type: str = Field(..., description="Template type: email or sms")
+    category: str = Field(default="general", description="Template category")
+    variables: List[str] = Field(default_factory=list, description="List of available variables")
+    is_active: bool = Field(default=True, description="Whether template is active")
+
+    @validator('type')
+    def validate_type(cls, v):
+        if v not in ['email', 'sms']:
+            raise ValueError('Type must be either email or sms')
+        return v
+
+class NotificationTemplateUpdateModel(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    subject: Optional[str] = Field(None, min_length=1, max_length=200)
+    content: Optional[str] = None
+    category: Optional[str] = None
+    variables: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+@router.post("/notification-templates", tags=["Notification Templates"])
+async def create_notification_template(
+    template_data: NotificationTemplateModel,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """Create a new notification template - ROOT_ADMIN only"""
+    return await notification_service.create_template(
+        template_data.dict(),
+        created_by=current_user.email
+    )
+
+@router.get("/notification-templates", tags=["Notification Templates"])
+async def get_notification_templates(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(50, ge=1, le=100, description="Items per page"),
+    type: Optional[str] = Query(None, description="Filter by template type (email/sms)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """Get notification templates with filtering and pagination - ROOT_ADMIN only"""
+    filters = {}
+    if type:
+        filters['type'] = type
+    if category:
+        filters['category'] = category
+
+    return await notification_service.get_templates(
+        page=page,
+        limit=limit,
+        filters=filters
+    )
+
+@router.get("/notification-templates/{template_id}", tags=["Notification Templates"])
+async def get_notification_template(
+    template_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """Get specific notification template - ROOT_ADMIN only"""
+    return await notification_service.get_template(template_id)
+
+@router.put("/notification-templates/{template_id}", tags=["Notification Templates"])
+async def update_notification_template(
+    template_id: str,
+    template_data: NotificationTemplateUpdateModel,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """Update a notification template - ROOT_ADMIN only"""
+    return await notification_service.update_template(
+        template_id,
+        template_data.dict(exclude_unset=True),
+        updated_by=current_user.email
+    )
+
+@router.delete("/notification-templates/{template_id}", tags=["Notification Templates"])
+async def delete_notification_template(
+    template_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """Delete a notification template - ROOT_ADMIN only"""
+    return await notification_service.delete_template(template_id)

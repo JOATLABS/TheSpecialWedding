@@ -29,7 +29,7 @@ The admin responses page now calls the secure export endpoint directly and expos
 - **Dynamic CSV Headers**: Headers generated based on form field structure
 - **Metadata Inclusion**: Optional submission metadata (date, IP address, user info, completion status)
 - **Date Range Filtering**: Export responses within specific date ranges
-- **Smart Data Formatting**: 
+- **Smart Data Formatting**:
  - Ratings displayed as "4/5"
  - Scales displayed as "8/10"
  - Arrays joined with semicolons
@@ -120,7 +120,7 @@ The admin responses page now calls the secure export endpoint directly and expos
 
 **Success (200)**:
 - **Content-Type**: `text/csv; charset=utf-8`
-- **Headers**: 
+- **Headers**:
  - `Content-Disposition: attachment; filename="FormName_responses_YYYYMMDD_HHMMSS.csv"`
  - `Content-Length: {file_size}`
  - Cache control headers
@@ -276,7 +276,6 @@ const exportCSV = async () => {
  const response = await fetch(`/admin/forms/${formId}/export/csv?include_metadata=true`, {
  headers: { 'Authorization': `Bearer ${token}` }
  });
- 
  if (response.ok) {
  const blob = await response.blob();
  const url = URL.createObjectURL(blob);
@@ -291,7 +290,7 @@ const exportCSV = async () => {
 ## Performance Characteristics
 
 - **Small Forms** (< 100 responses): ~50ms processing time
-- **Medium Forms** (< 1,000 responses): ~200ms processing time 
+- **Medium Forms** (< 1,000 responses): ~200ms processing time
 - **Large Forms** (< 10,000 responses): ~2-5s processing time
 - **Memory Usage**: Optimized for streaming, low memory footprint
 - **File Sizes**: Typical 1KB per response, compressed efficiently

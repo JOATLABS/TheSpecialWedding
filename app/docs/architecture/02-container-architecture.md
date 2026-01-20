@@ -323,5 +323,5 @@ Service Mesh:
 
 ---
 
-**Next**: [Component Architecture](./03-component-architecture.md) 
+**Next**: [Component Architecture](./03-component-architecture.md)
 **Previous**: [System Context](./01-system-context.md)

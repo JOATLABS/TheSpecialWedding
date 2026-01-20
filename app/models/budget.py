@@ -34,7 +34,6 @@ class BudgetCategory(BaseModel):
         arbitrary_types_allowed=True,
         str_strip_whitespace=True
     )
-    
     @field_serializer('id', when_used='json')
     def serialize_id(self, value) -> str:
         """Serialize ObjectId to string for JSON output."""
@@ -90,7 +89,6 @@ class VendorQuote(BaseModel):
         arbitrary_types_allowed=True,
         str_strip_whitespace=True
     )
-    
     @field_serializer('id', when_used='json')
     def serialize_id(self, value) -> str:
         """Serialize ObjectId to string for JSON output."""
@@ -138,7 +136,6 @@ class BudgetTemplate(BaseModel):
         arbitrary_types_allowed=True,
         str_strip_whitespace=True
     )
-    
     @field_serializer('id', when_used='json')
     def serialize_id(self, value) -> str:
         """Serialize ObjectId to string for JSON output."""
@@ -170,7 +167,7 @@ class BudgetSummary(BaseModel):
     total_budget: float = Field(ge=0, description="Total allocated budget")
     total_spent: float = Field(default=0.0, ge=0, description="Total amount spent")
     total_committed: float = Field(default=0.0, ge=0, description="Total committed (contracts signed)")
-    remaining_budget: float = Field(ge=0, description="Remaining budget available")
+    remaining_budget: float = Field(description="Remaining budget available (can be negative if overspent)")
     budget_variance: float = Field(description="Variance from budget (+ over, - under)")
     variance_percentage: float = Field(description="Variance as percentage")
     categories_count: int = Field(ge=0, description="Number of budget categories")

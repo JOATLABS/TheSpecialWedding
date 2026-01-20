@@ -98,7 +98,7 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
       />
 
       <div
-        className={`relative w-full max-w-[min(100vw-2rem,38rem)] sm:max-w-3xl max-h-[min(100vh-1.5rem,44rem)] overflow-hidden rounded-[2.25rem] bg-white transition-all duration-500 ease-out ${
+        className={`relative w-full max-w-[min(100vw-2rem,38rem)] sm:max-w-3xl max-h-[min(100dvh-1.5rem,44rem)] overflow-hidden rounded-[2.25rem] bg-white transition-all duration-500 ease-out ${
           isAnimating ? 'translate-y-0 scale-100' : 'translate-y-8 scale-[0.97]'
         } shadow-[0_50px_140px_-80px_rgba(15,23,42,0.7)] sm:overflow-visible`}
       >
@@ -131,7 +131,7 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
             </div>
           </div>
 
-          <div className="relative max-h-[calc(100vh-4rem)] overflow-y-auto p-6 sm:max-h-none sm:p-8">
+          <div className="relative max-h-[calc(100dvh-4rem)] overflow-y-auto p-6 sm:max-h-none sm:p-8">
             <button
               onClick={handleClose}
               className="absolute right-6 top-6 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 transition hover:-translate-y-[1px] hover:border-slate-300 hover:text-slate-900"
@@ -200,7 +200,7 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
 
         @media (max-width: 640px) {
           .overflow-y-auto {
-            max-height: calc(100vh - 6rem);
+            max-height: calc(100dvh - 4rem);
           }
         }
       `}</style>

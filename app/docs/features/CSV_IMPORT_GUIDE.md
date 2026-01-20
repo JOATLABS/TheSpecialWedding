@@ -9,10 +9,10 @@
 
 ### 2. **phone** OR **email** (At least ONE required)
 - **Description**: Contact information for sending reminders and communications
-- **Format**: 
+- **Format**:
   - Phone: 10-15 digits only (no spaces, dashes, or country codes)
   - Email: Valid email address format
-- **Example**: 
+- **Example**:
   - Phone: "1234567890"
   - Email: "john@example.com"
 

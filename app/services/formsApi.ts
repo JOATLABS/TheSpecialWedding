@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from '@/utils/env';
+
 export interface BlankFormPayload {
   name: string;
   description?: string;
@@ -37,7 +39,6 @@ interface RequestOptions {
   init?: RequestInit;
 }
 
-const FALLBACK_BASE_URL = 'http://localhost:8000';
 
 function normaliseHeaders(headers: HeadersInit = {}): Record<string, string> {
   if (headers instanceof Headers) {
@@ -76,7 +77,7 @@ async function authorisedFetch(path: string, { token, init }: RequestOptions) {
 
 export const formsApi = {
   resolveBaseUrl(): string {
-    return process.env.NEXT_PUBLIC_API_BASE_URL || FALLBACK_BASE_URL;
+    return getApiBaseUrl();
   },
 
   async fetchForms(token: string): Promise<FormSummaryResponse[]> {

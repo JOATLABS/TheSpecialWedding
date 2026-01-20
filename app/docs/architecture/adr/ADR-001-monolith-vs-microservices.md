@@ -1,8 +1,8 @@
 # ADR-001: Choose Monolithic Architecture Over Microservices for Initial Development
 
-**Date**: 2024-12-01 
-**Status**: Accepted 
-**Deciders**: Development Team, Technical Lead 
+**Date**: 2024-12-01
+**Status**: Accepted
+**Deciders**: Development Team, Technical Lead
 **Technical Story**: Platform architecture decision for initial SaaS launch
 
 ## Context and Problem Statement

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
@@ -10,7 +11,15 @@ import BudgetCategoryCard from '../../components/budget/BudgetCategoryCard';
 import PaymentHistoryPanel from '../../components/budget/PaymentHistoryPanel';
 import RecordPaymentModal from '../../components/budget/RecordPaymentModal';
 import { budgetApi } from '../../services/budgetApi';
+import {
+  getVendorDirectory,
+  getWeddingVendors,
+  assignVendorToWedding,
+  type VendorProfile,
+  type VendorAssignment
+} from '../../services/vendorManagementApi';
 import { formatDate } from '@/utils/dateFormat';
+import { Sparkles, X, Loader2, AlertCircle, Lightbulb } from 'lucide-react';
 import type {
   BudgetCategory,
   BudgetSummary,
@@ -26,6 +35,20 @@ interface Wedding {
   couple_names: string;
   date: string;
   slug: string;
+}
+
+interface AIInsight {
+  category?: string;
+  insight: string;
+  recommendation?: string;
+  priority?: 'high' | 'medium' | 'low';
+}
+
+interface AIInsightsResponse {
+  insights: AIInsight[];
+  cached: boolean;
+  credits_used: number;
+  warning?: string;
 }
 
 export default function BudgetDashboard() {
@@ -61,6 +84,73 @@ export default function BudgetDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'budget' | 'spent' | 'priority'>('priority');
 
+  // Vendor integration
+  const [vendorDirectory, setVendorDirectory] = useState<VendorProfile[]>([]);
+  const [vendorAssignments, setVendorAssignments] = useState<VendorAssignment[]>([]);
+  const [selectedVendorId, setSelectedVendorId] = useState<string>('');
+
+  // AI Budget Insights
+  const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
+  const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
+  const [aiInsightsError, setAiInsightsError] = useState<string>('');
+  const [showAiInsights, setShowAiInsights] = useState(false);
+  const [aiCreditsWarning, setAiCreditsWarning] = useState<string>('');
+
+  const fetchAiInsights = useCallback(async (forceRefresh = false) => {
+    if (!token || !selectedWedding) return;
+
+    setAiInsightsLoading(true);
+    setAiInsightsError('');
+    setAiCreditsWarning('');
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const url = new URL(`${baseUrl}/admin/ai/weddings/${selectedWedding}/budget-insights`);
+      if (forceRefresh) {
+        url.searchParams.set('force_refresh', 'true');
+      }
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 402) {
+          throw new Error(errorData.detail?.message || 'Insufficient AI credits. Please upgrade your plan.');
+        } else if (response.status === 429) {
+          throw new Error(errorData.detail?.message || 'AI service is busy. Please try again in a moment.');
+        } else if (response.status === 503) {
+          throw new Error(errorData.detail?.message || 'AI service is temporarily unavailable.');
+        }
+        throw new Error(errorData.detail?.message || errorData.detail || 'Failed to generate AI insights');
+      }
+
+      const data: AIInsightsResponse = await response.json();
+      setAiInsights(data.insights || []);
+      setShowAiInsights(true);
+
+      if (data.warning) {
+        setAiCreditsWarning(data.warning);
+      }
+
+      if (data.cached) {
+        toast.info('Showing cached insights. Click refresh for new analysis.');
+      } else {
+        toast.success(`AI insights generated (${data.credits_used} credits used)`);
+      }
+    } catch (err: any) {
+      const message = err.message || 'Failed to get AI insights';
+      setAiInsightsError(message);
+      toast.error(message);
+    } finally {
+      setAiInsightsLoading(false);
+    }
+  }, [token, selectedWedding]);
+
   const fetchWeddings = useCallback(async () => {
     if (!token) {
       setWeddings([]);
@@ -68,8 +158,9 @@ export default function BudgetDashboard() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl}/admin/weddings`, {
+      const baseUrl = getApiBaseUrl();
+      // Use authenticated planner endpoint to get assigned weddings
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -113,13 +204,17 @@ export default function BudgetDashboard() {
 
     setLoading(true);
     try {
-      const [summaryData, categoriesData] = await Promise.all([
+      const [summaryData, categoriesData, vendorData, assignmentsData] = await Promise.all([
         budgetApi.getBudgetSummary(token, selectedWedding),
         budgetApi.getBudgetCategories(token, selectedWedding),
+        getVendorDirectory(token).catch(() => []),
+        getWeddingVendors(token, selectedWedding).catch(() => []),
       ]);
 
       setBudgetSummary(summaryData);
       setCategories(categoriesData);
+      setVendorDirectory(vendorData);
+      setVendorAssignments(assignmentsData);
       setError('');
       await fetchPaymentHistory(selectedWedding);
     } catch (err: any) {
@@ -148,10 +243,15 @@ export default function BudgetDashboard() {
 
       const newCategory = await budgetApi.createBudgetCategory(token, categoryData);
       setCategories((prev) => [...prev, newCategory]);
+
+      // Handle vendor assignment if a vendor was selected
+      if (selectedVendorId) {
+        await handleVendorAssignment(newCategory.id || newCategory._id);
+      }
+
       setShowCategoryModal(false);
       resetCategoryForm();
       toast.success('Budget category created successfully');
-      
       // Refresh summary
       fetchBudgetData();
     } catch (err: any) {
@@ -173,19 +273,24 @@ export default function BudgetDashboard() {
       };
 
       const updatedCategory = await budgetApi.updateBudgetCategory(
-        token, 
-        editingCategory.id, 
+        token,
+        editingCategory.id,
         updateData
       );
-      
+
       setCategories((prev) =>
         prev.map((cat) => (cat.id === editingCategory.id ? updatedCategory : cat))
       );
+
+      // Handle vendor assignment if a vendor was selected
+      if (selectedVendorId) {
+        await handleVendorAssignment(editingCategory.id);
+      }
+
       setShowCategoryModal(false);
       setEditingCategory(null);
       resetCategoryForm();
       toast.success('Budget category updated successfully');
-      
       // Refresh summary
       fetchBudgetData();
     } catch (err: any) {
@@ -200,7 +305,6 @@ export default function BudgetDashboard() {
       await budgetApi.deleteBudgetCategory(token, categoryId);
       setCategories((prev) => prev.filter((cat) => cat.id !== categoryId));
       toast.success('Budget category deleted successfully');
-      
       // Refresh summary
       fetchBudgetData();
     } catch (err: any) {
@@ -217,6 +321,11 @@ export default function BudgetDashboard() {
       priority: category.priority,
       percentage_of_total: category.percentage_of_total || 0
     });
+    // Set the selected vendor if there's an existing assignment
+    const existingAssignment = vendorAssignments.find(
+      a => a.budget_category_id === (category.id || category._id)
+    );
+    setSelectedVendorId(existingAssignment?.vendor_profile_id || '');
     setShowCategoryModal(true);
   };
 
@@ -229,6 +338,59 @@ export default function BudgetDashboard() {
       percentage_of_total: 0
     });
     setEditingCategory(null);
+    setSelectedVendorId('');
+  };
+
+  // Helper to find assigned vendor for a category
+  const getAssignedVendorForCategory = useCallback((categoryId: string): VendorAssignment | undefined => {
+    return vendorAssignments.find(a => a.budget_category_id === categoryId);
+  }, [vendorAssignments]);
+
+  // Handle vendor assignment when creating/updating category
+  const handleVendorAssignment = async (categoryId: string) => {
+    if (!token || !selectedWedding || !selectedVendorId) return;
+
+    const vendor = vendorDirectory.find(v => v._id === selectedVendorId);
+    if (!vendor) return;
+
+    try {
+      const assignment = await assignVendorToWedding(token, {
+        vendor_profile_id: selectedVendorId,
+        wedding_id: selectedWedding,
+        budget_category_id: categoryId,
+      });
+      // Update local state
+      setVendorAssignments(prev => {
+        // Remove any existing assignment for this category
+        const filtered = prev.filter(a => a.budget_category_id !== categoryId);
+        return [...filtered, assignment];
+      });
+    } catch (err: any) {
+      console.error('Failed to assign vendor:', err);
+      // Don't fail the whole operation, just log the error
+      toast.error('Category saved, but vendor assignment failed');
+    }
+  };
+
+  // Bidirectional calculation handlers
+  const handleBudgetAmountChange = (amount: number) => {
+    const totalBudget = budgetSummary?.total_budget || 0;
+    const percentage = totalBudget > 0 ? (amount / totalBudget) * 100 : 0;
+    setCategoryForm({
+      ...categoryForm,
+      budgeted_amount: amount,
+      percentage_of_total: parseFloat(percentage.toFixed(2))
+    });
+  };
+
+  const handlePercentageChange = (percentage: number) => {
+    const totalBudget = budgetSummary?.total_budget || 0;
+    const amount = (percentage / 100) * totalBudget;
+    setCategoryForm({
+      ...categoryForm,
+      percentage_of_total: percentage,
+      budgeted_amount: parseFloat(amount.toFixed(2))
+    });
   };
 
   const handleAddPayment = (category: BudgetCategory) => {
@@ -287,7 +449,7 @@ export default function BudgetDashboard() {
   };
 
   // Filter and sort categories (computed during render, not in effect)
-  const filteredCategories = useMemo(() => 
+  const filteredCategories = useMemo(() =>
     categories
       .filter(category => {
         const matchesSearch = category.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -321,15 +483,28 @@ export default function BudgetDashboard() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-heading font-bold text-wedding-navy">
+          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">
             Budget Management
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
             Manage wedding budgets, track expenses, and compare vendor quotes
           </p>
         </div>
-        
         <div className="flex gap-3">
+          {selectedWedding && (
+            <Button
+              onClick={() => fetchAiInsights(false)}
+              disabled={aiInsightsLoading}
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+            >
+              {aiInsightsLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              AI Insights
+            </Button>
+          )}
           <Button onClick={() => exportBudgetReport('pdf')}>
             Export PDF
           </Button>
@@ -342,13 +517,13 @@ export default function BudgetDashboard() {
       {/* Wedding Selection */}
       <Card className="p-4">
         <div className="flex flex-col sm:flex-row gap-4 items-center">
-          <label className="font-medium text-wedding-navy whitespace-nowrap">
+          <label className="font-medium text-wedding-navy dark:text-gray-200 whitespace-nowrap">
             Select Wedding:
           </label>
           <select
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
@@ -365,12 +540,109 @@ export default function BudgetDashboard() {
         <BudgetSummaryCard summary={budgetSummary} />
       )}
 
+      {/* AI Budget Insights Panel */}
+      {showAiInsights && (
+        <Card className="p-6 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border-purple-200 dark:border-purple-800">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <h2 className="text-lg font-semibold text-purple-900 dark:text-purple-100">
+                AI Budget Insights
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => fetchAiInsights(true)}
+                disabled={aiInsightsLoading}
+                className="text-sm px-3 py-1"
+              >
+                {aiInsightsLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  'Refresh'
+                )}
+              </Button>
+              <button
+                onClick={() => setShowAiInsights(false)}
+                className="p-1 hover:bg-purple-200 dark:hover:bg-purple-800 rounded"
+              >
+                <X className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              </button>
+            </div>
+          </div>
+
+          {/* Credits Warning */}
+          {aiCreditsWarning && (
+            <div className="mb-4 p-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800 dark:text-amber-200">{aiCreditsWarning}</p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {aiInsightsError && (
+            <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg">
+              <p className="text-red-800 dark:text-red-200">{aiInsightsError}</p>
+            </div>
+          )}
+
+          {/* Insights List */}
+          {!aiInsightsError && aiInsights.length > 0 && (
+            <div className="space-y-4">
+              {aiInsights.map((insight, index) => (
+                <div
+                  key={index}
+                  className={`p-4 rounded-lg border ${
+                    insight.priority === 'high'
+                      ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                      : insight.priority === 'medium'
+                      ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                      : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Lightbulb className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                      insight.priority === 'high'
+                        ? 'text-red-600 dark:text-red-400'
+                        : insight.priority === 'medium'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-purple-600 dark:text-purple-400'
+                    }`} />
+                    <div className="flex-1">
+                      {insight.category && (
+                        <span className="inline-block px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-200 rounded mb-2">
+                          {insight.category}
+                        </span>
+                      )}
+                      <p className="text-slate-800 dark:text-slate-200">{insight.insight}</p>
+                      {insight.recommendation && (
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 italic">
+                          Recommendation: {insight.recommendation}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* No Insights */}
+          {!aiInsightsError && aiInsights.length === 0 && !aiInsightsLoading && (
+            <div className="text-center py-8 text-slate-600 dark:text-slate-400">
+              <Lightbulb className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No insights available yet. Add more budget data to get AI-powered recommendations.</p>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Categories Section */}
       {selectedWedding && (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[2fr_1fr] items-start">
           <div className="space-y-6">
             {/* Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white/60 backdrop-blur-xl border border-white/40 rounded-2xl p-4 shadow-md">
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-white/40 dark:border-slate-600 rounded-2xl p-4 shadow-md">
               <div className="flex flex-col sm:flex-row gap-4 items-center flex-1 w-full">
                 {/* Search */}
                 <input
@@ -378,14 +650,14 @@ export default function BudgetDashboard() {
                   placeholder="Search categories..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full sm:w-auto flex-1 rounded-xl border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="w-full sm:w-auto flex-1 rounded-xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                 />
 
                 {/* Status Filter */}
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full sm:w-auto rounded-xl border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="w-full sm:w-auto rounded-xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                 >
                   <option value="all">All Status</option>
                   <option value="pending">Pending</option>
@@ -398,7 +670,7 @@ export default function BudgetDashboard() {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                  className="w-full sm:w-auto rounded-xl border border-white/60 bg-white/70 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                  className="w-full sm:w-auto rounded-xl border border-white/60 dark:border-slate-600 bg-white/70 dark:bg-slate-700 text-gray-900 dark:text-gray-100 px-3 py-2 shadow-inner focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                 >
                   <option value="priority">Sort by Priority</option>
                   <option value="name">Sort by Name</option>
@@ -419,16 +691,16 @@ export default function BudgetDashboard() {
             {loading ? (
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
-                <p className="mt-2 text-gray-600">Loading budget data...</p>
+                <p className="mt-2 text-gray-600 dark:text-gray-400">Loading budget data...</p>
               </div>
             ) : error ? (
               <Card className="p-8 text-center">
-                <p className="text-red-600 mb-4">{error}</p>
+                <p className="text-red-600 dark:text-red-300 mb-4">{error}</p>
                 <Button onClick={fetchBudgetData}>Retry</Button>
               </Card>
             ) : filteredCategories.length === 0 ? (
               <Card className="p-8 text-center">
-                <p className="text-gray-600 mb-4">
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
                   {categories.length === 0
                     ? "No budget categories found. Create your first category to get started."
                     : "No categories match your search criteria."
@@ -442,15 +714,23 @@ export default function BudgetDashboard() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {filteredCategories.map((category) => (
-                  <BudgetCategoryCard
-                    key={category.id || category._id}
-                    category={category}
-                    onEdit={openEditModal}
-                    onDelete={handleDeleteCategory}
-                    onAddPayment={handleAddPayment}
-                  />
-                ))}
+                {filteredCategories.map((category) => {
+                  const assignment = getAssignedVendorForCategory(category.id || category._id);
+                  return (
+                    <BudgetCategoryCard
+                      key={category.id || category._id}
+                      category={category}
+                      assignedVendor={assignment ? {
+                        vendor_name: assignment.vendor_name,
+                        vendor_email: assignment.vendor_email,
+                        status: assignment.status
+                      } : undefined}
+                      onEdit={openEditModal}
+                      onDelete={handleDeleteCategory}
+                      onAddPayment={handleAddPayment}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -468,40 +748,37 @@ export default function BudgetDashboard() {
       {/* Category Modal */}
       {showCategoryModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4 text-wedding-navy">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4 text-wedding-navy dark:text-white">
               {editingCategory ? 'Edit Category' : 'Add New Category'}
             </h2>
-            
             <form onSubmit={editingCategory ? handleUpdateCategory : handleCreateCategory}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Category Name *
                   </label>
                   <input
                     type="text"
                     value={categoryForm.name}
                     onChange={(e) => setCategoryForm({...categoryForm, name: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   />
                 </div>
-                
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
                   <textarea
                     value={categoryForm.description}
                     onChange={(e) => setCategoryForm({...categoryForm, description: e.target.value})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     rows={2}
                   />
                 </div>
-                
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Budget Amount *
                   </label>
                   <input
@@ -509,20 +786,24 @@ export default function BudgetDashboard() {
                     min="0"
                     step="0.01"
                     value={categoryForm.budgeted_amount}
-                    onChange={(e) => setCategoryForm({...categoryForm, budgeted_amount: parseFloat(e.target.value) || 0})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    onChange={(e) => handleBudgetAmountChange(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                     required
                   />
+                  {budgetSummary && budgetSummary.total_budget > 0 && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Total budget: ${budgetSummary.total_budget.toLocaleString()}
+                    </p>
+                  )}
                 </div>
-                
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Priority (1 = Highest, 5 = Lowest)
                   </label>
                   <select
                     value={categoryForm.priority}
                     onChange={(e) => setCategoryForm({...categoryForm, priority: parseInt(e.target.value) as 1|2|3|4|5})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   >
                     <option value={1}>1 - Highest Priority</option>
                     <option value={2}>2 - High Priority</option>
@@ -531,9 +812,8 @@ export default function BudgetDashboard() {
                     <option value={5}>5 - Lowest Priority</option>
                   </select>
                 </div>
-                
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Percentage of Total Budget
                   </label>
                   <input
@@ -542,19 +822,44 @@ export default function BudgetDashboard() {
                     max="100"
                     step="0.1"
                     value={categoryForm.percentage_of_total}
-                    onChange={(e) => setCategoryForm({...categoryForm, percentage_of_total: parseFloat(e.target.value) || 0})}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Auto-calculated based on budget amount
+                  </p>
+                </div>
+
+                {/* Vendor Assignment */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Assign Vendor (Optional)
+                  </label>
+                  <select
+                    value={selectedVendorId}
+                    onChange={(e) => setSelectedVendorId(e.target.value)}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  >
+                    <option value="">-- No vendor assigned --</option>
+                    {vendorDirectory.map((vendor) => (
+                      <option key={vendor._id} value={vendor._id}>
+                        {vendor.business_name} ({vendor.service_category})
+                        {vendor.is_preferred && ' ★'}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Link a vendor from your directory to this budget category
+                  </p>
                 </div>
               </div>
-              
               <div className="flex gap-3 mt-6">
                 <Button type="submit" className="flex-1">
                   {editingCategory ? 'Update' : 'Create'} Category
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="danger" 
+                <Button
+                  type="button"
+                  variant="danger"
                   onClick={() => {
                     setShowCategoryModal(false);
                     resetCategoryForm();
@@ -570,6 +875,11 @@ export default function BudgetDashboard() {
 
       <RecordPaymentModal
         category={activeCategory}
+        suggestedVendorName={
+          activeCategory
+            ? getAssignedVendorForCategory(activeCategory.id || activeCategory._id)?.vendor_name
+            : undefined
+        }
         isOpen={showPaymentModal}
         onClose={() => {
           setShowPaymentModal(false);

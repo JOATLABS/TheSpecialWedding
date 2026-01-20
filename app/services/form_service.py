@@ -1,5 +1,4 @@
 from fastapi import HTTPException
-from bson import ObjectId
 from app.core.database import mongo
 from app.models.form import (
     FormModel,
@@ -13,7 +12,7 @@ from app.models.form import (
 )
 from app.services.email_service_resend import ResendEmailService
 from app.utils.security_utils import (
-    FormSecurityValidator, InputSanitizer, SecurityHeaders, rate_limiter
+    FormSecurityValidator, InputSanitizer, rate_limiter
 )
 from app.utils.csv_export import FormResponseCSVExporter, CSVSecurityError
 from datetime import datetime
@@ -26,11 +25,13 @@ import html
 
 logger = logging.getLogger(__name__)
 
+
 class FormService:
     def __init__(self):
         self.forms_collection = mongo.get_forms_collection()
         self.responses_collection = mongo.db["form_responses"]
         self.distributions_collection = mongo.db["form_distributions"]
+        self.wedding_collection = mongo.db["weddings"]
         self.email_service = ResendEmailService()
 
     @staticmethod
@@ -146,11 +147,9 @@ class FormService:
         """Get forms for a user"""
         try:
             # ROOT_ADMIN can see all forms, others see only their own
-            if is_root_admin:
-                query = {"is_active": True}
-            else:
-                query = {"created_by": created_by, "is_active": True}
-            
+            query: Dict[str, Any] = {"is_active": True}
+            if not is_root_admin:
+                query["created_by"] = created_by
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
@@ -173,9 +172,7 @@ class FormService:
 
                 if viewer_key:
                     state = (
-                        planner_state.get(viewer_key)
-                        or (planner_state.get(raw_viewer_email) if raw_viewer_email else {})
-                        or {}
+                        planner_state.get(viewer_key) or (planner_state.get(raw_viewer_email) if raw_viewer_email else {}) or {}
                     )
                     last_seen = int(state.get("last_viewed_submission_count", 0) or 0)
                     unread = max(submission_total - last_seen, 0)
@@ -193,7 +190,6 @@ class FormService:
         """Get a specific form with security validation"""
         try:
             logger.info(f"get_form called: form_id={form_id}, created_by={created_by}")
-            
             # Validate form_id format to prevent injection
             if not form_id or not isinstance(form_id, str):
                 raise HTTPException(status_code=400, detail="Invalid form ID")
@@ -212,7 +208,6 @@ class FormService:
                 if not InputSanitizer.validate_email(created_by):
                     raise HTTPException(status_code=400, detail="Invalid creator email")
                 query["created_by"] = created_by.lower().strip()
-            
             logger.info(f"Database query: {query}")
             form = await self.forms_collection.find_one(query)
             logger.info(f"Form found: {form is not None}")
@@ -345,7 +340,6 @@ class FormService:
         """Soft delete a form"""
         try:
             logger.info(f"delete_form called: form_id={form_id}, created_by={created_by}, is_root_admin={is_root_admin}")
-            
             # ROOT_ADMIN can delete any form, others can only delete their own
             if is_root_admin:
                 query = {"_id": form_id}
@@ -353,18 +347,15 @@ class FormService:
             else:
                 query = {"_id": form_id, "created_by": created_by}
                 logger.info(f"Using regular user query: {query}")
-            
             # First, check if form exists
             existing_form = await self.forms_collection.find_one({"_id": form_id})
             logger.info(f"Form exists check: {existing_form is not None}")
             if existing_form:
                 logger.info(f"Form details: _id={existing_form.get('_id')}, created_by={existing_form.get('created_by')}, is_active={existing_form.get('is_active')}")
-            
             result = await self.forms_collection.update_one(
                 query,
                 {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
             )
-            
             logger.info(f"Update result: matched_count={result.matched_count}, modified_count={result.modified_count}")
 
             if result.matched_count == 0:
@@ -389,8 +380,10 @@ class FormService:
             form = await self.get_form(form_id, created_by)
 
             # Generate form URL
-            base_url = os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000")
-            form_url = f"{base_url}/forms/{form_id}"
+            frontend_url = os.getenv("FRONTEND_URL")
+            if not frontend_url:
+                raise ValueError("FRONTEND_URL environment variable is required")
+            form_url = f"{frontend_url}/forms/{form_id}"
 
             sent_count = 0
             failed_count = 0
@@ -419,7 +412,7 @@ class FormService:
 
                     # Send email
                     if self.email_service.configured:
-                        email_result = self.email_service.send_email(
+                        email_result = await self.email_service.send_email(
                             to_email=recipient_email,
                             subject=send_data.email_settings.subject,
                             html_content=email_html,
@@ -457,8 +450,13 @@ class FormService:
             logging.error(f"Error sending form: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to send form: {str(e)}")
 
-    async def submit_form_response(self, form_id: str, response_data: SubmitFormRequest,
-                            ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Dict[str, Any]:
+    async def submit_form_response(
+        self,
+        form_id: str,
+        response_data: SubmitFormRequest,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Submit a form response with security validation"""
         try:
             # Rate limiting for form submissions
@@ -578,6 +576,13 @@ class FormService:
                     f"email={submitted_by_email}, ip={safe_ip}"
                 )
 
+                # Notify planner about the form submission
+                await self._notify_planner_form_submission(
+                    form=form,
+                    submitter_name=submitted_by_name or submitted_by_email or "Anonymous",
+                    form_id=form_id
+                )
+
                 # Sanitize response message to prevent XSS
                 success_message = form["settings"].get(
                     "success_message", "Thank you for your submission!"
@@ -607,7 +612,7 @@ class FormService:
         """Get all responses for a form"""
         try:
             # Verify user owns the form
-            form = await self.get_form(form_id, created_by)
+            await self.get_form(form_id, created_by)
 
             responses = await self.responses_collection.find(
                 {"form_id": form_id}
@@ -736,7 +741,7 @@ class FormService:
                     "completion_rate": completion_rate
                 },
                 "created_at": form["created_at"],
-                "last_response": self._get_last_response_time(form_id)
+                "last_response": await self._get_last_response_time(form_id)
             }
 
         except HTTPException:
@@ -756,8 +761,14 @@ class FormService:
         except Exception:
             return None
 
-    def _generate_form_email_html(self, form_title: str, form_description: str,
-                                 form_url: str, sender_name: str, custom_message: str) -> str:
+    def _generate_form_email_html(
+        self,
+        form_title: str,
+        form_description: str,
+        form_url: str,
+        sender_name: str,
+        custom_message: str,
+    ) -> str:
         """Generate HTML email for form distribution"""
         return f"""
         <!DOCTYPE html>
@@ -966,3 +977,46 @@ class FormService:
                 status_code=500,
                 detail="Failed to export form responses. Please try again later."
             )
+
+    async def _notify_planner_form_submission(
+        self,
+        form: Dict[str, Any],
+        submitter_name: str,
+        form_id: str
+    ):
+        """Notify the planner about a form submission"""
+        try:
+            wedding_id = form.get("wedding_id")
+            form_title = form.get("settings", {}).get("title", form.get("name", "Unknown Form"))
+
+            # If no wedding_id, try to find planner from the form creator
+            planner_email = None
+
+            if wedding_id:
+                # Get wedding to find planner
+                wedding = await self.wedding_collection.find_one({"wedding_id": wedding_id})
+                if wedding:
+                    planner_email = wedding.get("assigned_planner_email")
+            else:
+                # Use form creator as fallback
+                planner_email = form.get("created_by")
+
+            if not planner_email:
+                logger.debug(f"No planner found for form {form_id}")
+                return
+
+            # Import here to avoid circular imports
+            from app.services.planner_notification_service import planner_notification_service
+
+            await planner_notification_service.notify_form_submission(
+                planner_id=planner_email,
+                wedding_id=wedding_id or "",
+                form_type=form_title,
+                submitter_name=submitter_name,
+                form_id=form_id
+            )
+            logger.info(f"Form submission notification sent to {planner_email}")
+
+        except Exception as e:
+            # Don't fail the form submission if notification fails
+            logger.error(f"Failed to send form submission notification: {str(e)}")

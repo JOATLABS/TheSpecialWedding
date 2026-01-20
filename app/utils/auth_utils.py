@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 import jwt
-from passlib.context import CryptContext
-
+import bcrypt
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
 SECRET_KEY: str = os.getenv("SECRET_KEY")  # type: ignore
@@ -13,15 +14,17 @@ if not SECRET_KEY:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-pwd_context = CryptContext(schemes=["bcrypt"], bcrypt__rounds=12, deprecated="auto")
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash using bcrypt directly"""
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
 
-from typing import Optional
+def get_password_hash(password: str) -> str:
+    """Hash a password using bcrypt directly"""
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -31,6 +34,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
 
 def verify_token(token: str):
     try:
