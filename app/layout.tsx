@@ -1,6 +1,6 @@
 // app/layout.tsx
 import './styles/globals.css'
-import { Analytics } from "@vercel/analytics/next"
+import { SafeAnalytics } from './components/SafeAnalytics'
 import Script from 'next/script'
 
 export default function RootLayout({
@@ -15,8 +15,8 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         {children}
 
-        {/* Vercel Analytics - User experience metrics */}
-        <Analytics />
+        {/* Vercel Analytics - User experience metrics (wrapped in error boundary) */}
+        <SafeAnalytics />
 
         {/* Cloudflare Web Analytics - Traffic & performance (FREE, privacy-first, no cookies!) */}
         {cloudflareToken && (
