@@ -218,26 +218,16 @@ export default function AdminGuestsPage() {
 
       // Fetch plus ones for all guests
       try {
-        const plusOnesResponse = await Promise.all(
-          normalizedGuests.map(async (guest) => {
-            try {
-              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-              });
-              if (response.ok) {
-                const guestPlusOnes = await response.json();
-                return guestPlusOnes.map((po: PlusOne) => ({
-                  ...po,
-                  guest_id: guest.id,
-                }));
-              }
-              return [];
-            } catch {
-              return [];
-            }
-          })
-        );
-        setPlusOnes(plusOnesResponse.flat());
+        const response = await fetch(`${baseUrl}/plus_one/wedding/${selectedWedding}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const allPlusOnes = await response.json();
+          setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
+        } else {
+          setPlusOnes([]);
+        }
       } catch {
         setPlusOnes([]);
       }
