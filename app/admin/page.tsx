@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 
 interface MetricsSnapshot {
   id?: string;
@@ -223,40 +224,38 @@ export default function AdminMetricsDashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-2xl p-8 border border-rose-100 dark:border-slate-700">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-wedding-navy dark:text-white">Platform Health Overview</h1>
-            <p className="text-wedding-muted dark:text-gray-400 mt-1">
-              {latestSnapshot
-                ? `Last updated ${formatTimestamp(latestSnapshot.snapshot_time || latestSnapshot.timestamp)}`
-                : 'Metrics snapshots will appear once data is collected.'}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <label htmlFor="history-range" className="text-sm font-medium text-wedding-muted dark:text-gray-400">
-              History range
-            </label>
-            <select
-              id="history-range"
-              className="border border-rose-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white"
-              value={historyHours}
-              onChange={(event) => setHistoryHours(Number(event.target.value))}
-            >
-              {HISTORY_OPTIONS.map((option) => (
-                <option key={option.hours} value={option.hours}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+      <PageHeader
+        title="Platform Health Overview"
+        subtitle={latestSnapshot
+          ? `Last updated ${formatTimestamp(latestSnapshot.snapshot_time || latestSnapshot.timestamp)}`
+          : 'Metrics snapshots will appear once data is collected.'}
+      >
+        <div className="flex items-center gap-3">
+          <label htmlFor="history-range" className="text-sm font-medium text-slate-600 dark:text-slate-400">
+            History range
+          </label>
+          <select
+            id="history-range"
+            className="border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-white"
+            value={historyHours}
+            onChange={(event) => setHistoryHours(Number(event.target.value))}
+          >
+            {HISTORY_OPTIONS.map((option) => (
+              <option key={option.hours} value={option.hours}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
-        {error && (
-          <p className="mt-4 text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg px-4 py-3">
+      </PageHeader>
+
+      {error && (
+        <div className="p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg">
+          <p className="text-sm text-rose-600 dark:text-rose-400">
             {error}
           </p>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <MetricCard

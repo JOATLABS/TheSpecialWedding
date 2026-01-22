@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import type { ReactElement } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
 
@@ -213,21 +214,18 @@ export default function PlatformMetricsPage(): ReactElement {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-heading text-gray-900 dark:text-white">Platform Analytics</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Updated {formatDateTime(metrics.generated_at, {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })} · Timeframe: {
-              TIMEFRAME_OPTIONS.find((option) => option.value === metrics.timeframe)?.label || metrics.timeframe
-            }
-          </p>
-        </div>
+      <PageHeader
+        title="Platform Analytics"
+        subtitle={`Updated ${formatDateTime(metrics.generated_at, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })} · Timeframe: ${
+          TIMEFRAME_OPTIONS.find((option) => option.value === metrics.timeframe)?.label || metrics.timeframe
+        }`}
+      >
         <select
           value={timeframe}
           onChange={(event) => setTimeframe(event.target.value as TimeframeKey)}
@@ -239,7 +237,7 @@ export default function PlatformMetricsPage(): ReactElement {
             </option>
           ))}
         </select>
-      </div>
+      </PageHeader>
 
       <section className="space-y-4">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Growth</h2>

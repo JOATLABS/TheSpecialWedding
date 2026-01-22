@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 
 // ==================== INTERFACES ====================
 
@@ -816,10 +817,10 @@ export default function AdminGuestsPage() {
     <div className="space-y-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Guest Management</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">View and manage all wedding guests, RSVPs, and plus-ones</p>
-        </div>
+        <PageHeader
+          title="Guest Management"
+          subtitle="View and manage all wedding guests, RSVPs, and plus-ones"
+        />
 
         {/* Success/Error Messages */}
         {successMessage && (

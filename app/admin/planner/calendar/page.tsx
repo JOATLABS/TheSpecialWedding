@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import PageHeader from '@/admin/components/PageHeader';
 import {
   PlannerTask,
   getMonthTasks,
@@ -399,16 +400,10 @@ export default function PlannerCalendarPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">
-            Planning Calendar
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Manage your tasks and schedule
-          </p>
-        </div>
-
+      <PageHeader
+        title="Planning Calendar"
+        subtitle="Manage your tasks and schedule"
+      >
         <button
           onClick={() => {
             setSelectedTask(null);
@@ -432,7 +427,7 @@ export default function PlannerCalendarPage() {
           </svg>
           New Task
         </button>
-      </div>
+      </PageHeader>
 
       {/* Google Calendar Connection */}
       <GoogleCalendarConnect />

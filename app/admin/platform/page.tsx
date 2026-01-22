@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
 import { toast } from 'sonner';
@@ -344,16 +345,10 @@ export default function PlatformInfrastructurePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-3">
-            <Server className="w-7 h-7 text-primary-500" />
-            Platform Infrastructure
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
-            System health, errors, performance, and backups
-          </p>
-        </div>
+      <PageHeader
+        title="Platform Infrastructure"
+        subtitle="System health, errors, performance, and backups"
+      >
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             <input
@@ -372,7 +367,7 @@ export default function PlatformInfrastructurePage() {
             Refresh
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Last Updated */}
       <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">

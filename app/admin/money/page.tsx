@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { Card } from '../../components/ui/Card';
@@ -598,13 +599,10 @@ export default function MoneyDashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Money</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Unified view of all your financial transactions
-          </p>
-        </div>
+      <PageHeader
+        title="Money"
+        subtitle="Unified view of all your financial transactions"
+      >
         <div className="flex items-center gap-3">
           <select
             value={dateFilter}
@@ -621,7 +619,7 @@ export default function MoneyDashboard() {
             Refresh
           </Button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

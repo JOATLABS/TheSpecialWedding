@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 
@@ -194,10 +195,10 @@ export default function AdminGalleryUploadPage() {
   return (
     <div className="space-y-6">
       <div className="w-full max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Gallery Management</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">Upload and manage wedding photos</p>
-        </div>
+        <PageHeader
+          title="Gallery Management"
+          subtitle="Upload and manage wedding photos"
+        />
 
         {/* Wedding Selection - Global */}
         <Card className="mb-6">

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { ContentEditModal } from '../components/ContentEditModal';
 import { formatDate } from '@/utils/dateFormat';
@@ -815,21 +816,18 @@ const SaasAdminDashboard = () => {
  return (
  <div className="min-h-screen dark:bg-slate-700">
  {/* Header */}
- <div className="bg-white dark:bg-slate-800 shadow-sm border-b">
- <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
- <div className="flex justify-between items-center py-6">
- <div>
- <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">SAAS Admin Dashboard</h1>
- <p className="text-gray-600 dark:text-gray-400">Manage your wedding planning platform</p>
- </div>
- <div className="flex items-center space-x-4">
- <span className="text-sm text-gray-500 dark:text-gray-400">ROOT_ADMIN</span>
- <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
- <span className="text-white font-semibold">TD</span>
- </div>
- </div>
- </div>
- </div>
+ <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+ <PageHeader
+   title="SAAS Admin Dashboard"
+   subtitle="Manage your wedding planning platform"
+ >
+   <div className="flex items-center space-x-4">
+     <span className="text-sm text-gray-500 dark:text-gray-400">ROOT_ADMIN</span>
+     <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+       <span className="text-white font-semibold">TD</span>
+     </div>
+   </div>
+ </PageHeader>
  </div>
 
  {/* Navigation Tabs */}

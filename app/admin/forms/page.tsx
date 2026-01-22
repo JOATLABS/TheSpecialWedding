@@ -6,6 +6,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { SparklesIcon, SquaresPlusIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
 import { formatDate as formatUtcDate } from '@/utils/dateFormat';
@@ -330,42 +331,42 @@ export default function FormsManagementPage(): ReactElement {
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Forms</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Create and manage questionnaires, vendor workflows, and feedback forms
-          </p>
-          {forms.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {Object.entries(formCounts).map(([key, count]) => (
-                <FormBadge key={key} tone="neutral">
-                  {key.replace(/_/g, ' ')} · {count}
-                </FormBadge>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Button
-              id="create-form-button"
-              onClick={() => setShowCreateModal(true)}
-              className="shadow-lg shadow-wedding-rose/30"
-            >
-              Create new form
-            </Button>
-            <Button
-              variant="secondary"
-              className="shadow-lg shadow-slate-200/40"
-              onClick={() => {
-                void refreshForms();
-              }}
-            >
-              Refresh workspace
-            </Button>
+      <PageHeader
+        title="Forms"
+        subtitle={
+          <div>
+            <p>Create and manage questionnaires, vendor workflows, and feedback forms</p>
+            {forms.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {Object.entries(formCounts).map(([key, count]) => (
+                  <FormBadge key={key} tone="neutral">
+                    {key.replace(/_/g, ' ')} · {count}
+                  </FormBadge>
+                ))}
+              </div>
+            )}
           </div>
+        }
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Button
+            id="create-form-button"
+            onClick={() => setShowCreateModal(true)}
+            className="shadow-lg shadow-wedding-rose/30"
+          >
+            Create new form
+          </Button>
+          <Button
+            variant="secondary"
+            className="shadow-lg shadow-slate-200/40"
+            onClick={() => {
+              void refreshForms();
+            }}
+          >
+            Refresh workspace
+          </Button>
         </div>
+      </PageHeader>
 
       {error && (
         <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 dark:text-red-300 shadow-sm backdrop-blur">

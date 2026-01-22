@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 
@@ -185,12 +186,10 @@ export default function WeddingPlannerDashboard() {
  return (
  <div className="space-y-6">
  {/* Welcome Header */}
- <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">
- Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
- </h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">Here's what's happening with your weddings today.</p>
- </div>
+ <PageHeader
+   title={`Welcome back, ${userProfile?.user_data?.company_name || userProfile?.email || 'Planner'}!`}
+   subtitle="Here's what's happening with your weddings today."
+ />
 
  {/* Stats Cards */}
  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

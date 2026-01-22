@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '@/admin/components/PageHeader';
 import { formatDateTime } from '@/utils/dateFormat';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
@@ -481,10 +482,10 @@ export default function AdminRemindersPage() {
  <div className="space-y-6">
  <div className="max-w-7xl mx-auto">
  {/* Header */}
- <div className="mb-6">
-   <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Reminders & Invites</h1>
-   <p className="text-slate-600 dark:text-slate-400 mt-1">Send invitations and reminders via SMS or Email</p>
- </div>
+ <PageHeader
+   title="Reminders & Invites"
+   subtitle="Send invitations and reminders via SMS or Email"
+ />
 
  {/* Wedding Selection and Channel */}
  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
