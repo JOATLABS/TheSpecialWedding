@@ -1,6 +1,6 @@
-from fastapi import Request, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 import time
 from collections import defaultdict, deque
 from typing import Dict, Deque
@@ -47,7 +47,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _is_auth_endpoint(self, path: str) -> bool:
         """Check if the endpoint is authentication-related"""
-        auth_paths = ["/admin/token", "/admin/login", "/public/register", "/setup/complete"]
+        auth_paths = [
+            "/admin/token",
+            "/admin/login",
+            "/public/register",
+            "/setup/complete",
+            "/weddings/verify-guest-access",
+            "/weddings/guest-access",
+            "/otp/request",
+            "/otp/verify",
+            "/otp/send-by-contact"
+        ]
         return any(auth_path in path for auth_path in auth_paths)
     async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
         """Remove old requests outside the time window"""
@@ -91,11 +101,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         async with self.lock:
             if await self._is_rate_limited(client_ip, is_auth):
                 # Return rate limit exceeded error
-                raise HTTPException(
+                return JSONResponse(
                     status_code=429,
-                    detail={
+                    content={
                         "error": "Rate limit exceeded",
-                        "message": f"Too many requests. Try again later.",
+                        "message": "Too many requests. Try again later.",
                         "retry_after": self.auth_period if is_auth else self.period
                     }
                 )
