@@ -70,6 +70,33 @@ class PlusOneService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve plus-ones: {str(e)}")
 
+    async def get_plus_ones_by_wedding(self, wedding_id: str):
+        try:
+            # 1. Get all guests for this wedding to find their IDs
+            guest_collection = mongo.get_guest_collection()
+
+            # Fetch only _id of guests
+            guests = await guest_collection.find({"wedding_id": wedding_id}, {"_id": 1}).to_list(length=None)
+
+            if not guests:
+                return []
+
+            # guest_id is stored as string in plus_ones, but _id in guests is ObjectId.
+            # However, plus_ones.guest_id matches guest._id (as string).
+            guest_ids = [str(g["_id"]) for g in guests]
+
+            # 2. Fetch plus ones
+            # Use $in operator
+            results = await self.collection.find({"guest_id": {"$in": guest_ids}}).to_list(length=None)
+
+            for r in results:
+                r["id"] = str(r["_id"])
+                r.pop("_id", None)
+
+            return results
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve wedding plus-ones: {str(e)}")
+
     async def update_plus_one(self, plus_one_id: str, data: dict):
         try:
             result = await self.collection.update_one(

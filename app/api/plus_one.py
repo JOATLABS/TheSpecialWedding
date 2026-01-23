@@ -10,6 +10,15 @@ plus_one_service = PlusOneService()
 guest_service = GuestService()
 
 
+@router.get("/wedding/{wedding_id}", tags=["Plus-Ones"])
+async def get_wedding_plus_ones(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    # Check access to wedding
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    return await plus_one_service.get_plus_ones_by_wedding(wedding_id)
+
+
 @router.post("/plus-ones", tags=["Plus-Ones"])
 async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get guest to verify wedding access
