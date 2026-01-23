@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import PageHeader from '../../components/PageHeader';
 
 interface Wedding {
   id?: string;
@@ -193,11 +194,11 @@ export default function AdminGalleryUploadPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Gallery Management"
+        description="Upload and manage wedding photos"
+      />
       <div className="w-full max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Gallery Management</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">Upload and manage wedding photos</p>
-        </div>
 
         {/* Wedding Selection - Global */}
         <Card className="mb-6">

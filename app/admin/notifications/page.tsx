@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
+import PageHeader from './components/PageHeader';
 
 interface NotificationTemplate {
   _id: string;
@@ -288,12 +289,10 @@ export default function NotificationsPage() {
   if (!isRootAdmin) {
     return (
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Notifications</h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">Form submissions, RSVP updates, and activity alerts</p>
-          </div>
+        <PageHeader
+          title="Notifications"
+          description="Form submissions, RSVP updates, and activity alerts"
+        >
           {plannerNotifications.some(n => !n.is_read) && (
             <button
               onClick={markAllAsRead}
@@ -302,7 +301,7 @@ export default function NotificationsPage() {
               Mark all as read
             </button>
           )}
-        </div>
+        </PageHeader>
 
         {/* Notifications List */}
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -417,11 +416,10 @@ export default function NotificationsPage() {
   // ============================================
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Platform Notifications</h1>
-        <p className="text-gray-600 dark:text-gray-400">Send announcements and updates to all users</p>
-      </div>
+      <PageHeader
+        title="Platform Notifications"
+        description="Send announcements and updates to all users"
+      />
 
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-gray-700">

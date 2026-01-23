@@ -11,6 +11,7 @@ import BudgetCategoryCard from '../../components/budget/BudgetCategoryCard';
 import PaymentHistoryPanel from '../../components/budget/PaymentHistoryPanel';
 import RecordPaymentModal from '../../components/budget/RecordPaymentModal';
 import { budgetApi } from '../../services/budgetApi';
+import PageHeader from './components/PageHeader';
 import {
   getVendorDirectory,
   getWeddingVendors,
@@ -480,39 +481,31 @@ export default function BudgetDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
-            Budget Management
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Manage wedding budgets, track expenses, and compare vendor quotes
-          </p>
-        </div>
-        <div className="flex gap-3">
-          {selectedWedding && (
-            <Button
-              onClick={() => fetchAiInsights(false)}
-              disabled={aiInsightsLoading}
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-            >
-              {aiInsightsLoading ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
-              )}
-              AI Insights
-            </Button>
-          )}
-          <Button onClick={() => exportBudgetReport('pdf')}>
-            Export PDF
+      <PageHeader
+        title="Budget Management"
+        description="Manage wedding budgets, track expenses, and compare vendor quotes"
+      >
+        {selectedWedding && (
+          <Button
+            onClick={() => fetchAiInsights(false)}
+            disabled={aiInsightsLoading}
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+          >
+            {aiInsightsLoading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4 mr-2" />
+            )}
+            AI Insights
           </Button>
-          <Button onClick={() => exportBudgetReport('excel')}>
-            Export Excel
-          </Button>
-        </div>
-      </div>
+        )}
+        <Button onClick={() => exportBudgetReport('pdf')}>
+          Export PDF
+        </Button>
+        <Button onClick={() => exportBudgetReport('excel')}>
+          Export Excel
+        </Button>
+      </PageHeader>
 
       {/* Wedding Selection */}
       <Card className="p-4">

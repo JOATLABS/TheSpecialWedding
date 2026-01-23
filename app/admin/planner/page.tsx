@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
+import PageHeader from '../components/PageHeader';
 
 interface Wedding {
  id: string;
@@ -184,13 +185,10 @@ export default function WeddingPlannerDashboard() {
 
  return (
  <div className="space-y-6">
- {/* Welcome Header */}
- <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
- Welcome back, {userProfile?.user_data?.company_name || userProfile?.email}!
- </h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">Here's what's happening with your weddings today.</p>
- </div>
+ <PageHeader
+ title={`Welcome back, ${userProfile?.user_data?.company_name || userProfile?.email}!`}
+ description="Here's what's happening with your weddings today."
+ />
 
  {/* Stats Cards */}
  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

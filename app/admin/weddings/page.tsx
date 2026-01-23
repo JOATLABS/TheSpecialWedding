@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
+import PageHeader from './components/PageHeader';
 
 interface Wedding {
   _id: string;
@@ -413,27 +414,21 @@ export default function AdminWeddingsPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title={userProfile?.is_root_admin ? 'All Weddings' : 'My Weddings'}
+        description={userProfile?.is_root_admin
+          ? 'Manage all wedding events and assignments'
+          : 'Manage your wedding events and client details'
+        }
+      >
+        <button
+          onClick={() => setShowForm(true)}
+          className="px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition"
+        >
+          + Add Wedding
+        </button>
+      </PageHeader>
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
-              {userProfile?.is_root_admin ? 'All Weddings' : 'My Weddings'}
-            </h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">
-              {userProfile?.is_root_admin
-                ? 'Manage all wedding events and assignments'
-                : 'Manage your wedding events and client details'
-              }
-            </p>
-          </div>
-          <button
-            onClick={() => setShowForm(true)}
-            className="px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition"
-          >
-            + Add Wedding
-          </button>
-        </div>
 
         {/* Error Message */}
         {error && (

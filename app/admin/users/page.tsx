@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import PageHeader from './components/PageHeader';
 import {
   Users,
   UserPlus,
@@ -373,45 +374,19 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Hero Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 md:p-10"
+    <div className="space-y-6">
+      <PageHeader
+        title="Planner Management"
+        description="Manage your wedding planning team"
+      >
+        <button
+          onClick={() => setShowInviteModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg font-medium hover:bg-primary-600 transition-colors"
         >
-          {/* Decorative elements */}
-          <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-primary-500/20 to-secondary-500/20 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-amber-500/10 to-rose-500/10 rounded-full blur-2xl" />
-
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center shadow-lg shadow-primary-500/30">
-                <Users className="w-8 h-8 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
-                  Planner Management
-                </h1>
-                <p className="text-slate-400 mt-1 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  Manage your wedding planning team
-                </p>
-              </div>
-            </div>
-
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setShowInviteModal(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-500 to-secondary-500 text-white rounded-xl font-semibold shadow-lg shadow-primary-500/30 hover:shadow-xl hover:shadow-primary-500/40 transition-all"
-            >
-              <UserPlus className="w-5 h-5" />
-              Invite Planner
-            </motion.button>
-          </div>
-        </motion.div>
+          <UserPlus className="w-5 h-5" />
+          Invite Planner
+        </button>
+      </PageHeader>
 
         {/* Error Display */}
         <AnimatePresence>
