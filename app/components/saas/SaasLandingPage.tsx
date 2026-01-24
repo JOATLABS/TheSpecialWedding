@@ -427,25 +427,29 @@ export const SaasLandingPage: React.FC = () => {
     }
   }, [planLoading, plans, selectedPlan]);
 
-  const condensedPlans = useMemo(() => plans.slice(0, 4), [plans]);
+  const condensedPlans = useMemo(() => (Array.isArray(plans) ? plans : []).slice(0, 4), [plans]);
 
   const orderedFeatures = useMemo(() => {
-    return [...config.features].sort((a, b) => a.order - b.order);
+    const features = Array.isArray(config.features) ? config.features : [];
+    return [...features].sort((a, b) => a.order - b.order);
   }, [config.features]);
 
   const orderedBenefits = useMemo(() => {
-    return [...config.benefits].sort((a, b) => a.order - b.order);
+    const benefits = Array.isArray(config.benefits) ? config.benefits : [];
+    return [...benefits].sort((a, b) => a.order - b.order);
   }, [config.benefits]);
 
   const orderedTestimonials = useMemo(() => {
-    return [...config.testimonials].sort((a, b) => a.order - b.order);
+    const testimonials = Array.isArray(config.testimonials) ? config.testimonials : [];
+    return [...testimonials].sort((a, b) => a.order - b.order);
   }, [config.testimonials]);
 
   const statistics = useMemo(() => {
     if (config.statistics_enabled === false) {
       return [] as SaasConfig['statistics'];
     }
-    return (config.statistics ?? []).slice(0, 3);
+    const stats = Array.isArray(config.statistics) ? config.statistics : [];
+    return stats.slice(0, 3);
   }, [config.statistics, config.statistics_enabled]);
 
   const handleContactOpen = useCallback(() => {
