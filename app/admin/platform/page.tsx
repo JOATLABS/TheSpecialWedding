@@ -350,7 +350,7 @@ export default function PlatformInfrastructurePage() {
 
   const tabs = [
     { id: 'health' as TabType, label: 'System Health', icon: Activity },
-    { id: 'errors' as TabType, label: `Errors (${metrics.errors?.total_24h || 0})`, icon: AlertTriangle },
+    { id: 'errors' as TabType, label: `Errors (${activeTab === 'errors' ? allErrors.length : metrics.errors?.total_24h || 0})`, icon: AlertTriangle },
     { id: 'performance' as TabType, label: 'Performance', icon: Zap },
     { id: 'backups' as TabType, label: 'Backups', icon: Shield },
   ];

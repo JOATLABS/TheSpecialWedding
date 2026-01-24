@@ -121,7 +121,7 @@ export default function AdminBillingDashboard() {
       }
 
       // Fetch all subscriptions
-      const subsResponse = await fetch(`${baseUrl}/admin/subscriptions`, { headers });
+      const subsResponse = await fetch(`${baseUrl}/subscriptions`, { headers });
       if (subsResponse.ok) {
         const subsData = await subsResponse.json();
         setSubscriptions(Array.isArray(subsData) ? subsData : subsData.subscriptions || []);

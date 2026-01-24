@@ -176,6 +176,14 @@ def get_subscription_analytics(
     """Get platform-wide subscription analytics - ROOT_ADMIN only"""
     return subscription_service.get_subscription_analytics()
 
+@router.get("/subscriptions", tags=["ROOT_ADMIN"])
+async def list_all_subscriptions(
+    status: str = Query(None, description="Filter by status (active, trial, cancelled, expired)"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """List all user subscriptions for billing dashboard - ROOT_ADMIN only"""
+    return await subscription_service.list_all_subscriptions(status_filter=status)
+
 # ==================== SUBSCRIPTION LIMITS MIDDLEWARE ====================
 
 def require_subscription_limit(resource_type: str, amount: int = 1):

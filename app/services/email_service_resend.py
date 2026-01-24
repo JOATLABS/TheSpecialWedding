@@ -281,21 +281,7 @@ class ResendEmailService:
                 
                 # Add delay to respect Resend rate limit (2 requests per second)
                 time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
-        
-        # Add plus-ones support
-        plus_ones_collection = mongo.db["plus_ones"]
 
-        for recipient in recipients:
-            guest_id = recipient.get("guest_id")
-            if guest_id:
-                # Get plus-ones for this guest
-                plus_ones = list(plus_ones_collection.find({"guest_id": str(guest_id)}))
-                recipient["plus_ones"] = plus_ones
-                recipient["plus_ones_count"] = len(plus_ones)
-            else:
-                recipient["plus_ones"] = []
-                recipient["plus_ones_count"] = 0
-        
         return {"sent": sent, "failed": failed}
     
     async def get_email_logs(self, wedding_id: Optional[str] = None, limit: int = 100) -> List[Dict]:

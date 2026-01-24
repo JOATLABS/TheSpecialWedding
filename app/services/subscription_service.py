@@ -559,3 +559,61 @@ class SubscriptionService:
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error generating analytics: {str(e)}")
+
+    async def list_all_subscriptions(self, status_filter: Optional[str] = None) -> List[dict]:
+        """List all user subscriptions with details (ROOT_ADMIN only)"""
+        try:
+            # Build query
+            query = {}
+            if status_filter and status_filter != "all":
+                query["status"] = status_filter
+
+            # Fetch all subscriptions
+            subscriptions = await self.subscriptions_collection.find(query).to_list(length=None)
+
+            # Build lookup maps for plans and users
+            plans = await self.plans_collection.find({}).to_list(length=None)
+            plans_map = {str(plan.get("_id", "")): plan for plan in plans}
+
+            users = await self.users_collection.find({}).to_list(length=None)
+            users_map = {str(user.get("_id", "")): user for user in users}
+
+            formatted_subscriptions = []
+            for sub in subscriptions:
+                user_id = sub.get("user_id", "")
+                user = users_map.get(user_id, {})
+                plan_id = sub.get("plan_id", "")
+                plan = plans_map.get(plan_id, {})
+
+                # Determine amount based on billing interval
+                billing_interval = sub.get("billing_interval", "monthly")
+                if billing_interval == "yearly":
+                    amount = plan.get("price_yearly", 0)
+                else:
+                    amount = plan.get("price_monthly", 0)
+
+                # Format dates safely
+                def format_date(value):
+                    if isinstance(value, datetime):
+                        return value.isoformat()
+                    return str(value) if value else ""
+
+                formatted_sub = {
+                    "_id": str(sub.get("_id", "")),
+                    "user_id": user_id,
+                    "user_email": user.get("email", sub.get("user_email", "")),
+                    "company_name": user.get("company_name", sub.get("company_name", "")),
+                    "plan_id": plan_id,
+                    "plan_name": plan.get("name", sub.get("plan_name", "Unknown Plan")),
+                    "status": sub.get("status", "unknown"),
+                    "billing_interval": billing_interval,
+                    "amount": amount,
+                    "current_period_start": format_date(sub.get("current_period_start")),
+                    "current_period_end": format_date(sub.get("current_period_end")),
+                    "created_at": format_date(sub.get("created_at")),
+                }
+                formatted_subscriptions.append(formatted_sub)
+
+            return formatted_subscriptions
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error listing subscriptions: {str(e)}")

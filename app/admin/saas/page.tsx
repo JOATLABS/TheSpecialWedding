@@ -300,7 +300,7 @@ const SaasAdminDashboard = () => {
         'Content-Type': 'application/json'
       };
 
-      const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, { headers });
+      const plansResponse = await fetch(`${baseUrl}/subscription-plans`, { headers });
       if (plansResponse.ok) {
         const plansData = await plansResponse.json();
         setPlans(plansData);
@@ -322,7 +322,7 @@ const SaasAdminDashboard = () => {
         })) );
       }
 
-      const configResponse = await fetch(`${baseUrl}/admin/saas-config`, { headers });
+      const configResponse = await fetch(`${baseUrl}/saas/saas-config`, { headers });
       if (configResponse.ok) {
         const configData = await configResponse.json();
         setSaasConfig(configData);
@@ -330,7 +330,7 @@ const SaasAdminDashboard = () => {
         setSaasConfig(DEFAULT_SAAS_CONFIG);
       }
 
-      const sectionsResponse = await fetch(`${baseUrl}/admin/content-sections`, { headers });
+      const sectionsResponse = await fetch(`${baseUrl}/saas/content-sections`, { headers });
       if (sectionsResponse.ok) {
         const sectionsData = await sectionsResponse.json();
         setContentSections(sectionsData.map((section: any) => ({
@@ -456,7 +456,7 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- const response = await fetch(`${baseUrl}/admin/subscription-plans/${planId}`, {
+ const response = await fetch(`${baseUrl}/subscription-plans/${planId}`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -483,8 +483,8 @@ const SaasAdminDashboard = () => {
 
  const isEditing = !!editingPlan;
  const url = isEditing
- ? `${baseUrl}/admin/subscription-plans/${editingPlan._id}`
- : `${baseUrl}/admin/subscription-plans`;
+ ? `${baseUrl}/subscription-plans/${editingPlan._id}`
+ : `${baseUrl}/subscription-plans`;
 
  const method = isEditing ? 'PUT' : 'POST';
 
@@ -499,7 +499,7 @@ const SaasAdminDashboard = () => {
 
  if (response.ok) {
  // Refresh plans data
- const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, {
+ const plansResponse = await fetch(`${baseUrl}/subscription-plans`, {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
@@ -563,7 +563,7 @@ const SaasAdminDashboard = () => {
  };
 
  console.log('Saving SAAS config:', cleanConfig);
- const response = await fetch(`${baseUrl}/admin/saas-config`, {
+ const response = await fetch(`${baseUrl}/saas/saas-config`, {
  method: 'PUT',
  headers: {
  'Authorization': `Bearer ${token}`,
