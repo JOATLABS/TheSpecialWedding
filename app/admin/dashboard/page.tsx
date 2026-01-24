@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 // import MetricCard from '@/admin/components/MetricCard';
 import { GlassCard } from '@/admin/components/ui/glass/GlassCard';
 import { GlassTable } from '@/admin/components/ui/glass/GlassTable';

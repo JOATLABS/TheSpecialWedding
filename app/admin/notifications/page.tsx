@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 
 interface NotificationTemplate {
   _id: string;

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 
 interface UserProfile {
   email: string;

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import { Card } from '@/components/ui/Card';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 import {
   MessageSquare,
   Clock,

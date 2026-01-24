@@ -5,7 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 
 interface Wedding {
   _id: string;
