@@ -217,28 +217,18 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // Fetch plus ones for all guests
+      // Fetch plus ones for wedding (batch - avoids N+1 queries)
       try {
-        const plusOnesResponse = await Promise.all(
-          normalizedGuests.map(async (guest) => {
-            try {
-              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-              });
-              if (response.ok) {
-                const guestPlusOnes = await response.json();
-                return guestPlusOnes.map((po: PlusOne) => ({
-                  ...po,
-                  guest_id: guest.id,
-                }));
-              }
-              return [];
-            } catch {
-              return [];
-            }
-          })
+        const plusOnesResponse = await fetch(
+          `${baseUrl}/plus_one/plus-ones/wedding/${selectedWedding}`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
         );
-        setPlusOnes(plusOnesResponse.flat());
+        if (plusOnesResponse.ok) {
+          const plusOnesData = await plusOnesResponse.json();
+          setPlusOnes(Array.isArray(plusOnesData) ? plusOnesData : []);
+        } else {
+          setPlusOnes([]);
+        }
       } catch {
         setPlusOnes([]);
       }
