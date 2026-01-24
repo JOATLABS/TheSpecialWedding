@@ -48,9 +48,12 @@ export function SaasExperienceCarousel({
   const [activeIndex, setActiveIndex] = useState(0);
 
   const slides = useMemo<SlideDescriptor[]>(() => {
-    const sortedFeatures = [...features].sort((a, b) => a.order - b.order).slice(0, 6);
-    const sortedBenefits = [...benefits].sort((a, b) => a.order - b.order).slice(0, 4);
-    const sortedTestimonials = [...testimonials].sort((a, b) => a.order - b.order).slice(0, 3);
+    const featuresArr = Array.isArray(features) ? features : [];
+    const benefitsArr = Array.isArray(benefits) ? benefits : [];
+    const testimonialsArr = Array.isArray(testimonials) ? testimonials : [];
+    const sortedFeatures = [...featuresArr].sort((a, b) => a.order - b.order).slice(0, 6);
+    const sortedBenefits = [...benefitsArr].sort((a, b) => a.order - b.order).slice(0, 4);
+    const sortedTestimonials = [...testimonialsArr].sort((a, b) => a.order - b.order).slice(0, 3);
 
     return [
       {

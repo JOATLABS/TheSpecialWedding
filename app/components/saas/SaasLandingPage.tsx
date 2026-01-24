@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { IntegratedHeroSection } from './IntegratedHeroSection';
 import { PlannerAuthModal } from './PlannerAuthModal';
 import ContactSalesModal from './ContactSalesModal';
@@ -313,6 +313,7 @@ export const SaasLandingPage: React.FC = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const initialPlanSet = useRef(false);  // Track if initial plan selection has been made
 
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
@@ -404,31 +405,37 @@ export const SaasLandingPage: React.FC = () => {
   }, [fetchSubscriptionPlans]);
 
   useEffect(() => {
-    if (!planLoading && plans.length > 0 && !selectedPlan) {
+    // Only set initial plan once to prevent race condition with user selections
+    if (!planLoading && plans.length > 0 && !initialPlanSet.current) {
       const featuredPlan = plans.find((plan) => plan.is_featured) ?? plans[0];
       setSelectedPlan({ id: featuredPlan._id, name: featuredPlan.name });
+      initialPlanSet.current = true;
     }
-  }, [planLoading, plans, selectedPlan]);
+  }, [planLoading, plans]);
 
-  const condensedPlans = useMemo(() => plans.slice(0, 4), [plans]);
+  const condensedPlans = useMemo(() => (Array.isArray(plans) ? plans : []).slice(0, 4), [plans]);
 
   const orderedFeatures = useMemo(() => {
-    return [...config.features].sort((a, b) => a.order - b.order);
+    const features = Array.isArray(config.features) ? config.features : [];
+    return [...features].sort((a, b) => a.order - b.order);
   }, [config.features]);
 
   const orderedBenefits = useMemo(() => {
-    return [...config.benefits].sort((a, b) => a.order - b.order);
+    const benefits = Array.isArray(config.benefits) ? config.benefits : [];
+    return [...benefits].sort((a, b) => a.order - b.order);
   }, [config.benefits]);
 
   const orderedTestimonials = useMemo(() => {
-    return [...config.testimonials].sort((a, b) => a.order - b.order);
+    const testimonials = Array.isArray(config.testimonials) ? config.testimonials : [];
+    return [...testimonials].sort((a, b) => a.order - b.order);
   }, [config.testimonials]);
 
   const statistics = useMemo(() => {
     if (config.statistics_enabled === false) {
       return [] as SaasConfig['statistics'];
     }
-    return (config.statistics ?? []).slice(0, 3);
+    const stats = Array.isArray(config.statistics) ? config.statistics : [];
+    return stats.slice(0, 3);
   }, [config.statistics, config.statistics_enabled]);
 
   const handleContactOpen = useCallback(() => {

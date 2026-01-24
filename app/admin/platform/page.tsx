@@ -7,6 +7,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
 import { toast } from 'sonner';
+import PageHeader from '../components/PageHeader';
 import {
   Server,
   Database,
@@ -215,13 +216,26 @@ export default function PlatformInfrastructurePage() {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to acknowledge');
-      toast.success('Error acknowledged');
-      fetchAllErrors();
-      fetchMetrics();
+      if (response.ok) {
+        toast.success('Error acknowledged');
+        fetchAllErrors();
+        fetchMetrics();
+        return;
+      }
+
+      if (response.status === 404) {
+          toast.info('Error not found, it may have been handled already. Refreshing list.');
+          fetchAllErrors();
+          return;
+      }
+
+      const errorData = await response.json().catch(() => null);
+      const errorMessage = errorData?.detail || 'Failed to acknowledge error';
+      throw new Error(errorMessage);
+
     } catch (err) {
       console.error('Error acknowledging error:', err);
-      toast.error('Failed to acknowledge error');
+      toast.error(`Acknowledge failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setAcknowledgingIds(prev => {
         const next = new Set(prev);
@@ -343,36 +357,27 @@ export default function PlatformInfrastructurePage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-3">
-            <Server className="w-7 h-7 text-primary-500" />
-            Platform Infrastructure
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
-            System health, errors, performance, and backups
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600"
-            />
-            Auto-refresh (30s)
-          </label>
-          <button
-            onClick={() => { fetchMetrics(); if (activeTab === 'errors') fetchAllErrors(); }}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-medium"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Platform Infrastructure"
+        description="System health, errors, performance, and backups"
+      >
+        <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <input
+            type="checkbox"
+            checked={autoRefresh}
+            onChange={(e) => setAutoRefresh(e.target.checked)}
+            className="rounded border-slate-300 dark:border-slate-600"
+          />
+          Auto-refresh (30s)
+        </label>
+        <button
+          onClick={() => { fetchMetrics(); if (activeTab === 'errors') fetchAllErrors(); }}
+          className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-medium"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </button>
+      </PageHeader>
 
       {/* Last Updated */}
       <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">

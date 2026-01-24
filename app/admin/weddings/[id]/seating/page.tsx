@@ -211,7 +211,7 @@ export default function SeatingPage() {
 
       <div className="flex-1 flex flex-col relative print:w-full">
         <div className="h-16 bg-white/80 backdrop-blur border-b border-gray-200 flex items-center justify-between px-6 z-20 print:hidden">
-          <h1 className="font-playfair text-xl font-bold text-gray-800">Seating Plan</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold leading-tight text-slate-900 dark:text-white">Seating Plan</h1>
 
           <div className="flex gap-2">
             <GlassButton

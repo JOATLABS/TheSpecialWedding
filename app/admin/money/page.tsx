@@ -7,6 +7,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import PageHeader from '../components/PageHeader';
 import {
   Loader2,
   DollarSign,
@@ -597,31 +598,25 @@ export default function MoneyDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Money</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Unified view of all your financial transactions
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}
-            className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 text-sm"
-          >
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
-            <option value="1y">Last year</option>
-            <option value="all">All time</option>
-          </select>
-          <Button variant="outline" size="sm" onClick={() => fetchMoneyData()}>
-            <RefreshCw size={16} className="mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Money"
+        description="Unified view of all your financial transactions"
+      >
+        <select
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}
+          className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 text-sm"
+        >
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+          <option value="1y">Last year</option>
+          <option value="all">All time</option>
+        </select>
+        <Button variant="outline" size="sm" onClick={() => fetchMoneyData()}>
+          <RefreshCw size={16} className="mr-2" />
+          Refresh
+        </Button>
+      </PageHeader>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

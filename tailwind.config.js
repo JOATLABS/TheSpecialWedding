@@ -51,6 +51,8 @@ module.exports = {
       fontFamily: {
         'wedding': ['Playfair Display', 'serif'],
         'elegant': ['Cormorant Garamond', 'serif'],
+        'heading': ['Playfair Display', 'Georgia', 'serif'],
+        'sans': ['Inter', 'system-ui', 'sans-serif'],
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',

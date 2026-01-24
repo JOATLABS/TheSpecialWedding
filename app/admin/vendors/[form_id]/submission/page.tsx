@@ -233,7 +233,7 @@ export default function VendorSubmissionPage() {
  <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-6 text-white print:bg-gray-800">
  <div className="flex items-center justify-between">
  <div>
- <h1 className="text-2xl font-bold mb-2">Vendor Submission</h1>
+ <h1 className="text-2xl sm:text-3xl font-semibold leading-tight mb-2">Vendor Submission</h1>
  <p className="text-blue-100">{submission.form_name}</p>
  </div>
  <div className="text-right print:hidden">
