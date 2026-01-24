@@ -1,6 +1,6 @@
-from fastapi import Request, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 import time
 from collections import defaultdict, deque
 from typing import Dict, Deque
@@ -50,9 +50,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return request.client.host if request.client else "unknown"
 
     def _is_auth_endpoint(self, path: str) -> bool:
-        """Check if the endpoint is authentication-related"""
-        auth_paths = ["/admin/token", "/admin/login", "/public/register", "/setup/complete"]
-        return any(auth_path in path for auth_path in auth_paths)
+        """
+        Check if the endpoint is authentication-related or sensitive.
+        Uses prefix matching (startswith) to prevent partial match bypasses.
+        Assumes path is absolute from the app root (e.g. /admin/login).
+        """
+        # Sensitive paths requiring stricter rate limiting
+        sensitive_prefixes = [
+            "/admin/token",
+            "/admin/login",
+            "/public/register",
+            "/setup/complete",
+            "/otp/",
+            "/weddings/verify-guest-access",
+            "/weddings/guest-access"
+        ]
+        return any(path.startswith(prefix) for prefix in sensitive_prefixes)
 
     async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
         """Remove old requests outside the time window"""
@@ -156,13 +169,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 is_limited, remaining, reset_time = await self._check_memory_limit(client_ip, is_auth)
 
         if is_limited:
+            retry_after_seconds = max(1, reset_time - int(time.time()))
             # Return rate limit exceeded error
-            raise HTTPException(
+            return JSONResponse(
                 status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "message": f"Too many requests. Try again later.",
-                    "retry_after": self.auth_period if is_auth else self.period
+                content={
+                    "detail": {
+                        "error": "Rate limit exceeded",
+                        "message": f"Too many requests. Try again later.",
+                        "retry_after": retry_after_seconds
+                    }
+                },
+                headers={
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(reset_time),
+                    "Retry-After": str(retry_after_seconds)
                 }
             )
 
