@@ -427,7 +427,6 @@ export default function PlannerCalendarPage() {
           New Task
         </button>
       </PageHeader>
-      </div>
 
       {/* Google Calendar Connection */}
       <GoogleCalendarConnect />
