@@ -174,7 +174,7 @@ export default function FormEditPage() {
               ← Back to Forms
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Form</h1>
+              <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Edit Form</h1>
               <p className="text-gray-600 dark:text-gray-300">{form.name}</p>
             </div>
           </div>

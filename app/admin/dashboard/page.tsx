@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from './components/PageHeader';
 // import MetricCard from '@/admin/components/MetricCard';
 import { GlassCard } from '@/admin/components/ui/glass/GlassCard';
 import { GlassTable } from '@/admin/components/ui/glass/GlassTable';
@@ -241,34 +242,31 @@ export default function AdminMetricsDashboard() {
   }, [history]);
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-          <div>
-            <h1 className="font-heading text-3xl font-bold text-slate-800 dark:text-white">Platform Health</h1>
-            <p className="text-slate-500 dark:text-slate-400 mt-1">
-              {latestSnapshot
-                ? `System status updated ${formatTimestamp(latestSnapshot.snapshot_time || latestSnapshot.timestamp)}`
-                : 'Waiting for metrics...'}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <label htmlFor="history-range" className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Range
-            </label>
-            <select
-              id="history-range"
-              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-              value={historyHours}
-              onChange={(event) => setHistoryHours(Number(event.target.value))}
-            >
-              {HISTORY_OPTIONS.map((option) => (
-                <option key={option.hours} value={option.hours}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Platform Health"
+        description={latestSnapshot
+          ? `System status updated ${formatTimestamp(latestSnapshot.snapshot_time || latestSnapshot.timestamp)}`
+          : 'Waiting for metrics...'}
+      >
+        <div className="flex items-center gap-3">
+          <label htmlFor="history-range" className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            Range
+          </label>
+          <select
+            id="history-range"
+            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+            value={historyHours}
+            onChange={(event) => setHistoryHours(Number(event.target.value))}
+          >
+            {HISTORY_OPTIONS.map((option) => (
+              <option key={option.hours} value={option.hours}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </PageHeader>
 
       {error && (
         <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-300 dark:text-red-400 text-sm">

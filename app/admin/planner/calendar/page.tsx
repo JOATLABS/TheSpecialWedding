@@ -18,6 +18,7 @@ import {
 import TaskModal from './components/TaskModal';
 import GoogleCalendarConnect from './components/GoogleCalendarConnect';
 import { toast } from 'sonner';
+import PageHeader from '../../components/PageHeader';
 
 // AI Types
 interface TaskPrioritization {
@@ -398,17 +399,10 @@ export default function PlannerCalendarPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">
-            Planning Calendar
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Manage your tasks and schedule
-          </p>
-        </div>
-
+      <PageHeader
+        title="Planning Calendar"
+        description="Manage your tasks and schedule"
+      >
         <button
           onClick={() => {
             setSelectedTask(null);
@@ -432,6 +426,7 @@ export default function PlannerCalendarPage() {
           </svg>
           New Task
         </button>
+      </PageHeader>
       </div>
 
       {/* Google Calendar Connection */}

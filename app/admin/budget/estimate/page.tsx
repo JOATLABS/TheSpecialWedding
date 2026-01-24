@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { budgetApi } from '../../../services/budgetApi';
+import PageHeader from '../../components/PageHeader';
 
 interface CostEstimation {
   total_estimated_cost: number;
@@ -150,15 +151,10 @@ export default function CostEstimationPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-heading font-bold text-wedding-navy">
-          Wedding Cost Estimator
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Get accurate cost estimates based on your wedding preferences and location
-        </p>
-      </div>
+      <PageHeader
+        title="Wedding Cost Estimator"
+        description="Get accurate cost estimates based on your wedding preferences and location"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Estimation Form */}
