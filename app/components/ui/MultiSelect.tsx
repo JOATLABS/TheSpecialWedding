@@ -92,8 +92,9 @@ export function MultiSelect({
                         type="button"
                         onClick={(e) => removeOption(option.value, e)}
                         className="hover:bg-wedding-rose/20 rounded-full p-0.5 transition-colors"
+                        aria-label={`Remove ${option.label}`}
                       >
-                        <XMarkIcon className="h-3.5 w-3.5" />
+                        <XMarkIcon className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     </span>
                   ))}
