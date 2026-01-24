@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import PageHeader from '../components/PageHeader';
 
 // ==================== INTERFACES ====================
 
@@ -216,28 +217,18 @@ export default function AdminGuestsPage() {
         setRsvps([]);
       }
 
-      // Fetch plus ones for all guests
+      // Fetch plus ones for wedding (batch - avoids N+1 queries)
       try {
-        const plusOnesResponse = await Promise.all(
-          normalizedGuests.map(async (guest) => {
-            try {
-              const response = await fetch(`${baseUrl}/plus_one/plus-ones/${guest.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-              });
-              if (response.ok) {
-                const guestPlusOnes = await response.json();
-                return guestPlusOnes.map((po: PlusOne) => ({
-                  ...po,
-                  guest_id: guest.id,
-                }));
-              }
-              return [];
-            } catch {
-              return [];
-            }
-          })
-        );
-        setPlusOnes(plusOnesResponse.flat());
+        const response = await fetch(`${baseUrl}/plus_one/wedding/${selectedWedding}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const allPlusOnes = await response.json();
+          setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
+        } else {
+          setPlusOnes([]);
+        }
       } catch {
         setPlusOnes([]);
       }
@@ -815,11 +806,10 @@ export default function AdminGuestsPage() {
   return (
     <div className="space-y-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Guest Management</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">View and manage all wedding guests, RSVPs, and plus-ones</p>
-        </div>
+        <PageHeader
+          title="Guest Management"
+          description="View and manage all wedding guests, RSVPs, and plus-ones"
+        />
 
         {/* Success/Error Messages */}
         {successMessage && (

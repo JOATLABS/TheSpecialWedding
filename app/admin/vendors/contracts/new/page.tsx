@@ -506,7 +506,7 @@ Contract Reference: {{contract_number}}`,
                 </svg>
               </button>
               <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Contract Canvas</h1>
+                <h1 className="text-xl sm:text-2xl font-semibold leading-tight text-slate-900 dark:text-white">Contract Canvas</h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Create professional vendor contracts with ease
                 </p>

@@ -10,6 +10,7 @@ import { budgetApi } from '../../../services/budgetApi';
 import type { BudgetTemplate, CreateBudgetTemplatePayload } from '../../../types/budget';
 import { CreateTemplateModal } from '../../../components/budget/CreateTemplateModal';
 import { formatDate } from '@/utils/dateFormat';
+import PageHeader from '../../components/PageHeader';
 
 interface Wedding {
   id?: string;
@@ -185,28 +186,20 @@ export default function BudgetTemplatesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-heading font-bold text-wedding-navy">
-            Budget Templates
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Pre-built budget templates for different wedding types and sizes
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <Button
-            className="bg-purple-600 hover:bg-purple-700"
-            onClick={() => {
-              setCreationError('');
-              setShowCreateModal(true);
-            }}
-          >
-            Create Custom Template
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Budget Templates"
+        description="Pre-built budget templates for different wedding types and sizes"
+      >
+        <Button
+          className="bg-purple-600 hover:bg-purple-700"
+          onClick={() => {
+            setCreationError('');
+            setShowCreateModal(true);
+          }}
+        >
+          Create Custom Template
+        </Button>
+      </PageHeader>
 
       {/* Templates Grid */}
       {loading ? (

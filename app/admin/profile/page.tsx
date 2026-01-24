@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
+import PageHeader from '../components/PageHeader';
 
 interface UserProfile {
   email: string;
@@ -306,8 +307,11 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Account Settings"
+        description="Manage your profile and security settings"
+      />
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-heading text-gray-900 dark:text-white mb-8">Account Settings</h1>
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
           {/* Tab Navigation */}
           <div className="flex space-x-1 mb-6 border-b border-gray-200 dark:border-slate-700">

@@ -10,6 +10,7 @@ import VendorQuoteCard from '../../../components/budget/VendorQuoteCard';
 import { budgetApi } from '../../../services/budgetApi';
 import type { VendorQuote, CreateVendorQuoteRequest } from '../../../types/budget';
 import { formatDate } from '@/utils/dateFormat';
+import PageHeader from '../../components/PageHeader';
 
 interface Wedding {
   id?: string;
@@ -281,31 +282,22 @@ export default function VendorQuotesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-heading font-bold text-wedding-navy">
-            Vendor Quotes
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Collect, compare and manage vendor quotes for your wedding
-          </p>
-        </div>
-
-        <div className="flex gap-3">
-          <Button
-            onClick={() => setComparisonMode(!comparisonMode)}
-            className={comparisonMode ? 'bg-purple-600 hover:bg-purple-700' : ''}
-          >
-            {comparisonMode ? 'Exit Compare' : 'Compare Mode'}
+      <PageHeader
+        title="Vendor Quotes"
+        description="Collect, compare and manage vendor quotes for your wedding"
+      >
+        <Button
+          onClick={() => setComparisonMode(!comparisonMode)}
+          className={comparisonMode ? 'bg-purple-600 hover:bg-purple-700' : ''}
+        >
+          {comparisonMode ? 'Exit Compare' : 'Compare Mode'}
+        </Button>
+        {comparisonMode && selectedQuotes.length >= 2 && (
+          <Button onClick={compareQuotes}>
+            Compare Selected ({selectedQuotes.length})
           </Button>
-          {comparisonMode && selectedQuotes.length >= 2 && (
-            <Button onClick={compareQuotes}>
-              Compare Selected ({selectedQuotes.length})
-            </Button>
-          )}
-        </div>
-      </div>
+        )}
+      </PageHeader>
 
       {/* Wedding Selection */}
       <Card className="p-4">

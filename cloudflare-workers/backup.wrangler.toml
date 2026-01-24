@@ -15,12 +15,5 @@ compatibility_date = "2024-10-01"
 # Daily backup at 2 AM UTC
 crons = ["0 2 * * *"]
 
-[vars]
-# Base URL for the FastAPI backend
-API_URL = "https://api.thespecialwedding.com"
-
-# Optional: Email for backup alerts (uses FREE MailChannels)
-# ALERT_EMAIL = "admin@thespecialwedding.com"
-
-# Note: BACKUP_SECRET must be set via wrangler secret or Cloudflare dashboard
-# wrangler secret put BACKUP_SECRET --config cloudflare-workers/backup.wrangler.toml
+# All env vars are set via GitHub secrets during deployment (see deploy-workers.yml)
+# Required secrets in GitHub: NEXT_PUBLIC_API_BASE_URL, BACKUP_SECRET, RESEND_API_KEY, ALERT_EMAIL, ROOT_ADMIN_EMAIL

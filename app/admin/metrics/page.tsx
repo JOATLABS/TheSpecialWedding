@@ -7,6 +7,7 @@ import type { ReactElement } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
+import PageHeader from '../components/PageHeader';
 
 interface RoleBreakdown {
   [role: string]: number;
@@ -212,26 +213,21 @@ export default function PlatformMetricsPage(): ReactElement {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-heading text-gray-900 dark:text-white">Platform Analytics</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Updated {formatDateTime(metrics.generated_at, {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })} · Timeframe: {
-              TIMEFRAME_OPTIONS.find((option) => option.value === metrics.timeframe)?.label || metrics.timeframe
-            }
-          </p>
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Platform Analytics"
+        description={`Updated ${formatDateTime(metrics.generated_at, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })} · Timeframe: ${TIMEFRAME_OPTIONS.find((option) => option.value === metrics.timeframe)?.label || metrics.timeframe}`}
+      >
         <select
           value={timeframe}
           onChange={(event) => setTimeframe(event.target.value as TimeframeKey)}
-          className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-sm font-medium text-slate-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {TIMEFRAME_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -239,7 +235,7 @@ export default function PlatformMetricsPage(): ReactElement {
             </option>
           ))}
         </select>
-      </div>
+      </PageHeader>
 
       <section className="space-y-4">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Growth</h2>
