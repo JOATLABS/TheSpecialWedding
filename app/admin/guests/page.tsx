@@ -219,13 +219,13 @@ export default function AdminGuestsPage() {
 
       // Fetch plus ones for wedding (batch - avoids N+1 queries)
       try {
-        const plusOnesResponse = await fetch(
-          `${baseUrl}/plus_one/plus-ones/wedding/${selectedWedding}`,
-          { headers: { 'Authorization': `Bearer ${token}` } }
-        );
-        if (plusOnesResponse.ok) {
-          const plusOnesData = await plusOnesResponse.json();
-          setPlusOnes(Array.isArray(plusOnesData) ? plusOnesData : []);
+        const response = await fetch(`${baseUrl}/plus_one/wedding/${selectedWedding}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const allPlusOnes = await response.json();
+          setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
         } else {
           setPlusOnes([]);
         }
