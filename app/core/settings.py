@@ -39,12 +39,12 @@ class Settings(BaseSettings):
     media_domain: Optional[str] = Field(default=None, alias="MEDIA_DOMAIN")
 
     # Security
-    secret_key: str = Field(alias="SECRET_KEY")  # Required - no default for security
+    secret_key: str = Field(default="", alias="SECRET_KEY")  # Required - validated below
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
     # CORS
-    cors_origins: List[str] = Field(alias="CORS_ORIGINS")  # Required - no default for security
+    cors_origins: List[str] = Field(default=[], alias="CORS_ORIGINS")  # Required - validated below
 
     @field_validator('secret_key')
     @classmethod

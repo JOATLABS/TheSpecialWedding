@@ -7,7 +7,7 @@
  * Cron Schedules:
  * - process-due-payments: Daily at 9:00 AM UTC (0 9 * * *)
  * - send-payment-reminders: Daily at 10:00 AM UTC (0 10 * * *)
- * - retry-failed-payments: Every 6 hours (0 */6 * * *)
+ * - retry-failed-payments: Every 6 hours (0 *\/6 * * *)
  *
  * Setup Instructions:
  * 1. Go to Cloudflare Dashboard → Workers & Pages
