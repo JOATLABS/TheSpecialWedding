@@ -388,6 +388,7 @@ export default function AdminUsersPage() {
         </button>
       </PageHeader>
 
+      <div>
         {/* Error Display */}
         <AnimatePresence>
           {error && (

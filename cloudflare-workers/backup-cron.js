@@ -8,28 +8,43 @@
  * 1. Go to Cloudflare Dashboard → Workers & Pages
  * 2. Create new Worker
  * 3. Paste this code
- * 4. Add environment variables:
- *    - API_URL: https://api.thespecialwedding.com
+ * 4. Add environment variables (via GitHub secrets):
+ *    - NEXT_PUBLIC_API_BASE_URL: (backend API URL)
  *    - BACKUP_SECRET: (your backup secret from .env)
+ *    - RESEND_API_KEY: (your Resend API key for alerts)
+ *    - ALERT_EMAIL: (admin email for alerts)
  * 5. Add trigger: Cron Trigger → Schedule: 0 2 * * * (daily at 2 AM UTC)
  * 6. Deploy
  *
  * Cost: $0/month (FREE tier: 100,000 requests/day, unlimited workers)
  */
 
+/**
+ * Fetch with timeout to prevent hanging requests
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default {
 	async scheduled(event, env, ctx) {
 		console.log('Starting daily backup cron job...');
 
 		try {
-			// Trigger backup endpoint on your VPS
-			const response = await fetch(`${env.API_URL}/backup/trigger`, {
+			// Trigger backup endpoint on your VPS (longer timeout for backups)
+			const response = await fetchWithTimeout(`${env.NEXT_PUBLIC_API_BASE_URL}/backup/trigger`, {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${env.BACKUP_SECRET}`,
 					'Content-Type': 'application/json'
 				}
-			});
+			}, 60000); // 60 second timeout for backups
 
 			if (!response.ok) {
 				const errorText = await response.text();
@@ -38,22 +53,21 @@ export default {
 
 			const result = await response.json();
 
-			console.log('✓ Backup completed successfully', result);
+			console.log('Backup completed successfully', result);
 
-			// Optional: Send success notification to yourself via email
-			// Using Cloudflare Email Workers (FREE)
-			if (env.ALERT_EMAIL) {
-				await sendSuccessEmail(env.ALERT_EMAIL, result);
+			// Send success notification via Resend
+			if (env.RESEND_API_KEY && env.ALERT_EMAIL && env.ROOT_ADMIN_EMAIL) {
+				ctx.waitUntil(sendSuccessEmail(env, result));
 			}
 
 			return new Response('Backup completed successfully', { status: 200 });
 
 		} catch (error) {
-			console.error('✗ Backup failed:', error);
+			console.error('Backup failed:', error);
 
 			// Send failure alert
-			if (env.ALERT_EMAIL) {
-				await sendFailureEmail(env.ALERT_EMAIL, error.message);
+			if (env.RESEND_API_KEY && env.ALERT_EMAIL && env.ROOT_ADMIN_EMAIL) {
+				ctx.waitUntil(sendFailureEmail(env, error.message));
 			}
 
 			// Re-throw to mark cron execution as failed
@@ -63,70 +77,68 @@ export default {
 };
 
 /**
- * Send success notification email (optional)
+ * Send success notification email via Resend
  */
-async function sendSuccessEmail(to, backupInfo) {
-	// Using MailChannels (FREE for Cloudflare Workers)
-	await fetch('https://api.mailchannels.net/tx/v1/send', {
-		method: 'POST',
-		headers: {
-			'content-type': 'application/json',
-		},
-		body: JSON.stringify({
-			personalizations: [{
-				to: [{ email: to }],
-			}],
-			from: {
-				email: 'backups@thespecialwedding.com',
-				name: 'Backup System',
+async function sendSuccessEmail(env, backupInfo) {
+	try {
+		await fetchWithTimeout('https://api.resend.com/emails', {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+				'Content-Type': 'application/json'
 			},
-			subject: '✓ Daily Backup Completed Successfully',
-			content: [{
-				type: 'text/html',
-				value: `
-					<h2>✓ Database Backup Successful</h2>
+			body: JSON.stringify({
+				from: env.ALERT_EMAIL,
+				to: [env.ROOT_ADMIN_EMAIL],
+				subject: 'Daily Backup Completed Successfully',
+				html: `
+					<h2>Database Backup Successful</h2>
 					<p>Your daily database backup has completed successfully.</p>
 					<ul>
 						<li><strong>Time:</strong> ${new Date().toISOString()}</li>
-						<li><strong>Size:</strong> ${backupInfo.file_size_mb} MB</li>
-						<li><strong>Location:</strong> ${backupInfo.storage_location}</li>
+						<li><strong>Size:</strong> ${backupInfo.file_size_mb || 'N/A'} MB</li>
+						<li><strong>Location:</strong> ${backupInfo.storage_location || 'N/A'}</li>
 					</ul>
 					<p>No action required.</p>
 				`
-			}],
-		}),
-	});
+			})
+		});
+		console.log('Success email sent');
+	} catch (emailError) {
+		console.error('Failed to send success email:', emailError);
+	}
 }
 
 /**
- * Send failure notification email
+ * Send failure notification email via Resend
  */
-async function sendFailureEmail(to, errorMessage) {
-	await fetch('https://api.mailchannels.net/tx/v1/send', {
-		method: 'POST',
-		headers: {
-			'content-type': 'application/json',
-		},
-		body: JSON.stringify({
-			personalizations: [{
-				to: [{ email: to }],
-			}],
-			from: {
-				email: 'backups@thespecialwedding.com',
-				name: 'Backup System',
+async function sendFailureEmail(env, errorMessage) {
+	try {
+		await fetchWithTimeout('https://api.resend.com/emails', {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+				'Content-Type': 'application/json'
 			},
-			subject: '⚠️ Daily Backup FAILED',
-			content: [{
-				type: 'text/html',
-				value: `
-					<h2 style="color: red;">⚠️ Database Backup Failed</h2>
+			body: JSON.stringify({
+				from: env.ALERT_EMAIL,
+				to: [env.ROOT_ADMIN_EMAIL],
+				subject: 'Daily Backup FAILED',
+				html: `
+					<h2 style="color: red;">Database Backup Failed</h2>
 					<p>Your daily database backup has failed.</p>
 					<p><strong>Error:</strong> ${errorMessage}</p>
 					<p><strong>Time:</strong> ${new Date().toISOString()}</p>
 					<p>Please check your backup system immediately.</p>
-					<a href="https://admin.thespecialwedding.com/admin/platform/metrics">View Dashboard</a>
+					<a href="https://admin.thespecialwedding.com/admin/platform/metrics"
+					   style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
+						View Dashboard
+					</a>
 				`
-			}],
-		}),
-	});
+			})
+		});
+		console.log('Failure alert email sent');
+	} catch (emailError) {
+		console.error('Failed to send failure email:', emailError);
+	}
 }

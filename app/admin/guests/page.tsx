@@ -227,7 +227,6 @@ export default function AdminGuestsPage() {
           const plusOnesData = await plusOnesResponse.json();
           setPlusOnes(Array.isArray(plusOnesData) ? plusOnesData : []);
         } else {
-          // Non-OK response - plus-ones won't be shown but page still functions
           setPlusOnes([]);
         }
       } catch {

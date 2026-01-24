@@ -34,6 +34,11 @@ jobs:
         run: |
           cd cloudflare-workers
           wrangler deploy --config autopilot.wrangler.toml
+          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config autopilot.wrangler.toml
+          echo "${{ secrets.CRON_SECRET }}" | wrangler secret put CRON_SECRET --config autopilot.wrangler.toml
+          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config autopilot.wrangler.toml
+          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config autopilot.wrangler.toml
+          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config autopilot.wrangler.toml
 
       - name: Deploy Metrics Snapshot Worker
         env:
@@ -48,6 +53,30 @@ jobs:
         run: |
           cd cloudflare-workers
           wrangler deploy --config backup.wrangler.toml
+          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config backup.wrangler.toml
+          echo "${{ secrets.BACKUP_SECRET }}" | wrangler secret put BACKUP_SECRET --config backup.wrangler.toml
+          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config backup.wrangler.toml
+          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config backup.wrangler.toml
+          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config backup.wrangler.toml
+
+      - name: Create KV Namespace for Uptime Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd cloudflare-workers
+          # Create KV namespace (ignore error if already exists)
+          KV_OUTPUT=$(wrangler kv:namespace create "uptime-state" 2>&1) || true
+          # Extract ID from output or list existing namespaces
+          if echo "$KV_OUTPUT" | grep -q "already exists"; then
+            KV_ID=$(wrangler kv:namespace list --json | jq -r '.[] | select(.title | contains("uptime-state")) | .id')
+          else
+            KV_ID=$(echo "$KV_OUTPUT" | grep -oP 'id = "\K[^"]+')
+          fi
+          # Update wrangler.toml with the KV namespace ID
+          if [ -n "$KV_ID" ]; then
+            sed -i "s/<YOUR_KV_NAMESPACE_ID>/$KV_ID/" uptime.wrangler.toml
+            echo "KV namespace ID: $KV_ID"
+          fi
 
       - name: Deploy Uptime Cron Worker
         env:
@@ -55,6 +84,10 @@ jobs:
         run: |
           cd cloudflare-workers
           wrangler deploy --config uptime.wrangler.toml
+          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config uptime.wrangler.toml
+          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config uptime.wrangler.toml
+          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config uptime.wrangler.toml
+          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config uptime.wrangler.toml
 
       - name: Deploy Trial Cron Worker
         env:
@@ -62,6 +95,11 @@ jobs:
         run: |
           cd cloudflare-workers
           wrangler deploy --config trial.wrangler.toml
+          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config trial.wrangler.toml
+          echo "${{ secrets.CRON_SECRET }}" | wrangler secret put CRON_SECRET --config trial.wrangler.toml
+          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config trial.wrangler.toml
+          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config trial.wrangler.toml
+          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config trial.wrangler.toml
 
       - name: Notify on Success
         if: success()

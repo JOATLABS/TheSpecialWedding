@@ -5,6 +5,115 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **CRITICAL: Settings Validation** (`app/core/settings.py`):
+  - Removed insecure default `secret_key="changeme"` - now required from environment
+  - Added `field_validator` requiring SECRET_KEY to be 32+ characters and not a common default
+  - Removed insecure default `cors_origins=[]` - now required from environment
+  - Added validator ensuring CORS_ORIGINS has at least one configured origin
+  - Reference: [Pydantic Settings Management](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+
+### Fixed
+
+- **CRITICAL: Build Failure - Unterminated Regexp Literal** (`app/admin/users/page.tsx`):
+  - Added missing opening `<div>` tag after `</PageHeader>` component
+  - File had 65 opening `<div` tags but only 58 closing `</div>` tags
+  - Caused TypeScript/SWC parser to fail with misleading "Unterminated regexp literal" error
+  - Root cause: JSX structure imbalance from orphan closing tag at line 1019
+
+- **CRITICAL: Pricing Page TypeError - slice is not a function** (`app/components/saas/SignupModal.tsx:250`):
+  - Fixed `(selectedPlan?.features || selectedPlan?.features_list || []).slice(0, 4)` pattern
+  - Backend sends `features` as `Record<string, boolean>` (object), not array
+  - When `features` is truthy (even `{}`), the `||` fallback to `features_list` never triggered
+  - Objects don't have `.slice()` method, causing runtime TypeError on pricing page
+  - Changed to: `(Array.isArray(selectedPlan?.features_list) ? selectedPlan.features_list : []).slice(0, 4)`
+
+- **CRITICAL: N+1 Query Pattern** (`app/admin/guests/page.tsx`, `app/api/plus_one.py`, `app/services/plus_one_service.py`):
+  - Added batch endpoint `GET /plus_one/plus-ones/wedding/{wedding_id}` to fetch all plus-ones for a wedding in single query
+  - Replaced N individual API calls with single batch fetch, improving performance for large guest lists
+  - Reference: [MongoDB Query Optimization](https://www.mongodb.com/docs/manual/core/query-optimization/)
+
+- **HIGH: Race Condition in Plus-One Creation** (`app/services/plus_one_service.py:27-61`):
+  - Implemented insert-then-verify pattern to prevent concurrent requests exceeding plus-one limits
+  - If count exceeds limit after insert, rollback is performed automatically
+  - Reference: [MongoDB Atomic Operations](https://medium.com/tales-from-nimilandia/handling-race-conditions-and-concurrent-resource-updates-in-node-and-mongodb-by-performing-atomic-9f1a902bd5fa)
+
+- **HIGH: String/ObjectId Type Inconsistency** (`app/services/plus_one_service.py:124-162`):
+  - Standardized `guest_id` storage as string in plus_ones collection
+  - Fixed delete_plus_one to use ObjectId for guest collection lookups
+  - Prevents lookup failures due to type mismatches
+
+- **HIGH: Duplicate Router Registration** (`app/main.py:266-299`):
+  - Removed 7 duplicate routers from admin_routers that were already registered publicly with route-level authentication
+  - Affected routers: user_management, subscription, saas_config, forms, vendor_forms, vendor_management, contracts
+  - Prevents redundant route registration and potential conflicts
+
+- **HIGH: Plan Selection Race Condition** (`app/components/saas/SaasLandingPage.tsx:407-413`):
+  - Added `useRef` to track if initial plan selection has been made
+  - Removed `selectedPlan` from useEffect dependency array to prevent overwriting user's manual selection
+  - Reference: [React useRef for Preventing Infinite Loops](https://blog.logrocket.com/solve-react-useeffect-hook-infinite-loop-patterns/)
+
+- **Pricing Page TypeError** (`app/components/saas/SaasLandingPage.tsx`, `IntegratedHeroSection.tsx`, `SaasExperienceCarousel.tsx`):
+  - Added `Array.isArray()` defensive checks before calling `.slice()` and spread operators
+  - Prevents `Uncaught TypeError: .slice is not a function` during SSR hydration
+
+### Verified (No Change Required)
+
+- **Middleware Order** (`app/main.py:208-227`):
+  - Verified CORS middleware executes BEFORE rate limiting (correct for preflight handling)
+  - In FastAPI/Starlette, middleware added LAST executes FIRST on incoming requests
+  - Reference: [FastAPI Middleware Ordering](https://medium.com/@saurabhbatham17/navigating-middleware-ordering-in-fastapi-a-cors-dilemma-8be88ab2ee7b)
+
+## [1.6.1] - 2026-01-23
+
+### Fixed
+
+- **Cloudflare Workers - Deprecated MailChannels Replacement** (`cloudflare-workers/*.js`):
+  - Replaced deprecated MailChannels API with [Resend API](https://resend.com/docs/api-reference/emails/send-email) in all workers
+  - Updated email sending to use `POST https://api.resend.com/emails` with `Authorization: Bearer` header
+  - Email configuration now uses environment variables: `ALERT_EMAIL` (from), `ROOT_ADMIN_EMAIL` (to)
+  - Affected workers: `autopilot-cron.js`, `backup-cron.js`, `uptime-cron.js`
+
+- **Cloudflare Workers - Request Timeout** (`cloudflare-workers/*.js`):
+  - Added `fetchWithTimeout()` helper to all workers to prevent hanging requests
+  - Uses `AbortController` with configurable timeout (10s default, 15s health checks, 30s API calls, 60s backups)
+  - Reference: [Cloudflare Workers Context API](https://developers.cloudflare.com/workers/runtime-apis/context/)
+
+- **Cloudflare Workers - Premature Termination** (`cloudflare-workers/backup-cron.js`):
+  - Wrapped email sending calls with `ctx.waitUntil()` to prevent premature worker termination
+  - Ensures async email operations complete even after response is returned
+  - Reference: [Cloudflare Scheduled Handler](https://developers.cloudflare.com/workers/runtime-apis/handlers/scheduled/)
+
+- **Cloudflare Workers - Alert Spam Prevention** (`cloudflare-workers/uptime-cron.js`):
+  - Implemented KV-based alert debouncing (max 1 alert per hour during outages)
+  - Added recovery notifications when service comes back online
+  - Added `/status` endpoint to check current downtime state and last alert time
+  - Uses [Cloudflare KV](https://developers.cloudflare.com/kv/get-started/) for state persistence
+
+- **Cloudflare Workers - Hardcoded Values Removed**:
+  - Removed all hardcoded API URLs and email addresses from worker files and wrangler.toml configs
+  - All configuration now pulled from GitHub secrets during deployment
+  - Changed environment variable from `API_URL` to `NEXT_PUBLIC_API_BASE_URL` for consistency with project conventions
+  - Updated `deploy-workers.yml` to set secrets via `wrangler secret put`
+
+### Added
+
+- **Automated KV Namespace Creation** (`.github/workflows/deploy-workers.yml`):
+  - Deploy workflow now automatically creates KV namespace for uptime-cron worker
+  - Extracts namespace ID and updates `uptime.wrangler.toml` during deployment
+  - No manual `wrangler kv:namespace create` step required
+  - Reference: [Wrangler KV Commands](https://developers.cloudflare.com/kv/reference/kv-commands/)
+
+### Changed
+
+- **Deploy Workers Workflow** (`.github/workflows/deploy-workers.yml`):
+  - Updated all workers to use `NEXT_PUBLIC_API_BASE_URL` instead of `API_URL`
+  - Added `ALERT_EMAIL` and `ROOT_ADMIN_EMAIL` secrets to all worker deployments
+  - Added KV namespace creation step before uptime worker deployment
+
 ## [1.6.0] - 2026-01-10
 
 ### Added

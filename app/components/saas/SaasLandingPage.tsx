@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { IntegratedHeroSection } from './IntegratedHeroSection';
 import ModernHeroSection from './ModernHeroSection';
 import ImpactMetricsSection from './ImpactMetricsSection';
@@ -326,6 +326,7 @@ export const SaasLandingPage: React.FC = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const initialPlanSet = useRef(false);  // Track if initial plan selection has been made
 
   const defaultPlans: SubscriptionPlan[] = useMemo(
     () => [
@@ -417,15 +418,13 @@ export const SaasLandingPage: React.FC = () => {
   }, [fetchSubscriptionPlans]);
 
   useEffect(() => {
-    // Only auto-select default plan if:
-    // 1. Plans have loaded
-    // 2. No plan is currently selected
-    // 3. User hasn't explicitly selected a plan (prevents race condition)
-    if (!planLoading && plans.length > 0 && !selectedPlan && !userSelectedPlanRef.current) {
+    // Only set initial plan once to prevent race condition with user selections
+    if (!planLoading && plans.length > 0 && !initialPlanSet.current) {
       const featuredPlan = plans.find((plan) => plan.is_featured) ?? plans[0];
       setSelectedPlan({ id: featuredPlan._id, name: featuredPlan.name });
+      initialPlanSet.current = true;
     }
-  }, [planLoading, plans, selectedPlan]);
+  }, [planLoading, plans]);
 
   const condensedPlans = useMemo(() => (Array.isArray(plans) ? plans : []).slice(0, 4), [plans]);
 

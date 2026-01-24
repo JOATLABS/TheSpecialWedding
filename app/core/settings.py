@@ -39,12 +39,29 @@ class Settings(BaseSettings):
     media_domain: Optional[str] = Field(default=None, alias="MEDIA_DOMAIN")
 
     # Security
-    secret_key: str = Field(default="changeme", alias="SECRET_KEY")
+    secret_key: str = Field(default="", alias="SECRET_KEY")  # Required - validated below
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
     # CORS
-    cors_origins: List[str] = Field(default=[], alias="CORS_ORIGINS")
+    cors_origins: List[str] = Field(default=[], alias="CORS_ORIGINS")  # Required - validated below
+
+    @field_validator('secret_key')
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        """Ensure secret_key is not a weak default"""
+        weak_keys = {'changeme', 'secret', 'password', 'test', 'development'}
+        if v.lower() in weak_keys or len(v) < 32:
+            raise ValueError('SECRET_KEY must be at least 32 characters and not a common default')
+        return v
+
+    @field_validator('cors_origins')
+    @classmethod
+    def validate_cors_origins(cls, v: List[str]) -> List[str]:
+        """Ensure cors_origins is configured"""
+        if not v:
+            raise ValueError('CORS_ORIGINS must be configured with at least one origin')
+        return v
     cors_credentials: bool = Field(default=True, alias="CORS_CREDENTIALS")
     cors_methods: List[str] = Field(
         default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

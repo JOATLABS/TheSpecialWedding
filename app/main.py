@@ -268,6 +268,7 @@ app.include_router(contracts_router, tags=["Public Contracts"])  # Public contra
 app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
 
 # Admin routes (authentication required)
+# Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes
 admin_routers = [
     (auth_router, "Auth"),
     (import_router, "Admin"),
@@ -279,15 +280,15 @@ admin_routers = [
     (checkin_router, "Admin"),
     (gallery_admin_router, "Gallery"),
     (reminder_utils_router, "Admin"),
-    (user_management_router, "Admin"),
-    (subscription_router, "Subscription"),
-    (saas_config_router, "Subscription"),
+    # user_management_router - already registered publicly with route-level auth
+    # subscription_router - already registered publicly with route-level auth
+    # saas_config_router - already registered publicly with route-level auth
     (budget_router, "Budget"),
     (planner_metrics_router, "Metrics"),
-    (forms_router, "Forms"),
+    # forms_router - already registered publicly with route-level auth
     (trial_management_router, "Admin"),
-    (vendor_forms_router, "Vendor Forms"),
-    (vendor_management_router, "Vendor Management"),
+    # vendor_forms_router - already registered publicly with route-level auth
+    # vendor_management_router - already registered publicly with route-level auth
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (messaging_router, "Messaging"),
@@ -299,7 +300,7 @@ admin_routers = [
     (metering_router, "ROOT_ADMIN"),
     (planner_calendar_router, "Planner Calendar"),
     (packages_router, "Packages"),
-    (contracts_router, "Contracts"),
+    # contracts_router - already registered publicly with route-level auth
     (autopilot_router, "Autopilot"),
     (ai_router, "AI"),
     (planner_notifications_router, "Planner Notifications"),
