@@ -9,7 +9,7 @@
  * 2. Create new Worker
  * 3. Paste this code
  * 4. Add environment variables:
- *    - API_URL: https://api.thespecialwedding.com
+ *    - API_URL: https://api.thespecialwedding.io
  *    - ADMIN_TOKEN: (JWT token for ROOT_ADMIN - get from login)
  *    - Optional: DEPLOYMENT_ENV (production, staging, development)
  *    - Optional: ANALYTICS_INDEX (sampling key for Analytics Engine)

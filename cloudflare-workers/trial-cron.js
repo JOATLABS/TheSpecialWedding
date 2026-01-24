@@ -13,7 +13,7 @@
  * 2. Create new Worker named "trial-cron"
  * 3. Paste this code
  * 4. Add environment variables:
- *    - API_URL: https://api.thespecialwedding.com
+ *    - API_URL: https://api.thespecialwedding.io
  *    - CRON_SECRET: (same secret used by autopilot-cron)
  *    - RESEND_API_KEY: (your Resend API key for alerts)
  *    - ALERT_EMAIL: (admin email for alerts)
@@ -315,7 +315,7 @@ async function sendSuccessNotification(env, result) {
                 </div>
               </div>
               <div style="text-align: center; margin-top: 20px;">
-                <a href="https://admin.thespecialwedding.com/admin/users"
+                <a href="https://admin.thespecialwedding.io/admin/users"
                    style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
                   View Users Dashboard
                 </a>

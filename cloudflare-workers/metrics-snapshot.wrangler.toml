@@ -12,7 +12,7 @@ crons = ["0 * * * *"]
 
 [vars]
 # Base URL for the FastAPI backend
-API_URL = "https://api.thespecialwedding.com"
+API_URL = "https://api.thespecialwedding.io"
 # Optional: override environment label shown in Analytics Engine queries
 DEPLOYMENT_ENV = "production"
 # Optional: custom index value for sampling/partitioning in Analytics Engine

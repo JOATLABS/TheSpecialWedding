@@ -6,7 +6,6 @@ to specific features based on their subscription plan.
 """
 
 from fastapi import Depends, HTTPException, status
-from typing import Optional
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
 import logging

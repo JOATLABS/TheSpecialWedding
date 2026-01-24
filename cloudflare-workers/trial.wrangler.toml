@@ -19,10 +19,10 @@ crons = ["0 8 * * *"]
 
 [vars]
 # Base URL for the FastAPI backend
-API_URL = "https://api.thespecialwedding.com"
+API_URL = "https://api.thespecialwedding.io"
 
 # Email for job status alerts
-ALERT_EMAIL = "thedeveloper@thespecialwedding.com"
+ALERT_EMAIL = "alertsd@thespecialwedding.io"
 
 # Note: CRON_SECRET must be set via wrangler secret or Cloudflare dashboard
 # Use the SAME secret as autopilot-cron for consistency
