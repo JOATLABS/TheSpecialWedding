@@ -4,7 +4,7 @@
  * Monitors backend API health and sends alerts via Resend if down.
  * Uses KV to debounce alerts (max 1 alert per hour) and track recovery.
  *
- * Cron Schedule: Every 5 minutes (*/5 * * * *)
+ * Cron Schedule: Every 5 minutes
  *
  * Setup Instructions:
  * 1. Go to Cloudflare Dashboard → Workers & Pages
@@ -17,7 +17,7 @@
  *    - ROOT_ADMIN_EMAIL: (to email for alerts)
  * 5. Create KV namespace: wrangler kv:namespace create "uptime-state"
  * 6. Add KV binding in wrangler.toml (UPTIME_KV)
- * 7. Add triggers: Cron Trigger with schedule */5 * * * *
+ * 7. Add triggers: Cron Trigger with schedule every 5 minutes
  * 8. Deploy
  *
  * Cost: $0/month (FREE tier)
