@@ -23,6 +23,15 @@ async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = 
     return await plus_one_service.add_plus_one(plus_one)
 
 
+@router.get("/plus-ones/wedding/{wedding_id}", tags=["Plus-Ones"])
+async def get_plus_ones_by_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    """Batch fetch all plus-ones for a wedding (avoids N+1 queries)"""
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    return await plus_one_service.get_plus_ones_by_wedding(wedding_id)
+
+
 @router.get("/plus-ones/{guest_id}", tags=["Plus-Ones"])
 async def get_plus_ones(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get guest to verify wedding access
