@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
+import PageHeader from '../components/PageHeader';
 import {
   DollarSign,
   TrendingUp,
@@ -238,38 +239,30 @@ export default function AdminBillingDashboard() {
   }
 
   return (
-    <div className="min-h-screen dark:bg-slate-700">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-800 shadow-sm border-b dark:border-slate-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Billing & Revenue</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">Platform-wide subscription and revenue analytics</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={fetchBillingData}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh
-              </button>
-              <a
-                href="https://dashboard.stripe.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#635BFF] text-white rounded-lg hover:bg-[#5851ea] transition-colors text-sm font-medium"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Stripe Dashboard
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Billing & Revenue"
+        description="Platform-wide subscription and revenue analytics"
+      >
+        <button
+          onClick={fetchBillingData}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors text-sm font-medium text-slate-700 dark:text-slate-300"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </button>
+        <a
+          href="https://dashboard.stripe.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#635BFF] text-white rounded-lg hover:bg-[#5851ea] transition-colors text-sm font-medium"
+        >
+          <ExternalLink className="w-4 h-4" />
+          Stripe Dashboard
+        </a>
+      </PageHeader>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div>
         {error && (
           <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
             <p className="text-yellow-700 dark:text-yellow-300 text-sm">{error}</p>

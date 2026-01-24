@@ -63,7 +63,7 @@
     "auto-changelog": "^2.5.0",
     "autoprefixer": "^10.4.21",
     "baseline-browser-mapping": "^2.9.7",
-    "conventional-changelog-cli": "^5.0.0",
+    "conventional-changelog-cli": "^4.1.0",
     "dotenv": "^17.2.1",
     "eslint": "^9.36.0",
     "eslint-config-next": "^15.5.4",

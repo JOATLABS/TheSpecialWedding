@@ -7,6 +7,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import PageHeader from '../components/PageHeader';
 import {
   Plus,
   Package,
@@ -210,23 +211,17 @@ export default function PackagesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">
-            Service Packages
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Create and manage your wedding service packages
-          </p>
-        </div>
+      <PageHeader
+        title="Service Packages"
+        description="Create and manage your wedding service packages"
+      >
         <Link href="/admin/packages/new">
           <Button className="flex items-center gap-2">
             <Plus size={18} />
             New Package
           </Button>
         </Link>
-      </div>
+      </PageHeader>
 
       {/* Filters */}
       <Card className="p-4">

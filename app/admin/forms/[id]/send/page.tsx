@@ -225,7 +225,7 @@ export default function SendFormPage() {
  </button>
  </div>
  <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-6">
- <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Send Form</h1>
+ <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white mb-2">Send Form</h1>
  <div className="flex items-center text-gray-600 dark:text-gray-300">
  <span className="text-lg font-medium">{form.name}</span>
  <span className="mx-2">•</span>
