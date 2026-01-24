@@ -89,7 +89,7 @@ export default function PlannerActivityLogPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Planner Activity Log</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Planner Activity Log</h1>
           <p className="text-gray-600 dark:text-gray-400">Detailed activity across weddings you manage.</p>
         </div>
         <button

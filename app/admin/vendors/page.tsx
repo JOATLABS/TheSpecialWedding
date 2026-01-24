@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import PageHeader from '../components/PageHeader';
 import {
   getVendorDirectory,
   getContracts,
@@ -356,15 +357,10 @@ export default function VendorManagementPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-2xl font-sans font-bold text-slate-900 dark:text-white">Vendor Management</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Your complete vendor CRM - directory, contracts, and payments in one place
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Vendor Management"
+        description="Your complete vendor CRM - directory, contracts, and payments in one place"
+      />
 
       <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
 
