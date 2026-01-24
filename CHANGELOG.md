@@ -18,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CRITICAL: Build Failure - Unterminated Regexp Literal** (`app/admin/users/page.tsx`):
+  - Added missing opening `<div>` tag after `</PageHeader>` component
+  - File had 65 opening `<div` tags but only 58 closing `</div>` tags
+  - Caused TypeScript/SWC parser to fail with misleading "Unterminated regexp literal" error
+  - Root cause: JSX structure imbalance from orphan closing tag at line 1019
+
+- **CRITICAL: Pricing Page TypeError - slice is not a function** (`app/components/saas/SignupModal.tsx:250`):
+  - Fixed `(selectedPlan?.features || selectedPlan?.features_list || []).slice(0, 4)` pattern
+  - Backend sends `features` as `Record<string, boolean>` (object), not array
+  - When `features` is truthy (even `{}`), the `||` fallback to `features_list` never triggered
+  - Objects don't have `.slice()` method, causing runtime TypeError on pricing page
+  - Changed to: `(Array.isArray(selectedPlan?.features_list) ? selectedPlan.features_list : []).slice(0, 4)`
+
 - **CRITICAL: N+1 Query Pattern** (`app/admin/guests/page.tsx`, `app/api/plus_one.py`, `app/services/plus_one_service.py`):
   - Added batch endpoint `GET /plus_one/plus-ones/wedding/{wedding_id}` to fetch all plus-ones for a wedding in single query
   - Replaced N individual API calls with single batch fetch, improving performance for large guest lists
