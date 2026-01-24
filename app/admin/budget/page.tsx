@@ -11,7 +11,7 @@ import BudgetCategoryCard from '../../components/budget/BudgetCategoryCard';
 import PaymentHistoryPanel from '../../components/budget/PaymentHistoryPanel';
 import RecordPaymentModal from '../../components/budget/RecordPaymentModal';
 import { budgetApi } from '../../services/budgetApi';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 import {
   getVendorDirectory,
   getWeddingVendors,

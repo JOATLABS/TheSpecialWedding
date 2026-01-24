@@ -5,7 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 import {
   DollarSign,
   TrendingUp,

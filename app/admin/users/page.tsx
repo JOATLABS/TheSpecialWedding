@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 import {
   Users,
   UserPlus,

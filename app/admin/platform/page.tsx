@@ -7,7 +7,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
 import { toast } from 'sonner';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 import {
   Server,
   Database,

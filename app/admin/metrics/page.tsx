@@ -7,7 +7,7 @@ import type { ReactElement } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
-import PageHeader from './components/PageHeader';
+import PageHeader from '../components/PageHeader';
 
 interface RoleBreakdown {
   [role: string]: number;
