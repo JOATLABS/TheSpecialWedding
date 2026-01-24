@@ -75,26 +75,26 @@ export const IntegratedHeroSection: React.FC<IntegratedHeroSectionProps> = ({
   useTheming = false,
   hero_image_position,
 }) => {
-  const statistics = config.statistics_enabled === false ? [] : config.statistics?.slice(0, 3) ?? [];
-  const trustIndicators = config.trust_indicators?.slice(0, 3) ?? [
-    'Free 30-day trial',
-    'No credit card required',
-    'Cancel anytime',
-  ];
+  const statistics = config.statistics_enabled === false ? [] : (Array.isArray(config.statistics) ? config.statistics : []).slice(0, 3);
+  const trustIndicators = (Array.isArray(config.trust_indicators) ? config.trust_indicators : []).slice(0, 3).length > 0
+    ? (Array.isArray(config.trust_indicators) ? config.trust_indicators : []).slice(0, 3)
+    : ['Free 30-day trial', 'No credit card required', 'Cancel anytime'];
   const primaryFeatureCallouts = useMemo(() => {
     if (config.features_enabled === false) {
       return [] as Feature[];
     }
-    return (config.features ?? [])
+    const features = Array.isArray(config.features) ? config.features : [];
+    return features
       .filter((feature) => feature.status === 'available')
       .slice(0, 3);
   }, [config.features, config.features_enabled]);
 
   const featuredPlan = useMemo(() => {
-    if (!plans || plans.length === 0) {
+    const plansArray = Array.isArray(plans) ? plans : [];
+    if (plansArray.length === 0) {
       return undefined;
     }
-    return plans.find((plan) => plan.is_featured) ?? plans[0];
+    return plansArray.find((plan) => plan.is_featured) ?? plansArray[0];
   }, [plans]);
 
   const transitionStyle: React.CSSProperties = { transitionDuration: `${animationSpeedMs}ms` };
