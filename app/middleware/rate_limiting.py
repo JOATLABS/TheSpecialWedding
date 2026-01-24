@@ -5,10 +5,14 @@ import time
 from collections import defaultdict, deque
 from typing import Dict, Deque
 import asyncio
+from app.core.cache import cache, CacheKeys
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Rate limiting middleware using sliding window algorithm
+    Rate limiting middleware using Redis (preferred) or sliding window algorithm (fallback)
     """
     def __init__(
         self,
@@ -24,11 +28,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.auth_calls = auth_calls
         self.auth_period = auth_period
 
-        # Store request timestamps for each IP
+        # Store request timestamps for each IP (Fallback)
         self.requests: Dict[str, Deque[float]] = defaultdict(lambda: deque())
         self.auth_requests: Dict[str, Deque[float]] = defaultdict(lambda: deque())
 
-        # Lock for thread safety
+        # Lock for thread safety (Fallback)
         self.lock = asyncio.Lock()
 
     def _get_client_ip(self, request: Request) -> str:
@@ -49,34 +53,90 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """Check if the endpoint is authentication-related"""
         auth_paths = ["/admin/token", "/admin/login", "/public/register", "/setup/complete"]
         return any(auth_path in path for auth_path in auth_paths)
+
     async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
         """Remove old requests outside the time window"""
         current_time = time.time()
         while request_queue and current_time - request_queue[0] > period:
             request_queue.popleft()
 
-    async def _is_rate_limited(self, client_ip: str, is_auth: bool) -> bool:
-        """Check if the client has exceeded rate limits"""
-        current_time = time.time()
+    async def _check_redis_limit(self, client_ip: str, is_auth: bool) -> tuple[bool, int, int]:
+        """
+        Check rate limit using Redis.
+        Returns: (is_limited, remaining, reset_time)
+        """
+        limit = self.auth_calls if is_auth else self.calls
+        period = self.auth_period if is_auth else self.period
+        endpoint_type = "auth" if is_auth else "api"
 
-        if is_auth:
-            # Use stricter limits for auth endpoints
-            await self._cleanup_old_requests(self.auth_requests[client_ip], self.auth_period)
+        # Use CacheKeys generator
+        key = CacheKeys.rate_limit(client_ip, endpoint_type)
 
-            if len(self.auth_requests[client_ip]) >= self.auth_calls:
-                return True
+        try:
+            # Simple fixed window implementation
+            # INCR returns the new value
+            if not cache.redis_client:
+                 # Should not happen if check passed, but safety first
+                 async with self.lock:
+                    return await self._check_memory_limit(client_ip, is_auth)
 
-            self.auth_requests[client_ip].append(current_time)
-        else:
-            # Regular rate limiting
-            await self._cleanup_old_requests(self.requests[client_ip], self.period)
+            current_count = await cache.redis_client.incr(key)
 
-            if len(self.requests[client_ip]) >= self.calls:
-                return True
+            # If it's the first request (count == 1), set expiration
+            if current_count == 1:
+                await cache.redis_client.expire(key, period)
 
-            self.requests[client_ip].append(current_time)
+            # Get TTL for headers
+            ttl = await cache.redis_client.ttl(key)
+            reset_time = int(time.time()) + (ttl if ttl > 0 else period)
+            remaining = max(0, limit - current_count)
 
-        return False
+            return current_count > limit, remaining, reset_time
+
+        except Exception as e:
+            logger.error(f"Redis rate limit check failed: {str(e)}")
+            # Fallback to memory if Redis fails
+            # We must acquire lock here as we are entering critical section for memory storage
+            async with self.lock:
+                return await self._check_memory_limit(client_ip, is_auth)
+
+    async def _check_memory_limit(self, client_ip: str, is_auth: bool) -> tuple[bool, int, int]:
+        """
+        Check rate limit using in-memory sliding window.
+        Returns: (is_limited, remaining, reset_time)
+        """
+        # NOTE: This method must be called within an 'async with self.lock:' block
+
+        limit = self.auth_calls if is_auth else self.calls
+        period = self.auth_period if is_auth else self.period
+
+        # Select appropriate storage
+        requests_map = self.auth_requests if is_auth else self.requests
+        request_queue = requests_map[client_ip]
+
+        # Cleanup old requests
+        await self._cleanup_old_requests(request_queue, period)
+
+        # Check limit
+        current_count = len(request_queue)
+        if current_count >= limit:
+            reset_time = int(time.time()) + period # Approximate
+            return True, 0, reset_time
+
+        # Add new request
+        request_queue.append(time.time())
+
+        # Cleanup memory if too many IPs are tracked (DoS protection)
+        if len(requests_map) > 10000:
+            # Clear 10% of keys roughly
+            keys_to_remove = list(requests_map.keys())[:1000]
+            for k in keys_to_remove:
+                del requests_map[k]
+
+        remaining = max(0, limit - len(request_queue))
+        reset_time = int(time.time()) + period
+
+        return False, remaining, reset_time
 
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process the request with rate limiting"""
@@ -88,29 +148,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = self._get_client_ip(request)
         is_auth = self._is_auth_endpoint(request.url.path)
 
-        async with self.lock:
-            if await self._is_rate_limited(client_ip, is_auth):
-                # Return rate limit exceeded error
-                raise HTTPException(
-                    status_code=429,
-                    detail={
-                        "error": "Rate limit exceeded",
-                        "message": f"Too many requests. Try again later.",
-                        "retry_after": self.auth_period if is_auth else self.period
-                    }
-                )
+        # Optimization: Don't lock for Redis calls, only for in-memory operations
+        if cache.enabled and cache.redis_client:
+            is_limited, remaining, reset_time = await self._check_redis_limit(client_ip, is_auth)
+        else:
+            async with self.lock:
+                is_limited, remaining, reset_time = await self._check_memory_limit(client_ip, is_auth)
+
+        if is_limited:
+            # Return rate limit exceeded error
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "Rate limit exceeded",
+                    "message": f"Too many requests. Try again later.",
+                    "retry_after": self.auth_period if is_auth else self.period
+                }
+            )
 
         # Continue with the request
         response = await call_next(request)
 
         # Add rate limit headers to response
-        if is_auth:
-            remaining = max(0, self.auth_calls - len(self.auth_requests[client_ip]))
-            reset_time = int(time.time()) + self.auth_period
-        else:
-            remaining = max(0, self.calls - len(self.requests[client_ip]))
-            reset_time = int(time.time()) + self.period
-
         response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Reset"] = str(reset_time)
 
