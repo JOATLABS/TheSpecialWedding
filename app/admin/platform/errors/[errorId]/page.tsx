@@ -57,7 +57,9 @@ export default function ErrorDetailsPage() {
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch error details: ${response.statusText}`);
+          const errorData = await response.json().catch(() => null);
+          const errorMessage = errorData?.detail || `Failed to fetch error details: ${response.statusText}`;
+          throw new Error(errorMessage);
         }
 
         const data = await response.json();
@@ -93,11 +95,19 @@ export default function ErrorDetailsPage() {
         setError(prev => prev ? { ...prev, acknowledged: true } : null);
         alert('Error acknowledged successfully');
       } else {
-        throw new Error('Failed to acknowledge error');
+        if (response.status === 404) {
+          setFetchError('Error not found. It may have been acknowledged or deleted already.');
+          setError(null);
+          return; 
+        }
+        
+        const errorData = await response.json().catch(() => null);
+        const errorMessage = errorData?.detail || 'Failed to acknowledge error';
+        throw new Error(errorMessage);
       }
     } catch (err) {
       console.error('Error acknowledging error:', err);
-      alert('Failed to acknowledge error');
+      alert(`Failed to acknowledge error: ${err instanceof Error ? err.message : 'An unknown error occurred'}`);
     }
   };
 

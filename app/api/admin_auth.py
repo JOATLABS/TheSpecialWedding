@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from app.models.admin_user import AdminLoginModel
 from app.services.auth_service import AuthService

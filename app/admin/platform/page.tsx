@@ -215,13 +215,26 @@ export default function PlatformInfrastructurePage() {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to acknowledge');
-      toast.success('Error acknowledged');
-      fetchAllErrors();
-      fetchMetrics();
+      if (response.ok) {
+        toast.success('Error acknowledged');
+        fetchAllErrors();
+        fetchMetrics();
+        return;
+      }
+
+      if (response.status === 404) {
+          toast.info('Error not found, it may have been handled already. Refreshing list.');
+          fetchAllErrors();
+          return;
+      }
+
+      const errorData = await response.json().catch(() => null);
+      const errorMessage = errorData?.detail || 'Failed to acknowledge error';
+      throw new Error(errorMessage);
+
     } catch (err) {
       console.error('Error acknowledging error:', err);
-      toast.error('Failed to acknowledge error');
+      toast.error(`Acknowledge failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setAcknowledgingIds(prev => {
         const next = new Set(prev);
