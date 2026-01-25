@@ -195,19 +195,75 @@ async def activate_user(user_id: str, current_user: ExtendedAuthUser = Depends(r
     """Activate a user account - ROOT_ADMIN only"""
     return await user_service.activate_user(user_id)
 
+
+# ==================== INVITATION MANAGEMENT ENDPOINTS ====================
+
+
+@router.get("/admin/invitations", tags=["ROOT_ADMIN"])
+async def list_invitations(
+    status: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """
+    List all invitations with optional filtering - ROOT_ADMIN only
+
+    Args:
+        status: Filter by status (pending, completed, expired, cancelled)
+        page: Page number (default 1)
+        limit: Items per page (default 20)
+    """
+    return await user_service.list_invitations(status=status, page=page, limit=limit)
+
+
+@router.get("/admin/invitations/stats", tags=["ROOT_ADMIN"])
+async def get_invitation_stats(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+    """Get invitation counts by status - ROOT_ADMIN only"""
+    return await user_service.get_invitation_stats()
+
+
+@router.post("/admin/invitations/{invitation_id}/resend", tags=["ROOT_ADMIN"])
+async def resend_invitation(
+    invitation_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """Resend invitation email with new token - ROOT_ADMIN only"""
+    return await user_service.resend_invitation(invitation_id, resent_by=current_user.email)
+
+
+class CancelInvitationModel(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/admin/invitations/{invitation_id}/cancel", tags=["ROOT_ADMIN"])
+async def cancel_invitation(
+    invitation_id: str,
+    cancel_data: CancelInvitationModel = None,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """Cancel a pending invitation - ROOT_ADMIN only"""
+    reason = cancel_data.reason if cancel_data else None
+    return await user_service.cancel_invitation(
+        invitation_id,
+        cancelled_by=current_user.email,
+        reason=reason
+    )
+
+
 # ==================== PUBLIC ACCOUNT SETUP ENDPOINTS ====================
 
 
 @router.get("/setup/validate-token/{token}", tags=["Public"])
-def validate_invitation_token(token: str):
+async def validate_invitation_token(token: str):
     """Validate invitation token and return invitation details - No auth required"""
-    return user_service.validate_invitation_token(token)
+    return await user_service.validate_invitation_token(token)
 
 
 @router.post("/setup/complete", tags=["Public"])
-def complete_account_setup(setup_data: AccountSetupModel):
+async def complete_account_setup(setup_data: AccountSetupModel):
     """Complete account setup with password - No auth required"""
-    return user_service.complete_account_setup(setup_data.token, setup_data.password)
+    return await user_service.complete_account_setup(setup_data.token, setup_data.password)
 
 
 @router.post("/public/register", tags=["Public"])
@@ -217,15 +273,67 @@ async def register_wedding_planner(registration_data: PublicRegistrationModel):
 
 
 @router.get("/verify-email/{token}", tags=["Public"])
-def verify_email(token: str):
+async def verify_email(token: str):
     """Verify email address using token - No auth required"""
-    return user_service.verify_email(token)
+    return await user_service.verify_email(token)
 
 
 @router.get("/verify-email-change/{token}", tags=["Public"])
 async def verify_email_change(token: str):
     """Verify email address change using token - No auth required"""
     return await user_service.verify_email_change(token)
+
+
+# ==================== PASSWORD RESET ENDPOINTS ====================
+
+
+class ForgotPasswordModel(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordModel(BaseModel):
+    token: str
+    password: str
+    confirm_password: str
+
+    @validator('password')
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one number')
+        if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in v):
+            raise ValueError('Password must contain at least one special character')
+        return v
+
+    @validator('confirm_password')
+    def passwords_match(cls, v, values):
+        if 'password' in values and v != values['password']:
+            raise ValueError('Passwords do not match')
+        return v
+
+
+@router.post("/forgot-password", tags=["Public"])
+async def forgot_password(data: ForgotPasswordModel):
+    """Request a password reset email - No auth required"""
+    return await user_service.request_password_reset(data.email)
+
+
+@router.get("/reset-password/validate/{token}", tags=["Public"])
+async def validate_reset_token(token: str):
+    """Validate a password reset token - No auth required"""
+    return await user_service.validate_password_reset_token(token)
+
+
+@router.post("/reset-password", tags=["Public"])
+async def reset_password(data: ResetPasswordModel):
+    """Reset password using reset token - No auth required"""
+    return await user_service.reset_password(data.token, data.password)
+
 
 # ==================== USER PROFILE MANAGEMENT ====================
 

@@ -68,6 +68,7 @@ from app.api.ai import router as ai_router
 from app.api.planner_notifications import router as planner_notifications_router
 from app.api.tables import router as tables_router
 from app.api.config_errors import router as config_errors_router
+from app.api.admin_activity import router as admin_activity_router
 
 # Setup logging
 logging.basicConfig(
@@ -288,6 +289,7 @@ admin_routers = [
     (support_router, "Support"),
     (admin_platform_metrics_router, "ROOT_ADMIN"),
     (backup_router, "ROOT_ADMIN"),
+    (admin_activity_router, "ROOT_ADMIN"),
     (billing_jobs_router, "Admin"),
     (metering_router, "ROOT_ADMIN"),
     (planner_calendar_router, "Planner Calendar"),
