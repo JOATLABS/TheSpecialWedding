@@ -14,8 +14,11 @@ interface RSVPFormProps {
 interface PlusOneData {
   name: string;
   phone?: string;
+  email?: string;
   attending?: string[];
   dietary?: string;
+  sms_opt_in?: boolean;
+  email_opt_in?: boolean;
 }
 
 export default function RSVPForm({ guest, token }: RSVPFormProps) {
@@ -27,7 +30,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
   
   const addPlusOne = () => {
     if (plusOnes.length < guest.number_of_plus_ones_allowed) {
-      setPlusOnes([...plusOnes, { name: '', phone: '', attending: [], dietary: '' }]);
+      setPlusOnes([...plusOnes, { name: '', phone: '', email: '', attending: [], dietary: '', sms_opt_in: false, email_opt_in: false }]);
     }
   };
 
@@ -262,10 +265,10 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                   </div>
                   <div>
                     <label className="block font-medium text-gray-700 mb-2">Phone Number (Optional)</label>
-                    <input 
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-                      type="tel" 
-                      placeholder="+1 (555) 123-4567" 
+                    <input
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      type="tel"
+                      placeholder="+1 (555) 123-4567"
                       value={plusOne.phone}
                       onChange={(e) => {
                         const newPlusOnes = [...plusOnes];
@@ -275,11 +278,25 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                     />
                   </div>
                   <div>
+                    <label className="block font-medium text-gray-700 mb-2">Email (Optional)</label>
+                    <input
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      type="email"
+                      placeholder="guest@example.com"
+                      value={plusOne.email || ''}
+                      onChange={(e) => {
+                        const newPlusOnes = [...plusOnes];
+                        newPlusOnes[index].email = e.target.value;
+                        setPlusOnes(newPlusOnes);
+                      }}
+                    />
+                  </div>
+                  <div>
                     <label className="block font-medium text-gray-700 mb-2">Dietary Restrictions (Optional)</label>
-                    <input 
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent" 
-                      type="text" 
-                      placeholder="e.g., Vegetarian, Gluten-free, etc." 
+                    <input
+                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                      type="text"
+                      placeholder="e.g., Vegetarian, Gluten-free, etc."
                       value={plusOne.dietary}
                       onChange={(e) => {
                         const newPlusOnes = [...plusOnes];
@@ -287,6 +304,54 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                         setPlusOnes(newPlusOnes);
                       }}
                     />
+                  </div>
+
+                  {/* Plus-One SMS Opt-in */}
+                  <div className="border border-gray-200 rounded-lg p-3 mt-3">
+                    <label className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        checked={plusOne.sms_opt_in || false}
+                        onChange={(e) => {
+                          const newPlusOnes = [...plusOnes];
+                          newPlusOnes[index].sms_opt_in = e.target.checked;
+                          setPlusOnes(newPlusOnes);
+                        }}
+                        className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose"
+                      />
+                      <div className="flex-1">
+                        <span className="block font-medium text-gray-700 text-sm">
+                          Receive SMS reminders
+                        </span>
+                        <span className="block text-xs text-gray-500 mt-1">
+                          Standard message rates may apply. Reply STOP to opt out.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Plus-One Email Opt-in */}
+                  <div className="border border-gray-200 rounded-lg p-3 mt-2">
+                    <label className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        checked={plusOne.email_opt_in || false}
+                        onChange={(e) => {
+                          const newPlusOnes = [...plusOnes];
+                          newPlusOnes[index].email_opt_in = e.target.checked;
+                          setPlusOnes(newPlusOnes);
+                        }}
+                        className="mt-1 rounded text-wedding-rose focus:ring-wedding-rose"
+                      />
+                      <div className="flex-1">
+                        <span className="block font-medium text-gray-700 text-sm">
+                          Receive email updates
+                        </span>
+                        <span className="block text-xs text-gray-500 mt-1">
+                          Unsubscribe anytime via email link.
+                        </span>
+                      </div>
+                    </label>
                   </div>
                 </div>
               </div>

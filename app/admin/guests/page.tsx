@@ -52,8 +52,12 @@ interface PlusOne {
   _id?: string;
   guest_id: string;
   name: string;
+  phone?: string;
+  email?: string;
   dietary?: string;
   attending: string[];
+  sms_opt_in?: boolean | null;
+  email_opt_in?: boolean | null;
 }
 
 type SortField = 'name' | 'email' | 'phone' | 'role' | 'group_id' | 'rsvp_status' | 'plus_ones';
@@ -1303,7 +1307,22 @@ export default function AdminGuestsPage() {
                                               <li key={po._id || idx} className="text-sm bg-white dark:bg-slate-600 p-2 rounded shadow-sm">
                                                 <div className="font-medium text-gray-900 dark:text-gray-100">{po.name}</div>
                                                 <div className="text-gray-500 dark:text-gray-400 text-xs">
-                                                  {po.attending.join(', ')} {po.dietary && `| ${po.dietary}`}
+                                                  {po.phone && <span>Phone: {po.phone} | </span>}
+                                                  {po.email && <span>Email: {po.email} | </span>}
+                                                  Attending: {po.attending?.join(', ') || 'None'}
+                                                  {po.dietary && ` | Dietary: ${po.dietary}`}
+                                                </div>
+                                                <div className="flex gap-2 mt-1">
+                                                  {po.sms_opt_in && (
+                                                    <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                                      SMS ✓
+                                                    </span>
+                                                  )}
+                                                  {po.email_opt_in && (
+                                                    <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                                      Email ✓
+                                                    </span>
+                                                  )}
                                                 </div>
                                               </li>
                                             ))}
@@ -1453,8 +1472,22 @@ export default function AdminGuestsPage() {
                                         <li key={plusOne._id || idx} className="text-sm bg-gray-50 dark:bg-slate-700 p-2 rounded">
                                           <div className="font-medium">{plusOne.name}</div>
                                           <div className="text-gray-600 dark:text-gray-400">
-                                            Attending: {plusOne.attending.join(', ')}
+                                            {plusOne.phone && <span>Phone: {plusOne.phone} | </span>}
+                                            {plusOne.email && <span>Email: {plusOne.email} | </span>}
+                                            Attending: {plusOne.attending?.join(', ') || 'None'}
                                             {plusOne.dietary && ` | Dietary: ${plusOne.dietary}`}
+                                          </div>
+                                          <div className="flex gap-2 mt-1">
+                                            {plusOne.sms_opt_in && (
+                                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                                SMS ✓
+                                              </span>
+                                            )}
+                                            {plusOne.email_opt_in && (
+                                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                                Email ✓
+                                              </span>
+                                            )}
                                           </div>
                                         </li>
                                       ))}

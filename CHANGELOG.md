@@ -48,6 +48,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Root Admin Notification Badge Never Clears** (`app/services/notification_service.py`):
+  - Fixed notification badge showing count that never clears for root admin
+  - Root cause: Root admin was receiving their own notifications (via `target_audience: "all"`)
+  - Added `{"created_by": {"$ne": user_email}}` filter to exclude notifications created by the current user
+  - Modified `get_user_notifications()` at line 293 and `get_user_notification_count()` at line 481
+  - Logical behavior: Creators should not receive their own announcements
+  - Planners unaffected (they don't create notifications)
+
+- **Platform Errors Tab Data Mismatch** (`app/api/admin_platform_metrics.py`):
+  - Fixed Errors tab showing 0 errors while Dashboard showed 236 errors
+  - Root cause: `audit_logs` collection (where HTTP 4xx/5xx errors are stored) was only queried when `acknowledged=None`
+  - When "Unacknowledged" filter was selected (`acknowledged=False`), `audit_logs` were skipped entirely
+  - Changed line 720 from `acknowledged is None` to `acknowledged is not True`
+  - Now includes `audit_logs` for both "All" and "Unacknowledged" views, excludes only for "Acknowledged" view
+  - `audit_logs` entries don't have an `acknowledged` field, so they're inherently unacknowledged
+
+- **Undefined Function in Metrics Snapshot** (`app/api/admin_platform_metrics.py:578`):
+  - Fixed `NameError: name 'get_platform_metrics' is not defined` in `save_metrics_snapshot` endpoint
+  - Changed `await get_platform_metrics(current_user)` to `await get_platform_health(current_user)`
+  - The function was renamed but this call site was not updated
+
 - **Frontend Password Validation Mismatch** (`app/setup-account/page.tsx`, `app/reset-password/page.tsx`):
   - Fixed password validation in account setup and reset pages to match backend requirements
   - Added visual password requirements checklist with real-time validation

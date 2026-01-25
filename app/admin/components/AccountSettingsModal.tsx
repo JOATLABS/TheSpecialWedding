@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Camera, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { X, Camera, Trash2, Eye, EyeOff, Loader2, Bell, BellOff } from 'lucide-react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ interface UserProfile {
   company_name?: string;
   role: string;
   profile_image_url?: string;
+  push_notifications_enabled?: boolean;
 }
 
 interface ChangePasswordData {
@@ -68,6 +69,10 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
   const [imageUploading, setImageUploading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
+  // Push notifications state
+  const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(true);
+  const [savingPushSettings, setSavingPushSettings] = useState(false);
+
   // Form submission states
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
@@ -97,6 +102,8 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
           company_name: profile.company_name || ''
         });
         setEmailData((prev) => ({ ...prev, new_email: profile.email }));
+        // Initialize push notifications state (default to true if not set)
+        setPushNotificationsEnabled(profile.push_notifications_enabled !== false);
       }
     } catch (error) {
       console.error('Failed to fetch profile:', error);
@@ -305,6 +312,36 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
     }
   };
 
+  const handlePushNotificationsToggle = async () => {
+    setSavingPushSettings(true);
+    const newValue = !pushNotificationsEnabled;
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/profile/info`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ push_notifications_enabled: newValue }),
+      });
+
+      if (response.ok) {
+        setPushNotificationsEnabled(newValue);
+        toast.success(newValue ? 'Push notifications enabled' : 'Push notifications disabled');
+      } else {
+        const error = await response.json();
+        toast.error(error.detail || 'Failed to update notification settings');
+      }
+    } catch (error) {
+      console.error('Push notification toggle failed:', error);
+      toast.error('Failed to update notification settings');
+    } finally {
+      setSavingPushSettings(false);
+    }
+  };
+
   // Generate initials for avatar fallback
   const getInitials = () => {
     const first = userProfile?.first_name?.charAt(0) || '';
@@ -495,6 +532,41 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                         placeholder="Enter company name"
                       />
+                    </div>
+                  </div>
+
+                  {/* Push Notifications Toggle */}
+                  <div className="pt-4 border-t border-gray-200 dark:border-slate-700">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {pushNotificationsEnabled ? (
+                          <Bell className="w-5 h-5 text-wedding-rose" />
+                        ) : (
+                          <BellOff className="w-5 h-5 text-gray-400" />
+                        )}
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-white">
+                            Push Notifications
+                          </h3>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Receive instant alerts for RSVPs, payments, and updates
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handlePushNotificationsToggle}
+                        disabled={savingPushSettings}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-wedding-rose focus:ring-offset-2 ${
+                          pushNotificationsEnabled ? 'bg-wedding-rose' : 'bg-gray-300 dark:bg-slate-600'
+                        } ${savingPushSettings ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            pushNotificationsEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
                     </div>
                   </div>
 
