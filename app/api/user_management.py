@@ -57,6 +57,14 @@ class AccountSetupModel(BaseModel):
     token: str
     password: str
     confirm_password: str
+    first_name: str = Field(..., min_length=1, max_length=100, description="User's first name")
+    last_name: str = Field(..., min_length=1, max_length=100, description="User's last name")
+
+    @validator('first_name', 'last_name')
+    def validate_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Name cannot be empty')
+        return v.strip()
 
     @validator('password')
     def validate_password(cls, v):
@@ -262,8 +270,13 @@ async def validate_invitation_token(token: str):
 
 @router.post("/setup/complete", tags=["Public"])
 async def complete_account_setup(setup_data: AccountSetupModel):
-    """Complete account setup with password - No auth required"""
-    return await user_service.complete_account_setup(setup_data.token, setup_data.password)
+    """Complete account setup with password and name - No auth required"""
+    return await user_service.complete_account_setup(
+        setup_data.token,
+        setup_data.password,
+        setup_data.first_name,
+        setup_data.last_name
+    )
 
 
 @router.post("/public/register", tags=["Public"])
@@ -424,6 +437,11 @@ async def upload_profile_image(
 
         # Generate the public URL
         custom_domain = os.getenv("MEDIA_DOMAIN")
+        if not custom_domain:
+            raise HTTPException(status_code=500, detail="MEDIA_DOMAIN environment variable is not configured")
+        # Ensure URL has https:// prefix
+        if not custom_domain.startswith(('http://', 'https://')):
+            custom_domain = f"https://{custom_domain}"
         image_url = f"{custom_domain}/{key}"
 
         # Update user profile with new image URL
@@ -450,15 +468,19 @@ async def delete_profile_image(current_user: ExtendedAuthUser = Depends(require_
     if current_image:
         # Extract key from URL
         custom_domain = os.getenv("MEDIA_DOMAIN")
-        if current_image.startswith(custom_domain):
-            key = current_image.replace(custom_domain, "")
-            try:
-                gallery_service.s3.delete_object(
-                    Bucket=gallery_service.bucket_name,
-                    Key=key
-                )
-            except Exception:
-                pass  # Ignore deletion errors
+        if custom_domain:
+            # Ensure URL comparison accounts for https:// prefix
+            if not custom_domain.startswith(('http://', 'https://')):
+                custom_domain = f"https://{custom_domain}"
+            if current_image.startswith(custom_domain):
+                key = current_image.replace(f"{custom_domain}/", "")
+                try:
+                    gallery_service.s3.delete_object(
+                        Bucket=gallery_service.bucket_name,
+                        Key=key
+                    )
+                except Exception:
+                    pass  # Ignore deletion errors
 
     # Update user profile to remove image URL
     await user_service.update_profile_info(

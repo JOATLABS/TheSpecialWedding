@@ -916,7 +916,7 @@ export default function AdminUsersPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 overflow-hidden"
+          className="rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10"
         >
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -939,7 +939,7 @@ export default function AdminUsersPage() {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-visible">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/10">
