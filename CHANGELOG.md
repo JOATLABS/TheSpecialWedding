@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Plus-One Email and Opt-In Fields** (`app/models/plus_one.py`, `app/models/rsvp.py`, `app/services/rsvp_service.py`, `app/services/email_service_resend.py`, `app/components/RSVPForm.tsx`, `app/admin/guests/page.tsx`):
+  - Added `email` field to plus-ones so planners can contact them directly
+  - Added `sms_opt_in` and `email_opt_in` fields with consent tracking timestamps
+  - New fields in `PlusOneModel`: `email`, `sms_opt_in`, `sms_opt_in_date`, `sms_opt_out_date`, `email_opt_in`, `email_opt_in_date`, `email_opt_out_date`
+  - Frontend RSVP form now collects plus-one email and shows opt-in checkboxes with compliant consent language
+  - Email reminder service (`send_reminders`) now supports `target_group: "plus-ones"` and `"all"` to send reminders to opted-in plus-ones
+  - Admin guests page displays plus-one contact info (phone, email) and opt-in status badges (SMS, Email)
+  - SMS reminder service already had partial plus-one support; now properly tracks opt-in status
+
 - **Account Setup Name Collection** (`app/api/user_management.py`, `app/setup-account/page.tsx`):
   - Added `first_name` and `last_name` fields to `AccountSetupModel` with validation
   - Frontend form now collects planner's name during account setup
@@ -46,7 +55,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added collapsible pending invitations section with email status indicators (sent/failed)
   - Enhanced `user_invitations` collection: `email_status`, `email_sent_at`, `resend_count`, `last_resent_at`, `cancelled_at`, `cancelled_by`
 
+- **Push Notifications Toggle** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/user_management.py`, `app/models/user.py`, `app/services/planner_notification_service.py`):
+  - Added toggle switch in Account Settings modal for planners to enable/disable push notifications
+  - New `push_notifications_enabled` field in `ProfileInfoModel` (defaults to `True` - opt-out model)
+  - New `_check_push_enabled()` method in planner notification service checks user preference
+  - Ntfy push notifications are skipped if planner has disabled them
+  - Gives planners control over mobile/desktop push alerts while keeping in-app notifications active
+
 ### Fixed
+
+- **Code Quality & Type Safety Fixes** (Multiple files):
+  - **subscription_service.py**: Added missing `subscription_service = SubscriptionService()` singleton instance at end of file
+    - Fixes `"subscription_service" is unknown import symbol` error when importing from other modules
+  - **subscription_service.py**: Removed unused Pydantic model imports (`SubscriptionPlanModel`, `UserSubscriptionModel`, `UsageTrackingModel`, `SubscriptionStatus`, `BillingInterval`)
+    - Service uses raw MongoDB dictionaries instead of these models
+  - **user_management_service.py**: Removed unused `stripe_service` import (line 118)
+    - The `stripe` module is imported directly elsewhere in the file
+  - **user_management_service.py**: Fixed type error for `trial_end_date` timestamp conversion
+    - Changed `datetime.fromtimestamp(subscription.trial_end)` to `datetime.fromtimestamp(subscription.trial_end) if subscription.trial_end else None`
+    - Handles case where `subscription.trial_end` is `None` (no trial period)
 
 - **Root Admin Notification Badge Never Clears** (`app/services/notification_service.py`):
   - Fixed notification badge showing count that never clears for root admin
@@ -63,6 +90,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changed line 720 from `acknowledged is None` to `acknowledged is not True`
   - Now includes `audit_logs` for both "All" and "Unacknowledged" views, excludes only for "Acknowledged" view
   - `audit_logs` entries don't have an `acknowledged` field, so they're inherently unacknowledged
+
+- **PlannerNotificationTypes Type Errors** (`app/models/planner_notification.py`):
+  - Fixed 8 type errors in `planner_notification_service.py` where notification type constants were incompatible with `NotificationType` Literal
+  - Root cause: Type checker saw `PlannerNotificationTypes.FORM_SUBMISSION` as `str`, not `Literal["form_submission"]`
+  - Solution: Added `Final[Literal["..."]]` type annotations to all class constants
+  - Changed from `FORM_SUBMISSION: Literal["form_submission"]` to `FORM_SUBMISSION: Final[Literal["form_submission"]]`
+  - `Final` tells type checker the value is immutable and should preserve its literal type
+  - Affected constants: `FORM_SUBMISSION`, `RSVP_UPDATE`, `GUEST_MESSAGE`, `PAYMENT_RECEIVED`, `PAYMENT_FAILED`, `CONTRACT_SIGNED`, `VENDOR_RESPONSE`, `REMINDER`, `SYSTEM`
 
 - **Undefined Function in Metrics Snapshot** (`app/api/admin_platform_metrics.py:578`):
   - Fixed `NameError: name 'get_platform_metrics' is not defined` in `save_metrics_snapshot` endpoint
