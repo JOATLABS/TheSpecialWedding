@@ -12,22 +12,22 @@ These are SEPARATE from platform notifications (root admin announcements).
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional, Literal, Final
 from datetime import datetime
 from bson import ObjectId
 
 
 class PlannerNotificationTypes:
-    """Notification type constants"""
-    FORM_SUBMISSION: Literal["form_submission"] = "form_submission"
-    RSVP_UPDATE: Literal["rsvp_update"] = "rsvp_update"
-    GUEST_MESSAGE: Literal["guest_message"] = "guest_message"
-    PAYMENT_RECEIVED: Literal["payment_received"] = "payment_received"
-    PAYMENT_FAILED: Literal["payment_failed"] = "payment_failed"
-    CONTRACT_SIGNED: Literal["contract_signed"] = "contract_signed"
-    VENDOR_RESPONSE: Literal["vendor_response"] = "vendor_response"
-    REMINDER: Literal["reminder"] = "reminder"
-    SYSTEM: Literal["system"] = "system"
+    """Notification type constants with Final type annotations for proper Literal inference"""
+    FORM_SUBMISSION: Final[Literal["form_submission"]] = "form_submission"
+    RSVP_UPDATE: Final[Literal["rsvp_update"]] = "rsvp_update"
+    GUEST_MESSAGE: Final[Literal["guest_message"]] = "guest_message"
+    PAYMENT_RECEIVED: Final[Literal["payment_received"]] = "payment_received"
+    PAYMENT_FAILED: Final[Literal["payment_failed"]] = "payment_failed"
+    CONTRACT_SIGNED: Final[Literal["contract_signed"]] = "contract_signed"
+    VENDOR_RESPONSE: Final[Literal["vendor_response"]] = "vendor_response"
+    REMINDER: Final[Literal["reminder"]] = "reminder"
+    SYSTEM: Final[Literal["system"]] = "system"
 
 
 NotificationType = Literal[
