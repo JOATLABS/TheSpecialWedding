@@ -335,7 +335,7 @@ async def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_
         raise HTTPException(status_code=500, detail=f"Error fetching SAAS config: {str(e)}")
 
 @router.put("/saas-config", tags=["ROOT_ADMIN"])
-def update_saas_config(
+async def update_saas_config(
     config_data: Dict[str, Any],
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
@@ -346,7 +346,7 @@ def update_saas_config(
         config_data["updated_by"] = current_user.email
         config_data["updated_at"] = datetime.utcnow()
         # Update or insert configuration
-        result = mongo.db["saas_config"].update_one(
+        result = await mongo.db["saas_config"].update_one(
             {"type": "main_config"},
             {"$set": config_data},
             upsert=True
@@ -406,7 +406,7 @@ async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_
         raise HTTPException(status_code=500, detail=f"Error fetching content sections: {str(e)}")
 
 @router.put("/content-sections/{section_id}", tags=["ROOT_ADMIN"])
-def update_content_section(
+async def update_content_section(
     section_id: str,
     section_data: Dict[str, Any],
     current_user: ExtendedAuthUser = Depends(require_root_admin)
@@ -417,7 +417,7 @@ def update_content_section(
         section_data["updated_by"] = current_user.email
         section_data["updated_at"] = datetime.utcnow()
         # Update section
-        result = mongo.db["content_sections"].update_one(
+        result = await mongo.db["content_sections"].update_one(
             {"section": section_id},
             {"$set": section_data},
             upsert=True
@@ -465,7 +465,7 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
         raise HTTPException(status_code=500, detail=f"Error fetching wedding planners: {str(e)}")
 
 @router.post("/wedding-planners", tags=["ROOT_ADMIN"])
-def create_wedding_planner(
+async def create_wedding_planner(
     planner_data: Dict[str, Any],
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
@@ -475,7 +475,7 @@ def create_wedding_planner(
         if not planner_data.get("email"):
             raise HTTPException(status_code=400, detail="Email is required")
         # Check if user already exists
-        existing_user = mongo.get_users_collection().find_one({"email": planner_data["email"]})
+        existing_user = await mongo.get_users_collection().find_one({"email": planner_data["email"]})
         if existing_user:
             raise HTTPException(status_code=400, detail="User with this email already exists")
         # Create user document
@@ -491,7 +491,7 @@ def create_wedding_planner(
         }
 
         # Insert user
-        result = mongo.get_users_collection().insert_one(user_doc)
+        result = await mongo.get_users_collection().insert_one(user_doc)
 
         return {
             "message": "Wedding planner created successfully",
@@ -503,21 +503,21 @@ def create_wedding_planner(
         raise HTTPException(status_code=500, detail=f"Error creating wedding planner: {str(e)}")
 
 @router.put("/wedding-planners/{planner_id}/status", tags=["ROOT_ADMIN"])
-def toggle_planner_status(
+async def toggle_planner_status(
     planner_id: str,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Toggle wedding planner active status - ROOT_ADMIN only"""
     try:
         # Get current status
-        planner = mongo.get_users_collection().find_one({"_id": PyObjectId(planner_id)})
+        planner = await mongo.get_users_collection().find_one({"_id": PyObjectId(planner_id)})
         if not planner:
             raise HTTPException(status_code=404, detail="Wedding planner not found")
 
         new_status = not planner.get("is_active", True)
 
         # Update status
-        mongo.get_users_collection().update_one(
+        await mongo.get_users_collection().update_one(
             {"_id": PyObjectId(planner_id)},
             {
                 "$set": {
@@ -703,10 +703,10 @@ async def get_platform_metrics(
         )
 
 @router.get("/trial-settings", tags=["ROOT_ADMIN", "Public"])
-def get_trial_settings():
+async def get_trial_settings():
     """Get trial settings from SAAS config - Can be used by both admin and registration"""
     try:
-        config = mongo.db["saas_config"].find_one({"type": "main_config"})
+        config = await mongo.db["saas_config"].find_one({"type": "main_config"})
 
         if config and "trial_settings" in config:
             return config["trial_settings"]

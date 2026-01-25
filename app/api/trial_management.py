@@ -35,24 +35,24 @@ def verify_cron_auth(authorization: Optional[str] = Header(None)):
     raise HTTPException(status_code=401, detail="Invalid cron authorization")
 
 @router.post("/trials/check-expired", tags=["ROOT_ADMIN"])
-def check_expired_trials(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def check_expired_trials(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Check for expired trials and deactivate accounts - ROOT_ADMIN only"""
-    return trial_service.check_and_expire_trials()
+    return await trial_service.check_and_expire_trials()
 
 @router.post("/trials/send-warnings", tags=["ROOT_ADMIN"])
-def send_trial_warnings(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def send_trial_warnings(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Send warning emails for trials expiring soon - ROOT_ADMIN only"""
-    return trial_service.send_trial_warning_emails()
+    return await trial_service.send_trial_warning_emails()
 
 @router.post("/trials/run-maintenance", tags=["ROOT_ADMIN"])
-def run_trial_maintenance(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def run_trial_maintenance(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Run complete trial maintenance (warnings and expiration) - ROOT_ADMIN only"""
     try:
         # Send warnings first
-        warning_result = trial_service.send_trial_warning_emails()
+        warning_result = await trial_service.send_trial_warning_emails()
 
         # Then check for expired trials
-        expiration_result = trial_service.check_and_expire_trials()
+        expiration_result = await trial_service.check_and_expire_trials()
 
         return {
             "message": "Trial maintenance completed successfully",
@@ -112,7 +112,7 @@ async def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root
 # =========================================================================
 
 @router.post("/cron/trials/run-maintenance", tags=["CRON"])
-def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
+async def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
     """
     Run complete trial maintenance - CRON authenticated.
 
@@ -123,11 +123,11 @@ def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
         logger.info("Starting trial maintenance cron job")
 
         # Send warnings first
-        warning_result = trial_service.send_trial_warning_emails()
+        warning_result = await trial_service.send_trial_warning_emails()
         logger.info(f"Trial warnings sent: {warning_result}")
 
         # Then check for expired trials
-        expiration_result = trial_service.check_and_expire_trials()
+        expiration_result = await trial_service.check_and_expire_trials()
         logger.info(f"Trial expiration check: {expiration_result}")
 
         return {
@@ -147,7 +147,7 @@ def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
 
 
 @router.post("/cron/trials/send-warnings", tags=["CRON"])
-def cron_send_trial_warnings(_: bool = Depends(verify_cron_auth)):
+async def cron_send_trial_warnings(_: bool = Depends(verify_cron_auth)):
     """
     Send trial warning emails - CRON authenticated.
 
@@ -155,7 +155,7 @@ def cron_send_trial_warnings(_: bool = Depends(verify_cron_auth)):
     """
     try:
         logger.info("Starting trial warnings cron job")
-        result = trial_service.send_trial_warning_emails()
+        result = await trial_service.send_trial_warning_emails()
         logger.info(f"Trial warnings result: {result}")
 
         return {
@@ -173,7 +173,7 @@ def cron_send_trial_warnings(_: bool = Depends(verify_cron_auth)):
 
 
 @router.post("/cron/trials/check-expired", tags=["CRON"])
-def cron_check_expired_trials(_: bool = Depends(verify_cron_auth)):
+async def cron_check_expired_trials(_: bool = Depends(verify_cron_auth)):
     """
     Check and expire trials - CRON authenticated.
 
@@ -181,7 +181,7 @@ def cron_check_expired_trials(_: bool = Depends(verify_cron_auth)):
     """
     try:
         logger.info("Starting trial expiration cron job")
-        result = trial_service.check_and_expire_trials()
+        result = await trial_service.check_and_expire_trials()
         logger.info(f"Trial expiration result: {result}")
 
         return {
