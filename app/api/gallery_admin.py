@@ -29,22 +29,57 @@ async def verify_wedding_access_by_slug(wedding_slug: str, current_user: Extende
 
 # Admin Upload URL Endpoint
 @router.get("/gallery/upload-url", tags=["Admin"])
-async def get_upload_url(filename: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    """Get presigned URL for uploading to S3"""
-    return gallery_service.create_presigned_url(filename)
+async def get_upload_url(
+    filename: str = Query(...),
+    wedding_slug: str = Query(..., description="Wedding slug to upload to"),
+    folder: str = Query("gallery", description="Folder to upload to (gallery, our-story, wedding-party)"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Get presigned URL for uploading to S3 - validates wedding ownership"""
+    # Verify access to this wedding
+    if not await verify_wedding_access_by_slug(wedding_slug, current_user):
+        raise HTTPException(status_code=403, detail="Access denied to this wedding's gallery")
+
+    return gallery_service.create_presigned_url_with_wedding(filename, wedding_slug, folder)
 
 
 # Admin Get File URL Endpoint
 @router.get("/gallery/file-url", tags=["Admin"])
 async def get_file_url(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    """Get URL for a specific file"""
+    """Get URL for a specific file - validates wedding ownership"""
+    # Extract wedding_slug from key (format: folder/wedding-slug/timestamp_filename)
+    parts = key.split("/")
+    wedding_slug = parts[1] if len(parts) >= 2 else None
+
+    if not wedding_slug:
+        # If we can't extract wedding_slug, only root admin can proceed
+        if not current_user.is_root_admin:
+            raise HTTPException(status_code=403, detail="Invalid key format or access denied")
+    else:
+        # Verify access to this wedding
+        if not await verify_wedding_access_by_slug(wedding_slug, current_user):
+            raise HTTPException(status_code=403, detail="Access denied to this wedding's gallery")
+
     return gallery_service.get_file_url(key)
 
 
 # Admin Delete File Endpoint
 @router.delete("/gallery", tags=["Admin"])
 async def delete_file(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    """Delete a gallery image"""
+    """Delete a gallery image - validates wedding ownership"""
+    # Extract wedding_slug from key (format: folder/wedding-slug/timestamp_filename)
+    parts = key.split("/")
+    wedding_slug = parts[1] if len(parts) >= 2 else None
+
+    if not wedding_slug:
+        # If we can't extract wedding_slug, only root admin can proceed
+        if not current_user.is_root_admin:
+            raise HTTPException(status_code=403, detail="Invalid key format or access denied")
+    else:
+        # Verify access to this wedding
+        if not await verify_wedding_access_by_slug(wedding_slug, current_user):
+            raise HTTPException(status_code=403, detail="Access denied to this wedding's gallery")
+
     return gallery_service.delete_file(key)
 
 
@@ -55,7 +90,7 @@ async def list_gallery_files(prefix: str = Query("gallery/"), current_user: Exte
     # Extract wedding slug from prefix (format: "folder/wedding-slug/")
     parts = prefix.strip("/").split("/")
     if len(parts) >= 2:
-        wedding_slug = parts[1]  # e.g., "gallery/emmanuel-peace/" -> "emmanuel-peace"
+        wedding_slug = parts[1]  # e.g., "gallery/john-jane/" -> "john-jane"
 
         # Verify access to this wedding
         if not await verify_wedding_access_by_slug(wedding_slug, current_user):

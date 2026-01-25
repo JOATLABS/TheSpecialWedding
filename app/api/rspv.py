@@ -7,13 +7,14 @@ router = APIRouter()
 
 rsvp_service = RSVPService()
 
+
 @router.post("/invite/{token}/rsvp", tags=["RSVP"])
-def submit_rsvp(
-    token: str = Path(...), 
+async def submit_rsvp(
+    token: str = Path(...),
     rsvp: RSVPModel = Body(...)
 ):
     try:
-        return rsvp_service.submit_rsvp(token, rsvp)
+        return await rsvp_service.submit_rsvp(token, rsvp)
     except HTTPException as e:
         raise e
     except Exception:

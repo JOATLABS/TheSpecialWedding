@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
+import { toast } from 'sonner';
 
 interface ErrorDetails {
   error_id: string;
@@ -93,7 +94,7 @@ export default function ErrorDetailsPage() {
 
       if (response.ok) {
         setError(prev => prev ? { ...prev, acknowledged: true } : null);
-        alert('Error acknowledged successfully');
+        toast.success('Error acknowledged successfully');
       } else {
         if (response.status === 404) {
           setFetchError('Error not found. It may have been acknowledged or deleted already.');
@@ -107,7 +108,7 @@ export default function ErrorDetailsPage() {
       }
     } catch (err) {
       console.error('Error acknowledging error:', err);
-      alert(`Failed to acknowledge error: ${err instanceof Error ? err.message : 'An unknown error occurred'}`);
+      toast.error(`Failed to acknowledge error: ${err instanceof Error ? err.message : 'An unknown error occurred'}`);
     }
   };
 
@@ -309,13 +310,13 @@ export default function ErrorDetailsPage() {
         {/* Quick Actions */}
         <div className="flex space-x-4">
           <button
-            onClick={() => router.push('/admin/platform/metrics')}
+            onClick={() => router.push('/admin/platform')}
             className="flex-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-4 py-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium"
           >
             ← Back to Dashboard
           </button>
           <button
-            onClick={() => router.push('/admin/platform/errors')}
+            onClick={() => router.push('/admin/platform')}
             className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
           >
             View All Errors →

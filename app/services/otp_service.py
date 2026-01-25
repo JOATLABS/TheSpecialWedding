@@ -132,6 +132,8 @@ class OTPService:
         """
         Send OTP to a guest by their contact info (phone/email) for a specific wedding.
         Returns dict with success status and contact type.
+
+        Security: Rate limited to prevent OTP spam attacks.
         """
         # Normalize phone number for comparison
         normalized_contact = contact.strip()
@@ -156,6 +158,13 @@ class OTPService:
             return {"success": False, "error": "Guest not found for this wedding"}
 
         guest_id = str(guest["_id"])
+
+        # Rate limit: Prevent OTP spam - only allow 1 OTP per minute per guest
+        last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
+        if last_otp and last_otp.get("expires_at") > datetime.utcnow() - timedelta(minutes=4):
+            # OTP was sent less than 1 minute ago (5 min expiry - 4 min buffer)
+            logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
+            return {"success": False, "error": "Please wait before requesting another code"}
 
         # Generate and store OTP
         otp = await self.generate_otp(guest_id)
