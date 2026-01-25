@@ -398,7 +398,7 @@ async def get_form_responses(
 
 
 @router.post("/forms/{form_id}/views", tags=["Forms"])
-def mark_form_view(
+async def mark_form_view(
     form_id: str,
     payload: FormViewUpdateRequest,
     current_user: ExtendedAuthUser = Depends(get_current_user_extended),
@@ -407,7 +407,7 @@ def mark_form_view(
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
 
-    return form_service.mark_form_viewed(
+    return await form_service.mark_form_viewed(
         form_id,
         current_user.email,
         payload.scope,

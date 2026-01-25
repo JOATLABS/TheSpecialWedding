@@ -263,7 +263,8 @@ export default function AdminMetricsDashboard() {
       .filter(([key]) => !['health'].includes(key))
       .map(([key, value]) => ({
         key,
-        value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+        value,
+        isObject: typeof value === 'object' && value !== null,
       }));
   }, [metrics]);
 
@@ -432,18 +433,11 @@ export default function AdminMetricsDashboard() {
         ) : generalMetrics.length === 0 ? (
           <p className="text-wedding-muted dark:text-gray-400">Metrics payload is empty.</p>
         ) : (
-          <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <div className="space-y-4">
             {generalMetrics.map((metric) => (
-              <div key={metric.key} className="bg-rose-50 dark:bg-slate-700 border border-rose-100 dark:border-slate-600 rounded-lg px-4 py-3">
-                <dt className="text-xs font-semibold text-rose-500 dark:text-rose-400 uppercase tracking-wide">
-                  {metric.key}
-                </dt>
-                <dd className="text-sm text-wedding-navy dark:text-white mt-1 break-all">
-                  {metric.value}
-                </dd>
-              </div>
+              <CollapsibleMetric key={metric.key} metricKey={metric.key} value={metric.value} isObject={metric.isObject} />
             ))}
-          </dl>
+          </div>
         )}
       </div>
     </div>
@@ -469,6 +463,133 @@ function MetricCard({ title, value, loading }: MetricCardProps) {
 
 interface ActivityItemProps {
   activity: AdminActivity;
+}
+
+interface CollapsibleMetricProps {
+  metricKey: string;
+  value: unknown;
+  isObject: boolean;
+}
+
+function CollapsibleMetric({ metricKey, value, isObject }: CollapsibleMetricProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const renderValue = (val: unknown, depth = 0): React.ReactNode => {
+    if (val === null) return <span className="text-slate-400">null</span>;
+    if (val === undefined) return <span className="text-slate-400">undefined</span>;
+
+    if (typeof val === 'string') {
+      // Check if it's a timestamp
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(val)) {
+        const date = new Date(val);
+        if (!isNaN(date.getTime())) {
+          return <span className="text-emerald-600 dark:text-emerald-400">{date.toLocaleString()}</span>;
+        }
+      }
+      return <span className="text-emerald-600 dark:text-emerald-400">&quot;{val}&quot;</span>;
+    }
+
+    if (typeof val === 'number') {
+      return <span className="text-blue-600 dark:text-blue-400">{val}</span>;
+    }
+
+    if (typeof val === 'boolean') {
+      return <span className="text-amber-600 dark:text-amber-400">{val ? 'true' : 'false'}</span>;
+    }
+
+    if (Array.isArray(val)) {
+      if (val.length === 0) return <span className="text-slate-500">[]</span>;
+      return (
+        <div className="ml-4">
+          <span className="text-slate-500">[</span>
+          {val.map((item, index) => (
+            <div key={index} className="ml-4 border-l-2 border-slate-200 dark:border-slate-600 pl-3 my-1">
+              <span className="text-slate-400 text-xs mr-2">{index}:</span>
+              {renderValue(item, depth + 1)}
+            </div>
+          ))}
+          <span className="text-slate-500">]</span>
+        </div>
+      );
+    }
+
+    if (typeof val === 'object') {
+      const entries = Object.entries(val as Record<string, unknown>);
+      if (entries.length === 0) return <span className="text-slate-500">{'{}'}</span>;
+
+      return (
+        <div className={depth > 0 ? 'ml-4' : ''}>
+          {entries.map(([key, nestedValue]) => (
+            <div key={key} className="border-l-2 border-slate-200 dark:border-slate-600 pl-3 my-2">
+              <span className="text-purple-600 dark:text-purple-400 font-medium">{key}:</span>{' '}
+              {renderValue(nestedValue, depth + 1)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return <span>{String(val)}</span>;
+  };
+
+  // For simple non-object values, render inline
+  if (!isObject) {
+    return (
+      <div className="bg-rose-50 dark:bg-slate-700 border border-rose-100 dark:border-slate-600 rounded-lg px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-rose-500 dark:text-rose-400 uppercase tracking-wide">
+            {metricKey}
+          </span>
+        </div>
+        <div className="text-sm text-wedding-navy dark:text-white mt-2 font-mono">
+          {renderValue(value)}
+        </div>
+      </div>
+    );
+  }
+
+  // For objects, render with collapsible section
+  const objectEntries = Object.entries(value as Record<string, unknown>);
+  const previewKeys = objectEntries.slice(0, 3).map(([k]) => k).join(', ');
+  const hasMore = objectEntries.length > 3;
+
+  return (
+    <div className="bg-rose-50 dark:bg-slate-700 border border-rose-100 dark:border-slate-600 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-rose-100 dark:hover:bg-slate-600 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <svg
+            className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-xs font-semibold text-rose-500 dark:text-rose-400 uppercase tracking-wide">
+            {metricKey}
+          </span>
+        </div>
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          {objectEntries.length} {objectEntries.length === 1 ? 'property' : 'properties'}
+          {!isExpanded && (
+            <span className="ml-2 text-slate-400">
+              ({previewKeys}{hasMore ? '...' : ''})
+            </span>
+          )}
+        </span>
+      </button>
+      {isExpanded && (
+        <div className="px-4 py-3 border-t border-rose-100 dark:border-slate-600 bg-white dark:bg-slate-800">
+          <div className="text-sm text-wedding-navy dark:text-white font-mono overflow-x-auto">
+            {renderValue(value)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ActivityItem({ activity }: ActivityItemProps) {

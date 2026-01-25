@@ -70,6 +70,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changed table container from `overflow-x-auto` to `overflow-visible` (line 942)
   - Dropdown menu now renders fully visible outside the table boundaries
 
+- **Profile Picture Upload Not Saving** (`app/api/user_management.py`):
+  - Fixed profile image URL construction missing `https://` protocol prefix
+  - URLs were being constructed as `media.domain.com/path` instead of `https://media.domain.com/path`
+  - Added validation to ensure `MEDIA_DOMAIN` environment variable is set
+  - Fixed both upload and delete endpoints to handle URL protocol consistently
+
+- **Root Admin Settings Page UX** (`app/admin/components/TopHeader.tsx`, `app/admin/components/AccountSettingsModal.tsx`):
+  - Converted ROOT_ADMIN settings from separate page to popup modal
+  - Added dropdown menu to TopHeader username area with "Account Settings" and "Logout" options
+  - Created `AccountSettingsModal` component with Profile Info, Change Password, and Change Email tabs
+  - Profile picture upload/delete now works directly in the modal
+  - Improves UX by matching planner settings popup pattern
+
 - **Root Admin Subscription Management 404 Errors** (`app/admin/saas/page.tsx`):
   - Removed incorrect `/admin` prefix from subscription API calls
   - Changed `/admin/users/${id}/subscription` to `/users/${id}/subscription` at lines 705, 731, 767, 778

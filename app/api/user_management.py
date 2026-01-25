@@ -372,9 +372,9 @@ async def change_email(email_data: ChangeEmailModel, current_user: ExtendedAuthU
 
 
 @router.get("/profile", tags=["Profile"])
-def get_user_profile(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_user_profile(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get current user profile information"""
-    return user_service.get_user_profile(current_user.email)
+    return await user_service.get_user_profile(current_user.email)
 
 
 @router.put("/profile/info", tags=["Profile"])

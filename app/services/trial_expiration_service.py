@@ -10,10 +10,11 @@ class TrialExpirationService:
     def __init__(self):
         self.users_collection = mongo.get_users_collection()
         self.email_service = ResendEmailService()
-    def get_trial_settings(self) -> dict:
+
+    async def get_trial_settings(self) -> dict:
         """Get trial settings from SAAS config"""
         try:
-            config = mongo.db["saas_config"].find_one({"type": "main_config"})
+            config = await mongo.db["saas_config"].find_one({"type": "main_config"})
             if config and "trial_settings" in config:
                 return config["trial_settings"]
         except:
@@ -25,10 +26,11 @@ class TrialExpirationService:
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-    def check_and_expire_trials(self) -> dict:
+
+    async def check_and_expire_trials(self) -> dict:
         """Check for expired trials and deactivate accounts"""
         try:
-            trial_settings = self.get_trial_settings()
+            trial_settings = await self.get_trial_settings()
 
             if not trial_settings.get("auto_expire_trials", True):
                 return {"message": "Auto trial expiration is disabled"}
@@ -36,15 +38,17 @@ class TrialExpirationService:
             now = datetime.utcnow()
             expired_count = 0
 
-            # Find users with expired trials
-            expired_users = list(self.users_collection.find({
+            # Find users with expired trials using Motor async cursor
+            cursor = self.users_collection.find({
                 "subscription_status": "trial",
                 "trial_end_date": {"$lt": now},
                 "is_active": True
-            }))
+            })
+            expired_users = await cursor.to_list(length=None)
+
             for user in expired_users:
                 # Mark trial as expired
-                self.users_collection.update_one(
+                await self.users_collection.update_one(
                     {"_id": user["_id"]},
                     {"$set": {
                         "subscription_status": "expired",
@@ -69,23 +73,24 @@ class TrialExpirationService:
             logger.error(f"Error in trial expiration check: {str(e)}")
             return {"error": str(e)}
 
-    def send_trial_warning_emails(self) -> dict:
+    async def send_trial_warning_emails(self) -> dict:
         """Send warning emails for trials expiring soon"""
         try:
-            trial_settings = self.get_trial_settings()
+            trial_settings = await self.get_trial_settings()
             warning_days = trial_settings.get("trial_warning_days", 7)
 
             now = datetime.utcnow()
             warning_date = now + timedelta(days=warning_days)
 
-            # Find users whose trials expire within warning period
-            warning_users = list(self.users_collection.find({
+            # Find users whose trials expire within warning period using Motor async cursor
+            cursor = self.users_collection.find({
                 "subscription_status": "trial",
                 "trial_end_date": {"$lte": warning_date, "$gt": now},
                 "trial_warning_sent": {"$ne": True},
                 "is_active": True,
                 "email_verified": True
-            }))
+            })
+            warning_users = await cursor.to_list(length=None)
 
             warning_count = 0
 
@@ -95,12 +100,13 @@ class TrialExpirationService:
                 # Send warning email
                 if self.send_trial_warning_email(user, days_remaining):
                     # Mark warning as sent
-                    self.users_collection.update_one(
+                    await self.users_collection.update_one(
                         {"_id": user["_id"]},
                         {"$set": {"trial_warning_sent": True, "warning_sent_at": now}}
                     )
                     warning_count += 1
                     logger.info(f"Sent trial warning to user: {user['email']}")
+
             return {
                 "message": f"Trial warning check completed",
                 "warnings_sent": warning_count,

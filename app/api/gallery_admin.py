@@ -7,6 +7,7 @@ router = APIRouter()
 gallery_service = GalleryUploadService()
 wedding_service = WeddingService()
 
+
 async def verify_wedding_access_by_slug(wedding_slug: str, current_user: ExtendedAuthUser) -> bool:
     """Verify that the current user has access to the wedding by slug"""
     if current_user.is_root_admin:
@@ -25,23 +26,27 @@ async def verify_wedding_access_by_slug(wedding_slug: str, current_user: Extende
 
     return False
 
+
 # Admin Upload URL Endpoint
 @router.get("/gallery/upload-url", tags=["Admin"])
-def get_upload_url(filename: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_upload_url(filename: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get presigned URL for uploading to S3"""
     return gallery_service.create_presigned_url(filename)
 
+
 # Admin Get File URL Endpoint
 @router.get("/gallery/file-url", tags=["Admin"])
-def get_file_url(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_file_url(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get URL for a specific file"""
     return gallery_service.get_file_url(key)
 
+
 # Admin Delete File Endpoint
 @router.delete("/gallery", tags=["Admin"])
-def delete_file(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def delete_file(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Delete a gallery image"""
     return gallery_service.delete_file(key)
+
 
 # Admin List Files Endpoint
 @router.get("/gallery/list", tags=["Admin"])
@@ -61,6 +66,7 @@ async def list_gallery_files(prefix: str = Query("gallery/"), current_user: Exte
         return []
 
     return gallery_service.list_uploaded_files(prefix=prefix)
+
 
 # Admin Direct Upload Endpoint
 @router.post("/gallery/upload", tags=["Admin"])

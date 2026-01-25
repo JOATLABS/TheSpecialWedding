@@ -289,6 +289,8 @@ class NotificationService:
                 "$and": [
                     # Check if notification is active/sent and not expired
                     {"status": {"$in": ["active", "sent"]}},
+                    # Exclude notifications created by this user (creators should not receive their own)
+                    {"created_by": {"$ne": user_email}},
                     {
                         "$or": [
                             {"expiry_date": {"$exists": False}},
@@ -477,6 +479,8 @@ class NotificationService:
             query = {
                 "$and": [
                     {"status": {"$in": ["active", "sent"]}},
+                    # Exclude notifications created by this user (creators should not receive their own)
+                    {"created_by": {"$ne": user_email}},
                     {
                         "$or": [
                             {"expiry_date": {"$exists": False}},
