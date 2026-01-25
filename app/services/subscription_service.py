@@ -55,7 +55,7 @@ class SubscriptionService:
         """List all subscription plans"""
         try:
             query = {} if include_inactive else {"is_active": True}
-            cursor = self.plans_collection.find(query).sort("display_order", 1)
+            cursor = self.plans_collection.find(query).sort("sort_order", 1)
             plans = await cursor.to_list(length=None)
             return plans
         except Exception as e:
