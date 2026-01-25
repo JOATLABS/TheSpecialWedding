@@ -303,7 +303,12 @@ const SaasAdminDashboard = () => {
       const plansResponse = await fetch(`${baseUrl}/subscription-plans`, { headers });
       if (plansResponse.ok) {
         const plansData = await plansResponse.json();
+        console.log('[SaaS Admin] Subscription plans loaded:', plansData.length, 'plans');
         setPlans(plansData);
+      } else {
+        console.error('[SaaS Admin] Failed to load subscription plans:', plansResponse.status, plansResponse.statusText);
+        const errorText = await plansResponse.text();
+        console.error('[SaaS Admin] Error details:', errorText);
       }
 
       const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers });
@@ -702,7 +707,7 @@ const SaasAdminDashboard = () => {
  if (defaultPlan) {
  try {
  // Create subscription for the planner
- const subscriptionResponse = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ const subscriptionResponse = await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -711,7 +716,7 @@ const SaasAdminDashboard = () => {
  body: JSON.stringify({
  plan_id: defaultPlan._id,
  billing_interval: 'monthly',
- trial_days: 14
+ trial_days: parseInt(prompt('Enter trial days (0 for no trial, 150 for 5 months):') || '14', 10)
  })
  });
 
@@ -728,7 +733,7 @@ const SaasAdminDashboard = () => {
  } else {
  // If deactivating, cancel the subscription
  try {
- await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -764,7 +769,7 @@ const SaasAdminDashboard = () => {
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // First, cancel existing subscription if any
  try {
- await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -775,7 +780,7 @@ const SaasAdminDashboard = () => {
  // Ignore if no existing subscription
  }
  // Assign new subscription
- const response = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ const response = await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -784,7 +789,7 @@ const SaasAdminDashboard = () => {
  body: JSON.stringify({
  plan_id: planId,
  billing_interval: 'monthly',
- trial_days: 14
+ trial_days: parseInt(prompt('Enter trial days (0 for no trial, 150 for 5 months):') || '14', 10)
  })
  });
 
