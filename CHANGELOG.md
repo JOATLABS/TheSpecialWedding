@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Password Reset Flow** (`app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/api/user_management.py`, `app/services/user_management_service.py`):
+  - Complete forgot password / reset password functionality for users who cannot log in
+  - New API endpoints:
+    - `POST /forgot-password` - Request password reset email (public, no auth)
+    - `GET /reset-password/validate/{token}` - Validate reset token (public)
+    - `POST /reset-password` - Reset password with token (public)
+  - New frontend pages: `/forgot-password` (email input) and `/reset-password` (token validation + password entry)
+  - Added "Forgot password?" link to admin login page
+  - New database fields in `users` collection: `password_reset_token`, `password_reset_expires`, `password_reset_requested_at`
+  - Security: Tokens expire after 1 hour, single-use, same response regardless of email existence, confirmation email after reset
+  - Reference: [OWASP Password Reset Guidelines](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)
+
+- **Admin Activity Logging** (`app/services/admin_activity_service.py`, `app/api/admin_activity.py`, `app/admin/page.tsx`):
+  - New service to track all important admin actions for audit and visibility
+  - Activity types: `invitation_sent`, `invitation_resent`, `invitation_cancelled`, `planner_suspended`, `planner_activated`
+  - New API endpoints:
+    - `GET /admin/activity-log` - Paginated activity log (ROOT_ADMIN)
+    - `GET /admin/activity-log/recent` - Recent activities for dashboard (ROOT_ADMIN)
+  - Added "Recent Admin Activity" section to Platform Health Overview dashboard
+  - New collection `admin_activity_log` with fields: `admin_id`, `action_type`, `title`, `message`, `metadata`, `created_at`
+
+- **Invitation Management Enhancements** (`app/api/user_management.py`, `app/services/user_management_service.py`, `app/admin/users/page.tsx`):
+  - New API endpoints for invitation visibility and control:
+    - `GET /admin/invitations` - List invitations with status filtering (ROOT_ADMIN)
+    - `GET /admin/invitations/stats` - Invitation counts by status (ROOT_ADMIN)
+    - `POST /admin/invitations/{id}/resend` - Resend invitation email with new token (ROOT_ADMIN)
+    - `POST /admin/invitations/{id}/cancel` - Cancel pending invitation (ROOT_ADMIN)
+  - Added "Pending Invitations" stats card to Planner Management page
+  - Added collapsible pending invitations section with email status indicators (sent/failed)
+  - Enhanced `user_invitations` collection: `email_status`, `email_sent_at`, `resend_count`, `last_resent_at`, `cancelled_at`, `cancelled_by`
+
+### Fixed
+
+- **Frontend Password Validation Mismatch** (`app/setup-account/page.tsx`, `app/reset-password/page.tsx`):
+  - Fixed password validation in account setup and reset pages to match backend requirements
+  - Added visual password requirements checklist with real-time validation
+  - Password now requires: 8+ characters, uppercase, lowercase, number, special character
+  - Prevents user frustration from submitting valid-looking passwords that fail backend validation
+  - Reference: Backend validators in `app/api/user_management.py:AccountSetupModel`, `ResetPasswordModel`
+
+- **Success Message Not Displayed on Login** (`app/admin/login/page.tsx`):
+  - Fixed login page to display success messages from URL query params
+  - Messages now appear after account setup completion (`?message=Account setup completed!`)
+  - Messages now appear after password reset (`?message=Password reset successful!`)
+  - Auto-dismiss after 10 seconds with manual close button
+  - Styled with emerald green success indicator matching app design
+
+- **SAAS Admin Dashboard Hardcoded Statistics** (`app/admin/saas/page.tsx`):
+  - Fixed "Total Weddings" showing hardcoded value `12` instead of actual database count
+  - Fixed "Monthly Revenue" showing hardcoded value `$247` instead of real revenue data
+  - Fixed "Plan Distribution" showing hardcoded user counts (`0 users`/`1 user`) instead of actual subscribers per plan
+  - Added API calls to existing `/saas/analytics/overview` and `/saas/analytics/revenue` endpoints
+  - Added `AnalyticsOverview`, `PlanBreakdown`, and `RevenueAnalytics` TypeScript interfaces
+  - Dashboard now displays real-time statistics from the database
+
+- **Root Admin Subscription Management 404 Errors** (`app/admin/saas/page.tsx`):
+  - Removed incorrect `/admin` prefix from subscription API calls
+  - Changed `/admin/users/${id}/subscription` to `/users/${id}/subscription` at lines 705, 731, 767, 778
+  - Fixes: Activate planner, deactivate planner, and assign plan operations now work correctly
+  - Reference: subscription_router is registered without `/admin` prefix in `main.py`
+
+- **Subscription Plans Not Showing in Admin** (`app/services/subscription_service.py:58`):
+  - Fixed sort field mismatch: changed `display_order` to `sort_order`
+  - Plans query now uses correct field name matching the model definition
+  - Reference: `app/models/subscription.py:52` defines `sort_order: int`
+
+- **Subscription Seed Script Errors** (`scripts/seed_subscription_plans.py`):
+  - Added explicit null check for stripe module before accessing `stripe.api_key` (fixes Pylance error)
+  - Updated exception handling to use `from stripe import StripeError` for Stripe v13+ compatibility
+  - Replaced all emoji characters with text-based prefixes for professional logging:
+    - `[SEED]`, `[INFO]`, `[OK]`, `[WARN]`, `[ERROR]`, `[DEBUG]`
+    - `[EXISTS]`, `[CREATED]`, `[UPDATED]`, `[SKIP]`, `[PLAN]`
+    - `[SUMMARY]`, `[VERIFY]`, `[DONE]`
+
+### Changed
+
+- **Custom Trial Duration for Planners** (`app/admin/saas/page.tsx`):
+  - Added prompt for trial days when assigning subscriptions (lines 714, 787)
+  - ROOT_ADMIN can now set custom trial periods (e.g., 150 days for 5-month trial)
+  - Replaces hardcoded 14-day trial default
+
 ### Security
 
 - **CRITICAL: Settings Validation** (`app/core/settings.py`):

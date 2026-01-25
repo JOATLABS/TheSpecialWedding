@@ -12,6 +12,29 @@ interface InvitationDetails {
   expires_at: string;
 }
 
+interface PasswordValidation {
+  minLength: boolean;
+  hasUppercase: boolean;
+  hasLowercase: boolean;
+  hasNumber: boolean;
+  hasSpecial: boolean;
+}
+
+const validatePassword = (password: string): PasswordValidation => ({
+  minLength: password.length >= 8,
+  hasUppercase: /[A-Z]/.test(password),
+  hasLowercase: /[a-z]/.test(password),
+  hasNumber: /\d/.test(password),
+  hasSpecial: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password),
+});
+
+const isPasswordValid = (validation: PasswordValidation): boolean =>
+  validation.minLength &&
+  validation.hasUppercase &&
+  validation.hasLowercase &&
+  validation.hasNumber &&
+  validation.hasSpecial;
+
 export default function SetupAccountPage() {
   return (
     <Suspense fallback={
@@ -40,10 +63,22 @@ function SetupAccountContent() {
     password: '',
     confirmPassword: ''
   });
+  const [passwordValidation, setPasswordValidation] = useState<PasswordValidation>({
+    minLength: false,
+    hasUppercase: false,
+    hasLowercase: false,
+    hasNumber: false,
+    hasSpecial: false,
+  });
+
+  const handlePasswordChange = (password: string) => {
+    setFormData(prev => ({ ...prev, password }));
+    setPasswordValidation(validatePassword(password));
+  };
 
   const validateToken = useCallback(async (invitationToken: string) => {
     const baseUrl = getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/admin/setup/validate-token/${invitationToken}`);
+    const response = await fetch(`${baseUrl}/setup/validate-token/${invitationToken}`);
 
     if (!response.ok) {
       throw new Error('Invalid or expired invitation link');
@@ -93,13 +128,15 @@ function SetupAccountContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+
+    // Validate password meets all requirements
+    if (!isPasswordValid(passwordValidation)) {
+      setError('Password must meet all requirements listed below');
       return;
     }
 
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters long');
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 
@@ -108,7 +145,7 @@ function SetupAccountContent() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/setup/complete`, {
+      const response = await fetch(`${baseUrl}/setup/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -219,13 +256,20 @@ function SetupAccountContent() {
               type="password"
               id="password"
               value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              onChange={(e) => handlePasswordChange(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="Enter your password"
               required
-              minLength={8}
             />
-            <p className="text-xs text-gray-500 mt-1">Password must be at least 8 characters long</p>
+            {/* Password Requirements Checklist */}
+            <div className="mt-3 space-y-1.5">
+              <p className="text-xs font-medium text-gray-600 mb-2">Password requirements:</p>
+              <PasswordRequirement met={passwordValidation.minLength} text="At least 8 characters" />
+              <PasswordRequirement met={passwordValidation.hasUppercase} text="One uppercase letter (A-Z)" />
+              <PasswordRequirement met={passwordValidation.hasLowercase} text="One lowercase letter (a-z)" />
+              <PasswordRequirement met={passwordValidation.hasNumber} text="One number (0-9)" />
+              <PasswordRequirement met={passwordValidation.hasSpecial} text="One special character (!@#$%^&*)" />
+            </div>
           </div>
 
           <div>
@@ -264,6 +308,23 @@ function SetupAccountContent() {
           </p>
         </div>
       </GlassCard>
+    </div>
+  );
+}
+
+function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
+  return (
+    <div className={`flex items-center gap-2 text-xs ${met ? 'text-green-600' : 'text-gray-400'}`}>
+      {met ? (
+        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" strokeWidth={2} />
+        </svg>
+      )}
+      <span>{text}</span>
     </div>
   );
 }

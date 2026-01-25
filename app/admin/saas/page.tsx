@@ -58,6 +58,27 @@ interface WeddingPlanner {
  lastLogin?: string;
 }
 
+interface AnalyticsOverview {
+  total_planners: number;
+  active_planners: number;
+  total_weddings: number;
+  active_plans: number;
+  monthly_revenue: number;
+  yearly_revenue: number;
+  projected_annual_revenue: number;
+}
+
+interface PlanBreakdown {
+  plan_id: string;
+  plan_name: string;
+  active_users: number;
+  trial_users: number;
+}
+
+interface RevenueAnalytics {
+  plan_breakdown: PlanBreakdown[];
+}
+
 interface ThemeConfig {
  primary_color: string;
  secondary_color: string;
@@ -278,6 +299,8 @@ const SaasAdminDashboard = () => {
  const [editModalOpen, setEditModalOpen] = useState(false);
  const [editingSectionType, setEditingSectionType] = useState<string>('');
  const [editingSectionData, setEditingSectionData] = useState<any>(null);
+ const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
+ const [planBreakdown, setPlanBreakdown] = useState<PlanBreakdown[]>([]);
 
   // ROOT_ADMIN access control - redirect non-root admins
   useEffect(() => {
@@ -347,6 +370,22 @@ const SaasAdminDashboard = () => {
           updatedBy: section.updated_by,
           updatedAt: section.updated_at
         })) );
+      }
+
+      // Fetch analytics overview for dashboard statistics
+      const analyticsResponse = await fetch(`${baseUrl}/saas/analytics/overview`, { headers });
+      if (analyticsResponse.ok) {
+        const analyticsData = await analyticsResponse.json();
+        setAnalyticsOverview(analyticsData);
+      }
+
+      // Fetch revenue breakdown for per-plan user counts
+      const revenueResponse = await fetch(`${baseUrl}/saas/analytics/revenue`, { headers });
+      if (revenueResponse.ok) {
+        const revenueData = await revenueResponse.json();
+        if (revenueData.plan_breakdown) {
+          setPlanBreakdown(revenueData.plan_breakdown);
+        }
       }
     } catch (error) {
       console.error('Error fetching SaaS data:', error);
@@ -896,7 +935,7 @@ const SaasAdminDashboard = () => {
  <div className="ml-5 w-0 flex-1">
  <dl>
  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Weddings</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">12</dd>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{analyticsOverview?.total_weddings ?? 0}</dd>
  </dl>
  </div>
  </div>
@@ -912,7 +951,7 @@ const SaasAdminDashboard = () => {
  <div className="ml-5 w-0 flex-1">
  <dl>
  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Monthly Revenue</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">$247</dd>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">${analyticsOverview?.monthly_revenue ?? 0}</dd>
  </dl>
  </div>
  </div>
@@ -944,7 +983,11 @@ const SaasAdminDashboard = () => {
  <div key={plan._id} className="flex items-center justify-between">
  <span className="text-sm text-gray-900 dark:text-gray-100">{plan.name}</span>
  <span className="text-sm text-gray-500 dark:text-gray-400">
- {plan.name === 'Professional' ? '1 user' : '0 users'}
+ {(() => {
+  const breakdown = planBreakdown.find(b => b.plan_id === plan._id || b.plan_name === plan.name);
+  const count = breakdown ? breakdown.active_users + breakdown.trial_users : 0;
+  return `${count} user${count !== 1 ? 's' : ''}`;
+})()}
  </span>
  </div>
  ))}
