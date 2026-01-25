@@ -1,15 +1,16 @@
 # app/services/email_service_resend.py
 
+import asyncio
 import os
 import resend
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, cast
 import logging
 from app.core.database import mongo
-import base64
 import time
 
 logger = logging.getLogger(__name__)
+
 
 class ResendEmailService:
     def __init__(self):
@@ -21,18 +22,18 @@ class ResendEmailService:
         else:
             logger.warning("Resend email service not configured. RESEND_API_KEY required.")
             self.configured = False
-        
+
         # Database collections
         self.guest_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.email_log_collection = mongo.db["email_logs"]
         self.wedding_collection = mongo.db["weddings"]
-    
+
     async def send_email(
-        self, 
-        to_email: str, 
-        subject: str, 
-        html_content: str, 
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
         from_email: Optional[str] = None,
         from_name: Optional[str] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
@@ -40,41 +41,40 @@ class ResendEmailService:
         wedding_id: Optional[str] = None,
         email_type: Optional[str] = None
     ) -> Dict[str, Any]:
+
         """Send a single email using Resend"""
         if not self.configured:
             return {"success": False, "error": "Email service not configured"}
-        
+
         try:
             # Use provided from_email or default
             if not from_email:
                 from_email = os.getenv("RESEND_FROM_EMAIL", "noreply@thespecialwedding.com")
-            
+
             # Format from address
             if from_name:
                 from_address = f"{from_name} <{from_email}>"
             else:
                 from_address = from_email
-            
+
             # Prepare email parameters
-            params = {
+            params: Dict[str, Any] = {
                 "from": from_address,
                 "to": [to_email],
                 "subject": subject,
                 "html": html_content
             }
-            
+
             # Add optional parameters
             if reply_to:
                 params["reply_to"] = reply_to
-            
+
             if attachments:
                 params["attachments"] = attachments
-            
+
             # Send email
-            from typing import cast, Any
             email_response = resend.Emails.send(cast(Any, params))
 
-            
             # Log the email
             log_entry = {
                 "to": to_email,
@@ -89,13 +89,13 @@ class ResendEmailService:
                 "provider": "resend"
             }
             await self.email_log_collection.insert_one(log_entry)
-            
+
             logger.info(f"Email sent successfully to {to_email}, ID: {email_response.get('id')}")
             return {"success": True, "id": email_response.get("id")}
-            
+
         except Exception as e:
             logger.error(f"Failed to send email to {to_email}: {str(e)}")
-            
+
             # Log the failure
             log_entry = {
                 "to": to_email,
@@ -110,12 +110,12 @@ class ResendEmailService:
                 "provider": "resend"
             }
             await self.email_log_collection.insert_one(log_entry)
-            
+
             return {"success": False, "error": str(e)}
-    
+
     async def send_rsvp_invitations(
-        self, 
-        wedding_slug: str, 
+        self,
+        wedding_slug: str,
         custom_html: Optional[str] = None,
         custom_subject: Optional[str] = None,
         attachments: Optional[List[Dict[str, Any]]] = None
@@ -125,36 +125,36 @@ class ResendEmailService:
         wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
         if not wedding:
             return {"sent": 0, "failed": 0, "error": "Wedding not found"}
-        
+
         # Get custom from_email or use wedding-specific or default
         from_email = wedding.get("reminder_from_email") or os.getenv("RESEND_FROM_EMAIL", "noreply@thespecialwedding.com")
         from_name = wedding.get("couple_names", "TheSpecialWedding")
-        
+
         # Default subject if not provided
         if not custom_subject:
             custom_subject = f"You're Invited - {from_name}"
-        
+
         base_url = os.getenv("FRONTEND_URL") or ""
         if not base_url:
             logger.warning("FRONTEND_URL environment variable is not set - email links may not work")
         sent = 0
         failed = 0
-        
+
         # Get all guests with email addresses
         guests = self.guest_collection.find({"wedding_id": wedding["_id"]})
-        
-        for guest in guests:
+
+        async for guest in guests:
             email = guest.get("email")
             if not email:
                 continue
-            
+
             token = guest.get("token")
             if not token:
                 continue
-            
+
             # Generate RSVP URL
             rsvp_url = f"{base_url}/{wedding_slug}/invite/{token}"
-            
+
             # Use custom HTML or generate default
             if custom_html:
                 # Replace placeholders in custom HTML
@@ -173,9 +173,8 @@ class ResendEmailService:
                     rsvp_url=rsvp_url,
                     plus_ones=guest.get("plus_ones", [])
                 )
-            
             # Send email
-            result = self.send_email(
+            result = await self.send_email(
                 to_email=email,
                 subject=custom_subject,
                 html_content=html_content,
@@ -185,17 +184,17 @@ class ResendEmailService:
                 wedding_id=str(wedding["_id"]),
                 email_type="rsvp_invitation"
             )
-            
+
             if result["success"]:
                 sent += 1
             else:
                 failed += 1
-            
+
             # Add delay to respect Resend rate limit (2 requests per second)
-            time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
-        
+            await asyncio.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
+
         return {"sent": sent, "failed": failed}
-    
+
     async def send_reminders(
         self,
         wedding_slug: str,
@@ -209,38 +208,38 @@ class ResendEmailService:
         wedding = await self.wedding_collection.find_one({"slug": wedding_slug})
         if not wedding:
             return {"sent": 0, "failed": 0, "error": "Wedding not found"}
-        
+
         # Get event details
         event = next((e for e in wedding.get("events", []) if e["type"] == event_type), None)
         if not event:
             return {"sent": 0, "failed": 0, "error": "Event not found"}
-        
+
         # Get custom from_email or use wedding-specific or default
         from_email = wedding.get("reminder_from_email") or os.getenv("RESEND_FROM_EMAIL", "noreply@thespecialwedding.com")
         from_name = wedding.get("couple_names", "TheSpecialWedding")
-        
+
         # Default subject if not provided
         if not custom_subject:
             event_name = event_type.replace("_", " ").title()
             custom_subject = f"Reminder: {event_name} - {event['date']}"
-        
+
         sent = 0
         failed = 0
-        
+
         # Get guests based on target group
         if target_group in ["guests", "all"]:
             guests = self.guest_collection.find({"wedding_id": wedding["_id"]})
-            
-            for guest in guests:
+
+            async for guest in guests:
                 # Check if guest has RSVP'd for this event
                 rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
                 if not rsvp or event_type not in rsvp.get("attending", []):
                     continue
-                
+
                 email = guest.get("email")
                 if not email:
                     continue
-                
+
                 # Use custom HTML or generate default
                 if custom_html:
                     # Replace placeholders
@@ -262,9 +261,8 @@ class ResendEmailService:
                         couple_names=from_name,
                         plus_ones=guest.get("plus_ones", [])
                     )
-                
                 # Send email
-                result = self.send_email(
+                result = await self.send_email(
                     to_email=email,
                     subject=custom_subject,
                     html_content=html_content,
@@ -273,17 +271,81 @@ class ResendEmailService:
                     wedding_id=str(wedding["_id"]),
                     email_type="reminder"
                 )
-                
+
                 if result["success"]:
                     sent += 1
                 else:
                     failed += 1
-                
+
                 # Add delay to respect Resend rate limit (2 requests per second)
                 time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
 
+        # Send reminders to plus-ones
+        if target_group in ["plus-ones", "all"]:
+            plus_one_collection = mongo.db["plus_ones"]
+            # Get all guests for this wedding to find their plus-ones
+            wedding_guests = await self.guest_collection.find(
+                {"wedding_id": wedding["_id"]},
+                projection={"_id": 1}
+            ).to_list(length=None)
+            guest_ids = [str(g["_id"]) for g in wedding_guests]
+
+            plus_ones = await plus_one_collection.find(
+                {"guest_id": {"$in": guest_ids}}
+            ).to_list(length=None)
+
+            for plus_one in plus_ones:
+                # Check if plus-one is attending this event
+                if event_type not in plus_one.get("attending", []):
+                    continue
+
+                email = plus_one.get("email")
+                if not email:
+                    continue
+
+                # Check email opt-in (must be explicitly True)
+                if plus_one.get("email_opt_in") is not True:
+                    continue
+
+                # Generate email content
+                if custom_html:
+                    html_content = custom_html.replace("{name}", plus_one.get("name", "Guest"))
+                    html_content = html_content.replace("{guest_name}", plus_one.get("name", "Guest"))
+                    html_content = html_content.replace("{event_type}", event_type.replace("_", " ").title())
+                    html_content = html_content.replace("{event_date}", event.get("date", ""))
+                    html_content = html_content.replace("{venue_name}", event.get("details", {}).get("venue_name", ""))
+                    html_content = html_content.replace("{location}", event.get("details", {}).get("location", ""))
+                    html_content = html_content.replace("{time}", event.get("details", {}).get("time", ""))
+                    html_content = html_content.replace("{couple_names}", from_name)
+                else:
+                    html_content = self._generate_default_reminder_html(
+                        guest_name=plus_one.get("name", "Guest"),
+                        event_type=event_type,
+                        event_date=event.get("date", ""),
+                        event_details=event.get("details", {}),
+                        couple_names=from_name,
+                        plus_ones=[]
+                    )
+
+                result = await self.send_email(
+                    to_email=email,
+                    subject=custom_subject,
+                    html_content=html_content,
+                    from_email=from_email,
+                    from_name=from_name,
+                    wedding_id=str(wedding["_id"]),
+                    email_type="reminder"
+                )
+
+                if result.get("success"):
+                    sent += 1
+                else:
+                    failed += 1
+
+                time.sleep(0.6)
+
         return {"sent": sent, "failed": failed}
-    
+
     async def get_email_logs(self, wedding_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """Get email logs, optionally filtered by wedding"""
         query = {}
@@ -310,8 +372,8 @@ class ResendEmailService:
 
         logs = await cursor.to_list(length=limit)
         return logs
-    
-    def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str, plus_ones: list = None) -> str:
+
+    def _generate_default_invitation_html(self, guest_name: str, couple_names: str, wedding_date: str, rsvp_url: str, plus_ones: Optional[List[Any]] = None) -> str:
         """Generate default RSVP invitation HTML"""
         return f"""
         <!DOCTYPE html>
@@ -344,25 +406,25 @@ class ResendEmailService:
                 <div class="content">
                     <p>Dear {guest_name},</p>
                     <p>We would be delighted to have you join us as we celebrate our special day!</p>
-                    
+
                     <div class="details">
                         <p style="margin: 0;"><strong>Save the Date:</strong> {wedding_date}</p>
                         {self._generate_plus_ones_section(plus_ones)}
                     </div>
-                    
+
                     <p>Please let us know if you'll be able to attend by clicking the button below:</p>
-                    
+
                     <div class="button-container">
                         <a href="{rsvp_url}" class="button">RSVP NOW</a>
                     </div>
-                    
+
                     <p style="text-align: center; color: #666; font-size: 14px;">
                         If you're receiving this email and would like to receive SMS reminders,<br>
                         you can add your phone number when you RSVP.
                     </p>
-                    
+
                     <p>We look forward to celebrating with you!</p>
-                    
+
                     <p>With love,<br>{couple_names}</p>
                 </div>
                 <div class="footer">
@@ -375,8 +437,8 @@ class ResendEmailService:
         </body>
         </html>
         """
-    
-    def _generate_plus_ones_section(self, plus_ones: list = None) -> str:
+
+    def _generate_plus_ones_section(self, plus_ones: Optional[List[Any]] = None) -> str:
         """Generate HTML section for plus-ones information"""
         if not plus_ones:
             return ""
@@ -393,14 +455,14 @@ class ResendEmailService:
 
         return plus_ones_html
 
-    def _generate_default_reminder_html(self, guest_name: str, event_type: str, event_date: str, event_details: dict, couple_names: str, plus_ones: list = None) -> str:
+    def _generate_default_reminder_html(self, guest_name: str, event_type: str, event_date: str, event_details: dict, couple_names: str, plus_ones: Optional[List[Any]] = None) -> str:
         """Generate default reminder HTML"""
         event_title = event_type.replace('_', ' ').title()
         venue_name = event_details.get('venue_name', 'Venue details coming soon')
         location = event_details.get('location', '')
         time = event_details.get('time', '')
         attire = event_details.get('attire', '')
-        
+
         return f"""
         <!DOCTYPE html>
         <html>
@@ -455,9 +517,9 @@ class ResendEmailService:
                         </div>''' if attire else ''}
                         {self._generate_plus_ones_section(plus_ones)}
                     </div>
-                    
+
                     <p>We can't wait to see you there!</p>
-                    
+
                     <p>With love,<br>{couple_names}</p>
                 </div>
                 <div class="footer">

@@ -1,12 +1,12 @@
 from fastapi import HTTPException
 from app.core.database import mongo
-from typing import List, Optional
-from datetime import datetime, timedelta
+from typing import List, Optional, Any, Dict
+from datetime import datetime, timedelta, timezone
 import secrets
 import string
 import os
 import logging
-#import requests
+
 from app.utils.auth_utils import get_password_hash, verify_password
 from app.services.email_service_resend import ResendEmailService
 from app.core.events import event_bus, EventFactory
@@ -46,7 +46,7 @@ class UserManagementService:
     def generate_invitation_token(self) -> str:
         """Generate a secure invitation token"""
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
-    
+
     async def get_trial_settings(self) -> dict:
         """Get trial settings from SAAS config"""
         # Return defaults (can be extended to read from database later)
@@ -56,7 +56,7 @@ class UserManagementService:
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-        
+
     async def check_previous_trial_usage(self, email: str) -> bool:
         """Check if email has been used for a trial before"""
         try:
@@ -115,7 +115,6 @@ class UserManagementService:
             stripe_customer_id = None
             if trial_days > 0 and plan_id:
                 try:
-                    from app.services.stripe_service import stripe_service
                     from app.core.settings import settings
 
                     if settings.stripe_enabled and settings.stripe_secret_key:
@@ -530,7 +529,7 @@ class UserManagementService:
                                 }
                             )
                             stripe_subscription_id = subscription.id
-                            trial_end_date = datetime.fromtimestamp(subscription.trial_end)
+                            trial_end_date = datetime.fromtimestamp(subscription.trial_end) if subscription.trial_end else None
                             self.logger.info(
                                 f"Created Stripe subscription {stripe_subscription_id} with "
                                 f"{trial_days}-day trial for {invitation['email']}"
@@ -847,7 +846,7 @@ class UserManagementService:
         </body>
         </html>
         """
-        
+
     def _generate_verification_email_html(self, email: str, first_name: str, verification_url: str) -> str:
         """Generate email verification email HTML"""
         return f"""
@@ -921,7 +920,7 @@ class UserManagementService:
         </body>
         </html>
         """
-        
+
     def _generate_welcome_email_html(self, email: str, first_name: str, role: str, company_name: str) -> str:
         """Generate welcome email HTML for new users"""
         role_display = role.replace("_", " ").title()
@@ -1200,6 +1199,9 @@ class UserManagementService:
             # Handle profile image URL (can be set to None to remove)
             if "profile_image_url" in profile_data:
                 update_data["profile_image_url"] = profile_data["profile_image_url"]
+            # Handle push notifications preference
+            if "push_notifications_enabled" in profile_data:
+                update_data["push_notifications_enabled"] = profile_data["push_notifications_enabled"]
 
             if not update_data:
                 raise HTTPException(status_code=400, detail="No valid profile data provided")
@@ -1250,17 +1252,17 @@ class UserManagementService:
             limit: Items per page
         """
         try:
-            query = {}
+            query: Dict[str, Any] = {}
 
             if status:
                 if status == "expired":
                     # Expired = pending but past expires_at
                     query["status"] = "pending"
-                    query["expires_at"] = {"$lt": datetime.utcnow()}
+                    query["expires_at"] = {"$lt": datetime.now(timezone.utc)}
                 elif status == "pending":
                     # Pending = status pending AND not expired
                     query["status"] = "pending"
-                    query["expires_at"] = {"$gt": datetime.utcnow()}
+                    query["expires_at"] = {"$gt": datetime.now(timezone.utc)}
                 else:
                     query["status"] = status
 

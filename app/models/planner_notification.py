@@ -19,15 +19,15 @@ from bson import ObjectId
 
 class PlannerNotificationTypes:
     """Notification type constants"""
-    FORM_SUBMISSION = "form_submission"
-    RSVP_UPDATE = "rsvp_update"
-    GUEST_MESSAGE = "guest_message"
-    PAYMENT_RECEIVED = "payment_received"
-    PAYMENT_FAILED = "payment_failed"
-    CONTRACT_SIGNED = "contract_signed"
-    VENDOR_RESPONSE = "vendor_response"
-    REMINDER = "reminder"
-    SYSTEM = "system"
+    FORM_SUBMISSION: Literal["form_submission"] = "form_submission"
+    RSVP_UPDATE: Literal["rsvp_update"] = "rsvp_update"
+    GUEST_MESSAGE: Literal["guest_message"] = "guest_message"
+    PAYMENT_RECEIVED: Literal["payment_received"] = "payment_received"
+    PAYMENT_FAILED: Literal["payment_failed"] = "payment_failed"
+    CONTRACT_SIGNED: Literal["contract_signed"] = "contract_signed"
+    VENDOR_RESPONSE: Literal["vendor_response"] = "vendor_response"
+    REMINDER: Literal["reminder"] = "reminder"
+    SYSTEM: Literal["system"] = "system"
 
 
 NotificationType = Literal[
@@ -50,7 +50,7 @@ class PlannerNotificationCreate(BaseModel):
     type: NotificationType = Field(..., description="Notification type")
     title: str = Field(..., min_length=1, max_length=200)
     message: str = Field(..., min_length=1, max_length=1000)
-    metadata: Optional[dict] = Field(default_factory=dict, description="Additional context (guest name, form type, amount, etc.)")
+    metadata: Optional[dict] = Field(default_factory=lambda: {}, description="Additional context (guest name, form type, amount, etc.)")
     priority: Literal["low", "medium", "high"] = Field(default="medium")
     action_url: Optional[str] = Field(None, description="Deep link to relevant page")
 

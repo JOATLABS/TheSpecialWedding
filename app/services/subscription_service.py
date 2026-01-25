@@ -1,17 +1,10 @@
 from fastapi import HTTPException
 from app.core.database import mongo
-from app.models.subscription import (
-    SubscriptionPlanModel,
-    UserSubscriptionModel,
-    UsageTrackingModel,
-    SubscriptionStatus,
-    BillingInterval
-)
 from app.services.stripe_service import stripe_service
-from typing import List, Dict, Optional
+from typing import List, Optional
 from datetime import datetime, timedelta
-import calendar
 from bson import ObjectId
+
 
 class SubscriptionService:
     def __init__(self):
@@ -43,7 +36,7 @@ class SubscriptionService:
                 # Better to fail so we don't have inconsistent state
                 raise HTTPException(status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}")
 
-            result = await self.plans_collection.insert_one(plan_data)
+            await self.plans_collection.insert_one(plan_data)
             return {"message": "Subscription plan created successfully", "plan_id": plan_data["_id"]}
 
         except HTTPException:
@@ -97,7 +90,7 @@ class SubscriptionService:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}")
 
-            result = await self.plans_collection.update_one(
+            await self.plans_collection.update_one(
                 {"_id": plan_id},
                 {"$set": update_data}
             )
@@ -152,7 +145,7 @@ class SubscriptionService:
 
     # User Subscription Management
     async def assign_subscription(self, user_id: str, plan_id: str, billing_interval: str = "monthly",
-                          trial_days: int = 0, creator_email: str = "") -> dict:
+                                  trial_days: int = 0, creator_email: str = "") -> dict:
         """Assign subscription plan to user"""
         try:
             # Verify user exists
@@ -224,7 +217,7 @@ class SubscriptionService:
                 "created_by": creator_email
             }
 
-            result = await self.subscriptions_collection.insert_one(subscription_data)
+            await self.subscriptions_collection.insert_one(subscription_data)
 
             # Initialize usage tracking
             await self.initialize_usage_tracking(user_id, subscription_data["_id"])
@@ -617,3 +610,7 @@ class SubscriptionService:
             return formatted_subscriptions
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing subscriptions: {str(e)}")
+
+
+# Singleton instance
+subscription_service = SubscriptionService()
