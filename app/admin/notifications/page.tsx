@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
@@ -24,7 +25,8 @@ interface SentNotification {
   title: string;  // Backend uses "title" not "subject"
   message?: string;
   total_recipients: number;  // Backend uses "total_recipients" not "recipients_count"
-  sent_at: string;
+  sent_at?: string;  // Only set when notification is actually sent
+  created_at: string;  // Always set when notification is created
   status: 'active' | 'sent' | 'delivered' | 'failed';  // Backend uses "status" not "delivery_status"
   delivery_summary?: {
     attempted: number;
@@ -52,7 +54,17 @@ interface PlannerNotification {
 
 export default function NotificationsPage() {
   const { apiRequest, userProfile } = useAdmin();
-  const [activeTab, setActiveTab] = useState<'send' | 'templates' | 'history'>('send');
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
+
+  // Initialize tab from URL query param, default to 'send' for root admin
+  const getInitialTab = (): 'send' | 'templates' | 'history' => {
+    if (tabFromUrl === 'history') return 'history';
+    if (tabFromUrl === 'templates') return 'templates';
+    return 'send';
+  };
+
+  const [activeTab, setActiveTab] = useState<'send' | 'templates' | 'history'>(getInitialTab);
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
   const [sentNotifications, setSentNotifications] = useState<SentNotification[]>([]);
   const [plannerNotifications, setPlannerNotifications] = useState<PlannerNotification[]>([]);
@@ -60,6 +72,15 @@ export default function NotificationsPage() {
 
   // Check if user is root admin
   const isRootAdmin = userProfile?.is_root_admin === true;
+
+  // Update tab when URL query param changes (e.g., clicking bell icon with ?tab=history)
+  useEffect(() => {
+    if (tabFromUrl) {
+      if (tabFromUrl === 'history') setActiveTab('history');
+      else if (tabFromUrl === 'templates') setActiveTab('templates');
+      else if (tabFromUrl === 'send') setActiveTab('send');
+    }
+  }, [tabFromUrl]);
   // Send notification form
   const [useTemplate, setUseTemplate] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -133,16 +154,18 @@ export default function NotificationsPage() {
     }
   }, [apiRequest, isRootAdmin]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
   // Dispatch custom event to update bell count in TopHeader
-  const dispatchNotificationUpdate = () => {
+  const dispatchNotificationUpdate = useCallback(() => {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('notifications-updated'));
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    // Dispatch update event on mount to ensure bell badge count is current
+    dispatchNotificationUpdate();
+  }, [fetchData, dispatchNotificationUpdate]);
 
   // Mark a single activity notification as read
   const markNotificationAsRead = async (notificationId: string, source?: 'platform' | 'activity') => {
@@ -642,7 +665,7 @@ export default function NotificationsPage() {
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Subject</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Recipients</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Sent Date</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Date</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Status</th>
                   </tr>
                 </thead>
@@ -656,15 +679,18 @@ export default function NotificationsPage() {
                           notification.total_recipients
                         }
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">{formatDate(notification.sent_at)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
+                        {notification.sent_at ? formatDate(notification.sent_at) : formatDate(notification.created_at)}
+                      </td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           notification.status === 'sent' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                           notification.status === 'delivered' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
                           notification.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                          notification.status === 'active' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' :
                           'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
                         }`}>
-                          {notification.status.toUpperCase()}
+                          {notification.status === 'active' ? 'DRAFT' : notification.status.toUpperCase()}
                         </span>
                       </td>
                     </tr>

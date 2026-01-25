@@ -614,24 +614,25 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
         raise HTTPException(status_code=500, detail=f"Error fetching overview analytics: {str(e)}")
 
 @router.get("/analytics/revenue", tags=["ROOT_ADMIN"])
-def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get detailed revenue analytics for ROOT_ADMIN"""
     try:
         # Revenue by subscription plan
         plan_revenue = []
-        plans = mongo.get_subscription_plans_collection().find({"is_active": True})
+        plans_cursor = mongo.get_subscription_plans_collection().find({"is_active": True})
+        plans = await plans_cursor.to_list(length=None)
 
         for plan in plans:
             plan_id = plan["_id"]
 
             # Count active users on this plan
-            active_users_count = mongo.get_users_collection().count_documents({
+            active_users_count = await mongo.get_users_collection().count_documents({
                 "plan_id": plan_id,
                 "subscription_status": "active",
                 "is_active": True
             })
             # Count trial users on this plan
-            trial_users_count = mongo.get_users_collection().count_documents({
+            trial_users_count = await mongo.get_users_collection().count_documents({
                 "plan_id": plan_id,
                 "subscription_status": "trial",
                 "is_active": True

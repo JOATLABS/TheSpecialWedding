@@ -445,9 +445,9 @@ class UserManagementService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error validating token: {str(e)}")
 
-    async def complete_account_setup(self, token: str, password: str) -> dict:
+    async def complete_account_setup(self, token: str, password: str, first_name: str, last_name: str) -> dict:
         """
-        Complete account setup with password.
+        Complete account setup with password and name.
 
         If the invitation includes trial_days > 0, creates a Stripe Subscription
         with trial period so usage can be tracked and billing starts automatically
@@ -567,6 +567,8 @@ class UserManagementService:
                 "email": invitation["email"],
                 "password_hash": password_hash,
                 "role": invitation["role"],
+                "first_name": first_name,
+                "last_name": last_name,
                 "company_name": invite_data.get("company_name", ""),
                 "plan_id": plan_id,
                 "subscription_status": subscription_status,
@@ -597,6 +599,19 @@ class UserManagementService:
                     )
                 except Exception as sub_error:
                     self.logger.error(f"Failed to create subscription record: {str(sub_error)}")
+                    # ROLLBACK: Delete the user document since subscription failed
+                    await self.users_collection.delete_one({"_id": result.inserted_id})
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Account created but subscription setup failed. Please try again or contact support."
+                    )
+            elif trial_days > 0 and not plan_id:
+                # Trial requested but no plan specified - rollback
+                await self.users_collection.delete_one({"_id": result.inserted_id})
+                raise HTTPException(
+                    status_code=400,
+                    detail="Trial requires a subscription plan. Please contact the administrator."
+                )
 
             # Mark invitation as completed
             await self.invitations_collection.update_one(

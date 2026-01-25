@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `AnalyticsOverview`, `PlanBreakdown`, and `RevenueAnalytics` TypeScript interfaces
   - Dashboard now displays real-time statistics from the database
 
+- **Planner Management Actions Dropdown Clipped** (`app/admin/users/page.tsx`):
+  - Fixed Actions column 3-dot menu dropdown being cut off by parent container
+  - Removed `overflow-hidden` from planners table card wrapper (line 919)
+  - Changed table container from `overflow-x-auto` to `overflow-visible` (line 942)
+  - Dropdown menu now renders fully visible outside the table boundaries
+
 - **Root Admin Subscription Management 404 Errors** (`app/admin/saas/page.tsx`):
   - Removed incorrect `/admin` prefix from subscription API calls
   - Changed `/admin/users/${id}/subscription` to `/users/${id}/subscription` at lines 705, 731, 767, 778
