@@ -109,7 +109,7 @@ export default function PlatformInfrastructurePage() {
   // Error filtering state
   const [allErrors, setAllErrors] = useState<ErrorSummary[]>([]);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
-  const [acknowledgedFilter, setAcknowledgedFilter] = useState<AcknowledgedFilter>('false');
+  const [acknowledgedFilter, setAcknowledgedFilter] = useState<AcknowledgedFilter>('all');
   const [errorLimit, setErrorLimit] = useState(50);
   const [loadingErrors, setLoadingErrors] = useState(false);
   const [acknowledgingIds, setAcknowledgingIds] = useState<Set<string>>(new Set());
@@ -350,7 +350,7 @@ export default function PlatformInfrastructurePage() {
 
   const tabs = [
     { id: 'health' as TabType, label: 'System Health', icon: Activity },
-    { id: 'errors' as TabType, label: `Errors (${activeTab === 'errors' ? allErrors.length : metrics.errors?.total_24h || 0})`, icon: AlertTriangle },
+    { id: 'errors' as TabType, label: `Errors (${metrics.errors?.total_24h || 0})`, icon: AlertTriangle },
     { id: 'performance' as TabType, label: 'Performance', icon: Zap },
     { id: 'backups' as TabType, label: 'Backups', icon: Shield },
   ];
@@ -627,7 +627,9 @@ export default function PlatformInfrastructurePage() {
           {/* Error Statistics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Errors</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                {severityFilter !== 'all' || acknowledgedFilter !== 'all' ? 'Filtered Results' : 'Total Errors (24h)'}
+              </p>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{allErrors.length}</p>
             </Card>
             <Card className="p-4">
@@ -697,7 +699,12 @@ export default function PlatformInfrastructurePage() {
                           <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{err.error_type}</p>
                         </td>
                         <td className="px-6 py-4">
-                          <p className="text-sm text-gray-700 dark:text-gray-300 max-w-md truncate">{err.message}</p>
+                          <p
+                            className="text-sm text-gray-700 dark:text-gray-300 max-w-md truncate cursor-help hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                            title={err.message}
+                          >
+                            {err.message}
+                          </p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">{err.endpoint || 'N/A'}</p>

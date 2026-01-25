@@ -21,9 +21,26 @@ async def get_guest(token: str, wedding_id: str = Query(...)):
 
 
 @router.get("/invite/search", tags=["Guest"])
-async def search_guest(phone: str = Query(None), name: str = Query(None)):
+async def search_guest(
+    wedding_id: str = Query(..., description="Wedding ID to search within"),
+    phone: str = Query(None, description="Guest phone number"),
+    name: str = Query(None, description="Guest name"),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+):
+    """
+    Search for a guest by phone or name within a specific wedding.
+    Requires authentication and wedding access.
+    """
+    # Verify user has access to this wedding
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     try:
-        return await guest_service.get_guest_by_phone_or_name(phone=phone, name=name)
+        return await guest_service.get_guest_by_phone_or_name(
+            phone=phone,
+            name=name,
+            wedding_id=wedding_id
+        )
     except HTTPException as e:
         raise e
     except Exception:

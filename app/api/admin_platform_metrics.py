@@ -575,7 +575,7 @@ async def save_metrics_snapshot(
     to build historical data for trends/charts.
     """
     # Get current metrics
-    metrics = await get_platform_metrics(current_user)
+    metrics = await get_platform_health(current_user)
 
     # Save to platform_metrics collection
     snapshot = {
@@ -713,7 +713,11 @@ async def get_recent_errors(
     except Exception as exc:
         logger.warning("Failed to query self-hosted errors collection: %s", exc)
 
-    include_audit_fallback = acknowledged is None and len(errors_docs) < limit
+    # Include audit_logs when:
+    # - acknowledged is None (show all) OR acknowledged is False (show unacknowledged)
+    # - audit_logs entries don't have an acknowledged field, so they're inherently "unacknowledged"
+    # - Only skip audit_logs when acknowledged=True (looking for explicitly acknowledged errors only)
+    include_audit_fallback = acknowledged is not True and len(errors_docs) < limit
     if include_audit_fallback:
         remaining = limit - len(errors_docs)
         if remaining > 0:

@@ -27,8 +27,23 @@ class GalleryUploadService:
         )
 
     def create_presigned_url(self, filename: str, expires_in: int = 300):
+        """Legacy method - creates presigned URL without wedding_slug (deprecated)"""
         try:
             key = f"gallery/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{filename}"
+            url = self.s3.generate_presigned_url(
+                ClientMethod="put_object",
+                Params={"Bucket": self.bucket_name, "Key": key},
+                ExpiresIn=expires_in
+            )
+            return {"upload_url": url, "key": key}
+        except ClientError as e:
+            raise HTTPException(status_code=500, detail=f"Error creating upload URL: {str(e)}")
+
+    def create_presigned_url_with_wedding(self, filename: str, wedding_slug: str, folder: str = "gallery", expires_in: int = 300):
+        """Creates presigned URL with wedding_slug in the key for proper authorization"""
+        try:
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            key = f"{folder}/{wedding_slug}/{timestamp}_{filename}"
             url = self.s3.generate_presigned_url(
                 ClientMethod="put_object",
                 Params={"Bucket": self.bucket_name, "Key": key},

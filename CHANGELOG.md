@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Account Setup Name Collection** (`app/api/user_management.py`, `app/setup-account/page.tsx`):
+  - Added `first_name` and `last_name` fields to `AccountSetupModel` with validation
+  - Frontend form now collects planner's name during account setup
+  - Backend passes name fields to `complete_account_setup()` service method
+  - Planners no longer show as "Unnamed Planner" after completing account setup
+
 - **Password Reset Flow** (`app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/api/user_management.py`, `app/services/user_management_service.py`):
   - Complete forgot password / reset password functionality for users who cannot log in
   - New API endpoints:
@@ -110,6 +116,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaces hardcoded 14-day trial default
 
 ### Security
+
+- **Multi-Tenant Data Isolation** (Multiple files):
+  - **Guest Search Endpoint** (`app/api/guest.py`):
+    - `/invite/search` now requires authentication via `require_wedding_planner_only`
+    - Added mandatory `wedding_id` parameter to prevent cross-wedding guest enumeration
+    - Added ownership verification via `check_wedding_access()` before returning results
+  - **Guest Service** (`app/services/guest_service.py`):
+    - `get_guest_by_phone_or_name()` now accepts and filters by `wedding_id`
+    - Prevents planners from accessing guests outside their assigned weddings
+  - **Gallery Admin Endpoints** (`app/api/gallery_admin.py`):
+    - Added `verify_wedding_access_by_slug()` helper for ownership validation
+    - All endpoints now validate wedding ownership via `assigned_planner_email` field
+    - `/gallery/upload-url`: Validates planner access before generating presigned URL
+    - `/gallery/file-url`: Extracts wedding_slug from key path and validates ownership
+    - `DELETE /gallery`: Validates ownership before allowing file deletion
+    - `/gallery/list`: Filters results by wedding access, returns empty for unauthorized
+    - `/gallery/upload`: Validates wedding access before accepting uploads
+  - **OTP Rate Limiting** (`app/services/otp_service.py`):
+    - Added rate limiting to `send_otp_by_contact()` method (1 OTP per minute per guest)
+    - Prevents OTP spam attacks while keeping endpoint public for guest verification
+    - Uses existing OTP expiry (5 min) minus 4 min buffer to calculate rate limit window
 
 - **CRITICAL: Settings Validation** (`app/core/settings.py`):
   - Removed insecure default `secret_key="changeme"` - now required from environment
