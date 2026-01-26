@@ -64,6 +64,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Account Settings Modal Issues** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/admin_auth.py`):
+  - Fixed "Not Found" error when clicking "Save Changes"
+    - Root cause: Frontend was calling `/admin/profile/info` but endpoint is at `/profile/info` (no `/admin` prefix)
+    - Fixed all API paths (password, email, info, image) to use correct endpoints
+  - Fixed modal positioning (was appearing off-center/inside header dropdown)
+    - Root cause: Modal was rendered inside `<header>` element, interfering with `fixed` positioning
+    - Solution: Used React Portal (`createPortal`) to render modal at document.body level
+    - Added `z-[9999]` to ensure modal appears above all other elements
+  - Improved modal UI design:
+    - Added gradient header background with subtitle
+    - Redesigned tab navigation with pill-style selector
+    - Improved Save button styling with shadow and better spacing
+    - Added smooth animations (fade-in, zoom-in)
+    - Better dark mode support
+  - Added `push_notifications_enabled` field to `GET /admin/profile` response (defaults to `true`)
+
 - **CRITICAL: User Management Operations Failing (Delete/Suspend/Activate)** (`app/services/user_management_service.py`):
   - Fixed "Failed to delete user" error when attempting to delete a planner from Planner Management page
   - Root cause: User ID passed as string but MongoDB stores `_id` as ObjectId - query never matched
