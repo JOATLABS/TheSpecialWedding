@@ -150,6 +150,19 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["form_distributions"]
 
+    # Messaging collections (MongoDB-backed, replaces Firestore)
+    def get_conversations_collection(self):
+        """Conversations collection for messaging"""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["conversations"]
+
+    def get_messages_collection(self):
+        """Messages collection for messaging"""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["messages"]
+
     async def test_connection(self):
         """Test the database connection"""
         try:

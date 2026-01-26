@@ -178,6 +178,15 @@ class Settings(BaseSettings):
         alias="FIREBASE_SERVICE_ACCOUNT_JSON"
     )
 
+    # Soketi (Pusher-compatible self-hosted realtime)
+    soketi_enabled: bool = Field(default=False, alias="SOKETI_ENABLED")
+    soketi_host: str = Field(default="localhost", alias="SOKETI_HOST")
+    soketi_port: int = Field(default=6001, alias="SOKETI_PORT")
+    soketi_app_id: str = Field(default="app-id", alias="SOKETI_APP_ID")
+    soketi_key: str = Field(default="app-key", alias="SOKETI_KEY")
+    soketi_secret: str = Field(default="app-secret", alias="SOKETI_SECRET")
+    soketi_use_tls: bool = Field(default=False, alias="SOKETI_USE_TLS")
+
     # AI Service (Gemini)
     google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
     gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
@@ -334,6 +343,29 @@ class Settings(BaseSettings):
             "token_uri": self.firebase_token_uri,
             "auth_provider_x509_cert_url": self.firebase_provider_cert_url,
             "client_x509_cert_url": self.firebase_client_cert_url,
+        }
+
+    def is_soketi_configured(self) -> bool:
+        """Check if Soketi realtime messaging is enabled and configured."""
+        return self.soketi_enabled and all([
+            self.soketi_host,
+            self.soketi_app_id,
+            self.soketi_key,
+            self.soketi_secret,
+        ])
+
+    def get_soketi_config(self) -> Dict[str, Any]:
+        """Return Soketi configuration for pusher client initialization."""
+        protocol = "https" if self.soketi_use_tls else "http"
+        return {
+            "app_id": self.soketi_app_id,
+            "key": self.soketi_key,
+            "secret": self.soketi_secret,
+            "host": self.soketi_host,
+            "port": self.soketi_port,
+            "ssl": self.soketi_use_tls,
+            "cluster": "mt1",  # Required by pusher client but ignored by Soketi
+            "endpoint": f"{protocol}://{self.soketi_host}:{self.soketi_port}",
         }
 
     def is_production(self) -> bool:
