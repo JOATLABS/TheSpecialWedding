@@ -276,9 +276,19 @@ class UserManagementService:
     async def get_user(self, user_id: str) -> dict:
         """Get user by ID"""
         try:
-            user = await self.users_collection.find_one({"_id": user_id}, {"password_hash": 0})
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
+            user = await self.users_collection.find_one({"_id": obj_id}, {"password_hash": 0})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
+            # Convert ObjectId to string for JSON serialization
+            user["_id"] = str(user["_id"])
             return user
         except HTTPException:
             raise
@@ -288,6 +298,14 @@ class UserManagementService:
     async def update_user(self, user_id: str, update_data: dict) -> dict:
         """Update user details"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             # Remove protected fields
             protected_fields = ["_id", "email", "password_hash", "created_at"]
             for field in protected_fields:
@@ -297,7 +315,7 @@ class UserManagementService:
             update_data["updated_at"] = datetime.utcnow()
 
             result = await self.users_collection.update_one(
-                {"_id": user_id},
+                {"_id": obj_id},
                 {"$set": update_data}
             )
 
@@ -314,8 +332,16 @@ class UserManagementService:
     async def delete_user(self, user_id: str) -> dict:
         """Delete user"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             # Get user first to check if they exist and get their email
-            user = await self.users_collection.find_one({"_id": user_id})
+            user = await self.users_collection.find_one({"_id": obj_id})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
             # Check if user has assigned weddings
@@ -327,7 +353,7 @@ class UserManagementService:
                 )
 
             # Delete user
-            result = await self.users_collection.delete_one({"_id": user_id})
+            result = await self.users_collection.delete_one({"_id": obj_id})
 
             if result.deleted_count == 0:
                 raise HTTPException(status_code=404, detail="User not found")
@@ -342,15 +368,23 @@ class UserManagementService:
     async def assign_wedding_to_planner(self, user_id: str, wedding_id: str) -> dict:
         """Assign a wedding to a planner"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId for user
+            try:
+                user_obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             # Get user to verify they exist and are a planner
-            user = await self.users_collection.find_one({"_id": user_id})
+            user = await self.users_collection.find_one({"_id": user_obj_id})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
             if user["role"] != "wedding_planner":
                 raise HTTPException(status_code=400, detail="User is not a wedding planner")
 
-            # Update wedding with assigned planner
+            # Update wedding with assigned planner (wedding_id may be string slug or ObjectId)
             result = await self.weddings_collection.update_one(
                 {"_id": wedding_id},
                 {"$set": {"assigned_planner_email": user["email"]}}
@@ -388,9 +422,17 @@ class UserManagementService:
     async def suspend_user(self, user_id: str) -> dict:
         """Suspend user account"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             result = await self.users_collection.update_one(
-                {"_id": user_id},
-                {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
+                {"_id": obj_id},
+                {"$set": {"is_active": False, "is_suspended": True, "updated_at": datetime.utcnow()}}
             )
 
             if result.matched_count == 0:
@@ -406,9 +448,17 @@ class UserManagementService:
     async def activate_user(self, user_id: str) -> dict:
         """Activate user account"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             result = await self.users_collection.update_one(
-                {"_id": user_id},
-                {"$set": {"is_active": True, "updated_at": datetime.utcnow()}}
+                {"_id": obj_id},
+                {"$set": {"is_active": True, "is_suspended": False, "updated_at": datetime.utcnow()}}
             )
 
             if result.matched_count == 0:
