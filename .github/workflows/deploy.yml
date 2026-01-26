@@ -18,7 +18,7 @@ jobs:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     # Only run if pushing to the configured deployment branch
-    if: github.ref == format('refs/heads/{0}', vars.DEPLOY_BRANCH || 'development/saas-features')
+    if: github.ref == format('refs/heads/{0}', vars.DEPLOY_BRANCH || 'feature-twilio-otp-improvements-final-submitted')
     permissions:
       contents: read
       packages: write
@@ -145,7 +145,7 @@ jobs:
             cd /opt/weddingapp
 
             # Pull latest code from the configured deployment branch
-            DEPLOY_BRANCH="${{ vars.DEPLOY_BRANCH || 'development/saas-features' }}"
+            DEPLOY_BRANCH="${{ vars.DEPLOY_BRANCH || 'feature-twilio-otp-improvements-final-submitted' }}"
             git fetch origin
             git checkout $DEPLOY_BRANCH
             git pull origin $DEPLOY_BRANCH
@@ -179,9 +179,10 @@ jobs:
             # SECURITY CONFIGURATION
             # ================================
             SECRET_KEY=${{ secrets.SECRET_KEY }}
+            API_KEY=${{ secrets.API_KEY }}
             JWT_ALGORITHM=HS256
             JWT_EXPIRE_MINUTES=60
-            API_KEY=${{ secrets.API_KEY }}
+            
 
             # CORS Configuration
             CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
@@ -193,7 +194,7 @@ jobs:
 
             # Rate Limiting
             RATE_LIMIT_REQUESTS=${{ secrets.RATE_LIMIT_REQUESTS || '100' }}
-            RATE_LIMIT_WINDOW=${{ secrets.RATE_LIMIT_WINDOW || '900' }}
+            RATE_LIMIT_WINDOW=${{ secrets.RATE_LIMIT_WINDOW || '15' }}
             RATE_LIMIT_PER_MINUTE=${{ secrets.RATE_LIMIT_PER_MINUTE || '60' }}
 
             # ================================
@@ -263,7 +264,6 @@ jobs:
             # SAAS CONFIGURATION
             # ================================
             ENABLE_SAAS_FEATURES=true
-            DEFAULT_TRIAL_DAYS=${{ secrets.DEFAULT_TRIAL_DAYS || '14' }}
 
             # Stripe Payment Configuration
             STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}

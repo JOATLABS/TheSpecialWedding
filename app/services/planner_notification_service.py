@@ -14,7 +14,7 @@ from app.models.planner_notification import (
     PlannerNotificationTypes,
     NotificationType
 )
-from typing import List, Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime
 from bson import ObjectId
 import logging
@@ -45,6 +45,22 @@ class PlannerNotificationService:
         except Exception:
             return None
 
+    async def _check_push_enabled(self, planner_id: str) -> bool:
+        """Check if user has push notifications enabled (defaults to True if not set)"""
+        try:
+            users_collection = mongo.db["users"]
+            user = await users_collection.find_one(
+                {"email": planner_id},
+                {"push_notifications_enabled": 1}
+            )
+            if user:
+                # Default to True if field doesn't exist (opt-out model)
+                return user.get("push_notifications_enabled", True)
+            return True
+        except Exception:
+            # On error, default to sending notification
+            return True
+
     async def _send_push_notification(
         self,
         planner_id: str,
@@ -56,6 +72,11 @@ class PlannerNotificationService:
     ):
         """Send push notification via Ntfy (non-blocking)"""
         try:
+            # Check if user has push notifications enabled
+            if not await self._check_push_enabled(planner_id):
+                logger.debug(f"Push notifications disabled for user {planner_id}")
+                return
+
             # Late import to avoid circular dependencies
             from app.services.ntfy_service import ntfy_service
 
@@ -138,7 +159,7 @@ class PlannerNotificationService:
     ) -> dict:
         """Get activity notifications for a planner"""
         try:
-            query = {"planner_id": planner_id}
+            query: Dict[str, Any] = {"planner_id": planner_id}
 
             if unread_only:
                 query["is_read"] = False
@@ -216,7 +237,7 @@ class PlannerNotificationService:
         """Mark a notification as read"""
         try:
             obj_id = ObjectId(notification_id)
-        except:
+        except Exception:
             raise HTTPException(status_code=400, detail="Invalid notification ID")
 
         try:
@@ -261,7 +282,7 @@ class PlannerNotificationService:
         """Delete a notification"""
         try:
             obj_id = ObjectId(notification_id)
-        except:
+        except Exception:
             raise HTTPException(status_code=400, detail="Invalid notification ID")
 
         try:
@@ -378,7 +399,7 @@ class PlannerNotificationService:
                 "payment_id": payment_id
             },
             priority="high",
-            action_url=f"/admin/planner/money"
+            action_url="/admin/planner/money"
         )
 
     async def notify_payment_failed(
@@ -404,7 +425,7 @@ class PlannerNotificationService:
                 "payment_id": payment_id
             },
             priority="high",
-            action_url=f"/admin/planner/money"
+            action_url="/admin/planner/money"
         )
 
     async def notify_contract_signed(
@@ -449,7 +470,46 @@ class PlannerNotificationService:
                 "response_type": response_type,
                 "vendor_id": vendor_id
             },
-            action_url=f"/admin/planner/vendors"
+            action_url="/admin/planner/vendors"
+        )
+
+    async def notify_task_reminder(
+        self,
+        planner_id: str,
+        task_title: str,
+        due_date: str,
+        wedding_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        reminder_minutes: Optional[int] = None
+    ):
+        """Trigger notification for a task reminder (calendar task due soon)"""
+        if reminder_minutes:
+            if reminder_minutes >= 1440:  # 24 hours or more
+                days = reminder_minutes // 1440
+                time_str = f"{days} day{'s' if days > 1 else ''}"
+            elif reminder_minutes >= 60:
+                hours = reminder_minutes // 60
+                time_str = f"{hours} hour{'s' if hours > 1 else ''}"
+            else:
+                time_str = f"{reminder_minutes} minute{'s' if reminder_minutes > 1 else ''}"
+            message = f"Task '{task_title}' is due in {time_str}"
+        else:
+            message = f"Task '{task_title}' is due soon"
+
+        return await self.create_notification(
+            planner_id=planner_id,
+            notification_type=PlannerNotificationTypes.REMINDER,
+            title="Task Reminder",
+            message=message,
+            wedding_id=wedding_id,
+            metadata={
+                "task_title": task_title,
+                "task_id": task_id,
+                "due_date": due_date,
+                "reminder_minutes": reminder_minutes
+            },
+            priority="high",
+            action_url="/admin/planner/calendar"
         )
 
 

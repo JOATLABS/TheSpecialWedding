@@ -52,7 +52,6 @@ const adminNavItems: NavItem[] = [
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
-  { name: 'Settings', href: '/admin/profile', icon: Settings },
 ];
 
 // Navigation items for Wedding Planners

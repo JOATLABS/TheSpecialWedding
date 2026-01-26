@@ -61,7 +61,7 @@ export default function WeddingDetailsPage() {
  rsvp_config: wedding.rsvp_config || {
  greeting: "Join us in celebrating our special day! Please let us know if you'll be attending.",
  help_text: "Check your phone for your personal invitation link, or contact us directly.",
- phone_numbers: ["(319) 529-6088", "(405) 708-1076"]
+ phone_numbers: ["(405) 529-6088", "(405) 708-1076"]
  },
  privacy_settings: wedding.privacy_settings || {
  privacy_mode: "private",

@@ -4,28 +4,52 @@ Creates default subscription plans in MongoDB and corresponding products/prices 
 Runs on container startup via Dockerfile.coolify.
 """
 import os
+import sys
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from pymongo import MongoClient
 
 # Load environment variables
 load_dotenv()
 
-# Check for Stripe
+print("\n[SEED] Starting subscription plans seeding...")
+print("=" * 50)
+
+# Check for Stripe (v13+ uses direct imports)
 try:
     import stripe
+    from stripe import StripeError  # v13+ exception class
     STRIPE_AVAILABLE = True
 except ImportError:
+    stripe = None  # type: ignore
     STRIPE_AVAILABLE = False
-    print("⚠️  Stripe not installed, skipping Stripe product creation")
+    StripeError = Exception  # type: ignore # Fallback for type hints
+    print("[WARN] Stripe not installed, skipping Stripe product creation")
 
-# Connect to MongoDB
+# Connect to MongoDB with error handling
+try:
+    from pymongo import MongoClient
+    from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+except ImportError:
+    print("[ERROR] pymongo not installed!")
+    sys.exit(1)
+
 mongo_uri = (
     os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017"
 )
 db_name = os.getenv("MONGO_DB", "wedding")
 
-client: MongoClient = MongoClient(mongo_uri)
+print(f"[INFO] Connecting to MongoDB database: {db_name}")
+
+try:
+    client: MongoClient = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+    # Force connection test
+    client.admin.command('ping')
+    print("[OK] MongoDB connected successfully")
+except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+    print(f"[ERROR] MongoDB connection failed: {e}")
+    print(f"[DEBUG] URI prefix: {mongo_uri[:30]}...")
+    sys.exit(1)
+
 db = client[db_name]
 collection = db["subscription_plans"]
 
@@ -33,21 +57,21 @@ collection = db["subscription_plans"]
 stripe_secret = os.getenv("STRIPE_SECRET_KEY")
 stripe_enabled = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
 
-if STRIPE_AVAILABLE and stripe_secret and stripe_enabled:
+if STRIPE_AVAILABLE and stripe and stripe_secret and stripe_enabled:
     stripe.api_key = stripe_secret
     STRIPE_CONFIGURED = True
-    print(f"✅ Stripe configured (mode: {'live' if stripe_secret.startswith('sk_live') else 'test'})")
+    print(f"[OK] Stripe configured (mode: {'live' if stripe_secret.startswith('sk_live') else 'test'})")
 else:
     STRIPE_CONFIGURED = False
     if not stripe_enabled:
-        print("ℹ️  Stripe disabled via STRIPE_ENABLED=false")
+        print("[INFO] Stripe disabled via STRIPE_ENABLED=false")
     elif not stripe_secret:
-        print("⚠️  STRIPE_SECRET_KEY not set, skipping Stripe integration")
+        print("[WARN] STRIPE_SECRET_KEY not set, skipping Stripe integration")
 
 
 def create_stripe_product_and_prices(plan: dict) -> dict:
     """Create Stripe product and prices, return IDs."""
-    if not STRIPE_CONFIGURED:
+    if not STRIPE_CONFIGURED or not stripe:
         return {}
 
     plan_id = plan["_id"]
@@ -60,7 +84,7 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
         )
         if existing_products.data:
             product = existing_products.data[0]
-            print(f"  ↪ Stripe product exists: {product.id}")
+            print(f"  [EXISTS] Stripe product: {product.id}")
 
             # Get existing prices
             prices = stripe.Price.list(product=product.id, active=True)
@@ -78,8 +102,8 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
                 "stripe_monthly_price_id": monthly_price,
                 "stripe_yearly_price_id": yearly_price
             }
-    except stripe.error.StripeError as e:
-        print(f"  ⚠️  Error searching Stripe products: {e}")
+    except StripeError as e:
+        print(f"[WARN] Error searching Stripe products: {e}")
 
     # Create new product
     try:
@@ -91,36 +115,36 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
                 "source": "seed_script"
             }
         )
-        print(f"  ✅ Created Stripe product: {product.id}")
+        print(f"  [CREATED] Stripe product: {product.id}")
 
         # Create monthly price
-        monthly_price = stripe.Price.create(
+        new_monthly_price = stripe.Price.create(
             product=product.id,
             unit_amount=int(plan["price_monthly"] * 100),  # Convert to cents
             currency="usd",
             recurring={"interval": "month"},
             metadata={"plan_id": plan_id, "interval": "monthly"}
         )
-        print(f"  ✅ Created monthly price: {monthly_price.id} (${plan['price_monthly']}/mo)")
+        print(f"  [CREATED] Monthly price: {new_monthly_price.id} (${plan['price_monthly']}/mo)")
 
         # Create yearly price
-        yearly_price = stripe.Price.create(
+        new_yearly_price = stripe.Price.create(
             product=product.id,
             unit_amount=int(plan["price_yearly"] * 100),  # Convert to cents
             currency="usd",
             recurring={"interval": "year"},
             metadata={"plan_id": plan_id, "interval": "yearly"}
         )
-        print(f"  ✅ Created yearly price: {yearly_price.id} (${plan['price_yearly']}/yr)")
+        print(f"  [CREATED] Yearly price: {new_yearly_price.id} (${plan['price_yearly']}/yr)")
 
         return {
             "stripe_product_id": product.id,
-            "stripe_monthly_price_id": monthly_price.id,
-            "stripe_yearly_price_id": yearly_price.id
+            "stripe_monthly_price_id": new_monthly_price.id,
+            "stripe_yearly_price_id": new_yearly_price.id
         }
 
-    except stripe.error.StripeError as e:
-        print(f"  ❌ Stripe error creating product: {e}")
+    except StripeError as e:
+        print(f"  [ERROR] Stripe error creating product: {e}")
         return {}
 
 
@@ -258,7 +282,7 @@ plans = [
     }
 ]
 
-print("\n🌱 Seeding Subscription Plans...")
+print("\n[SEED] Seeding Subscription Plans...")
 print("=" * 50)
 
 created = 0
@@ -267,7 +291,7 @@ skipped = 0
 
 for plan in plans:
     plan_id = plan["_id"]
-    print(f"\n📦 Processing: {plan['name']} - ${plan['price_monthly']}/month")
+    print(f"\n[PLAN] Processing: {plan['name']} - ${plan['price_monthly']}/month")
 
     # Create Stripe products if configured (idempotent - checks existing first)
     stripe_ids = create_stripe_product_and_prices(plan) if STRIPE_CONFIGURED else {}
@@ -312,24 +336,24 @@ for plan in plans:
     )
 
     if result.upserted_id:
-        print(f"  ✅ Created in database")
+        print("  [CREATED] Added to database")
         created += 1
     elif result.modified_count > 0:
-        print(f"  ✅ Updated in database")
+        print("  [UPDATED] Updated in database")
         updated += 1
     else:
-        print(f"  ⏭  No changes needed")
+        print("  [SKIP] No changes needed")
         skipped += 1
 
 print("\n" + "=" * 50)
-print(f"📊 Summary: Created {created}, Updated {updated}, Skipped {skipped}")
+print(f"[SUMMARY] Created {created}, Updated {updated}, Skipped {skipped}")
 
 # Verify final state
 all_plans = list(collection.find({"is_active": True}).sort("sort_order", 1))
-print(f"\n📋 Active plans in database: {len(all_plans)}")
+print(f"\n[VERIFY] Active plans in database: {len(all_plans)}")
 for p in all_plans:
-    stripe_status = "✅ Stripe" if p.get("stripe_product_id") else "❌ No Stripe"
-    print(f"  • {p['name']}: ${p['price_monthly']}/mo ({stripe_status})")
+    stripe_status = "[STRIPE]" if p.get("stripe_product_id") else "[NO STRIPE]"
+    print(f"  - {p['name']}: ${p['price_monthly']}/mo {stripe_status}")
 
 client.close()
-print("\n✅ Subscription plans seeding complete!")
+print("\n[DONE] Subscription plans seeding complete!")

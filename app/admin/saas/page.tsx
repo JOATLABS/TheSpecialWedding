@@ -58,6 +58,27 @@ interface WeddingPlanner {
  lastLogin?: string;
 }
 
+interface AnalyticsOverview {
+  total_planners: number;
+  active_planners: number;
+  total_weddings: number;
+  active_plans: number;
+  monthly_revenue: number;
+  yearly_revenue: number;
+  projected_annual_revenue: number;
+}
+
+interface PlanBreakdown {
+  plan_id: string;
+  plan_name: string;
+  active_users: number;
+  trial_users: number;
+}
+
+interface RevenueAnalytics {
+  plan_breakdown: PlanBreakdown[];
+}
+
 interface ThemeConfig {
  primary_color: string;
  secondary_color: string;
@@ -278,6 +299,8 @@ const SaasAdminDashboard = () => {
  const [editModalOpen, setEditModalOpen] = useState(false);
  const [editingSectionType, setEditingSectionType] = useState<string>('');
  const [editingSectionData, setEditingSectionData] = useState<any>(null);
+ const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
+ const [planBreakdown, setPlanBreakdown] = useState<PlanBreakdown[]>([]);
 
   // ROOT_ADMIN access control - redirect non-root admins
   useEffect(() => {
@@ -300,10 +323,15 @@ const SaasAdminDashboard = () => {
         'Content-Type': 'application/json'
       };
 
-      const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, { headers });
+      const plansResponse = await fetch(`${baseUrl}/subscription-plans`, { headers });
       if (plansResponse.ok) {
         const plansData = await plansResponse.json();
+        console.log('[SaaS Admin] Subscription plans loaded:', plansData.length, 'plans');
         setPlans(plansData);
+      } else {
+        console.error('[SaaS Admin] Failed to load subscription plans:', plansResponse.status, plansResponse.statusText);
+        const errorText = await plansResponse.text();
+        console.error('[SaaS Admin] Error details:', errorText);
       }
 
       const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers });
@@ -322,7 +350,7 @@ const SaasAdminDashboard = () => {
         })) );
       }
 
-      const configResponse = await fetch(`${baseUrl}/admin/saas-config`, { headers });
+      const configResponse = await fetch(`${baseUrl}/saas/saas-config`, { headers });
       if (configResponse.ok) {
         const configData = await configResponse.json();
         setSaasConfig(configData);
@@ -330,7 +358,7 @@ const SaasAdminDashboard = () => {
         setSaasConfig(DEFAULT_SAAS_CONFIG);
       }
 
-      const sectionsResponse = await fetch(`${baseUrl}/admin/content-sections`, { headers });
+      const sectionsResponse = await fetch(`${baseUrl}/saas/content-sections`, { headers });
       if (sectionsResponse.ok) {
         const sectionsData = await sectionsResponse.json();
         setContentSections(sectionsData.map((section: any) => ({
@@ -342,6 +370,22 @@ const SaasAdminDashboard = () => {
           updatedBy: section.updated_by,
           updatedAt: section.updated_at
         })) );
+      }
+
+      // Fetch analytics overview for dashboard statistics
+      const analyticsResponse = await fetch(`${baseUrl}/saas/analytics/overview`, { headers });
+      if (analyticsResponse.ok) {
+        const analyticsData = await analyticsResponse.json();
+        setAnalyticsOverview(analyticsData);
+      }
+
+      // Fetch revenue breakdown for per-plan user counts
+      const revenueResponse = await fetch(`${baseUrl}/saas/analytics/revenue`, { headers });
+      if (revenueResponse.ok) {
+        const revenueData = await revenueResponse.json();
+        if (revenueData.plan_breakdown) {
+          setPlanBreakdown(revenueData.plan_breakdown);
+        }
       }
     } catch (error) {
       console.error('Error fetching SaaS data:', error);
@@ -456,7 +500,7 @@ const SaasAdminDashboard = () => {
  try {
  const baseUrl = getApiBaseUrl();
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- const response = await fetch(`${baseUrl}/admin/subscription-plans/${planId}`, {
+ const response = await fetch(`${baseUrl}/subscription-plans/${planId}`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -483,8 +527,8 @@ const SaasAdminDashboard = () => {
 
  const isEditing = !!editingPlan;
  const url = isEditing
- ? `${baseUrl}/admin/subscription-plans/${editingPlan._id}`
- : `${baseUrl}/admin/subscription-plans`;
+ ? `${baseUrl}/subscription-plans/${editingPlan._id}`
+ : `${baseUrl}/subscription-plans`;
 
  const method = isEditing ? 'PUT' : 'POST';
 
@@ -499,7 +543,7 @@ const SaasAdminDashboard = () => {
 
  if (response.ok) {
  // Refresh plans data
- const plansResponse = await fetch(`${baseUrl}/admin/subscription-plans`, {
+ const plansResponse = await fetch(`${baseUrl}/subscription-plans`, {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
@@ -563,7 +607,7 @@ const SaasAdminDashboard = () => {
  };
 
  console.log('Saving SAAS config:', cleanConfig);
- const response = await fetch(`${baseUrl}/admin/saas-config`, {
+ const response = await fetch(`${baseUrl}/saas/saas-config`, {
  method: 'PUT',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -702,7 +746,7 @@ const SaasAdminDashboard = () => {
  if (defaultPlan) {
  try {
  // Create subscription for the planner
- const subscriptionResponse = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ const subscriptionResponse = await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -711,7 +755,7 @@ const SaasAdminDashboard = () => {
  body: JSON.stringify({
  plan_id: defaultPlan._id,
  billing_interval: 'monthly',
- trial_days: 14
+ trial_days: parseInt(prompt('Enter trial days (0 for no trial, 150 for 5 months):') || '14', 10)
  })
  });
 
@@ -728,7 +772,7 @@ const SaasAdminDashboard = () => {
  } else {
  // If deactivating, cancel the subscription
  try {
- await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -764,7 +808,7 @@ const SaasAdminDashboard = () => {
  const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // First, cancel existing subscription if any
  try {
- await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -775,7 +819,7 @@ const SaasAdminDashboard = () => {
  // Ignore if no existing subscription
  }
  // Assign new subscription
- const response = await fetch(`${baseUrl}/admin/users/${plannerId}/subscription`, {
+ const response = await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -784,7 +828,7 @@ const SaasAdminDashboard = () => {
  body: JSON.stringify({
  plan_id: planId,
  billing_interval: 'monthly',
- trial_days: 14
+ trial_days: parseInt(prompt('Enter trial days (0 for no trial, 150 for 5 months):') || '14', 10)
  })
  });
 
@@ -891,7 +935,7 @@ const SaasAdminDashboard = () => {
  <div className="ml-5 w-0 flex-1">
  <dl>
  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Weddings</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">12</dd>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{analyticsOverview?.total_weddings ?? 0}</dd>
  </dl>
  </div>
  </div>
@@ -907,7 +951,7 @@ const SaasAdminDashboard = () => {
  <div className="ml-5 w-0 flex-1">
  <dl>
  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Monthly Revenue</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">$247</dd>
+ <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">${analyticsOverview?.monthly_revenue ?? 0}</dd>
  </dl>
  </div>
  </div>
@@ -939,7 +983,11 @@ const SaasAdminDashboard = () => {
  <div key={plan._id} className="flex items-center justify-between">
  <span className="text-sm text-gray-900 dark:text-gray-100">{plan.name}</span>
  <span className="text-sm text-gray-500 dark:text-gray-400">
- {plan.name === 'Professional' ? '1 user' : '0 users'}
+ {(() => {
+  const breakdown = planBreakdown.find(b => b.plan_id === plan._id || b.plan_name === plan.name);
+  const count = breakdown ? breakdown.active_users + breakdown.trial_users : 0;
+  return `${count} user${count !== 1 ? 's' : ''}`;
+})()}
  </span>
  </div>
  ))}

@@ -1,7 +1,7 @@
+from typing import Optional, Union
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
-from typing import Optional, List
 import os
 from datetime import datetime
 from app.core.database import mongo
@@ -14,9 +14,10 @@ security = HTTPBearer(auto_error=True)
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
+
 class ExtendedAuthUser:
     """Extended auth user supporting multiple roles"""
-    def __init__(self, email: str, role: str, user_data: dict = None):
+    def __init__(self, email: str, role: str, user_data: Optional[dict] = None):
         self.email = email
         self.role = role
         self.user_data = user_data or {}
@@ -25,6 +26,7 @@ class ExtendedAuthUser:
         self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
+
 
 async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = Depends(security)) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
@@ -96,11 +98,11 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                     if isinstance(trial_end_date, str):
                         try:
                             trial_end_date = datetime.fromisoformat(trial_end_date.replace('Z', '+00:00'))
-                        except:
+                        except ValueError:
                             trial_end_date = datetime.fromisoformat(trial_end_date)
                     if datetime.utcnow() > trial_end_date:
                         # Auto-expire the trial
-                        mongo.get_users_collection().update_one(
+                        await mongo.get_users_collection().update_one(
                             {"email": email},
                             {"$set": {
                                 "subscription_status": "expired",
@@ -119,12 +121,13 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
     except HTTPException:
         # Re-raise HTTP exceptions (including trial expiration 402) as-is
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
 
 # Role-based dependency factories
 async def require_root_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
@@ -136,6 +139,7 @@ async def require_root_admin(current_user: ExtendedAuthUser = Depends(get_curren
         )
     return current_user
 
+
 async def require_wedding_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require wedding planner access"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
@@ -144,6 +148,7 @@ async def require_wedding_planner(current_user: ExtendedAuthUser = Depends(get_c
             detail="Wedding planner access required"
         )
     return current_user
+
 
 async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require vendor access"""
@@ -154,6 +159,7 @@ async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_us
         )
     return current_user
 
+
 async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require root admin or wedding planner access"""
     if not (current_user.is_root_admin or current_user.is_wedding_planner):
@@ -162,6 +168,7 @@ async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_
             detail="Admin or wedding planner access required"
         )
     return current_user
+
 
 async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require root admin access"""
@@ -172,6 +179,7 @@ async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current
         )
     return current_user
 
+
 async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
     """Require wedding planner access only (excludes root admin)"""
     if not current_user.is_wedding_planner:
@@ -180,6 +188,7 @@ async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(
             detail="Wedding planner access required"
         )
     return current_user
+
 
 async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     """Check if user has access to a specific wedding"""
@@ -201,6 +210,7 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
             return False
 
         try:
+            query_id: Union[str, ObjectId]
             # Handle both string and ObjectId formats
             if isinstance(wedding_id, str):
                 # Check if it looks like a valid ObjectId (24 hex characters)
@@ -224,6 +234,7 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
         vendor = await mongo.get_vendors_collection().find_one({"email": user.email, "wedding_id": wedding_id})
         return vendor is not None
     return False
+
 
 async def require_wedding_access(wedding_id: str):
     """Factory function to require access to a specific wedding"""

@@ -1,7 +1,6 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
-from app.models.plus_one import PlusOneModel
 from bson import ObjectId
 from datetime import datetime
 import logging
@@ -39,10 +38,10 @@ class RSVPService:
             )
 
             update_data: dict[str, object] = {
-                "phone": rsvp_data.phone, 
+                "phone": rsvp_data.phone,
                 "updated_at": datetime.utcnow()
             }
-            
+
             # Handle SMS opt-in
             if hasattr(rsvp_data, 'sms_opt_in'):
                 update_data["sms_opt_in"] = rsvp_data.sms_opt_in
@@ -72,7 +71,7 @@ class RSVPService:
                 max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
                 if max_plus_ones == 0:
                     raise HTTPException(status_code=403, detail="No plus-ones allowed for this guest")
-                
+
                 # Count existing plus-ones
                 existing_count = await self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
                 new_plus_ones_count = len(rsvp_data.plus_ones)
@@ -86,18 +85,34 @@ class RSVPService:
                 # Insert all new plus-ones
                 plus_ones_to_insert = []
                 for plus_one_data in rsvp_data.plus_ones:
-                    plus_one = PlusOneModel(
-                        guest_id=str(guest_id),
-                        name=plus_one_data.name,
-                        phone=plus_one_data.phone,
-                        attending=plus_one_data.attending,
-                        dietary=plus_one_data.dietary
-                    )
-                    plus_ones_to_insert.append(plus_one.dict())
+                    now = datetime.utcnow()
+                    plus_one_doc: dict[str, object] = {
+                        "guest_id": str(guest_id),
+                        "name": plus_one_data.name,
+                        "phone": plus_one_data.phone,
+                        "email": plus_one_data.email,
+                        "attending": plus_one_data.attending,
+                        "dietary": plus_one_data.dietary,
+                        "sms_opt_in": plus_one_data.sms_opt_in,
+                        "email_opt_in": plus_one_data.email_opt_in,
+                    }
+
+                    # Add opt-in timestamps
+                    if plus_one_data.sms_opt_in is True:
+                        plus_one_doc["sms_opt_in_date"] = now
+                    elif plus_one_data.sms_opt_in is False:
+                        plus_one_doc["sms_opt_out_date"] = now
+
+                    if plus_one_data.email_opt_in is True:
+                        plus_one_doc["email_opt_in_date"] = now
+                    elif plus_one_data.email_opt_in is False:
+                        plus_one_doc["email_opt_out_date"] = now
+
+                    plus_ones_to_insert.append(plus_one_doc)
 
                 if plus_ones_to_insert:
                     await self.plus_one_collection.insert_many(plus_ones_to_insert)
-                
+
                 # Update guest to mark plus_one_submitted as True if at least one plus-one is submitted
                 if new_plus_ones_count > 0:
                     await self.guest_collection.update_one(
@@ -127,7 +142,7 @@ class RSVPService:
         guest_name: str,
         status: str,
         guest_count: int = 1,
-        guest_id: str = None
+        guest_id: str | None = None
     ):
         """Notify the planner about an RSVP update"""
         try:

@@ -71,6 +71,8 @@ from app.api.ai import router as ai_router
 from app.api.planner_notifications import router as planner_notifications_router
 from app.api.tables import router as tables_router
 from app.api.config_errors import router as config_errors_router
+from app.api.admin_activity import router as admin_activity_router
+from app.api.scheduler_jobs import router as scheduler_jobs_router
 
 # Setup logging
 logging.basicConfig(
@@ -266,6 +268,7 @@ app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
 app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
 app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
 app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
+app.include_router(scheduler_jobs_router, prefix="/scheduler", tags=["Scheduler"])  # Scheduled task processing
 
 # Admin routes (authentication required)
 # Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes
@@ -296,6 +299,7 @@ admin_routers = [
     (checklist_admin_router, "Admin"),
     (admin_platform_metrics_router, "ROOT_ADMIN"),
     (backup_router, "ROOT_ADMIN"),
+    (admin_activity_router, "ROOT_ADMIN"),
     (billing_jobs_router, "Admin"),
     (metering_router, "ROOT_ADMIN"),
     (planner_calendar_router, "Planner Calendar"),

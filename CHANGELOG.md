@@ -7,7 +7,221 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Plus-One Email and Opt-In Fields** (`app/models/plus_one.py`, `app/models/rsvp.py`, `app/services/rsvp_service.py`, `app/services/email_service_resend.py`, `app/components/RSVPForm.tsx`, `app/admin/guests/page.tsx`):
+  - Added `email` field to plus-ones so planners can contact them directly
+  - Added `sms_opt_in` and `email_opt_in` fields with consent tracking timestamps
+  - New fields in `PlusOneModel`: `email`, `sms_opt_in`, `sms_opt_in_date`, `sms_opt_out_date`, `email_opt_in`, `email_opt_in_date`, `email_opt_out_date`
+  - Frontend RSVP form now collects plus-one email and shows opt-in checkboxes with compliant consent language
+  - Email reminder service (`send_reminders`) now supports `target_group: "plus-ones"` and `"all"` to send reminders to opted-in plus-ones
+  - Admin guests page displays plus-one contact info (phone, email) and opt-in status badges (SMS, Email)
+  - SMS reminder service already had partial plus-one support; now properly tracks opt-in status
+
+- **Account Setup Name Collection** (`app/api/user_management.py`, `app/setup-account/page.tsx`):
+  - Added `first_name` and `last_name` fields to `AccountSetupModel` with validation
+  - Frontend form now collects planner's name during account setup
+  - Backend passes name fields to `complete_account_setup()` service method
+  - Planners no longer show as "Unnamed Planner" after completing account setup
+
+- **Password Reset Flow** (`app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/api/user_management.py`, `app/services/user_management_service.py`):
+  - Complete forgot password / reset password functionality for users who cannot log in
+  - New API endpoints:
+    - `POST /forgot-password` - Request password reset email (public, no auth)
+    - `GET /reset-password/validate/{token}` - Validate reset token (public)
+    - `POST /reset-password` - Reset password with token (public)
+  - New frontend pages: `/forgot-password` (email input) and `/reset-password` (token validation + password entry)
+  - Added "Forgot password?" link to admin login page
+  - New database fields in `users` collection: `password_reset_token`, `password_reset_expires`, `password_reset_requested_at`
+  - Security: Tokens expire after 1 hour, single-use, same response regardless of email existence, confirmation email after reset
+  - Reference: [OWASP Password Reset Guidelines](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)
+
+- **Admin Activity Logging** (`app/services/admin_activity_service.py`, `app/api/admin_activity.py`, `app/admin/page.tsx`):
+  - New service to track all important admin actions for audit and visibility
+  - Activity types: `invitation_sent`, `invitation_resent`, `invitation_cancelled`, `planner_suspended`, `planner_activated`
+  - New API endpoints:
+    - `GET /admin/activity-log` - Paginated activity log (ROOT_ADMIN)
+    - `GET /admin/activity-log/recent` - Recent activities for dashboard (ROOT_ADMIN)
+  - Added "Recent Admin Activity" section to Platform Health Overview dashboard
+  - New collection `admin_activity_log` with fields: `admin_id`, `action_type`, `title`, `message`, `metadata`, `created_at`
+
+- **Invitation Management Enhancements** (`app/api/user_management.py`, `app/services/user_management_service.py`, `app/admin/users/page.tsx`):
+  - New API endpoints for invitation visibility and control:
+    - `GET /admin/invitations` - List invitations with status filtering (ROOT_ADMIN)
+    - `GET /admin/invitations/stats` - Invitation counts by status (ROOT_ADMIN)
+    - `POST /admin/invitations/{id}/resend` - Resend invitation email with new token (ROOT_ADMIN)
+    - `POST /admin/invitations/{id}/cancel` - Cancel pending invitation (ROOT_ADMIN)
+  - Added "Pending Invitations" stats card to Planner Management page
+  - Added collapsible pending invitations section with email status indicators (sent/failed)
+  - Enhanced `user_invitations` collection: `email_status`, `email_sent_at`, `resend_count`, `last_resent_at`, `cancelled_at`, `cancelled_by`
+
+- **Push Notifications Toggle** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/user_management.py`, `app/models/user.py`, `app/services/planner_notification_service.py`):
+  - Added toggle switch in Account Settings modal for planners to enable/disable push notifications
+  - New `push_notifications_enabled` field in `ProfileInfoModel` (defaults to `True` - opt-out model)
+  - New `_check_push_enabled()` method in planner notification service checks user preference
+  - Ntfy push notifications are skipped if planner has disabled them
+  - Gives planners control over mobile/desktop push alerts while keeping in-app notifications active
+
+### Fixed
+
+- **Account Settings Modal Issues** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/admin_auth.py`):
+  - Fixed "Not Found" error when clicking "Save Changes"
+    - Root cause: Frontend was calling `/admin/profile/info` but endpoint is at `/profile/info` (no `/admin` prefix)
+    - Fixed all API paths (password, email, info, image) to use correct endpoints
+  - Fixed modal positioning (was appearing off-center/inside header dropdown)
+    - Root cause: Modal was rendered inside `<header>` element, interfering with `fixed` positioning
+    - Solution: Used React Portal (`createPortal`) to render modal at document.body level
+    - Added `z-[9999]` to ensure modal appears above all other elements
+  - Improved modal UI design:
+    - Added gradient header background with subtitle
+    - Redesigned tab navigation with pill-style selector
+    - Improved Save button styling with shadow and better spacing
+    - Added smooth animations (fade-in, zoom-in)
+    - Better dark mode support
+  - Added `push_notifications_enabled` field to `GET /admin/profile` response (defaults to `true`)
+
+- **CRITICAL: User Management Operations Failing (Delete/Suspend/Activate)** (`app/services/user_management_service.py`):
+  - Fixed "Failed to delete user" error when attempting to delete a planner from Planner Management page
+  - Root cause: User ID passed as string but MongoDB stores `_id` as ObjectId - query never matched
+  - Added `from bson import ObjectId` conversion to all user-by-ID queries:
+    - `get_user()`: Now converts string to ObjectId before querying
+    - `update_user()`: Now converts string to ObjectId before updating
+    - `delete_user()`: Now converts string to ObjectId before find and delete
+    - `suspend_user()`: Now converts string to ObjectId, also sets `is_suspended: True`
+    - `activate_user()`: Now converts string to ObjectId, also sets `is_suspended: False`
+    - `assign_wedding_to_planner()`: Now converts user_id string to ObjectId
+  - Pattern now matches all other services in codebase (subscription_service, stripe_service, autopilot_service, etc.)
+  - Also added `is_suspended` field to user document for frontend status display
+
+- **Code Quality & Type Safety Fixes** (Multiple files):
+  - **subscription_service.py**: Added missing `subscription_service = SubscriptionService()` singleton instance at end of file
+    - Fixes `"subscription_service" is unknown import symbol` error when importing from other modules
+  - **subscription_service.py**: Removed unused Pydantic model imports (`SubscriptionPlanModel`, `UserSubscriptionModel`, `UsageTrackingModel`, `SubscriptionStatus`, `BillingInterval`)
+    - Service uses raw MongoDB dictionaries instead of these models
+  - **user_management_service.py**: Removed unused `stripe_service` import (line 118)
+    - The `stripe` module is imported directly elsewhere in the file
+  - **user_management_service.py**: Fixed type error for `trial_end_date` timestamp conversion
+    - Changed `datetime.fromtimestamp(subscription.trial_end)` to `datetime.fromtimestamp(subscription.trial_end) if subscription.trial_end else None`
+    - Handles case where `subscription.trial_end` is `None` (no trial period)
+
+- **Root Admin Notification Badge Never Clears** (`app/services/notification_service.py`):
+  - Fixed notification badge showing count that never clears for root admin
+  - Root cause: Root admin was receiving their own notifications (via `target_audience: "all"`)
+  - Added `{"created_by": {"$ne": user_email}}` filter to exclude notifications created by the current user
+  - Modified `get_user_notifications()` at line 293 and `get_user_notification_count()` at line 481
+  - Logical behavior: Creators should not receive their own announcements
+  - Planners unaffected (they don't create notifications)
+
+- **Platform Errors Tab Data Mismatch** (`app/api/admin_platform_metrics.py`):
+  - Fixed Errors tab showing 0 errors while Dashboard showed 236 errors
+  - Root cause: `audit_logs` collection (where HTTP 4xx/5xx errors are stored) was only queried when `acknowledged=None`
+  - When "Unacknowledged" filter was selected (`acknowledged=False`), `audit_logs` were skipped entirely
+  - Changed line 720 from `acknowledged is None` to `acknowledged is not True`
+  - Now includes `audit_logs` for both "All" and "Unacknowledged" views, excludes only for "Acknowledged" view
+  - `audit_logs` entries don't have an `acknowledged` field, so they're inherently unacknowledged
+
+- **PlannerNotificationTypes Type Errors** (`app/models/planner_notification.py`):
+  - Fixed 8 type errors in `planner_notification_service.py` where notification type constants were incompatible with `NotificationType` Literal
+  - Root cause: Type checker saw `PlannerNotificationTypes.FORM_SUBMISSION` as `str`, not `Literal["form_submission"]`
+  - Solution: Added `Final[Literal["..."]]` type annotations to all class constants
+  - Changed from `FORM_SUBMISSION: Literal["form_submission"]` to `FORM_SUBMISSION: Final[Literal["form_submission"]]`
+  - `Final` tells type checker the value is immutable and should preserve its literal type
+  - Affected constants: `FORM_SUBMISSION`, `RSVP_UPDATE`, `GUEST_MESSAGE`, `PAYMENT_RECEIVED`, `PAYMENT_FAILED`, `CONTRACT_SIGNED`, `VENDOR_RESPONSE`, `REMINDER`, `SYSTEM`
+
+- **Undefined Function in Metrics Snapshot** (`app/api/admin_platform_metrics.py:578`):
+  - Fixed `NameError: name 'get_platform_metrics' is not defined` in `save_metrics_snapshot` endpoint
+  - Changed `await get_platform_metrics(current_user)` to `await get_platform_health(current_user)`
+  - The function was renamed but this call site was not updated
+
+- **Frontend Password Validation Mismatch** (`app/setup-account/page.tsx`, `app/reset-password/page.tsx`):
+  - Fixed password validation in account setup and reset pages to match backend requirements
+  - Added visual password requirements checklist with real-time validation
+  - Password now requires: 8+ characters, uppercase, lowercase, number, special character
+  - Prevents user frustration from submitting valid-looking passwords that fail backend validation
+  - Reference: Backend validators in `app/api/user_management.py:AccountSetupModel`, `ResetPasswordModel`
+
+- **Success Message Not Displayed on Login** (`app/admin/login/page.tsx`):
+  - Fixed login page to display success messages from URL query params
+  - Messages now appear after account setup completion (`?message=Account setup completed!`)
+  - Messages now appear after password reset (`?message=Password reset successful!`)
+  - Auto-dismiss after 10 seconds with manual close button
+  - Styled with emerald green success indicator matching app design
+
+- **SAAS Admin Dashboard Hardcoded Statistics** (`app/admin/saas/page.tsx`):
+  - Fixed "Total Weddings" showing hardcoded value `12` instead of actual database count
+  - Fixed "Monthly Revenue" showing hardcoded value `$247` instead of real revenue data
+  - Fixed "Plan Distribution" showing hardcoded user counts (`0 users`/`1 user`) instead of actual subscribers per plan
+  - Added API calls to existing `/saas/analytics/overview` and `/saas/analytics/revenue` endpoints
+  - Added `AnalyticsOverview`, `PlanBreakdown`, and `RevenueAnalytics` TypeScript interfaces
+  - Dashboard now displays real-time statistics from the database
+
+- **Planner Management Actions Dropdown Clipped** (`app/admin/users/page.tsx`):
+  - Fixed Actions column 3-dot menu dropdown being cut off by parent container
+  - Removed `overflow-hidden` from planners table card wrapper (line 919)
+  - Changed table container from `overflow-x-auto` to `overflow-visible` (line 942)
+  - Dropdown menu now renders fully visible outside the table boundaries
+
+- **Profile Picture Upload Not Saving** (`app/api/user_management.py`):
+  - Fixed profile image URL construction missing `https://` protocol prefix
+  - URLs were being constructed as `media.domain.com/path` instead of `https://media.domain.com/path`
+  - Added validation to ensure `MEDIA_DOMAIN` environment variable is set
+  - Fixed both upload and delete endpoints to handle URL protocol consistently
+
+- **Root Admin Settings Page UX** (`app/admin/components/TopHeader.tsx`, `app/admin/components/AccountSettingsModal.tsx`):
+  - Converted ROOT_ADMIN settings from separate page to popup modal
+  - Added dropdown menu to TopHeader username area with "Account Settings" and "Logout" options
+  - Created `AccountSettingsModal` component with Profile Info, Change Password, and Change Email tabs
+  - Profile picture upload/delete now works directly in the modal
+  - Improves UX by matching planner settings popup pattern
+
+- **Root Admin Subscription Management 404 Errors** (`app/admin/saas/page.tsx`):
+  - Removed incorrect `/admin` prefix from subscription API calls
+  - Changed `/admin/users/${id}/subscription` to `/users/${id}/subscription` at lines 705, 731, 767, 778
+  - Fixes: Activate planner, deactivate planner, and assign plan operations now work correctly
+  - Reference: subscription_router is registered without `/admin` prefix in `main.py`
+
+- **Subscription Plans Not Showing in Admin** (`app/services/subscription_service.py:58`):
+  - Fixed sort field mismatch: changed `display_order` to `sort_order`
+  - Plans query now uses correct field name matching the model definition
+  - Reference: `app/models/subscription.py:52` defines `sort_order: int`
+
+- **Subscription Seed Script Errors** (`scripts/seed_subscription_plans.py`):
+  - Added explicit null check for stripe module before accessing `stripe.api_key` (fixes Pylance error)
+  - Updated exception handling to use `from stripe import StripeError` for Stripe v13+ compatibility
+  - Replaced all emoji characters with text-based prefixes for professional logging:
+    - `[SEED]`, `[INFO]`, `[OK]`, `[WARN]`, `[ERROR]`, `[DEBUG]`
+    - `[EXISTS]`, `[CREATED]`, `[UPDATED]`, `[SKIP]`, `[PLAN]`
+    - `[SUMMARY]`, `[VERIFY]`, `[DONE]`
+
+### Changed
+
+- **Custom Trial Duration for Planners** (`app/admin/saas/page.tsx`):
+  - Added prompt for trial days when assigning subscriptions (lines 714, 787)
+  - ROOT_ADMIN can now set custom trial periods (e.g., 150 days for 5-month trial)
+  - Replaces hardcoded 14-day trial default
+
 ### Security
+
+- **Multi-Tenant Data Isolation** (Multiple files):
+  - **Guest Search Endpoint** (`app/api/guest.py`):
+    - `/invite/search` now requires authentication via `require_wedding_planner_only`
+    - Added mandatory `wedding_id` parameter to prevent cross-wedding guest enumeration
+    - Added ownership verification via `check_wedding_access()` before returning results
+  - **Guest Service** (`app/services/guest_service.py`):
+    - `get_guest_by_phone_or_name()` now accepts and filters by `wedding_id`
+    - Prevents planners from accessing guests outside their assigned weddings
+  - **Gallery Admin Endpoints** (`app/api/gallery_admin.py`):
+    - Added `verify_wedding_access_by_slug()` helper for ownership validation
+    - All endpoints now validate wedding ownership via `assigned_planner_email` field
+    - `/gallery/upload-url`: Validates planner access before generating presigned URL
+    - `/gallery/file-url`: Extracts wedding_slug from key path and validates ownership
+    - `DELETE /gallery`: Validates ownership before allowing file deletion
+    - `/gallery/list`: Filters results by wedding access, returns empty for unauthorized
+    - `/gallery/upload`: Validates wedding access before accepting uploads
+  - **OTP Rate Limiting** (`app/services/otp_service.py`):
+    - Added rate limiting to `send_otp_by_contact()` method (1 OTP per minute per guest)
+    - Prevents OTP spam attacks while keeping endpoint public for guest verification
+    - Uses existing OTP expiry (5 min) minus 4 min buffer to calculate rate limit window
 
 - **CRITICAL: Settings Validation** (`app/core/settings.py`):
   - Removed insecure default `secret_key="changeme"` - now required from environment

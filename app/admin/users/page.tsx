@@ -29,7 +29,13 @@ import {
   X,
   Clock,
   CreditCard,
-  Gift
+  Gift,
+  Send,
+  ChevronDown,
+  ChevronUp,
+  Ban,
+  CheckCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 interface Planner {
@@ -70,6 +76,32 @@ interface InviteFormData {
   admin_notes: string;
 }
 
+interface PendingInvitation {
+  _id: string;
+  email: string;
+  invite_data: {
+    plan_id?: string;
+    trial_days?: number;
+    company_name?: string;
+    admin_notes?: string;
+  };
+  invited_by: string;
+  created_at: string;
+  expires_at: string;
+  status: 'pending' | 'completed' | 'expired' | 'cancelled';
+  email_status: 'pending' | 'sent' | 'failed';
+  resend_count: number;
+  plan_name?: string;
+}
+
+interface InvitationStats {
+  pending: number;
+  completed: number;
+  expired: number;
+  cancelled: number;
+  total: number;
+}
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const { token, userProfile } = useAdmin();
@@ -93,6 +125,14 @@ export default function AdminUsersPage() {
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
   const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
   const [defaultTrialDays, setDefaultTrialDays] = useState<number>(14); // Fallback, fetched from SAAS config
+
+  // Pending invitations state
+  const [pendingInvitations, setPendingInvitations] = useState<PendingInvitation[]>([]);
+  const [invitationStats, setInvitationStats] = useState<InvitationStats>({ pending: 0, completed: 0, expired: 0, cancelled: 0, total: 0 });
+  const [showPendingInvitations, setShowPendingInvitations] = useState(true);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<{ message: string; emailStatus?: string } | null>(null);
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
@@ -180,11 +220,130 @@ export default function AdminUsersPage() {
     }
   }, [token, inviteForm.plan_id]);
 
+  const fetchPendingInvitations = useCallback(async () => {
+    if (!token) return;
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/admin/invitations?status=pending&limit=50`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      setPendingInvitations(data.invitations || []);
+    } catch (err) {
+      console.error('Error fetching pending invitations:', err);
+    }
+  }, [token]);
+
+  const fetchInvitationStats = useCallback(async () => {
+    if (!token) return;
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/admin/invitations/stats`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      setInvitationStats(data);
+    } catch (err) {
+      console.error('Error fetching invitation stats:', err);
+    }
+  }, [token]);
+
+  const handleResendInvitation = async (invitationId: string) => {
+    setResendingId(invitationId);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/admin/invitations/${invitationId}/resend`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to resend invitation');
+      }
+
+      const result = await response.json();
+      setSuccessToast({
+        message: result.message || 'Invitation resent successfully',
+        emailStatus: 'sent'
+      });
+
+      // Refresh data
+      fetchPendingInvitations();
+      fetchInvitationStats();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend invitation');
+    } finally {
+      setResendingId(null);
+    }
+  };
+
+  const handleCancelInvitation = async (invitationId: string) => {
+    if (!confirm('Are you sure you want to cancel this invitation?')) return;
+
+    setCancellingId(invitationId);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/admin/invitations/${invitationId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Cancelled by admin' }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to cancel invitation');
+      }
+
+      setSuccessToast({
+        message: 'Invitation cancelled successfully',
+      });
+
+      // Refresh data
+      fetchPendingInvitations();
+      fetchInvitationStats();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel invitation');
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
   useEffect(() => {
     fetchPlanners();
     fetchPlans();
     fetchTrialSettings();
-  }, [fetchPlanners, fetchPlans, fetchTrialSettings]);
+    fetchPendingInvitations();
+    fetchInvitationStats();
+  }, [fetchPlanners, fetchPlans, fetchTrialSettings, fetchPendingInvitations, fetchInvitationStats]);
+
+  // Auto-hide success toast
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
 
   // Close action menu when clicking outside
   useEffect(() => {
@@ -245,10 +404,17 @@ export default function AdminUsersPage() {
         trial_end_behavior: 'pause',
         admin_notes: ''
       });
-      fetchPlanners();
 
-      // Optionally show success toast (if you have a toast system)
-      console.log(successMessage);
+      // Show success toast with email status
+      setSuccessToast({
+        message: successMessage,
+        emailStatus: result.email_status || 'sent'
+      });
+
+      // Refresh all data
+      fetchPlanners();
+      fetchPendingInvitations();
+      fetchInvitationStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to invite planner');
     } finally {
@@ -389,6 +555,45 @@ export default function AdminUsersPage() {
       </PageHeader>
 
       <div>
+        {/* Success Toast */}
+        <AnimatePresence>
+          {successToast && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="fixed top-4 right-4 z-50 bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-sm rounded-2xl p-4 shadow-lg max-w-md"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                  {successToast.emailStatus === 'sent' ? (
+                    <CheckCircle className="w-5 h-5 text-emerald-400" />
+                  ) : successToast.emailStatus === 'failed' ? (
+                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                  ) : (
+                    <CheckCircle className="w-5 h-5 text-emerald-400" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <p className="text-emerald-300">{successToast.message}</p>
+                  {successToast.emailStatus && (
+                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                      <Mail className="w-3 h-3" />
+                      Email status: {' '}
+                      <span className={successToast.emailStatus === 'sent' ? 'text-emerald-400' : successToast.emailStatus === 'failed' ? 'text-red-400' : 'text-amber-400'}>
+                        {successToast.emailStatus}
+                      </span>
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setSuccessToast(null)} className="text-emerald-400 hover:text-emerald-300">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Error Display */}
         <AnimatePresence>
           {error && (
@@ -412,7 +617,7 @@ export default function AdminUsersPage() {
         </AnimatePresence>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -466,13 +671,198 @@ export default function AdminUsersPage() {
               </div>
             </div>
           </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="group relative overflow-hidden rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 p-6 hover:bg-white/10 transition-all cursor-pointer"
+            onClick={() => setShowPendingInvitations(!showPendingInvitations)}
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-violet-500/20 to-purple-500/20 rounded-full blur-2xl group-hover:scale-150 transition-transform" />
+            <div className="relative flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center shadow-lg shadow-violet-500/30">
+                <Send className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-400 font-medium">Pending Invites</p>
+                <p className="text-4xl font-bold text-violet-400">{invitationStats.pending}</p>
+              </div>
+            </div>
+            {invitationStats.pending > 0 && (
+              <div className="absolute bottom-2 right-2 text-violet-400">
+                {showPendingInvitations ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
+            )}
+          </motion.div>
         </div>
+
+        {/* Pending Invitations Section */}
+        <AnimatePresence>
+          {showPendingInvitations && pendingInvitations.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              className="overflow-hidden"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl bg-violet-500/5 backdrop-blur-sm border border-violet-500/20 overflow-hidden"
+              >
+                <div className="px-6 py-4 border-b border-violet-500/20 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Send className="w-5 h-5 text-violet-400" />
+                    <h3 className="font-semibold text-white">Pending Invitations</h3>
+                    <span className="px-2 py-0.5 text-xs bg-violet-500/20 text-violet-400 rounded-full">
+                      {pendingInvitations.length}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowPendingInvitations(false)}
+                    className="text-slate-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-violet-500/10">
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Email
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Plan
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Trial
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Email Status
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Sent
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Expires
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-violet-500/5">
+                      {pendingInvitations.map((invitation) => (
+                        <tr key={invitation._id} className="hover:bg-violet-500/5 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                                <Mail className="w-4 h-4 text-violet-400" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-white">{invitation.email}</p>
+                                {invitation.invite_data?.company_name && (
+                                  <p className="text-xs text-slate-500">{invitation.invite_data.company_name}</p>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="px-2 py-1 text-xs bg-slate-500/20 text-slate-300 rounded-lg">
+                              {invitation.plan_name || 'Default'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="text-sm text-slate-300">
+                              {invitation.invite_data?.trial_days || 0} days
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-full ${
+                              invitation.email_status === 'sent'
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : invitation.email_status === 'failed'
+                                ? 'bg-red-500/20 text-red-400'
+                                : 'bg-amber-500/20 text-amber-400'
+                            }`}>
+                              {invitation.email_status === 'sent' ? (
+                                <CheckCircle className="w-3 h-3" />
+                              ) : invitation.email_status === 'failed' ? (
+                                <AlertTriangle className="w-3 h-3" />
+                              ) : (
+                                <Clock className="w-3 h-3" />
+                              )}
+                              {invitation.email_status}
+                              {invitation.resend_count > 0 && (
+                                <span className="ml-1 opacity-70">({invitation.resend_count}x)</span>
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="text-sm text-slate-400">
+                              {new Date(invitation.created_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="text-sm text-slate-400">
+                              {new Date(invitation.expires_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleResendInvitation(invitation._id)}
+                                disabled={resendingId === invitation._id}
+                                className="p-2 rounded-lg bg-violet-500/20 text-violet-400 hover:bg-violet-500/30 transition-all disabled:opacity-50"
+                                title="Resend Invitation"
+                              >
+                                {resendingId === invitation._id ? (
+                                  <div className="w-4 h-4 border-2 border-violet-400/30 border-t-violet-400 rounded-full animate-spin" />
+                                ) : (
+                                  <RefreshCw className="w-4 h-4" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleCancelInvitation(invitation._id)}
+                                disabled={cancellingId === invitation._id}
+                                className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all disabled:opacity-50"
+                                title="Cancel Invitation"
+                              >
+                                {cancellingId === invitation._id ? (
+                                  <div className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+                                ) : (
+                                  <Ban className="w-4 h-4" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Filters & Search */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
+          transition={{ delay: 0.5 }}
           className="rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 p-6"
         >
           <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
@@ -525,8 +915,8 @@ export default function AdminUsersPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 overflow-hidden"
+          transition={{ delay: 0.6 }}
+          className="rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10"
         >
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -549,7 +939,7 @@ export default function AdminUsersPage() {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-visible">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/10">

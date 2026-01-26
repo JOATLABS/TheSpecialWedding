@@ -142,7 +142,7 @@ export default function PlatformMetricsPage(): ReactElement {
     setError(null);
 
     try {
-      const data = await fetchWithAuth(`/admin/analytics/platform?timeframe=${timeframe}`);
+      const data = await fetchWithAuth(`/saas/analytics/platform?timeframe=${timeframe}`);
       setMetrics(data);
     } catch (err) {
       console.error('Failed to load platform metrics', err);

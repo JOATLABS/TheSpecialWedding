@@ -1,12 +1,12 @@
 from fastapi import HTTPException
 from app.core.database import mongo
-from typing import List, Optional
-from datetime import datetime, timedelta
+from typing import List, Optional, Any, Dict
+from datetime import datetime, timedelta, timezone
 import secrets
 import string
 import os
 import logging
-#import requests
+
 from app.utils.auth_utils import get_password_hash, verify_password
 from app.services.email_service_resend import ResendEmailService
 from app.core.events import event_bus, EventFactory
@@ -46,7 +46,7 @@ class UserManagementService:
     def generate_invitation_token(self) -> str:
         """Generate a secure invitation token"""
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
-    
+
     async def get_trial_settings(self) -> dict:
         """Get trial settings from SAAS config"""
         # Return defaults (can be extended to read from database later)
@@ -56,7 +56,7 @@ class UserManagementService:
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-        
+
     async def check_previous_trial_usage(self, email: str) -> bool:
         """Check if email has been used for a trial before"""
         try:
@@ -115,7 +115,6 @@ class UserManagementService:
             stripe_customer_id = None
             if trial_days > 0 and plan_id:
                 try:
-                    from app.services.stripe_service import stripe_service
                     from app.core.settings import settings
 
                     if settings.stripe_enabled and settings.stripe_secret_key:
@@ -152,14 +151,19 @@ class UserManagementService:
                 "expires_at": datetime.utcnow() + timedelta(days=7),
                 "status": "pending",
                 # Store Stripe customer ID for use during account setup
-                "stripe_customer_id": stripe_customer_id
+                "stripe_customer_id": stripe_customer_id,
+                # Email tracking fields
+                "email_status": "pending",
+                "email_sent_at": None,
+                "resend_count": 0
             }
 
-            await self.invitations_collection.insert_one(invitation)
+            result = await self.invitations_collection.insert_one(invitation)
+            invitation_id = str(result.inserted_id)
 
             # Send invitation email with trial info if applicable
             trial_info = f" with a {trial_days}-day free trial" if trial_days > 0 else ""
-            await self.send_invitation_email(
+            email_success = await self.send_invitation_email(
                 email,
                 invitation_token,
                 role,
@@ -168,12 +172,44 @@ class UserManagementService:
                 trial_days=trial_days
             )
 
+            # Update email status
+            email_status = "sent" if email_success else "failed"
+            await self.invitations_collection.update_one(
+                {"_id": result.inserted_id},
+                {"$set": {
+                    "email_status": email_status,
+                    "email_sent_at": datetime.utcnow() if email_success else None
+                }}
+            )
+
+            # Log activity
+            try:
+                from app.services.admin_activity_service import admin_activity_service
+                # Get plan name for activity log
+                plan_name = "Unknown"
+                if plan_id:
+                    plans_collection = mongo.db["subscription_plans"]
+                    plan = await plans_collection.find_one({"_id": plan_id}, {"name": 1})
+                    if plan:
+                        plan_name = plan.get("name", "Unknown")
+
+                await admin_activity_service.log_invitation_sent(
+                    admin_id=inviter_email,
+                    email=email,
+                    plan_name=plan_name,
+                    trial_days=trial_days,
+                    invitation_id=invitation_id
+                )
+            except Exception as log_error:
+                self.logger.warning(f"Failed to log invitation activity: {str(log_error)}")
+
             return {
                 "message": f"Invitation sent to {email}{trial_info}",
-                "invitation_id": str(invitation["_id"]),
+                "invitation_id": invitation_id,
                 "expires_at": invitation["expires_at"],
                 "trial_days": trial_days,
-                "stripe_customer_created": stripe_customer_id is not None
+                "stripe_customer_created": stripe_customer_id is not None,
+                "email_status": email_status
             }
         except HTTPException:
             raise
@@ -240,9 +276,19 @@ class UserManagementService:
     async def get_user(self, user_id: str) -> dict:
         """Get user by ID"""
         try:
-            user = await self.users_collection.find_one({"_id": user_id}, {"password_hash": 0})
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
+            user = await self.users_collection.find_one({"_id": obj_id}, {"password_hash": 0})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
+            # Convert ObjectId to string for JSON serialization
+            user["_id"] = str(user["_id"])
             return user
         except HTTPException:
             raise
@@ -252,6 +298,14 @@ class UserManagementService:
     async def update_user(self, user_id: str, update_data: dict) -> dict:
         """Update user details"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             # Remove protected fields
             protected_fields = ["_id", "email", "password_hash", "created_at"]
             for field in protected_fields:
@@ -261,7 +315,7 @@ class UserManagementService:
             update_data["updated_at"] = datetime.utcnow()
 
             result = await self.users_collection.update_one(
-                {"_id": user_id},
+                {"_id": obj_id},
                 {"$set": update_data}
             )
 
@@ -278,8 +332,16 @@ class UserManagementService:
     async def delete_user(self, user_id: str) -> dict:
         """Delete user"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             # Get user first to check if they exist and get their email
-            user = await self.users_collection.find_one({"_id": user_id})
+            user = await self.users_collection.find_one({"_id": obj_id})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
             # Check if user has assigned weddings
@@ -291,7 +353,7 @@ class UserManagementService:
                 )
 
             # Delete user
-            result = await self.users_collection.delete_one({"_id": user_id})
+            result = await self.users_collection.delete_one({"_id": obj_id})
 
             if result.deleted_count == 0:
                 raise HTTPException(status_code=404, detail="User not found")
@@ -306,15 +368,23 @@ class UserManagementService:
     async def assign_wedding_to_planner(self, user_id: str, wedding_id: str) -> dict:
         """Assign a wedding to a planner"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId for user
+            try:
+                user_obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             # Get user to verify they exist and are a planner
-            user = await self.users_collection.find_one({"_id": user_id})
+            user = await self.users_collection.find_one({"_id": user_obj_id})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
             if user["role"] != "wedding_planner":
                 raise HTTPException(status_code=400, detail="User is not a wedding planner")
 
-            # Update wedding with assigned planner
+            # Update wedding with assigned planner (wedding_id may be string slug or ObjectId)
             result = await self.weddings_collection.update_one(
                 {"_id": wedding_id},
                 {"$set": {"assigned_planner_email": user["email"]}}
@@ -352,9 +422,17 @@ class UserManagementService:
     async def suspend_user(self, user_id: str) -> dict:
         """Suspend user account"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             result = await self.users_collection.update_one(
-                {"_id": user_id},
-                {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
+                {"_id": obj_id},
+                {"$set": {"is_active": False, "is_suspended": True, "updated_at": datetime.utcnow()}}
             )
 
             if result.matched_count == 0:
@@ -370,9 +448,17 @@ class UserManagementService:
     async def activate_user(self, user_id: str) -> dict:
         """Activate user account"""
         try:
+            from bson import ObjectId
+
+            # Convert string to ObjectId
+            try:
+                obj_id = ObjectId(user_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+
             result = await self.users_collection.update_one(
-                {"_id": user_id},
-                {"$set": {"is_active": True, "updated_at": datetime.utcnow()}}
+                {"_id": obj_id},
+                {"$set": {"is_active": True, "is_suspended": False, "updated_at": datetime.utcnow()}}
             )
 
             if result.matched_count == 0:
@@ -408,9 +494,9 @@ class UserManagementService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error validating token: {str(e)}")
 
-    async def complete_account_setup(self, token: str, password: str) -> dict:
+    async def complete_account_setup(self, token: str, password: str, first_name: str, last_name: str) -> dict:
         """
-        Complete account setup with password.
+        Complete account setup with password and name.
 
         If the invitation includes trial_days > 0, creates a Stripe Subscription
         with trial period so usage can be tracked and billing starts automatically
@@ -493,7 +579,7 @@ class UserManagementService:
                                 }
                             )
                             stripe_subscription_id = subscription.id
-                            trial_end_date = datetime.fromtimestamp(subscription.trial_end)
+                            trial_end_date = datetime.fromtimestamp(subscription.trial_end) if subscription.trial_end else None
                             self.logger.info(
                                 f"Created Stripe subscription {stripe_subscription_id} with "
                                 f"{trial_days}-day trial for {invitation['email']}"
@@ -530,6 +616,8 @@ class UserManagementService:
                 "email": invitation["email"],
                 "password_hash": password_hash,
                 "role": invitation["role"],
+                "first_name": first_name,
+                "last_name": last_name,
                 "company_name": invite_data.get("company_name", ""),
                 "plan_id": plan_id,
                 "subscription_status": subscription_status,
@@ -560,6 +648,19 @@ class UserManagementService:
                     )
                 except Exception as sub_error:
                     self.logger.error(f"Failed to create subscription record: {str(sub_error)}")
+                    # ROLLBACK: Delete the user document since subscription failed
+                    await self.users_collection.delete_one({"_id": result.inserted_id})
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Account created but subscription setup failed. Please try again or contact support."
+                    )
+            elif trial_days > 0 and not plan_id:
+                # Trial requested but no plan specified - rollback
+                await self.users_collection.delete_one({"_id": result.inserted_id})
+                raise HTTPException(
+                    status_code=400,
+                    detail="Trial requires a subscription plan. Please contact the administrator."
+                )
 
             # Mark invitation as completed
             await self.invitations_collection.update_one(
@@ -795,7 +896,7 @@ class UserManagementService:
         </body>
         </html>
         """
-        
+
     def _generate_verification_email_html(self, email: str, first_name: str, verification_url: str) -> str:
         """Generate email verification email HTML"""
         return f"""
@@ -869,7 +970,7 @@ class UserManagementService:
         </body>
         </html>
         """
-        
+
     def _generate_welcome_email_html(self, email: str, first_name: str, role: str, company_name: str) -> str:
         """Generate welcome email HTML for new users"""
         role_display = role.replace("_", " ").title()
@@ -1148,6 +1249,9 @@ class UserManagementService:
             # Handle profile image URL (can be set to None to remove)
             if "profile_image_url" in profile_data:
                 update_data["profile_image_url"] = profile_data["profile_image_url"]
+            # Handle push notifications preference
+            if "push_notifications_enabled" in profile_data:
+                update_data["push_notifications_enabled"] = profile_data["push_notifications_enabled"]
 
             if not update_data:
                 raise HTTPException(status_code=400, detail="No valid profile data provided")
@@ -1180,3 +1284,630 @@ class UserManagementService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating profile: {str(e)}")
+
+    # ==================== INVITATION MANAGEMENT ====================
+
+    async def list_invitations(
+        self,
+        status: Optional[str] = None,
+        page: int = 1,
+        limit: int = 20
+    ) -> dict:
+        """
+        List invitations with optional status filter.
+
+        Args:
+            status: Filter by status (pending, completed, expired, cancelled)
+            page: Page number (1-indexed)
+            limit: Items per page
+        """
+        try:
+            query: Dict[str, Any] = {}
+
+            if status:
+                if status == "expired":
+                    # Expired = pending but past expires_at
+                    query["status"] = "pending"
+                    query["expires_at"] = {"$lt": datetime.now(timezone.utc)}
+                elif status == "pending":
+                    # Pending = status pending AND not expired
+                    query["status"] = "pending"
+                    query["expires_at"] = {"$gt": datetime.now(timezone.utc)}
+                else:
+                    query["status"] = status
+
+            total = await self.invitations_collection.count_documents(query)
+            skip = (page - 1) * limit
+            pages = (total + limit - 1) // limit if total > 0 else 0
+
+            # Get subscription plans for enrichment
+            plans_collection = mongo.db["subscription_plans"]
+            plans_cursor = plans_collection.find({}, {"_id": 1, "name": 1})
+            plans_map = {}
+            async for plan in plans_cursor:
+                plans_map[str(plan["_id"])] = plan.get("name", "Unknown")
+
+            cursor = self.invitations_collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            invitations = []
+
+            async for doc in cursor:
+                invite_data = doc.get("invite_data", {})
+                plan_id = invite_data.get("plan_id")
+
+                # Determine actual status (check if expired)
+                actual_status = doc.get("status", "pending")
+                if actual_status == "pending" and doc.get("expires_at", datetime.utcnow()) < datetime.utcnow():
+                    actual_status = "expired"
+
+                invitations.append({
+                    "_id": str(doc["_id"]),
+                    "id": str(doc["_id"]),
+                    "email": doc["email"],
+                    "role": doc.get("role", "wedding_planner"),
+                    "invite_data": {
+                        "plan_id": plan_id,
+                        "plan_name": plans_map.get(plan_id, "Unknown") if plan_id else None,
+                        "trial_days": invite_data.get("trial_days", 0),
+                        "company_name": invite_data.get("company_name"),
+                        "trial_end_behavior": invite_data.get("trial_end_behavior", "pause"),
+                        "admin_notes": invite_data.get("admin_notes")
+                    },
+                    "invited_by": doc.get("invited_by"),
+                    "created_at": doc["created_at"].isoformat() if doc.get("created_at") else None,
+                    "expires_at": doc["expires_at"].isoformat() if doc.get("expires_at") else None,
+                    "status": actual_status,
+                    "email_status": doc.get("email_status", "sent"),
+                    "email_sent_at": doc["email_sent_at"].isoformat() if doc.get("email_sent_at") else None,
+                    "resend_count": doc.get("resend_count", 0),
+                    "last_resent_at": doc["last_resent_at"].isoformat() if doc.get("last_resent_at") else None,
+                    "completed_at": doc["completed_at"].isoformat() if doc.get("completed_at") else None
+                })
+
+            return {
+                "invitations": invitations,
+                "total": total,
+                "page": page,
+                "pages": pages
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error listing invitations: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error listing invitations: {str(e)}")
+
+    async def get_invitation_stats(self) -> dict:
+        """Get invitation counts by status"""
+        try:
+            now = datetime.utcnow()
+
+            # Pending (not expired)
+            pending = await self.invitations_collection.count_documents({
+                "status": "pending",
+                "expires_at": {"$gt": now}
+            })
+
+            # Expired (pending but past expires_at)
+            expired = await self.invitations_collection.count_documents({
+                "status": "pending",
+                "expires_at": {"$lt": now}
+            })
+
+            # Completed
+            completed = await self.invitations_collection.count_documents({
+                "status": "completed"
+            })
+
+            # Cancelled
+            cancelled = await self.invitations_collection.count_documents({
+                "status": "cancelled"
+            })
+
+            return {
+                "pending": pending,
+                "expired": expired,
+                "completed": completed,
+                "cancelled": cancelled,
+                "total": pending + expired + completed + cancelled
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error getting invitation stats: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error getting invitation stats: {str(e)}")
+
+    async def resend_invitation(self, invitation_id: str, resent_by: str) -> dict:
+        """
+        Resend invitation email with a new token.
+
+        Args:
+            invitation_id: The invitation document ID
+            resent_by: Email of admin who is resending
+        """
+        try:
+            from bson import ObjectId
+
+            try:
+                obj_id = ObjectId(invitation_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid invitation ID")
+
+            # Find the invitation
+            invitation = await self.invitations_collection.find_one({"_id": obj_id})
+
+            if not invitation:
+                raise HTTPException(status_code=404, detail="Invitation not found")
+
+            if invitation.get("status") == "completed":
+                raise HTTPException(status_code=400, detail="Cannot resend completed invitation")
+
+            if invitation.get("status") == "cancelled":
+                raise HTTPException(status_code=400, detail="Cannot resend cancelled invitation")
+
+            # Generate new token and reset expiration
+            new_token = self.generate_invitation_token()
+            new_expires = datetime.utcnow() + timedelta(days=7)
+
+            # Send new email
+            invite_data = invitation.get("invite_data", {})
+            email_success = await self.send_invitation_email(
+                invitation["email"],
+                new_token,
+                invitation.get("role", "wedding_planner"),
+                resent_by,
+                invite_data.get("company_name"),
+                trial_days=invite_data.get("trial_days", 0)
+            )
+
+            # Update invitation record
+            update_data = {
+                "token": new_token,
+                "expires_at": new_expires,
+                "status": "pending",
+                "email_status": "sent" if email_success else "failed",
+                "last_resent_at": datetime.utcnow(),
+                "resent_by": resent_by
+            }
+
+            await self.invitations_collection.update_one(
+                {"_id": obj_id},
+                {
+                    "$set": update_data,
+                    "$inc": {"resend_count": 1}
+                }
+            )
+
+            # Log activity
+            try:
+                from app.services.admin_activity_service import admin_activity_service
+                await admin_activity_service.log_invitation_resent(
+                    admin_id=resent_by,
+                    email=invitation["email"],
+                    invitation_id=invitation_id
+                )
+            except Exception as log_error:
+                self.logger.warning(f"Failed to log invitation resent activity: {str(log_error)}")
+
+            return {
+                "message": f"Invitation resent to {invitation['email']}",
+                "invitation_id": invitation_id,
+                "email_status": "sent" if email_success else "failed",
+                "new_expires_at": new_expires.isoformat()
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error resending invitation: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error resending invitation: {str(e)}")
+
+    async def cancel_invitation(
+        self,
+        invitation_id: str,
+        cancelled_by: str,
+        reason: Optional[str] = None
+    ) -> dict:
+        """
+        Cancel a pending invitation.
+
+        Args:
+            invitation_id: The invitation document ID
+            cancelled_by: Email of admin who is cancelling
+            reason: Optional reason for cancellation
+        """
+        try:
+            from bson import ObjectId
+
+            try:
+                obj_id = ObjectId(invitation_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid invitation ID")
+
+            # Find the invitation
+            invitation = await self.invitations_collection.find_one({"_id": obj_id})
+
+            if not invitation:
+                raise HTTPException(status_code=404, detail="Invitation not found")
+
+            if invitation.get("status") == "completed":
+                raise HTTPException(status_code=400, detail="Cannot cancel completed invitation")
+
+            if invitation.get("status") == "cancelled":
+                raise HTTPException(status_code=400, detail="Invitation already cancelled")
+
+            # Update invitation status
+            await self.invitations_collection.update_one(
+                {"_id": obj_id},
+                {
+                    "$set": {
+                        "status": "cancelled",
+                        "cancelled_at": datetime.utcnow(),
+                        "cancelled_by": cancelled_by,
+                        "cancellation_reason": reason
+                    }
+                }
+            )
+
+            # If Stripe customer was pre-created, optionally delete it
+            stripe_customer_id = invitation.get("stripe_customer_id")
+            if stripe_customer_id:
+                try:
+                    from app.core.settings import settings
+                    if settings.stripe_enabled and settings.stripe_secret_key:
+                        import stripe
+                        stripe.api_key = settings.stripe_secret_key
+                        # Don't delete, just update metadata to mark as cancelled
+                        stripe.Customer.modify(
+                            stripe_customer_id,
+                            metadata={"invitation_cancelled": "true", "cancelled_at": datetime.utcnow().isoformat()}
+                        )
+                except Exception as stripe_error:
+                    self.logger.warning(f"Failed to update Stripe customer for cancelled invitation: {str(stripe_error)}")
+
+            # Log activity
+            try:
+                from app.services.admin_activity_service import admin_activity_service
+                await admin_activity_service.log_invitation_cancelled(
+                    admin_id=cancelled_by,
+                    email=invitation["email"],
+                    reason=reason,
+                    invitation_id=invitation_id
+                )
+            except Exception as log_error:
+                self.logger.warning(f"Failed to log invitation cancelled activity: {str(log_error)}")
+
+            return {
+                "message": f"Invitation for {invitation['email']} cancelled",
+                "invitation_id": invitation_id,
+                "cancelled_at": datetime.utcnow().isoformat()
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error cancelling invitation: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error cancelling invitation: {str(e)}")
+
+    # ==================== PASSWORD RESET ====================
+
+    async def request_password_reset(self, email: str) -> dict:
+        """
+        Request a password reset. Generates a reset token and sends email.
+
+        Args:
+            email: The user's email address
+
+        Returns:
+            Success message (same message whether user exists or not for security)
+        """
+        try:
+            # Always return same message for security (don't reveal if email exists)
+            success_message = {
+                "message": "If an account with this email exists, you will receive a password reset link shortly.",
+                "email": email
+            }
+
+            # Find the user
+            user = await self.users_collection.find_one({"email": email})
+            if not user:
+                # Don't reveal that user doesn't exist
+                return success_message
+
+            # Check if user account is active
+            if not user.get("is_active", True):
+                # Don't reveal account status
+                return success_message
+
+            # Generate reset token
+            reset_token = self.generate_invitation_token()
+            reset_expires = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry
+
+            # Store reset token in user document
+            await self.users_collection.update_one(
+                {"email": email},
+                {
+                    "$set": {
+                        "password_reset_token": reset_token,
+                        "password_reset_expires": reset_expires,
+                        "password_reset_requested_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            # Send password reset email
+            if self.email_service.configured:
+                frontend_url = os.getenv("FRONTEND_URL")
+                if not frontend_url:
+                    self.logger.error("FRONTEND_URL environment variable is required")
+                    return success_message
+
+                reset_url = f"{frontend_url}/reset-password?token={reset_token}"
+                html_content = self._generate_password_reset_email_html(
+                    email=email,
+                    first_name=user.get("first_name", ""),
+                    reset_url=reset_url
+                )
+
+                await self.email_service.send_email(
+                    to_email=email,
+                    subject="Reset Your Password - Special Wedding",
+                    html_content=html_content,
+                    from_name="Special Wedding Team",
+                    email_type="password_reset"
+                )
+            else:
+                self.logger.warning(f"Email service not configured. Password reset for {email} not sent.")
+
+            return success_message
+
+        except Exception as e:
+            self.logger.error(f"Error requesting password reset: {str(e)}")
+            # Still return success message for security
+            return {
+                "message": "If an account with this email exists, you will receive a password reset link shortly.",
+                "email": email
+            }
+
+    async def reset_password(self, token: str, new_password: str) -> dict:
+        """
+        Reset password using a valid reset token.
+
+        Args:
+            token: The password reset token
+            new_password: The new password to set
+
+        Returns:
+            Success message
+        """
+        try:
+            # Find user with matching reset token
+            user = await self.users_collection.find_one({
+                "password_reset_token": token
+            })
+
+            if not user:
+                raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+            # Check if token has expired
+            if user.get("password_reset_expires") and user["password_reset_expires"] < datetime.utcnow():
+                # Clean up expired token
+                await self.users_collection.update_one(
+                    {"_id": user["_id"]},
+                    {
+                        "$unset": {
+                            "password_reset_token": "",
+                            "password_reset_expires": "",
+                            "password_reset_requested_at": ""
+                        }
+                    }
+                )
+                raise HTTPException(status_code=400, detail="Password reset token has expired. Please request a new one.")
+
+            # Hash new password
+            new_password_hash = get_password_hash(new_password)
+
+            # Update password and clear reset token
+            await self.users_collection.update_one(
+                {"_id": user["_id"]},
+                {
+                    "$set": {
+                        "password_hash": new_password_hash,
+                        "password_changed_at": datetime.utcnow()
+                    },
+                    "$unset": {
+                        "password_reset_token": "",
+                        "password_reset_expires": "",
+                        "password_reset_requested_at": ""
+                    }
+                }
+            )
+
+            # Publish password changed event
+            try:
+                event = EventFactory.password_changed(
+                    user_id=str(user["_id"]),
+                    email=user["email"]
+                )
+                await event_bus.publish(event)
+            except Exception as e:
+                self.logger.warning(f"Failed to publish password changed event: {e}")
+
+            # Send confirmation email
+            if self.email_service.configured:
+                html_content = self._generate_password_changed_email_html(
+                    email=user["email"],
+                    first_name=user.get("first_name", "")
+                )
+
+                await self.email_service.send_email(
+                    to_email=user["email"],
+                    subject="Your Password Has Been Changed - Special Wedding",
+                    html_content=html_content,
+                    from_name="Special Wedding Team",
+                    email_type="password_changed"
+                )
+
+            return {
+                "message": "Password has been reset successfully. You can now log in with your new password.",
+                "email": user["email"]
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error resetting password: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error resetting password: {str(e)}")
+
+    async def validate_password_reset_token(self, token: str) -> dict:
+        """
+        Validate a password reset token without using it.
+
+        Args:
+            token: The password reset token
+
+        Returns:
+            Token validation status and masked email
+        """
+        try:
+            user = await self.users_collection.find_one({
+                "password_reset_token": token
+            })
+
+            if not user:
+                raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+            # Check if token has expired
+            if user.get("password_reset_expires") and user["password_reset_expires"] < datetime.utcnow():
+                raise HTTPException(status_code=400, detail="Password reset token has expired. Please request a new one.")
+
+            # Mask email for privacy (show first 2 chars and domain)
+            email = user["email"]
+            email_parts = email.split("@")
+            if len(email_parts[0]) > 2:
+                masked_email = email_parts[0][:2] + "***@" + email_parts[1]
+            else:
+                masked_email = email_parts[0][0] + "***@" + email_parts[1]
+
+            return {
+                "valid": True,
+                "email": masked_email,
+                "expires_at": user["password_reset_expires"].isoformat()
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error validating reset token: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error validating reset token: {str(e)}")
+
+    def _generate_password_reset_email_html(self, email: str, first_name: str, reset_url: str) -> str:
+        """Generate password reset email HTML"""
+        name_display = first_name if first_name else "there"
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background: #f8f9fa; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: white; }}
+                .header {{ background: linear-gradient(135deg, #1e3a5f, #2c5282); color: white; padding: 40px 30px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 28px; font-weight: 300; letter-spacing: 1px; }}
+                .header p {{ margin: 10px 0 0; font-size: 16px; opacity: 0.9; }}
+                .content {{ padding: 40px 30px; }}
+                .button-container {{ text-align: center; margin: 35px 0; }}
+                .button {{ display: inline-block; padding: 16px 40px; background-color: #c8847e; color: white; text-decoration: none; border-radius: 30px; font-weight: 500; letter-spacing: 1px; }}
+                .button:hover {{ background-color: #b6736d; }}
+                .footer {{ text-align: center; padding: 30px; color: #666; font-size: 14px; background: #f8f9fa; border-top: 1px solid #eee; }}
+                .security-note {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 14px; }}
+                .expiry-warning {{ background: #ffe6e6; border: 1px solid #ffcccc; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 14px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Password Reset Request</h1>
+                    <p>Special Wedding Platform</p>
+                </div>
+                <div class="content">
+                    <p>Hi {name_display},</p>
+                    <p>We received a request to reset the password for your Special Wedding account associated with <strong>{email}</strong>.</p>
+
+                    <p>Click the button below to reset your password:</p>
+
+                    <div class="button-container">
+                        <a href="{reset_url}" class="button">Reset Password</a>
+                    </div>
+
+                    <div class="expiry-warning">
+                        <strong>Important:</strong> This password reset link will expire in 1 hour. After that, you'll need to request a new one.
+                    </div>
+
+                    <div class="security-note">
+                        <strong>Security Note:</strong> If you didn't request a password reset, please ignore this email. Your password will remain unchanged. If you're concerned about your account security, please contact our support team.
+                    </div>
+
+                    <p>Best regards,<br>The Special Wedding Team</p>
+                </div>
+                <div class="footer">
+                    <p>If the button doesn't work, copy and paste this link:</p>
+                    <p style="word-break: break-all; color: #c8847e; font-size: 12px;">{reset_url}</p>
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                    <p>&copy; Special Wedding - Professional Wedding Planning Platform</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    def _generate_password_changed_email_html(self, email: str, first_name: str) -> str:
+        """Generate password changed confirmation email HTML"""
+        name_display = first_name if first_name else "there"
+        frontend_url = os.getenv("FRONTEND_URL", "")
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background: #f8f9fa; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: white; }}
+                .header {{ background: linear-gradient(135deg, #1e3a5f, #2c5282); color: white; padding: 40px 30px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 28px; font-weight: 300; letter-spacing: 1px; }}
+                .content {{ padding: 40px 30px; }}
+                .success-card {{ background: #e8f5e9; border-left: 4px solid #4caf50; padding: 20px; margin: 25px 0; border-radius: 0 8px 8px 0; }}
+                .button-container {{ text-align: center; margin: 35px 0; }}
+                .button {{ display: inline-block; padding: 16px 40px; background-color: #c8847e; color: white; text-decoration: none; border-radius: 30px; font-weight: 500; letter-spacing: 1px; }}
+                .footer {{ text-align: center; padding: 30px; color: #666; font-size: 14px; background: #f8f9fa; border-top: 1px solid #eee; }}
+                .security-note {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 14px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Password Changed Successfully</h1>
+                </div>
+                <div class="content">
+                    <p>Hi {name_display},</p>
+
+                    <div class="success-card">
+                        <p style="margin: 0;"><strong>Your password has been successfully changed.</strong></p>
+                        <p style="margin: 10px 0 0;">You can now log in to your account with your new password.</p>
+                    </div>
+
+                    <div class="button-container">
+                        <a href="{frontend_url}/admin/login" class="button">Log In Now</a>
+                    </div>
+
+                    <div class="security-note">
+                        <strong>Didn't make this change?</strong> If you didn't change your password, your account may have been compromised. Please contact our support team immediately.
+                    </div>
+
+                    <p>Best regards,<br>The Special Wedding Team</p>
+                </div>
+                <div class="footer">
+                    <p>&copy; Special Wedding - Professional Wedding Planning Platform</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """

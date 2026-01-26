@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -75,12 +76,25 @@ function WelcomeShowcase() {
 
 export default function AdminLoginPage() {
   const { login } = useAdmin();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Read success message from URL query params (e.g., after account setup)
+  useEffect(() => {
+    const message = searchParams.get('message');
+    if (message) {
+      setSuccessMessage(message);
+      // Auto-hide success message after 10 seconds
+      const timer = setTimeout(() => setSuccessMessage(null), 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams]);
 
   const disableSubmit = useMemo(() => {
     if (!emailPattern.test(email)) {
@@ -214,13 +228,41 @@ export default function AdminLoginPage() {
                         />
                         <span>Keep me signed in on this device</span>
                       </label>
-                      <Link
-                        href="/"
-                        className="text-sm font-medium text-wedding-rose transition hover:text-wedding-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
-                      >
-                        Return to SaaS home
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <Link
+                          href="/forgot-password"
+                          className="text-sm font-medium text-wedding-rose transition hover:text-wedding-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
+                        >
+                          Forgot password?
+                        </Link>
+                        <Link
+                          href="/"
+                          className="text-sm font-medium text-wedding-navy/60 transition hover:text-wedding-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
+                        >
+                          Return to SaaS home
+                        </Link>
+                      </div>
                     </div>
+
+                    {successMessage && (
+                      <div role="status" className="rounded-lg border border-emerald-400/40 bg-emerald-50 px-4 py-3 flex items-start gap-3">
+                        <svg className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-emerald-800">{successMessage}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSuccessMessage(null)}
+                          className="text-emerald-600 hover:text-emerald-800"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
 
                     {error && (
                       <p role="alert" className="rounded-lg border border-wedding-rose/40 bg-wedding-rose/10 px-3 py-2 text-sm text-wedding-rose">

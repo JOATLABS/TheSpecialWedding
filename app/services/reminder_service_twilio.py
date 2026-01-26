@@ -81,6 +81,10 @@ class TwilioReminderService:
             async for po in self.plus_one_collection.find({}):
                 if event_type in po.get("attending", []):
                     phone = po.get("phone")
+                    # Check if plus-one has opted in for SMS (or not explicitly opted out)
+                    sms_opt_in = po.get("sms_opt_in", None)
+                    if sms_opt_in is False:  # Explicitly opted out
+                        continue
                     if phone:
                         status = self._send_sms(phone, message)
                         logs.append(self._log(
@@ -163,7 +167,6 @@ class TwilioRSVPReminderHelper:
         
     async def send_personalized_rsvp_links(self, slug: str, custom_message: Optional[str] = None):
         # Get wedding by slug first
-        wedding = await self.wedding_collection.find_one({"slug": slug})
         wedding = await self.wedding_collection.find_one({"slug": slug})
         if not wedding:
             logger.error(f"Wedding not found with slug: {slug}")

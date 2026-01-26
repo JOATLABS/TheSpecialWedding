@@ -174,14 +174,30 @@ class GuestService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error deleting guest: {str(e)}")
 
-    async def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None):
+    async def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None, wedding_id: Optional[str] = None):
+        """
+        Search for a guest by phone or name, optionally filtered by wedding_id.
+
+        Args:
+            phone: Guest phone number
+            name: Guest name
+            wedding_id: Wedding ID to filter results (REQUIRED for security)
+
+        Security: Always provide wedding_id to prevent cross-wedding data access
+        """
         try:
             query = {}
+
+            # SECURITY: Always filter by wedding_id to prevent cross-wedding access
+            if wedding_id:
+                query["wedding_id"] = wedding_id
+
             if phone:
                 query["phone"] = phone
             if name:
                 query["name"] = name
-            if not query:
+
+            if not phone and not name:
                 raise HTTPException(status_code=400, detail="Must provide phone or name to search")
 
             guest = await self.collection.find_one(query)
@@ -190,6 +206,8 @@ class GuestService:
             guest["id"] = str(guest["_id"])
             guest.pop("_id", None)
             return guest
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
 
