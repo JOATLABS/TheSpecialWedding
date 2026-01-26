@@ -139,11 +139,106 @@ async def create_wedding_indexes():
         return False
 
 
+async def create_guest_indexes():
+    """
+    Create indexes for guests collection
+
+    Key queries:
+    1. Get guests by wedding_id (guest list)
+    2. Lookup guest by token (login)
+    3. Lookup by phone (verification)
+    4. Lookup by email
+    """
+    collection = mongo.db["guests"]
+    try:
+        # 1. Wedding ID - Most frequent query (list guests)
+        await collection.create_index(
+            [("wedding_id", ASCENDING)],
+            name="idx_wedding_id"
+        )
+        logger.info("Created index: idx_wedding_id")
+
+        # 2. Token - Unique lookup for guest auth
+        await collection.create_index(
+            [("token", ASCENDING)],
+            name="idx_token",
+            unique=True
+        )
+        logger.info("Created index: idx_token")
+
+        # 3. Phone - Lookup for verification
+        await collection.create_index(
+            [("phone", ASCENDING)],
+            name="idx_guest_phone"
+        )
+        logger.info("Created index: idx_guest_phone")
+
+        # 4. Email - Lookup
+        await collection.create_index(
+            [("email", ASCENDING)],
+            name="idx_guest_email"
+        )
+        logger.info("Created index: idx_guest_email")
+
+        logger.info("All guest indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating guest indexes: {str(e)}")
+        return False
+
+
+async def create_plus_one_indexes():
+    """
+    Create indexes for plus_ones collection
+
+    Key queries:
+    1. Get plus ones by guest_id
+    """
+    collection = mongo.db["plus_ones"]
+    try:
+        # 1. Guest ID - Foreign key lookup
+        await collection.create_index(
+            [("guest_id", ASCENDING)],
+            name="idx_guest_id"
+        )
+        logger.info("Created index: idx_guest_id")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating plus_one indexes: {str(e)}")
+        return False
+
+
+async def create_rsvp_indexes():
+    """
+    Create indexes for rsvps collection
+
+    Key queries:
+    1. Get RSVP by guest_id
+    """
+    collection = mongo.db["rsvps"]
+    try:
+        # 1. Guest ID - Foreign key lookup
+        await collection.create_index(
+            [("guest_id", ASCENDING)],
+            name="idx_guest_id"
+        )
+        logger.info("Created index: idx_guest_id")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating rsvp indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
         await create_support_ticket_indexes()
         await create_wedding_indexes()
+        await create_guest_indexes()
+        await create_plus_one_indexes()
+        await create_rsvp_indexes()
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
