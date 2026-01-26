@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Camera, Trash2, Eye, EyeOff, Loader2, Bell, BellOff } from 'lucide-react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -138,7 +139,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
     setSavingPassword(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/password`, {
+      const response = await fetch(`${baseUrl}/profile/password`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -168,7 +169,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
     setSavingEmail(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/email`, {
+      const response = await fetch(`${baseUrl}/profile/email`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -204,7 +205,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
       };
 
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/info`, {
+      const response = await fetch(`${baseUrl}/profile/info`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -260,7 +261,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
       formData.append('file', file);
 
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/image`, {
+      const response = await fetch(`${baseUrl}/profile/image`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -293,7 +294,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/image`, {
+      const response = await fetch(`${baseUrl}/profile/image`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -318,7 +319,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/info`, {
+      const response = await fetch(`${baseUrl}/profile/info`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -352,24 +353,30 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+  // Use portal to render modal at body level, avoiding parent positioning issues
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden m-4">
+      <div className="relative z-10 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Account Settings</h2>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 dark:border-slate-700 bg-gradient-to-r from-wedding-rose/10 to-wedding-gold/10 dark:from-slate-700 dark:to-slate-800">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Account Settings</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Manage your profile and preferences</p>
+          </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+            className="p-2 rounded-full hover:bg-white/50 dark:hover:bg-slate-600 transition-colors"
+            aria-label="Close modal"
           >
-            <X size={20} className="text-gray-500 dark:text-gray-400" />
+            <X size={22} className="text-gray-600 dark:text-gray-300" />
           </button>
         </div>
 
@@ -386,36 +393,36 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
           ) : (
             <div className="p-6">
               {/* Tab Navigation */}
-              <div className="flex space-x-1 mb-6 border-b border-gray-200 dark:border-slate-700">
+              <div className="flex gap-2 mb-6 p-1 bg-gray-100 dark:bg-slate-700/50 rounded-lg">
                 <button
                   onClick={() => setActiveTab('profile')}
-                  className={`px-4 py-2 font-medium text-sm rounded-t-lg transition-colors ${
+                  className={`flex-1 px-4 py-2.5 font-medium text-sm rounded-md transition-all ${
                     activeTab === 'profile'
-                      ? 'bg-wedding-rose text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-wedding-rose'
+                      ? 'bg-white dark:bg-slate-600 text-wedding-rose shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
                 >
                   Profile Info
                 </button>
                 <button
                   onClick={() => setActiveTab('password')}
-                  className={`px-4 py-2 font-medium text-sm rounded-t-lg transition-colors ${
+                  className={`flex-1 px-4 py-2.5 font-medium text-sm rounded-md transition-all ${
                     activeTab === 'password'
-                      ? 'bg-wedding-rose text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-wedding-rose'
+                      ? 'bg-white dark:bg-slate-600 text-wedding-rose shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
                 >
-                  Change Password
+                  Password
                 </button>
                 <button
                   onClick={() => setActiveTab('email')}
-                  className={`px-4 py-2 font-medium text-sm rounded-t-lg transition-colors ${
+                  className={`flex-1 px-4 py-2.5 font-medium text-sm rounded-md transition-all ${
                     activeTab === 'email'
-                      ? 'bg-wedding-rose text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-wedding-rose'
+                      ? 'bg-white dark:bg-slate-600 text-wedding-rose shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
                 >
-                  Change Email
+                  Email
                 </button>
               </div>
 
@@ -570,11 +577,11 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                     </div>
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
                     <button
                       onClick={handleProfileUpdate}
                       disabled={savingProfile}
-                      className="bg-wedding-rose text-white px-4 py-2 rounded-md hover:bg-wedding-gold transition text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                      className="bg-wedding-rose text-white px-6 py-2.5 rounded-lg hover:bg-wedding-gold transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md hover:shadow-lg"
                     >
                       {savingProfile && <Loader2 className="w-4 h-4 animate-spin" />}
                       Save Changes
@@ -708,4 +715,8 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
       </div>
     </div>
   );
+
+  // Render modal using portal to document.body
+  if (typeof window === 'undefined') return null;
+  return createPortal(modalContent, document.body);
 }
