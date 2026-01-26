@@ -64,6 +64,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CRITICAL: User Management Operations Failing (Delete/Suspend/Activate)** (`app/services/user_management_service.py`):
+  - Fixed "Failed to delete user" error when attempting to delete a planner from Planner Management page
+  - Root cause: User ID passed as string but MongoDB stores `_id` as ObjectId - query never matched
+  - Added `from bson import ObjectId` conversion to all user-by-ID queries:
+    - `get_user()`: Now converts string to ObjectId before querying
+    - `update_user()`: Now converts string to ObjectId before updating
+    - `delete_user()`: Now converts string to ObjectId before find and delete
+    - `suspend_user()`: Now converts string to ObjectId, also sets `is_suspended: True`
+    - `activate_user()`: Now converts string to ObjectId, also sets `is_suspended: False`
+    - `assign_wedding_to_planner()`: Now converts user_id string to ObjectId
+  - Pattern now matches all other services in codebase (subscription_service, stripe_service, autopilot_service, etc.)
+  - Also added `is_suspended` field to user document for frontend status display
+
 - **Code Quality & Type Safety Fixes** (Multiple files):
   - **subscription_service.py**: Added missing `subscription_service = SubscriptionService()` singleton instance at end of file
     - Fixes `"subscription_service" is unknown import symbol` error when importing from other modules
