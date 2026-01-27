@@ -13,8 +13,11 @@ type Petal = {
   spin: number; // angular velocity
   tilt: number; // flip phase
   size: number; // base size in px (device pixels)
-  tint: number; // 0..1 choose between pink->crimson ranges
+  variant: number; // Index into sprite cache
 };
+
+const SPRITE_VARIANTS = 20;
+const BASE_SIZE = 80; // Render sprites at high resolution to allow downscaling
 
 // Simple pseudo-random by seed for stable init
 const rand = (seed: number) => {
@@ -25,6 +28,9 @@ const rand = (seed: number) => {
 function createPetal(width: number, height: number, i: number): Petal {
   const z = 0.35 + rand(i + 1) * 0.65; // depth
   const size = (18 + rand(i + 2) * 24) * (0.8 + z * 0.8);
+  // Pick a random variant (which determines color/tint)
+  const variant = Math.floor(rand(i + 10) * SPRITE_VARIANTS);
+
   return {
     x: rand(i + 3) * width,
     y: -rand(i + 4) * height * 0.4 - size,
@@ -37,11 +43,11 @@ function createPetal(width: number, height: number, i: number): Petal {
     spin: (rand(i + 8) - 0.5) * 0.02,
     tilt: rand(i + 9) * Math.PI * 2,
     size,
-    tint: rand(i + 10),
+    variant,
   };
 }
 
-function drawPetalSprite(size: number, tint: number): HTMLCanvasElement {
+function createPetalSprite(size: number, tint: number): HTMLCanvasElement {
   const c = document.createElement("canvas");
   // generous sprite to rotate without clipping
   const pad = size * 1.2;
@@ -97,11 +103,19 @@ function drawPetalSprite(size: number, tint: number): HTMLCanvasElement {
 export default function PetalCanvas({ count = 26 }: { count?: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const petals = useRef<Petal[]>([]);
-  const sprites = useRef<HTMLCanvasElement[]>([]);
+  const spriteCache = useRef<HTMLCanvasElement[]>([]);
   const rafRef = useRef<number | undefined>(undefined);
   const resizeRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
+    // Generate sprite cache once if empty
+    if (spriteCache.current.length === 0) {
+        spriteCache.current = Array.from({ length: SPRITE_VARIANTS }, (_, i) => {
+            const tint = i / (SPRITE_VARIANTS - 1);
+            return createPetalSprite(BASE_SIZE, tint);
+        });
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -121,7 +135,6 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
 
       const target = reduce ? 0 : Math.max(count, Math.min(72, Math.round(window.innerWidth / 22)));
       petals.current = Array.from({ length: target }, (_, i) => createPetal(w, h, i + 1));
-      sprites.current = petals.current.map((p) => drawPetalSprite(p.size, p.tint));
       ctx.clearRect(0, 0, w, h);
     };
 
@@ -152,7 +165,6 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
 
       for (const [idx] of order) {
         const p = petals.current[idx];
-        const sprite = sprites.current[idx];
 
         // Subtle horizontal drift with friction and clamp
         p.ax = wind * (0.15 + p.z * 0.35);
@@ -178,7 +190,7 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
           fresh.y = -fresh.size;
           fresh.x = Math.random() * w;
           petals.current[idx] = fresh;
-          sprites.current[idx] = drawPetalSprite(fresh.size, fresh.tint);
+          // No new sprite generation here!
           continue;
         }
 
@@ -188,8 +200,13 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
         const flip = Math.sin(p.tilt);
         const scaleX = 0.85 + Math.abs(flip) * 0.25; // limits
         const scaleY = 0.85 + (1 - Math.abs(flip)) * 0.15;
+
+        // Calculate scale relative to BASE_SIZE
+        const sizeScale = p.size / BASE_SIZE;
+
         ctx.rotate(p.angle + flip * 0.4);
-        ctx.scale(scaleX, scaleY);
+        ctx.scale(scaleX * sizeScale, scaleY * sizeScale);
+
         ctx.globalAlpha = 0.8 * (0.6 + p.z * 0.4);
         // Soft depth-of-field blur for far petals
         if ((1 - p.z) > 0.5) {
@@ -198,7 +215,12 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
         } else {
           ctx.filter = "none";
         }
-        ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+
+        const sprite = spriteCache.current[p.variant];
+        if (sprite) {
+             ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+        }
+
         ctx.restore();
       }
 
