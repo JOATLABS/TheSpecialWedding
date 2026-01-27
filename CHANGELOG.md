@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Guest Export Features** (`app/api/guest_export.py`, `app/services/guest_export_service.py`, `app/admin/guests/page.tsx`):
+  - **Individual QR Preview**: View/download QR code for single guest (for physical RSVP cards)
+    - `GET /admin/guests/{guest_id}/qr` - Returns QR PNG inline with caching
+    - `GET /admin/guests/{guest_id}/qr/download` - Returns QR PNG as attachment for download
+    - QR codes link to: `{FRONTEND_URL}/{slug}/invite/{token}` (RSVP page)
+  - **Guest List PDF Export**: Printable PDF of guest table
+    - `GET /admin/guests/export/pdf` - Returns styled PDF with guest details
+    - Columns: Name, Phone, Email, Group, RSVP Status, Dietary
+    - Footer shows summary stats (Total, Attending, Pending, Declined)
+    - Uses WeasyPrint with lazy import pattern (matches contract_pdf_service.py)
+  - **Bulk QR ZIP Download**: Download QR codes as PNG files in a ZIP archive
+    - `POST /admin/guests/export/qr-zip` - Returns ZIP of QR PNGs
+    - Supports all guests or selected guests via `guest_ids` parameter
+    - Files named: `GuestName_token.png` for uniqueness
+  - **Frontend Integration** (`app/admin/guests/page.tsx`):
+    - [QR] button on guest row actions opens modal with preview + download
+    - Export dropdown with PDF, CSV, and ZIP options
+    - "Download QR Codes" button in bulk actions bar for selected guests
+    - QR Preview Modal with instant display and download button
+  - **New Service**: `GuestExportService` with methods:
+    - `generate_qr_code(url)` - Generate QR code PNG bytes using qrcode library
+    - `build_rsvp_url(slug, token)` - Build RSVP URL for guest
+    - `generate_guest_list_pdf(wedding_id, wedding_name)` - Generate styled PDF
+    - `generate_guests_qr_zip(guests, slug)` - Generate ZIP archive
+    - `get_single_guest_qr(guest_id, wedding_id)` - Get single guest QR with filename
+  - **Security**: All endpoints require `require_wedding_planner_only` + `check_wedding_access()`
+  - Validated against qrcode, weasyprint, and FastAPI documentation via context7 MCP
+
+- **Bulk Error Acknowledgement Endpoint** (`app/api/admin_platform_metrics.py`):
+  - New `POST /admin/platform/errors/acknowledge-bulk` endpoint for acknowledging multiple errors in a single API call
+  - Accepts `BulkAcknowledgeRequest` with list of `error_ids`
+  - Uses MongoDB `update_many` with `$or` operator to match both `error_id` and `_id` fields
+  - Returns `acknowledged_count` and `requested_count` for accurate feedback
+  - Replaces 200+ individual API calls with a single operation
+  - Validated against PyMongo official documentation via context7 MCP
+
+- **Cursor-Based Pagination for Error Dashboard** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+  - Replaced `skip()`-based pagination with cursor-based pagination using `_id` range queries
+  - **Backend changes:**
+    - New `cursor` parameter (error_id from last item of previous page)
+    - New `direction` parameter (`'next'` for older, `'prev'` for newer errors)
+    - Uses `$lt`/`$gt` operators on indexed `_id` field for O(1) performance
+    - Returns `next_cursor` and `prev_cursor` for navigation
+  - **Frontend changes:**
+    - Replaced page state with `cursorHistory` array for backward navigation
+    - New handlers: `handleNextPage()`, `handlePrevPage()`, `handleFirstPage()`
+    - Updated pagination controls to use cursor-based navigation
+  - **Performance improvement:**
+    - `skip()`: O(n) - degrades linearly with offset (page 1000 scans 1000*limit documents)
+    - Cursor: O(1) - constant time regardless of how deep into dataset
+  - Validated against MongoDB and React official documentation via context7 MCP
+
+- **Error Table Endpoint Column Tooltip** (`app/admin/platform/page.tsx`):
+  - Added `title` attribute and `cursor-help` class to truncated endpoint column
+  - Full endpoint path now visible on hover for better UX
+
 - **Plus-One Email and Opt-In Fields** (`app/models/plus_one.py`, `app/models/rsvp.py`, `app/services/rsvp_service.py`, `app/services/email_service_resend.py`, `app/components/RSVPForm.tsx`, `app/admin/guests/page.tsx`):
   - Added `email` field to plus-ones so planners can contact them directly
   - Added `sms_opt_in` and `email_opt_in` fields with consent tracking timestamps
@@ -64,6 +120,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SMS/Email Opt-In Default Values** (`app/services/guest_service.py`, `app/services/import_service.py`):
+  - Fixed new guests being created as "opted out" before receiving any message
+  - **Root cause**: `sms_opt_in: False` and `email_opt_in: False` hardcoded on guest creation
+  - **Impact**: Reminder service blocked messages for guests who hadn't opted out
+  - **Fix**: Changed defaults to `True` (opted-in) - guests can opt-out later via RSVP form
+  - `guest_service.py` line 242: `"sms_opt_in": False` → `"sms_opt_in": True`
+  - `guest_service.py` line 243: `"email_opt_in": False` → `"email_opt_in": True`
+  - `import_service.py`: Added explicit `"sms_opt_in": True, "email_opt_in": True` for imported guests
+  - **Expected behavior**: New guests can receive initial RSVP invite, opt-out option available on RSVP form
+
+- **Forms API 404 Error** (`app/services/formsApi.ts`):
+  - Fixed "Not Found" error when accessing Forms page in planner dashboard
+  - **Root cause**: Frontend called `/admin/forms` but backend registers routes at `/forms` (no `/admin` prefix)
+  - **Fix**: Removed `/admin` prefix from all form API paths in frontend service
+  - Affected methods: `fetchForms`, `fetchTemplates`, `createBlankForm`, `createFromTemplate`, `duplicateForm`, `markScopeViewed`
+  - Path changes:
+    - `/admin/forms` → `/forms`
+    - `/admin/form-templates` → `/form-templates`
+    - `/admin/forms/from-template/{id}` → `/forms/from-template/{id}`
+    - `/admin/forms/{id}/duplicate` → `/forms/{id}/duplicate`
+    - `/admin/forms/{id}/views` → `/forms/{id}/views`
+
+- **False Positive Error Acknowledgement** (`app/admin/platform/page.tsx`):
+  - Fixed "Acknowledged 200 errors" toast showing success when all acknowledgements actually failed
+  - Root cause: `Promise.allSettled()` marks promises as "fulfilled" even when HTTP response is 4xx/5xx
+  - The code only checked `r.status === 'fulfilled'` without verifying `response.ok`
+  - **Before:** 200 errors "acknowledged" but unacknowledged count remained 200
+  - **After:** Uses bulk endpoint for single API call, properly reports actual success/failure count
+  - Validated against MDN Fetch API documentation via context7 MCP
+
+- **Duplicate `/admin/admin/` API Route Prefix** (`app/api/admin_activity.py`):
+  - Fixed 404 errors on activity log endpoints due to double `/admin` prefix
+  - Root cause: Router defined `prefix="/admin"` AND was mounted with `prefix="/admin"` in `main.py`
+  - Changed `router = APIRouter(prefix="/admin", tags=["ROOT_ADMIN"])` to `router = APIRouter(tags=["ROOT_ADMIN"])`
+  - Affected endpoints now work correctly:
+    - `/admin/admin/activity-log` → `/admin/activity-log`
+    - `/admin/admin/activity-log/recent` → `/admin/activity-log/recent`
+  - Validated against FastAPI APIRouter documentation via context7 MCP
+
 - **Notification Polling Performance & Resource Waste** (`app/admin/components/TopHeader.tsx`):
   - Fixed aggressive polling that continued even after authentication failures (401 errors)
   - **Issues fixed:**
@@ -87,6 +182,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `/admin/admin/invitations/{id}/cancel` → fixed to `/admin/invitations/{id}/cancel`
     - `/admin/admin/activity-log/recent` → fixed to `/admin/activity-log/recent`
   - Root cause: Frontend code incorrectly included `/admin` twice in URL paths
+
+- **Profile Page API Path Mismatches** (`app/admin/profile/page.tsx`):
+  - Fixed 404 errors on profile update operations (password, email, info, image)
+  - Root cause: `user_management.py` profile endpoints are mounted WITHOUT `/admin` prefix, but frontend used `/admin/profile/...`
+  - Fixed API paths:
+    - `/admin/profile/password` → `/profile/password` (PUT)
+    - `/admin/profile/email` → `/profile/email` (PUT)
+    - `/admin/profile/info` → `/profile/info` (PUT)
+    - `/admin/profile/image` → `/profile/image` (POST upload, DELETE remove)
+  - Note: `GET /admin/profile` remains correct (served by `admin_auth.py` with `/admin` prefix)
+  - This affects both root admin and planner profile pages
 
 - **Account Settings Modal Issues** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/admin_auth.py`):
   - Fixed "Not Found" error when clicking "Save Changes"
