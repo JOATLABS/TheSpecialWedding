@@ -2,6 +2,7 @@ import os
 import boto3
 import qrcode
 import logging
+from urllib.parse import urlparse
 from io import BytesIO
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, UploadFile
@@ -91,11 +92,34 @@ class GalleryUploadService:
 
     def generate_qr_code(self, url: str):
         try:
+            # Security: Validate scheme and that the URL belongs to our domain
+            parsed_url = urlparse(url)
+            if parsed_url.scheme.lower() not in ("http", "https"):
+                raise HTTPException(status_code=400, detail="Invalid URL scheme")
+            allowed_domains = []
+
+            frontend_url = os.getenv("FRONTEND_URL")
+            if frontend_url:
+                allowed_domains.append(urlparse(frontend_url).netloc)
+
+            if MEDIA_DOMAIN:
+                # MEDIA_DOMAIN might contain protocol
+                if "://" in MEDIA_DOMAIN:
+                    allowed_domains.append(urlparse(MEDIA_DOMAIN).netloc)
+                else:
+                    allowed_domains.append(MEDIA_DOMAIN)
+
+            # Check if domain is allowed (reject external domains)
+            if not parsed_url.netloc or parsed_url.netloc not in allowed_domains:
+                raise HTTPException(status_code=400, detail="Invalid URL domain")
+
             qr = qrcode.make(url)
             buffer = BytesIO()
             qr.save(buffer)
             buffer.seek(0)
             return StreamingResponse(buffer, media_type="image/png")
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error generating QR code: {str(e)}")
 
