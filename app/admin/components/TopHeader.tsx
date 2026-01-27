@@ -13,6 +13,11 @@ interface TopHeaderProps {
   title?: string;
 }
 
+// Polling configuration
+const BASE_POLL_INTERVAL = 60000; // 60 seconds
+const MAX_POLL_INTERVAL = 300000; // 5 minutes max backoff
+const FOCUS_DEBOUNCE_MS = 2000; // 2 second debounce for focus events
+
 export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { userProfile, token, logout } = useAdmin();
@@ -20,6 +25,13 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Polling state refs (refs to avoid re-renders and stale closures)
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const currentIntervalMs = useRef(BASE_POLL_INTERVAL);
+  const consecutiveErrors = useRef(0);
+  const lastFocusFetch = useRef(0);
+  const isPollingEnabled = useRef(true);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -32,9 +44,40 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Stop polling (e.g., on auth failure)
+  const stopPolling = useCallback(() => {
+    isPollingEnabled.current = false;
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
+
+  // Reset backoff on success
+  const resetBackoff = useCallback(() => {
+    consecutiveErrors.current = 0;
+    currentIntervalMs.current = BASE_POLL_INTERVAL;
+  }, []);
+
+  // Increase backoff on error (exponential with cap)
+  const increaseBackoff = useCallback(() => {
+    consecutiveErrors.current += 1;
+    // Exponential backoff: 60s -> 120s -> 240s -> 300s (capped)
+    currentIntervalMs.current = Math.min(
+      BASE_POLL_INTERVAL * Math.pow(2, consecutiveErrors.current),
+      MAX_POLL_INTERVAL
+    );
+  }, []);
+
   // Fetch combined notification count (platform announcements + activity notifications)
-  const fetchNotificationCount = useCallback(async () => {
+  const fetchNotificationCount = useCallback(async (isManualFetch = false) => {
     if (!token) return;
+
+    // Skip if polling disabled (auth failure) unless it's a manual fetch after re-auth
+    if (!isPollingEnabled.current && !isManualFetch) return;
+
+    // Skip if tab is hidden (save resources)
+    if (document.hidden && !isManualFetch) return;
 
     try {
       // Fetch both counts in parallel
@@ -56,34 +99,95 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
       ]);
 
       let totalUnread = 0;
+      let hasAuthError = false;
 
-      // Add platform notification count
-      if (platformRes.status === 'fulfilled' && platformRes.value.ok) {
-        const platformData = await platformRes.value.json();
-        totalUnread += platformData.unread || 0;
+      // Check platform response
+      if (platformRes.status === 'fulfilled') {
+        if (platformRes.value.status === 401) {
+          hasAuthError = true;
+        } else if (platformRes.value.ok) {
+          const platformData = await platformRes.value.json();
+          totalUnread += platformData.unread || 0;
+        }
       }
 
-      // Add activity notification count (may fail for root admin - that's okay)
-      if (activityRes.status === 'fulfilled' && activityRes.value.ok) {
-        const activityData = await activityRes.value.json();
-        totalUnread += activityData.unread || 0;
+      // Check activity response (may fail for root admin - that's expected)
+      if (activityRes.status === 'fulfilled') {
+        if (activityRes.value.status === 401) {
+          hasAuthError = true;
+        } else if (activityRes.value.ok) {
+          const activityData = await activityRes.value.json();
+          totalUnread += activityData.unread || 0;
+        }
       }
 
+      // Handle authentication failure - stop polling, user needs to re-login
+      if (hasAuthError) {
+        console.warn('Notification polling: Authentication failed (401). Stopping polling.');
+        stopPolling();
+        // Optionally trigger logout for expired sessions
+        // logout();
+        return;
+      }
+
+      // Success - reset backoff and update count
+      resetBackoff();
       setUnreadCount(totalUnread);
     } catch (error) {
       console.error('Failed to fetch notification count:', error);
+      increaseBackoff();
     }
-  }, [token]);
+  }, [token, stopPolling, resetBackoff, increaseBackoff]);
 
-  // Fetch on mount, every 60 seconds, on window focus, and on custom events
-  useEffect(() => {
-    fetchNotificationCount();
+  // Start polling with current interval
+  const startPolling = useCallback(() => {
+    // Clear any existing interval
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
 
-    const interval = setInterval(fetchNotificationCount, 60000);
+    // Only start if enabled
+    if (!isPollingEnabled.current) return;
 
-    // Refetch when window gains focus (user returns from notifications page)
-    const handleFocus = () => {
+    pollIntervalRef.current = setInterval(() => {
       fetchNotificationCount();
+    }, currentIntervalMs.current);
+  }, [fetchNotificationCount]);
+
+  // Fetch on mount, with smart polling that respects visibility and auth state
+  useEffect(() => {
+    // Reset polling state on mount/token change
+    isPollingEnabled.current = true;
+    resetBackoff();
+
+    // Initial fetch
+    fetchNotificationCount(true);
+
+    // Start interval polling
+    startPolling();
+
+    // Handle visibility change - pause polling when tab hidden, resume when visible
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab hidden - stop polling to save resources
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+      } else {
+        // Tab visible again - fetch immediately and restart polling
+        fetchNotificationCount();
+        startPolling();
+      }
+    };
+
+    // Debounced focus handler - avoid multiple rapid calls when focusing
+    const handleFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusFetch.current > FOCUS_DEBOUNCE_MS) {
+        lastFocusFetch.current = now;
+        fetchNotificationCount();
+      }
     };
 
     // Listen for custom event when notifications are marked as read
@@ -91,15 +195,19 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
       fetchNotificationCount();
     };
 
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleFocus);
     window.addEventListener('notifications-updated', handleNotificationsRead);
 
     return () => {
-      clearInterval(interval);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('notifications-updated', handleNotificationsRead);
     };
-  }, [fetchNotificationCount]);
+  }, [fetchNotificationCount, startPolling, resetBackoff]);
 
   const toggleTheme = () => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');

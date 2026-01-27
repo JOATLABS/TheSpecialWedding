@@ -166,6 +166,13 @@ export default function AdminGuestsPage() {
   const [reminderMessage, setReminderMessage] = useState('');
   const [sendingReminder, setSendingReminder] = useState(false);
 
+  // QR preview modal state
+  const [qrModalGuest, setQrModalGuest] = useState<Guest | null>(null);
+
+  // Export dropdown state
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+
   // ==================== DATA FETCHING ====================
 
   const fetchWeddings = useCallback(async () => {
@@ -651,6 +658,173 @@ export default function AdminGuestsPage() {
     }
   };
 
+  // ==================== EXPORT FUNCTIONS ====================
+
+  const handleExportPDF = async () => {
+    if (!selectedWedding) return;
+
+    setExportLoading(true);
+    setExportMenuOpen(false);
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(
+        `${baseUrl}/admin/guests/export/pdf?wedding_id=${selectedWedding}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (!response.ok) throw new Error('Failed to export PDF');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'guest_list.pdf';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      showSuccess('Guest list PDF downloaded!');
+    } catch {
+      setError('Failed to export PDF. PDF generation may not be available.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    setExportMenuOpen(false);
+    // Generate CSV from current guest data
+    const headers = ['Name', 'Email', 'Phone', 'Group', 'Role', 'RSVP Status', 'Dietary'];
+    const rows = filteredAndSortedGuests.map(guest => {
+      const guestId = guest.id || guest._id || '';
+      const rsvp = getRSVPForGuest(guestId);
+      const status = rsvp ? 'RSVP\'d' : guest.invite_sent ? 'Pending' : 'Not Invited';
+      return [
+        guest.name,
+        guest.email || '',
+        guest.phone || '',
+        getGroupLabel(guest.group_id),
+        guest.role,
+        status,
+        rsvp?.dietary || ''
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'guest_list.csv';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    showSuccess('Guest list CSV downloaded!');
+  };
+
+  const handleExportAllQRZip = async () => {
+    if (!selectedWedding) return;
+
+    setExportLoading(true);
+    setExportMenuOpen(false);
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(`${baseUrl}/admin/guests/export/qr-zip`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          guest_ids: [],  // Empty means all guests
+          wedding_id: selectedWedding,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to export QR codes');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'qr_codes.zip';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      showSuccess('QR codes ZIP downloaded!');
+    } catch {
+      setError('Failed to export QR codes');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleExportSelectedQRZip = async () => {
+    if (!selectedWedding || selectedGuests.size === 0) return;
+
+    setExportLoading(true);
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(`${baseUrl}/admin/guests/export/qr-zip`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          guest_ids: Array.from(selectedGuests),
+          wedding_id: selectedWedding,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to export QR codes');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'selected_qr_codes.zip';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      showSuccess(`${selectedGuests.size} QR codes downloaded!`);
+    } catch {
+      setError('Failed to export QR codes');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const downloadSingleQR = async (guest: Guest) => {
+    const guestId = guest.id || guest._id || '';
+    if (!selectedWedding || !guestId) return;
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(
+        `${baseUrl}/admin/guests/${guestId}/qr/download?wedding_id=${selectedWedding}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (!response.ok) throw new Error('Failed to download QR code');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${guest.name.replace(/\s+/g, '_')}_qr.png`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      setError('Failed to download QR code');
+    }
+  };
+
   // ==================== BULK ACTIONS ====================
 
   const handleBulkAssignGroup = async () => {
@@ -944,6 +1118,60 @@ export default function AdminGuestsPage() {
                     >
                       {viewMode === 'table' ? 'Card View' : 'Table View'}
                     </button>
+                    {/* Export dropdown */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                        disabled={exportLoading || guests.length === 0}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {exportLoading ? (
+                          <>
+                            <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                            Exporting...
+                          </>
+                        ) : (
+                          <>
+                            Export
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </>
+                        )}
+                      </button>
+                      {exportMenuOpen && (
+                        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-700 rounded-lg shadow-lg border border-gray-200 dark:border-slate-600 z-20">
+                          <button
+                            onClick={handleExportPDF}
+                            className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 first:rounded-t-lg flex items-center gap-3"
+                          >
+                            <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                            Export Guest List (PDF)
+                          </button>
+                          <button
+                            onClick={handleExportCSV}
+                            className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 flex items-center gap-3"
+                          >
+                            <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Export Guest List (CSV)
+                          </button>
+                          <hr className="border-gray-200 dark:border-slate-600" />
+                          <button
+                            onClick={handleExportAllQRZip}
+                            className="w-full px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-600 last:rounded-b-lg flex items-center gap-3"
+                          >
+                            <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                            </svg>
+                            Download All QR Codes (ZIP)
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -998,6 +1226,20 @@ export default function AdminGuestsPage() {
                       className="px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
                     >
                       Send Message
+                    </button>
+                    <button
+                      onClick={handleExportSelectedQRZip}
+                      disabled={exportLoading}
+                      className="px-3 py-1 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {exportLoading ? (
+                        <span className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></span>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                        </svg>
+                      )}
+                      Download QR Codes
                     </button>
                     <button
                       onClick={() => { setSelectedGuests(new Set()); setSelectAll(false); }}
@@ -1228,6 +1470,13 @@ export default function AdminGuestsPage() {
                                     >
                                       Edit
                                     </button>
+                                    <button
+                                      onClick={() => setQrModalGuest(guest)}
+                                      className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
+                                      title="View QR Code"
+                                    >
+                                      QR
+                                    </button>
                                     {!rsvp && (
                                       <button
                                         onClick={() => openReminderModal(guestId)}
@@ -1394,6 +1643,13 @@ export default function AdminGuestsPage() {
                                   className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600"
                                 >
                                   Edit
+                                </button>
+                                <button
+                                  onClick={() => setQrModalGuest(guest)}
+                                  className="px-3 py-1 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+                                  title="View QR Code"
+                                >
+                                  QR
                                 </button>
                                 {!rsvp && (
                                   <button
@@ -1982,6 +2238,66 @@ export default function AdminGuestsPage() {
                   className="flex-1 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-500 transition-colors"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* QR Code Preview Modal */}
+        {qrModalGuest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-sm w-full p-6 text-center">
+              <h2 className="text-xl font-bold text-wedding-navy dark:text-white mb-2">
+                {qrModalGuest.name}
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Scan to open RSVP page
+              </p>
+
+              {/* QR Code Image */}
+              <div className="flex justify-center mb-4">
+                <img
+                  src={`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/admin/guests/${qrModalGuest.id || qrModalGuest._id}/qr?wedding_id=${selectedWedding}`}
+                  alt={`QR Code for ${qrModalGuest.name}`}
+                  className="w-48 h-48 border border-gray-200 dark:border-slate-600 rounded-lg bg-white"
+                />
+              </div>
+
+              {/* Guest Info */}
+              <div className="text-left mb-4 p-3 bg-gray-50 dark:bg-slate-700 rounded-lg text-sm">
+                <p className="text-gray-600 dark:text-gray-300">
+                  <span className="font-medium">Token:</span>{' '}
+                  <span className="font-mono text-xs">{qrModalGuest.token}</span>
+                </p>
+                {qrModalGuest.phone && (
+                  <p className="text-gray-600 dark:text-gray-300">
+                    <span className="font-medium">Phone:</span> {qrModalGuest.phone}
+                  </p>
+                )}
+                {qrModalGuest.email && (
+                  <p className="text-gray-600 dark:text-gray-300">
+                    <span className="font-medium">Email:</span> {qrModalGuest.email}
+                  </p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => downloadSingleQR(qrModalGuest)}
+                  className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download PNG
+                </button>
+                <button
+                  onClick={() => setQrModalGuest(null)}
+                  className="flex-1 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-500 transition-colors"
+                >
+                  Close
                 </button>
               </div>
             </div>

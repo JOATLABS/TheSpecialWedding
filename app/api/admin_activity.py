@@ -9,7 +9,7 @@ from typing import Optional
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.admin_activity_service import admin_activity_service
 
-router = APIRouter(prefix="/admin", tags=["ROOT_ADMIN"])
+router = APIRouter(tags=["ROOT_ADMIN"])
 
 
 @router.get("/activity-log")

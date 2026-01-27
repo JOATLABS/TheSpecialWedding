@@ -81,7 +81,7 @@ export const formsApi = {
   },
 
   async fetchForms(token: string): Promise<FormSummaryResponse[]> {
-    const response = await authorisedFetch('/admin/forms', { token });
+    const response = await authorisedFetch('/forms', { token });
     const data = await response.json();
 
     if (!Array.isArray(data)) {
@@ -109,7 +109,7 @@ export const formsApi = {
   },
 
   async fetchTemplates(token: string): Promise<FormTemplateResponse[]> {
-    const response = await authorisedFetch('/admin/form-templates', { token });
+    const response = await authorisedFetch('/form-templates', { token });
     const data = await response.json();
 
     if (!data || !Array.isArray(data.templates)) {
@@ -125,7 +125,7 @@ export const formsApi = {
   },
 
   async createBlankForm(token: string, payload: BlankFormPayload) {
-    const response = await authorisedFetch('/admin/forms', {
+    const response = await authorisedFetch('/forms', {
       token,
       init: {
         method: 'POST',
@@ -158,7 +158,7 @@ export const formsApi = {
       query.set('wedding_id', payload.weddingId);
     }
 
-    const response = await authorisedFetch(`/admin/forms/from-template/${payload.templateId}?${query.toString()}`, {
+    const response = await authorisedFetch(`/forms/from-template/${payload.templateId}?${query.toString()}`, {
       token,
       init: {
         method: 'POST',
@@ -169,7 +169,7 @@ export const formsApi = {
   },
 
   async duplicateForm(token: string, payload: DuplicateFormPayload) {
-    const response = await authorisedFetch(`/admin/forms/${payload.formId}/duplicate`, {
+    const response = await authorisedFetch(`/forms/${payload.formId}/duplicate`, {
       token,
       init: {
         method: 'POST',
@@ -186,7 +186,7 @@ export const formsApi = {
     scope: 'responses' | 'analytics',
     submissionCount?: number,
   ) {
-    const response = await authorisedFetch(`/admin/forms/${formId}/views`, {
+    const response = await authorisedFetch(`/forms/${formId}/views`, {
       token,
       init: {
         method: 'POST',

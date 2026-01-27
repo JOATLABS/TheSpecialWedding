@@ -145,7 +145,7 @@ export default function AdminMetricsDashboard() {
     setActivitiesLoading(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/admin/activity-log/recent?limit=10`, {
+      const response = await fetch(`${baseUrl}/admin/activity-log/recent?limit=10`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },

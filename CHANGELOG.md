@@ -64,6 +64,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Notification Polling Performance & Resource Waste** (`app/admin/components/TopHeader.tsx`):
+  - Fixed aggressive polling that continued even after authentication failures (401 errors)
+  - **Issues fixed:**
+    - Polling continued indefinitely despite 401 unauthorized responses
+    - No exponential backoff on errors - same rate even during failures
+    - Polling continued when browser tab was hidden (wasted resources)
+    - No debouncing on window focus events - caused rapid duplicate requests
+  - **Improvements:**
+    - Added `stopPolling()` on 401 authentication errors - stops wasting server resources
+    - Added Page Visibility API - pauses polling when tab is hidden, resumes when visible
+    - Added exponential backoff: 60s → 120s → 240s → 300s (max) on consecutive errors
+    - Added 2-second debounce on focus events to prevent rapid duplicate calls
+    - Properly cleans up intervals on unmount and visibility changes
+
+- **Double `/admin/admin/` Prefix in API Paths** (`app/admin/users/page.tsx`, `app/admin/page.tsx`):
+  - Fixed 404 errors caused by duplicate `/admin` prefix in invitation and activity log API calls
+  - Affected endpoints (all returning 404):
+    - `/admin/admin/invitations` → fixed to `/admin/invitations`
+    - `/admin/admin/invitations/stats` → fixed to `/admin/invitations/stats`
+    - `/admin/admin/invitations/{id}/resend` → fixed to `/admin/invitations/{id}/resend`
+    - `/admin/admin/invitations/{id}/cancel` → fixed to `/admin/invitations/{id}/cancel`
+    - `/admin/admin/activity-log/recent` → fixed to `/admin/activity-log/recent`
+  - Root cause: Frontend code incorrectly included `/admin` twice in URL paths
+
 - **Account Settings Modal Issues** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/admin_auth.py`):
   - Fixed "Not Found" error when clicking "Save Changes"
     - Root cause: Frontend was calling `/admin/profile/info` but endpoint is at `/profile/info` (no `/admin` prefix)

@@ -225,7 +225,7 @@ export default function AdminUsersPage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/admin/invitations?status=pending&limit=50`, {
+      const response = await fetch(`${baseUrl}/admin/invitations?status=pending&limit=50`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -246,7 +246,7 @@ export default function AdminUsersPage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/admin/invitations/stats`, {
+      const response = await fetch(`${baseUrl}/admin/invitations/stats`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -266,7 +266,7 @@ export default function AdminUsersPage() {
     setResendingId(invitationId);
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/admin/invitations/${invitationId}/resend`, {
+      const response = await fetch(`${baseUrl}/admin/invitations/${invitationId}/resend`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -301,7 +301,7 @@ export default function AdminUsersPage() {
     setCancellingId(invitationId);
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/admin/invitations/${invitationId}/cancel`, {
+      const response = await fetch(`${baseUrl}/admin/invitations/${invitationId}/cancel`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
