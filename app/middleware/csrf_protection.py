@@ -2,6 +2,7 @@
 CSRF Protection Middleware
 """
 from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 import secrets
@@ -102,36 +103,24 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         """Process request with CSRF protection"""
 
-        # Skip CSRF check for safe methods
-        if request.method in self.safe_methods:
-            response = await call_next(request)
-            return response
         # Skip CSRF check for excluded paths
         if self._is_excluded_path(request.url.path):
             response = await call_next(request)
             return response
-        # Skip CSRF for GET requests to admin endpoints that don't modify state
-        if request.method == "GET" and "/admin/" in request.url.path:
-            # Allow GET requests for admin dashboard access
-            if any(safe_path in request.url.path for safe_path in [
-                "/admin/weddings", "/admin/users", "/admin/forms", "/admin/stats"
-            ]):
-                response = await call_next(request)
-                return response
 
-        # Get session ID
+        # Get session ID (needed for token generation)
         session_id = self._get_session_id(request)
 
-        # Get CSRF tokens
+        # Check CSRF cookie presence
         cookie_token = request.cookies.get(self.cookie_name)
-        header_token = request.headers.get(self.header_name)
 
-        # For non-safe methods, verify CSRF token
-        if not cookie_token or not header_token:
-            # Generate new token for first request
+        # Handle Safe Methods (GET, HEAD, OPTIONS, TRACE)
+        if request.method in self.safe_methods:
+            response = await call_next(request)
+
+            # Ensure CSRF token cookie is set for safe methods so client can use it later
             if not cookie_token:
                 new_token = self._generate_csrf_token(session_id)
-                response = await call_next(request)
                 response.set_cookie(
                     key=self.cookie_name,
                     value=new_token,
@@ -148,17 +137,23 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
                     secure=True,
                     max_age=86400  # 24 hours
                 )
-                return response
-            else:
-                raise HTTPException(
-                    status_code=403,
-                    detail="CSRF token missing in request header"
-                )
+            return response
+
+        # Get header token for verification
+        header_token = request.headers.get(self.header_name)
+
+        # For non-safe methods, verify CSRF token
+        if not cookie_token or not header_token:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "CSRF token missing in request header or cookie"}
+            )
+
         # Verify CSRF token
         if not self._verify_csrf_token(cookie_token, header_token):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=403,
-                detail="Invalid CSRF token"
+                content={"detail": "Invalid CSRF token"}
             )
 
         # Token is valid, continue with request

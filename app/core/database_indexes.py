@@ -260,7 +260,7 @@ QUERY_PATTERNS = {
     },
     "guest_history": {
         "description": "Get all tickets from a specific phone number",
-        "query": {"phone": "+13195296088"},
+        "query": {"phone": "+14054005000"},
         "sort": [("created_at", DESCENDING)],
         "uses_index": "idx_phone_created"
     },
