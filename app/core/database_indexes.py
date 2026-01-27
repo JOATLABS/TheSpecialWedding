@@ -139,11 +139,61 @@ async def create_wedding_indexes():
         return False
 
 
+async def create_guest_indexes():
+    """
+    Create indexes for guests collection
+
+    Key queries that need optimization:
+    1. Get guests by wedding_id (list guests)
+    2. Get guest by token (guest access)
+    3. Get guest by phone (search)
+    4. Get guest by email (lookup)
+    """
+    collection = mongo.get_guest_collection()
+
+    try:
+        # 1. List guests by wedding (most common query)
+        await collection.create_index(
+            [("wedding_id", ASCENDING)],
+            name="idx_wedding_id"
+        )
+        logger.info("Created index: idx_wedding_id")
+
+        # 2. Guest access by token
+        await collection.create_index(
+            [("token", ASCENDING)],
+            name="idx_token"
+        )
+        logger.info("Created index: idx_token")
+
+        # 3. Phone lookup
+        await collection.create_index(
+            [("phone", ASCENDING)],
+            name="idx_phone"
+        )
+        logger.info("Created index: idx_phone")
+
+        # 4. Email lookup
+        await collection.create_index(
+            [("email", ASCENDING)],
+            name="idx_email"
+        )
+        logger.info("Created index: idx_email")
+
+        logger.info("All guest indexes created successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating guest indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
         await create_support_ticket_indexes()
         await create_wedding_indexes()
+        await create_guest_indexes()
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
