@@ -239,7 +239,8 @@ class GuestService:
                 "plus_one_allowed": data.get("plus_one_allowed", False),
                 "number_of_plus_ones_allowed": data.get("number_of_plus_ones_allowed", 0),
                 "plus_one_submitted": False,
-                "sms_opt_in": False,
+                "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
+                "email_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
             }

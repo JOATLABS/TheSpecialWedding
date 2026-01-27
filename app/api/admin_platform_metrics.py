@@ -6,6 +6,7 @@ Provides comprehensive metrics for the ROOT_ADMIN dashboard.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from typing import Dict, Any, List, Optional, Iterable
 from datetime import datetime, timedelta
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
@@ -662,32 +663,30 @@ async def save_metrics_snapshot(
 
 @router.get("/errors/recent")
 async def get_recent_errors(
-    limit: int = Query(50, ge=1, le=200, description="Number of errors to retrieve"),
+    limit: int = Query(50, ge=1, le=200, description="Number of errors per page"),
+    cursor: Optional[str] = Query(None, description="Cursor for pagination (last error_id from previous page)"),
+    direction: str = Query("next", description="Pagination direction: 'next' or 'prev'"),
     severity: Optional[str] = Query(None, description="Filter by severity: all, critical, warning"),
     acknowledged: Optional[bool] = Query(None, description="Filter by acknowledged status"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
-    Get recent errors with filtering options
+    Get recent errors with filtering and cursor-based pagination.
+
+    Cursor-based pagination provides O(1) performance regardless of offset,
+    unlike skip() which degrades at high offsets.
+
+    Args:
+        limit: Number of errors per page (1-200)
+        cursor: The error_id from the last item of the previous page
+        direction: 'next' for older errors, 'prev' for newer errors
+        severity: Filter by severity level
+        acknowledged: Filter by acknowledged status
     """
     now = datetime.utcnow()
     default_cutoff = now - timedelta(days=30)
 
-    errors_docs: List[Dict[str, Any]] = []
-    seen_ids = set()
-
-    def extend_errors(docs: Iterable[Dict[str, Any]]):
-        for doc in docs:
-            doc_identifier = doc.get("error_id") or doc.get("_id")
-            doc_identifier_str = str(doc_identifier) if doc_identifier is not None else None
-            if doc_identifier_str and doc_identifier_str in seen_ids:
-                continue
-            if doc_identifier_str:
-                seen_ids.add(doc_identifier_str)
-            errors_docs.append(doc)
-            if len(errors_docs) >= limit:
-                break
-
+    # Build base query for errors collection
     errors_query: Dict[str, Any] = {"timestamp": {"$gte": default_cutoff}}
     if acknowledged is not None:
         errors_query["acknowledged"] = acknowledged
@@ -707,31 +706,105 @@ async def get_recent_errors(
             },
         ]
 
+    # Get total count for UI display
+    total_errors = 0
+    total_audit = 0
     try:
-        cursor = mongo.db["errors"].find(errors_query).sort("timestamp", -1).limit(limit)
-        extend_errors(await cursor.to_list(length=limit))
+        total_errors = await mongo.db["errors"].count_documents(errors_query)
+    except Exception as exc:
+        logger.warning("Failed to count errors: %s", exc)
+
+    # Build audit_logs query for fallback
+    audit_query: Dict[str, Any] = {
+        "timestamp": {"$gte": default_cutoff},
+        "response_status": {"$gte": 400},
+    }
+    if severity == "critical":
+        audit_query["response_status"] = {"$gte": 500}
+    elif severity == "warning":
+        audit_query["response_status"] = {"$gte": 400, "$lt": 500}
+
+    # Only count audit_logs if not filtering for acknowledged=True
+    if acknowledged is not True:
+        try:
+            total_audit = await mongo.db["audit_logs"].count_documents(audit_query)
+        except Exception as exc:
+            logger.warning("Failed to count audit_logs: %s", exc)
+
+    total_count = total_errors + total_audit
+
+    # Fetch errors with cursor-based pagination
+    errors_docs: List[Dict[str, Any]] = []
+    seen_ids = set()
+
+    def extend_errors(docs: Iterable[Dict[str, Any]], max_items: int):
+        added = 0
+        for doc in docs:
+            if added >= max_items:
+                break
+            doc_identifier = doc.get("error_id") or doc.get("_id")
+            doc_identifier_str = str(doc_identifier) if doc_identifier is not None else None
+            if doc_identifier_str and doc_identifier_str in seen_ids:
+                continue
+            if doc_identifier_str:
+                seen_ids.add(doc_identifier_str)
+            errors_docs.append(doc)
+            added += 1
+
+    try:
+        # Apply cursor-based pagination using _id range query
+        cursor_query = errors_query.copy()
+
+        if cursor:
+            # Find the cursor document to get its _id for range query
+            cursor_doc = None
+            if ObjectId.is_valid(cursor):
+                cursor_doc = await mongo.db["errors"].find_one({"_id": ObjectId(cursor)})
+            if not cursor_doc:
+                cursor_doc = await mongo.db["errors"].find_one({"error_id": cursor})
+
+            if cursor_doc and "_id" in cursor_doc:
+                cursor_id = cursor_doc["_id"]
+                # For descending sort (newest first):
+                # - "next" page: get items with _id < cursor_id (older)
+                # - "prev" page: get items with _id > cursor_id (newer)
+                if direction == "prev":
+                    cursor_query["_id"] = {"$gt": cursor_id}
+                    sort_direction = 1  # Ascending to get items just after cursor
+                else:
+                    cursor_query["_id"] = {"$lt": cursor_id}
+                    sort_direction = -1  # Descending (normal order)
+            else:
+                sort_direction = -1
+        else:
+            sort_direction = -1  # Default: newest first
+
+        # Fetch one extra to determine if there are more pages
+        fetch_limit = limit + 1
+        db_cursor = mongo.db["errors"].find(cursor_query).sort("_id", sort_direction).limit(fetch_limit)
+        fetched_docs = await db_cursor.to_list(length=fetch_limit)
+
+        # If going backwards, reverse to maintain consistent order
+        if direction == "prev" and cursor:
+            fetched_docs.reverse()
+
+        # Check if there are more results
+        has_more = len(fetched_docs) > limit
+        if has_more:
+            fetched_docs = fetched_docs[:limit]
+
+        extend_errors(fetched_docs, limit)
+
     except Exception as exc:
         logger.warning("Failed to query self-hosted errors collection: %s", exc)
 
-    # Include audit_logs when:
-    # - acknowledged is None (show all) OR acknowledged is False (show unacknowledged)
-    # - audit_logs entries don't have an acknowledged field, so they're inherently "unacknowledged"
-    # - Only skip audit_logs when acknowledged=True (looking for explicitly acknowledged errors only)
-    include_audit_fallback = acknowledged is not True and len(errors_docs) < limit
+    # Include audit_logs for remaining items if needed (only for first page without cursor)
+    include_audit_fallback = acknowledged is not True and len(errors_docs) < limit and not cursor
     if include_audit_fallback:
         remaining = limit - len(errors_docs)
         if remaining > 0:
-            audit_query: Dict[str, Any] = {
-                "timestamp": {"$gte": default_cutoff},
-                "response_status": {"$gte": 400},
-            }
-            if severity == "critical":
-                audit_query["response_status"] = {"$gte": 500}
-            elif severity == "warning":
-                audit_query["response_status"] = {"$gte": 400, "$lt": 500}
-
-            cursor = mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(remaining)
-            extend_errors(await cursor.to_list(length=remaining))
+            audit_cursor = mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(remaining)
+            extend_errors(await audit_cursor.to_list(length=remaining), remaining)
 
     errors_docs.sort(
         key=lambda doc: _coerce_datetime(doc.get("timestamp")) or datetime.min,
@@ -739,9 +812,27 @@ async def get_recent_errors(
     )
     normalized_errors = [_extract_error_summary(error) for error in errors_docs]
 
+    # Calculate cursors for next/prev navigation
+    next_cursor = None
+    prev_cursor = None
+
+    if normalized_errors:
+        # Next cursor: last item's error_id (for fetching older errors)
+        next_cursor = normalized_errors[-1].get("error_id") if has_more or (cursor and direction == "prev") else None
+        # Prev cursor: first item's error_id (for fetching newer errors)
+        prev_cursor = normalized_errors[0].get("error_id") if cursor else None
+
+    total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
+
     return {
         "errors": normalized_errors,
-        "total": len(normalized_errors),
+        "total": total_count,
+        "limit": limit,
+        "total_pages": total_pages,
+        "has_next": next_cursor is not None,
+        "has_prev": prev_cursor is not None,
+        "next_cursor": next_cursor,
+        "prev_cursor": prev_cursor,
         "filters": {
             "severity": severity,
             "acknowledged": acknowledged
@@ -822,6 +913,49 @@ async def acknowledge_error(
 
     except Exception as e:
         logger.error(f"Failed to acknowledge error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BulkAcknowledgeRequest(BaseModel):
+    error_ids: List[str]
+
+
+@router.post("/errors/acknowledge-bulk")
+async def acknowledge_errors_bulk(
+    request: BulkAcknowledgeRequest,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """Acknowledge multiple errors in a single operation"""
+
+    try:
+        # Build filter for both error_id and ObjectId matches
+        object_ids = [ObjectId(eid) for eid in request.error_ids if ObjectId.is_valid(eid)]
+
+        result = await mongo.db["errors"].update_many(
+            {
+                "$or": [
+                    {"error_id": {"$in": request.error_ids}},
+                    {"_id": {"$in": object_ids}}
+                ]
+            },
+            {
+                "$set": {
+                    "acknowledged": True,
+                    "acknowledged_by": current_user.email,
+                    "acknowledged_at": datetime.utcnow()
+                }
+            }
+        )
+
+        return {
+            "status": "success",
+            "acknowledged_count": result.modified_count,
+            "requested_count": len(request.error_ids),
+            "acknowledged_by": current_user.email
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to bulk acknowledge errors: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

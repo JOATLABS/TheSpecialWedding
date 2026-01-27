@@ -104,7 +104,7 @@ export default function ProfilePage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/password`, {
+      const response = await fetch(`${baseUrl}/profile/password`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -134,7 +134,7 @@ export default function ProfilePage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/email`, {
+      const response = await fetch(`${baseUrl}/profile/email`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -169,7 +169,7 @@ export default function ProfilePage() {
       };
 
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/info`, {
+      const response = await fetch(`${baseUrl}/profile/info`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -226,7 +226,7 @@ export default function ProfilePage() {
       formData.append('file', file);
 
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/image`, {
+      const response = await fetch(`${baseUrl}/profile/image`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -260,7 +260,7 @@ export default function ProfilePage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/profile/image`, {
+      const response = await fetch(`${baseUrl}/profile/image`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

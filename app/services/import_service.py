@@ -6,6 +6,7 @@ from app.core.database import mongo
 from app.utils.token_generator import generate_token
 from datetime import datetime
 
+
 class GuestImportService:
     def __init__(self):
         self.collection = mongo.get_guest_collection()
@@ -30,10 +31,12 @@ class GuestImportService:
             group_id = row.get("group_id", None)
 
             if not name or len(name) < 2:
+                # TODO log invalid entry
                 continue
             
             # Require at least phone or email for contact
             if not phone and not email:
+                # TODO log invalid entry and should not continue because atleast one is required
                 continue
 
             token = generate_token()
@@ -53,6 +56,8 @@ class GuestImportService:
                 "plus_one_allowed": plus_one_allowed,
                 "number_of_plus_ones_allowed": number_of_plus_ones_allowed,
                 "plus_one_submitted": False,
+                "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
+                "email_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
             }
@@ -65,71 +70,3 @@ class GuestImportService:
                 continue
 
         return {"imported": success, "tokens": tokens}
-
-
-
-# import csv
-# from fastapi import UploadFile, HTTPException
-# from app.core.database import mongo
-# from app.utils.token_generator import generate_token
-
-# class GuestImportService:
-#     def __init__(self):
-#         self.collection = mongo.get_guest_collection()
-
-#     def import_csv(self, file: UploadFile):
-#         if not file.filename.endswith('.csv'):
-#             raise HTTPException(status_code=400, detail="File must be a CSV")
-
-#         decoded = file.file.read().decode('utf-8').splitlines()
-#         reader = csv.DictReader(decoded)
-
-#         success = 0
-#         tokens = []
-
-#         for row in reader:
-#             name = row.get("name")
-#             phone = row.get("phone", None)
-#             allow_plus_ones = self._parse_boolean(row.get("allow_guest_to_add_plus_ones", "false"))
-#             number_of_allowed_plus_ones = self._parse_int(row.get("number_of_allowed_plus_ones", "0"))
-
-#             if not name or len(name) < 2:
-#                 continue
-
-#             # Validate and adjust plus-one settings
-#             if not allow_plus_ones:
-#                 number_of_allowed_plus_ones = 0
-
-#             token = generate_token()
-
-#             doc = {
-#                 "name": name.strip(),
-#                 "phone": phone.strip() if phone else None,
-#                 "token": token,
-#                 "rsvp": None,
-#                 "allow_plus_ones": allow_plus_ones,
-#                 "number_of_allowed_plus_ones": number_of_allowed_plus_ones,
-#                 "plus_ones": []
-#             }
-
-#             try:
-#                 await self.collection.insert_one(doc)
-#                 success += 1
-#                 tokens.append(token)
-#             except Exception:
-#                 continue
-
-#         return {"imported": success, "tokens": tokens}
-
-#     def _parse_boolean(self, value):
-#         """Convert string value to boolean"""
-#         if isinstance(value, bool):
-#             return value
-#         return value.lower() in ('yes', 'true', '1', 'y', 't')
-
-#     def _parse_int(self, value):
-#         """Convert string value to integer with fallback to 0"""
-#         try:
-#             return int(value)
-#         except (ValueError, TypeError):
-#             return 0

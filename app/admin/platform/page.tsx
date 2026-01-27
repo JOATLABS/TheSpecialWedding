@@ -115,6 +115,15 @@ export default function PlatformInfrastructurePage() {
   const [acknowledgingIds, setAcknowledgingIds] = useState<Set<string>>(new Set());
   const [acknowledgingAll, setAcknowledgingAll] = useState(false);
 
+  // Cursor-based pagination state
+  const [totalErrors, setTotalErrors] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [hasPrevPage, setHasPrevPage] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [prevCursor, setPrevCursor] = useState<string | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<string[]>([]);  // Track cursor history for "First" button
+
   // Access control - ROOT ADMIN only
   useEffect(() => {
     if (userProfile && !userProfile.is_root_admin) {
@@ -155,7 +164,7 @@ export default function PlatformInfrastructurePage() {
     }
   }, []);
 
-  const fetchAllErrors = useCallback(async () => {
+  const fetchAllErrors = useCallback(async (cursor?: string | null, direction: 'next' | 'prev' = 'next') => {
     try {
       setLoadingErrors(true);
       const baseUrl = getApiBaseUrl();
@@ -165,6 +174,8 @@ export default function PlatformInfrastructurePage() {
 
       const params = new URLSearchParams({
         limit: errorLimit.toString(),
+        direction,
+        ...(cursor && { cursor }),
         ...(severityFilter !== 'all' && { severity: severityFilter }),
         ...(acknowledgedFilter !== 'all' && { acknowledged: acknowledgedFilter })
       });
@@ -179,6 +190,12 @@ export default function PlatformInfrastructurePage() {
       if (response.ok) {
         const data = await response.json();
         setAllErrors(data.errors || []);
+        setTotalErrors(data.total || 0);
+        setTotalPages(data.total_pages || 1);
+        setHasNextPage(data.has_next || false);
+        setHasPrevPage(data.has_prev || false);
+        setNextCursor(data.next_cursor || null);
+        setPrevCursor(data.prev_cursor || null);
       }
     } catch (err) {
       console.error('Error fetching errors:', err);
@@ -201,6 +218,45 @@ export default function PlatformInfrastructurePage() {
       fetchAllErrors();
     }
   }, [activeTab, fetchAllErrors]);
+
+  // Reset cursor when filters change
+  useEffect(() => {
+    setNextCursor(null);
+    setPrevCursor(null);
+    setCursorHistory([]);
+  }, [errorLimit, severityFilter, acknowledgedFilter]);
+
+  const handleNextPage = () => {
+    if (nextCursor && hasNextPage) {
+      // Save current first item's cursor to history for going back
+      if (allErrors.length > 0 && allErrors[0].error_id) {
+        setCursorHistory(prev => [...prev, allErrors[0].error_id]);
+      }
+      fetchAllErrors(nextCursor, 'next');
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (cursorHistory.length > 0) {
+      // Go back using cursor history
+      const newHistory = [...cursorHistory];
+      const prevPageCursor = newHistory.pop();
+      setCursorHistory(newHistory);
+      // If we're at the beginning of history, fetch first page
+      if (newHistory.length === 0) {
+        fetchAllErrors(undefined, 'next');
+      } else {
+        fetchAllErrors(prevPageCursor, 'prev');
+      }
+    } else if (prevCursor) {
+      fetchAllErrors(prevCursor, 'prev');
+    }
+  };
+
+  const handleFirstPage = () => {
+    setCursorHistory([]);
+    fetchAllErrors(undefined, 'next');
+  };
 
   const handleAcknowledgeError = async (errorId: string) => {
     setAcknowledgingIds(prev => new Set(prev).add(errorId));
@@ -254,26 +310,32 @@ export default function PlatformInfrastructurePage() {
       const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
-      // Parallel requests with Promise.allSettled
-      const results = await Promise.allSettled(
-        unacknowledgedErrors.map(err =>
-          fetch(`${baseUrl}/admin/platform/errors/${err.error_id}/acknowledge`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          })
-        )
-      );
+      // Use bulk acknowledge endpoint for better performance
+      const response = await fetch(`${baseUrl}/admin/platform/errors/acknowledge-bulk`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          error_ids: unacknowledgedErrors.map(e => e.error_id)
+        })
+      });
 
-      const succeeded = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      if (response.ok) {
+        const data = await response.json();
+        const requested = data.requested_count || unacknowledgedErrors.length;
+        const acknowledged = data.acknowledged_count || 0;
 
-      if (failed > 0) {
-        toast.warning(`Acknowledged ${succeeded}, ${failed} failed`);
+        if (acknowledged < requested) {
+          toast.warning(`Acknowledged ${acknowledged} of ${requested} errors`);
+        } else {
+          toast.success(`Acknowledged ${acknowledged} errors`);
+        }
       } else {
-        toast.success(`Acknowledged ${succeeded} errors`);
+        const errorData = await response.json().catch(() => null);
+        const errorMessage = errorData?.detail || 'Failed to acknowledge errors';
+        toast.error(errorMessage);
       }
 
       fetchAllErrors();
@@ -603,10 +665,10 @@ export default function PlatformInfrastructurePage() {
                   onChange={(e) => setErrorLimit(Number(e.target.value))}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 text-sm"
                 >
-                  <option value={25}>25 errors</option>
-                  <option value={50}>50 errors</option>
-                  <option value={100}>100 errors</option>
-                  <option value={200}>200 errors</option>
+                  <option value={25}>25 per page</option>
+                  <option value={50}>50 per page</option>
+                  <option value={100}>100 per page</option>
+                  <option value={200}>200 per page</option>
                 </select>
               </div>
               <div className="ml-auto">
@@ -628,24 +690,29 @@ export default function PlatformInfrastructurePage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="p-4">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                {severityFilter !== 'all' || acknowledgedFilter !== 'all' ? 'Filtered Results' : 'Total Errors (24h)'}
+                {severityFilter !== 'all' || acknowledgedFilter !== 'all' ? 'Total Matching' : 'Total Errors (30d)'}
               </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{allErrors.length}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{totalErrors}</p>
+              {totalPages > 1 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Showing {allErrors.length} of {totalErrors}
+                </p>
+              )}
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical (this page)</p>
               <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
                 {allErrors.filter(e => e.severity === 'critical').length}
               </p>
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings (this page)</p>
               <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
                 {allErrors.filter(e => e.severity === 'warning').length}
               </p>
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged (this page)</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
                 {allErrors.filter(e => !e.acknowledged).length}
               </p>
@@ -707,7 +774,12 @@ export default function PlatformInfrastructurePage() {
                           </p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">{err.endpoint || 'N/A'}</p>
+                          <p
+                            className="text-sm text-gray-500 dark:text-gray-400 font-mono max-w-xs truncate cursor-help"
+                            title={err.endpoint || 'N/A'}
+                          >
+                            {err.endpoint || 'N/A'}
+                          </p>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -747,6 +819,48 @@ export default function PlatformInfrastructurePage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </Card>
+          )}
+
+          {/* Pagination Controls */}
+          {(hasNextPage || hasPrevPage || cursorHistory.length > 0) && (
+            <Card className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Showing {allErrors.length} of {totalErrors} total errors
+                  {cursorHistory.length > 0 && (
+                    <span className="ml-2 text-gray-400">
+                      (Page {cursorHistory.length + 1})
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleFirstPage}
+                    disabled={cursorHistory.length === 0 || loadingErrors}
+                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    First
+                  </button>
+                  <button
+                    onClick={handlePrevPage}
+                    disabled={(cursorHistory.length === 0 && !hasPrevPage) || loadingErrors}
+                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="px-3 py-1 text-sm font-medium bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 rounded">
+                    {cursorHistory.length + 1}
+                  </span>
+                  <button
+                    onClick={handleNextPage}
+                    disabled={!hasNextPage || loadingErrors}
+                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </Card>
           )}
