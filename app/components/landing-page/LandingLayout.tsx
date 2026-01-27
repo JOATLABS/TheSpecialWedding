@@ -160,10 +160,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
         {/* Wedding Details */}
         <SectionWrapper id="venue">
-          <GlassCard className="max-w-4xl mx-auto p-8" depth="near" theme={wedding.theme_config}>
-            <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Wedding Details</h2>
-            <EventLocationSection wedding={wedding} />
-          </GlassCard>
+          <EventLocationSection wedding={wedding} />
         </SectionWrapper>
 
         {/* FAQ */}

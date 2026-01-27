@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wedding } from '@/types/wedding';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { formatDate as formatDisplayDate } from '@/utils/dateFormat';
 
 interface EventLocationSectionProps {
@@ -95,7 +96,9 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
   const theme = wedding.theme_config;
 
   return (
-    <div className="flex flex-col space-y-3">
+    <GlassCard className="max-w-4xl mx-auto p-6" depth="near" theme={wedding.theme_config}>
+      <h2 className="text-4xl font-bold text-center mb-8 theme-primary">Wedding Details</h2>
+      <div className="flex flex-col space-y-3">
 
       {/* Event dropdown */}
       <div>
@@ -229,5 +232,6 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
         </div>
       </div>
     </div>
+    </GlassCard>
   );
 };
