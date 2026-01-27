@@ -562,6 +562,9 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                       </div>
                       <button
                         type="button"
+                        role="switch"
+                        aria-checked={pushNotificationsEnabled}
+                        aria-label="Push notifications"
                         onClick={handlePushNotificationsToggle}
                         disabled={savingPushSettings}
                         className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-wedding-rose focus:ring-offset-2 ${
@@ -609,6 +612,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                         type="button"
                         onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
                       >
                         {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
@@ -631,6 +635,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                         type="button"
                         onClick={() => setShowNewPassword(!showNewPassword)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        aria-label={showNewPassword ? "Hide new password" : "Show new password"}
                       >
                         {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
@@ -692,6 +697,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                         type="button"
                         onClick={() => setShowEmailPassword(!showEmailPassword)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        aria-label={showEmailPassword ? "Hide password" : "Show password"}
                       >
                         {showEmailPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
