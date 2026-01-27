@@ -231,6 +231,78 @@ async def create_rsvp_indexes():
         return False
 
 
+async def create_subscription_indexes():
+    """
+    Create indexes for subscription-related collections
+    """
+    plans_collection = mongo.db["subscription_plans"]
+    subs_collection = mongo.db["user_subscriptions"]
+    usage_collection = mongo.db["usage_tracking"]
+
+    try:
+        # Subscription Plans
+        await plans_collection.create_index(
+            [("sort_order", ASCENDING)],
+            name="idx_plan_sort_order"
+        )
+        logger.info("Created index: idx_plan_sort_order")
+
+        # User Subscriptions
+        # 1. Look up by user + status (most common)
+        await subs_collection.create_index(
+            [("user_id", ASCENDING), ("status", ASCENDING)],
+            name="idx_user_status"
+        )
+        # 2. Look up by email + status (for feature gates)
+        await subs_collection.create_index(
+            [("user_email", ASCENDING), ("status", ASCENDING)],
+            name="idx_email_status"
+        )
+        # 3. Look up by plan + status (for plan deletion checks)
+        await subs_collection.create_index(
+            [("plan_id", ASCENDING), ("status", ASCENDING)],
+            name="idx_plan_status"
+        )
+        # 4. Status filtering (for analytics)
+        await subs_collection.create_index(
+            [("status", ASCENDING)],
+            name="idx_status"
+        )
+        logger.info("Created user_subscription indexes")
+
+        # Usage Tracking
+        await usage_collection.create_index(
+            [("user_id", ASCENDING), ("current_month", ASCENDING)],
+            name="idx_user_month"
+        )
+        logger.info("Created usage_tracking indexes")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating subscription indexes: {str(e)}")
+        return False
+
+
+async def create_user_indexes():
+    """
+    Create indexes for users collection
+    """
+    collection = mongo.get_users_collection()
+    try:
+        # 1. Email - Unique lookup
+        await collection.create_index(
+            [("email", ASCENDING)],
+            name="idx_user_email",
+            unique=True
+        )
+        logger.info("Created index: idx_user_email")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating user indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -239,6 +311,8 @@ async def create_all_indexes():
         await create_guest_indexes()
         await create_plus_one_indexes()
         await create_rsvp_indexes()
+        await create_subscription_indexes()
+        await create_user_indexes()
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
