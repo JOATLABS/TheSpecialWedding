@@ -143,48 +143,91 @@ async def create_guest_indexes():
     """
     Create indexes for guests collection
 
-    Key queries that need optimization:
-    1. Get guests by wedding_id (list guests)
-    2. Get guest by token (guest access)
-    3. Get guest by phone (search)
-    4. Get guest by email (lookup)
+    Key queries:
+    1. Get guests by wedding_id (guest list)
+    2. Lookup guest by token (login)
+    3. Lookup by phone (verification)
+    4. Lookup by email
     """
-    collection = mongo.get_guest_collection()
-
+    collection = mongo.db["guests"]
     try:
-        # 1. List guests by wedding (most common query)
+        # 1. Wedding ID - Most frequent query (list guests)
         await collection.create_index(
             [("wedding_id", ASCENDING)],
             name="idx_wedding_id"
         )
         logger.info("Created index: idx_wedding_id")
 
-        # 2. Guest access by token
+        # 2. Token - Unique lookup for guest auth
         await collection.create_index(
             [("token", ASCENDING)],
-            name="idx_token"
+            name="idx_token",
+            unique=True
         )
         logger.info("Created index: idx_token")
 
-        # 3. Phone lookup
+        # 3. Phone - Lookup for verification
         await collection.create_index(
             [("phone", ASCENDING)],
-            name="idx_phone"
+            name="idx_guest_phone"
         )
-        logger.info("Created index: idx_phone")
+        logger.info("Created index: idx_guest_phone")
 
-        # 4. Email lookup
+        # 4. Email - Lookup
         await collection.create_index(
             [("email", ASCENDING)],
-            name="idx_email"
+            name="idx_guest_email"
         )
-        logger.info("Created index: idx_email")
+        logger.info("Created index: idx_guest_email")
 
         logger.info("All guest indexes created successfully")
         return True
-
     except Exception as e:
         logger.error(f"Error creating guest indexes: {str(e)}")
+        return False
+
+
+async def create_plus_one_indexes():
+    """
+    Create indexes for plus_ones collection
+
+    Key queries:
+    1. Get plus ones by guest_id
+    """
+    collection = mongo.db["plus_ones"]
+    try:
+        # 1. Guest ID - Foreign key lookup
+        await collection.create_index(
+            [("guest_id", ASCENDING)],
+            name="idx_guest_id"
+        )
+        logger.info("Created index: idx_guest_id")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating plus_one indexes: {str(e)}")
+        return False
+
+
+async def create_rsvp_indexes():
+    """
+    Create indexes for rsvps collection
+
+    Key queries:
+    1. Get RSVP by guest_id
+    """
+    collection = mongo.db["rsvps"]
+    try:
+        # 1. Guest ID - Foreign key lookup
+        await collection.create_index(
+            [("guest_id", ASCENDING)],
+            name="idx_guest_id"
+        )
+        logger.info("Created index: idx_guest_id")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating rsvp indexes: {str(e)}")
         return False
 
 
@@ -194,6 +237,8 @@ async def create_all_indexes():
         await create_support_ticket_indexes()
         await create_wedding_indexes()
         await create_guest_indexes()
+        await create_plus_one_indexes()
+        await create_rsvp_indexes()
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
@@ -215,7 +260,7 @@ QUERY_PATTERNS = {
     },
     "guest_history": {
         "description": "Get all tickets from a specific phone number",
-        "query": {"phone": "+13195296088"},
+        "query": {"phone": "+14054005000"},
         "sort": [("created_at", DESCENDING)],
         "uses_index": "idx_phone_created"
     },
