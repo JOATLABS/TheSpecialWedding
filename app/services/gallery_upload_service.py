@@ -92,8 +92,10 @@ class GalleryUploadService:
 
     def generate_qr_code(self, url: str):
         try:
-            # Security: Validate that the URL belongs to our domain
+            # Security: Validate scheme and that the URL belongs to our domain
             parsed_url = urlparse(url)
+            if parsed_url.scheme.lower() not in ("http", "https"):
+                raise HTTPException(status_code=400, detail="Invalid URL scheme")
             allowed_domains = []
 
             frontend_url = os.getenv("FRONTEND_URL")
