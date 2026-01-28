@@ -1516,7 +1516,7 @@ class StripeService:
             if not planner_email:
                 # Try to get planner from wedding
                 if wedding_id:
-                    wedding = await mongo.db["weddings"].find_one({"wedding_id": wedding_id})
+                    wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
                     if wedding:
                         planner_email = wedding.get("assigned_planner_email")
 

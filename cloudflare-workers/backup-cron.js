@@ -130,7 +130,7 @@ async function sendFailureEmail(env, errorMessage) {
 					<p><strong>Error:</strong> ${errorMessage}</p>
 					<p><strong>Time:</strong> ${new Date().toISOString()}</p>
 					<p>Please check your backup system immediately.</p>
-					<a href="https://admin.thespecialwedding.com/admin/platform/metrics"
+					<a href="https://thespecialwedding.io/admin/platform/metrics"
 					   style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
 						View Dashboard
 					</a>

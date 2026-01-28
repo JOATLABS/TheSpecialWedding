@@ -98,7 +98,11 @@ export function useTables(weddingId: string) {
         },
         body: JSON.stringify({ table_id: tableId, guest_ids: guestIds }),
       });
-      if (!response.ok) throw new Error('Failed to assign guests');
+      if (!response.ok) {
+        // Parse error response to get actual message (e.g., capacity exceeded)
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to assign guests');
+      }
       return true;
     } catch (err: any) {
       setError(err.message);

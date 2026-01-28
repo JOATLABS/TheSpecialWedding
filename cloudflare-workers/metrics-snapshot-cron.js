@@ -8,8 +8,8 @@
  * 1. Go to Cloudflare Dashboard → Workers & Pages
  * 2. Create new Worker
  * 3. Paste this code
- * 4. Add environment variables:
- *    - API_URL: https://api.thespecialwedding.io
+ * 4. Add environment variables (via GitHub secrets):
+ *    - NEXT_PUBLIC_API_BASE_URL: (backend API URL)
  *    - ADMIN_TOKEN: (JWT token for ROOT_ADMIN - get from login)
  *    - Optional: DEPLOYMENT_ENV (production, staging, development)
  *    - Optional: ANALYTICS_INDEX (sampling key for Analytics Engine)
@@ -31,7 +31,7 @@ export default {
     console.log('Saving metrics snapshot...');
 
     try {
-      const response = await fetch(`${env.API_URL}/admin/platform/metrics/snapshot`, {
+      const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/platform/metrics/snapshot`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${env.ADMIN_TOKEN}`,
@@ -59,7 +59,7 @@ export default {
           env.WEDDING_ANALYTICAL,
           result.metrics,
           {
-            environment: env.DEPLOYMENT_ENV || inferEnvironment(env.API_URL),
+            environment: env.DEPLOYMENT_ENV || inferEnvironment(env.NEXT_PUBLIC_API_BASE_URL),
             index: env.ANALYTICS_INDEX || 'special-wedding',
           }
         );

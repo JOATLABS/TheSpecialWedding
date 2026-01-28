@@ -300,7 +300,7 @@ async function sendDowntimeAlert(env, errorInfo) {
                 </ol>
               </div>
               <div style="text-align: center; margin-top: 20px;">
-                <a href="https://admin.thespecialwedding.com/admin/platform/metrics"
+                <a href="https://thespecialwedding.io/admin/platform/metrics"
                    style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
                   View Dashboard
                 </a>
@@ -373,7 +373,7 @@ async function sendRecoveryAlert(env, healthInfo) {
                 <p style="margin: 0; color: #065F46;">The service has recovered and is responding normally. No action is required.</p>
               </div>
               <div style="text-align: center; margin-top: 20px;">
-                <a href="https://admin.thespecialwedding.com/admin/platform/metrics"
+                <a href="https://thespecialwedding.io/admin/platform/metrics"
                    style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
                   View Dashboard
                 </a>

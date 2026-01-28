@@ -139,6 +139,30 @@ async def create_wedding_indexes():
         return False
 
 
+async def create_table_indexes():
+    """
+    Create indexes for tables collection (seating orchestration)
+
+    Key queries:
+    1. Get tables by wedding_id (seating page)
+    """
+    collection = mongo.db["tables"]
+
+    try:
+        # 1. Wedding ID - Most frequent query (list tables for seating page)
+        await collection.create_index(
+            [("wedding_id", ASCENDING)],
+            name="idx_table_wedding_id"
+        )
+        logger.info("Created index: idx_table_wedding_id")
+
+        logger.info("All table indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating table indexes: {str(e)}")
+        return False
+
+
 async def create_guest_indexes():
     """
     Create indexes for guests collection
@@ -179,6 +203,20 @@ async def create_guest_indexes():
             name="idx_guest_email"
         )
         logger.info("Created index: idx_guest_email")
+
+        # 5. Table ID - For seating queries (find guests at a specific table)
+        await collection.create_index(
+            [("table_id", ASCENDING)],
+            name="idx_table_id"
+        )
+        logger.info("Created index: idx_table_id")
+
+        # 6. Wedding + Table compound index (for seating page queries)
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("table_id", ASCENDING)],
+            name="idx_wedding_table"
+        )
+        logger.info("Created index: idx_wedding_table")
 
         logger.info("All guest indexes created successfully")
         return True
@@ -308,6 +346,7 @@ async def create_all_indexes():
     try:
         await create_support_ticket_indexes()
         await create_wedding_indexes()
+        await create_table_indexes()  # Seating orchestration
         await create_guest_indexes()
         await create_plus_one_indexes()
         await create_rsvp_indexes()

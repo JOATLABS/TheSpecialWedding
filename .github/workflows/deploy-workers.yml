@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'development/**'
+      - 'feature-twilio-otp-improvements-final-submitted'
     paths:
       - 'cloudflare-workers/**'
   workflow_dispatch:  # Allow manual deployment
@@ -13,8 +14,8 @@ jobs:
   deploy-workers:
     name: Deploy Cloudflare Workers
     runs-on: ubuntu-latest
-    # Only run if pushing to main or configured deployment branch
-    if: github.ref == 'refs/heads/main' || github.ref == format('refs/heads/{0}', vars.DEPLOY_BRANCH || 'development/saas-features')
+    # Run on main, development branches, or the current feature branch
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/') || github.ref == 'refs/heads/feature-twilio-otp-improvements-final-submitted'
 
     steps:
       - name: Checkout code
@@ -46,6 +47,11 @@ jobs:
         run: |
           cd cloudflare-workers
           wrangler deploy --config metrics-snapshot.wrangler.toml
+          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config metrics-snapshot.wrangler.toml
+          echo "${{ secrets.ADMIN_TOKEN }}" | wrangler secret put ADMIN_TOKEN --config metrics-snapshot.wrangler.toml
+          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config metrics-snapshot.wrangler.toml
+          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config metrics-snapshot.wrangler.toml
+          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config metrics-snapshot.wrangler.toml
 
       - name: Deploy Backup Cron Worker
         env:
@@ -66,16 +72,29 @@ jobs:
           cd cloudflare-workers
           # Create KV namespace (ignore error if already exists)
           KV_OUTPUT=$(wrangler kv:namespace create "uptime-state" 2>&1) || true
-          # Extract ID from output or list existing namespaces
+          echo "KV creation output: $KV_OUTPUT"
+
+          # Extract ID - try multiple patterns
           if echo "$KV_OUTPUT" | grep -q "already exists"; then
-            KV_ID=$(wrangler kv:namespace list --json | jq -r '.[] | select(.title | contains("uptime-state")) | .id')
+            echo "KV namespace already exists, fetching ID from list..."
+            KV_ID=$(wrangler kv:namespace list --json | jq -r '.[] | select(.title | contains("uptime-state")) | .id' | head -1)
           else
-            KV_ID=$(echo "$KV_OUTPUT" | grep -oP 'id = "\K[^"]+')
+            # Try to extract from creation output (format varies by wrangler version)
+            KV_ID=$(echo "$KV_OUTPUT" | grep -oE '[a-f0-9]{32}' | head -1)
+            if [ -z "$KV_ID" ]; then
+              KV_ID=$(echo "$KV_OUTPUT" | grep -oP 'id = "\K[^"]+' || true)
+            fi
           fi
-          # Update wrangler.toml with the KV namespace ID
+
+          echo "Extracted KV namespace ID: $KV_ID"
+
+          # Update wrangler.toml with the KV namespace ID (handle both placeholder formats)
           if [ -n "$KV_ID" ]; then
-            sed -i "s/<YOUR_KV_NAMESPACE_ID>/$KV_ID/" uptime.wrangler.toml
-            echo "KV namespace ID: $KV_ID"
+            sed -i "s|<YOUR_KV_NAMESPACE_ID>|$KV_ID|g" uptime.wrangler.toml
+            sed -i "s|YOUR_KV_NAMESPACE_ID|$KV_ID|g" uptime.wrangler.toml
+            echo "✓ KV namespace ID set: $KV_ID"
+          else
+            echo "⚠️ Warning: Could not extract KV namespace ID"
           fi
 
       - name: Deploy Uptime Cron Worker

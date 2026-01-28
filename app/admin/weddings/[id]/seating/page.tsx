@@ -181,17 +181,33 @@ export default function SeatingPage() {
   const applyAISuggestions = async () => {
     if (!aiSuggestions) return;
 
-    // Apply each table's guest assignments
-    for (const tableSuggestion of aiSuggestions.tables) {
-      const guestIds = tableSuggestion.guests.map(g => g.guest_id);
-      if (guestIds.length > 0) {
-        // Optimistic update
-        setGuests(prev => prev.map(g =>
-          guestIds.includes(g.id) ? { ...g, table_id: tableSuggestion.table_id } : g
-        ));
-        // API call
-        await assignGuests(tableSuggestion.table_id, guestIds);
+    // Optimistic update - apply all suggestions to UI immediately
+    setGuests(prev => {
+      const updatedGuests = [...prev];
+      for (const tableSuggestion of aiSuggestions.tables) {
+        const guestIds = tableSuggestion.guests.map(g => g.guest_id);
+        for (let i = 0; i < updatedGuests.length; i++) {
+          if (guestIds.includes(updatedGuests[i].id)) {
+            updatedGuests[i] = { ...updatedGuests[i], table_id: tableSuggestion.table_id };
+          }
+        }
       }
+      return updatedGuests;
+    });
+
+    // Batch API calls - run all assignments in parallel for better performance
+    const assignmentPromises = aiSuggestions.tables
+      .filter(tableSuggestion => tableSuggestion.guests.length > 0)
+      .map(tableSuggestion => {
+        const guestIds = tableSuggestion.guests.map(g => g.guest_id);
+        return assignGuests(tableSuggestion.table_id, guestIds);
+      });
+
+    try {
+      await Promise.all(assignmentPromises);
+    } catch (error) {
+      console.error('Error applying AI suggestions:', error);
+      // Optionally refresh to get correct state on error
     }
 
     setShowAiModal(false);
@@ -210,7 +226,7 @@ export default function SeatingPage() {
       </div>
 
       <div className="flex-1 flex flex-col relative print:w-full">
-        <div className="h-16 bg-white/80 backdrop-blur border-b border-gray-200 flex items-center justify-between px-6 z-20 print:hidden">
+        <div className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-gray-200 dark:border-slate-700 flex items-center justify-between px-6 z-20 print:hidden">
           <h1 className="text-xl sm:text-2xl font-semibold leading-tight text-slate-900 dark:text-white">Seating Plan</h1>
 
           <div className="flex gap-2">
@@ -237,9 +253,9 @@ export default function SeatingPage() {
 
         {/* AI Error Banner */}
         {aiError && (
-          <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
-            <span className="text-red-700 text-sm">{aiError}</span>
-            <button onClick={() => setAiError(null)} className="text-red-500 hover:text-red-700">
+          <div className="mx-6 mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center justify-between">
+            <span className="text-red-700 dark:text-red-400 text-sm">{aiError}</span>
+            <button onClick={() => setAiError(null)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
               <X className="w-4 h-4" />
             </button>
           </div>

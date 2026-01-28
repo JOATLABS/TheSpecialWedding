@@ -994,7 +994,7 @@ class FormService:
 
             if wedding_id:
                 # Get wedding to find planner
-                wedding = await self.wedding_collection.find_one({"wedding_id": wedding_id})
+                wedding = await self.wedding_collection.find_one({"_id": wedding_id})
                 if wedding:
                     planner_email = wedding.get("assigned_planner_email")
             else:

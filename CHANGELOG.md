@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Seating Orchestration Enhancements** (`app/api/tables.py`, `app/admin/weddings/[id]/seating/page.tsx`, `app/admin/components/seating/*`, `app/core/database_indexes.py`):
+  - **Server-side capacity validation**: API now rejects guest assignments that would exceed table capacity
+    - Returns clear error message: "Cannot assign guests: table capacity is X, would have Y guests after assignment"
+    - Prevents over-seating at the API level, not just frontend warnings
+  - **Database indexes for seating performance**:
+    - `idx_table_wedding_id` on `tables` collection for fast table listing
+    - `idx_table_id` on `guests` collection for finding guests at a table
+    - `idx_wedding_table` compound index for seating page queries
+  - **Batch AI suggestion applications**: Changed from sequential to parallel API calls using `Promise.all()`
+    - Significantly faster when applying AI seating suggestions across many tables
+  - **Reduced motion accessibility**: LiquidBackground now uses `useReducedMotion` from framer-motion
+    - Users with `prefers-reduced-motion: reduce` see a static gradient instead of 3D animation
+  - **Capacity warning on drag-over**: Visual indicator when dragging guest to a full table
+    - Orange highlight with warning icon and seat count when table is at capacity
+  - **Full dark mode support for seating components**:
+    - SeatingCanvas, TableNode, Sidebar, and all seating UI elements now support dark mode
+    - Header bar, error banner, and modal all have proper `dark:` variants
+  - **Frontend error handling**: `useTables` hook now parses API error details
+    - Shows actual capacity error messages instead of generic "Failed to assign guests"
+  - Validated against Tailwind CSS, dnd-kit, and framer-motion documentation via context7 MCP
+
 - **Guest Export Features** (`app/api/guest_export.py`, `app/services/guest_export_service.py`, `app/admin/guests/page.tsx`):
   - **Individual QR Preview**: View/download QR code for single guest (for physical RSVP cards)
     - `GET /admin/guests/{guest_id}/qr` - Returns QR PNG inline with caching
@@ -120,6 +141,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security: Delete table wedding scope** (`app/api/tables.py`):
+  - Fixed guest unassignment query to include `wedding_id` filter when deleting tables
+  - Prevents theoretical cross-wedding data leak
+  - Query now: `{"table_id": table_id, "wedding_id": table["wedding_id"]}`
+
 - **CRITICAL: Complete RSVP Invite Flow Broken — 7 Bugs** (`app/api/wedding.py`, `app/[slug]/invite/[token]/page.tsx`, `app/components/OTPFlow.tsx`, `app/otp/verify/page.tsx`, `app/admin/guests/page.tsx`, `app/admin/reminders/page.tsx`):
   - **Root cause**: `/weddings/slug/{slug}` endpoint was rewritten for security but stripped the response from `get_wedding_privacy_info()`, removing `id` and `events` that the invite page depends on
   - **Impact**: Guests clicking RSVP links saw 404 pages; SMS templates were missing the domain URL
@@ -147,6 +173,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Query never matched any wedding → always returned `None` → QR code generation silently failed
   - Fix: `{"wedding_id": wedding_id}` → `{"_id": wedding_id}`
 
+- **Guest Export API — Same Wrong Query Field Bug** (`app/api/guest_export.py:110,163`):
+  - PDF export endpoint (`GET /guests/export/pdf`) queried `{"wedding_id": wedding_id}` → always returned `None` → PDF header showed "Wedding" instead of couple names
+  - ZIP export endpoint (`POST /guests/export/qr-zip`) queried `{"wedding_id": request.wedding_id}` → always returned `None` → endpoint returned 404 "Wedding not found" for every request
+  - Both fixes: `{"wedding_id": ...}` → `{"_id": ...}`
+  - Note: Same bug pattern as `guest_export_service.py:420` fix above, but in the API layer
+
+- **Guest Export URL Fallback Logic** (`app/services/guest_export_service.py:84-87`):
+  - `build_rsvp_url()` had broken fallback logic for `FRONTEND_URL` environment variable
+  - Code called `os.getenv("FRONTEND_URL", "")` then checked if empty and called it again with different default - the second call would still return empty string
+  - Fix: Simplified to `os.getenv("FRONTEND_URL") or "https://thespecialwedding.io"`
+  - **URL format**: Generates full RSVP URL as `{FRONTEND_URL}/{slug}/invite/{token}` (e.g., `https://thespecialwedding.io/emmanuel-peace/invite/abc123xyz`)
+  - **Note**: Ensure `FRONTEND_URL` environment variable is set in Coolify to match your production domain
+
+- **Cloudflare Workers — Multiple Configuration Issues** (`.github/workflows/deploy-workers.yml`, `cloudflare-workers/*.js`, `cloudflare-workers/*.wrangler.toml`):
+  - **Issue 1 — Workflow branch condition**: Workflow only triggered on `main` or `development/saas-features`, not current branch `feature-twilio-otp-improvements-final-submitted`
+    - Fix: Added current branch to trigger list and simplified condition using `startsWith()`
+  - **Issue 2 — Metrics snapshot missing secrets**: `metrics-snapshot.wrangler.toml` deployment had no `wrangler secret put` commands
+    - Fix: Added `NEXT_PUBLIC_API_BASE_URL`, `ADMIN_TOKEN`, `RESEND_API_KEY`, `ALERT_EMAIL`, `ROOT_ADMIN_EMAIL` secrets
+  - **Issue 3 — Inconsistent API URL variable**: `trial-cron.js` and `metrics-snapshot-cron.js` used `env.API_URL` (hardcoded in wrangler.toml), other workers used `env.NEXT_PUBLIC_API_BASE_URL` (set via GitHub secrets)
+    - Fix: Changed all workers to use `NEXT_PUBLIC_API_BASE_URL` for consistency
+  - **Issue 4 — Hardcoded API URLs in wrangler.toml**: `trial.wrangler.toml` and `metrics-snapshot.wrangler.toml` had `API_URL = "https://api.thespecialwedding.io"` hardcoded
+    - Fix: Removed hardcoded URLs, now all workers get API URL from GitHub secrets
+  - **Issue 5 — Wrong admin dashboard URLs**: All workers had `https://admin.thespecialwedding.io/admin/*` (non-existent subdomain)
+    - Fix: Changed to `https://thespecialwedding.io/admin/*` (path-based routing)
+  - **Issue 6 — KV namespace replacement fragile**: sed command used `-i` with simple pattern that might not match
+    - Fix: Added multiple pattern handling and better error logging
+  - **Issue 7 — Typo in ALERT_EMAIL**: `trial.wrangler.toml` had `alertsd@thespecialwedding.io` (extra 'd')
+    - Fix: Removed hardcoded email, now set via GitHub secrets
+  - **Files modified**:
+    - `.github/workflows/deploy-workers.yml`
+    - `cloudflare-workers/autopilot-cron.js`
+    - `cloudflare-workers/backup-cron.js`
+    - `cloudflare-workers/uptime-cron.js`
+    - `cloudflare-workers/trial-cron.js`
+    - `cloudflare-workers/metrics-snapshot-cron.js`
+    - `cloudflare-workers/trial.wrangler.toml`
+    - `cloudflare-workers/metrics-snapshot.wrangler.toml`
+
+- **Planner Notifications — Wrong Wedding Query Field** (`app/services/rsvp_service.py:150`, `app/services/stripe_service.py:1519`, `app/services/form_service.py:997`):
+  - Same bug pattern as guest export: queried weddings collection with `{"wedding_id": wedding_id}` instead of `{"_id": wedding_id}`
+  - **Impact**: Planner notifications silently failed — planners never received push/in-app notifications for:
+    - RSVP updates (guest confirmed/declined attendance)
+    - Payment received (Stripe payment success)
+    - Form submissions (contact forms, vendor inquiries)
+  - All three queries returned `None` → code exited early without sending notification
+  - Fix: `{"wedding_id": wedding_id}` → `{"_id": wedding_id}` in all three services
+  - Validated against `WeddingModel` schema: `id: str = Field(..., alias="_id")`
+
 - **SMS/Email Opt-In Default Values** (`app/services/guest_service.py`, `app/services/import_service.py`):
   - Fixed new guests being created as "opted out" before receiving any message
   - **Root cause**: `sms_opt_in: False` and `email_opt_in: False` hardcoded on guest creation
@@ -155,7 +229,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `guest_service.py` line 242: `"sms_opt_in": False` → `"sms_opt_in": True`
   - `guest_service.py` line 243: `"email_opt_in": False` → `"email_opt_in": True`
   - `import_service.py`: Added explicit `"sms_opt_in": True, "email_opt_in": True` for imported guests
-  - **Expected behavior**: New guests can receive initial RSVP invite, opt-out option available on RSVP form
+
+- **CSRF Middleware Blocking Guest RSVP Flow** (`app/main.py`, `app/core/settings.py`):
+  - **Root cause**: CSRF middleware required `X-CSRF-Token` header + `csrf_token` cookie for all POST requests, but guest-facing pages don't have CSRF tokens
+  - **Impact**: Guests clicking "Verify My Identity" on RSVP page saw "CSRF token missing in request header or cookie" error
+  - **Analysis**: CSRF protection is redundant for this application because:
+    1. Admin pages use JWT Bearer tokens (CSRF-immune by design - browsers don't auto-attach Authorization headers cross-origin)
+    2. Guest pages use URL token-based auth (not vulnerable to CSRF - attacker would need to know the token)
+    3. No session cookies are used that could be exploited
+  - **Verified against OWASP guidelines**:
+    - [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html): Custom request headers trigger CORS preflight, preventing cross-origin requests
+    - [OWASP CSRF Attack](https://owasp.org/www-community/attacks/csrf): "all cookies will be submitted with every request" — JWT in Authorization header is not auto-attached
+  - **Fix**: Removed CSRF middleware entirely
+    - `app/main.py`: Removed `CSRFProtectionMiddleware` import and registration
+    - `app/core/settings.py`: Changed `csrf_enabled` default from `True` to `False`
+  - **Note**: CSRF middleware file (`app/middleware/csrf_protection.py`) retained with expanded `exclude_paths` documenting which endpoints would need exemption if CSRF is re-enabled:
+    - `/otp/` - OTP endpoints (phone verification)
+    - `/forgot-password` - Password recovery (email-based)
+    - `/reset-password` - Password reset (uses reset token)
+    - `/setup/` - Account setup (uses invitation token)
+    - `/signup` - User registration
+    - `/contact` - Contact forms (public)
 
 - **Forms API 404 Error** (`app/services/formsApi.ts`):
   - Fixed "Not Found" error when accessing Forms page in planner dashboard
