@@ -16,28 +16,55 @@ class AdminRSVPService:
         try:
             # Filter by wedding_id if provided
             query = {"wedding_id": wedding_id} if wedding_id else {}
-            guests = list(self.guest_collection.find(query))
-            result = []
 
+            # Optimized: Async fetch
+            cursor = self.guest_collection.find(query)
+            guests = await cursor.to_list(length=None)
+
+            if not guests:
+                return []
+
+            # Collect guest IDs for batch querying
+            guest_ids_obj = [g["_id"] for g in guests]
+            guest_ids_str = [str(g["_id"]) for g in guests]
+
+            # Batch fetch RSVPs (handle both ObjectId and string formats)
+            rsvp_cursor = self.rsvp_collection.find({
+                "guest_id": {"$in": guest_ids_obj + guest_ids_str}
+            })
+            rsvps_list = await rsvp_cursor.to_list(length=None)
+
+            # Index RSVPs by guest_id (normalized to string)
+            rsvp_map = {}
+            for r in rsvps_list:
+                gid = str(r.get("guest_id"))
+                rsvp_map[gid] = r
+
+            # Batch fetch Plus Ones
+            plus_one_cursor = self.plus_one_collection.find({
+                "guest_id": {"$in": guest_ids_str}
+            })
+            plus_ones_list = await plus_one_cursor.to_list(length=None)
+
+            # Index Plus Ones by guest_id
+            plus_one_map = {}
+            for p in plus_ones_list:
+                gid = str(p.get("guest_id"))
+                if "_id" in p:
+                    p["_id"] = str(p["_id"])
+                plus_one_map[gid] = p
+
+            result = []
             for guest in guests:
                 guest_id = guest["_id"]
                 guest_id_str = str(guest_id)
                 
-                # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
-                rsvp = await self.rsvp_collection.find_one({
-                    "$or": [
-                        {"guest_id": guest_id},      # Old format: ObjectId
-                        {"guest_id": guest_id_str}   # New format: string
-                    ]
-                })
+                # O(1) Lookup
+                rsvp = rsvp_map.get(guest_id_str)
                 
                 # Only include guests who have actually RSVP'd
                 if rsvp:
-                    plus_one = await self.plus_one_collection.find_one({"guest_id": guest_id_str})
-                    
-                    # Convert plus_one _id to string if it exists
-                    if plus_one and "_id" in plus_one:
-                        plus_one["_id"] = str(plus_one["_id"])
+                    plus_one = plus_one_map.get(guest_id_str)
                     
                     result.append({
                         "guest_id": guest_id_str,
@@ -54,9 +81,9 @@ class AdminRSVPService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve RSVPs: {str(e)}")
 
-    def export_rsvps_to_csv(self):
+    async def export_rsvps_to_csv(self):
         try:
-            guests = self.get_all_rsvps()
+            guests = await self.get_all_rsvps()
             output = io.StringIO()
             writer = csv.writer(output)
 
