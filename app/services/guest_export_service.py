@@ -4,7 +4,7 @@ Guest Export Service
 Generates QR codes for RSVP links, guest list PDFs, and bulk QR code ZIP files.
 Used by planners for physical invitations and printable guest lists.
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from datetime import datetime
 from io import BytesIO
 import zipfile
@@ -43,9 +43,9 @@ class GuestExportService:
             PNG image bytes
         """
         try:
-            import qrcode
-            from qrcode.constants import ERROR_CORRECT_L
-            from PIL import Image
+            import qrcode  # type: ignore
+            from qrcode.constants import ERROR_CORRECT_L  # type: ignore
+            from io import BytesIO
 
             qr = qrcode.QRCode(
                 version=1,
