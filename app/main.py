@@ -376,8 +376,7 @@ if settings.is_development():
                         "keyspace_hits": info.get("keyspace_hits", 0),
                         "keyspace_misses": info.get("keyspace_misses", 0),
                         "hit_rate": (
-                            info.get("keyspace_hits", 0) /
-                            (info.get("keyspace_hits", 0) + info.get("keyspace_misses", 1))
+                            info.get("keyspace_hits", 0) / (info.get("keyspace_hits", 0) + info.get("keyspace_misses", 1))
                         )
                     }
                 else:

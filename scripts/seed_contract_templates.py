@@ -17,7 +17,7 @@ from bson import ObjectId
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.database import mongo, init_database
+from app.core.database import mongo, init_database  # noqa: E402
 
 
 # Standard placeholders available in all templates
