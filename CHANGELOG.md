@@ -139,7 +139,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ntfy push notifications are skipped if planner has disabled them
   - Gives planners control over mobile/desktop push alerts while keeping in-app notifications active
 
+- **Ntfy Push Notification Diagnostics & Error Logging** (`app/services/ntfy_service.py`, `app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+  - **Health check endpoint integration**: Ntfy service status now visible in Platform Monitoring dashboard
+  - New `health_check()` method in `NtfyNotificationService`:
+    - Tests DNS resolution for ntfy server hostname
+    - Tests HTTP connectivity with 5-second timeout
+    - Reports status: `healthy`, `disabled`, `timeout`, `unreachable`, `auth_required`, or `error`
+    - Returns diagnostic info: `configured`, `enabled`, `dns_resolved`, `connection_successful`, `server_url`, `error`
+  - **Error logging to database**: Failed push notifications now logged to `errors` collection
+    - New `_log_notification_failure()` method logs failures with topic, title, HTTP status, and server URL
+    - Errors appear in Platform Monitoring → Errors tab for admin visibility
+    - Severity set to `warning` with `source: "ntfy_service"`
+  - **Backend integration** (`admin_platform_metrics.py`):
+    - `GET /admin/platform/metrics` now includes `services.ntfy` health status
+    - Metrics snapshot includes ntfy status for historical tracking
+  - **Frontend integration** (`platform/page.tsx`):
+    - New "External Services" card in Health tab showing ntfy status
+    - Displays: status badge (healthy/disabled/error), configured, DNS resolved, connected, server URL
+    - Shows error message with warning icon when ntfy is unhealthy
+  - **Root cause identified**: Coolify domain misconfigured as `https://...:80` (HTTPS uses port 443, not 80)
+    - Fix: Update Coolify environment variable to `SERVICE_URL_NTFY=http://notify.thespecialwedding.io`
+  - Verified ntfy API format against official ntfy documentation via context7 MCP
+
 ### Fixed
+
+- **Coolify Deployment — Missing Environment Variables** (`Dockerfile.coolify`, `.github/workflows/deploy.yml`):
+  - **Dockerfile.coolify**: Added `BACKUP_SECRET`, `FRONTEND_URL`, `CRON_SECRET` as ARG/ENV declarations for Coolify injection
+  - **deploy.yml**: Added `BACKUP_SECRET` and `FRONTEND_URL` to VPS deployment .env file
+  - **deploy.yml**: Restricted workflow to only trigger on `feature-twilio-otp-improvements-final-submitted` branch (excluded `main`)
+  - **deploy.yml**: Added comment clarifying `DEPLOYMENT_TARGET='coolify'` skips VPS SSH deployment
+  - **Impact**: Backup cron authentication and guest export QR code URL generation now work correctly in Coolify deployments
+  - Verified against GitHub Actions and Docker official documentation via context7 MCP
+
+- **Cloudflare Workers — Documentation Comment Mismatch** (`cloudflare-workers/metrics-snapshot-cron.js`):
+  - Documentation comment referenced `API_URL` but code correctly used `NEXT_PUBLIC_API_BASE_URL`
+  - Fix: Updated comment to match actual environment variable name
 
 - **Security: Delete table wedding scope** (`app/api/tables.py`):
   - Fixed guest unassignment query to include `wedding_id` filter when deleting tables
