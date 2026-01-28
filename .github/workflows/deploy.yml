@@ -3,7 +3,8 @@ name: Deploy WeddingApp Backend
 on:
   push:
     branches:
-      - '**'  # Trigger on any branch push (filter by DEPLOY_BRANCH variable)
+      - 'feature-twilio-otp-improvements-final-submitted'
+      # Note: Excluded 'main' to prevent accidental deployments
   workflow_dispatch:  # Allow manual deployment
 
 env:
@@ -130,6 +131,7 @@ jobs:
             }
 
       # Deploy to VPS with Docker Compose
+      # Only runs when DEPLOYMENT_TARGET='VPS'. For Coolify, set DEPLOYMENT_TARGET='coolify' to skip.
       - name: Deploy to VPS via SSH
         if: ${{ vars.DEPLOYMENT_TARGET == 'VPS' }}
         uses: appleboy/ssh-action@v1.0.0
@@ -272,6 +274,10 @@ jobs:
 
             # Autopilot Cron Configuration
             CRON_SECRET=${{ secrets.CRON_SECRET }}
+            BACKUP_SECRET=${{ secrets.BACKUP_SECRET }}
+
+            # Frontend URL (for guest export QR codes)
+            FRONTEND_URL=${{ secrets.FRONTEND_URL }}
 
             # ================================
             # CACHING CONFIGURATION

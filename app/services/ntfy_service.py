@@ -19,6 +19,9 @@ Usage:
 import httpx
 import hashlib
 import logging
+import socket
+import uuid
+from datetime import datetime
 from typing import Optional, Literal
 from app.core.config import settings
 
@@ -93,6 +96,97 @@ class NtfyNotificationService:
             return ""
         topic = self._get_planner_topic(planner_id)
         return f"{self.server_url}/{topic}"
+
+    async def health_check(self) -> dict:
+        """
+        Test ntfy connectivity and return diagnostic info.
+        Used by platform monitoring to show ntfy status.
+        """
+        result = {
+            "status": "unknown",
+            "configured": bool(self.server_url),
+            "enabled": self.enabled,
+            "server_url": self.server_url,
+            "admin_topic": getattr(settings, 'NTFY_ADMIN_TOPIC', None),
+            "dns_resolved": False,
+            "connection_successful": False,
+            "error": None,
+            "checked_at": datetime.utcnow().isoformat()
+        }
+
+        if not self.enabled:
+            result["status"] = "disabled"
+            result["error"] = "SERVICE_URL_NTFY not configured"
+            return result
+
+        # Test DNS resolution
+        try:
+            # Extract hostname from URL (handle http://, https://, and ports)
+            hostname = self.server_url.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
+            socket.gethostbyname(hostname)
+            result["dns_resolved"] = True
+        except socket.gaierror as e:
+            result["status"] = "error"
+            result["error"] = f"DNS resolution failed: {str(e)}"
+            return result
+
+        # Test HTTP connectivity
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                # Just test connectivity - GET request to server root
+                response = await client.get(f"{self.server_url}")
+                result["connection_successful"] = True
+                result["http_status"] = response.status_code
+
+                # ntfy returns 200 for valid topics, 404 for root is OK (means server responding)
+                if response.status_code in [200, 404]:
+                    result["status"] = "healthy"
+                elif response.status_code == 401:
+                    result["status"] = "auth_required"
+                    result["error"] = "Server requires authentication"
+                else:
+                    result["status"] = "error"
+                    result["error"] = f"HTTP {response.status_code}"
+
+        except httpx.TimeoutException:
+            result["status"] = "timeout"
+            result["error"] = "Connection timeout (5s)"
+        except httpx.ConnectError as e:
+            result["status"] = "unreachable"
+            result["error"] = f"Connection failed: {str(e)}"
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+    async def _log_notification_failure(
+        self,
+        topic: str,
+        title: str,
+        error_message: str,
+        http_status: Optional[int] = None
+    ) -> None:
+        """Log failed notification to errors collection for admin visibility."""
+        try:
+            from app.core.database import mongo
+            await mongo.db["errors"].insert_one({
+                "error_id": str(uuid.uuid4()),
+                "timestamp": datetime.utcnow(),
+                "error_type": "NtfyNotificationFailed",
+                "error_message": f"Failed to send push notification: {error_message}",
+                "severity": "warning",
+                "acknowledged": False,
+                "source": "ntfy_service",
+                "metadata": {
+                    "topic": topic,
+                    "title": title,
+                    "http_status": http_status,
+                    "server_url": self.server_url
+                }
+            })
+        except Exception as e:
+            logger.debug(f"Failed to log ntfy error to database: {e}")
 
     async def send_notification(
         self,
@@ -169,14 +263,20 @@ class NtfyNotificationService:
                     logger.info(f"Push notification sent to topic {topic}: {title}")
                     return True
                 else:
-                    logger.error(f"Ntfy returned {response.status_code}: {response.text}")
+                    error_msg = f"Ntfy returned {response.status_code}: {response.text}"
+                    logger.error(error_msg)
+                    await self._log_notification_failure(topic, title, error_msg, response.status_code)
                     return False
 
         except httpx.TimeoutException:
-            logger.error(f"Timeout sending notification to {topic}")
+            error_msg = f"Timeout sending notification to {topic}"
+            logger.error(error_msg)
+            await self._log_notification_failure(topic, title, error_msg)
             return False
         except Exception as e:
-            logger.error(f"Error sending Ntfy notification: {str(e)}")
+            error_msg = f"Error sending Ntfy notification: {str(e)}"
+            logger.error(error_msg)
+            await self._log_notification_failure(topic, title, error_msg)
             return False
 
     async def send_rsvp_notification(
@@ -328,8 +428,6 @@ class NtfyNotificationService:
     async def _fallback_email_alert(self, title: str, message: str) -> None:
         """Send email, create support ticket, and log to errors collection when Ntfy is unavailable."""
         import os
-        import uuid
-        from datetime import datetime
 
         root_admin_email = os.getenv("ROOT_ADMIN_EMAIL")
 

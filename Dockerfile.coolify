@@ -104,9 +104,16 @@ environment=PORT=3000,NODE_ENV=production
 priority=2
 EOF
 
-# Set environment variables
+# Runtime environment variables (injected by Coolify)
+ARG BACKUP_SECRET
+ARG FRONTEND_URL
+ARG CRON_SECRET
+
 ENV PYTHONUNBUFFERED=1
 ENV NODE_ENV=production
+ENV BACKUP_SECRET=${BACKUP_SECRET}
+ENV FRONTEND_URL=${FRONTEND_URL}
+ENV CRON_SECRET=${CRON_SECRET}
 
 # Expose both ports
 EXPOSE 3000 8000
