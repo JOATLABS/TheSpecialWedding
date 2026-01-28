@@ -471,6 +471,21 @@ async def get_platform_health(
             "status": {"$ne": "archived"}
         })
 
+        # ==================== SERVICE HEALTH ====================
+
+        # Ntfy push notification service health
+        try:
+            from app.services.ntfy_service import ntfy_service
+            ntfy_health = await ntfy_service.health_check()
+        except Exception as e:
+            logger.error(f"Failed to check ntfy health: {str(e)}")
+            ntfy_health = {
+                "status": "error",
+                "error": f"Health check failed: {str(e)}",
+                "enabled": False,
+                "configured": False
+            }
+
         # ==================== COMPILE RESPONSE ====================
 
         generated_at = now.isoformat()
@@ -513,6 +528,9 @@ async def get_platform_health(
             },
             "performance": {
                 "slow_endpoints": slow_endpoints
+            },
+            "services": {
+                "ntfy": ntfy_health
             },
             "timestamp": generated_at
         }
@@ -590,6 +608,7 @@ async def save_metrics_snapshot(
     error_metrics = snapshot.get("errors", {})
     business_metrics = snapshot.get("business", {})
     performance_metrics = snapshot.get("performance", {})
+    services_metrics = snapshot.get("services", {})
 
     database_metrics = health_metrics.get("database", {})
     cpu_metrics = health_metrics.get("cpu", {})
@@ -650,6 +669,14 @@ async def save_metrics_snapshot(
                 }
                 for endpoint in performance_metrics.get("slow_endpoints", [])
             ],
+        },
+        "services": {
+            "ntfy": {
+                "status": services_metrics.get("ntfy", {}).get("status"),
+                "enabled": services_metrics.get("ntfy", {}).get("enabled"),
+                "server_url": services_metrics.get("ntfy", {}).get("server_url"),
+                "error": services_metrics.get("ntfy", {}).get("error"),
+            },
         },
     }
 

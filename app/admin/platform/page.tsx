@@ -23,7 +23,8 @@ import {
   Activity,
   XCircle,
   ChevronRight,
-  Loader2
+  Loader2,
+  Bell
 } from 'lucide-react';
 
 // Types
@@ -85,11 +86,28 @@ interface BackupStatus {
   status: string;
 }
 
+interface NtfyHealth {
+  status: string;
+  configured: boolean;
+  enabled: boolean;
+  server_url?: string;
+  admin_topic?: string;
+  dns_resolved?: boolean;
+  connection_successful?: boolean;
+  error?: string;
+  checked_at?: string;
+}
+
+interface ServicesMetrics {
+  ntfy?: NtfyHealth;
+}
+
 interface PlatformMetrics {
   generated_at: string;
   health: HealthMetrics;
   errors: ErrorMetrics;
   performance: PerformanceMetrics;
+  services?: ServicesMetrics;
   backups?: BackupStatus;
 }
 
@@ -571,6 +589,69 @@ export default function PlatformInfrastructurePage() {
               </p>
             </Card>
           </div>
+
+          {/* Services Health */}
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">External Services</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {/* Ntfy Push Notifications */}
+              <div className="p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-5 h-5 text-indigo-500" />
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Push Notifications (ntfy)</h4>
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    metrics.services?.ntfy?.status === 'healthy'
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                      : metrics.services?.ntfy?.status === 'disabled'
+                      ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                  }`}>
+                    {metrics.services?.ntfy?.status || 'unknown'}
+                  </span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Configured</span>
+                    <span className={metrics.services?.ntfy?.configured ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                      {metrics.services?.ntfy?.configured ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">DNS Resolved</span>
+                    <span className={metrics.services?.ntfy?.dns_resolved ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}>
+                      {metrics.services?.ntfy?.dns_resolved ? 'Yes' : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Connected</span>
+                    <span className={metrics.services?.ntfy?.connection_successful ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}>
+                      {metrics.services?.ntfy?.connection_successful ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  {metrics.services?.ntfy?.server_url && (
+                    <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <span className="text-gray-500 dark:text-gray-400 text-xs">Server: </span>
+                      <span className="text-gray-700 dark:text-gray-300 text-xs font-mono break-all">
+                        {metrics.services?.ntfy?.server_url}
+                      </span>
+                    </div>
+                  )}
+                  {metrics.services?.ntfy?.error && (
+                    <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex items-start gap-1">
+                        <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-red-600 dark:text-red-400 text-xs">
+                          {metrics.services?.ntfy?.error}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
 
           {!metrics.health?.psutil_available && (
             <Card className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800">
