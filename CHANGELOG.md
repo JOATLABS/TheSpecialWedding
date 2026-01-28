@@ -120,6 +120,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CRITICAL: Complete RSVP Invite Flow Broken — 7 Bugs** (`app/api/wedding.py`, `app/[slug]/invite/[token]/page.tsx`, `app/components/OTPFlow.tsx`, `app/otp/verify/page.tsx`, `app/admin/guests/page.tsx`, `app/admin/reminders/page.tsx`):
+  - **Root cause**: `/weddings/slug/{slug}` endpoint was rewritten for security but stripped the response from `get_wedding_privacy_info()`, removing `id` and `events` that the invite page depends on
+  - **Impact**: Guests clicking RSVP links saw 404 pages; SMS templates were missing the domain URL
+  - **Bug 1 — Invite page 404** (`app/api/wedding.py:228`): Endpoint returned `{couple_names, slug, privacy_mode}` instead of full `privacy_info` response. Frontend sent `wedding_id=undefined` to guest endpoint → 404
+    - Fix: Return `privacy_info` directly (already security-filtered by `get_wedding_privacy_info()`)
+  - **Bug 1b — Frontend ID mismatch** (`app/[slug]/invite/[token]/page.tsx:27`): Used `wedding._id` but `get_wedding_privacy_info` returns `id` (no underscore)
+    - Fix: `wedding._id` → `wedding.id`
+  - **Bug 2 — OTPFlow wrong guest ID** (`app/components/OTPFlow.tsx:21,30`): Used `guest._id` but backend returns `guest.id`
+    - Fix: `guest._id` → `guest.id`
+  - **Bug 3 — OTP client API paths don't exist** (`app/components/OTPFlow.tsx:18`, `app/otp/verify/page.tsx:36,48,68`): Client-side fetches to `/api/otp/request`, `/api/otp/verify`, `/api/guest/invite/{token}` — no Next.js route handlers exist for these paths
+    - Fix: Use `process.env.NEXT_PUBLIC_API_BASE_URL` as base URL for all client-side backend calls
+  - **Bug 4 — Missing wedding_id in guest fetch** (`app/otp/verify/page.tsx:48`): Called `/api/guest/invite/{token}` without required `wedding_id` query param → 422
+    - Fix: Use `/weddings/guest-access/{slug}/{token}` endpoint which returns both wedding and guest
+  - **Bug 5 — RSVPForm missing WeddingContext** (`app/otp/verify/page.tsx:86`): `/otp/verify` page is NOT under `[slug]/` layout, so no WeddingContext provider exists → runtime error
+    - Fix: Wrap RSVPForm in `<WeddingContext.Provider>` with wedding data fetched via guest-access endpoint
+  - **Bug 6 — SMS template missing domain** (`app/admin/guests/page.tsx:610,2209`): `process.env.FRONTEND_URL` used in `'use client'` component — undefined in browser (no `NEXT_PUBLIC_` prefix)
+    - Fix: `process.env.FRONTEND_URL || ''` → `window.location.origin`
+  - **Bug 7 — SMS preview missing domain** (`app/admin/reminders/page.tsx:755`): Same env var issue as Bug 6
+    - Fix: `process.env.FRONTEND_URL || ''` → `window.location.origin`
+  - **OTPFlow slug param**: Added `slug` prop to OTPFlow component, passed through redirect URL to OTP verify page
+  - Verified field names against database schemas: `WeddingModel._id` (string), `GuestModel.wedding_id` (string), `get_wedding_privacy_info()` returns `id: str(wedding._id)`
+
+- **Guest Export QR Code — Wrong MongoDB Query Field** (`app/services/guest_export_service.py:420`):
+  - `get_single_guest_qr()` queried weddings collection with `{"wedding_id": wedding_id}` but wedding documents use `_id` as primary key, not `wedding_id`
+  - Query never matched any wedding → always returned `None` → QR code generation silently failed
+  - Fix: `{"wedding_id": wedding_id}` → `{"_id": wedding_id}`
+
 - **SMS/Email Opt-In Default Values** (`app/services/guest_service.py`, `app/services/import_service.py`):
   - Fixed new guests being created as "opted out" before receiving any message
   - **Root cause**: `sms_opt_in: False` and `email_opt_in: False` hardcoded on guest creation
