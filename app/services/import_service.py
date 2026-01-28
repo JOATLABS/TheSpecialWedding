@@ -33,7 +33,7 @@ class GuestImportService:
             if not name or len(name) < 2:
                 # TODO log invalid entry
                 continue
-            
+
             # Require at least phone or email for contact
             if not phone and not email:
                 # TODO log invalid entry and should not continue because atleast one is required
@@ -44,7 +44,7 @@ class GuestImportService:
             # Ensure logical consistency
             if not plus_one_allowed:
                 number_of_plus_ones_allowed = 0
-            
+
             doc = {
                 "wedding_id": wedding_id,
                 "name": name.strip(),
