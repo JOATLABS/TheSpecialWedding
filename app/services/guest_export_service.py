@@ -417,7 +417,7 @@ class GuestExportService:
                 return None
 
             # Get wedding slug
-            wedding = await self.wedding_collection.find_one({"wedding_id": wedding_id})
+            wedding = await self.wedding_collection.find_one({"_id": wedding_id})
             if not wedding:
                 return None
 
