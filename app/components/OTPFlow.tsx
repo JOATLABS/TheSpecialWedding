@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function OTPFlow({ guest, token }: { guest: any, token: string }) {
+export default function OTPFlow({ guest, token, slug }: { guest: any, token: string, slug: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -15,10 +15,11 @@ export default function OTPFlow({ guest, token }: { guest: any, token: string })
     setError('');
 
     try {
-      const response = await fetch('/api/otp/request', {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(`${apiBase}/otp/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id: guest._id }),
+        body: JSON.stringify({ guest_id: guest.id }),
       });
 
       if (!response.ok) {
@@ -27,7 +28,7 @@ export default function OTPFlow({ guest, token }: { guest: any, token: string })
       }
 
       // Redirect to the OTP verification page
-      router.push(`/otp/verify?guest_id=${guest._id}&token=${token}`);
+      router.push(`/otp/verify?guest_id=${guest.id}&token=${token}&slug=${slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {

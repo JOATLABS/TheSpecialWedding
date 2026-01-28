@@ -24,9 +24,9 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
  }
  const wedding = await weddingRes.json();
 
- const guestRes = await fetch(`${apiUrl}/guest/invite/${token}?wedding_id=${wedding._id}`, { cache: 'no-store' });
+ const guestRes = await fetch(`${apiUrl}/guest/invite/${token}?wedding_id=${wedding.id}`, { cache: 'no-store' });
  if (!guestRes.ok) {
- console.error(`Guest not found: token=${token}, wedding_id=${wedding._id}`);
+ console.error(`Guest not found: token=${token}, wedding_id=${wedding.id}`);
  notFound();
  }
  const guest = await guestRes.json();
@@ -81,7 +81,7 @@ export default async function InvitePage({ params }: { params: Promise<{ slug: s
  {/* OTP Flow */}
  <div className="bg-white rounded-lg shadow-lg p-8">
  <h2 className="text-2xl font-bold text-wedding-navy mb-6 text-center">RSVP Verification</h2>
- <OTPFlow guest={guest} token={token} />
+ <OTPFlow guest={guest} token={token} slug={slug} />
  </div>
 
  {/* Footer */}

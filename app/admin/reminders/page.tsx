@@ -752,7 +752,7 @@ export default function AdminRemindersPage() {
  <div className="p-6 bg-blue-50 rounded-lg">
  <h4 className="font-medium text-blue-900 mb-2">SMS Preview:</h4>
  <p className="text-blue-700 dark:text-blue-300 text-sm">
-        “{inviteMessage.replace('{url}', `${process.env.NEXT_PUBLIC_FRONTEND_URL || ''}/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}”
+        "{inviteMessage.replace('{url}', `${typeof window !== 'undefined' ? window.location.origin : ''}/${selectedWeddingData?.slug}/invite/[token]`).replace('{name}', '[Guest Name]')}"
  </p>
  </div>
  )}

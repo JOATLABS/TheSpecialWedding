@@ -44,11 +44,12 @@ class GuestExportService:
         """
         try:
             import qrcode
+            from qrcode.constants import ERROR_CORRECT_L
             from PIL import Image
 
             qr = qrcode.QRCode(
                 version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                error_correction=ERROR_CORRECT_L,
                 box_size=box_size,
                 border=border,
             )
@@ -58,7 +59,7 @@ class GuestExportService:
             img = qr.make_image(fill_color="black", back_color="white")
 
             buffer = BytesIO()
-            img.save(buffer, format="PNG")
+            img.save(buffer, kind="PNG")
             buffer.seek(0)
             return buffer.getvalue()
 
@@ -80,9 +81,9 @@ class GuestExportService:
         Returns:
             Full RSVP URL
         """
-        frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+        frontend_url = os.getenv("FRONTEND_URL", "")
         if not frontend_url:
-            frontend_url = os.getenv("NEXT_PUBLIC_FRONTEND_URL", "https://thespecialwedding.io")
+            frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
         return f"{frontend_url}/{slug}/invite/{token}"
 
     async def get_guest_with_rsvp(self, guest: Dict, rsvp_map: Dict[str, Dict]) -> Dict:
