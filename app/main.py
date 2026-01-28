@@ -16,7 +16,6 @@ from app.core.database_indexes import create_all_indexes
 # Import middleware
 from app.middleware.error_handler import ErrorHandlerMiddleware
 from app.middleware.rate_limiting import RateLimitMiddleware
-from app.middleware.csrf_protection import CSRFProtectionMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.audit_logging import AuditLoggingMiddleware
 from app.middleware.performance_monitoring import PerformanceMonitoringMiddleware
@@ -173,16 +172,7 @@ if settings.security_headers_enabled:
         enable_csp=settings.csp_enabled
     )
 
-# 3. CSRF protection
-if settings.csrf_enabled:
-    app.add_middleware(
-        CSRFProtectionMiddleware,
-        secret_key=settings.secret_key,
-        cookie_name=settings.csrf_cookie_name,
-        header_name=settings.csrf_header_name
-    )
-
-# 4. Audit logging
+# 3. Audit logging
 if settings.audit_logging_enabled:
     app.add_middleware(
         AuditLoggingMiddleware,

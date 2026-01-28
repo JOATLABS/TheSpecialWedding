@@ -108,7 +108,7 @@ export default {
 async function runTrialMaintenance(env) {
   console.log('Running trial maintenance...');
 
-  const response = await fetch(`${env.API_URL}/cron/trials/run-maintenance`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/run-maintenance`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -136,7 +136,7 @@ async function runTrialMaintenance(env) {
 async function sendTrialWarnings(env) {
   console.log('Sending trial warnings...');
 
-  const response = await fetch(`${env.API_URL}/cron/trials/send-warnings`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/send-warnings`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -164,7 +164,7 @@ async function sendTrialWarnings(env) {
 async function checkExpiredTrials(env) {
   console.log('Checking expired trials...');
 
-  const response = await fetch(`${env.API_URL}/cron/trials/check-expired`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/check-expired`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -241,7 +241,7 @@ async function sendFailureAlert(env, jobName, errorMessage) {
                 </ul>
               </div>
               <div style="text-align: center; margin-top: 20px;">
-                <a href="https://admin.thespecialwedding.com/admin/users"
+                <a href="https://thespecialwedding.io/admin/users"
                    style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
                   View Users Dashboard
                 </a>
@@ -315,7 +315,7 @@ async function sendSuccessNotification(env, result) {
                 </div>
               </div>
               <div style="text-align: center; margin-top: 20px;">
-                <a href="https://admin.thespecialwedding.io/admin/users"
+                <a href="https://thespecialwedding.io/admin/users"
                    style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
                   View Users Dashboard
                 </a>

@@ -107,7 +107,7 @@ async def export_guest_list_pdf(
 
     try:
         # Get wedding name for the PDF header
-        wedding = await mongo.db["weddings"].find_one({"wedding_id": wedding_id})
+        wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
         wedding_name = wedding.get("couple_names", "Wedding") if wedding else "Wedding"
 
         pdf_bytes = await guest_export_service.generate_guest_list_pdf(
@@ -160,7 +160,7 @@ async def export_qr_codes_zip(
         wedding_collection = mongo.db["weddings"]
 
         # Get wedding slug
-        wedding = await wedding_collection.find_one({"wedding_id": request.wedding_id})
+        wedding = await wedding_collection.find_one({"_id": request.wedding_id})
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 

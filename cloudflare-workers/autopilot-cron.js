@@ -268,7 +268,7 @@ async function sendFailureEmail(env, jobName, errorMessage) {
           <p><strong>Error:</strong> ${errorMessage}</p>
           <p><strong>Time:</strong> ${new Date().toISOString()}</p>
           <p>Please check the payment system immediately.</p>
-          <a href="https://admin.thespecialwedding.com/admin/contracts"
+          <a href="https://thespecialwedding.io/admin/contracts"
              style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
             View Dashboard
           </a>

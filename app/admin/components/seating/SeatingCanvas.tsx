@@ -53,7 +53,7 @@ export function SeatingCanvas({
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="relative w-full h-full overflow-hidden bg-[#f8fafc]">
+      <div className="relative w-full h-full overflow-hidden bg-light-bg dark:bg-dark-bg">
 
         {/* 3D Liquid Background */}
         <LiquidBackground />

@@ -40,6 +40,8 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
   };
 
   const isOverCapacity = guests.length > table.capacity;
+  const isAtCapacity = guests.length >= table.capacity;
+  const wouldExceedCapacity = isOver && isAtCapacity;
 
   // Visual variants for table shape
   const borderRadius = table.shape === 'round' ? 'rounded-[32px]' : 'rounded-2xl';
@@ -58,12 +60,13 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
         whileTap={{ scale: 0.98 }}
         className={`
           w-72 ${borderRadius}
-          bg-white/40 backdrop-blur-xl
-          border border-white/50
+          bg-white/40 dark:bg-slate-800/40 backdrop-blur-xl
+          border border-white/50 dark:border-slate-700/50
           shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]
           overflow-hidden
           transition-all duration-300
-          ${isOver ? 'ring-2 ring-blue-400/50 bg-blue-50/40' : ''}
+          ${isOver && !wouldExceedCapacity ? 'ring-2 ring-blue-400/50 bg-blue-50/40 dark:bg-blue-900/20' : ''}
+          ${wouldExceedCapacity ? 'ring-2 ring-orange-400/50 bg-orange-50/40 dark:bg-orange-900/20' : ''}
           ${isOverCapacity ? 'ring-2 ring-red-400/50' : ''}
         `}
         style={{ transformStyle: "preserve-3d", perspective: 1000 }}
@@ -73,30 +76,30 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
           {...listeners}
           {...attributes}
           className={`
-            p-3 border-b border-white/20
+            p-3 border-b border-white/20 dark:border-slate-700/30
             flex justify-between items-center
             cursor-grab active:cursor-grabbing
-            bg-gradient-to-r from-white/40 to-transparent
+            bg-gradient-to-r from-white/40 dark:from-slate-700/40 to-transparent
           `}
         >
           <div className="flex items-center gap-2">
             <div className={`
               w-8 h-8 flex items-center justify-center
               ${table.shape === 'round' ? 'rounded-full' : 'rounded-md'}
-              bg-white/50 border border-white/40 text-gray-600 shadow-sm
+              bg-white/50 dark:bg-slate-700/50 border border-white/40 dark:border-slate-600/40 text-gray-600 dark:text-gray-300 shadow-sm
             `}>
               <span className="text-xs font-bold">{guests.length}</span>
             </div>
-            <span className="font-playfair font-semibold text-gray-800">{table.name}</span>
+            <span className="font-playfair font-semibold text-gray-800 dark:text-gray-100">{table.name}</span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-1 rounded-full bg-white/30 border border-white/20 ${isOverCapacity ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
+            <span className={`text-xs px-2 py-1 rounded-full bg-white/30 dark:bg-slate-700/30 border border-white/20 dark:border-slate-600/20 ${isOverCapacity ? 'text-red-600 dark:text-red-400 font-bold' : 'text-gray-500 dark:text-gray-400'}`}>
               Max {table.capacity}
             </span>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(table.id); }}
-              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+              className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
             >
               ×
             </button>
@@ -114,12 +117,23 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
             ))}
           </AnimatePresence>
 
-          {guests.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 py-6 gap-2">
-              <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center">
+          {guests.length === 0 && !wouldExceedCapacity && (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 py-6 gap-2">
+              <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
                 <span className="text-xl">+</span>
               </div>
               <span className="text-xs font-medium">Drop Guests Here</span>
+            </div>
+          )}
+
+          {/* Capacity warning on drag-over */}
+          {wouldExceedCapacity && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-orange-50/80 dark:bg-orange-900/40 rounded-lg z-10">
+              <div className="text-orange-600 dark:text-orange-400 text-center px-4">
+                <span className="text-2xl">⚠️</span>
+                <p className="text-xs font-semibold mt-1">Table at capacity</p>
+                <p className="text-[10px] opacity-75">({guests.length}/{table.capacity} seats)</p>
+              </div>
             </div>
           )}
         </div>

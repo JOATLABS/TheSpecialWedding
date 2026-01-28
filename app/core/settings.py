@@ -111,7 +111,9 @@ class Settings(BaseSettings):
     s3_region: str = Field(default="auto", alias="S3_REGION")
     s3_endpoint_url: Optional[str] = Field(default=None, alias="S3_ENDPOINT_URL")
     # Security Features
-    csrf_enabled: bool = Field(default=True, alias="CSRF_ENABLED")
+    # CSRF disabled - JWT Bearer auth is already CSRF-immune (browsers don't auto-attach
+    # Authorization headers cross-origin), and guest endpoints use token-based auth
+    csrf_enabled: bool = Field(default=False, alias="CSRF_ENABLED")
     csrf_cookie_name: str = Field(default="csrf_token", alias="CSRF_COOKIE_NAME")
     csrf_header_name: str = Field(default="X-CSRF-Token", alias="CSRF_HEADER_NAME")
 

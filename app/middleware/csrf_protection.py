@@ -34,10 +34,16 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
             "/weddings/verify-guest-access",  # Guest verification endpoints
             "/weddings/privacy-info",         # Public privacy info
             "/weddings/guest-access",         # Token-based access
-            "/stripe/",                       # Stripe endpoints use JWT auth
+            "/stripe/",                       # Stripe endpoints use signatures
             "/rsvp/",                         # RSVP endpoints use token auth
             "/admin/auth",                    # Auth endpoints
-            "/public/"                        # Public endpoints
+            "/public/",                       # Public endpoints
+            "/otp/",                          # OTP endpoints use phone verification
+            "/forgot-password",               # Password recovery (email-based)
+            "/reset-password",                # Password reset (uses reset token)
+            "/setup/",                        # Account setup (uses invitation token)
+            "/signup",                        # User registration
+            "/contact"                        # Contact forms (public)
         ]
 
         # Store tokens with expiration

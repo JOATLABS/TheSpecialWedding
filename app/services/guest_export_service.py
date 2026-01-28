@@ -81,9 +81,7 @@ class GuestExportService:
         Returns:
             Full RSVP URL
         """
-        frontend_url = os.getenv("FRONTEND_URL", "")
-        if not frontend_url:
-            frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
+        frontend_url = os.getenv("FRONTEND_URL") or "https://thespecialwedding.io"
         return f"{frontend_url}/{slug}/invite/{token}"
 
     async def get_guest_with_rsvp(self, guest: Dict, rsvp_map: Dict[str, Dict]) -> Dict:

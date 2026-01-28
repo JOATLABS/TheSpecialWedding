@@ -1,6 +1,7 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { MeshDistortMaterial, Sphere, Environment, Float } from '@react-three/drei';
+import { useReducedMotion } from 'framer-motion';
 import * as THREE from 'three';
 
 function LiquidSphere() {
@@ -48,8 +49,22 @@ function Scene() {
 }
 
 export function LiquidBackground() {
+  // Use framer-motion's built-in hook for reduced motion detection
+  const shouldReduceMotion = useReducedMotion();
+
+  // Render static gradient background for users who prefer reduced motion
+  if (shouldReduceMotion) {
+    return (
+      <div className="absolute inset-0 w-full h-full pointer-events-none -z-10 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900">
+        {/* Static decorative elements instead of animated 3D */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 blur-3xl opacity-60" />
+        <div className="absolute inset-0 bg-white/30 dark:bg-slate-900/30 backdrop-blur-[2px]" />
+      </div>
+    );
+  }
+
   return (
-    <div className="absolute inset-0 w-full h-full pointer-events-none -z-10 bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="absolute inset-0 w-full h-full pointer-events-none -z-10 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900">
       <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
         <Scene />
       </Canvas>
@@ -57,7 +72,7 @@ export function LiquidBackground() {
       {/* Frosted glass overlay to ensure text legibility if needed,
           but we want the mirror to be visible.
           Maybe a vignette? */}
-      <div className="absolute inset-0 bg-white/30 backdrop-blur-[2px]" />
+      <div className="absolute inset-0 bg-white/30 dark:bg-slate-900/30 backdrop-blur-[2px]" />
     </div>
   );
 }

@@ -107,9 +107,9 @@ async def delete_table(
     if not await check_wedding_access(current_user, table["wedding_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    # Unassign guests assigned to this table
+    # Unassign guests assigned to this table (scoped to wedding for security)
     await mongo.db["guests"].update_many(
-        {"table_id": table_id},
+        {"table_id": table_id, "wedding_id": table["wedding_id"]},
         {"$set": {"table_id": None}}
     )
 
@@ -137,7 +137,7 @@ async def assign_guests(
     if not await check_wedding_access(current_user, table["wedding_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    # Bulk update guests
+    # Validate guest IDs
     guest_object_ids = []
     for gid in request.guest_ids:
         try:
@@ -145,13 +145,40 @@ async def assign_guests(
         except:
             continue
 
+    if not guest_object_ids:
+        return {"message": "No valid guest IDs provided", "assigned": 0}
+
+    # Check capacity: count current guests at table + new guests (excluding those already at table)
+    current_guests_count = await mongo.db["guests"].count_documents({
+        "table_id": request.table_id,
+        "wedding_id": table["wedding_id"]
+    })
+
+    # Count how many of the requested guests are NOT already at this table
+    guests_already_at_table = await mongo.db["guests"].count_documents({
+        "_id": {"$in": guest_object_ids},
+        "table_id": request.table_id,
+        "wedding_id": table["wedding_id"]
+    })
+
+    new_guests_count = len(guest_object_ids) - guests_already_at_table
+    total_after_assign = current_guests_count + new_guests_count
+
+    if total_after_assign > table.get("capacity", 10):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot assign guests: table capacity is {table.get('capacity', 10)}, "
+                   f"would have {total_after_assign} guests after assignment"
+        )
+
+    # Bulk update guests
     if guest_object_ids:
         await mongo.db["guests"].update_many(
             {"_id": {"$in": guest_object_ids}, "wedding_id": table["wedding_id"]},
             {"$set": {"table_id": request.table_id}}
         )
 
-    return {"message": f"Assigned {len(guest_object_ids)} guests to table"}
+    return {"message": f"Assigned {len(guest_object_ids)} guests to table", "assigned": len(guest_object_ids)}
 
 @router.post("/tables/unassign", tags=["Seating"])
 async def unassign_guests(

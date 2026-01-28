@@ -11,12 +11,18 @@ compatibility_date = "2024-10-01"
 crons = ["0 * * * *"]
 
 [vars]
-# Base URL for the FastAPI backend
-API_URL = "https://api.thespecialwedding.io"
 # Optional: override environment label shown in Analytics Engine queries
 DEPLOYMENT_ENV = "production"
 # Optional: custom index value for sampling/partitioning in Analytics Engine
 ANALYTICS_INDEX = "special-wedding"
+
+# All env vars are set via GitHub secrets during deployment (see deploy-workers.yml)
+# Required secrets in GitHub:
+# - NEXT_PUBLIC_API_BASE_URL: Backend API URL (e.g., https://api.thespecialwedding.io)
+# - ADMIN_TOKEN: JWT token for ROOT_ADMIN authentication
+# - RESEND_API_KEY: For sending alert emails
+# - ALERT_EMAIL: From address for alerts
+# - ROOT_ADMIN_EMAIL: Recipient for alerts
 
 [[analytics_engine_datasets]]
 binding = "WEDDING_ANALYTICAL"
