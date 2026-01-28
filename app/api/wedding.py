@@ -224,14 +224,7 @@ async def get_wedding_by_slug(slug: str):
     verification_service = GuestVerificationService()
     privacy_info = await verification_service.get_wedding_privacy_info(slug)
 
-    # Only return basic info to show what authentication is required
-    return {
-        "couple_names": privacy_info.get("couple_names"),
-        "slug": slug,
-        "privacy_mode": privacy_info.get("privacy_mode"),
-        "requires_authentication": privacy_info.get("privacy_mode") != "public",
-        "message": "Use /weddings/verify-guest-access/{slug} with proper authentication to access full wedding details"
-    }
+    return privacy_info
 
 @router.delete("/weddings/{wedding_id}", tags=["Admin"])
 async def delete_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):

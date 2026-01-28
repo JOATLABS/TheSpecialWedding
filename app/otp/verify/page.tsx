@@ -5,6 +5,9 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
+import { WeddingContext } from '@/contexts/WeddingContext';
+
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 function VerifyOTPContent() {
   const [otp, setOtp] = useState('');
@@ -12,10 +15,12 @@ function VerifyOTPContent() {
   const [error, setError] = useState('');
   const [isVerified, setIsVerified] = useState(false);
   const [guestData, setGuestData] = useState(null);
+  const [weddingData, setWeddingData] = useState<any>(null);
   const [resendCooldown, setResendCooldown] = useState(60);
   const searchParams = useSearchParams();
   const guest_id = searchParams.get('guest_id');
   const token = searchParams.get('token') ?? '';
+  const slug = searchParams.get('slug') ?? '';
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -33,7 +38,7 @@ function VerifyOTPContent() {
         throw new Error('Missing RSVP token');
       }
 
-      const response = await fetch('/api/otp/verify', {
+      const response = await fetch(`${apiBase}/otp/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guest_id, otp }),
@@ -44,12 +49,20 @@ function VerifyOTPContent() {
         throw new Error(errorData.detail || 'Failed to verify OTP');
       }
 
-      // Fetch guest data after successful verification
-      const guestRes = await fetch(`/api/guest/invite/${token}`);
-      if (!guestRes.ok) {
+      // Fetch wedding + guest data after successful verification
+      const accessRes = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
+      if (!accessRes.ok) {
         throw new Error('Failed to fetch guest data');
       }
-      const guest = await guestRes.json();
+      const { wedding, guest } = await accessRes.json();
+
+      // Map _id to id for WeddingContext compatibility
+      const weddingForContext = {
+        ...wedding,
+        id: wedding.id || wedding._id || slug,
+      };
+
+      setWeddingData(weddingForContext);
       setGuestData(guest);
       setIsVerified(true);
     } catch (err) {
@@ -65,7 +78,7 @@ function VerifyOTPContent() {
     setResendCooldown(60);
 
     try {
-      const response = await fetch('/api/otp/request', {
+      const response = await fetch(`${apiBase}/otp/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ guest_id }),
@@ -82,8 +95,12 @@ function VerifyOTPContent() {
     }
   };
 
-  if (isVerified && guestData) {
-    return <RSVPForm guest={guestData} token={token} />;
+  if (isVerified && guestData && weddingData) {
+    return (
+      <WeddingContext.Provider value={weddingData}>
+        <RSVPForm guest={guestData} token={token} />
+      </WeddingContext.Provider>
+    );
   }
 
   return (
