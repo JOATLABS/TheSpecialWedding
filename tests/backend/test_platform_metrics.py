@@ -21,15 +21,96 @@ import app.api.saas_config as saas_config  # noqa: E402
 import app.api.platform_metrics as platform_metrics_api  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.dependencies.auth import require_admin  # noqa: E402
+from app.dependencies.auth_extended import require_root_admin  # noqa: E402
 from app.services.platform_metrics_service import PlatformMetricsService  # noqa: E402
 import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
 
+
+class AsyncMockCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def __aiter__(self):
+        self.iter = iter(self.cursor)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self.iter)
+        except StopIteration:
+            raise StopAsyncIteration
+
+    async def to_list(self, length=None):
+        if length is not None:
+            return list(self.cursor)[:length]
+        return list(self.cursor)
+
+    def sort(self, key_or_list, direction=None):
+        if hasattr(self.cursor, 'sort'):
+            self.cursor.sort(key_or_list, direction)
+        return self
+
+    def limit(self, limit):
+        if hasattr(self.cursor, 'limit'):
+            self.cursor.limit(limit)
+        return self
+
+class AsyncMockCollection:
+    def __init__(self, collection):
+        self.collection = collection
+
+    def aggregate(self, pipeline):
+        cursor = self.collection.aggregate(pipeline)
+        return AsyncMockCursor(cursor)
+
+    def find(self, *args, **kwargs):
+        cursor = self.collection.find(*args, **kwargs)
+        return AsyncMockCursor(cursor)
+
+    async def find_one(self, *args, **kwargs):
+        return self.collection.find_one(*args, **kwargs)
+
+    async def count_documents(self, filter, **kwargs):
+        return self.collection.count_documents(filter, **kwargs)
+
+    async def insert_one(self, document, **kwargs):
+        return self.collection.insert_one(document, **kwargs)
+
+    def insert_many(self, documents, **kwargs):
+        return self.collection.insert_many(documents, **kwargs)
+
+    async def update_one(self, filter, update, **kwargs):
+        return self.collection.update_one(filter, update, **kwargs)
+
+    async def update_many(self, filter, update, **kwargs):
+        return self.collection.update_many(filter, update, **kwargs)
+
+    async def delete_many(self, filter, **kwargs):
+        return self.collection.delete_many(filter, **kwargs)
+
+    @property
+    def name(self):
+        return self.collection.name
+
+class AsyncMockDatabase:
+    def __init__(self, database):
+        self.database = database
+
+    def __getitem__(self, name):
+        return AsyncMockCollection(self.database[name])
+
+    def get_collection(self, name):
+        return AsyncMockCollection(self.database[name])
+
+    async def command(self, command):
+        return {"ok": 1}
 
 class FakeMongo:
     """In-memory stand-in for the production Mongo connector."""
 
     def __init__(self, database):
-        self.db = database
+        self.db = AsyncMockDatabase(database)
+        self._raw_db = database
 
     def get_users_collection(self):
         return self.db["users"]
@@ -58,6 +139,9 @@ class FakeMongo:
     def get_ai_usage_collection(self):
         return self.db["ai_usage"]
 
+    def get_vendors_collection(self):
+        return self.db["vendors"]
+
 
 @pytest.fixture
 def mongo_fixture(monkeypatch):
@@ -83,6 +167,11 @@ def snapshot_test_client(monkeypatch):
     service = PlatformMetricsService(fake)
     monkeypatch.setattr(platform_metrics_service, "service", service)
     monkeypatch.setattr(platform_metrics_api, "metrics_service", service)
+
+    # Patch mongo in admin_platform_metrics for get_platform_health
+    import app.api.admin_platform_metrics as admin_metrics
+    monkeypatch.setattr(admin_metrics, "mongo", fake)
+
     monkeypatch.setattr(settings, "PLATFORM_METRICS_TOKEN", "metrics-test-token")
 
     app = FastAPI()
@@ -92,6 +181,7 @@ def snapshot_test_client(monkeypatch):
         return SimpleNamespace(role="admin")
 
     app.dependency_overrides[require_admin] = override_require_admin
+    app.dependency_overrides[require_root_admin] = override_require_admin
 
     return TestClient(app)
 
@@ -128,7 +218,7 @@ async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
 
     # Subscription plans and assignments
     plans = fake_mongo.get_subscription_plans_collection()
-    plans.insert_one(
+    plans.insert_many([
         {
             "_id": "plan_basic",
             "name": "Basic",
@@ -136,7 +226,7 @@ async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
             "price_yearly": 540,
             "is_active": True,
         }
-    )
+    ])
 
     subscriptions = db.get_collection("user_subscriptions")
     subscriptions.insert_many(
@@ -171,27 +261,27 @@ async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
     fake_mongo.get_rsvps_collection().insert_many([{ "_id": "rsvp1" }, { "_id": "rsvp2" }])
 
     forms = fake_mongo.get_forms_collection()
-    forms.insert_one(
+    forms.insert_many([
         {
             "_id": "form1",
             "is_active": True,
             "created_at": now - timedelta(days=2),
         }
-    )
+    ])
 
-    fake_mongo.get_form_responses_collection().insert_one(
+    fake_mongo.get_form_responses_collection().insert_many([
         {"_id": "resp1", "submitted_at": now - timedelta(days=1)}
-    )
+    ])
 
-    db.get_collection("notifications").insert_one(
+    db.get_collection("notifications").insert_many([
         {"_id": "notif1", "status": "sent", "sent_at": now - timedelta(days=1)}
-    )
-    db.get_collection("email_logs").insert_one(
+    ])
+    db.get_collection("email_logs").insert_many([
         {"_id": "email1", "status": "success", "sent_at": now - timedelta(days=1)}
-    )
-    fake_mongo.get_ai_usage_collection().insert_one(
+    ])
+    fake_mongo.get_ai_usage_collection().insert_many([
         {"_id": "ai1", "created_at": now - timedelta(hours=4)}
-    )
+    ])
 
     metrics = await saas_config.get_platform_metrics(
         timeframe="7d", current_user=SimpleNamespace()
@@ -263,7 +353,8 @@ def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client):
     assert response.status_code == 404
 
     admin_response = client.get("/admin/platform/metrics")
-    assert admin_response.status_code == 404
+    # Falls back to live health data, so it returns 200
+    assert admin_response.status_code == 200
 
     history_response = client.get("/admin/platform/metrics/history")
     assert history_response.status_code == 200
