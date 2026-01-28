@@ -4,7 +4,6 @@ from app.dependencies.auth_extended import require_root_admin, require_admin_or_
 from app.services.user_management_service import UserManagementService
 from app.services.gallery_upload_service import GalleryUploadService
 from pydantic import BaseModel, Field, validator, EmailStr
-from typing import Dict
 import os
 
 router = APIRouter()
@@ -248,7 +247,7 @@ class CancelInvitationModel(BaseModel):
 @router.post("/admin/invitations/{invitation_id}/cancel", tags=["ROOT_ADMIN"])
 async def cancel_invitation(
     invitation_id: str,
-    cancel_data: CancelInvitationModel = None,
+    cancel_data: Optional[CancelInvitationModel] = None,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Cancel a pending invitation - ROOT_ADMIN only"""

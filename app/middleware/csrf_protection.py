@@ -1,7 +1,7 @@
 """
 CSRF Protection Middleware
 """
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -68,7 +68,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         ]
         for token in expired_tokens:
             del self.token_store[token]
-            
+
     def _verify_csrf_token(self, cookie_token: str, header_token: str) -> bool:
         """Verify CSRF token"""
         # Check if tokens match
@@ -105,6 +105,14 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
 
         # Skip CSRF check for excluded paths
         if self._is_excluded_path(request.url.path):
+            response = await call_next(request)
+            return response
+
+        # Skip CSRF for JWT Bearer auth - Bearer tokens in Authorization headers
+        # are immune to CSRF by design (OWASP: custom headers trigger CORS preflight,
+        # browsers never auto-attach Authorization headers cross-origin)
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
             response = await call_next(request)
             return response
 
@@ -179,7 +187,7 @@ class CSRFTokenGenerator:
         timestamp = str(int(time.time()))
         token_data = f"{user_id}:{timestamp}:{self.secret_key}"
         return hashlib.sha256(token_data.encode()).hexdigest()
-    
+
     def verify_token(self, token: str, user_id: str, max_age: int = 3600) -> bool:
         """Verify a CSRF token"""
         # In production, this would check against stored tokens

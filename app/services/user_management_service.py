@@ -739,6 +739,24 @@ class UserManagementService:
 
             result = await self.users_collection.insert_one(user_data)
 
+            # Auto-complete any pending invitation for this email
+            try:
+                pending_invitation = await self.invitations_collection.find_one({
+                    "email": email,
+                    "status": "pending"
+                })
+                if pending_invitation:
+                    await self.invitations_collection.update_one(
+                        {"_id": pending_invitation["_id"]},
+                        {"$set": {
+                            "status": "completed",
+                            "completed_at": datetime.utcnow(),
+                            "completion_method": "public_registration"
+                        }}
+                    )
+            except Exception as e:
+                self.logger.warning(f"Failed to auto-complete invitation for {email}: {e}")
+
             # Send email verification email
             if self.email_service.configured:
                 # Create verification URL

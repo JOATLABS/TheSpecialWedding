@@ -10,6 +10,7 @@ from app.services.platform_metrics_service import PlatformMetricsService
 
 router = APIRouter()
 
+
 def _normalize_datetime(value: Any) -> Optional[datetime]:
     """Convert supported datetime representations to datetime objects."""
     if isinstance(value, datetime):
@@ -51,6 +52,7 @@ def _is_upcoming(date_value: Any, reference: datetime) -> bool:
     return bool(parsed and parsed.date() >= reference.date())
 
 # ==================== SAAS CONFIGURATION MANAGEMENT ====================
+
 
 def _get_default_saas_config():
     """Shared default configuration used by both admin and public endpoints.
@@ -311,6 +313,7 @@ def _get_default_saas_config():
         }
     }
 
+
 @router.get("/saas-config", tags=["ROOT_ADMIN"])
 async def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get current SAAS configuration - ROOT_ADMIN only"""
@@ -334,6 +337,7 @@ async def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching SAAS config: {str(e)}")
 
+
 @router.put("/saas-config", tags=["ROOT_ADMIN"])
 async def update_saas_config(
     config_data: Dict[str, Any],
@@ -346,7 +350,7 @@ async def update_saas_config(
         config_data["updated_by"] = current_user.email
         config_data["updated_at"] = datetime.utcnow()
         # Update or insert configuration
-        result = await mongo.db["saas_config"].update_one(
+        await mongo.db["saas_config"].update_one(
             {"type": "main_config"},
             {"$set": config_data},
             upsert=True
@@ -358,6 +362,7 @@ async def update_saas_config(
         raise HTTPException(status_code=500, detail=f"Error updating SAAS config: {str(e)}")
 
 # ==================== CONTENT SECTIONS MANAGEMENT ====================
+
 
 @router.get("/content-sections", tags=["ROOT_ADMIN"])
 async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_root_admin)):
@@ -405,6 +410,7 @@ async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching content sections: {str(e)}")
 
+
 @router.put("/content-sections/{section_id}", tags=["ROOT_ADMIN"])
 async def update_content_section(
     section_id: str,
@@ -417,7 +423,7 @@ async def update_content_section(
         section_data["updated_by"] = current_user.email
         section_data["updated_at"] = datetime.utcnow()
         # Update section
-        result = await mongo.db["content_sections"].update_one(
+        await mongo.db["content_sections"].update_one(
             {"section": section_id},
             {"$set": section_data},
             upsert=True
@@ -429,6 +435,7 @@ async def update_content_section(
         raise HTTPException(status_code=500, detail=f"Error updating content section: {str(e)}")
 
 # ==================== WEDDING PLANNERS MANAGEMENT ====================
+
 
 @router.get("/wedding-planners", tags=["ROOT_ADMIN"])
 async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_root_admin)):
@@ -463,6 +470,7 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching wedding planners: {str(e)}")
+
 
 @router.post("/wedding-planners", tags=["ROOT_ADMIN"])
 async def create_wedding_planner(
@@ -502,6 +510,7 @@ async def create_wedding_planner(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating wedding planner: {str(e)}")
 
+
 @router.put("/wedding-planners/{planner_id}/status", tags=["ROOT_ADMIN"])
 async def toggle_planner_status(
     planner_id: str,
@@ -538,6 +547,7 @@ async def toggle_planner_status(
 
 # ==================== PUBLIC SAAS CONFIGURATION ====================
 
+
 @router.get("/config", tags=["Public"])
 async def get_public_saas_config():
     """Get SAAS configuration for public landing page - No auth required"""
@@ -562,6 +572,7 @@ async def get_public_saas_config():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching public SAAS config: {str(e)}")
+
 
 @router.get("/analytics/overview", tags=["ROOT_ADMIN"])
 async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
@@ -612,6 +623,7 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching overview analytics: {str(e)}")
+
 
 @router.get("/analytics/revenue", tags=["ROOT_ADMIN"])
 async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
@@ -678,7 +690,6 @@ async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require
         raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")
 
 
-
 @router.get("/analytics/platform", tags=["ROOT_ADMIN"])
 async def get_platform_metrics(
     timeframe: str = Query(
@@ -702,6 +713,7 @@ async def get_platform_metrics(
             detail=f"Error compiling platform metrics: {str(exc)}",
         )
 
+
 @router.get("/trial-settings", tags=["ROOT_ADMIN", "Public"])
 async def get_trial_settings():
     """Get trial settings from SAAS config - Can be used by both admin and registration"""
@@ -718,7 +730,7 @@ async def get_trial_settings():
             "auto_expire_trials": True,
             "allow_multiple_trials": False
         }
-    except Exception as e:
+    except Exception:
         # Return defaults on error to prevent registration failures
         return {
             "default_trial_days": 30,
