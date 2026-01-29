@@ -25,6 +25,21 @@ class Settings:
     NEXT_PUBLIC_API_BASE_URL: Optional[str] = os.getenv("NEXT_PUBLIC_API_BASE_URL")
     MEDIA_DOMAIN: Optional[str] = os.getenv("MEDIA_DOMAIN")
 
+    def get_required_url(self, url_name: str) -> str:
+        """
+        Get a required URL configuration value.
+        Returns the URL or raises ValueError if not configured.
+        """
+        url_map = {
+            "FRONTEND_URL": self.FRONTEND_URL,
+            "NEXT_PUBLIC_API_BASE_URL": self.NEXT_PUBLIC_API_BASE_URL,
+            "MEDIA_DOMAIN": self.MEDIA_DOMAIN,
+        }
+        value = url_map.get(url_name) or os.getenv(url_name)
+        if not value:
+            raise ValueError(f"{url_name} environment variable is not configured")
+        return value
+
     # Google Calendar Integration
     GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")

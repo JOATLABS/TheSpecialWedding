@@ -148,6 +148,141 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
     return detail
 
 
+async def _check_twilio_health(since: datetime) -> Dict[str, Any]:
+    """
+    Check Twilio SMS service health and delivery statistics.
+
+    Returns:
+        Dict with status, configuration, and delivery metrics
+    """
+    import os
+
+    result = {
+        "status": "unknown",
+        "configured": False,
+        "account_sid_set": False,
+        "auth_token_set": False,
+        "messaging_service_sid_set": False,
+        "status_callback_configured": False,
+        "delivery_stats_24h": {
+            "total_sent": 0,
+            "delivered": 0,
+            "failed": 0,
+            "undelivered": 0,
+            "pending": 0,
+            "delivery_rate": 0.0
+        },
+        "error": None
+    }
+
+    # Check environment variables
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    messaging_service_sid = os.getenv("TWILIO_MESSAGING_SERVICE_SID")
+    status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
+
+    result["account_sid_set"] = bool(account_sid)
+    result["auth_token_set"] = bool(auth_token)
+    result["messaging_service_sid_set"] = bool(messaging_service_sid)
+    result["status_callback_configured"] = bool(status_callback_url)
+
+    # Check if all required credentials are set
+    result["configured"] = all([account_sid, auth_token, messaging_service_sid])
+
+    if not result["configured"]:
+        result["status"] = "not_configured"
+        missing = []
+        if not account_sid:
+            missing.append("TWILIO_ACCOUNT_SID")
+        if not auth_token:
+            missing.append("TWILIO_AUTH_TOKEN")
+        if not messaging_service_sid:
+            missing.append("TWILIO_MESSAGING_SERVICE_SID")
+        result["error"] = f"Missing: {', '.join(missing)}"
+        return result
+
+    # Get delivery statistics from reminders_sent collection
+    try:
+        pipeline = [
+            {
+                "$match": {
+                    "provider": "twilio",
+                    "sent_at": {"$gte": since}
+                }
+            },
+            {
+                "$facet": {
+                    "total": [{"$count": "count"}],
+                    "by_status": [
+                        {"$group": {"_id": "$delivery_status", "count": {"$sum": 1}}}
+                    ],
+                    "failed": [
+                        {"$match": {"status": {"$regex": "^failed"}}},
+                        {"$count": "count"}
+                    ]
+                }
+            }
+        ]
+
+        cursor = mongo.db["reminders_sent"].aggregate(pipeline)
+        stats_list = await cursor.to_list(length=1)
+        stats = stats_list[0] if stats_list else {}
+
+        total_sent = stats.get("total", [{}])[0].get("count", 0) if stats.get("total") else 0
+        failed_on_send = stats.get("failed", [{}])[0].get("count", 0) if stats.get("failed") else 0
+
+        # Parse delivery statuses
+        delivered = 0
+        undelivered = 0
+        pending = 0
+
+        for status_item in stats.get("by_status", []):
+            status = status_item.get("_id")
+            count = status_item.get("count", 0)
+
+            if status in ["delivered"]:
+                delivered += count
+            elif status in ["undelivered", "failed"]:
+                undelivered += count
+            elif status in ["queued", "accepted", "sending", "sent"]:
+                pending += count
+
+        # Calculate delivery rate (excluding pending)
+        completed = delivered + undelivered + failed_on_send
+        delivery_rate = (delivered / completed * 100) if completed > 0 else 100.0
+
+        result["delivery_stats_24h"] = {
+            "total_sent": total_sent,
+            "delivered": delivered,
+            "failed": failed_on_send + undelivered,
+            "undelivered": undelivered,
+            "pending": pending,
+            "delivery_rate": round(delivery_rate, 1)
+        }
+
+        # Determine overall status
+        if total_sent == 0:
+            result["status"] = "healthy"  # No SMS sent, but configured
+        elif delivery_rate >= 95:
+            result["status"] = "healthy"
+        elif delivery_rate >= 80:
+            result["status"] = "degraded"
+        else:
+            result["status"] = "unhealthy"
+
+        # Warn if status callback not configured
+        if not status_callback_url:
+            result["status"] = "warning" if result["status"] == "healthy" else result["status"]
+            result["error"] = "TWILIO_STATUS_CALLBACK_URL not configured - delivery tracking disabled"
+
+    except Exception as e:
+        logger.error(f"Failed to get Twilio delivery stats: {str(e)}")
+        result["status"] = "error"
+        result["error"] = f"Failed to query delivery stats: {str(e)}"
+
+    return result
+
+
 CPU_PERCENT_INITIALIZED = False
 
 if PSUTIL_AVAILABLE:
@@ -486,6 +621,9 @@ async def get_platform_health(
                 "configured": False
             }
 
+        # Twilio SMS service health
+        twilio_health = await _check_twilio_health(day_ago)
+
         # ==================== COMPILE RESPONSE ====================
 
         generated_at = now.isoformat()
@@ -530,7 +668,8 @@ async def get_platform_health(
                 "slow_endpoints": slow_endpoints
             },
             "services": {
-                "ntfy": ntfy_health
+                "ntfy": ntfy_health,
+                "twilio": twilio_health
             },
             "timestamp": generated_at
         }
@@ -676,6 +815,12 @@ async def save_metrics_snapshot(
                 "enabled": services_metrics.get("ntfy", {}).get("enabled"),
                 "server_url": services_metrics.get("ntfy", {}).get("server_url"),
                 "error": services_metrics.get("ntfy", {}).get("error"),
+            },
+            "twilio": {
+                "status": services_metrics.get("twilio", {}).get("status"),
+                "configured": services_metrics.get("twilio", {}).get("configured"),
+                "delivery_stats_24h": services_metrics.get("twilio", {}).get("delivery_stats_24h"),
+                "error": services_metrics.get("twilio", {}).get("error"),
             },
         },
     }

@@ -24,7 +24,8 @@ import {
   XCircle,
   ChevronRight,
   Loader2,
-  Bell
+  Bell,
+  MessageSquare
 } from 'lucide-react';
 
 // Types
@@ -98,8 +99,27 @@ interface NtfyHealth {
   checked_at?: string;
 }
 
+interface TwilioHealth {
+  status: string;
+  configured: boolean;
+  account_sid_set?: boolean;
+  auth_token_set?: boolean;
+  messaging_service_sid_set?: boolean;
+  status_callback_configured?: boolean;
+  delivery_stats_24h?: {
+    total_sent: number;
+    delivered: number;
+    failed: number;
+    undelivered: number;
+    pending: number;
+    delivery_rate: number;
+  };
+  error?: string;
+}
+
 interface ServicesMetrics {
   ntfy?: NtfyHealth;
+  twilio?: TwilioHealth;
 }
 
 interface PlatformMetrics {
@@ -644,6 +664,94 @@ export default function PlatformInfrastructurePage() {
                         <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                         <span className="text-red-600 dark:text-red-400 text-xs">
                           {metrics.services?.ntfy?.error}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Twilio SMS Service */}
+              <div className="p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-emerald-500" />
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">SMS Service (Twilio)</h4>
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    metrics.services?.twilio?.status === 'healthy'
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                      : metrics.services?.twilio?.status === 'not_configured'
+                      ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                      : metrics.services?.twilio?.status === 'degraded' || metrics.services?.twilio?.status === 'warning'
+                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                  }`}>
+                    {metrics.services?.twilio?.status || 'unknown'}
+                  </span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Configured</span>
+                    <span className={metrics.services?.twilio?.configured ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                      {metrics.services?.twilio?.configured ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Status Callback</span>
+                    <span className={metrics.services?.twilio?.status_callback_configured ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}>
+                      {metrics.services?.twilio?.status_callback_configured ? 'Enabled' : 'Not Set'}
+                    </span>
+                  </div>
+                  {metrics.services?.twilio?.delivery_stats_24h && metrics.services.twilio.delivery_stats_24h.total_sent > 0 && (
+                    <>
+                      <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <span className="text-gray-500 dark:text-gray-400 text-xs font-medium">24h Delivery Stats</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">Total Sent</span>
+                        <span className="text-gray-700 dark:text-gray-300 font-medium">
+                          {metrics.services.twilio.delivery_stats_24h.total_sent}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">Delivered</span>
+                        <span className="text-green-600 dark:text-green-400 font-medium">
+                          {metrics.services.twilio.delivery_stats_24h.delivered}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">Failed</span>
+                        <span className={metrics.services.twilio.delivery_stats_24h.failed > 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-500 dark:text-gray-400'}>
+                          {metrics.services.twilio.delivery_stats_24h.failed}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">Pending</span>
+                        <span className="text-yellow-600 dark:text-yellow-400">
+                          {metrics.services.twilio.delivery_stats_24h.pending}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pt-1">
+                        <span className="text-gray-500 dark:text-gray-400">Delivery Rate</span>
+                        <span className={`font-semibold ${
+                          metrics.services.twilio.delivery_stats_24h.delivery_rate >= 95
+                            ? 'text-green-600 dark:text-green-400'
+                            : metrics.services.twilio.delivery_stats_24h.delivery_rate >= 80
+                            ? 'text-yellow-600 dark:text-yellow-400'
+                            : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {metrics.services.twilio.delivery_stats_24h.delivery_rate}%
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {metrics.services?.twilio?.error && (
+                    <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex items-start gap-1">
+                        <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-yellow-600 dark:text-yellow-400 text-xs">
+                          {metrics.services?.twilio?.error}
                         </span>
                       </div>
                     </div>
