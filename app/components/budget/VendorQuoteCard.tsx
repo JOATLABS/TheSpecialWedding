@@ -66,6 +66,7 @@ export default function VendorQuoteCard({
     return (
       <div
         className="flex items-center"
+        // Use 'group' role for interactive rating to group the buttons, 'img' for static display
         role={interactive ? 'group' : 'img'}
         aria-label={interactive ? 'Rate this quote' : `Rating: ${currentRating} out of 5 stars`}
       >
