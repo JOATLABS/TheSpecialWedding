@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.reminder_service import ReminderService
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
@@ -253,7 +254,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         from app.services.email_service_resend import ResendEmailService
         email_service = ResendEmailService()
 
-        frontend_url = settings.get_required_url("FRONTEND_URL")
+        frontend_url = settings.FRONTEND_URL or os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
         subject = f"New Guest Message: {ticket['wedding_name']}"
 
         html_content = f"""
