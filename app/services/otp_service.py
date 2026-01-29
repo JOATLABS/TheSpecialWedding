@@ -46,11 +46,16 @@ class OTPService:
         )
         return otp
 
-    async def send_otp(self, guest_id: str) -> bool:
-        """Send an OTP to the guest's phone."""
+    async def send_otp(self, guest_id: str) -> dict:
+        """
+        Send an OTP to the guest's phone.
+
+        Returns:
+            dict with "success" (bool) and "error" (str) if failed
+        """
         if not ObjectId.is_valid(guest_id):
             logger.warning(f"Invalid ObjectId format: {guest_id}")
-            return False
+            return {"success": False, "error": "Invalid guest ID format"}
 
         # Ensure TTL index exists
         await self._ensure_indexes()
@@ -67,15 +72,15 @@ class OTPService:
                 # If OTP is still valid (sent within last minute), rate limit
                 elif expires_at > datetime.utcnow() - timedelta(minutes=4):
                     logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
-                    return False
+                    return {"success": False, "error": "Please wait before requesting another code"}
 
         guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
         if not guest:
             logger.warning(f"Guest not found for guest_id: {guest_id}")
-            return False
+            return {"success": False, "error": "Guest not found"}
         if not guest.get("phone"):
             logger.warning(f"Guest has no phone number: {guest_id}")
-            return False
+            return {"success": False, "error": "No phone number on file. Please contact the wedding planner."}
 
         otp = await self.generate_otp(guest_id)
         message = f"Your verification code is: {otp}"
@@ -85,7 +90,9 @@ class OTPService:
         status = result.get("status") if isinstance(result, dict) else result
         if status != "success":
             logger.error(f"Failed to send OTP SMS to guest_id {guest_id}: {status}")
-        return status == "success"
+            return {"success": False, "error": "Failed to send SMS. Please try again later."}
+
+        return {"success": True}
 
     async def verify_otp(self, wedding_id: str, contact: str, otp_code: str) -> dict:
         """

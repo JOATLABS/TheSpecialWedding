@@ -28,9 +28,12 @@ class OTPVerify(BaseModel):
 @router.post("/otp/request", tags=["OTP"])
 async def request_otp(payload: OTPRequest):
     """Request an OTP for a guest by guest_id."""
-    success = await otp_service.send_otp(payload.guest_id)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to send OTP")
+    result = await otp_service.send_otp(payload.guest_id)
+    if not result.get("success"):
+        error = result.get("error", "Failed to send OTP")
+        # Use 400 for client errors (no phone, rate limit), 500 for server errors
+        status_code = 400 if "phone" in error.lower() or "wait" in error.lower() else 500
+        raise HTTPException(status_code=status_code, detail=error)
     return {"message": "OTP sent successfully"}
 
 
@@ -61,9 +64,9 @@ async def send_otp_by_contact(payload: OTPRequestByContact):
 
 
 @router.post("/otp/verify", tags=["OTP"])
-def verify_otp(payload: OTPVerify):
-    """Verify an OTP for a guest."""
-    success = otp_service.verify_otp(payload.guest_id, payload.otp)
+async def verify_otp_endpoint(payload: OTPVerify):
+    """Verify an OTP for a guest by guest_id."""
+    success = await otp_service.verify_otp_by_guest_id(payload.guest_id, payload.otp)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     return {"message": "OTP verified successfully"}
