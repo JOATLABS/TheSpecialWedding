@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Twilio SMS Delivery Tracking** (`app/api/twilio_webhooks.py`, `app/services/reminder_service_twilio.py`, `app/core/database_indexes.py`):
+  - **StatusCallback webhooks**: Track SMS delivery status (delivered/failed/undelivered) via Twilio webhooks
+    - `POST /webhook/twilio/status` - Receives delivery status updates from Twilio
+    - Updates `reminders_sent` collection with `delivery_status`, `delivery_events`, and `error_code`
+  - **MessageSid tracking**: `_send_sms()` now returns dict with `message_sid` for delivery correlation
+    - Log records include `message_sid`, `delivery_status`, `delivery_status_updated_at`, `delivery_events` fields
+  - **Database indexes**: Added sparse unique index on `message_sid` field in `reminders_sent` collection
+  - **Incoming SMS webhook**: `POST /webhook/twilio/incoming` handles STOP/HELP/START and support messages
+    - Routes messages to assigned wedding planner or logs to errors collection for root admin
+
+- **Twilio Platform Monitoring** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+  - **Backend health check**: `_check_twilio_health()` function checks:
+    - Environment variables: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID`, `TWILIO_STATUS_CALLBACK_URL`
+    - 24h delivery stats from `reminders_sent` collection: total sent, delivered, failed, pending, delivery rate
+    - Status: healthy (>=95%), degraded (>=80%), unhealthy (<80%)
+  - **Frontend dashboard card**: New "SMS Service (Twilio)" card in External Services section
+    - Shows configuration status, status callback status, delivery stats, and delivery rate percentage
+    - Color-coded status indicators and warnings for missing configuration
+
+- **Settings URL Helper** (`app/core/config.py`):
+  - Added `get_required_url(url_name)` method to Settings class
+  - Returns configured URL or raises ValueError if not set
+  - Supports `FRONTEND_URL`, `NEXT_PUBLIC_API_BASE_URL`, `MEDIA_DOMAIN`
+
+### Fixed
+
+- **OTP Service Dict Handling** (`app/services/otp_service.py`):
+  - Fixed `send_otp()` and `send_otp_by_contact()` to handle dict return from `_send_sms()`
+  - Extracts status with `result.get("status") if isinstance(result, dict) else result`
+  - Prevents 500 errors when sending OTP via Twilio
+
+- **Removed Slack Integration** (`app/api/twilio_webhooks.py`, `app/api/reminder.py`):
+  - Replaced Slack webhook notifications with errors collection logging
+  - Unassigned support tickets now appear in platform monitoring Errors tab
+  - Root admin gets email notification for unassigned tickets
+
 - **Seating Orchestration Enhancements** (`app/api/tables.py`, `app/admin/weddings/[id]/seating/page.tsx`, `app/admin/components/seating/*`, `app/core/database_indexes.py`):
   - **Server-side capacity validation**: API now rejects guest assignments that would exceed table capacity
     - Returns clear error message: "Cannot assign guests: table capacity is X, would have Y guests after assignment"
@@ -284,6 +320,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `/setup/` - Account setup (uses invitation token)
     - `/signup` - User registration
     - `/contact` - Contact forms (public)
+
+- **OTP Request Returns Generic Error Message** (`app/services/otp_service.py`, `app/api/otp.py`):
+  - **Root cause**: `send_otp()` returned `True/False` with no error details; API returned generic "Failed to send OTP" for all failure cases
+  - **Impact**: Guests saw unhelpful error message when OTP failed (e.g., missing phone number displayed as "Failed to send OTP")
+  - **Fix**: Modified `send_otp()` to return dict with specific error messages:
+    - `{"success": False, "error": "Invalid guest ID format"}` — invalid ObjectId
+    - `{"success": False, "error": "Please wait before requesting another code"}` — rate limited
+    - `{"success": False, "error": "Guest not found"}` — guest doesn't exist
+    - `{"success": False, "error": "No phone number on file. Please contact the wedding planner."}` — missing phone
+    - `{"success": False, "error": "Failed to send SMS. Please try again later."}` — Twilio error
+  - **Also fixed**: `/otp/verify` endpoint was calling wrong method (`verify_otp` instead of `verify_otp_by_guest_id`) and missing `async/await`
 
 - **Forms API 404 Error** (`app/services/formsApi.ts`):
   - Fixed "Not Found" error when accessing Forms page in planner dashboard
