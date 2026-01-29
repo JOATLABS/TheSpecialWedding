@@ -80,7 +80,9 @@ class OTPService:
         otp = await self.generate_otp(guest_id)
         message = f"Your verification code is: {otp}"
 
-        status = self.twilio_service._send_sms(guest["phone"], message)
+        result = self.twilio_service._send_sms(guest["phone"], message)
+        # _send_sms now returns a dict with "status", "message_sid", "initial_status"
+        status = result.get("status") if isinstance(result, dict) else result
         if status != "success":
             logger.error(f"Failed to send OTP SMS to guest_id {guest_id}: {status}")
         return status == "success"
@@ -217,7 +219,9 @@ class OTPService:
             if not phone.startswith('+'):
                 phone = f"+1{phone}"
 
-            status = self.twilio_service._send_sms(phone, message)
+            result = self.twilio_service._send_sms(phone, message)
+            # _send_sms now returns a dict with "status", "message_sid", "initial_status"
+            status = result.get("status") if isinstance(result, dict) else result
             if status == "success":
                 return {"success": True, "contact_type": "phone"}
             else:

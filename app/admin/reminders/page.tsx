@@ -45,6 +45,12 @@ interface MessageLog {
  status: string;
  sent_at: string;
  provider?: 'twilio' | 'telnyx' | 'resend'; // Track which service was used
+ // Delivery tracking fields (Twilio)
+ message_sid?: string;
+ delivery_status?: 'accepted' | 'queued' | 'sending' | 'sent' | 'delivered' | 'failed' | 'undelivered';
+ delivery_status_updated_at?: string;
+ error_code?: number;
+ error_message?: string;
 }
 
 export default function AdminRemindersPage() {
@@ -946,11 +952,28 @@ export default function AdminRemindersPage() {
  <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-400">
  {formatLogTimestamp(log.sent_at)}
  </div>
+ <div className="flex gap-2">
  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
  log.status === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
  }`}>
  {log.status}
  </span>
+ {log.provider === 'twilio' && log.delivery_status && (
+ <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+ log.delivery_status === 'delivered'
+ ? 'bg-green-100 text-green-800'
+ : log.delivery_status === 'sent'
+ ? 'bg-blue-100 text-blue-800'
+ : log.delivery_status === 'queued' || log.delivery_status === 'accepted'
+ ? 'bg-yellow-100 text-yellow-800'
+ : log.delivery_status === 'failed' || log.delivery_status === 'undelivered'
+ ? 'bg-red-100 text-red-800'
+ : 'bg-gray-100 text-gray-800'
+ }`}>
+ {log.delivery_status}
+ </span>
+ )}
+ </div>
  </div>
  <div className="font-semibold text-sm">{log.phone || log.to || 'N/A'}</div>
  <div className="flex gap-2">
@@ -994,6 +1017,9 @@ export default function AdminRemindersPage() {
  Status
  </th>
  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+ Delivery
+ </th>
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Content
  </th>
  </tr>
@@ -1023,6 +1049,32 @@ export default function AdminRemindersPage() {
  }`}>
  {log.status}
  </span>
+ </td>
+ <td className="px-6 py-4 whitespace-nowrap">
+ {log.provider === 'twilio' && log.delivery_status ? (
+ <div className="flex flex-col">
+ <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+ log.delivery_status === 'delivered'
+ ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+ : log.delivery_status === 'sent'
+ ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+ : log.delivery_status === 'queued' || log.delivery_status === 'accepted'
+ ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+ : log.delivery_status === 'failed' || log.delivery_status === 'undelivered'
+ ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+ : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+ }`}>
+ {log.delivery_status}
+ </span>
+ {log.error_message && (
+ <span className="text-xs text-red-600 dark:text-red-400 mt-1 max-w-[150px] truncate" title={log.error_message}>
+ {log.error_message}
+ </span>
+ )}
+ </div>
+ ) : (
+ <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
+ )}
  </td>
  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
  {log.message || log.subject || ''}

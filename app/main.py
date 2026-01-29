@@ -57,6 +57,7 @@ from app.api.stripe_payment import router as stripe_router
 from app.api.admin_platform_metrics import router as admin_platform_metrics_router
 from app.api.admin_backup import router as backup_router
 from app.api.email_webhooks import router as email_webhooks_router
+from app.api.twilio_webhooks import router as twilio_webhooks_router
 from app.api.billing_jobs import router as billing_jobs_router
 from app.api.metering import router as metering_router
 from app.api.planner_calendar import router as planner_calendar_router
@@ -250,6 +251,7 @@ app.include_router(vendor_management_router, prefix="/vendor-contract", tags=["V
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
 app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
+app.include_router(twilio_webhooks_router, tags=["Webhooks"])  # Twilio SMS delivery webhooks
 app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
 app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
 app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
