@@ -102,7 +102,13 @@ class TwilioReminderService:
 
         return {"sent": len(logs), "provider": "twilio"}
 
-    def _send_sms(self, to: str, body: str) -> str:
+    def _send_sms(self, to: str, body: str) -> dict:
+        """
+        Send SMS and return both status and message_sid for delivery tracking.
+
+        Returns:
+            dict with "status", "message_sid", and "initial_status" keys
+        """
         try:
             if not self.client:
                 raise RuntimeError("Twilio client is not initialized")
@@ -111,12 +117,16 @@ class TwilioReminderService:
             if not to.startswith('+'):
                 to = f"+1{to}"  # Assume US number if no country code
 
+            # Get the StatusCallback URL for delivery tracking
+            status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
+
             # Prefer Messaging Service SID; if not set, require a valid from number
             if self.messaging_service_sid:
                 message = self.client.messages.create(
                     messaging_service_sid=self.messaging_service_sid,
                     body=body,
-                    to=to
+                    to=to,
+                    status_callback=status_callback_url
                 )
             else:
                 from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
@@ -125,27 +135,69 @@ class TwilioReminderService:
                 message = self.client.messages.create(
                     from_=from_number,
                     body=body,
-                    to=to
+                    to=to,
+                    status_callback=status_callback_url
                 )
 
             logger.info(f"Twilio SMS sent to {to}, SID: {message.sid}")
-            return "success"
+            return {
+                "status": "success",
+                "message_sid": message.sid,
+                "initial_status": message.status  # "queued" or "accepted"
+            }
 
         except Exception as e:
             logger.error(f"Twilio SMS failed to {to}: {str(e)}")
-            return f"failed: {str(e)}"
+            return {
+                "status": f"failed: {str(e)}",
+                "message_sid": None,
+                "initial_status": None
+            }
 
-    def _log(self, phone, guest_id, message, target_type, event_type, status, timestamp):
-        return {
+    def _log(self, phone, guest_id, message, target_type, event_type, send_result, timestamp, wedding_id=None):
+        """
+        Create log record with MessageSid for delivery tracking.
+
+        Args:
+            send_result: Either a string (legacy) or dict with status/message_sid/initial_status
+        """
+        # Handle both old string format and new dict format
+        if isinstance(send_result, dict):
+            status = send_result.get("status", "unknown")
+            message_sid = send_result.get("message_sid")
+            initial_status = send_result.get("initial_status")
+        else:
+            status = send_result
+            message_sid = None
+            initial_status = None
+
+        log_record = {
             "phone": phone,
             "guest_id": str(guest_id),
+            "wedding_id": str(wedding_id) if wedding_id else None,
             "message": message,
             "target_type": target_type,
             "event_type": event_type,
             "status": status,
             "sent_at": timestamp,
-            "provider": "twilio"
+            "provider": "twilio",
+            # New delivery tracking fields
+            "message_sid": message_sid,
+            "delivery_status": initial_status,
+            "delivery_status_updated_at": timestamp if message_sid else None,
         }
+
+        # Add initial delivery event if we have a message_sid
+        if message_sid and initial_status:
+            log_record["delivery_events"] = [{
+                "status": initial_status,
+                "timestamp": timestamp,
+                "error_code": None
+            }]
+        else:
+            log_record["delivery_events"] = []
+
+        return log_record
 
     async def get_logs(self):
         return await self.log_collection.find({"provider": "twilio"}, {"_id": 0}).to_list(length=None)
@@ -204,17 +256,27 @@ class TwilioRSVPReminderHelper:
             if not phone.startswith('+'):
                 phone = f"+1{phone}"
 
+            # Delivery tracking fields
+            message_sid = None
+            initial_status = None
+
             try:
                 if not self.client:
                     raise RuntimeError("Twilio client is not initialized")
 
+                # Get the StatusCallback URL for delivery tracking
+                status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
+
                 twilio_message = self.client.messages.create(
                     messaging_service_sid=self.messaging_service_sid,
                     body=message,
-                    to=phone
+                    to=phone,
+                    status_callback=status_callback_url
                 )
                 logger.info(f"Twilio invite sent to {phone}, SID: {twilio_message.sid}")
                 status = "success"
+                message_sid = twilio_message.sid
+                initial_status = twilio_message.status  # "queued" or "accepted"
                 sent_count += 1
 
                 # Mark guest as having received an invite
@@ -227,16 +289,34 @@ class TwilioRSVPReminderHelper:
                 status = f"failed: {str(e)}"
                 failed_count += 1
 
-            logs.append({
+            # Build log record with delivery tracking
+            log_record = {
                 "phone": phone,
                 "guest_id": str(guest_id),
+                "wedding_id": str(wedding_id),
                 "message": message,
                 "target_type": "guest",
                 "event_type": "rsvp_invite",
                 "status": status,
                 "sent_at": now,
-                "provider": "twilio"
-            })
+                "provider": "twilio",
+                # Delivery tracking fields
+                "message_sid": message_sid,
+                "delivery_status": initial_status,
+                "delivery_status_updated_at": now if message_sid else None,
+            }
+
+            # Add initial delivery event if we have a message_sid
+            if message_sid and initial_status:
+                log_record["delivery_events"] = [{
+                    "status": initial_status,
+                    "timestamp": now,
+                    "error_code": None
+                }]
+            else:
+                log_record["delivery_events"] = []
+
+            logs.append(log_record)
 
         if logs:
             await self.log_collection.insert_many(logs)

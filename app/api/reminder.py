@@ -35,7 +35,16 @@ async def handle_sms_callback(request: Request):
     Compliant with toll-free SMS requirements
     """
     try:
-        data = await request.json()
+        # Twilio sends form-encoded data, Telnyx sends JSON
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            # Twilio format - form data
+            form_data = await request.form()
+            data = dict(form_data)
+        else:
+            # Telnyx format - JSON
+            data = await request.json()
+
         guest_collection = mongo.get_guest_collection()
         wedding_collection = mongo.db["weddings"]
         

@@ -341,6 +341,62 @@ async def create_user_indexes():
         return False
 
 
+async def create_reminders_sent_indexes():
+    """
+    Create indexes for reminders_sent collection (SMS/Email logs)
+
+    Key queries:
+    1. Get logs by wedding_id
+    2. Get logs by message_sid (Twilio status callback lookup)
+    3. Get logs by delivery status
+    4. Get logs by provider (twilio/telnyx/resend)
+    """
+    collection = mongo.db["reminders_sent"]
+    try:
+        # 1. Wedding ID - Filter logs by wedding
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("sent_at", DESCENDING)],
+            name="idx_wedding_sent"
+        )
+        logger.info("Created index: idx_wedding_sent")
+
+        # 2. Message SID - Twilio status callback lookup (unique, sparse for legacy records)
+        await collection.create_index(
+            [("message_sid", ASCENDING)],
+            name="idx_message_sid",
+            unique=True,
+            sparse=True  # Allow null for legacy records without message_sid
+        )
+        logger.info("Created index: idx_message_sid (unique, sparse)")
+
+        # 3. Delivery status - Filter by status
+        await collection.create_index(
+            [("delivery_status", ASCENDING), ("sent_at", DESCENDING)],
+            name="idx_delivery_status_sent"
+        )
+        logger.info("Created index: idx_delivery_status_sent")
+
+        # 4. Provider - Filter by SMS provider
+        await collection.create_index(
+            [("provider", ASCENDING), ("sent_at", DESCENDING)],
+            name="idx_provider_sent"
+        )
+        logger.info("Created index: idx_provider_sent")
+
+        # 5. Guest ID - Lookup logs for a specific guest
+        await collection.create_index(
+            [("guest_id", ASCENDING), ("sent_at", DESCENDING)],
+            name="idx_guest_sent"
+        )
+        logger.info("Created index: idx_guest_sent")
+
+        logger.info("All reminders_sent indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating reminders_sent indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -352,6 +408,7 @@ async def create_all_indexes():
         await create_rsvp_indexes()
         await create_subscription_indexes()
         await create_user_indexes()
+        await create_reminders_sent_indexes()  # SMS delivery tracking
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
