@@ -2,7 +2,7 @@
 
 import random
 from datetime import datetime, timedelta
-from pymongo import IndexModel, ASCENDING
+from pymongo import ASCENDING
 from bson.objectid import ObjectId
 from app.core.database import mongo
 from app.services.reminder_service_twilio import TwilioReminderService
@@ -12,16 +12,27 @@ logger = logging.getLogger(__name__)
 
 
 class OTPService:
+    _indexes_initialized = False
+
     def __init__(self):
         self.otp_collection = mongo.db["otps"]
         self.guest_collection = mongo.get_guest_collection()
         self.twilio_service = TwilioReminderService()
 
-        async def init_indexes(self):
-            # Create a TTL index on the 'expires_at' field
-            await self.otp_collection.create_indexes([
-                IndexModel([("expires_at", ASCENDING)], expireAfterSeconds=0)
-            ])
+    async def _ensure_indexes(self):
+        """Create TTL index on expires_at field if not already created."""
+        if not OTPService._indexes_initialized:
+            try:
+                await self.otp_collection.create_index(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0
+                )
+                OTPService._indexes_initialized = True
+                logger.info("OTP TTL index created successfully")
+            except Exception as e:
+                # Index might already exist, that's fine
+                logger.debug(f"OTP index creation: {e}")
+                OTPService._indexes_initialized = True
 
     async def generate_otp(self, guest_id: str) -> str:
         """Generate a 6-digit OTP and store it."""
@@ -38,23 +49,40 @@ class OTPService:
     async def send_otp(self, guest_id: str) -> bool:
         """Send an OTP to the guest's phone."""
         if not ObjectId.is_valid(guest_id):
+            logger.warning(f"Invalid ObjectId format: {guest_id}")
             return False
 
-        # Rate limit OTP requests to one per minute
+        # Ensure TTL index exists
+        await self._ensure_indexes()
+
+        # Check for existing OTP and handle rate limiting
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
-        if last_otp and last_otp.get("expires_at") > datetime.utcnow() - timedelta(minutes=4):
-            # This is a simple way to prevent spamming OTP requests.
-            # A more robust solution would use a dedicated rate-limiting library.
-            return False
+        if last_otp:
+            expires_at = last_otp.get("expires_at")
+            if expires_at:
+                # If OTP has expired, delete it and allow new request
+                if expires_at <= datetime.utcnow():
+                    await self.otp_collection.delete_one({"_id": last_otp["_id"]})
+                    logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
+                # If OTP is still valid (sent within last minute), rate limit
+                elif expires_at > datetime.utcnow() - timedelta(minutes=4):
+                    logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
+                    return False
 
         guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
-        if not guest or not guest.get("phone"):
+        if not guest:
+            logger.warning(f"Guest not found for guest_id: {guest_id}")
+            return False
+        if not guest.get("phone"):
+            logger.warning(f"Guest has no phone number: {guest_id}")
             return False
 
         otp = await self.generate_otp(guest_id)
         message = f"Your verification code is: {otp}"
 
         status = self.twilio_service._send_sms(guest["phone"], message)
+        if status != "success":
+            logger.error(f"Failed to send OTP SMS to guest_id {guest_id}: {status}")
         return status == "success"
 
     async def verify_otp(self, wedding_id: str, contact: str, otp_code: str) -> dict:
@@ -159,12 +187,22 @@ class OTPService:
 
         guest_id = str(guest["_id"])
 
-        # Rate limit: Prevent OTP spam - only allow 1 OTP per minute per guest
+        # Ensure TTL index exists
+        await self._ensure_indexes()
+
+        # Check for existing OTP and handle rate limiting
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
-        if last_otp and last_otp.get("expires_at") > datetime.utcnow() - timedelta(minutes=4):
-            # OTP was sent less than 1 minute ago (5 min expiry - 4 min buffer)
-            logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
-            return {"success": False, "error": "Please wait before requesting another code"}
+        if last_otp:
+            expires_at = last_otp.get("expires_at")
+            if expires_at:
+                # If OTP has expired, delete it and allow new request
+                if expires_at <= datetime.utcnow():
+                    await self.otp_collection.delete_one({"_id": last_otp["_id"]})
+                    logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
+                # If OTP is still valid (sent within last minute), rate limit
+                elif expires_at > datetime.utcnow() - timedelta(minutes=4):
+                    logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
+                    return {"success": False, "error": "Please wait before requesting another code"}
 
         # Generate and store OTP
         otp = await self.generate_otp(guest_id)
