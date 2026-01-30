@@ -15,6 +15,7 @@ interface MessageEnrichmentProps {
 }
 
 export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmentProps) {
+  // State for controlling the active enrichment panel
   const [activePanel, setActivePanel] = useState<'url' | 'location' | 'form' | null>(null);
   const [url, setUrl] = useState('');
   const [urlLabel, setUrlLabel] = useState('');
