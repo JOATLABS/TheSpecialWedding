@@ -397,6 +397,53 @@ async def create_reminders_sent_indexes():
         return False
 
 
+async def create_payment_request_indexes():
+    """
+    Create indexes for payment_requests collection
+    """
+    collection = mongo.db["payment_requests"]
+    try:
+        # 1. User ID + Created At - For listing user's payment history
+        await collection.create_index(
+            [("user_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_payment_user_created"
+        )
+        logger.info("Created index: idx_payment_user_created")
+
+        # 2. Payment Intent ID - Unique lookup
+        await collection.create_index(
+            [("payment_intent_id", ASCENDING)],
+            name="idx_payment_intent_id",
+            unique=True
+        )
+        logger.info("Created index: idx_payment_intent_id")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating payment_requests indexes: {str(e)}")
+        return False
+
+
+async def create_stripe_customer_indexes():
+    """
+    Create indexes for stripe_customers collection
+    """
+    collection = mongo.db["stripe_customers"]
+    try:
+        # 1. User ID - Unique lookup
+        await collection.create_index(
+            [("user_id", ASCENDING)],
+            name="idx_customer_user_id",
+            unique=True
+        )
+        logger.info("Created index: idx_customer_user_id")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating stripe_customers indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -409,6 +456,8 @@ async def create_all_indexes():
         await create_subscription_indexes()
         await create_user_indexes()
         await create_reminders_sent_indexes()  # SMS delivery tracking
+        await create_payment_request_indexes()
+        await create_stripe_customer_indexes()
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
