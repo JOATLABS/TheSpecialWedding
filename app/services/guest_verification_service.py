@@ -13,6 +13,7 @@ from app.services.otp_service import OTPService
 security_logger = logging.getLogger("guest_verification_security")
 security_logger.setLevel(logging.INFO)
 
+
 class GuestVerificationService:
     def __init__(self):
         self.guest_service = GuestService()
@@ -78,21 +79,22 @@ class GuestVerificationService:
         if identifier in self._failed_attempts:
             del self._failed_attempts[identifier]
 
-    def _log_security_event(self, event_type: str, details: Dict[str, Any]):
-        """Log security events for monitoring"""
+    async def _log_security_event(self, event_type: str, details: Dict[str, Any]):
+        """Log security events for monitoring - database only, no console logging of sensitive data"""
         try:
             log_entry = {
                 "event_type": event_type,
                 "timestamp": datetime.utcnow(),
                 "details": details
             }
-            security_logger.info(f"Security Event: {event_type} - {details}")
+            # Only log event type to console, not the sensitive details
+            security_logger.info(f"Security Event: {event_type}")
 
-            # Also store in database for audit trail
-            mongo.db["security_audit_logs"].insert_one(log_entry)
-        except Exception as e:
+            # Store full details in database for audit trail (not exposed to logs)
+            await mongo.db["security_audit_logs"].insert_one(log_entry)
+        except Exception:
             # Don't fail the main flow if logging fails
-            security_logger.error(f"Failed to log security event: {str(e)}")
+            security_logger.error("Failed to log security event")
 
     async def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -111,26 +113,61 @@ class GuestVerificationService:
         # Check rate limiting
         rate_limit_key = f"{slug}:{verification_data.get('phone', verification_data.get('name', 'unknown'))}"
         if not self._check_rate_limit(rate_limit_key):
-            self._log_security_event("RATE_LIMIT_EXCEEDED", {"slug": slug})
+            await self._log_security_event("RATE_LIMIT_EXCEEDED", {"slug": slug})
             raise HTTPException(
                 status_code=429,
                 detail="Too many failed attempts. Please try again later."
             )
 
         try:
-            # Debug logging
-            security_logger.info(f"Verification attempt for slug: {slug}, data: {verification_data}")
+            # Debug logging - only log slug, not sensitive verification data
+            security_logger.debug(f"Verification attempt for slug: {slug}")
 
             # Get wedding by slug
             wedding = await self.wedding_service.get_wedding_by_slug(slug)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
+            # IMPORTANT: Check token FIRST, regardless of privacy mode
+            # This is critical for RSVP invite links which always have a token
+            # Without this, public weddings would return guest: null breaking the RSVP form
+            token = verification_data.get("token")
+            if token:
+                token = self._sanitize_input(token, "token", max_length=255)
+                try:
+                    guest = await self.guest_service.get_guest_by_token(token, wedding["_id"])
+                    if guest:
+                        self._reset_failed_attempts(rate_limit_key)
+                        await self._log_security_event("TOKEN_AUTH_SUCCESS", {
+                            "slug": slug,
+                            "wedding_id": str(wedding.get("_id")),
+                            "guest_id": str(guest.get("id"))
+                        })
+                        wedding_response = {
+                            **wedding,
+                            "id": str(wedding.get("_id"))
+                        }
+                        return {
+                            "access": True,
+                            "wedding": wedding_response,
+                            "guest": guest,
+                            "auth_method": "token"
+                        }
+                    else:
+                        # Token provided but guest not found - record failed attempt
+                        self._record_failed_attempt(rate_limit_key)
+                        await self._log_security_event("TOKEN_AUTH_FAILED", {"slug": slug, "token_provided": True})
+
+                except Exception:
+                    security_logger.warning("Token verification error")
+                    self._record_failed_attempt(rate_limit_key)
+                    # TODO evaluate this shit - Fall through to privacy mode checks if token fails
+
             # Check privacy settings
             privacy_settings = wedding.get("privacy_settings", {})
             privacy_mode = privacy_settings.get("privacy_mode", "private")
 
-            # If wedding is public, grant access immediately
+            # If wedding is public, grant access immediately (no token was provided or token failed)
             if privacy_mode == "public":
                 # Transform wedding to have 'id' for frontend consistency
                 wedding_response = {
@@ -153,7 +190,7 @@ class GuestVerificationService:
                 if provided_password and stored_password and \
                    secrets.compare_digest(str(provided_password), str(stored_password)):
                     self._reset_failed_attempts(rate_limit_key)
-                    self._log_security_event("PASSWORD_AUTH_SUCCESS", {
+                    await self._log_security_event("PASSWORD_AUTH_SUCCESS", {
                         "slug": slug,
                         "wedding_id": str(wedding.get("_id"))
                     })
@@ -171,45 +208,13 @@ class GuestVerificationService:
                 elif provided_password:
                     # Password was provided but incorrect
                     self._record_failed_attempt(rate_limit_key)
-                    self._log_security_event("PASSWORD_AUTH_FAILED", {"slug": slug})
+                    await self._log_security_event("PASSWORD_AUTH_FAILED", {"slug": slug})
 
             # For private mode, try different verification methods
+            # Note: Token verification is handled above (before privacy mode checks)
+            # If we reach here with a token, it means the token lookup failed
             if privacy_mode == "private":
-                guest = None
-
-                # Method 1: Token-based verification (highest priority)
-                token = verification_data.get("token")
-                if token:
-                    # Sanitize token
-                    token = self._sanitize_input(token, "token", max_length=255)
-                    try:
-                        guest = await self.guest_service.get_guest_by_token(token, wedding["_id"])
-                        if guest:
-                            self._reset_failed_attempts(rate_limit_key)
-                            self._log_security_event("TOKEN_AUTH_SUCCESS", {
-                                "slug": slug,
-                                "wedding_id": str(wedding.get("_id")),
-                                "guest_id": str(guest.get("id"))  # guest has 'id', not '_id'
-                            })
-                            # Transform wedding to have 'id' like guest does for frontend consistency
-                            wedding_response = {
-                                **wedding,
-                                "id": str(wedding.get("_id"))
-                            }
-                            return {
-                                "access": True,
-                                "wedding": wedding_response,
-                                "guest": guest,
-                                "auth_method": "token"
-                            }
-                        else:
-                            self._record_failed_attempt(rate_limit_key)
-                            self._log_security_event("TOKEN_AUTH_FAILED", {"slug": slug})
-                    except Exception as e:
-                        security_logger.warning(f"Token verification error: {str(e)}")
-                        self._record_failed_attempt(rate_limit_key)
-
-                # Method 2: OTP verification (replaces name/phone verification)
+                # OTP verification (replaces name/phone verification)
                 # Check if this is an OTP verification
                 otp_code = verification_data.get("otp_code")
                 contact = verification_data.get("contact", "").strip()
@@ -228,7 +233,7 @@ class GuestVerificationService:
                         )
                         if otp_result.get("success"):
                             self._reset_failed_attempts(rate_limit_key)
-                            self._log_security_event("OTP_AUTH_SUCCESS", {
+                            await self._log_security_event("OTP_AUTH_SUCCESS", {
                                 "slug": slug,
                                 "wedding_id": str(wedding.get("_id")),
                                 "contact_type": otp_result.get("auth_method", "otp")
@@ -246,9 +251,9 @@ class GuestVerificationService:
                             }
                         else:
                             self._record_failed_attempt(rate_limit_key)
-                            self._log_security_event("OTP_AUTH_FAILED", {"slug": slug})
-                    except Exception as e:
-                        security_logger.warning(f"OTP verification error: {str(e)}")
+                            await self._log_security_event("OTP_AUTH_FAILED", {"slug": slug})
+                    except Exception:
+                        security_logger.warning("OTP verification error")
                         self._record_failed_attempt(rate_limit_key)
 
                 # Method 3: Request OTP (when phone/email provided without code)
@@ -269,7 +274,7 @@ class GuestVerificationService:
                     }
 
             # Access denied - log why
-            security_logger.warning(f"Access denied for slug: {slug}, privacy_mode: {privacy_mode}, provided: {list(verification_data.keys())}")
+            security_logger.warning(f"Access denied for slug: {slug}")
 
             # Access denied
             return {
@@ -321,7 +326,7 @@ class GuestVerificationService:
 
         return phone
 
-    def _log_guest_verification(self, wedding_id: str, guest_id: str, method: str):
+    async def _log_guest_verification(self, wedding_id: str, guest_id: str, method: str):
         """Log guest verification for analytics"""
         try:
             log_entry = {
@@ -331,7 +336,7 @@ class GuestVerificationService:
                 "timestamp": datetime.utcnow(),
                 "type": "guest_verification"
             }
-            mongo.db["access_logs"].insert_one(log_entry)
+            await mongo.db["access_logs"].insert_one(log_entry)
         except Exception:
             # Silently fail - logging shouldn't break the main flow
             pass
@@ -346,8 +351,8 @@ class GuestVerificationService:
             privacy_settings = wedding.get("privacy_settings", {})
             privacy_mode = privacy_settings.get("privacy_mode", "private")
 
-            # Log privacy mode for debugging
-            security_logger.info(f"Privacy info for {slug}: mode={privacy_mode}, settings={privacy_settings}")
+            # Log privacy mode for debugging - don't expose settings (may contain password)
+            security_logger.debug(f"Privacy info request for slug: {slug}")
 
             # Base response with privacy info
             response = {
