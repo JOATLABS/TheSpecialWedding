@@ -17,19 +17,22 @@ logger = logging.getLogger(__name__)
 
 # Lazy import to avoid circular imports
 _web_push_service = None
+_web_push_checked = False
 
 
 def _get_web_push_service():
     """Lazy load web push service to avoid circular imports"""
-    global _web_push_service
-    if _web_push_service is None:
+    global _web_push_service, _web_push_checked
+    if not _web_push_checked:
+        _web_push_checked = True
         try:
             from app.services.web_push_service import web_push_service
             _web_push_service = web_push_service
         except ImportError:
             logger.warning("Web Push service not available")
-            _web_push_service = False
-    return _web_push_service if _web_push_service else None
+            _web_push_service = None
+    return _web_push_service
+
 
 # Root admin email - the platform developer
 ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
