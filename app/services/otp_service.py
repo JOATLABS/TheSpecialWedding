@@ -2,9 +2,10 @@
 
 import random
 from datetime import datetime, timedelta, timezone
-from pymongo import ASCENDING, ReturnDocument
+from pymongo import ASCENDING
 from bson.objectid import ObjectId
 from app.core.database import mongo
+from app.core.settings import settings
 from app.services.reminder_service_twilio import TwilioReminderService
 import logging
 
@@ -84,15 +85,18 @@ class OTPService:
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
         if last_otp:
             expires_at = last_otp.get("expires_at")
+            created_at = last_otp.get("created_at")
             if expires_at:
                 # If OTP has expired, delete it and allow new request
                 if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
-                # If OTP was sent within last minute (expires_at > now + 4min), rate limit
-                elif expires_at > datetime.now(timezone.utc) + timedelta(minutes=4):
-                    logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
-                    return {"success": False, "error": "Please wait before requesting another code"}
+                # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
+                elif created_at:
+                    seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
+                    if seconds_since_created < settings.rate_limit_auth_period:
+                        logger.info(f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)")
+                        return {"success": False, "error": "Please wait before requesting another code"}
 
         guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
         if not guest:
@@ -244,15 +248,18 @@ class OTPService:
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
         if last_otp:
             expires_at = last_otp.get("expires_at")
+            created_at = last_otp.get("created_at")
             if expires_at:
                 # If OTP has expired, delete it and allow new request
                 if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
-                # If OTP was sent within last minute (expires_at > now + 4min), rate limit
-                elif expires_at > datetime.now(timezone.utc) + timedelta(minutes=4):
-                    logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
-                    return {"success": False, "error": "Please wait before requesting another code"}
+                # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
+                elif created_at:
+                    seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
+                    if seconds_since_created < settings.rate_limit_auth_period:
+                        logger.info(f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)")
+                        return {"success": False, "error": "Please wait before requesting another code"}
 
         # Generate and store OTP
         otp = await self.generate_otp(guest_id)
