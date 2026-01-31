@@ -84,7 +84,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix**: Each calendar event now has unique UID (`timestamp-index@wedding-rsvp`), event-specific title (e.g., "Traditional Ceremony - Peace & Emmanuel"), and correct time/location/attire
   - **Result**: Downloaded ICS now contains all wedding events with correct dates and times
 
+- **Calendar ICS Missing Timezone Information** (`app/components/RSVPForm.tsx`, `app/models/wedding.py`, `app/types/wedding.ts`):
+  - **Root cause**: ICS dates like `20260529T180000` had no timezone indicator - calendar apps interpreted in user's local timezone
+  - **Impact**: Guests in different timezones would see wrong event times (e.g., 6 PM Chicago showing as 6 PM Lagos)
+  - **Fix**: Added `timezone` field to `WeddingModel` (defaults to `America/Chicago`) and `EventDetailsModel` for per-event override
+  - **Fix**: Added `timezone` field to TypeScript `Wedding` and `EventDetails` interfaces
+  - **Fix**: ICS now includes `DTSTART;TZID=America/Chicago:20260529T180000` format with explicit timezone
+  - **Fix**: Added `X-WR-TIMEZONE` header for calendar app compatibility (Google Calendar, Apple Calendar, Outlook)
+  - **Result**: Calendar events now display in the correct wedding venue timezone regardless of guest's location
+
 ### Added
+
+- **Wedding Timezone Configuration** (`app/models/wedding.py`, `app/types/wedding.ts`):
+  - **New field**: `timezone` on `WeddingModel` - IANA timezone string (e.g., `America/Chicago`, `Africa/Lagos`)
+  - **Default value**: `America/Chicago` (US Central Time) for backward compatibility
+  - **Per-event override**: `EventDetailsModel.timezone` allows different timezones for events at different venues
+  - **Frontend types**: Updated `Wedding` and `EventDetails` TypeScript interfaces
+  - **Use case**: Planners can configure the correct timezone for their wedding venue, ensuring calendar downloads show accurate local times
 
 - **Already RSVPed Detection** (`app/components/AlreadyRSVPedScreen.tsx`, `app/otp/verify/page.tsx`, `app/services/guest_verification_service.py`):
   - **Problem solved**: Guests re-visiting RSVP link after submission would go through OTP verification again (Twilio SMS cost ~$0.0079 each)

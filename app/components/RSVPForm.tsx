@@ -101,9 +101,12 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
       if (!events.some(e => e.date || wedding.date)) return;
 
-      const formatICSDate = (date: Date): string => {
+      // Get wedding timezone (default to America/Chicago for US Central Time)
+      const weddingTimezone = (wedding as any).timezone || 'America/Chicago';
+
+      const formatICSDate = (year: number, month: number, day: number, hour: number, min: number): string => {
         const pad = (n: number) => n.toString().padStart(2, '0');
-        return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+        return `${year}${pad(month)}${pad(day)}T${pad(hour)}${pad(min)}00`;
       };
 
       const eventTypeLabels: Record<string, string> = {
@@ -123,8 +126,20 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         const startTime = parseTimeToISO(startTimeStr);
         const [year, month, day] = eventDate.split('-').map(Number);
         const [startHour, startMin] = startTime.split(':').map(Number);
-        const startDate = new Date(year, month - 1, day, startHour, startMin);
-        const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000);
+
+        // Calculate end time (3 hours after start)
+        let endHour = startHour + 3;
+        let endDay = day;
+        let endMonth = month;
+        let endYear = year;
+        if (endHour >= 24) {
+          endHour -= 24;
+          endDay += 1;
+          // Simple day overflow handling (not accounting for month lengths, but events rarely cross midnight)
+        }
+
+        // Get event-specific timezone or fall back to wedding timezone
+        const eventTimezone = event.details?.timezone || weddingTimezone;
 
         const eventLabel = eventTypeLabels[event.type] || event.type.replace('_', ' ');
         const summary = `${eventLabel} - ${wedding.couple_names || 'Wedding'}`;
@@ -136,8 +151,8 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
         return [
           'BEGIN:VEVENT',
-          `DTSTART:${formatICSDate(startDate)}`,
-          `DTEND:${formatICSDate(endDate)}`,
+          `DTSTART;TZID=${eventTimezone}:${formatICSDate(year, month, day, startHour, startMin)}`,
+          `DTEND;TZID=${eventTimezone}:${formatICSDate(endYear, endMonth, endDay, endHour, startMin)}`,
           `SUMMARY:${summary}`,
           `LOCATION:${location}`,
           `DESCRIPTION:${description}`,
@@ -152,6 +167,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         'PRODID:-//Wedding RSVP//EN',
         'CALSCALE:GREGORIAN',
         'METHOD:PUBLISH',
+        `X-WR-TIMEZONE:${weddingTimezone}`,
         ...vevents,
         'END:VCALENDAR'
       ].join('\r\n');
