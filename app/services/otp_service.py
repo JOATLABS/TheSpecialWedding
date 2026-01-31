@@ -1,7 +1,7 @@
 # app/services/otp_service.py
 
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pymongo import ASCENDING
 from bson.objectid import ObjectId
 from app.core.database import mongo
@@ -37,7 +37,7 @@ class OTPService:
     async def generate_otp(self, guest_id: str) -> str:
         """Generate a 6-digit OTP and store it."""
         otp = str(random.randint(100000, 999999))
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
         await self.otp_collection.update_one(
             {"guest_id": guest_id},
@@ -66,11 +66,11 @@ class OTPService:
             expires_at = last_otp.get("expires_at")
             if expires_at:
                 # If OTP has expired, delete it and allow new request
-                if expires_at <= datetime.utcnow():
+                if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
-                # If OTP is still valid (sent within last minute), rate limit
-                elif expires_at > datetime.utcnow() - timedelta(minutes=4):
+                # If OTP was sent within last minute (expires_at > now + 4min), rate limit
+                elif expires_at > datetime.now(timezone.utc) + timedelta(minutes=4):
                     logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
                     return {"success": False, "error": "Please wait before requesting another code"}
 
@@ -130,7 +130,7 @@ class OTPService:
         record = await self.otp_collection.find_one({
             "guest_id": guest_id,
             "otp": otp_clean,
-            "expires_at": {"$gt": datetime.utcnow()}
+            "expires_at": {"$gt": datetime.now(timezone.utc)}
         })
 
         if record:
@@ -155,32 +155,18 @@ class OTPService:
 
     async def verify_otp_by_guest_id(self, guest_id: str, otp: str) -> bool:
         """Legacy method: Verify OTP by guest_id. Use verify_otp() instead."""
-        # Strip whitespace from OTP input
         otp_clean = otp.strip()
-
-        # Debug: Check what's stored for this guest
-        stored_record = await self.otp_collection.find_one({"guest_id": guest_id})
-        if stored_record:
-            logger.info(
-                f"OTP verify debug - guest_id: {guest_id}, stored_otp: {stored_record.get('otp')}, "
-                f"input_otp: '{otp_clean}', expires_at: {stored_record.get('expires_at')}, "
-                f"now: {datetime.utcnow()}, expired: {stored_record.get('expires_at', datetime.min) <= datetime.utcnow()}"
-            )
-        else:
-            logger.warning(f"OTP verify debug - No OTP record found for guest_id: {guest_id}")
 
         record = await self.otp_collection.find_one({
             "guest_id": guest_id,
             "otp": otp_clean,
-            "expires_at": {"$gt": datetime.utcnow()}
+            "expires_at": {"$gt": datetime.now(timezone.utc)}
         })
 
         if record:
             await self.otp_collection.delete_one({"_id": record["_id"]})
-            logger.info(f"OTP verified successfully for guest_id: {guest_id}")
             return True
 
-        logger.warning(f"OTP verification failed for guest_id: {guest_id}")
         return False
 
     async def send_otp_by_contact(self, wedding_id: str, contact: str) -> dict:
@@ -223,11 +209,11 @@ class OTPService:
             expires_at = last_otp.get("expires_at")
             if expires_at:
                 # If OTP has expired, delete it and allow new request
-                if expires_at <= datetime.utcnow():
+                if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
-                # If OTP is still valid (sent within last minute), rate limit
-                elif expires_at > datetime.utcnow() - timedelta(minutes=4):
+                # If OTP was sent within last minute (expires_at > now + 4min), rate limit
+                elif expires_at > datetime.now(timezone.utc) + timedelta(minutes=4):
                     logger.info(f"Rate limited OTP request for guest_id: {guest_id}")
                     return {"success": False, "error": "Please wait before requesting another code"}
 

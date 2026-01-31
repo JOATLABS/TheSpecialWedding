@@ -187,6 +187,13 @@ class ResendEmailService:
 
             if result["success"]:
                 sent += 1
+                # Mark guest as having received an invite if not already set
+                if not guest.get("invite_sent"):
+                    await self.guest_collection.update_one(
+                        {"_id": guest["_id"]},
+                        {"$set": {"invite_sent": True, "invite_sent_date": datetime.utcnow()}}
+                    )
+                    logger.info(f"Set invite_sent=True for guest {guest.get('name', 'Unknown')}")
             else:
                 failed += 1
 

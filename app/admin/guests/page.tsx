@@ -1022,15 +1022,16 @@ export default function AdminGuestsPage() {
           </select>
         </div>
 
-        {selectedWedding && (
+        {selectedWedding && (() => {
+          // Calculate stats once for use in both stat cards and tabs
+          const guestsWithRsvp = new Set(rsvps.map(r => normalizeId(r.guest_id)));
+          const invitedNoRsvp = guests.filter(g => g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
+          const notInvited = guests.filter(g => !g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
+
+          return (
           <>
             {/* Stats Overview */}
-            {(() => {
-              const guestsWithRsvp = new Set(rsvps.map(r => normalizeId(r.guest_id)));
-              const invitedNoRsvp = guests.filter(g => g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
-              const notInvited = guests.filter(g => !g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
-              return (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                   <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</h3>
                     <p className="text-3xl font-bold text-wedding-navy mt-2">{guests.length}</p>
@@ -1052,8 +1053,6 @@ export default function AdminGuestsPage() {
                     <p className="text-3xl font-bold text-wedding-sage mt-2">{plusOnes.length}</p>
                   </div>
                 </div>
-              );
-            })()}
 
             {/* Controls */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-8">
@@ -1090,7 +1089,7 @@ export default function AdminGuestsPage() {
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
-                      Awaiting RSVP ({guests.length - rsvps.length})
+                      Awaiting RSVP ({invitedNoRsvp})
                     </button>
                     <button
                       onClick={() => setActiveTab('import')}
@@ -1781,7 +1780,8 @@ export default function AdminGuestsPage() {
               </div>
             )}
           </>
-        )}
+          );
+        })()}
 
         {/* ==================== MODALS ==================== */}
 

@@ -332,6 +332,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `{"success": False, "error": "Failed to send SMS. Please try again later."}` — Twilio error
   - **Also fixed**: `/otp/verify` endpoint was calling wrong method (`verify_otp` instead of `verify_otp_by_guest_id`) and missing `async/await`
 
+- **OTP Rate Limiting Math Error + Double-Submit Race Condition** (`app/services/otp_service.py`, `app/otp/verify/page.tsx`):
+  - **Bug 1 — Rate limit blocks ALL resends for 5 minutes** (lines 73, 205):
+    - **Root cause**: Condition `expires_at > datetime.utcnow() - timedelta(minutes=4)` should be `+ timedelta(minutes=4)`
+    - **Why**: OTP expires in 5 minutes. To rate-limit for 1 minute: `expires_at > now + 4min` (sent < 1 min ago)
+    - **Impact**: Current logic is ALWAYS true for valid OTPs, blocking ALL resends until OTP expires
+    - **Fix**: Changed `- timedelta(minutes=4)` → `+ timedelta(minutes=4)` in both `send_otp()` and `send_otp_by_contact()`
+  - **Bug 2 — Double-click causes "Invalid or expired OTP"** (`app/otp/verify/page.tsx`):
+    - **Root cause**: No double-submit protection; OTP deleted on first successful verify, second request fails
+    - **Impact**: Network shows success but UI shows error (first click succeeded, second failed)
+    - **Fix**: Added `isSubmittingRef` guard to prevent concurrent verify requests
+  - **Bug 3 — Frontend/backend timer mismatch** (`app/otp/verify/page.tsx`):
+    - **Root cause**: Frontend hardcoded 60s cooldown but server blocked for 5 minutes (due to Bug 1)
+    - **Fix**: Changed cooldown from 60 to 65 seconds (5 seconds buffer over server's 1-minute limit)
+  - **Bug 4 — datetime.utcnow() deprecated** (`app/services/otp_service.py`):
+    - **Root cause**: `datetime.utcnow()` returns naive datetime, deprecated in Python 3.12+
+    - **Impact**: Potential timezone issues with MongoDB TTL index and comparison operations
+    - **Fix**: Replaced all 7 occurrences with `datetime.now(timezone.utc)` (timezone-aware)
+  - **Bug 5 — OTP verify success but RSVP form doesn't appear** (`app/otp/verify/page.tsx`):
+    - **Root cause**: After OTP verify succeeds, `/weddings/guest-access/{slug}/{token}` fetch may fail; error thrown before `setIsVerified(true)`
+    - **Impact**: OTP is consumed (deleted) but guest is stuck on verify screen with no way to proceed
+    - **Fix**: Added `otpVerified` state to track OTP success separately; added retry UI when wedding data fetch fails after successful OTP verification
+
 - **Forms API 404 Error** (`app/services/formsApi.ts`):
   - Fixed "Not Found" error when accessing Forms page in planner dashboard
   - **Root cause**: Frontend called `/admin/forms` but backend registers routes at `/forms` (no `/admin` prefix)

@@ -163,6 +163,14 @@ async def send_individual_reminders(payload: IndividualReminderRequest):
             logger.info(f"SMS sent to {phone}, SID: {message.sid}")
             sent_count += 1
             status = "success"
+
+            # Mark guest as having received an invite if not already set
+            if not invite_sent:
+                await guest_collection.update_one(
+                    {"_id": guest["_id"]},
+                    {"$set": {"invite_sent": True, "invite_sent_date": now}}
+                )
+                logger.info(f"Set invite_sent=True for guest {guest_name}")
         except Exception as e:
             logger.error(f"Failed to send SMS to {phone}: {e}")
             failed_count += 1
