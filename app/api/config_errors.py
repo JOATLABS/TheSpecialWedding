@@ -10,7 +10,7 @@ import uuid
 import re
 import hashlib
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, field_validator
 from fastapi import APIRouter, Request, HTTPException
 
@@ -171,7 +171,7 @@ async def _create_notification(error_id: str, report: ConfigErrorReport, timesta
             )
             return
 
-        notification = {
+        notification: Dict[str, Any] = {
             "title": f"CRITICAL: {_sanitize(report.error_type, 50)}",
             "message": _sanitize(report.message, 500),
             "type": "system_config",
