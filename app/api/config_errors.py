@@ -27,20 +27,22 @@ _recent_errors: Dict[str, datetime] = {}
 DEDUP_WINDOW = 300  # 5 minutes
 
 _web_push_service = None
+_web_push_checked = False
 
 # Root admin email for push alerts
 ROOT_ADMIN_EMAIL = "thedeveloper@thespecialwedding.com"
 
 
 def _get_web_push_service():
-    global _web_push_service
-    if _web_push_service is None:
+    global _web_push_service, _web_push_checked
+    if not _web_push_checked:
+        _web_push_checked = True
         try:
             from app.services.web_push_service import web_push_service
             _web_push_service = web_push_service
         except ImportError:
-            _web_push_service = False
-    return _web_push_service if _web_push_service else None
+            _web_push_service = None
+    return _web_push_service
 
 
 def _sanitize(value: Optional[str], max_len: int = 500) -> Optional[str]:
