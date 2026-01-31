@@ -17,13 +17,19 @@ class RSVPService:
 
     async def submit_rsvp(self, token: str, rsvp_data: RSVPModel):
         try:
+            logger.info(f"Processing RSVP submission for token: {token[:8]}...")
+
             guest = await self.guest_collection.find_one({"token": token})
             if not guest:
+                logger.warning(f"Guest not found for token: {token[:8]}...")
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             guest_id = ObjectId(guest["_id"])
             guest_id_str = str(guest_id)
             wedding_id_str = str(guest.get("wedding_id", ""))
+
+            logger.info(f"RSVP for guest: {guest.get('name', 'Unknown')} (id={guest_id_str}), "
+                       f"wedding_id={wedding_id_str}, attending={rsvp_data.attending}")
 
             await self.rsvp_collection.update_one(
                 {"guest_id": guest_id_str},
@@ -129,11 +135,13 @@ class RSVPService:
                 guest_id=guest_id_str
             )
 
+            logger.info(f"RSVP submitted successfully for guest {guest_id_str} to wedding {wedding_id_str}")
             return {"message": "RSVP submitted successfully"}
 
         except HTTPException:
             raise
         except Exception as e:
+            logger.error(f"Error submitting RSVP: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail="Error submitting RSVP: {}".format(str(e)))
 
     async def _notify_planner_rsvp(
@@ -146,16 +154,25 @@ class RSVPService:
     ):
         """Notify the planner about an RSVP update"""
         try:
+            logger.info(f"Looking up wedding for RSVP notification: wedding_id={wedding_id}")
+
             # Get wedding to find planner
+            # Note: wedding _id is stored as string, so this query should work
             wedding = await self.wedding_collection.find_one({"_id": wedding_id})
             if not wedding:
-                logger.warning(f"Wedding {wedding_id} not found for RSVP notification")
+                logger.warning(f"Wedding {wedding_id} not found for RSVP notification. "
+                             f"This may indicate a mismatch between guest.wedding_id and wedding._id")
                 return
 
             planner_email = wedding.get("assigned_planner_email")
+            couple_names = wedding.get("couple_names", "Unknown")
+
             if not planner_email:
-                logger.debug(f"No planner assigned to wedding {wedding_id}")
+                logger.debug(f"No planner assigned to wedding {wedding_id} ({couple_names})")
                 return
+
+            logger.info(f"Sending RSVP notification: planner={planner_email}, wedding={couple_names}, "
+                       f"guest={guest_name}, status={status}, count={guest_count}")
 
             # Import here to avoid circular imports
             from app.services.planner_notification_service import planner_notification_service
@@ -168,8 +185,8 @@ class RSVPService:
                 guest_count=guest_count,
                 guest_id=guest_id
             )
-            logger.info(f"RSVP notification sent to {planner_email} for wedding {wedding_id}")
+            logger.info(f"RSVP notification sent successfully to {planner_email} for wedding {wedding_id}")
 
         except Exception as e:
             # Don't fail the RSVP submission if notification fails
-            logger.error(f"Failed to send RSVP notification: {str(e)}")
+            logger.error(f"Failed to send RSVP notification for wedding {wedding_id}: {str(e)}", exc_info=True)

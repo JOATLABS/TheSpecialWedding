@@ -132,9 +132,14 @@ class GuestVerificationService:
 
             # If wedding is public, grant access immediately
             if privacy_mode == "public":
+                # Transform wedding to have 'id' for frontend consistency
+                wedding_response = {
+                    **wedding,
+                    "id": str(wedding.get("_id"))
+                }
                 return {
                     "access": True,
-                    "wedding": wedding,
+                    "wedding": wedding_response,
                     "guest": None,
                     "auth_method": "public"
                 }
@@ -152,9 +157,14 @@ class GuestVerificationService:
                         "slug": slug,
                         "wedding_id": str(wedding.get("_id"))
                     })
+                    # Transform wedding to have 'id' for frontend consistency
+                    wedding_response = {
+                        **wedding,
+                        "id": str(wedding.get("_id"))
+                    }
                     return {
                         "access": True,
-                        "wedding": wedding,
+                        "wedding": wedding_response,
                         "guest": None,
                         "auth_method": "password"
                     }
@@ -179,11 +189,16 @@ class GuestVerificationService:
                             self._log_security_event("TOKEN_AUTH_SUCCESS", {
                                 "slug": slug,
                                 "wedding_id": str(wedding.get("_id")),
-                                "guest_id": str(guest.get("_id"))
+                                "guest_id": str(guest.get("id"))  # guest has 'id', not '_id'
                             })
+                            # Transform wedding to have 'id' like guest does for frontend consistency
+                            wedding_response = {
+                                **wedding,
+                                "id": str(wedding.get("_id"))
+                            }
                             return {
                                 "access": True,
-                                "wedding": wedding,
+                                "wedding": wedding_response,
                                 "guest": guest,
                                 "auth_method": "token"
                             }
@@ -218,9 +233,14 @@ class GuestVerificationService:
                                 "wedding_id": str(wedding.get("_id")),
                                 "contact_type": otp_result.get("auth_method", "otp")
                             })
+                            # Transform wedding to have 'id' like guest does for frontend consistency
+                            wedding_response = {
+                                **wedding,
+                                "id": str(wedding.get("_id"))
+                            }
                             return {
                                 "access": True,
-                                "wedding": wedding,
+                                "wedding": wedding_response,
                                 "guest": otp_result.get("guest"),
                                 "auth_method": otp_result.get("auth_method", "otp")
                             }
