@@ -54,11 +54,11 @@ async def process_task_reminders(
     sync: bool = Query(False, description="If true, run synchronously instead of in background")
 ):
     """
-    Process task reminders and send Ntfy notifications.
+    Process task reminders and send push notifications.
 
     This endpoint should be called by an external scheduler (cron job) every 5-15 minutes.
     It checks for calendar tasks with reminder_minutes set that are due for notification
-    and sends push notifications via Ntfy.
+    and sends push notifications via Web Push API.
 
     Headers:
         X-Scheduler-Key: Required scheduler API key

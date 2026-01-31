@@ -21,6 +21,8 @@ class GuestVerificationService:
         self.otp_service = OTPService()
         self.weddings_collection = mongo.db["weddings"]
         self.guests_collection = mongo.get_guest_collection()
+        self.rsvp_collection = mongo.db["rsvps"]
+        self.plus_ones_collection = mongo.db["plus_ones"]
 
         # Security configuration
         self._failed_attempts = {}  # In-memory rate limiting (use Redis in production)
@@ -153,6 +155,35 @@ class GuestVerificationService:
                 "guest_id": str(guest.get("id"))
             })
 
+            # Check if guest has already RSVPed
+            guest_id_str = str(guest.get("id"))
+            existing_rsvp = await self.rsvp_collection.find_one({
+                "$or": [
+                    {"guest_id": guest_id_str},
+                    {"guest_id": guest.get("id")}
+                ]
+            })
+
+            # Get plus-ones if RSVP exists
+            plus_ones = []
+            if existing_rsvp:
+                plus_ones_cursor = self.plus_ones_collection.find({"guest_id": guest_id_str})
+                plus_ones = await plus_ones_cursor.to_list(length=20)
+                # Convert ObjectId to string for JSON serialization
+                for po in plus_ones:
+                    po["id"] = str(po.pop("_id", ""))
+
+            # Build RSVP response
+            rsvp_data = None
+            if existing_rsvp:
+                rsvp_data = {
+                    "has_rsvp": True,
+                    "submitted_at": existing_rsvp.get("submitted_at"),
+                    "attending": existing_rsvp.get("attending", []),
+                    "dietary": existing_rsvp.get("dietary"),
+                    "plus_ones": plus_ones
+                }
+
             # Return wedding and guest data
             wedding_response = {
                 **wedding,
@@ -163,6 +194,7 @@ class GuestVerificationService:
                 "access": True,
                 "wedding": wedding_response,
                 "guest": guest,
+                "rsvp": rsvp_data,
                 "auth_method": "token"
             }
 

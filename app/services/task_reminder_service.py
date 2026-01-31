@@ -1,7 +1,7 @@
 """
 Task Reminder Scheduler Service
 
-Processes calendar tasks with reminder_minutes and sends Ntfy push notifications.
+Processes calendar tasks with reminder_minutes and sends push notifications via Web Push API.
 This provides a fallback reminder system for planners who don't use Google Calendar.
 
 Usage:
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class TaskReminderService:
-    """Service for processing and sending task reminder notifications via Ntfy"""
+    """Service for processing and sending task reminder notifications via Web Push"""
 
     def __init__(self):
         self.tasks_collection = mongo.db["planner_tasks"]
@@ -140,7 +140,7 @@ class TaskReminderService:
             results["reminders_sent"] += 1
             return
 
-        # Send notification (which triggers Ntfy)
+        # Send notification (triggers Web Push)
         try:
             await planner_notification_service.notify_task_reminder(
                 planner_id=planner_email,

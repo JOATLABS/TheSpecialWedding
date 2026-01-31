@@ -21,22 +21,20 @@ interface PlusOneData {
   email_opt_in?: boolean;
 }
 
-// Reusable Card component for form sections
-function FormCard({ title, icon, children, className = '' }: {
+// Glass card component matching SaaS landing page design
+function FormCard({ title, children, className = '' }: {
   title: string;
-  icon?: string;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <div className={`bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden ${className}`}>
-      <div className="bg-gradient-to-r from-wedding-blush/50 to-wedding-ivory px-5 py-4 border-b border-gray-100">
-        <h2 className="text-base font-semibold text-wedding-navy flex items-center gap-2">
-          {icon && <span className="text-lg">{icon}</span>}
+    <div className={`rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden ${className}`}>
+      <div className="px-6 py-4 border-b border-white/10">
+        <h2 className="text-xs font-semibold text-wedding-rose uppercase tracking-[0.3em]">
           {title}
         </h2>
       </div>
-      <div className="p-5">
+      <div className="p-6">
         {children}
       </div>
     </div>
@@ -45,7 +43,7 @@ function FormCard({ title, icon, children, className = '' }: {
 
 export default function RSVPForm({ guest, token }: RSVPFormProps) {
   const wedding = useWedding();
-  const { register, handleSubmit, formState: { errors, isSubmitting }, watch, setValue } = useForm();
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
@@ -62,102 +60,64 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
     setPlusOnes(newPlusOnes);
   };
 
-  // Helper to parse time strings like "3:00 PM" or "15:00" to 24-hour format "HH:mm"
   const parseTimeToISO = (timeStr: string): string => {
     if (!timeStr) return '12:00';
-
-    // Already in 24-hour format like "15:00"
     if (/^\d{1,2}:\d{2}$/.test(timeStr) && !timeStr.toLowerCase().includes('am') && !timeStr.toLowerCase().includes('pm')) {
       const [hours, minutes] = timeStr.split(':');
       return `${hours.padStart(2, '0')}:${minutes}`;
     }
-
-    // Parse 12-hour format like "3:00 PM" or "3:00PM"
     const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
     if (match) {
       let hours = parseInt(match[1], 10);
       const minutes = match[2];
       const period = match[3]?.toLowerCase();
-
       if (period === 'pm' && hours !== 12) hours += 12;
       if (period === 'am' && hours === 12) hours = 0;
-
       return `${hours.toString().padStart(2, '0')}:${minutes}`;
     }
-
-    return '12:00'; // Default fallback
+    return '12:00';
   };
 
   const generateICS = () => {
     try {
-      // Try to find white_wedding event first, then fall back to first event or wedding date
       const event = wedding.events?.find(e => e.type === 'white_wedding') || wedding.events?.[0];
       const eventDate = event?.date || wedding.date;
-
-      if (!eventDate) {
-        console.error('No event date available for calendar invite');
-        return;
-      }
+      if (!eventDate) return;
 
       const startTimeStr = event?.details?.time || '12:00';
       const startTime = parseTimeToISO(startTimeStr);
-
-      // Create start date - note: parse as local time, not UTC
       const [year, month, day] = eventDate.split('-').map(Number);
       const [startHour, startMin] = startTime.split(':').map(Number);
-
       const startDate = new Date(year, month - 1, day, startHour, startMin);
-
-      // End time: 3 hours after start (backend doesn't have endTime field)
       const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000);
 
-      // Format dates for ICS (YYYYMMDDTHHMMSS format, local time)
       const formatICSDate = (date: Date): string => {
         const pad = (n: number) => n.toString().padStart(2, '0');
         return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
       };
 
-      const location = event?.details?.venue_name || event?.details?.location || 'Wedding Venue';
-      const summary = `${wedding.couple_names || 'Wedding'} Celebration`;
-
       const ics = [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        'PRODID:-//Wedding RSVP//EN',
-        'CALSCALE:GREGORIAN',
-        'METHOD:PUBLISH',
-        'BEGIN:VEVENT',
-        `DTSTART:${formatICSDate(startDate)}`,
-        `DTEND:${formatICSDate(endDate)}`,
-        `SUMMARY:${summary}`,
-        `LOCATION:${location}`,
-        `DESCRIPTION:You are cordially invited to celebrate with us!`,
-        `UID:${Date.now()}@wedding-rsvp`,
-        'END:VEVENT',
-        'END:VCALENDAR'
+        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Wedding RSVP//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+        'BEGIN:VEVENT', `DTSTART:${formatICSDate(startDate)}`, `DTEND:${formatICSDate(endDate)}`,
+        `SUMMARY:${wedding.couple_names || 'Wedding'} Celebration`,
+        `LOCATION:${event?.details?.venue_name || event?.details?.location || 'Wedding Venue'}`,
+        `DESCRIPTION:You are cordially invited to celebrate with us!`, `UID:${Date.now()}@wedding-rsvp`,
+        'END:VEVENT', 'END:VCALENDAR'
       ].join('\r\n');
 
       const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
       const url = URL.createObjectURL(blob);
-
-      // Create and trigger download
       const link = document.createElement('a');
       link.href = url;
       link.download = 'wedding_invite.ics';
       link.style.display = 'none';
       document.body.appendChild(link);
-
-      // Small delay to ensure browser processes the link
       setTimeout(() => {
         link.click();
-        setTimeout(() => {
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }, 100);
+        setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(url); }, 100);
       }, 0);
-
-    } catch (error) {
-      console.error('Error generating calendar invite:', error);
+    } catch (err) {
+      console.error('Error generating calendar invite:', err);
     }
   };
 
@@ -166,22 +126,17 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const apiUrl = baseUrl.replace('/admin', '');
 
-      const filledPlusOnes = plusOnes.filter(p => p.name.trim());
-
-      const mainRsvpData = {
-        ...data,
-        wedding_id: wedding.id,
-        plus_ones: filledPlusOnes
-      };
+      const filledPlusOnes = plusOnes
+        .filter(p => p.name.trim())
+        .map(p => ({ ...p, attending: data.attending || [] }));
 
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mainRsvpData)
+        body: JSON.stringify({ ...data, wedding_id: wedding.id, plus_ones: filledPlusOnes })
       });
 
       if (!res.ok) throw new Error('RSVP failed');
-
       localStorage.setItem(`rsvp-${token}`, 'true');
       setSubmitted(true);
       generateICS();
@@ -190,34 +145,19 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
     }
   };
 
-  // Success state with modern card design
   if (submitted) {
     return (
-      <div className="bg-white rounded-2xl shadow-lg border border-green-200 overflow-hidden">
-        <div className="h-2 bg-gradient-to-r from-green-400 via-wedding-sage to-green-400" />
-        <div className="p-8 text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-semibold text-wedding-navy mb-2">
-            Thank You, {guest.name}!
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Your RSVP has been received.
-          </p>
-          <p className="text-sm text-gray-500">
-            A calendar invite has been downloaded to help you remember the date.
-          </p>
-          <div className="flex items-center justify-center mt-6">
-            <div className="h-px bg-wedding-rose/30 w-12" />
-            <span className="mx-3 text-wedding-rose text-lg">&#9829;</span>
-            <div className="h-px bg-wedding-rose/30 w-12" />
-          </div>
-          <p className="text-sm text-gray-500 mt-4">
-            We can't wait to celebrate with you!
-          </p>
+      <div className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-xl p-10 text-center">
+        <div className="w-16 h-16 bg-wedding-rose/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <svg className="w-8 h-8 text-wedding-rose" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-semibold text-white mb-3">Thank you, {guest.name}</h2>
+        <p className="text-slate-200 mb-1">Your RSVP has been received.</p>
+        <p className="text-sm text-slate-400">A calendar invite has been downloaded.</p>
+        <div className="mt-8 pt-6 border-t border-white/10">
+          <p className="text-sm text-slate-300">We look forward to celebrating with you.</p>
         </div>
       </div>
     );
@@ -225,349 +165,213 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header Card */}
-      <div className="bg-white rounded-2xl shadow-lg border border-wedding-rose/20 overflow-hidden">
-        <div className="h-2 bg-gradient-to-r from-wedding-rose via-wedding-gold to-wedding-rose" />
-        <div className="p-6 sm:p-8 text-center">
-          <p className="text-wedding-rose font-medium text-sm tracking-wide uppercase mb-2">
-            You're Invited
-          </p>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-wedding-navy mb-3">
-            Welcome, {guest.name}!
-          </h1>
-          <p className="text-gray-600">
-            Please RSVP for
-          </p>
-          <p className="text-xl sm:text-2xl font-medium text-wedding-navy mt-1">
-            {wedding.couple_names}'s Wedding
-          </p>
-          <div className="flex items-center justify-center mt-6">
-            <div className="h-px bg-wedding-rose/30 w-16" />
-            <span className="mx-3 text-wedding-gold">&#10022;</span>
-            <div className="h-px bg-wedding-rose/30 w-16" />
-          </div>
+      {/* Header */}
+      <div className="text-center pb-6 border-b border-white/10">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-xs uppercase tracking-[0.3em] backdrop-blur mb-4">
+          You're Invited
         </div>
+        <h1 className="text-3xl font-semibold text-white mb-2">Welcome, {guest.name}</h1>
+        <p className="text-slate-200">
+          Please RSVP for <span className="font-semibold text-wedding-rose">{wedding.couple_names}'s</span> wedding
+        </p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Events Card */}
-        <FormCard title="Which events will you attend?" icon="&#128197;">
+        {/* Events */}
+        <FormCard title="Events">
           <div className="space-y-3">
             {[
               { value: 'traditional', label: 'Traditional Ceremony' },
               { value: 'white_wedding', label: 'White Wedding' },
               { value: 'reception', label: 'Reception' },
             ].map((event) => (
-              <label
-                key={event.value}
-                className="flex items-center p-3 rounded-xl border border-gray-200 hover:border-wedding-rose/50 hover:bg-wedding-blush/20 cursor-pointer transition-all"
-              >
+              <label key={event.value} className="flex items-center p-4 rounded-2xl border border-white/10 bg-white/5 hover:border-wedding-rose/40 hover:bg-wedding-rose/10 cursor-pointer transition-all">
                 <input
                   type="checkbox"
                   value={event.value}
                   {...register('attending')}
-                  className="w-5 h-5 rounded text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
+                  className="w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                 />
-                <span className="ml-3 text-gray-700 font-medium">{event.label}</span>
+                <span className="ml-3 text-slate-200">{event.label}</span>
               </label>
             ))}
           </div>
         </FormCard>
 
-        {/* Contact Info Card */}
-        <FormCard title="Your Information" icon="&#128100;">
+        {/* Your Details */}
+        <FormCard title="Your Details">
           <div className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Dietary Restrictions
-              </label>
+              <label className="block text-sm text-slate-200 mb-2">Dietary Restrictions</label>
               <input
                 type="text"
                 {...register('dietary')}
-                placeholder="e.g., Vegetarian, Gluten-free, Nut allergy"
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all"
+                placeholder="e.g., Vegetarian, Gluten-free"
+                className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur"
               />
-              <p className="text-xs text-gray-500 mt-1">Leave blank if none</p>
+              <p className="text-xs text-slate-500 mt-1">Leave blank if none</p>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm text-slate-200 mb-2">
                 Phone Number <span className="text-wedding-rose">*</span>
               </label>
               <input
                 type="tel"
                 defaultValue={guest.phone}
-                {...register('phone', {
-                  required: true,
-                  pattern: /^\+?\d{10,15}$/
-                })}
+                {...register('phone', { required: true, pattern: /^\+?\d{10,15}$/ })}
                 placeholder="+1 (555) 123-4567"
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur"
               />
-              {errors.phone && (
-                <p className="text-red-500 text-sm mt-1 flex items-center gap-1">
-                  <span>&#9888;</span> Please enter a valid phone number
-                </p>
-              )}
+              {errors.phone && <p className="text-wedding-rose text-xs mt-1">Please enter a valid phone number</p>}
             </div>
           </div>
         </FormCard>
 
-        {/* Notifications Card */}
-        <FormCard title="Stay Updated" icon="&#128276;">
-          <div className="space-y-5">
-            {/* SMS Opt-in */}
-            <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+        {/* Notifications */}
+        <FormCard title="Notifications">
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   {...register('sms_opt_in')}
                   defaultChecked={false}
-                  className="mt-1 w-5 h-5 rounded text-wedding-rose focus:ring-wedding-rose"
+                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                 />
-                <div className="flex-1">
-                  <span className="block font-semibold text-gray-800">
-                    &#128241; SMS Reminders
-                  </span>
-                  <span className="block text-sm text-gray-600 mt-1">
-                    Receive wedding updates and reminders via text message
-                  </span>
+                <div>
+                  <span className="block text-sm font-medium text-white">SMS Reminders</span>
+                  <span className="block text-xs text-slate-400 mt-0.5">Receive updates via text message</span>
                 </div>
               </label>
-
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  <strong>By checking above, you consent to receive automated texts from {wedding.couple_names || 'the couple'}.</strong>{' '}
-                  Reply STOP to opt out. Msg & data rates may apply. Message frequency varies. Consent is not required to attend.{' '}
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      window.open(window.location.origin + '/' + wedding.slug + '#footer', '_blank');
-                    }}
-                    className="text-wedding-rose hover:underline"
-                  >
-                    Terms & Privacy
-                  </a>
-                </p>
-              </div>
+              <p className="text-xs text-slate-500 mt-3 pl-7">
+                By opting in, you consent to receive automated texts. Reply STOP to opt out. Msg rates may apply.{' '}
+                <a href="#" onClick={(e) => { e.preventDefault(); window.open(`${window.location.origin}/${wedding.slug}#footer`, '_blank'); }} className="text-wedding-rose hover:underline">
+                  Terms
+                </a>
+              </p>
             </div>
 
-            {/* Email Opt-in */}
-            <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   {...register('email_opt_in')}
                   defaultChecked={false}
-                  className="mt-1 w-5 h-5 rounded text-wedding-rose focus:ring-wedding-rose"
+                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                 />
-                <div className="flex-1">
-                  <span className="block font-semibold text-gray-800">
-                    &#9993; Email Updates
-                  </span>
-                  <span className="block text-sm text-gray-600 mt-1">
-                    Receive event details and updates via email
-                  </span>
+                <div>
+                  <span className="block text-sm font-medium text-white">Email Updates</span>
+                  <span className="block text-xs text-slate-400 mt-0.5">Receive updates via email</span>
                 </div>
               </label>
-
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-xs text-gray-500">
-                  Unsubscribe anytime via email link.
-                </p>
-              </div>
+              <p className="text-xs text-slate-500 mt-3 pl-7">Unsubscribe anytime via email link.</p>
             </div>
           </div>
         </FormCard>
 
-        {/* Plus Ones Card */}
+        {/* Plus Ones */}
         {guest.plus_one_allowed && guest.number_of_plus_ones_allowed > 0 && (
-          <FormCard title="Additional Guests" icon="&#128101;">
-            <div className="space-y-4">
-              {/* Info banner */}
-              <div className="flex items-center gap-2 p-3 bg-wedding-sage/20 rounded-xl border border-wedding-sage/30">
-                <span className="text-wedding-sage text-xl">&#8505;</span>
-                <p className="text-sm text-gray-700">
-                  You may bring up to <strong>{guest.number_of_plus_ones_allowed}</strong> additional
-                  {guest.number_of_plus_ones_allowed === 1 ? ' guest' : ' guests'}
-                </p>
-              </div>
+          <FormCard title="Additional Guests">
+            <p className="text-sm text-slate-400 mb-4">
+              You may bring up to {guest.number_of_plus_ones_allowed} additional {guest.number_of_plus_ones_allowed === 1 ? 'guest' : 'guests'}.
+            </p>
 
-              {/* Plus One Cards */}
+            <div className="space-y-4">
               {plusOnes.map((plusOne, index) => (
-                <div
-                  key={index}
-                  className="p-4 bg-white rounded-xl border-2 border-dashed border-gray-200 hover:border-wedding-rose/50 transition-colors"
-                >
+                <div key={index} className="p-5 rounded-2xl border border-white/10 bg-white/5">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-semibold text-wedding-navy">
-                      Guest {index + 1}
-                    </h3>
+                    <span className="text-sm font-medium text-white">Guest {index + 1}</span>
                     <button
                       type="button"
                       onClick={() => removePlusOne(index)}
-                      className="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-1"
+                      className="text-xs text-wedding-rose hover:text-wedding-rose/80 font-medium transition-colors"
                     >
-                      <span>&#10005;</span> Remove
+                      Remove
                     </button>
                   </div>
 
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                    <input
+                      className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur"
+                      type="text"
+                      placeholder="Full name"
+                      value={plusOne.name}
+                      onChange={(e) => { const n = [...plusOnes]; n[index].name = e.target.value; setPlusOnes(n); }}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
                       <input
-                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all"
-                        type="text"
-                        placeholder="Enter guest's full name"
-                        value={plusOne.name}
-                        onChange={(e) => {
-                          const newPlusOnes = [...plusOnes];
-                          newPlusOnes[index].name = e.target.value;
-                          setPlusOnes(newPlusOnes);
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number (Optional)</label>
-                      <input
-                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
                         type="tel"
-                        placeholder="+1 (555) 123-4567"
+                        placeholder="Phone (optional)"
                         value={plusOne.phone}
-                        onChange={(e) => {
-                          const newPlusOnes = [...plusOnes];
-                          newPlusOnes[index].phone = e.target.value;
-                          setPlusOnes(newPlusOnes);
-                        }}
+                        onChange={(e) => { const n = [...plusOnes]; n[index].phone = e.target.value; setPlusOnes(n); }}
                       />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Email (Optional)</label>
                       <input
-                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
                         type="email"
-                        placeholder="guest@example.com"
+                        placeholder="Email (optional)"
                         value={plusOne.email || ''}
-                        onChange={(e) => {
-                          const newPlusOnes = [...plusOnes];
-                          newPlusOnes[index].email = e.target.value;
-                          setPlusOnes(newPlusOnes);
-                        }}
+                        onChange={(e) => { const n = [...plusOnes]; n[index].email = e.target.value; setPlusOnes(n); }}
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Dietary Restrictions (Optional)</label>
-                      <input
-                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose transition-all"
-                        type="text"
-                        placeholder="e.g., Vegetarian, Gluten-free, etc."
-                        value={plusOne.dietary}
-                        onChange={(e) => {
-                          const newPlusOnes = [...plusOnes];
-                          newPlusOnes[index].dietary = e.target.value;
-                          setPlusOnes(newPlusOnes);
-                        }}
-                      />
-                    </div>
+                    <input
+                      className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                      type="text"
+                      placeholder="Dietary restrictions (optional)"
+                      value={plusOne.dietary}
+                      onChange={(e) => { const n = [...plusOnes]; n[index].dietary = e.target.value; setPlusOnes(n); }}
+                    />
 
-                    {/* Plus-One SMS Opt-in */}
-                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
-                      <label className="flex items-start gap-3 cursor-pointer">
+                    <div className="flex gap-6 pt-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={plusOne.sms_opt_in || false}
-                          onChange={(e) => {
-                            const newPlusOnes = [...plusOnes];
-                            newPlusOnes[index].sms_opt_in = e.target.checked;
-                            setPlusOnes(newPlusOnes);
-                          }}
-                          className="mt-1 w-4 h-4 rounded text-wedding-rose focus:ring-wedding-rose"
+                          onChange={(e) => { const n = [...plusOnes]; n[index].sms_opt_in = e.target.checked; setPlusOnes(n); }}
+                          className="w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                         />
-                        <div className="flex-1">
-                          <span className="block font-medium text-gray-700 text-sm">
-                            Receive SMS reminders
-                          </span>
-                          <span className="block text-xs text-gray-500 mt-1">
-                            Standard message rates may apply. Reply STOP to opt out.
-                          </span>
-                        </div>
+                        <span className="text-xs text-slate-300">SMS reminders</span>
                       </label>
-                    </div>
-
-                    {/* Plus-One Email Opt-in */}
-                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
-                      <label className="flex items-start gap-3 cursor-pointer">
+                      <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={plusOne.email_opt_in || false}
-                          onChange={(e) => {
-                            const newPlusOnes = [...plusOnes];
-                            newPlusOnes[index].email_opt_in = e.target.checked;
-                            setPlusOnes(newPlusOnes);
-                          }}
-                          className="mt-1 w-4 h-4 rounded text-wedding-rose focus:ring-wedding-rose"
+                          onChange={(e) => { const n = [...plusOnes]; n[index].email_opt_in = e.target.checked; setPlusOnes(n); }}
+                          className="w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                         />
-                        <div className="flex-1">
-                          <span className="block font-medium text-gray-700 text-sm">
-                            Receive email updates
-                          </span>
-                          <span className="block text-xs text-gray-500 mt-1">
-                            Unsubscribe anytime via email link.
-                          </span>
-                        </div>
+                        <span className="text-xs text-slate-300">Email updates</span>
                       </label>
                     </div>
                   </div>
                 </div>
               ))}
 
-              {/* Add Guest Button */}
               {plusOnes.length < guest.number_of_plus_ones_allowed && (
                 <button
                   type="button"
                   onClick={addPlusOne}
-                  className="w-full py-4 border-2 border-dashed border-wedding-rose/50 rounded-xl text-wedding-rose font-semibold hover:bg-wedding-blush/30 hover:border-wedding-rose transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3 border border-dashed border-white/20 rounded-xl text-sm text-slate-300 hover:border-wedding-rose/50 hover:text-white transition-all"
                 >
-                  <span className="text-xl">+</span>
-                  Add a Guest
+                  + Add Guest
                 </button>
               )}
-
-              <p className="text-sm text-gray-500 italic text-center">
-                Leave blank if you're not bringing additional guests
-              </p>
             </div>
           </FormCard>
         )}
 
-        {/* Error Display */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-            <p className="text-red-600 font-medium">{error}</p>
+          <div className="rounded-2xl border border-wedding-rose/40 bg-wedding-rose/10 p-4 backdrop-blur">
+            <p className="text-sm text-wedding-rose">{error}</p>
           </div>
         )}
 
-        {/* Submit Button */}
-        <div className="pt-2">
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-4 bg-gradient-to-r from-wedding-rose to-wedding-rose/90 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-wedding-rose/90 hover:to-wedding-rose disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.01] active:scale-[0.99]"
-          >
-            {isSubmitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Submitting...
-              </span>
-            ) : (
-              'Confirm RSVP'
-            )}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        >
+          {isSubmitting ? 'Submitting...' : 'Confirm RSVP'}
+        </button>
       </form>
     </div>
   );

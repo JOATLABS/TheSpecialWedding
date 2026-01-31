@@ -26,18 +26,21 @@ router = APIRouter()
 _recent_errors: Dict[str, datetime] = {}
 DEDUP_WINDOW = 300  # 5 minutes
 
-_ntfy_service = None
+_web_push_service = None
+
+# Root admin email for push alerts
+ROOT_ADMIN_EMAIL = "thedeveloper@thespecialwedding.com"
 
 
-def _get_ntfy_service():
-    global _ntfy_service
-    if _ntfy_service is None:
+def _get_web_push_service():
+    global _web_push_service
+    if _web_push_service is None:
         try:
-            from app.services.ntfy_service import ntfy_service
-            _ntfy_service = ntfy_service
+            from app.services.web_push_service import web_push_service
+            _web_push_service = web_push_service
         except ImportError:
-            _ntfy_service = False
-    return _ntfy_service if _ntfy_service else None
+            _web_push_service = False
+    return _web_push_service if _web_push_service else None
 
 
 def _sanitize(value: Optional[str], max_len: int = 500) -> Optional[str]:
@@ -146,7 +149,7 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
         raise HTTPException(status_code=500, detail="Failed to log error")
 
     await _create_notification(error_id, report, now)
-    await _send_ntfy_alert(report)
+    await _send_push_alert(report)
 
     return {"error_id": error_id, "reported": True}
 
@@ -191,20 +194,22 @@ async def _create_notification(error_id: str, report: ConfigErrorReport, timesta
         logger.error(f"Failed to create notification: {e}")
 
 
-async def _send_ntfy_alert(report: ConfigErrorReport):
-    ntfy = _get_ntfy_service()
-    if not ntfy:
+async def _send_push_alert(report: ConfigErrorReport):
+    """Send Web Push notification for critical config errors to root admin"""
+    web_push = _get_web_push_service()
+    if not web_push or not web_push.enabled:
         return
 
     try:
-        await ntfy.send_admin_alert(
+        await web_push.send_notification(
+            user_id=ROOT_ADMIN_EMAIL,
             title=f"Config Error: {_sanitize(report.variable_name, 50)}",
-            message=f"{_sanitize(report.message, 200)}\nHost: {_sanitize(report.hostname, 50)}",
-            priority="urgent",
-            tags=["rotating_light", "gear"]
+            body=f"{_sanitize(report.message, 150)}\nHost: {_sanitize(report.hostname, 50)}",
+            url="/admin/platform",
+            tag="config-error"
         )
     except Exception as e:
-        logger.error(f"Failed to send Ntfy alert: {e}")
+        logger.error(f"Failed to send Web Push alert: {e}")
 
 
 def _get_client_ip(request: Request) -> str:

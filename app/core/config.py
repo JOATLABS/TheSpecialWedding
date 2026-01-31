@@ -51,9 +51,10 @@ class Settings:
         "https://www.googleapis.com/auth/calendar.events",
     ]
 
-    # Ntfy Push Notification Service - NO FALLBACKS
-    SERVICE_URL_NTFY: Optional[str] = os.getenv("SERVICE_URL_NTFY")
-    NTFY_ADMIN_TOPIC: Optional[str] = os.getenv("NTFY_ADMIN_TOPIC")
+    # Web Push Notification Service (VAPID)
+    VAPID_PUBLIC_KEY: Optional[str] = os.getenv("VAPID_PUBLIC_KEY")
+    VAPID_PRIVATE_KEY: Optional[str] = os.getenv("VAPID_PRIVATE_KEY")
+    VAPID_EMAIL: str = os.getenv("VAPID_EMAIL", "mailto:admin@thespecialwedding.io")
 
 
 settings = Settings()
