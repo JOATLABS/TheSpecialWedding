@@ -62,47 +62,98 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
   const parseTimeToISO = (timeStr: string): string => {
     if (!timeStr) return '12:00';
-    if (/^\d{1,2}:\d{2}$/.test(timeStr) && !timeStr.toLowerCase().includes('am') && !timeStr.toLowerCase().includes('pm')) {
+
+    // Handle 24-hour format without AM/PM (e.g., "18:00")
+    if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
       const [hours, minutes] = timeStr.split(':');
       return `${hours.padStart(2, '0')}:${minutes}`;
     }
-    const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
-    if (match) {
-      let hours = parseInt(match[1], 10);
-      const minutes = match[2];
-      const period = match[3]?.toLowerCase();
+
+    // Handle formats with colon: "6:00 PM", "6:00PM"
+    const colonMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+    if (colonMatch) {
+      let hours = parseInt(colonMatch[1], 10);
+      const minutes = colonMatch[2];
+      const period = colonMatch[3]?.toLowerCase();
       if (period === 'pm' && hours !== 12) hours += 12;
       if (period === 'am' && hours === 12) hours = 0;
       return `${hours.toString().padStart(2, '0')}:${minutes}`;
     }
+
+    // Handle hour-only formats: "6PM", "6 PM", "6pm"
+    const hourOnlyMatch = timeStr.match(/^(\d{1,2})\s*(am|pm)$/i);
+    if (hourOnlyMatch) {
+      let hours = parseInt(hourOnlyMatch[1], 10);
+      const period = hourOnlyMatch[2].toLowerCase();
+      if (period === 'pm' && hours !== 12) hours += 12;
+      if (period === 'am' && hours === 12) hours = 0;
+      return `${hours.toString().padStart(2, '0')}:00`;
+    }
+
     return '12:00';
   };
 
   const generateICS = () => {
     try {
-      const event = wedding.events?.find(e => e.type === 'white_wedding') || wedding.events?.[0];
-      const eventDate = event?.date || wedding.date;
-      if (!eventDate) return;
+      const events = wedding.events && wedding.events.length > 0
+        ? wedding.events
+        : [{ type: 'white_wedding' as const, date: wedding.date, details: undefined }];
 
-      const startTimeStr = event?.details?.time || '12:00';
-      const startTime = parseTimeToISO(startTimeStr);
-      const [year, month, day] = eventDate.split('-').map(Number);
-      const [startHour, startMin] = startTime.split(':').map(Number);
-      const startDate = new Date(year, month - 1, day, startHour, startMin);
-      const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000);
+      if (!events.some(e => e.date || wedding.date)) return;
 
       const formatICSDate = (date: Date): string => {
         const pad = (n: number) => n.toString().padStart(2, '0');
         return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
       };
 
+      const eventTypeLabels: Record<string, string> = {
+        traditional: 'Traditional Ceremony',
+        white_wedding: 'White Wedding',
+        reception: 'Reception',
+        engagement: 'Engagement Party',
+        rehearsal: 'Rehearsal Dinner',
+      };
+
+      const timestamp = Date.now();
+      const vevents = events.map((event, index) => {
+        const eventDate = event.date || wedding.date;
+        if (!eventDate) return '';
+
+        const startTimeStr = event.details?.time || '12:00';
+        const startTime = parseTimeToISO(startTimeStr);
+        const [year, month, day] = eventDate.split('-').map(Number);
+        const [startHour, startMin] = startTime.split(':').map(Number);
+        const startDate = new Date(year, month - 1, day, startHour, startMin);
+        const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000);
+
+        const eventLabel = eventTypeLabels[event.type] || event.type.replace('_', ' ');
+        const summary = `${eventLabel} - ${wedding.couple_names || 'Wedding'}`;
+        const location = event.details?.venue_name || event.details?.location || 'Wedding Venue';
+        const attire = event.details?.attire ? `Attire: ${event.details.attire}` : '';
+        const description = attire
+          ? `You are cordially invited! ${attire}`
+          : 'You are cordially invited to celebrate with us!';
+
+        return [
+          'BEGIN:VEVENT',
+          `DTSTART:${formatICSDate(startDate)}`,
+          `DTEND:${formatICSDate(endDate)}`,
+          `SUMMARY:${summary}`,
+          `LOCATION:${location}`,
+          `DESCRIPTION:${description}`,
+          `UID:${timestamp}-${index}@wedding-rsvp`,
+          'END:VEVENT'
+        ].join('\r\n');
+      }).filter(Boolean);
+
       const ics = [
-        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Wedding RSVP//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
-        'BEGIN:VEVENT', `DTSTART:${formatICSDate(startDate)}`, `DTEND:${formatICSDate(endDate)}`,
-        `SUMMARY:${wedding.couple_names || 'Wedding'} Celebration`,
-        `LOCATION:${event?.details?.venue_name || event?.details?.location || 'Wedding Venue'}`,
-        `DESCRIPTION:You are cordially invited to celebrate with us!`, `UID:${Date.now()}@wedding-rsvp`,
-        'END:VEVENT', 'END:VCALENDAR'
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Wedding RSVP//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        ...vevents,
+        'END:VCALENDAR'
       ].join('\r\n');
 
       const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });

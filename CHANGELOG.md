@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Web Push Notifications (Replaces Ntfy)** (`app/services/web_push_service.py`, `app/api/web_push.py`, `app/admin/components/AccountSettingsModal.tsx`, `public/sw.js`):
+  - **Complete replacement**: Removed self-hosted Ntfy server dependency in favor of standard Web Push API with VAPID authentication
+  - **Why**: Ntfy required users to download a separate app, copy/paste subscription URLs, and perform manual setup - poor UX. Web Push is the industry standard (used by Gmail, YouTube, etc.) where users just click "Allow" and notifications work automatically
+  - **New service** (`app/services/web_push_service.py`):
+    - VAPID-based authentication using `pywebpush` library
+    - Subscriptions stored in MongoDB `push_subscriptions` collection (per user, per device)
+    - Methods: `save_subscription()`, `remove_subscription()`, `send_notification()`, `health_check()`
+    - Handles expired subscriptions (404/410 responses) with automatic cleanup
+  - **New API endpoints** (`app/api/web_push.py`):
+    - `GET /admin/web-push/vapid-public-key` - Get VAPID public key for browser subscription
+    - `POST /admin/web-push/subscribe` - Save browser push subscription
+    - `DELETE /admin/web-push/unsubscribe` - Remove subscription by endpoint
+    - `GET /admin/web-push/health` - Health check for monitoring
+  - **Service worker** (`public/sw.js`):
+    - Handles `push` events with JSON payload parsing
+    - Handles `notificationclick` to focus/open app window
+    - Handles `pushsubscriptionchange` for subscription renewal
+  - **Frontend toggle fix** (`app/admin/components/AccountSettingsModal.tsx`):
+    - Toggle now checks actual browser subscription state when modal opens
+    - Previously showed DB preference which could be stale on different devices
+    - Uses `navigator.serviceWorker.getRegistration()` and `pushManager.getSubscription()`
+  - **Platform metrics updated** (`app/admin/platform/page.tsx`, `app/api/admin_platform_metrics.py`):
+    - Changed `NtfyHealth` interface to `WebPushHealth`
+    - Shows: configured, enabled, has_public_key, has_private_key, vapid_email, total_subscriptions
+  - **Config validator updated** (`app/services/config_validator.py`, `app/api/config_errors.py`):
+    - Replaced Ntfy alert sending with Web Push
+    - Fixed type error: changed `False` sentinel to separate `_web_push_checked` flag
+  - **Environment variables**:
+    - Removed: `SERVICE_URL_NTFY`
+    - Added: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`
+  - **Dependencies**: Added `pywebpush>=1.14.0` to `requirements.txt`
+  - **Files removed**: `app/services/ntfy_service.py` (deleted)
+  - **Generate VAPID keys**: `python -c "from pywebpush import generate_vapid_keys; k=generate_vapid_keys(); print(f'VAPID_PRIVATE_KEY={k[\"private_key\"]}\\nVAPID_PUBLIC_KEY={k[\"public_key\"]}')"`
+
 - **RSVP Form Glassmorphism Redesign** (`app/components/RSVPForm.tsx`, `app/otp/verify/page.tsx`):
   - **Glass design system**: Complete redesign to match SaaS landing page aesthetic
   - **Dark theme**: `bg-slate-950` background with radial gradient overlays and subtle grid pattern
@@ -40,6 +74,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix**: Default 3-hour event duration since backend doesn't have `endTime`
   - **Fix**: Proper ICS format with `\r\n` line endings and required headers (PRODID, CALSCALE, METHOD)
   - **Fix**: Added error handling and URL cleanup with `URL.revokeObjectURL()`
+
+- **Calendar ICS Generates Only One Event with Wrong Time** (`app/components/RSVPForm.tsx`):
+  - **Root cause 1**: `generateICS()` only picked one event (white_wedding or first) instead of all configured events
+  - **Root cause 2**: `parseTimeToISO()` regex required colon - formats like "6PM" failed, defaulting to 12:00
+  - **Symptom**: Planner configured Traditional (05/29 6PM), White Wedding (05/30 5PM), Reception - calendar showed only one event at 12:00PM
+  - **Fix**: Enhanced `parseTimeToISO()` to handle hour-only formats: "6PM", "5pm", "6 PM" via new regex `/^(\d{1,2})\s*(am|pm)$/i`
+  - **Fix**: Refactored `generateICS()` to loop through ALL `wedding.events` and create multiple VEVENT blocks
+  - **Fix**: Each calendar event now has unique UID (`timestamp-index@wedding-rsvp`), event-specific title (e.g., "Traditional Ceremony - Peace & Emmanuel"), and correct time/location/attire
+  - **Result**: Downloaded ICS now contains all wedding events with correct dates and times
 
 ### Added
 
