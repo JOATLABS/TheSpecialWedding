@@ -33,7 +33,7 @@ describe('formsApi', () => {
 
   it('creates a blank form with accessibility-safe defaults', async () => {
     const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      assert.equal(input.toString(), 'https://api.example.com/admin/forms');
+      assert.equal(input.toString(), 'https://api.example.com/forms');
       assert.equal(init?.method, 'POST');
 
       const headers = init?.headers as Record<string, string> | undefined;
@@ -65,7 +65,7 @@ describe('formsApi', () => {
     const fetchMock = mock.fn(async (input: RequestInfo | URL) => {
       assert.equal(
         input.toString(),
-        'https://api.example.com/admin/forms/from-template/template_a?form_name=Summer+Showcase',
+        'https://api.example.com/forms/from-template/template_a?form_name=Summer+Showcase',
       );
       return new Response(JSON.stringify({ id: 'form_456' }), { status: 200 });
     });
@@ -82,7 +82,7 @@ describe('formsApi', () => {
 
   it('duplicates a form with the correct payload', async () => {
     const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      assert.equal(input.toString(), 'https://api.example.com/admin/forms/form_789/duplicate');
+      assert.equal(input.toString(), 'https://api.example.com/forms/form_789/duplicate');
       assert.equal(init?.method, 'POST');
 
       const parsedBody = JSON.parse(init?.body as string);
@@ -103,7 +103,7 @@ describe('formsApi', () => {
 
   it('marks responses as viewed and forwards the submission count', async () => {
     const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      assert.equal(input.toString(), 'https://api.example.com/admin/forms/form_222/views');
+      assert.equal(input.toString(), 'https://api.example.com/forms/form_222/views');
       assert.equal(init?.method, 'POST');
 
       const parsedBody = JSON.parse(init?.body as string);

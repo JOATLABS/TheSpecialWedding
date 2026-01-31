@@ -81,6 +81,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
           <button
             key={type}
             type="button"
+            aria-pressed={activePanel === type}
             onClick={() => setActivePanel(activePanel === type ? null : type)}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
               activePanel === type
@@ -106,6 +107,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               type="button"
               onClick={() => setActivePanel(null)}
               className="text-blue-600 dark:text-blue-400 hover:text-blue-800"
+              aria-label="Close URL panel"
             >
               <XMarkIcon className="h-5 w-5" />
             </button>
@@ -116,6 +118,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               value={urlLabel}
               onChange={(e) => setUrlLabel(e.target.value)}
               placeholder="Link label (optional)"
+              aria-label="Link label"
               className="px-3 py-2 rounded-md border border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <input
@@ -123,6 +126,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
+              aria-label="Link URL"
               className="px-3 py-2 rounded-md border border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -150,6 +154,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               type="button"
               onClick={() => setActivePanel(null)}
               className="text-green-600 dark:text-green-400 hover:text-green-800"
+              aria-label="Close location panel"
             >
               <XMarkIcon className="h-5 w-5" />
             </button>
@@ -160,6 +165,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Venue name or address"
+              aria-label="Location name"
               className="w-full px-3 py-2 rounded-md border border-green-200 dark:border-green-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
             <input
@@ -167,6 +173,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               value={locationUrl}
               onChange={(e) => setLocationUrl(e.target.value)}
               placeholder="Google Maps link (optional)"
+              aria-label="Location map URL"
               className="w-full px-3 py-2 rounded-md border border-green-200 dark:border-green-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
           </div>
@@ -194,6 +201,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               type="button"
               onClick={() => setActivePanel(null)}
               className="text-purple-600 dark:text-purple-400 hover:text-purple-800"
+              aria-label="Close form panel"
             >
               <XMarkIcon className="h-5 w-5" />
             </button>
@@ -201,6 +209,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
           <select
             value={selectedForm}
             onChange={(e) => setSelectedForm(e.target.value)}
+            aria-label="Select form"
             className="w-full px-3 py-2 rounded-md border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           >
             <option value="">Select a form...</option>
