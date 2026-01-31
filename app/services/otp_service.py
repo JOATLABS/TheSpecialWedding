@@ -125,10 +125,11 @@ class OTPService:
 
         guest_id = str(guest["_id"])
 
-        # Verify OTP code
+        # Verify OTP code (strip whitespace from input)
+        otp_clean = otp_code.strip()
         record = await self.otp_collection.find_one({
             "guest_id": guest_id,
-            "otp": otp_code,
+            "otp": otp_clean,
             "expires_at": {"$gt": datetime.utcnow()}
         })
 
@@ -154,15 +155,32 @@ class OTPService:
 
     async def verify_otp_by_guest_id(self, guest_id: str, otp: str) -> bool:
         """Legacy method: Verify OTP by guest_id. Use verify_otp() instead."""
+        # Strip whitespace from OTP input
+        otp_clean = otp.strip()
+
+        # Debug: Check what's stored for this guest
+        stored_record = await self.otp_collection.find_one({"guest_id": guest_id})
+        if stored_record:
+            logger.info(
+                f"OTP verify debug - guest_id: {guest_id}, stored_otp: {stored_record.get('otp')}, "
+                f"input_otp: '{otp_clean}', expires_at: {stored_record.get('expires_at')}, "
+                f"now: {datetime.utcnow()}, expired: {stored_record.get('expires_at', datetime.min) <= datetime.utcnow()}"
+            )
+        else:
+            logger.warning(f"OTP verify debug - No OTP record found for guest_id: {guest_id}")
+
         record = await self.otp_collection.find_one({
             "guest_id": guest_id,
-            "otp": otp,
+            "otp": otp_clean,
             "expires_at": {"$gt": datetime.utcnow()}
         })
 
         if record:
             await self.otp_collection.delete_one({"_id": record["_id"]})
+            logger.info(f"OTP verified successfully for guest_id: {guest_id}")
             return True
+
+        logger.warning(f"OTP verification failed for guest_id: {guest_id}")
         return False
 
     async def send_otp_by_contact(self, wedding_id: str, contact: str) -> dict:
