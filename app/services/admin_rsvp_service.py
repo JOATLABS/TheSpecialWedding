@@ -6,6 +6,7 @@ from app.core.database import mongo
 from datetime import datetime
 from typing import List, Optional
 
+
 class AdminRSVPService:
     def __init__(self):
         self.guest_collection = mongo.get_guest_collection()
@@ -16,7 +17,7 @@ class AdminRSVPService:
         try:
             # Filter by wedding_id if provided
             query = {"wedding_id": wedding_id} if wedding_id else {}
-            guests = list(self.guest_collection.find(query))
+            guests = await self.guest_collection.find(query).to_list(length=None)
             result = []
 
             for guest in guests:
@@ -54,9 +55,9 @@ class AdminRSVPService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve RSVPs: {str(e)}")
 
-    def export_rsvps_to_csv(self):
+    async def export_rsvps_to_csv(self):
         try:
-            guests = self.get_all_rsvps()
+            guests = await self.get_all_rsvps()
             output = io.StringIO()
             writer = csv.writer(output)
 

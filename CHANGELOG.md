@@ -35,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OTP Rate Limiting Now Uses Settings** (`app/services/otp_service.py`):
+  - Fixed hardcoded `timedelta(minutes=4)` rate limit logic to use `settings.rate_limit_auth_period`
+  - Rate limiting now uses `created_at` timestamp instead of confusing `expires_at` calculation
+  - Both `send_otp()` (line 93) and `send_otp_by_contact()` (line 253) now use configurable rate limit
+  - Default: 60 seconds from `RATE_LIMIT_AUTH_PERIOD` env variable
+  - Clearer logging: shows seconds since last OTP was sent
+
+- **Admin RSVP Service Async Bug** (`app/services/admin_rsvp_service.py`):
+  - Fixed `get_all_rsvps()` using synchronous `list()` with async Motor driver
+  - Changed `list(self.guest_collection.find(query))` to `await self.guest_collection.find(query).to_list(length=None)`
+  - This bug caused the planner dashboard to fail silently when fetching RSVPs
+
 - **OTP Service Dict Handling** (`app/services/otp_service.py`):
   - Fixed `send_otp()` and `send_otp_by_contact()` to handle dict return from `_send_sms()`
   - Extracts status with `result.get("status") if isinstance(result, dict) else result`
