@@ -355,7 +355,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                     from_name="Wedding Platform"
                 )
 
-                # Send Ntfy push notification to planner
+                # Send push notification to planner
                 try:
                     from app.services.planner_notification_service import planner_notification_service
                     await planner_notification_service.notify_vendor_response(
@@ -365,9 +365,9 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                         response_type=f"submitted {form['form_name']}",
                         vendor_id=str(result.inserted_id)
                     )
-                except Exception as ntfy_error:
-                    logging.warning(f"Failed to send Ntfy notification: {str(ntfy_error)}")
-                    # Continue even if Ntfy fails
+                except Exception as push_error:
+                    logging.warning(f"Failed to send push notification: {str(push_error)}")
+                    # Continue even if push notification fails
 
         except Exception as e:
             logging.error(f"Failed to send notification email: {str(e)}")

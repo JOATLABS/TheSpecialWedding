@@ -73,6 +73,8 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
   // Push notifications state
   const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(true);
   const [savingPushSettings, setSavingPushSettings] = useState(false);
+  const [browserPushSupported, setBrowserPushSupported] = useState(true);
+  const [browserPushPermission, setBrowserPushPermission] = useState<NotificationPermission | null>(null);
 
   // Form submission states
   const [savingProfile, setSavingProfile] = useState(false);
@@ -119,6 +121,39 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
       fetchUserProfile();
     }
   }, [isOpen, fetchUserProfile]);
+
+  // Check browser push notification support and actual subscription state
+  useEffect(() => {
+    if (typeof window !== 'undefined' && isOpen) {
+      const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+      setBrowserPushSupported(supported);
+
+      if (supported) {
+        setBrowserPushPermission(Notification.permission);
+
+        // Check actual browser subscription state
+        const checkSubscription = async () => {
+          try {
+            const registration = await navigator.serviceWorker.getRegistration();
+            if (registration) {
+              const subscription = await registration.pushManager.getSubscription();
+              // If browser has subscription, enable; if not, disable
+              // This ensures toggle reflects actual state for THIS browser/device
+              setPushNotificationsEnabled(!!subscription);
+            } else {
+              // No service worker registered = no subscription
+              setPushNotificationsEnabled(false);
+            }
+          } catch (error) {
+            console.error('Failed to check push subscription:', error);
+            // Fall back to DB preference (already set in fetchUserProfile)
+          }
+        };
+
+        checkSubscription();
+      }
+    }
+  }, [isOpen]);
 
   // Reset form when closing
   useEffect(() => {
@@ -314,30 +349,131 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
   };
 
   const handlePushNotificationsToggle = async () => {
+    if (!browserPushSupported) {
+      toast.error('Push notifications are not supported in this browser');
+      return;
+    }
+
     setSavingPushSettings(true);
-    const newValue = !pushNotificationsEnabled;
+    const baseUrl = getApiBaseUrl();
 
     try {
-      const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/profile/info`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ push_notifications_enabled: newValue }),
-      });
+      if (!pushNotificationsEnabled) {
+        // ENABLING push notifications
 
-      if (response.ok) {
-        setPushNotificationsEnabled(newValue);
-        toast.success(newValue ? 'Push notifications enabled' : 'Push notifications disabled');
+        // 1. Request notification permission
+        const permission = await Notification.requestPermission();
+        setBrowserPushPermission(permission);
+
+        if (permission !== 'granted') {
+          toast.error('Please allow notifications in your browser settings');
+          setSavingPushSettings(false);
+          return;
+        }
+
+        // 2. Register service worker
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+
+        // 3. Get VAPID public key from backend
+        const keyResponse = await fetch(`${baseUrl}/admin/web-push/vapid-public-key`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!keyResponse.ok) {
+          throw new Error('Failed to get VAPID key from server');
+        }
+
+        const { vapid_public_key } = await keyResponse.json();
+        if (!vapid_public_key) {
+          throw new Error('VAPID key not configured on server');
+        }
+
+        // 4. Convert VAPID key to Uint8Array
+        const urlBase64ToUint8Array = (base64String: string) => {
+          const padding = '='.repeat((4 - base64String.length % 4) % 4);
+          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          const outputArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+          }
+          return outputArray;
+        };
+
+        // 5. Subscribe to push notifications
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapid_public_key)
+        });
+
+        // 6. Send subscription to backend
+        const subscribeResponse = await fetch(`${baseUrl}/admin/web-push/subscribe`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ subscription: subscription.toJSON() })
+        });
+
+        if (!subscribeResponse.ok) {
+          throw new Error('Failed to save subscription');
+        }
+
+        // 7. Update user preference
+        await fetch(`${baseUrl}/profile/info`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ push_notifications_enabled: true })
+        });
+
+        setPushNotificationsEnabled(true);
+        toast.success('Push notifications enabled');
+
       } else {
-        const error = await response.json();
-        toast.error(error.detail || 'Failed to update notification settings');
+        // DISABLING push notifications
+
+        // 1. Unsubscribe from browser push
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          const subscription = await registration.pushManager.getSubscription();
+          if (subscription) {
+            // Tell backend to remove subscription
+            await fetch(`${baseUrl}/admin/web-push/unsubscribe`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ endpoint: subscription.endpoint })
+            });
+
+            // Unsubscribe locally
+            await subscription.unsubscribe();
+          }
+        }
+
+        // 2. Update user preference
+        await fetch(`${baseUrl}/profile/info`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ push_notifications_enabled: false })
+        });
+
+        setPushNotificationsEnabled(false);
+        toast.success('Push notifications disabled');
       }
     } catch (error) {
       console.error('Push notification toggle failed:', error);
-      toast.error('Failed to update notification settings');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update notification settings';
+      toast.error(errorMessage);
     } finally {
       setSavingPushSettings(false);
     }
@@ -556,7 +692,11 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                             Push Notifications
                           </h3>
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Receive instant alerts for RSVPs, payments, and updates
+                            {!browserPushSupported
+                              ? 'Not supported in this browser'
+                              : browserPushPermission === 'denied'
+                              ? 'Blocked - enable in browser settings'
+                              : 'Receive instant alerts for RSVPs, payments, and updates'}
                           </p>
                         </div>
                       </div>
@@ -566,16 +706,22 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                         aria-checked={pushNotificationsEnabled}
                         aria-label="Push notifications"
                         onClick={handlePushNotificationsToggle}
-                        disabled={savingPushSettings}
+                        disabled={savingPushSettings || !browserPushSupported || browserPushPermission === 'denied'}
                         className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-wedding-rose focus:ring-offset-2 ${
                           pushNotificationsEnabled ? 'bg-wedding-rose' : 'bg-gray-300 dark:bg-slate-600'
-                        } ${savingPushSettings ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        } ${savingPushSettings || !browserPushSupported || browserPushPermission === 'denied' ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
-                        <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                            pushNotificationsEnabled ? 'translate-x-5' : 'translate-x-0'
-                          }`}
-                        />
+                        {savingPushSettings ? (
+                          <span className="pointer-events-none inline-flex h-5 w-5 items-center justify-center rounded-full bg-white shadow">
+                            <Loader2 className="w-3 h-3 animate-spin text-wedding-rose" />
+                          </span>
+                        ) : (
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              pushNotificationsEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        )}
                       </button>
                     </div>
                   </div>

@@ -104,7 +104,8 @@ async def get_wedding_with_token_access(slug: str, token: str):
 
         return {
             "wedding": result["wedding"],
-            "guest": result.get("guest")
+            "guest": result.get("guest"),
+            "rsvp": result.get("rsvp")  # Include existing RSVP data if guest already submitted
         }
     except HTTPException:
         raise

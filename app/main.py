@@ -71,6 +71,7 @@ from app.api.config_errors import router as config_errors_router
 from app.api.admin_activity import router as admin_activity_router
 from app.api.scheduler_jobs import router as scheduler_jobs_router
 from app.api.guest_export import router as guest_export_router
+from app.api.web_push import router as web_push_router
 
 # Setup logging
 logging.basicConfig(
@@ -295,6 +296,7 @@ admin_routers = [
     (planner_notifications_router, "Planner Notifications"),
     (tables_router, "Seating"),
     (guest_export_router, "Guest Export"),
+    (web_push_router, "Web Push"),
 ]
 
 for router, tag in admin_routers:

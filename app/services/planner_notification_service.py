@@ -4,7 +4,7 @@ Planner Activity Notifications Service
 Handles CRUD operations and triggers for planner-specific notifications.
 These are wedding activity notifications (RSVPs, forms, payments), NOT platform announcements.
 
-Now with Ntfy push notification support!
+Includes Web Push notification support for instant browser notifications.
 """
 
 from fastapi import HTTPException
@@ -70,7 +70,7 @@ class PlannerNotificationService:
         wedding_name: Optional[str] = None,
         action_url: Optional[str] = None
     ):
-        """Send push notification via Ntfy (non-blocking)"""
+        """Send push notification via Web Push API (non-blocking)"""
         try:
             # Check if user has push notifications enabled
             if not await self._check_push_enabled(planner_id):
@@ -78,16 +78,18 @@ class PlannerNotificationService:
                 return
 
             # Late import to avoid circular dependencies
-            from app.services.ntfy_service import ntfy_service
+            from app.services.web_push_service import web_push_service
 
-            if ntfy_service.enabled:
-                await ntfy_service.send_notification(
-                    planner_id=planner_id,
+            if web_push_service.enabled:
+                # Build full message with wedding name if provided
+                full_message = f"[{wedding_name}] {message}" if wedding_name else message
+
+                await web_push_service.send_notification(
+                    user_id=planner_id,
                     title=title,
-                    message=message,
-                    notification_type=notification_type,
-                    wedding_name=wedding_name,
-                    click_url=action_url
+                    body=full_message,
+                    url=action_url,
+                    tag=notification_type
                 )
         except Exception as e:
             # Don't fail the main notification if push fails

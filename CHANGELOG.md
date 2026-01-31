@@ -9,16 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **RSVP Form Modern Redesign** (`app/components/RSVPForm.tsx`, `app/otp/verify/page.tsx`):
-  - **Page layout wrapper**: Added gradient background (`wedding-ivory` to `wedding-blush/30`) with centered container
-  - **Header card**: Welcoming header with guest name greeting, couple names, decorative gradient border
-  - **FormCard component**: Reusable card wrapper with themed headers for visual hierarchy
-  - **Events section**: Clickable rows with hover states for each event checkbox (Traditional, White Wedding, Reception)
-  - **Contact section**: Clean inputs with helpful placeholder text and validation feedback
-  - **Notifications section**: Redesigned SMS and Email opt-in boxes with compliance text
-  - **Plus-ones section**: Info banner showing allowed count, dashed border guest cards, modern "Add Guest" button
-  - **Submit button**: Gradient background, shadow effects, hover/active animations, loading spinner
-  - **Success state**: Modern card with checkmark icon, personalized thank you message, decorative heart divider
+- **RSVP Form Glassmorphism Redesign** (`app/components/RSVPForm.tsx`, `app/otp/verify/page.tsx`):
+  - **Glass design system**: Complete redesign to match SaaS landing page aesthetic
+  - **Dark theme**: `bg-slate-950` background with radial gradient overlays and subtle grid pattern
+  - **Glass cards**: `backdrop-blur-xl`, `bg-white/5`, `border-white/10`, `rounded-3xl` styling
+  - **FormCard component**: Glass card wrapper with wedding-rose uppercase tracking labels
+  - **Events section**: Glass checkboxes with hover states (`hover:border-wedding-rose/40 hover:bg-wedding-rose/10`)
+  - **Form inputs**: Dark glass inputs (`bg-white/5 text-white placeholder-slate-500`)
+  - **Notifications section**: Glass opt-in cards with proper dark theme contrast
+  - **Plus-ones section**: Glass guest cards with matching input styling
+  - **Submit button**: `rounded-full` with `shadow-wedding-rose/40` glow effect
+  - **Success state**: Glass card with wedding-rose accent checkmark and gradient bar
+  - **OTP verify page**: Full glass design with matching background effects and animations
+
+- **Plus-One Events Auto-Inherit** (`app/components/RSVPForm.tsx`):
+  - Plus-ones now automatically inherit the main guest's selected events on RSVP submission
+  - Previously: Plus-ones were submitted with empty `attending: []` array
+  - Now: `filledPlusOnes.map(p => ({ ...p, attending: data.attending || [] }))`
+  - Fixes "Attending: None" display issue in admin dashboard for plus-ones
 
 ### Fixed
 
@@ -34,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix**: Added error handling and URL cleanup with `URL.revokeObjectURL()`
 
 ### Added
+
+- **Already RSVPed Detection** (`app/components/AlreadyRSVPedScreen.tsx`, `app/otp/verify/page.tsx`, `app/services/guest_verification_service.py`):
+  - **Problem solved**: Guests re-visiting RSVP link after submission would go through OTP verification again (Twilio SMS cost ~$0.0079 each)
+  - **Backend enhancement**: `get_rsvp_access_by_token()` now checks for existing RSVP in `rsvps` collection
+    - Returns `rsvp: { has_rsvp, submitted_at, attending, dietary, plus_ones }` in response
+    - Fetches associated plus-ones from `plus_ones` collection
+  - **New component**: `AlreadyRSVPedScreen` shows existing RSVP status with glass design
+    - Displays guest name, submission date, events attending, dietary restrictions
+    - "Edit My RSVP" button to switch to edit mode
+  - **Edit mode flow**: `editMode` state allows guests to modify their existing RSVP
+  - **Cost savings**: Prevents unnecessary OTP SMS costs for return visitors
 
 - **Twilio SMS Delivery Tracking** (`app/api/twilio_webhooks.py`, `app/services/reminder_service_twilio.py`, `app/core/database_indexes.py`):
   - **StatusCallback webhooks**: Track SMS delivery status (delivered/failed/undelivered) via Twilio webhooks

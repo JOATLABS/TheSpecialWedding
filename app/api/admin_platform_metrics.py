@@ -608,13 +608,13 @@ async def get_platform_health(
 
         # ==================== SERVICE HEALTH ====================
 
-        # Ntfy push notification service health
+        # Web Push notification service health
         try:
-            from app.services.ntfy_service import ntfy_service
-            ntfy_health = await ntfy_service.health_check()
+            from app.services.web_push_service import web_push_service
+            web_push_health = await web_push_service.health_check()
         except Exception as e:
-            logger.error(f"Failed to check ntfy health: {str(e)}")
-            ntfy_health = {
+            logger.error(f"Failed to check Web Push health: {str(e)}")
+            web_push_health = {
                 "status": "error",
                 "error": f"Health check failed: {str(e)}",
                 "enabled": False,
@@ -668,7 +668,7 @@ async def get_platform_health(
                 "slow_endpoints": slow_endpoints
             },
             "services": {
-                "ntfy": ntfy_health,
+                "web_push": web_push_health,
                 "twilio": twilio_health
             },
             "timestamp": generated_at
@@ -810,11 +810,11 @@ async def save_metrics_snapshot(
             ],
         },
         "services": {
-            "ntfy": {
-                "status": services_metrics.get("ntfy", {}).get("status"),
-                "enabled": services_metrics.get("ntfy", {}).get("enabled"),
-                "server_url": services_metrics.get("ntfy", {}).get("server_url"),
-                "error": services_metrics.get("ntfy", {}).get("error"),
+            "web_push": {
+                "status": services_metrics.get("web_push", {}).get("status"),
+                "enabled": services_metrics.get("web_push", {}).get("enabled"),
+                "total_subscriptions": services_metrics.get("web_push", {}).get("total_subscriptions"),
+                "error": services_metrics.get("web_push", {}).get("error"),
             },
             "twilio": {
                 "status": services_metrics.get("twilio", {}).get("status"),
