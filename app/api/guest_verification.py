@@ -7,6 +7,7 @@ from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAut
 router = APIRouter()
 verification_service = GuestVerificationService()
 
+
 class GuestVerificationRequest(BaseModel):
     token: Optional[str] = Field(None, description="Guest invitation token")
     name: Optional[str] = Field(None, description="Guest name for verification")
@@ -16,6 +17,7 @@ class GuestVerificationRequest(BaseModel):
     otp_code: Optional[str] = Field(None, description="OTP verification code")
     contact: Optional[str] = Field(None, description="Contact (phone/email) for OTP verification")
 
+
 class PrivacySettingsUpdate(BaseModel):
     privacy_mode: str = Field(..., description="Privacy mode: public, password, private")
     guest_auth_required: bool = Field(default=True)
@@ -24,14 +26,24 @@ class PrivacySettingsUpdate(BaseModel):
     require_phone_verification: bool = Field(default=True)
     require_name_verification: bool = Field(default=True)
 
+
 @router.post("/weddings/verify-guest-access/{slug}", tags=["Guest"])
 async def verify_guest_access(slug: str, verification: GuestVerificationRequest):
     """
-    Verify guest access to a wedding using various authentication methods.
-    Returns wedding data if access is granted.
+    Verify visitor access to view a wedding page based on privacy settings.
+
+    Privacy modes:
+    - public: Anyone can view
+    - password: Anyone with the correct password can view
+    - private: ONLY guests on the guest list can view. They must:
+      1. Enter their phone/email (must match a guest record for this wedding)
+      2. Receive OTP to that contact via SMS/email
+      3. Verify OTP to prove they control that contact
+
+    For RSVP with invite token, use GET /weddings/guest-access/{slug}/{token} instead.
     """
     try:
-        result = await verification_service.verify_guest_access(
+        result = await verification_service.verify_wedding_page_access(
             slug=slug,
             verification_data=verification.dict()
         )
@@ -59,6 +71,7 @@ async def verify_guest_access(slug: str, verification: GuestVerificationRequest)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Verification error: {str(e)}")
 
+
 @router.get("/weddings/privacy-info/{slug}", tags=["Guest"])
 async def get_wedding_privacy_info(slug: str):
     """
@@ -72,17 +85,19 @@ async def get_wedding_privacy_info(slug: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting privacy info: {str(e)}")
 
+
 @router.get("/weddings/guest-access/{slug}/{token}", tags=["Guest"])
 async def get_wedding_with_token_access(slug: str, token: str):
     """
-    Get wedding details using token-based authentication.
-    This is for direct token-based access (legacy support).
+    Get wedding and guest data using invite token.
+
+    Used by RSVP flow after OTP verification.
+    The token is the authorization - no privacy checks needed.
+    Guest received a personalized invite link with this token.
     """
     try:
-        result = await verification_service.verify_guest_access(
-            slug=slug,
-            verification_data={"token": token}
-        )
+        # Use direct token lookup - no privacy checks needed
+        result = await verification_service.get_rsvp_access_by_token(slug, token)
 
         if not result.get("access"):
             raise HTTPException(status_code=403, detail="Invalid guest token")
@@ -95,6 +110,7 @@ async def get_wedding_with_token_access(slug: str, token: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Token verification error: {str(e)}")
+
 
 @router.put("/weddings/{wedding_id}/privacy-settings", tags=["Admin"])
 async def update_wedding_privacy_settings(
@@ -118,6 +134,7 @@ async def update_wedding_privacy_settings(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating privacy settings: {str(e)}")
 
+
 @router.get("/weddings/{wedding_id}/access-logs", tags=["Admin"])
 async def get_wedding_access_logs(
     wedding_id: str,
@@ -131,10 +148,10 @@ async def get_wedding_access_logs(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
         from app.core.database import mongo
-        logs = list(mongo.db["access_logs"].find(
+        logs = await mongo.db["access_logs"].find(
             {"wedding_id": wedding_id},
             {"_id": 0}
-        ).sort("timestamp", -1).limit(100))
+        ).sort("timestamp", -1).limit(100).to_list(length=100)
 
         return {"logs": logs}
 

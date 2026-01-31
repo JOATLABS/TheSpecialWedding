@@ -96,22 +96,106 @@ class GuestVerificationService:
             # Don't fail the main flow if logging fails
             security_logger.error("Failed to log security event")
 
-    async def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
+    # =========================================================================
+    # RSVP TOKEN ACCESS - Simple token lookup, NO privacy checks needed
+    # Used by: GET /weddings/guest-access/{slug}/{token}
+    # Purpose: Guest has a personalized invite link with token - just validate it
+    # =========================================================================
+    async def get_rsvp_access_by_token(self, slug: str, token: str) -> Dict[str, Any]:
         """
-        Verify guest access to a wedding based on different authentication methods.
-        Returns wedding data and guest info if access is granted.
+        Get wedding and guest data for RSVP using invite token.
 
-        Enhanced with security features:
-        - Input sanitization
-        - Rate limiting
-        - Security logging
-        - Constant-time password comparison
+        This is a DIRECT token lookup - the token IS the authorization.
+        No privacy mode checks needed because:
+        - Guest received a personalized invite link
+        - Token proves they are an invited guest
+        - Privacy mode only matters for anonymous visitors
+
+        Returns:
+            - wedding: Full wedding data
+            - guest: Guest data (name, phone, plus_one_allowed, etc.)
+        """
+        # Sanitize inputs
+        slug = self._sanitize_input(slug, "slug", max_length=100)
+        token = self._sanitize_input(token, "token", max_length=255)
+
+        if not token:
+            raise HTTPException(status_code=400, detail="Token is required")
+
+        # Rate limiting by token
+        rate_limit_key = f"rsvp_token:{token[:20]}"
+        if not self._check_rate_limit(rate_limit_key):
+            await self._log_security_event("RSVP_TOKEN_RATE_LIMIT", {"slug": slug})
+            raise HTTPException(
+                status_code=429,
+                detail="Too many attempts. Please try again later."
+            )
+
+        try:
+            # Get wedding by slug
+            wedding = await self.wedding_service.get_wedding_by_slug(slug)
+            if not wedding:
+                raise HTTPException(status_code=404, detail="Wedding not found")
+
+            # Look up guest by token - this is the ONLY check needed
+            guest = await self.guest_service.get_guest_by_token(token, wedding["_id"])
+
+            if not guest:
+                self._record_failed_attempt(rate_limit_key)
+                await self._log_security_event("RSVP_TOKEN_INVALID", {"slug": slug})
+                raise HTTPException(status_code=403, detail="Invalid invite token")
+
+            # Success - reset rate limit and log
+            self._reset_failed_attempts(rate_limit_key)
+            await self._log_security_event("RSVP_TOKEN_SUCCESS", {
+                "slug": slug,
+                "wedding_id": str(wedding.get("_id")),
+                "guest_id": str(guest.get("id"))
+            })
+
+            # Return wedding and guest data
+            wedding_response = {
+                **wedding,
+                "id": str(wedding.get("_id"))
+            }
+
+            return {
+                "access": True,
+                "wedding": wedding_response,
+                "guest": guest,
+                "auth_method": "token"
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            security_logger.error(f"RSVP token access error: {type(e).__name__}")
+            raise HTTPException(status_code=500, detail="Error accessing RSVP")
+
+    # =========================================================================
+    # WEDDING PAGE ACCESS - Privacy-based verification for viewing wedding page
+    # Used by: POST /weddings/verify-guest-access/{slug}
+    # Purpose: Verify visitor is on guest list before showing wedding page
+    # =========================================================================
+    async def verify_wedding_page_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Verify visitor access to view a wedding page based on privacy settings.
+
+        Privacy modes:
+        - public: Anyone can view the wedding page
+        - password: Anyone with the correct password can view
+        - private: ONLY guests on the guest list can view. They must:
+          1. Enter their phone/email (must match a guest record for this wedding)
+          2. Receive OTP to that contact via SMS/email
+          3. Verify OTP to prove they control that contact
+
+        For RSVP with invite token, use get_rsvp_access_by_token() instead.
         """
         # Sanitize inputs
         slug = self._sanitize_input(slug, "slug", max_length=100)
 
         # Check rate limiting
-        rate_limit_key = f"{slug}:{verification_data.get('phone', verification_data.get('name', 'unknown'))}"
+        rate_limit_key = f"{slug}:{verification_data.get('phone', verification_data.get('contact', 'unknown'))}"
         if not self._check_rate_limit(rate_limit_key):
             await self._log_security_event("RATE_LIMIT_EXCEEDED", {"slug": slug})
             raise HTTPException(
@@ -120,48 +204,10 @@ class GuestVerificationService:
             )
 
         try:
-            # Debug logging - only log slug, not sensitive verification data
-            security_logger.debug(f"Verification attempt for slug: {slug}")
-
             # Get wedding by slug
             wedding = await self.wedding_service.get_wedding_by_slug(slug)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-
-            # IMPORTANT: Check token FIRST, regardless of privacy mode
-            # This is critical for RSVP invite links which always have a token
-            # Without this, public weddings would return guest: null breaking the RSVP form
-            token = verification_data.get("token")
-            if token:
-                token = self._sanitize_input(token, "token", max_length=255)
-                try:
-                    guest = await self.guest_service.get_guest_by_token(token, wedding["_id"])
-                    if guest:
-                        self._reset_failed_attempts(rate_limit_key)
-                        await self._log_security_event("TOKEN_AUTH_SUCCESS", {
-                            "slug": slug,
-                            "wedding_id": str(wedding.get("_id")),
-                            "guest_id": str(guest.get("id"))
-                        })
-                        wedding_response = {
-                            **wedding,
-                            "id": str(wedding.get("_id"))
-                        }
-                        return {
-                            "access": True,
-                            "wedding": wedding_response,
-                            "guest": guest,
-                            "auth_method": "token"
-                        }
-                    else:
-                        # Token provided but guest not found - record failed attempt
-                        self._record_failed_attempt(rate_limit_key)
-                        await self._log_security_event("TOKEN_AUTH_FAILED", {"slug": slug, "token_provided": True})
-
-                except Exception:
-                    security_logger.warning("Token verification error")
-                    self._record_failed_attempt(rate_limit_key)
-                    # TODO evaluate this shit - Fall through to privacy mode checks if token fails
 
             # Check privacy settings
             privacy_settings = wedding.get("privacy_settings", {})
@@ -423,3 +469,24 @@ class GuestVerificationService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating privacy settings: {str(e)}")
+
+    # =========================================================================
+    # BACKWARD COMPATIBILITY WRAPPER
+    # Routes to appropriate method based on whether token is provided
+    # =========================================================================
+    async def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        DEPRECATED: Use get_rsvp_access_by_token() for RSVP or
+        verify_wedding_page_access() for wedding page viewing.
+
+        This wrapper maintains backward compatibility by routing to the
+        appropriate method based on whether a token is provided.
+        """
+        token = verification_data.get("token")
+
+        if token:
+            # Token provided - use RSVP token access (no privacy checks needed)
+            return await self.get_rsvp_access_by_token(slug, token)
+        else:
+            # No token - use privacy-based wedding page access
+            return await self.verify_wedding_page_access(slug, verification_data)
