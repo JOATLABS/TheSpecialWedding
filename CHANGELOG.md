@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **RSVP Form Modern Redesign** (`app/components/RSVPForm.tsx`, `app/otp/verify/page.tsx`):
+  - **Page layout wrapper**: Added gradient background (`wedding-ivory` to `wedding-blush/30`) with centered container
+  - **Header card**: Welcoming header with guest name greeting, couple names, decorative gradient border
+  - **FormCard component**: Reusable card wrapper with themed headers for visual hierarchy
+  - **Events section**: Clickable rows with hover states for each event checkbox (Traditional, White Wedding, Reception)
+  - **Contact section**: Clean inputs with helpful placeholder text and validation feedback
+  - **Notifications section**: Redesigned SMS and Email opt-in boxes with compliance text
+  - **Plus-ones section**: Info banner showing allowed count, dashed border guest cards, modern "Add Guest" button
+  - **Submit button**: Gradient background, shadow effects, hover/active animations, loading spinner
+  - **Success state**: Modern card with checkmark icon, personalized thank you message, decorative heart divider
+
+### Fixed
+
+- **Calendar Invite Download Not Working** (`app/components/RSVPForm.tsx`):
+  - **Root cause 1**: Backend `EventDetailsModel.time` uses 12-hour format (`"3:00 PM"`) but frontend expected 24-hour (`"15:00"`)
+  - **Root cause 2**: Backend model has no `endTime` field but frontend was trying to use it
+  - **Root cause 3**: Invalid Date created when `eventDate` was undefined (`new Date("undefinedT15:00:00Z")`)
+  - **Fix**: Added `parseTimeToISO()` helper that handles both 12-hour and 24-hour time formats
+  - **Fix**: Use local time parsing instead of UTC to prevent timezone issues
+  - **Fix**: Fallback to first event if no `white_wedding` event found, then to `wedding.date`
+  - **Fix**: Default 3-hour event duration since backend doesn't have `endTime`
+  - **Fix**: Proper ICS format with `\r\n` line endings and required headers (PRODID, CALSCALE, METHOD)
+  - **Fix**: Added error handling and URL cleanup with `URL.revokeObjectURL()`
+
 ### Added
 
 - **Twilio SMS Delivery Tracking** (`app/api/twilio_webhooks.py`, `app/services/reminder_service_twilio.py`, `app/core/database_indexes.py`):

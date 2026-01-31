@@ -166,7 +166,11 @@ function VerifyOTPContent() {
   if (isVerified && guestData && weddingData) {
     return (
       <WeddingContext.Provider value={weddingData}>
-        <RSVPForm guest={guestData} token={token} />
+        <div className="min-h-screen bg-gradient-to-b from-wedding-ivory to-wedding-blush/30">
+          <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
+            <RSVPForm guest={guestData} token={token} />
+          </div>
+        </div>
       </WeddingContext.Provider>
     );
   }
