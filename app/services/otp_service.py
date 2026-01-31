@@ -2,7 +2,7 @@
 
 import random
 from datetime import datetime, timedelta, timezone
-from pymongo import ASCENDING
+from pymongo import ASCENDING, ReturnDocument
 from bson.objectid import ObjectId
 from app.core.database import mongo
 from app.services.reminder_service_twilio import TwilioReminderService
@@ -39,11 +39,31 @@ class OTPService:
         otp = str(random.randint(100000, 999999))
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
-        await self.otp_collection.update_one(
-            {"guest_id": guest_id},
-            {"$set": {"otp": otp, "expires_at": expires_at}},
-            upsert=True
-        )
+        # Get fresh collection reference to ensure database is connected
+        otp_collection = mongo.db["otps"]
+
+        # Delete any existing OTP for this guest first
+        delete_result = await otp_collection.delete_many({"guest_id": guest_id})
+        logger.info(f"Deleted {delete_result.deleted_count} existing OTP(s) for guest_id: {guest_id}")
+
+        # Insert new OTP document
+        otp_doc = {
+            "guest_id": guest_id,
+            "otp": otp,
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc)
+        }
+        insert_result = await otp_collection.insert_one(otp_doc)
+
+        if not insert_result.inserted_id:
+            raise Exception(f"Failed to insert OTP to database for guest_id: {guest_id}")
+
+        # Verify by reading back
+        saved_doc = await otp_collection.find_one({"_id": insert_result.inserted_id})
+        if not saved_doc:
+            raise Exception(f"OTP inserted but cannot be read back for guest_id: {guest_id}")
+
+        logger.info(f"OTP saved successfully for guest_id: {guest_id}, doc_id: {insert_result.inserted_id}")
         return otp
 
     async def send_otp(self, guest_id: str) -> dict:
@@ -82,7 +102,12 @@ class OTPService:
             logger.warning(f"Guest has no phone number: {guest_id}")
             return {"success": False, "error": "No phone number on file. Please contact the wedding planner."}
 
-        otp = await self.generate_otp(guest_id)
+        try:
+            otp = await self.generate_otp(guest_id)
+        except Exception as e:
+            logger.error(f"Failed to save OTP for guest_id {guest_id}: {str(e)}")
+            return {"success": False, "error": "Failed to generate verification code. Please try again."}
+
         message = f"Your verification code is: {otp}"
 
         result = self.twilio_service._send_sms(guest["phone"], message)
@@ -157,16 +182,28 @@ class OTPService:
         """Legacy method: Verify OTP by guest_id. Use verify_otp() instead."""
         otp_clean = otp.strip()
 
-        record = await self.otp_collection.find_one({
+        # Get fresh collection reference (same as generate_otp)
+        otp_collection = mongo.db["otps"]
+
+        # First check if ANY OTP exists for this guest (for debugging)
+        any_record = await otp_collection.find_one({"guest_id": guest_id})
+        if any_record:
+            logger.info(f"Found OTP record for guest_id {guest_id}: otp={any_record.get('otp')}, expires_at={any_record.get('expires_at')}")
+        else:
+            logger.warning(f"No OTP record found for guest_id: {guest_id}")
+
+        record = await otp_collection.find_one({
             "guest_id": guest_id,
             "otp": otp_clean,
             "expires_at": {"$gt": datetime.now(timezone.utc)}
         })
 
         if record:
-            await self.otp_collection.delete_one({"_id": record["_id"]})
+            await otp_collection.delete_one({"_id": record["_id"]})
+            logger.info(f"OTP verified and deleted for guest_id: {guest_id}")
             return True
 
+        logger.warning(f"OTP verification failed for guest_id: {guest_id}, otp_provided: {otp_clean}")
         return False
 
     async def send_otp_by_contact(self, wedding_id: str, contact: str) -> dict:

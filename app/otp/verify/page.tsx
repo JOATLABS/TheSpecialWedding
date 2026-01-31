@@ -7,7 +7,17 @@ import { useSearchParams } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
 import { WeddingContext } from '@/contexts/WeddingContext';
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+// Get API base URL - fallback to empty string for relative URLs in single-container deployment
+const getApiBase = (): string => {
+  const url = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (!url) {
+    console.warn('NEXT_PUBLIC_API_BASE_URL not set, using relative URLs');
+    return '';
+  }
+  return url;
+};
+
+const apiBase = getApiBase();
 
 function VerifyOTPContent() {
   const [otp, setOtp] = useState('');
@@ -42,18 +52,39 @@ function VerifyOTPContent() {
         const errorData = await accessRes.json().catch(() => ({}));
         throw new Error(errorData.detail || 'Failed to load RSVP form. Please try again.');
       }
-      const { wedding, guest } = await accessRes.json();
+      const data = await accessRes.json();
+      const { wedding, guest } = data;
+
+      // Validate response data
+      if (!wedding) {
+        console.error('Wedding data missing from response:', data);
+        throw new Error('Wedding data not found. Please try again.');
+      }
+      if (!guest) {
+        console.error('Guest data missing from response:', data);
+        throw new Error('Guest data not found. Please try again.');
+      }
 
       // Map _id to id for WeddingContext compatibility
+      // MongoDB returns _id, but frontend expects id
       const weddingForContext = {
         ...wedding,
         id: wedding.id || wedding._id || slug,
+        // Ensure slug is present
+        slug: wedding.slug || slug,
       };
+
+      console.log('Wedding data loaded successfully:', {
+        weddingId: weddingForContext.id,
+        guestId: guest.id,
+        hasEvents: !!wedding.events?.length
+      });
 
       setWeddingData(weddingForContext);
       setGuestData(guest);
       setIsVerified(true);
     } catch (err) {
+      console.error('fetchWeddingData error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load RSVP form');
     } finally {
       setLoading(false);
@@ -62,7 +93,10 @@ function VerifyOTPContent() {
 
   const handleVerifyOTP = async () => {
     // Prevent double-submit
-    if (isSubmittingRef.current) return;
+    if (isSubmittingRef.current) {
+      console.log('OTP verification already in progress, ignoring duplicate click');
+      return;
+    }
     isSubmittingRef.current = true;
     setLoading(true);
     setError('');
@@ -71,7 +105,14 @@ function VerifyOTPContent() {
       if (!token) {
         throw new Error('Missing RSVP token');
       }
+      if (!guest_id) {
+        throw new Error('Missing guest ID');
+      }
+      if (!slug) {
+        throw new Error('Missing wedding slug');
+      }
 
+      console.log('Verifying OTP for guest:', guest_id);
       const response = await fetch(`${apiBase}/otp/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,15 +121,18 @@ function VerifyOTPContent() {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('OTP verification failed:', errorData);
         throw new Error(errorData.detail || 'Failed to verify OTP');
       }
 
+      console.log('OTP verified successfully, fetching wedding data...');
       // OTP verified successfully - mark this so user doesn't need to re-enter
       setOtpVerified(true);
 
       // Now fetch wedding + guest data
       await fetchWeddingData();
     } catch (err) {
+      console.error('handleVerifyOTP error:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
