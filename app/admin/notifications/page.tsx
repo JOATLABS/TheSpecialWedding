@@ -40,9 +40,10 @@ interface SentNotification {
 
 // Planner notification (received notifications like form submissions, RSVPs)
 // Also includes root admin notification types (support_ticket, system_config, sales_contact)
+// And support_ticket_response for when root admin responds to planner tickets
 interface PlannerNotification {
   _id: string;
-  type: 'form_submission' | 'rsvp_update' | 'guest_message' | 'payment_received' | 'payment_failed' | 'contract_signed' | 'vendor_response' | 'system' | 'reminder' | 'support_ticket' | 'system_config' | 'sales_contact';
+  type: 'form_submission' | 'rsvp_update' | 'guest_message' | 'payment_received' | 'payment_failed' | 'contract_signed' | 'vendor_response' | 'system' | 'reminder' | 'support_ticket' | 'system_config' | 'sales_contact' | 'support_ticket_response';
   title: string;
   message: string;
   wedding_id?: string;
@@ -344,6 +345,7 @@ export default function NotificationsPage() {
                           notification.type === 'contract_signed' ? 'bg-indigo-500' :
                           notification.type === 'vendor_response' ? 'bg-amber-500' :
                           notification.type === 'reminder' ? 'bg-orange-500' :
+                          notification.type === 'support_ticket_response' ? 'bg-teal-500' :
                           'bg-gray-500'
                         }`} />
                         <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -421,6 +423,10 @@ export default function NotificationsPage() {
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-orange-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">Reminders</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-teal-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Support Responses</span>
             </div>
           </div>
         </div>

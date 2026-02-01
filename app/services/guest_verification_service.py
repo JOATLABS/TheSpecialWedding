@@ -633,8 +633,9 @@ class GuestVerificationService:
                     from app.services.reminder_service_twilio import TwilioReminderService
                     twilio_service = TwilioReminderService()
                     message = f"Hi {guest_name}! Here's your personal RSVP link for {couple_names}'s wedding: {rsvp_url}"
-                    result = twilio_service._send_sms(contact, message)
-                    send_success = result.get("status") != "failed"
+                    # Use digits_only for Twilio - it will add +1 prefix for E.164 format
+                    result = twilio_service._send_sms(digits_only, message)
+                    send_success = result.get("status") == "success"
                 except Exception as e:
                     security_logger.error(f"Failed to send SMS: {str(e)}")
             else:

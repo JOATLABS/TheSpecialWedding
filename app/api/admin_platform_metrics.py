@@ -1337,13 +1337,200 @@ async def acknowledge_errors_bulk(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/errors/export")
+async def export_errors(
+    format: str = Query("json", description="Export format: json or csv"),
+    acknowledged: Optional[bool] = Query(None, description="Filter by acknowledged status"),
+    days: int = Query(30, ge=1, le=365, description="Export errors from the last N days"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """
+    Export errors for audit compliance before pruning.
+
+    Returns error data in JSON format (CSV can be generated client-side from JSON).
+    Use this endpoint to download acknowledged errors before cleanup.
+
+    Args:
+        format: Export format (json supported, csv can be derived client-side)
+        acknowledged: Filter by acknowledged status (True = only acknowledged, False = only unacknowledged, None = all)
+        days: Export errors from the last N days (default: 30)
+    """
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        # Build query
+        query: Dict[str, Any] = {"timestamp": {"$gte": cutoff_date}}
+        if acknowledged is not None:
+            query["acknowledged"] = acknowledged
+
+        # Fetch errors from errors collection
+        cursor = mongo.db["errors"].find(query).sort("timestamp", -1)
+        errors_list = await cursor.to_list(length=None)
+
+        # Format for export
+        exported_errors = []
+        for error in errors_list:
+            exported_error = {
+                "error_id": str(error.get("error_id") or error.get("_id")),
+                "error_type": error.get("error_type", "Unknown"),
+                "message": error.get("error_message") or error.get("message", ""),
+                "severity": error.get("severity", "unknown"),
+                "timestamp": _normalize_timestamp(error.get("timestamp")),
+                "endpoint": error.get("path") or (error.get("request", {}) or {}).get("path"),
+                "method": error.get("method") or (error.get("request", {}) or {}).get("method"),
+                "status_code": error.get("response_status") or error.get("status_code"),
+                "user_id": error.get("user_id"),
+                "ip_address": error.get("ip_address"),
+                "user_agent": error.get("user_agent"),
+                "stack_trace": error.get("stack_trace", ""),
+                "acknowledged": error.get("acknowledged", False),
+                "acknowledged_by": error.get("acknowledged_by"),
+                "acknowledged_at": _normalize_timestamp(error.get("acknowledged_at")),
+                "metadata": error.get("metadata", {}),
+            }
+            exported_errors.append(exported_error)
+
+        # Generate CSV if requested
+        csv_data = None
+        if format.lower() == "csv":
+            import csv
+            import io
+
+            output = io.StringIO()
+            if exported_errors:
+                fieldnames = [
+                    "error_id", "error_type", "message", "severity", "timestamp",
+                    "endpoint", "method", "status_code", "user_id", "ip_address",
+                    "acknowledged", "acknowledged_by", "acknowledged_at"
+                ]
+                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writeheader()
+                writer.writerows(exported_errors)
+            csv_data = output.getvalue()
+
+        return {
+            "status": "success",
+            "export_format": format,
+            "total_count": len(exported_errors),
+            "date_range": {
+                "from": cutoff_date.isoformat() + "Z",
+                "to": datetime.utcnow().isoformat() + "Z"
+            },
+            "filters": {
+                "acknowledged": acknowledged,
+                "days": days
+            },
+            "data": exported_errors if format.lower() == "json" else None,
+            "csv_data": csv_data if format.lower() == "csv" else None,
+            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "exported_by": current_user.email
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to export errors: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/errors/{error_id}/acknowledge-and-delete")
+async def acknowledge_and_delete_error(
+    error_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """
+    Acknowledge and immediately delete an error.
+
+    Use the export endpoint first if you need to keep the data for audit compliance.
+    """
+    try:
+        acknowledged_at = datetime.utcnow()
+
+        # Find and delete from errors collection
+        error = None
+        if ObjectId.is_valid(error_id):
+            error = await mongo.db["errors"].find_one_and_delete({"_id": ObjectId(error_id)})
+        if not error:
+            error = await mongo.db["errors"].find_one_and_delete({"error_id": error_id})
+
+        # Try audit_logs as fallback
+        if not error and ObjectId.is_valid(error_id):
+            error = await mongo.db["audit_logs"].find_one_and_delete({"_id": ObjectId(error_id)})
+
+        if not error:
+            raise HTTPException(status_code=404, detail="Error not found")
+
+        return {
+            "status": "success",
+            "action": "acknowledged_and_deleted",
+            "error_id": error_id,
+            "acknowledged_by": current_user.email,
+            "acknowledged_at": acknowledged_at.isoformat() + "Z",
+            "deleted": True
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to acknowledge and delete error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/errors/acknowledge-and-delete-bulk")
+async def acknowledge_and_delete_errors_bulk(
+    request: BulkAcknowledgeRequest,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """
+    Acknowledge and immediately delete multiple errors.
+
+    Use the export endpoint first if you need to keep the data for audit compliance.
+    """
+    try:
+        acknowledged_at = datetime.utcnow()
+
+        # Build filter for both error_id and ObjectId matches
+        object_ids = [ObjectId(eid) for eid in request.error_ids if ObjectId.is_valid(eid)]
+
+        # Delete from errors collection
+        errors_result = await mongo.db["errors"].delete_many({
+            "$or": [
+                {"error_id": {"$in": request.error_ids}},
+                {"_id": {"$in": object_ids}}
+            ]
+        })
+
+        # Delete from audit_logs collection
+        audit_result = await mongo.db["audit_logs"].delete_many({
+            "_id": {"$in": object_ids}
+        })
+
+        total_deleted = errors_result.deleted_count + audit_result.deleted_count
+
+        return {
+            "status": "success",
+            "action": "acknowledged_and_deleted",
+            "deleted_count": total_deleted,
+            "errors_deleted": errors_result.deleted_count,
+            "audit_logs_deleted": audit_result.deleted_count,
+            "requested_count": len(request.error_ids),
+            "acknowledged_by": current_user.email,
+            "acknowledged_at": acknowledged_at.isoformat() + "Z"
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to bulk acknowledge and delete errors: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/errors/cleanup")
 async def cleanup_old_errors(
     days: int = Query(30, ge=7, le=365, description="Delete errors older than this many days"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
-    Clean up old acknowledged errors
+    Clean up old acknowledged errors.
+
+    Only deletes errors that have been acknowledged.
+    Use the export endpoint first if you need to keep the data for audit compliance.
 
     Args:
         days: Delete errors older than this many days (default: 30)
@@ -1360,4 +1547,56 @@ async def cleanup_old_errors(
         "status": "success",
         "deleted_count": result.deleted_count,
         "cutoff_date": cutoff_date.isoformat() + "Z"
+    }
+
+
+@router.delete("/audit-logs/cleanup")
+async def cleanup_old_audit_logs(
+    days: int = Query(30, ge=7, le=365, description="Delete audit logs older than this many days"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """
+    Clean up old audit logs.
+
+    Args:
+        days: Delete audit logs older than this many days (default: 30)
+    """
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+    result = await mongo.db["audit_logs"].delete_many({
+        "timestamp": {"$lt": cutoff_date}
+    })
+
+    return {
+        "status": "success",
+        "deleted_count": result.deleted_count,
+        "cutoff_date": cutoff_date.isoformat() + "Z",
+        "collection": "audit_logs"
+    }
+
+
+@router.delete("/security-logs/cleanup")
+async def cleanup_old_security_logs(
+    days: int = Query(180, ge=30, le=365, description="Delete security logs older than this many days"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """
+    Clean up old security audit logs.
+
+    Default retention is 180 days for compliance reasons.
+
+    Args:
+        days: Delete security logs older than this many days (default: 180)
+    """
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+    result = await mongo.db["security_audit_logs"].delete_many({
+        "timestamp": {"$lt": cutoff_date}
+    })
+
+    return {
+        "status": "success",
+        "deleted_count": result.deleted_count,
+        "cutoff_date": cutoff_date.isoformat() + "Z",
+        "collection": "security_audit_logs"
     }

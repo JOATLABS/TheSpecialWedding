@@ -514,6 +514,36 @@ class PlannerNotificationService:
             action_url="/admin/planner/calendar"
         )
 
+    async def notify_support_ticket_response(
+        self,
+        planner_id: str,
+        ticket_number: str,
+        ticket_subject: str,
+        responder_name: str,
+        ticket_id: str,
+        message_preview: Optional[str] = None
+    ):
+        """Notify planner when root admin responds to their support ticket"""
+        preview = ""
+        if message_preview:
+            preview = f": {message_preview[:80]}..." if len(message_preview) > 80 else f": {message_preview}"
+
+        return await self.create_notification(
+            planner_id=planner_id,
+            notification_type=PlannerNotificationTypes.SUPPORT_TICKET_RESPONSE,
+            title=f"Support Response: {ticket_subject[:50]}",
+            message=f"{responder_name} responded to ticket #{ticket_number}{preview}",
+            wedding_id=None,
+            metadata={
+                "ticket_number": ticket_number,
+                "ticket_id": ticket_id,
+                "responder_name": responder_name,
+                "ticket_subject": ticket_subject
+            },
+            priority="high",
+            action_url="/admin/support"
+        )
+
 
 # Singleton instance
 planner_notification_service = PlannerNotificationService()

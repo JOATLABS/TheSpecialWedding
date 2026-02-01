@@ -8,6 +8,7 @@ from app.services.reminder_service_twilio import (
     twilio_client,
     MESSAGING_SERVICE_SID
 )
+from app.services.activity_log_service import activity_log_service
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
 from pydantic import BaseModel
@@ -20,12 +21,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Initialize services only if Twilio is configured
+twilio_reminder_service: Optional[TwilioReminderService] = None
+twilio_helper: Optional[TwilioRSVPReminderHelper] = None
+
 if twilio_configured:
     twilio_reminder_service = TwilioReminderService()
     twilio_helper = TwilioRSVPReminderHelper()
-else:
-    twilio_reminder_service = None
-    twilio_helper = None
+
 
 class SlugModel(BaseModel):
     slug: str
@@ -37,6 +39,7 @@ class IndividualReminderRequest(BaseModel):
     guest_tokens: List[str]
     message: str
 
+
 @router.get("/reminders/twilio/status", tags=["Admin"])
 def get_twilio_status():
     """Check if Twilio services are configured and available"""
@@ -44,6 +47,7 @@ def get_twilio_status():
         "available": twilio_configured,
         "message": "Twilio configured and ready" if twilio_configured else "Twilio not configured"
     }
+
 
 @router.post("/reminders/twilio/send", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def send_reminder_twilio(
@@ -57,6 +61,7 @@ def send_reminder_twilio(
 
     return twilio_reminder_service.send_reminders(event_type, message, target_group)
 
+
 @router.post("/reminders/twilio/send-invites", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 def send_invites_twilio(payload: SlugModel):
     """Send RSVP invite links using Twilio"""
@@ -68,8 +73,12 @@ def send_invites_twilio(payload: SlugModel):
         custom_message=payload.custom_message
     )
 
-@router.post("/reminders/send-to-guests", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
-async def send_individual_reminders(payload: IndividualReminderRequest):
+
+@router.post("/reminders/send-to-guests", tags=["Admin"])
+async def send_individual_reminders(
+    payload: IndividualReminderRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
     """
     Send SMS reminders to specific guests by their tokens.
     Used for individual reminder buttons on guest cards and bulk selections.
@@ -194,6 +203,28 @@ async def send_individual_reminders(payload: IndividualReminderRequest):
     if logs:
         await log_collection.insert_many(logs)
 
+    # Log activity for planner dashboard - group by wedding_id
+    if sent_count > 0:
+        try:
+            # Group sent logs by wedding_id
+            wedding_sent_counts: dict[str, int] = {}
+            for log in logs:
+                if log.get("status") == "success" and log.get("wedding_id"):
+                    wid = log["wedding_id"]
+                    wedding_sent_counts[wid] = wedding_sent_counts.get(wid, 0) + 1
+
+            # Log one activity per wedding
+            for wedding_id, count in wedding_sent_counts.items():
+                await activity_log_service.log_reminder_sent(
+                    wedding_id=wedding_id,
+                    recipient_count=count,
+                    reminder_type="individual",
+                    planner_email=current_user.email,
+                    channel="sms"
+                )
+        except Exception as log_err:
+            logger.warning(f"Failed to log SMS activity: {log_err}")
+
     return {
         "sent": sent_count,
         "failed": failed_count,
@@ -210,6 +241,7 @@ async def get_twilio_logs():
         raise HTTPException(status_code=503, detail="Twilio service not configured")
 
     return await twilio_reminder_service.get_logs()
+
 
 @router.get("/reminders/logs", tags=["Admin"])
 async def get_all_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):

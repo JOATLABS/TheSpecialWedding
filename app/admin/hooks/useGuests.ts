@@ -53,7 +53,7 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
     try {
       const token = localStorage.getItem('admin_token');
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/guests/${weddingId}`,
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/guests?wedding_id=${weddingId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
           signal: fetchSignal

@@ -4,10 +4,14 @@ Admin Activity Log API Endpoints
 Provides endpoints for root admins to view their activity history.
 """
 
-from fastapi import APIRouter, Depends, Query
-from typing import Optional
+from fastapi import APIRouter, Depends, Query, HTTPException
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.admin_activity_service import admin_activity_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ROOT_ADMIN"])
 
@@ -29,12 +33,24 @@ async def get_activity_log(
         action_type: Filter by action type (invitation_sent, planner_suspended, etc.)
         entity_type: Filter by entity type (invitation, planner, subscription)
     """
-    return await admin_activity_service.get_activity_log(
-        page=page,
-        limit=limit,
-        action_type=action_type,
-        entity_type=entity_type
-    )
+    try:
+        return await admin_activity_service.get_activity_log(
+            page=page,
+            limit=limit,
+            action_type=action_type,
+            entity_type=entity_type
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get activity log: {str(e)}", exc_info=True)
+        return {
+            "activities": [],
+            "total": 0,
+            "page": page,
+            "pages": 0,
+            "error": "Failed to load activity log"
+        }
 
 
 @router.get("/activity-log/recent")
@@ -48,5 +64,139 @@ async def get_recent_activities(
     Args:
         limit: Maximum number of activities to return (default 10, max 50)
     """
-    activities = await admin_activity_service.get_recent_activities(limit=limit)
-    return {"activities": activities}
+    try:
+        activities = await admin_activity_service.get_recent_activities(limit=limit)
+        return {"activities": activities}
+    except Exception as e:
+        logger.error(f"Failed to get recent activities: {str(e)}", exc_info=True)
+        return {"activities": [], "error": "Failed to load recent activities"}
+
+
+@router.delete("/activity-log/cleanup")
+async def cleanup_old_activities(
+    days: int = Query(90, ge=7, le=365, description="Delete activities older than this many days"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """
+    Clean up old admin activity log entries - ROOT_ADMIN only
+
+    This endpoint manually deletes activity log entries older than the specified
+    number of days. Note that TTL indexes also provide automatic cleanup.
+
+    Args:
+        days: Delete activities older than this many days (default 90, min 7, max 365)
+    """
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        result = await admin_activity_service.collection.delete_many({
+            "created_at": {"$lt": cutoff_date}
+        })
+
+        logger.info(
+            f"Admin activity cleanup by {current_user.email}: "
+            f"deleted {result.deleted_count} entries older than {days} days"
+        )
+
+        return {
+            "status": "success",
+            "deleted_count": result.deleted_count,
+            "cutoff_date": cutoff_date.isoformat() + "Z",
+            "days": days
+        }
+    except Exception as e:
+        logger.error(f"Failed to cleanup activity log: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to cleanup activity log: {str(e)}"
+        )
+
+
+@router.get("/activity-log/export")
+async def export_activity_log(
+    format: str = Query("json", description="Export format: json or csv"),
+    action_type: Optional[str] = Query(None, description="Filter by action type"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type"),
+    days: int = Query(90, ge=1, le=365, description="Export activities from the last N days"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+) -> Dict[str, Any]:
+    """
+    Export admin activity log for audit compliance - ROOT_ADMIN only
+
+    Args:
+        format: Export format (json or csv)
+        action_type: Filter by action type
+        entity_type: Filter by entity type
+        days: Export activities from the last N days (default 90)
+    """
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        query: Dict[str, Any] = {"created_at": {"$gte": cutoff_date}}
+
+        if action_type:
+            query["action_type"] = action_type
+
+        if entity_type:
+            query["entity_type"] = entity_type
+
+        cursor = admin_activity_service.collection.find(query).sort("created_at", -1)
+        activities = []
+
+        async for doc in cursor:
+            doc_id = doc.get("_id", "")
+            created_at = doc.get("created_at")
+            activities.append({
+                "id": str(doc_id) if doc_id else "",
+                "admin_id": doc.get("admin_id", ""),
+                "action_type": doc.get("action_type", "unknown"),
+                "title": doc.get("title", ""),
+                "message": doc.get("message", ""),
+                "entity_type": doc.get("entity_type"),
+                "entity_id": doc.get("entity_id"),
+                "metadata": doc.get("metadata", {}),
+                "is_read": doc.get("is_read", False),
+                "created_at": created_at.isoformat() if created_at else None
+            })
+
+        if format == "csv":
+            # Generate CSV content
+            import csv
+            import io
+            output = io.StringIO()
+            if activities:
+                fieldnames = ["id", "admin_id", "action_type", "title", "message",
+                              "entity_type", "entity_id", "is_read", "created_at"]
+                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writeheader()
+                writer.writerows(activities)
+
+            return {
+                "format": "csv",
+                "content": output.getvalue(),
+                "count": len(activities),
+                "exported_at": datetime.utcnow().isoformat() + "Z",
+                "filters": {
+                    "days": days,
+                    "action_type": action_type,
+                    "entity_type": entity_type
+                }
+            }
+        else:
+            return {
+                "format": "json",
+                "activities": activities,
+                "count": len(activities),
+                "exported_at": datetime.utcnow().isoformat() + "Z",
+                "filters": {
+                    "days": days,
+                    "action_type": action_type,
+                    "entity_type": entity_type
+                }
+            }
+    except Exception as e:
+        logger.error(f"Failed to export activity log: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export activity log: {str(e)}"
+        )

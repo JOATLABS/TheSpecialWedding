@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   Users,
   Wallet,
-  Settings,
   LogOut,
   ChevronLeft,
   Heart,
@@ -25,6 +24,7 @@ import {
   Calendar,
   Image,
   Package,
+  LayoutGrid,
   type LucideIcon
 } from 'lucide-react';
 
@@ -68,7 +68,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Vendors', href: '/admin/vendors', icon: Store },
   { name: 'Reminders', href: '/admin/reminders', icon: Bell },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
-  { name: 'Settings', href: '/admin/profile', icon: Settings },
+  { name: 'Seating', href: '/admin/seating', icon: LayoutGrid },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
 ];
 
