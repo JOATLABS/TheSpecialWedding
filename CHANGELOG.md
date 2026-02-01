@@ -64,6 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **QR Code Preview Not Displaying in Guest Management** (`app/admin/guests/page.tsx`):
+  - **Root cause**: The QR code modal used `<img src>` pointing directly to the authenticated API endpoint, but browsers don't send Authorization headers with image requests
+  - **Fix**: Added state variables `qrImageUrl` and `qrImageLoading` to track fetched QR image
+  - **Fix**: Added `useEffect` that fetches QR code with proper `Authorization: Bearer ${token}` header when modal opens
+  - **Fix**: Converts response blob to object URL for display in the modal
+  - **Fix**: Shows loading spinner while fetching, error state if fetch fails
+  - **Fix**: Properly cleans up blob URL when modal closes to prevent memory leaks
+
 - **Calendar Invite Download Not Working** (`app/components/RSVPForm.tsx`):
   - **Root cause 1**: Backend `EventDetailsModel.time` uses 12-hour format (`"3:00 PM"`) but frontend expected 24-hour (`"15:00"`)
   - **Root cause 2**: Backend model has no `endTime` field but frontend was trying to use it

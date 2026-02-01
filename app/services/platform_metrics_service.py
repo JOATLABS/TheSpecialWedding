@@ -12,13 +12,12 @@ import asyncio
 import inspect
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, AsyncIterator, Dict, List, Mapping, Optional, Sequence, Tuple
 
 try:  # pragma: no cover - optional Motor runtime
     from motor.motor_asyncio import AsyncIOMotorCollection
 except ImportError:  # pragma: no cover - Motor not installed in tests
-    AsyncIOMotorCollection = None  # type: ignore[assignment]
-
+    AsyncIOMotorCollection = None  # type: ignore[assignment,misc]
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
@@ -132,7 +131,7 @@ class PlatformMetricsService:
         )
 
         return {
-            "generated_at": now.isoformat(),
+            "generated_at": now.isoformat() + "Z",
             "timeframe": timeframe,
             "users": users,
             "subscriptions": subscriptions,
@@ -277,7 +276,7 @@ class PlatformMetricsService:
     ) -> Dict[str, Any]:
         weddings_collection = self._mongo.get_weddings_collection()
 
-        pipeline = [
+        pipeline: List[Dict[str, Any]] = [
             {
                 "$addFields": {
                     "event_date": {
@@ -527,7 +526,7 @@ class PlatformMetricsService:
     async def _calculate_revenue_summary(
         self, subscriptions_collection: Any, plans_collection: Any
     ) -> Dict[str, Any]:
-        pipeline = [
+        pipeline: List[Dict[str, Any]] = [
             {"$match": {"status": "active"}},
             {
                 "$lookup": {
@@ -623,7 +622,7 @@ class PlatformMetricsService:
 
         monthly_total = 0.0
         annual_total = 0.0
-        plan_breakdown: Dict[str, Dict[str, float]] = {}
+        plan_breakdown: Dict[str, Dict[str, Any]] = {}
 
         for doc in revenue_docs:
             plan_id = doc.get("_id")
@@ -631,6 +630,13 @@ class PlatformMetricsService:
             monthly = float(doc.get("monthly", 0))
             annual = float(doc.get("annual", 0))
 
+            if plan_id is None:
+                logger.warning(
+                    "Subscription with missing plan_id found during revenue calculation; "
+                    "monthly=%.2f, annual=%.2f",
+                    monthly,
+                    annual,
+                )
             key = str(plan_id) if plan_id is not None else "unknown"
             plan_breakdown[key] = {
                 "name": plan_name,
@@ -656,7 +662,7 @@ class PlatformMetricsService:
 
         monthly_total = 0.0
         annual_total = 0.0
-        plan_breakdown: Dict[str, Dict[str, float]] = {}
+        plan_breakdown: Dict[str, Dict[str, Any]] = {}
 
         async for subscription in self._iterate_documents(
             subscriptions_collection,
@@ -675,6 +681,13 @@ class PlatformMetricsService:
             )
             annual_value = price_yearly if price_yearly else monthly_value * 12
 
+            if plan_id is None:
+                logger.warning(
+                    "Subscription with missing plan_id found in revenue fallback; "
+                    "monthly=%.2f, annual=%.2f",
+                    monthly_value,
+                    annual_value,
+                )
             key = str(plan_id) if plan_id is not None else "unknown"
             plan_entry = plan_breakdown.setdefault(
                 key,
@@ -694,7 +707,7 @@ class PlatformMetricsService:
         collection: Any,
         filter_query: Mapping[str, Any],
         projection: Optional[Mapping[str, int]] = None,
-    ) -> Iterable[Mapping[str, Any]]:
+    ) -> AsyncIterator[Mapping[str, Any]]:
         cursor = collection.find(filter_query, projection)
 
         if hasattr(cursor, "__aiter__"):
@@ -709,7 +722,7 @@ class PlatformMetricsService:
             yield document
 
     async def _aggregate(
-        self, collection: Any, pipeline: List[Mapping[str, Any]]
+        self, collection: Any, pipeline: Sequence[Mapping[str, Any]]
     ) -> List[Mapping[str, Any]]:
         cursor = collection.aggregate(pipeline)
 
@@ -722,7 +735,7 @@ class PlatformMetricsService:
         return await asyncio.to_thread(sync_aggregate)
 
     async def _safe_aggregate(
-        self, collection: Any, pipeline: List[Mapping[str, Any]]
+        self, collection: Any, pipeline: Sequence[Mapping[str, Any]]
     ) -> List[Mapping[str, Any]]:
         try:
             return await self._aggregate(collection, pipeline)

@@ -24,10 +24,15 @@ except ImportError:
 
 
 def _normalize_timestamp(value: Any) -> Optional[str]:
-    """Return an ISO formatted timestamp string when possible."""
+    """Return an ISO formatted timestamp string with Z suffix for UTC indication."""
     if isinstance(value, datetime):
-        return value.isoformat()
+        # Add Z suffix to indicate UTC time (critical for correct frontend timezone conversion)
+        iso_str = value.isoformat()
+        return iso_str if iso_str.endswith("Z") else iso_str + "Z"
     if isinstance(value, str):
+        # Ensure existing strings have Z suffix if they look like UTC timestamps
+        if value and not value.endswith("Z") and "+" not in value and "-" not in value[-6:]:
+            return value + "Z"
         return value
     return None
 
@@ -95,9 +100,10 @@ def _extract_error_summary(error: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
-    """Return detailed error document compatible with admin UI expectations."""
+    """Return detailed error document with full debugging information for root admin."""
     summary = _extract_error_summary(error)
     request_info = error.get("request", {})
+    user_info = error.get("user", {})
 
     normalized_request: Optional[Dict[str, Any]] = None
 
@@ -118,6 +124,7 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
 
         headers = request_info.get("headers")
         if headers is not None:
+            # Filter out potentially sensitive headers already done in error_handler
             normalized_request["headers"] = headers
     elif summary.get("endpoint"):
         normalized_request = {
@@ -129,11 +136,38 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
             "query_params": error.get("query_params"),
         }
 
+    # Get the full stack trace for debugging
+    stack_trace = error.get("stack_trace", "")
+    if not stack_trace:
+        # Try alternative field names
+        stack_trace = error.get("traceback", "") or error.get("exception_traceback", "")
+
+    # Extract response payload for debugging
+    response_payload = error.get("response", {})
+    if isinstance(response_payload, dict):
+        response_info = {
+            "status_code": response_payload.get("error", {}).get("code") or summary.get("status_code"),
+            "error_code": response_payload.get("error", {}).get("code"),
+            "response_message": response_payload.get("error", {}).get("message"),
+        }
+    else:
+        response_info = None
+
     detail = {
         **summary,
-        "stack_trace": error.get("stack_trace", ""),
+        "stack_trace": stack_trace,
         "request": normalized_request,
+        "response": response_info,
         "context": error.get("context"),
+        # Additional debugging information
+        "environment": error.get("environment"),
+        "user_authenticated": user_info.get("authenticated", False) if user_info else None,
+        "error_source": error.get("source", "backend"),
+        "metadata": error.get("metadata"),
+        # Full error message (unsanitized for root admin)
+        "full_error_message": error.get("error_message") or error.get("message"),
+        # Original exception type
+        "exception_type": error.get("error_type") or type(error).__name__,
     }
 
     # Preserve any acknowledgement metadata if present
@@ -145,7 +179,66 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 detail[key] = value
 
+    # Add troubleshooting hints based on error type
+    detail["troubleshooting_hints"] = _generate_troubleshooting_hints(detail)
+
     return detail
+
+
+def _generate_troubleshooting_hints(error_detail: Dict[str, Any]) -> List[str]:
+    """Generate contextual troubleshooting hints based on error details."""
+    hints: List[str] = []
+    error_type = error_detail.get("exception_type", "")
+    status_code = error_detail.get("status_code")
+    endpoint = error_detail.get("endpoint", "")
+    stack_trace = error_detail.get("stack_trace", "")
+
+    # Status code based hints
+    if status_code == 401:
+        hints.append("Check if the authentication token is valid and not expired")
+        hints.append("Verify the user has the correct permissions for this endpoint")
+    elif status_code == 403:
+        hints.append("User is authenticated but lacks permission for this action")
+        hints.append("Check role-based access control settings")
+    elif status_code == 404:
+        hints.append("Verify the requested resource exists in the database")
+        hints.append("Check if the URL path and parameters are correct")
+    elif status_code == 500:
+        hints.append("Review the stack trace for the root cause")
+        hints.append("Check server logs for additional context around this timestamp")
+
+    # Error type based hints
+    if "Database" in error_type or "Mongo" in error_type:
+        hints.append("Check database connection and credentials")
+        hints.append("Verify MongoDB is running and accessible")
+    elif "Timeout" in error_type or "timeout" in str(stack_trace).lower():
+        hints.append("Check for slow database queries or external API calls")
+        hints.append("Consider increasing timeout limits or optimizing the operation")
+    elif "Key" in error_type or "Attribute" in error_type:
+        hints.append("Check for missing required fields in the request or database document")
+        hints.append("Verify the data structure matches expected schema")
+    elif "Validation" in error_type:
+        hints.append("Check the request payload against the API schema")
+        hints.append("Verify all required fields are provided and have correct types")
+
+    # Endpoint specific hints
+    if "/webhook/" in endpoint:
+        hints.append("Verify webhook signature and payload format")
+        hints.append("Check webhook configuration in the external service")
+    elif "/ai/" in endpoint:
+        hints.append("Check AI service API key and rate limits")
+        hints.append("Verify the AI service is operational")
+    elif "/auth/" in endpoint:
+        hints.append("Check authentication service configuration")
+        hints.append("Verify OAuth/JWT settings if applicable")
+
+    # Default hints if none generated
+    if not hints:
+        hints.append("Review the stack trace above to identify the source of the error")
+        hints.append("Check application logs for additional context around this timestamp")
+        hints.append("Verify the request parameters and endpoint configuration")
+
+    return hints
 
 
 async def _check_twilio_health(since: datetime) -> Dict[str, Any]:
@@ -563,41 +656,116 @@ async def get_platform_health(
 
         # ==================== PERFORMANCE METRICS ====================
 
-        # Get slow requests from audit_logs
-        slow_endpoint_pipeline = [
+        # Get comprehensive endpoint performance metrics from audit_logs
+        endpoint_performance_pipeline = [
             {
                 "$match": {
                     "timestamp": {"$gte": day_ago},
-                    "response_time_ms": {"$exists": True, "$gte": 1000}  # >1 second
+                    "response_time_ms": {"$exists": True},
+                    "path": {"$exists": True, "$ne": None}
                 }
             },
             {
                 "$group": {
                     "_id": "$path",
-                    "avg_response_time": {"$avg": "$response_time_ms"},
-                    "max_response_time": {"$max": "$response_time_ms"},
-                    "request_count": {"$sum": 1}
+                    "avg_response_time_ms": {"$avg": "$response_time_ms"},
+                    "min_response_time_ms": {"$min": "$response_time_ms"},
+                    "max_response_time_ms": {"$max": "$response_time_ms"},
+                    "total_requests": {"$sum": 1},
+                    "error_count": {
+                        "$sum": {
+                            "$cond": [{"$gte": ["$response_status", 400]}, 1, 0]
+                        }
+                    },
+                    "response_times": {"$push": "$response_time_ms"}
                 }
             },
             {
-                "$sort": {"avg_response_time": -1}
+                "$match": {
+                    "total_requests": {"$gte": 1}
+                }
             },
             {
-                "$limit": 10
+                "$sort": {"avg_response_time_ms": -1}
+            },
+            {
+                "$limit": 20
             }
         ]
 
-        slow_cursor = mongo.db["audit_logs"].aggregate(slow_endpoint_pipeline)
-        slow_endpoints_raw = await slow_cursor.to_list(length=10)
+        perf_cursor = mongo.db["audit_logs"].aggregate(endpoint_performance_pipeline)
+        endpoint_metrics_raw = await perf_cursor.to_list(length=20)
 
+        # Calculate percentiles and format response
+        endpoint_performance: List[Dict[str, Any]] = []
         slow_endpoints: List[Dict[str, Any]] = []
-        for endpoint in slow_endpoints_raw:
-            slow_endpoints.append({
+
+        for endpoint in endpoint_metrics_raw:
+            response_times = sorted(endpoint.get("response_times", []))
+            total_requests = endpoint.get("total_requests", 0)
+            error_count = endpoint.get("error_count", 0)
+
+            # Calculate percentiles
+            p50 = response_times[int(len(response_times) * 0.5)] if response_times else 0
+            p95 = response_times[int(len(response_times) * 0.95)] if response_times else 0
+            p99 = response_times[int(len(response_times) * 0.99)] if response_times else 0
+
+            avg_ms = endpoint.get("avg_response_time_ms", 0)
+            max_ms = endpoint.get("max_response_time_ms", 0)
+            error_rate = (error_count / total_requests * 100) if total_requests > 0 else 0
+
+            # Determine performance status
+            if avg_ms > 1000:
+                status = "critical"
+            elif avg_ms > 500:
+                status = "warning"
+            elif avg_ms > 200:
+                status = "moderate"
+            else:
+                status = "healthy"
+
+            perf_entry = {
                 "endpoint": endpoint.get("_id"),
-                "avg_response_time": round(endpoint.get("avg_response_time", 0) / 1000, 3),
-                "max_response_time": round(endpoint.get("max_response_time", 0) / 1000, 3),
-                "request_count": endpoint.get("request_count", 0),
-            })
+                "avg_response_time_ms": round(avg_ms, 1),
+                "min_response_time_ms": round(endpoint.get("min_response_time_ms", 0), 1),
+                "max_response_time_ms": round(max_ms, 1),
+                "p50_ms": round(p50, 1),
+                "p95_ms": round(p95, 1),
+                "p99_ms": round(p99, 1),
+                "request_count": total_requests,
+                "error_count": error_count,
+                "error_rate": round(error_rate, 2),
+                "status": status
+            }
+            endpoint_performance.append(perf_entry)
+
+            # Track slow endpoints separately (>500ms avg or >1s max)
+            if avg_ms > 500 or max_ms > 1000:
+                slow_endpoints.append(perf_entry)
+
+        # Get overall performance summary
+        total_requests_24h = sum(ep.get("request_count", 0) for ep in endpoint_performance)
+        total_errors_24h = sum(ep.get("error_count", 0) for ep in endpoint_performance)
+        overall_error_rate = (total_errors_24h / total_requests_24h * 100) if total_requests_24h > 0 else 0
+
+        # Calculate overall average response time
+        overall_avg_pipeline = [
+            {
+                "$match": {
+                    "timestamp": {"$gte": day_ago},
+                    "response_time_ms": {"$exists": True}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "avg_response_time_ms": {"$avg": "$response_time_ms"}
+                }
+            }
+        ]
+        overall_cursor = mongo.db["audit_logs"].aggregate(overall_avg_pipeline)
+        overall_result = await overall_cursor.to_list(length=1)
+        overall_avg_ms = overall_result[0].get("avg_response_time_ms", 0) if overall_result else 0
 
         # ==================== WEDDING METRICS ====================
 
@@ -626,7 +794,8 @@ async def get_platform_health(
 
         # ==================== COMPILE RESPONSE ====================
 
-        generated_at = now.isoformat()
+        # Use Z suffix to indicate UTC time (critical for correct frontend timezone conversion)
+        generated_at = now.isoformat() + "Z"
 
         return {
             "generated_at": generated_at,
@@ -665,6 +834,15 @@ async def get_platform_health(
                 "active_weddings": active_weddings
             },
             "performance": {
+                "summary": {
+                    "total_requests_24h": total_requests_24h,
+                    "total_errors_24h": total_errors_24h,
+                    "overall_error_rate": round(overall_error_rate, 2),
+                    "overall_avg_response_time_ms": round(overall_avg_ms, 1),
+                    "slow_endpoint_count": len(slow_endpoints),
+                    "monitored_endpoint_count": len(endpoint_performance)
+                },
+                "endpoints": endpoint_performance,
                 "slow_endpoints": slow_endpoints
             },
             "services": {
@@ -713,7 +891,7 @@ async def get_metrics_history(
         if "_id" in record:
             record["_id"] = str(record["_id"])
         if "snapshot_time" in record and isinstance(record["snapshot_time"], datetime):
-            record["snapshot_time"] = record["snapshot_time"].isoformat()
+            record["snapshot_time"] = record["snapshot_time"].isoformat() + "Z"
 
     return {
         "history": history,
@@ -828,7 +1006,7 @@ async def save_metrics_snapshot(
     return {
         "status": "success",
         "snapshot_id": str(result.inserted_id),
-        "timestamp": snapshot["snapshot_time"].isoformat(),
+        "timestamp": snapshot["snapshot_time"].isoformat() + "Z",
         "metrics": metrics_summary,
     }
 
@@ -1046,32 +1224,36 @@ async def acknowledge_error(
     error_id: str,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
-    """Mark an error as acknowledged"""
+    """Mark an error as acknowledged in errors or audit_logs collection"""
 
     try:
-        # Update in errors collection
+        acknowledged_at = datetime.utcnow()
+        update_payload = {
+            "$set": {
+                "acknowledged": True,
+                "acknowledged_by": current_user.email,
+                "acknowledged_at": acknowledged_at
+            }
+        }
+
+        # Try errors collection first - by error_id field
         result = await mongo.db["errors"].update_one(
             {"error_id": error_id},
-            {
-                "$set": {
-                    "acknowledged": True,
-                    "acknowledged_by": current_user.email,
-                    "acknowledged_at": datetime.utcnow()
-                }
-            }
+            update_payload
         )
 
+        # Try errors collection by ObjectId if not found
         if result.modified_count == 0 and ObjectId.is_valid(error_id):
-            # Try by ObjectId
             result = await mongo.db["errors"].update_one(
                 {"_id": ObjectId(error_id)},
-                {
-                    "$set": {
-                        "acknowledged": True,
-                        "acknowledged_by": current_user.email,
-                        "acknowledged_at": datetime.utcnow()
-                    }
-                }
+                update_payload
+            )
+
+        # Try audit_logs collection as fallback (these only have _id, not error_id)
+        if result.modified_count == 0 and ObjectId.is_valid(error_id):
+            result = await mongo.db["audit_logs"].update_one(
+                {"_id": ObjectId(error_id)},
+                update_payload
             )
 
         if result.modified_count == 0:
@@ -1080,9 +1262,12 @@ async def acknowledge_error(
         return {
             "status": "success",
             "acknowledged": True,
-            "acknowledged_by": current_user.email
+            "acknowledged_by": current_user.email,
+            "acknowledged_at": acknowledged_at.isoformat() + "Z"
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to acknowledge error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1097,33 +1282,48 @@ async def acknowledge_errors_bulk(
     request: BulkAcknowledgeRequest,
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
-    """Acknowledge multiple errors in a single operation"""
+    """Acknowledge multiple errors in both errors and audit_logs collections"""
 
     try:
+        acknowledged_at = datetime.utcnow()
+        update_payload = {
+            "$set": {
+                "acknowledged": True,
+                "acknowledged_by": current_user.email,
+                "acknowledged_at": acknowledged_at
+            }
+        }
+
         # Build filter for both error_id and ObjectId matches
         object_ids = [ObjectId(eid) for eid in request.error_ids if ObjectId.is_valid(eid)]
 
-        result = await mongo.db["errors"].update_many(
+        # Update errors collection (supports both error_id field and _id)
+        errors_result = await mongo.db["errors"].update_many(
             {
                 "$or": [
                     {"error_id": {"$in": request.error_ids}},
                     {"_id": {"$in": object_ids}}
                 ]
             },
-            {
-                "$set": {
-                    "acknowledged": True,
-                    "acknowledged_by": current_user.email,
-                    "acknowledged_at": datetime.utcnow()
-                }
-            }
+            update_payload
         )
+
+        # Update audit_logs collection (only has _id, not error_id field)
+        audit_result = await mongo.db["audit_logs"].update_many(
+            {"_id": {"$in": object_ids}},
+            update_payload
+        )
+
+        total_acknowledged = errors_result.modified_count + audit_result.modified_count
 
         return {
             "status": "success",
-            "acknowledged_count": result.modified_count,
+            "acknowledged_count": total_acknowledged,
+            "errors_acknowledged": errors_result.modified_count,
+            "audit_logs_acknowledged": audit_result.modified_count,
             "requested_count": len(request.error_ids),
-            "acknowledged_by": current_user.email
+            "acknowledged_by": current_user.email,
+            "acknowledged_at": acknowledged_at.isoformat() + "Z"
         }
 
     except Exception as e:
@@ -1153,5 +1353,5 @@ async def cleanup_old_errors(
     return {
         "status": "success",
         "deleted_count": result.deleted_count,
-        "cutoff_date": cutoff_date.isoformat()
+        "cutoff_date": cutoff_date.isoformat() + "Z"
     }

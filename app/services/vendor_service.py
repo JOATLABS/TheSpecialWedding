@@ -16,6 +16,7 @@ from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
 import stripe
 
 from app.core.database import mongo
@@ -80,12 +81,13 @@ class VendorService:
         # Services
         self.email_service = ResendEmailService()
 
-        # S3 Client for document storage
+        # S3 Client for document storage (Cloudflare R2 requires s3v4 signature)
         self.s3 = boto3.client(
             "s3",
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
+            config=Config(signature_version='s3v4'),
         )
         self.bucket_name = os.getenv("S3_BUCKET_NAME")
         self.media_domain = MEDIA_DOMAIN or ""

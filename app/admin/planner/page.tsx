@@ -590,6 +590,7 @@ export default function WeddingPlannerDashboard() {
  activity.type === 'rsvp_received' ? 'bg-green-500' :
  activity.type === 'guest_updated' ? 'bg-blue-500' :
  activity.type === 'email_sent' ? 'bg-yellow-500' :
+ activity.type === 'support_ticket_created' ? 'bg-red-500' :
  'bg-purple-500'
  }`}></div>
  <div>

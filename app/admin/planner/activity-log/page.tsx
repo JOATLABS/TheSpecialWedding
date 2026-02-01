@@ -81,6 +81,8 @@ export default function PlannerActivityLogPage() {
         ? 'bg-blue-500'
         : type === 'email_sent'
         ? 'bg-yellow-500'
+        : type === 'support_ticket_created'
+        ? 'bg-red-500'
         : 'bg-purple-500';
     return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
   };

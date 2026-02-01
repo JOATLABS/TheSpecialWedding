@@ -284,6 +284,17 @@ class NotificationService:
     async def get_user_notifications(self, user_email: str, user_role: str, page: int = 1, limit: int = 20, unread_only: bool = False) -> dict:
         """Get notifications for a specific user"""
         try:
+            # Build target audience conditions
+            audience_conditions = [
+                {"target_audience": "all"},
+                {"target_audience": user_role + "s"},  # wedding_planner -> wedding_planners
+                {"user_id": user_email}  # Direct user targeting
+            ]
+
+            # ROOT_ADMIN should also see notifications targeted to "root_admin"
+            if user_role == "ROOT_ADMIN":
+                audience_conditions.append({"target_audience": "root_admin"})
+
             # Build query for user-specific notifications
             query = {
                 "$and": [
@@ -299,13 +310,7 @@ class NotificationService:
                         ]
                     },
                     # Check target audience
-                    {
-                        "$or": [
-                            {"target_audience": "all"},
-                            {"target_audience": user_role + "s"},  # wedding_planner -> wedding_planners
-                            {"user_id": user_email}  # Direct user targeting
-                        ]
-                    }
+                    {"$or": audience_conditions}
                 ]
             }
 
@@ -475,6 +480,17 @@ class NotificationService:
     async def get_user_notification_count(self, user_email: str, user_role: str) -> dict:
         """Get notification count for user"""
         try:
+            # Build target audience conditions
+            audience_conditions = [
+                {"target_audience": "all"},
+                {"target_audience": user_role + "s"},
+                {"user_id": user_email}
+            ]
+
+            # ROOT_ADMIN should also see notifications targeted to "root_admin"
+            if user_role == "ROOT_ADMIN":
+                audience_conditions.append({"target_audience": "root_admin"})
+
             # Query for user notifications
             query = {
                 "$and": [
@@ -488,13 +504,7 @@ class NotificationService:
                             {"expiry_date": {"$gt": datetime.utcnow()}}
                         ]
                     },
-                    {
-                        "$or": [
-                            {"target_audience": "all"},
-                            {"target_audience": user_role + "s"},
-                            {"user_id": user_email}
-                        ]
-                    },
+                    {"$or": audience_conditions},
                     {"dismissed_by.user_id": {"$ne": user_email}}
                 ]
             }

@@ -71,13 +71,31 @@ interface ErrorMetrics {
   recent_errors: ErrorSummary[];
 }
 
+interface EndpointPerformance {
+  endpoint: string;
+  avg_response_time_ms: number;
+  min_response_time_ms: number;
+  max_response_time_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+  request_count: number;
+  error_count: number;
+  error_rate: number;
+  status: 'healthy' | 'moderate' | 'warning' | 'critical';
+}
+
 interface PerformanceMetrics {
-  slow_endpoints: Array<{
-    endpoint: string;
-    avg_response_time: number;
-    max_response_time: number;
-    request_count: number;
-  }>;
+  summary?: {
+    total_requests_24h: number;
+    total_errors_24h: number;
+    overall_error_rate: number;
+    overall_avg_response_time_ms: number;
+    slow_endpoint_count: number;
+    monitored_endpoint_count: number;
+  };
+  endpoints?: EndpointPerformance[];
+  slow_endpoints: EndpointPerformance[];
 }
 
 interface BackupStatus {
@@ -1058,41 +1076,99 @@ export default function PlatformInfrastructurePage() {
 
       {activeTab === 'performance' && (
         <div className="space-y-6">
-          {(metrics.performance?.slow_endpoints?.length ?? 0) > 0 ? (
+          {/* Performance Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Requests (24h)</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {(metrics.performance?.summary?.total_requests_24h ?? 0).toLocaleString()}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Avg Response Time</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {(metrics.performance?.summary?.overall_avg_response_time_ms ?? 0).toFixed(0)}ms
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Error Rate</p>
+              <p className={`text-2xl font-bold ${(metrics.performance?.summary?.overall_error_rate ?? 0) > 5 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                {(metrics.performance?.summary?.overall_error_rate ?? 0).toFixed(2)}%
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Slow Endpoints</p>
+              <p className={`text-2xl font-bold ${(metrics.performance?.summary?.slow_endpoint_count ?? 0) > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
+                {metrics.performance?.summary?.slow_endpoint_count ?? 0}
+              </p>
+            </Card>
+          </div>
+
+          {/* All Endpoints Performance Table */}
+          {(metrics.performance?.endpoints?.length ?? 0) > 0 ? (
             <Card className="overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-800">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Slow Endpoints (&gt;1s avg response time)</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  Endpoint Performance (Top {metrics.performance?.endpoints?.length ?? 0} by response time)
+                </h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Avg Duration</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Max Duration</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Requests</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Avg</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">P95</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">P99</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Max</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Requests</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Rate</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700">
-                    {(metrics.performance?.slow_endpoints ?? []).map((endpoint, idx) => (
-                      <tr key={endpoint.endpoint ?? idx}>
-                        <td className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100">{endpoint.endpoint}</td>
-                        <td className="px-6 py-4 text-sm">
-                          <span className="font-semibold text-orange-600 dark:text-orange-400">{endpoint.avg_response_time.toFixed(3)}s</span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{endpoint.max_response_time.toFixed(3)}s</td>
-                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{endpoint.request_count}</td>
-                      </tr>
-                    ))}
+                    {(metrics.performance?.endpoints ?? []).map((endpoint, idx) => {
+                      const statusColors: Record<string, string> = {
+                        healthy: 'bg-green-500',
+                        moderate: 'bg-yellow-500',
+                        warning: 'bg-orange-500',
+                        critical: 'bg-red-500'
+                      };
+                      const statusColor = statusColors[endpoint.status] || 'bg-gray-500';
+                      return (
+                        <tr key={endpoint.endpoint ?? idx} className={endpoint.status === 'critical' ? 'bg-red-50 dark:bg-red-950/20' : ''}>
+                          <td className="px-4 py-3">
+                            <span className={`inline-block w-3 h-3 rounded-full ${statusColor}`} title={endpoint.status} />
+                          </td>
+                          <td className="px-4 py-3 text-sm font-mono text-gray-900 dark:text-gray-100 max-w-xs truncate" title={endpoint.endpoint}>
+                            {endpoint.endpoint}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <span className={endpoint.status === 'critical' ? 'font-semibold text-red-600 dark:text-red-400' : endpoint.status === 'warning' ? 'font-semibold text-orange-600 dark:text-orange-400' : 'text-gray-700 dark:text-gray-300'}>
+                              {endpoint.avg_response_time_ms.toFixed(0)}ms
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{endpoint.p95_ms.toFixed(0)}ms</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{endpoint.p99_ms.toFixed(0)}ms</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{endpoint.max_response_time_ms.toFixed(0)}ms</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{endpoint.request_count.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-sm">
+                            <span className={endpoint.error_rate > 5 ? 'text-red-600 dark:text-red-400 font-semibold' : endpoint.error_rate > 1 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}>
+                              {endpoint.error_rate.toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </Card>
           ) : (
             <Card className="p-12 text-center">
-              <Zap className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">All Endpoints Performing Well</h3>
-              <p className="text-gray-600 dark:text-gray-400">No slow endpoints detected. All requests are within acceptable response times.</p>
+              <Zap className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">No Performance Data Available</h3>
+              <p className="text-gray-600 dark:text-gray-400">Performance metrics will appear once requests are logged to the audit system.</p>
             </Card>
           )}
         </div>

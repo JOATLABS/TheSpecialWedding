@@ -183,7 +183,12 @@ export default function SupportPage() {
 
     try {
       setCreating(true);
-      await apiRequest('/admin/tickets', 'POST', newTicket);
+      const result = await apiRequest<{ id: string; ticket_number: string; message: string }>('/admin/tickets', 'POST', newTicket);
+
+      // Validate the response contains expected fields
+      if (!result || !result.ticket_number) {
+        throw new Error('Failed to create ticket - invalid response from server');
+      }
 
       // Reset form and close modal
       setNewTicket({
@@ -194,10 +199,10 @@ export default function SupportPage() {
       });
       setShowCreateModal(false);
 
-      // Refresh tickets list
-      fetchData();
+      // Refresh tickets list - await to ensure list updates before showing success
+      await fetchData();
 
-      alert('Support ticket created successfully! Our team will respond soon.');
+      alert(`Support ticket ${result.ticket_number} created successfully! Our team will respond soon.`);
     } catch (error) {
       console.error('Error creating ticket:', error);
       alert('Failed to create support ticket. Please try again.');

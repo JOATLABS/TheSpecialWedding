@@ -5,6 +5,7 @@ import logging
 from urllib.parse import urlparse
 from io import BytesIO
 from botocore.exceptions import ClientError
+from botocore.config import Config
 from fastapi import HTTPException, UploadFile
 from datetime import datetime
 from fastapi.responses import StreamingResponse
@@ -25,6 +26,7 @@ class GalleryUploadService:
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
+            config=Config(signature_version='s3v4'),
         )
 
     def create_presigned_url(self, filename: str, expires_in: int = 300):
@@ -70,6 +72,8 @@ class GalleryUploadService:
             self.s3.delete_object(Bucket=self.bucket_name, Key=key)
             return {"message": "File deleted successfully"}
         except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"S3 delete error ({error_code}): {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
 
     def list_uploaded_files(self, prefix: str = "gallery/"):
@@ -77,7 +81,7 @@ class GalleryUploadService:
             response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
             if 'Contents' not in response:
                 return []
-            
+
             # Use custom domain for public access instead of presigned URLs
             files = [
                 {
@@ -88,6 +92,8 @@ class GalleryUploadService:
             ]
             return sorted(files, key=lambda x: x["key"], reverse=True)
         except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"S3 list error ({error_code}): {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error listing files: {str(e)}")
 
     def generate_qr_code(self, url: str):
@@ -132,5 +138,7 @@ class GalleryUploadService:
             self.s3.upload_fileobj(file.file, self.bucket_name, key)
             return {"message": "File uploaded successfully", "key": key}
         except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"S3 upload error ({error_code}): {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 

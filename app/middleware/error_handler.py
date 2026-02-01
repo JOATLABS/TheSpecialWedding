@@ -180,7 +180,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "error": {
                     "code": "IP_BLOCKED",
                     "message": "Your IP has been temporarily blocked due to excessive errors. Please try again later.",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
                     "retry_after": 3600,
                 }
             },
