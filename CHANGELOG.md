@@ -71,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Modified `add_comment()` method**: Now triggers notification when ROOT_ADMIN responds (excludes internal comments and self-responses)
   - **Email notification**: New `_send_ticket_response_email()` method sends formatted HTML email to planner with ticket details and response content
   - **Activity logging**: Comments are now logged to `activity_logs` collection for audit trail
-  - **Frontend**: Added `support_ticket_response` to TypeScript interface with teal color indicator
+  - **Frontend**: Added `support_ticket_response` to TypeScript interface with teal color indicator and legend entry
   - **Flow**: ROOT_ADMIN adds comment → In-app notification + Email + Web Push (automatic via existing service) → Planner sees response in bell icon and receives email
   - **Guards**: Only non-internal comments trigger notifications; planner's own follow-up comments don't trigger self-notification
 
