@@ -64,6 +64,50 @@ class SupportService:
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create ticket")
 
+            logger.info(f"Support ticket {ticket_number} created successfully by {created_by}")
+
+            # Log activity for planner dashboard (activity_logs collection)
+            try:
+                activity_logs_collection = mongo.db["activity_logs"]
+                await activity_logs_collection.insert_one({
+                    "type": "support_ticket_created",
+                    "message": f"Support ticket created: {ticket['subject'][:50]}",
+                    "timestamp": datetime.utcnow(),
+                    "created_at": datetime.utcnow(),
+                    "planner_email": created_by,
+                    "actor_email": created_by,
+                    "metadata": {
+                        "ticket_number": ticket_number,
+                        "ticket_id": str(result.inserted_id),
+                        "priority": ticket['priority'],
+                        "category": ticket['category']
+                    }
+                })
+                logger.info(f"Activity logged for support ticket {ticket_number}")
+            except Exception as activity_error:
+                logger.error(f"Failed to log activity for ticket {ticket_number}: {str(activity_error)}")
+                # Don't fail ticket creation if activity logging fails
+
+            # Create in-app notification for ROOT_ADMIN
+            try:
+                from app.services.notification_service import NotificationService
+                notification_service = NotificationService()
+                await notification_service.create_notification(
+                    notification_data={
+                        "title": f"New Support Ticket: {ticket['subject'][:50]}",
+                        "message": f"Ticket #{ticket_number} from {created_by} - Priority: {ticket['priority'].upper()}",
+                        "type": "support_ticket",
+                        "target_audience": "root_admin",
+                        "is_dismissible": True,
+                        "priority": "high" if ticket['priority'] in ['urgent', 'high'] else "medium"
+                    },
+                    created_by="system"
+                )
+                logger.info(f"In-app notification created for support ticket {ticket_number}")
+            except Exception as notif_error:
+                logger.error(f"Failed to create notification for ticket {ticket_number}: {str(notif_error)}")
+                # Don't fail ticket creation if notification fails
+
             # Send email notification to root admin
             try:
                 await self._send_new_ticket_notification(ticket, created_by)

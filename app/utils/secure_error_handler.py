@@ -60,7 +60,7 @@ class SecureErrorHandler:
             "error": {
                 "code": exc.error_code,
                 "message": sanitized_message,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "error_id": error_id
             }
         }
@@ -111,7 +111,7 @@ class SecureErrorHandler:
             "error": {
                 "code": self._get_error_code_from_status(status_code),
                 "message": secure_message,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "error_id": error_id
             }
         }
@@ -146,7 +146,7 @@ class SecureErrorHandler:
             "error": {
                 "code": "VALIDATION_ERROR",
                 "message": "Input validation failed",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "error_id": error_id,
                 "details": sanitized_errors
             }
@@ -170,7 +170,7 @@ class SecureErrorHandler:
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
                 "message": "An unexpected error occurred. Please try again later.",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "error_id": error_id
             }
         }
@@ -292,7 +292,7 @@ class SecureErrorHandler:
         try:
             error_details = {
                 "error_id": error_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "exception_type": type(exc).__name__,
                 "exception_message": str(exc),
                 "path": str(request.url.path),
@@ -315,7 +315,7 @@ class SecureErrorHandler:
         """Log security-related events"""
 
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
             "event_type": event_type,
             "severity": "WARNING",
             "details": details

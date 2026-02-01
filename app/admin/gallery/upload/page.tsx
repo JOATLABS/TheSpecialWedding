@@ -310,7 +310,7 @@ export default function AdminGalleryUploadPage() {
                               try {
                                 const base = getApiBaseUrl();
                                 const res = await fetch(
-                                  `${base}/gallery?key=${encodeURIComponent(
+                                  `${base}/admin/gallery?key=${encodeURIComponent(
                                     'gallery/' + key
                                   )}`,
                                   {

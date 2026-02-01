@@ -22,8 +22,11 @@ from app.services.ai_service import (
     AIServiceUnavailableError,
     AIQuotaExceededError,
     AITimeoutError,
-    AIInvalidResponseError
+    AIInvalidResponseError,
+    MODEL_PRIMARY,
+    MODEL_ECONOMY
 )
+from app.core.settings import settings
 from app.dependencies.auth_extended import require_admin_or_planner, check_wedding_access, ExtendedAuthUser
 from app.core.database import mongo
 from bson import ObjectId
@@ -512,6 +515,17 @@ async def get_budget_insights(
     Returns 3 actionable insights about the budget allocation.
     Cost: 3 credits
     """
+    # Check if AI service is properly initialized
+    if not ai_service._client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_not_configured",
+                "message": "AI service is not configured. Please contact the administrator.",
+                "hint": "GEMINI_API_KEY environment variable may be missing."
+            }
+        )
+
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 
@@ -621,6 +635,17 @@ async def get_dashboard_insights(
 
     Cost: 2 credits
     """
+    # Check if AI service is properly initialized
+    if not ai_service._client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_not_configured",
+                "message": "AI service is not configured. Please contact the administrator.",
+                "hint": "GEMINI_API_KEY environment variable may be missing."
+            }
+        )
+
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 
@@ -1878,6 +1903,17 @@ async def chat_with_ai(
     - 1 credit per message
     - Culturally-aware responses when wedding context is provided
     """
+    # Check if AI service is properly initialized
+    if not ai_service._client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_not_configured",
+                "message": "AI service is not configured. Please contact the administrator.",
+                "hint": "GEMINI_API_KEY environment variable may be missing."
+            }
+        )
+
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 
@@ -2144,3 +2180,48 @@ async def generate_form_questions(
     except Exception as e:
         logger.error(f"Error generating form questions: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate form questions")
+
+
+# =========================================================================
+# AI HEALTH CHECK (Diagnostic Endpoint)
+# =========================================================================
+
+@router.get("/health")
+async def ai_health_check(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Check AI service health and configuration status.
+
+    Returns diagnostic information about the AI service:
+    - Whether AI is enabled (API key configured)
+    - Whether the Gemini client initialized successfully
+    - API connection status (if client is initialized)
+
+    Cost: 0 credits (diagnostic only)
+    """
+    status = {
+        "ai_enabled": settings.ai_enabled,
+        "api_key_configured": bool(settings.ai_api_key),
+        "client_initialized": ai_service._client is not None,
+        "primary_model": MODEL_PRIMARY,
+        "economy_model": MODEL_ECONOMY,
+    }
+
+    # Try a lightweight API test if client is initialized
+    if ai_service._client:
+        try:
+            # List models to verify API key works (synchronous call)
+            models_response = ai_service._client.models.list()
+            models = list(models_response)
+            status["api_connection"] = "ok"
+            status["available_models"] = len(models)
+        except Exception as e:
+            status["api_connection"] = "error"
+            status["api_error"] = str(e)
+            logger.error(f"AI health check - API connection error: {str(e)}")
+    else:
+        status["api_connection"] = "not_initialized"
+        status["api_error"] = "Gemini client not initialized. Check GEMINI_API_KEY environment variable."
+
+    return status

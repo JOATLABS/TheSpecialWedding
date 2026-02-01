@@ -168,6 +168,8 @@ export default function AdminGuestsPage() {
 
   // QR preview modal state
   const [qrModalGuest, setQrModalGuest] = useState<Guest | null>(null);
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [qrImageLoading, setQrImageLoading] = useState(false);
 
   // Export dropdown state
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -263,6 +265,53 @@ export default function AdminGuestsPage() {
       setSelectAll(false);
     }
   }, [fetchGuestData, selectedWedding]);
+
+  // Fetch QR code with authentication when modal opens
+  useEffect(() => {
+    if (!qrModalGuest || !selectedWedding || !token) {
+      setQrImageUrl(null);
+      return;
+    }
+
+    const fetchQrCode = async () => {
+      setQrImageLoading(true);
+      try {
+        const guestId = qrModalGuest.id || qrModalGuest._id;
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+        const response = await fetch(
+          `${baseUrl}/admin/guests/${guestId}/qr?wedding_id=${selectedWedding}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch QR code');
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        setQrImageUrl(url);
+      } catch (err) {
+        console.error('Error fetching QR code:', err);
+        setQrImageUrl(null);
+      } finally {
+        setQrImageLoading(false);
+      }
+    };
+
+    fetchQrCode();
+
+    // Cleanup blob URL when modal closes
+    return () => {
+      if (qrImageUrl) {
+        URL.revokeObjectURL(qrImageUrl);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrModalGuest, selectedWedding, token]);
 
   // ==================== HELPER FUNCTIONS ====================
 
@@ -2256,11 +2305,24 @@ export default function AdminGuestsPage() {
 
               {/* QR Code Image */}
               <div className="flex justify-center mb-4">
-                <img
-                  src={`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/admin/guests/${qrModalGuest.id || qrModalGuest._id}/qr?wedding_id=${selectedWedding}`}
-                  alt={`QR Code for ${qrModalGuest.name}`}
-                  className="w-48 h-48 border border-gray-200 dark:border-slate-600 rounded-lg bg-white"
-                />
+                <div className="w-48 h-48 border border-gray-200 dark:border-slate-600 rounded-lg bg-white flex items-center justify-center">
+                  {qrImageLoading ? (
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                  ) : qrImageUrl ? (
+                    <img
+                      src={qrImageUrl}
+                      alt={`QR Code for ${qrModalGuest.name}`}
+                      className="w-full h-full rounded-lg"
+                    />
+                  ) : (
+                    <div className="text-gray-400 text-sm text-center px-4">
+                      <svg className="w-8 h-8 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Failed to load QR code
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Guest Info */}
