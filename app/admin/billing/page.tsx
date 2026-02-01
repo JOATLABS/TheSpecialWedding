@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { Card } from '@/components/ui/Card';
 import PageHeader from '../components/PageHeader';
 import {
@@ -216,11 +217,7 @@ export default function AdminBillingDashboard() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    return formatAdminDate(dateString, DEFAULT_TIMEZONE);
   };
 
   const filteredSubscriptions = subscriptions.filter(sub =>

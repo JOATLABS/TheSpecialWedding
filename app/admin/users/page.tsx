@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatAdminTimestamp, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import {
   Users,
@@ -55,6 +56,7 @@ interface Planner {
   subscription_tier?: string;
   plan_id?: string;
   organization?: string;
+  timezone?: string;
 }
 
 interface SubscriptionPlan {
@@ -804,20 +806,12 @@ export default function AdminUsersPage() {
                           </td>
                           <td className="px-6 py-4 text-center">
                             <span className="text-sm text-slate-400">
-                              {new Date(invitation.created_at).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
+                              {formatAdminTimestamp(invitation.created_at)}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
                             <span className="text-sm text-slate-400">
-                              {new Date(invitation.expires_at).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric'
-                              })}
+                              {formatAdminDate(invitation.expires_at)}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -1062,11 +1056,7 @@ export default function AdminUsersPage() {
                           <div className="flex items-center justify-center gap-1.5 text-sm text-slate-400">
                             <Calendar className="w-4 h-4" />
                             {planner.created_at
-                              ? new Date(planner.created_at).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                })
+                              ? formatAdminDate(planner.created_at)
                               : 'N/A'
                             }
                           </div>

@@ -102,6 +102,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Frontend types**: Updated `Wedding` and `EventDetails` TypeScript interfaces
   - **Use case**: Planners can configure the correct timezone for their wedding venue, ensuring calendar downloads show accurate local times
 
+- **Planner Timezone Preference** (`app/models/user_extended.py`, `app/admin/users/page.tsx`, `app/admin/saas/page.tsx`):
+  - **New field**: `timezone` on `UserModel` - IANA timezone for display preferences (default: `America/Chicago`)
+  - **Frontend types**: Added `timezone` to `Planner` and `WeddingPlanner` TypeScript interfaces
+  - **Use case**: Planners see timestamps in their preferred timezone across the dashboard
+
+- **Admin Dashboard Timestamp Consistency** (`app/utils/dateFormat.ts`, 20+ admin pages):
+  - **Problem**: ~27 instances of browser-local `.toLocaleString()` caused different users to see different times for the same record
+  - **Root cause**: Mix of UTC formatting (centralized utility) and browser-local formatting (direct `.toLocaleString()`)
+  - **Enhanced utility** (`app/utils/dateFormat.ts`):
+    - Added `getTimezoneAbbreviation()` - Gets timezone abbreviation (CST, EST, WAT) for display
+    - Added `formatDateTimeWithTz()` - Format with timezone suffix (e.g., "Jan 30, 2026, 3:00 PM CST")
+    - Added `formatAdminTimestamp()` - Primary function for admin dashboard timestamps with timezone indicator
+    - Added `formatAdminDate()` - Date-only formatting for admin displays
+    - Added `formatListTimestamp()` - Shorter format for tables/lists
+    - All functions accept optional timezone parameter (defaults to `America/Chicago`)
+  - **Pages updated**:
+    - Root admin: `app/admin/page.tsx`, `app/admin/dashboard/page.tsx`
+    - Weddings: `app/admin/weddings/page.tsx`, `app/admin/weddings/[id]/page.tsx`
+    - Billing: `app/admin/billing/page.tsx`, `app/admin/money/page.tsx`, `app/admin/planner/billing/page.tsx`
+    - Vendors: `app/admin/vendors/contracts/[id]/page.tsx`, `app/admin/vendors/contracts/new/page.tsx`, `app/admin/vendors/components/PaymentMilestones.tsx`, `app/admin/vendors/components/VendorPaymentModal.tsx`
+    - Users: `app/admin/users/page.tsx`
+    - Planner: `app/admin/planner/calendar/page.tsx`, `app/admin/planner/calendar/components/GoogleCalendarConnect.tsx`
+    - Forms: `app/admin/forms/[id]/edit/page.tsx`
+    - Notifications: `app/admin/notifications/page.tsx`
+    - Packages: `app/admin/packages/[id]/send/page.tsx`
+  - **Result**: All admin timestamps now show consistent timezone-aware formatting with abbreviation suffix (e.g., "Jan 30, 2026, 3:00 PM CST")
+
 - **Already RSVPed Detection** (`app/components/AlreadyRSVPedScreen.tsx`, `app/otp/verify/page.tsx`, `app/services/guest_verification_service.py`):
   - **Problem solved**: Guests re-visiting RSVP link after submission would go through OTP verification again (Twilio SMS cost ~$0.0079 each)
   - **Backend enhancement**: `get_rsvp_access_by_token()` now checks for existing RSVP in `rsvps` collection
