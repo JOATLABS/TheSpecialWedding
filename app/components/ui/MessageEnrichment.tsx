@@ -121,6 +121,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
               placeholder="Link label (optional)"
               aria-label="Link label"
               // Auto-focus the first input to streamline the user workflow when opening the panel
+              // This improves accessibility for keyboard users
               autoFocus
               className="px-3 py-2 rounded-md border border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
