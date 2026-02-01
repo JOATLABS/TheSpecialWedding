@@ -81,6 +81,19 @@ class AdminRSVPService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve RSVPs: {str(e)}")
 
+    def sanitize_csv_field(self, field_value: Optional[str]) -> str:
+        """
+        Sanitize CSV field to prevent Formula Injection (CSV Injection).
+        If the field starts with =, +, -, or @, prepend a single quote.
+        """
+        if not field_value:
+            return ""
+
+        value = str(field_value)
+        if value.startswith(("=", "+", "-", "@")):
+            return f"'{value}"
+        return value
+
     async def export_rsvps_to_csv(self):
         try:
             guests = await self.get_all_rsvps()
@@ -91,7 +104,8 @@ class AdminRSVPService:
 
             for entry in guests:
                 plus_one = entry.get("plus_one")
-                writer.writerow([
+
+                row_data = [
                     entry["name"],
                     entry.get("phone", ""),
                     ", ".join(entry.get("attending", [])),
@@ -100,7 +114,10 @@ class AdminRSVPService:
                     plus_one.get("name") if plus_one else "",
                     ", ".join(plus_one.get("attending", [])) if plus_one else "",
                     plus_one.get("dietary") if plus_one else ""
-                ])
+                ]
+
+                sanitized_row = [self.sanitize_csv_field(val) for val in row_data]
+                writer.writerow(sanitized_row)
 
             output.seek(0)
             return output.read()
