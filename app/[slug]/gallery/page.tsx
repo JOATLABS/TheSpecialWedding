@@ -1,51 +1,143 @@
 // app/[slug]/gallery/page.tsx
+'use client';
 
-import { Metadata } from 'next';
+import { useCallback, useContext, useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { GalleryGrid } from '@/components/GalleryGrid';
 import { formatDate } from '@/utils/dateFormat';
+import { WeddingContext } from '@/contexts/WeddingContext';
+import GuestVerificationModal from '@/components/GuestVerificationModal';
 
 type GalleryImage = {
   key: string;
   url: string;
 };
 
-export const metadata: Metadata = {
-  title: 'Gallery - Wedding Memories',
-  description: 'Browse through beautiful moments from the wedding celebration.',
-};
+const API_BASE_URL = getApiBaseUrl();
+const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
 
-async function fetchGallery(slug: string): Promise<GalleryImage[]> {
-  const baseUrl = getApiBaseUrl();
-  const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
-  const res = await fetch(`${apiUrl}/gallery?wedding_slug=${slug}`, {
-    cache: 'no-store',
-  });
+export default function GalleryPage() {
+  const contextWedding = useContext(WeddingContext);
+  const params = useParams();
+  const slug = params.slug as string;
 
-  if (!res.ok) {
-    throw new Error('Failed to fetch gallery images');
+  const [wedding, setWedding] = useState<any>(null);
+  const [guest, setGuest] = useState<any>(null);
+  const [images, setImages] = useState<GalleryImage[]>([]);
+  const [accessGranted, setAccessGranted] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Check if wedding requires authentication
+    if (contextWedding?.privacy_mode === 'public') {
+      // Wedding is explicitly set to public, grant access immediately
+      setWedding(contextWedding);
+      setAccessGranted(true);
+      setLoading(false);
+    } else {
+      // Wedding requires authentication (default: private)
+      setLoading(false);
+    }
+  }, [contextWedding]);
+
+  const handleGuestVerified = (weddingData: any, guestData?: any) => {
+    setWedding(weddingData);
+    setGuest(guestData);
+    setAccessGranted(true);
+  };
+
+  const fetchGallery = useCallback(
+    async (weddingData?: any, guestData?: any) => {
+      if (!slug) return;
+
+      const targetWedding = weddingData || wedding;
+      const targetGuest = guestData || guest;
+
+      try {
+        // For public weddings, use the simple gallery endpoint
+        // For private/password weddings, use the verified endpoint with query params
+        const isPublic = targetWedding?.privacy_mode === 'public';
+
+        let galleryUrl: string;
+        if (isPublic) {
+          // Public gallery endpoint
+          galleryUrl = `${API_URL}/gallery?wedding_slug=${encodeURIComponent(slug)}`;
+        } else {
+          // Build query params for verified endpoint
+          const params = new URLSearchParams({ wedding_slug: slug });
+
+          // Add authentication parameters based on what we have
+          if (targetGuest?.token) {
+            params.append('token', targetGuest.token);
+          } else if (targetGuest?.name) {
+            params.append('name', targetGuest.name);
+            if (targetGuest.phone) {
+              params.append('phone', targetGuest.phone);
+            }
+          }
+
+          galleryUrl = `${API_URL}/gallery/verified?${params.toString()}`;
+        }
+
+        const res = await fetch(galleryUrl, {
+          method: isPublic ? 'GET' : 'POST',
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
+        } else {
+          // If gallery fails, don't show error - just continue without images
+          console.warn('Gallery access failed, continuing without images');
+          setImages([]);
+        }
+      } catch (err: any) {
+        console.warn('Gallery could not be loaded:', err);
+        setImages([]); // Continue without gallery instead of showing error
+      }
+    },
+    [guest, slug, wedding]
+  );
+
+  // Fetch gallery when access is granted
+  useEffect(() => {
+    if (accessGranted && wedding) {
+      fetchGallery();
+    }
+  }, [accessGranted, fetchGallery, wedding]);
+
+  // Also fetch gallery after verification with the new data
+  useEffect(() => {
+    if (accessGranted && guest) {
+      fetchGallery(wedding, guest);
+    }
+  }, [accessGranted, guest, wedding, fetchGallery]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading gallery...</p>
+        </div>
+      </div>
+    );
   }
 
-  return res.json();
-}
+  // Show verification modal if access not granted (private wedding)
+  if (!accessGranted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
+        <GuestVerificationModal
+          slug={slug}
+          onVerified={handleGuestVerified}
+        />
+      </div>
+    );
+  }
 
-async function fetchWedding(slug: string) {
-  const base = getApiBaseUrl();
-  const res = await fetch(`${base}/weddings/slug/${slug}`);
-  if (!res.ok) return null;
-  return res.json();
-}
-
-export default async function GalleryPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  const [images, wedding] = await Promise.all([
-    fetchGallery(slug),
-    fetchWedding(slug)
-  ]);
+  const displayWedding = wedding || contextWedding;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -53,11 +145,11 @@ export default async function GalleryPage({
       <div className="bg-wedding-navy text-white py-12">
         <div className="max-w-6xl mx-auto px-4 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            {wedding?.couple_names || "Wedding"} Gallery
+            {displayWedding?.couple_names || "Wedding"} Gallery
           </h1>
-          {wedding?.date && (
+          {displayWedding?.date && (
             <p className="text-xl text-blue-100">
-              {formatDate(wedding.date, {
+              {formatDate(displayWedding.date, {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
@@ -65,8 +157,8 @@ export default async function GalleryPage({
               })}
             </p>
           )}
-          {wedding?.venue && (
-            <p className="text-lg text-blue-200 mt-2">{wedding.venue}</p>
+          {displayWedding?.venue && (
+            <p className="text-lg text-blue-200 mt-2">{displayWedding.venue}</p>
           )}
         </div>
       </div>
@@ -95,7 +187,7 @@ export default async function GalleryPage({
 
       {/* Back to home */}
       <div className="text-center pb-12">
-        <a 
+        <a
           href={`/${slug}`}
           className="inline-flex items-center bg-wedding-rose text-white px-6 py-3 rounded-lg font-semibold hover:bg-opacity-90 transition-colors"
         >

@@ -1275,6 +1275,12 @@ async def acknowledge_error(
 
 class BulkAcknowledgeRequest(BaseModel):
     error_ids: List[str]
+    delete_after_acknowledge: bool = False
+
+
+class ErrorExportFormat(str):
+    JSON = "json"
+    CSV = "csv"
 
 
 @router.post("/errors/acknowledge-bulk")

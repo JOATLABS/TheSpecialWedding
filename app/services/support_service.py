@@ -12,7 +12,8 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 # Root admin email for support notifications
-ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+# Default fallback uses .io domain (SAAS platform) - should be configured via env var
+ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "admin@thespecialwedding.io")
 
 
 class SupportService:

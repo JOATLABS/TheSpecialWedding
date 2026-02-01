@@ -39,9 +39,10 @@ interface SentNotification {
 }
 
 // Planner notification (received notifications like form submissions, RSVPs)
+// Also includes root admin notification types (support_ticket, system_config, sales_contact)
 interface PlannerNotification {
   _id: string;
-  type: 'form_submission' | 'rsvp_update' | 'guest_message' | 'payment_received' | 'payment_failed' | 'contract_signed' | 'vendor_response' | 'system' | 'reminder';
+  type: 'form_submission' | 'rsvp_update' | 'guest_message' | 'payment_received' | 'payment_failed' | 'contract_signed' | 'vendor_response' | 'system' | 'reminder' | 'support_ticket' | 'system_config' | 'sales_contact';
   title: string;
   message: string;
   wedding_id?: string;
@@ -86,7 +87,7 @@ export default function NotificationsPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [customSubject, setCustomSubject] = useState('');
   const [customContent, setCustomContent] = useState('');
-  const [recipientFilter, setRecipientFilter] = useState('all_users');
+  const [recipientFilter, setRecipientFilter] = useState('all');
   const [sending, setSending] = useState(false);
   // Template creation modal
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -253,20 +254,13 @@ export default function NotificationsPage() {
 
     setSending(true);
     try {
-      // Map frontend filter to backend target_audience
-      let targetAudience = 'all';
-      if (recipientFilter === 'wedding_planners') {
-        targetAudience = 'wedding_planners';
-      }
-      // Note: backend doesn't currently support trial/premium filtering,
-      // so they map to 'all' for now
-
+      // recipientFilter directly maps to backend target_audience: 'all', 'wedding_planners', 'vendors'
       // Step 1: Create notification
       const createResponse = await apiRequest<{id: string}>('/admin/notifications', 'POST', {
         title: customSubject,
         message: customContent,
         type: 'info',
-        target_audience: targetAudience,
+        target_audience: recipientFilter,
         is_dismissible: true,
         priority: 'medium'
       });
@@ -282,7 +276,7 @@ export default function NotificationsPage() {
         alert(`Notification sent successfully! Delivered to ${sendResponse.sent || 0} users.`);
         setCustomSubject('');
         setCustomContent('');
-        setRecipientFilter('all_users');
+        setRecipientFilter('all');
         setUseTemplate(false);
         setSelectedTemplateId('');
 
@@ -535,11 +529,9 @@ export default function NotificationsPage() {
                 onChange={(e) => setRecipientFilter(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
               >
-                <option value="all_users">All Users</option>
-                <option value="active_users">Active Users Only</option>
-                <option value="wedding_planners">Wedding Planners Only</option>
-                <option value="trial_users">Trial Users</option>
-                <option value="premium_users">Premium Users</option>
+                <option value="all">All Users</option>
+                <option value="wedding_planners">Wedding Planners</option>
+                <option value="vendors">Vendors</option>
               </select>
             </div>
 
