@@ -284,16 +284,21 @@ class NotificationService:
     async def get_user_notifications(self, user_email: str, user_role: str, page: int = 1, limit: int = 20, unread_only: bool = False) -> dict:
         """Get notifications for a specific user"""
         try:
-            # Build target audience conditions
-            audience_conditions = [
-                {"target_audience": "all"},
-                {"target_audience": user_role + "s"},  # wedding_planner -> wedding_planners
-                {"user_id": user_email}  # Direct user targeting
-            ]
-
-            # ROOT_ADMIN should also see notifications targeted to "root_admin"
+            # Build target audience conditions based on role
             if user_role == "ROOT_ADMIN":
-                audience_conditions.append({"target_audience": "root_admin"})
+                # Root admin only sees: system alerts (root_admin) and direct targeting
+                # NOT platform announcements (all, wedding_planners, vendors) - those are FOR users
+                audience_conditions = [
+                    {"target_audience": "root_admin"},  # System alerts: support tickets, config errors, contact forms
+                    {"user_id": user_email}  # Direct user targeting
+                ]
+            else:
+                # Regular users (planners, vendors) see: all, their role, and direct targeting
+                audience_conditions = [
+                    {"target_audience": "all"},
+                    {"target_audience": user_role + "s"},  # wedding_planner -> wedding_planners
+                    {"user_id": user_email}  # Direct user targeting
+                ]
 
             # Build query for user-specific notifications
             query = {
@@ -480,16 +485,21 @@ class NotificationService:
     async def get_user_notification_count(self, user_email: str, user_role: str) -> dict:
         """Get notification count for user"""
         try:
-            # Build target audience conditions
-            audience_conditions = [
-                {"target_audience": "all"},
-                {"target_audience": user_role + "s"},
-                {"user_id": user_email}
-            ]
-
-            # ROOT_ADMIN should also see notifications targeted to "root_admin"
+            # Build target audience conditions based on role
             if user_role == "ROOT_ADMIN":
-                audience_conditions.append({"target_audience": "root_admin"})
+                # Root admin only sees: system alerts (root_admin) and direct targeting
+                # NOT platform announcements (all, wedding_planners, vendors) - those are FOR users
+                audience_conditions = [
+                    {"target_audience": "root_admin"},  # System alerts: support tickets, config errors, contact forms
+                    {"user_id": user_email}  # Direct user targeting
+                ]
+            else:
+                # Regular users (planners, vendors) see: all, their role, and direct targeting
+                audience_conditions = [
+                    {"target_audience": "all"},
+                    {"target_audience": user_role + "s"},
+                    {"user_id": user_email}
+                ]
 
             # Query for user notifications
             query = {

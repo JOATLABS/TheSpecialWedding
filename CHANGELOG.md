@@ -7,7 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Request RSVP Link Feature** (`app/components/RequestRSVPLinkModal.tsx`, `app/components/landing-page/ThemedHeroSection.tsx`, `app/components/landing-page/LandingLayout.tsx`, `app/api/guest_verification.py`, `app/services/guest_verification_service.py`):
+  - **Purpose**: Allow guests who lost their invitation link to request it via phone or email
+  - **User flow**: Guest visits `/{slug}` landing page → clicks "Celebrate with us" button → enters phone/email → receives RSVP link via SMS or email
+  - **New modal component** (`app/components/RequestRSVPLinkModal.tsx`):
+    - Luxury/modern glassmorphism design with wedding theme colors
+    - Phone/email toggle with auto-detection based on input
+    - Loading spinner, success state, error handling
+    - Dark mode support with gradient decorative border
+  - **ThemedHeroSection update** (`app/components/landing-page/ThemedHeroSection.tsx`):
+    - Added `onCelebrateClick?: () => void` prop to interface
+    - Changed decorative div to interactive button with click handler
+  - **LandingLayout integration** (`app/components/landing-page/LandingLayout.tsx`):
+    - Added `showRSVPLinkModal` state management
+    - Wired modal to ThemedHeroSection's `onCelebrateClick` callback
+  - **New API endpoint** (`app/api/guest_verification.py`):
+    - `POST /guests/request-rsvp-link` - Request RSVP link via phone or email
+    - Pydantic model: `RequestRSVPLinkRequest` with `slug`, `contact`, `contact_type` fields
+    - Always returns generic success message to prevent guest enumeration
+  - **New service method** (`app/services/guest_verification_service.py`):
+    - `request_and_send_rsvp_link()` - Core logic for guest lookup and link delivery
+    - **Phone lookup**: Tries multiple stored formats (original, digits-only, E.164 with +1)
+    - **Email lookup**: Case-insensitive MongoDB regex query
+    - **SMS delivery**: Uses `TwilioReminderService._send_sms()`
+    - **Email delivery**: Uses `ResendEmailService.send_email()` with HTML template
+    - `_generate_rsvp_link_email_html()` - Professional email template with RSVP button
+  - **Security features**:
+    - Rate limiting: 3 requests per contact per 10 minutes (hashed contact)
+    - Generic success messages prevent guest enumeration attacks
+    - No cross-channel leakage (only sends to provided contact type)
+    - Security event logging for audit trail
+  - **Impact**: Guests can now recover their RSVP link without contacting the couple directly
+
 ### Changed
+
+- **Platform Metrics Response Time Unit Standardization** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+  - **Eliminated redundant unit conversions**: Backend stored ms → API converted to seconds → Frontend converted back to ms
+  - **New flow**: Backend stores ms → API returns ms directly → Frontend displays ms
+  - **Field name changes** for clarity (explicit `_ms` suffix):
+
+    | Old Name                    | New Name                       |
+    | --------------------------- | ------------------------------ |
+    | `avg_response_time`         | `avg_response_time_ms`         |
+    | `min_response_time`         | `min_response_time_ms`         |
+    | `max_response_time`         | `max_response_time_ms`         |
+    | `p50`, `p95`, `p99`         | `p50_ms`, `p95_ms`, `p99_ms`   |
+    | `overall_avg_response_time` | `overall_avg_response_time_ms` |
+
+  - **Backend changes** (`app/api/admin_platform_metrics.py`):
+    - Removed `/1000` divisions when returning response times
+    - Updated field names in `_calculate_performance_metrics()` and `_calculate_endpoint_performance()`
+  - **Frontend changes** (`app/admin/platform/page.tsx`):
+    - Updated TypeScript interfaces (`PerformanceSummary`, `EndpointPerformance`) with new field names
+    - Removed `* 1000` multiplications when displaying values
+  - **Why**: Reduces cognitive overhead, prevents floating-point precision issues, and follows the principle of keeping data in its natural unit until display
+
+- **AI Chat Service Availability & Health Monitoring** (`app/api/ai.py`):
+  - **503 Service Unavailable**: When Google Gemini API is unavailable (network errors, API key issues, quota exceeded), the endpoint now returns proper 503 status instead of 500
+  - **Why**: Frontend can detect 503 and show "AI temporarily unavailable" message instead of generic error; follows same pattern as Stripe, Telnyx, and email services in the codebase
+  - **New endpoint**: `GET /admin/ai/health` - Health check for AI service monitoring
+    - Returns: `{ status: "healthy"|"degraded"|"unhealthy", model, configured, api_key_set, error? }`
+    - Tests actual API connectivity by making a minimal request to Gemini
+    - Used by platform metrics dashboard for service status monitoring
+  - **Enhanced error handling**:
+    - `google.api_core.exceptions.GoogleAPIError` for API-level failures (quota, permissions)
+    - `requests.exceptions.RequestException` for network connectivity issues
+    - Both return 503 with `detail: "AI service temporarily unavailable"`
+  - **Platform metrics integration**: AI health status now available alongside other service health checks (Stripe, Twilio, Web Push, Email)
 
 - **Web Push Notifications (Replaces Ntfy)** (`app/services/web_push_service.py`, `app/api/web_push.py`, `app/admin/components/AccountSettingsModal.tsx`, `public/sw.js`):
   - **Complete replacement**: Removed self-hosted Ntfy server dependency in favor of standard Web Push API with VAPID authentication
@@ -63,6 +131,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixes "Attending: None" display issue in admin dashboard for plus-ones
 
 ### Fixed
+
+- **Gallery S3 Operations Failing on Cloudflare R2** (`app/services/gallery_upload_service.py`, `app/services/vendor_service.py`):
+  - **Root cause**: Cloudflare R2 requires S3 Signature Version 4 (`s3v4`) for all operations, but boto3 defaults to v2
+  - **Symptom**: `AccessDenied` errors on upload, list, and delete operations despite correct credentials
+  - **Fix**: Added `config=Config(signature_version='s3v4')` to boto3 client initialization in both services
+  - **Fix**: Added error code logging for better diagnostics on S3 operation failures
+  - **Impact**: Gallery uploads, listing, and deletion now work correctly with Cloudflare R2
+
+- **Gallery Image Delete Returning 405 Method Not Allowed** (`app/admin/gallery/upload/page.tsx`):
+  - **Root cause**: Frontend called `DELETE /gallery` but the admin endpoint is registered at `DELETE /admin/gallery`
+  - **Fix**: Changed delete endpoint from `/gallery` to `/admin/gallery` (line 313)
+  - **Impact**: Planners can now delete gallery images from the upload management page
+
+- **Private Wedding Gallery Page Returning 403 for Verified Guests** (`app/[slug]/gallery/page.tsx`):
+  - **Root cause**: Gallery page was server-side rendered (SSR) and only called `GET /gallery` without guest verification
+  - **Symptom**: Guest verifies on landing page → clicks "View Full Gallery" → 403 error because verification state wasn't persisted
+  - **Fix**: Converted gallery page to client-side rendering (`'use client'`)
+  - **Fix**: Added same verification flow as landing page using `WeddingContext` and `GuestVerificationModal`
+  - **Fix**: Public weddings use `GET /gallery?wedding_slug={slug}`
+  - **Fix**: Private weddings show verification modal, then use `POST /gallery/verified` with guest token/name/phone
+  - **Alignment verified**:
+    - `GuestVerificationModal` props: `slug`, `onVerified(wedding, guest?)` ✅
+    - `WeddingContext` provides `privacy_mode` field ✅
+    - `GalleryGrid` expects `images: {key, url}[]` ✅
+    - Backend returns `[{key, url}]` from `gallery/{slug}/` prefix ✅
+  - **Impact**: Guests on private weddings can now access the full gallery page after verification
+
+- **Root Admin In-App Notifications Not Displaying** (`app/services/notification_service.py`, `app/services/support_service.py`, `app/utils/secure_error_handler.py`):
+  - **Root cause**: Schema mismatch between notification creation and retrieval
+    - Notifications created with `target_audience: "root_admin"` but fetched using `user_id` field
+    - Root admin has no `user_id` in notifications collection - they use audience-based targeting
+  - **Fix** (`app/services/notification_service.py`):
+    - Added `get_root_admin_notifications()` method that queries by `target_audience: "root_admin"`
+    - Updated `get_notifications()` to handle root admin case with proper audience query
+    - Updated `mark_as_read()` and `mark_all_as_read()` to use audience-based queries for root admin
+    - Added `delete_notification()` method with proper root admin support
+  - **Fix** (`app/services/support_service.py`):
+    - Changed notification `target_audience` from `"admin"` to `"root_admin"` for consistency
+    - Root admin notifications now use correct audience identifier throughout
+  - **Fix** (`app/utils/secure_error_handler.py`):
+    - Changed notification `target_audience` from `"admin"` to `"root_admin"` for config error alerts
+  - **Impact**: Root admin can now see notification bell count and all in-app notifications for:
+    - Support ticket submissions from planners
+    - Contact form submissions from public users
+    - Configuration error alerts from the system
+
+- **Notification System Schema Alignment** (Multiple files):
+  - **API Validation** (`app/api/notification_management.py`):
+    - Added `root_admin` to valid `target_audience` values in both `NotificationCreateModel` and `NotificationUpdateModel` validators
+    - Previously API would reject notifications with `target_audience: "root_admin"` even though backend services created them
+  - **TypeScript Interface** (`app/admin/notifications/page.tsx`):
+    - Added `support_ticket`, `system_config`, and `sales_contact` to `PlannerNotification.type` union
+    - These types are used by root admin notifications but were missing from the TypeScript interface
+  - **Priority Value Standardization** (`app/models/support_ticket.py`, `app/api/reminder.py`, `app/api/twilio_webhooks.py`):
+    - Changed default priority from `"normal"` to `"medium"` to match notification system
+    - Standardized priority enum to `["low", "medium", "high", "urgent"]` across all systems
+    - Previously support tickets used `"normal"` while notifications used `"medium"`
+  - **ROOT_ADMIN_EMAIL Fallback** (`app/services/support_service.py`):
+    - Updated fallback email domain from `.com` to `.io` to match SAAS platform domain
+    - Changed from `thedeveloper@thespecialwedding.com` to `admin@thespecialwedding.io`
+  - **Impact**: Full schema alignment between database models, API validation, and frontend TypeScript interfaces
+
+- **Notification Recipient Dropdown Misaligned with Schema** (`app/admin/notifications/page.tsx`):
+  - **Root cause**: Dropdown showed `"Trial Users"` and `"Premium Users"` options that don't exist in subscription schema
+  - **Subscription status enum**: `PENDING_PAYMENT`, `TRIAL`, `ACTIVE`, `CANCELLED`, `EXPIRED`, `SUSPENDED` - no "premium"
+  - **Fix**: Simplified dropdown to match backend `target_audience` values exactly:
+    - `all` → All Users
+    - `wedding_planners` → Wedding Planners
+    - `vendors` → Vendors
+  - **Fix**: Removed stale mapping logic - `recipientFilter` now passes directly to `target_audience`
+  - **Fix**: Updated default state from `'all_users'` to `'all'`
+  - **Impact**: Frontend dropdown now matches backend API validation and subscription schema
+
+- **Root Admin Receiving Own Platform Notifications** (`app/services/notification_service.py`):
+  - **Root cause**: Notification retrieval logic included `target_audience: "all"` for root admin
+  - **Problem**: When root admin sends notification to "all users", they would also see it in their bell
+  - **Fix**: Separated audience logic by role:
+    - **Root admin** only sees: `target_audience: "root_admin"` (system alerts) + direct `user_id` targeting
+    - **Planners/Vendors** see: `target_audience: "all"` + their role + direct targeting
+  - **Fix**: Applied to both `get_user_notifications()` and `get_user_notification_count()` methods
+  - **Impact**: Root admin notification bell only shows system alerts (support tickets, config errors, contact forms), not their own platform announcements
 
 - **QR Code Preview Not Displaying in Guest Management** (`app/admin/guests/page.tsx`):
   - **Root cause**: The QR code modal used `<img src>` pointing directly to the authenticated API endpoint, but browsers don't send Authorization headers with image requests

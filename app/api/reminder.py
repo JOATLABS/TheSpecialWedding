@@ -215,7 +215,7 @@ async def handle_sms_callback(request: Request):
                         "source": "sms",
                         "provider": "telnyx",
                         "is_read": False,
-                        "priority": "normal"
+                        "priority": "medium"
                     }
                     await mongo.db["support_tickets"].insert_one(support_ticket)
                     logger.info(f"Support ticket created from {from_number} for planner {assigned_planner_email}: {text}")
