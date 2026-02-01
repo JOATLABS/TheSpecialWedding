@@ -18,6 +18,7 @@ interface UserProfile {
     profile_image_url?: string;
     first_name?: string;
     last_name?: string;
+    timezone?: string; // IANA timezone string (e.g., 'America/Chicago')
 }
 
 type AdminContextType = {

@@ -1270,6 +1270,12 @@ class UserManagementService:
             # Handle push notifications preference
             if "push_notifications_enabled" in profile_data:
                 update_data["push_notifications_enabled"] = profile_data["push_notifications_enabled"]
+            # Handle timezone preference (IANA timezone string)
+            if profile_data.get("timezone") is not None:
+                timezone_str = profile_data["timezone"].strip()
+                # Basic validation: should look like a valid IANA timezone
+                if "/" in timezone_str or timezone_str in ("UTC", "GMT"):
+                    update_data["timezone"] = timezone_str
 
             if not update_data:
                 raise HTTPException(status_code=400, detail="No valid profile data provided")

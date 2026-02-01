@@ -56,6 +56,7 @@ interface WeddingPlanner {
  is_active: boolean;
  createdAt: string;
  lastLogin?: string;
+ timezone?: string;
 }
 
 interface AnalyticsOverview {

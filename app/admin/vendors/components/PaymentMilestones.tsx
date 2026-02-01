@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/Label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
 import { Loader2, DollarSign, Plus, Send, Calendar, CheckCircle2, Clock, AlertCircle, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
   getPaymentMilestones,
   createPaymentMilestones,
@@ -229,12 +230,8 @@ export function PaymentMilestones({
     }).format(amount);
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  const formatDateLocal = (dateStr: string) => {
+    return formatAdminDate(dateStr, DEFAULT_TIMEZONE);
   };
 
   // Calculate totals
@@ -309,7 +306,7 @@ export function PaymentMilestones({
                 <div>
                   <div className="font-medium">{milestone.description}</div>
                   <div className="text-sm text-gray-500">
-                    Due: {formatDate(milestone.due_date)}
+                    Due: {formatDateLocal(milestone.due_date)}
                     {milestone.vendor_name && ` • ${milestone.vendor_name}`}
                   </div>
                 </div>

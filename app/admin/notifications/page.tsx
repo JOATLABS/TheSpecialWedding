@@ -625,7 +625,7 @@ export default function NotificationsPage() {
                   <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 mb-3 font-medium">{template.subject}</p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 line-clamp-2">{template.content}</p>
                   <div className="mt-4 pt-4 border-t dark:border-gray-700 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 dark:text-gray-400">
-                    <span>Created: {new Date(template.created_at).toLocaleDateString()}</span>
+                    <span>Created: {formatDate(template.created_at)}</span>
                     {template.is_active !== undefined && (
                       <span className={template.is_active ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
                         {template.is_active ? '● Active' : '○ Inactive'}
