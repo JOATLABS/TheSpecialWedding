@@ -33,19 +33,19 @@ export function GuestItem({ guest }: GuestItemProps) {
       whileTap={{ scale: 0.98 }}
       className={`
         relative p-3 mb-2 rounded-xl text-sm cursor-grab active:cursor-grabbing
-        border border-white/20 backdrop-blur-md shadow-sm
+        border border-white/20 dark:border-slate-600/20 backdrop-blur-md shadow-sm
         transition-colors duration-200
         ${isDragging
-          ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-200/50 shadow-lg z-50'
-          : 'bg-white/60 hover:bg-white/80'}
+          ? 'bg-blue-50/80 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 ring-2 ring-blue-200/50 dark:ring-blue-800/50 shadow-lg z-50'
+          : 'bg-white/60 dark:bg-slate-700/60 hover:bg-white/80 dark:hover:bg-slate-700/80'}
       `}
     >
       <div className="flex items-center gap-2">
         <div className={`w-2 h-2 rounded-full ${guest.table_id ? 'bg-green-400' : 'bg-amber-400'}`} />
-        <div className="font-medium text-gray-800">{guest.name}</div>
+        <div className="font-medium text-gray-800 dark:text-gray-100">{guest.name}</div>
       </div>
       {guest.group_id && (
-        <div className="text-xs text-gray-500 mt-1 ml-4 font-light tracking-wide">{guest.group_id}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-4 font-light tracking-wide">{guest.group_id}</div>
       )}
     </motion.div>
   );

@@ -5,6 +5,8 @@ from bson import ObjectId
 from datetime import datetime
 import logging
 
+from app.services.activity_log_service import activity_log_service
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,8 +30,7 @@ class RSVPService:
             guest_id_str = str(guest_id)
             wedding_id_str = str(guest.get("wedding_id", ""))
 
-            logger.info(f"RSVP for guest: {guest.get('name', 'Unknown')} (id={guest_id_str}), "
-                       f"wedding_id={wedding_id_str}, attending={rsvp_data.attending}")
+            logger.info(f"RSVP for guest: {guest.get('name', 'Unknown')} (id={guest_id_str}), wedding_id={wedding_id_str}, attending={rsvp_data.attending}")
 
             await self.rsvp_collection.update_one(
                 {"guest_id": guest_id_str},
@@ -161,7 +162,7 @@ class RSVPService:
             wedding = await self.wedding_collection.find_one({"_id": wedding_id})
             if not wedding:
                 logger.warning(f"Wedding {wedding_id} not found for RSVP notification. "
-                             f"This may indicate a mismatch between guest.wedding_id and wedding._id")
+                               f"This may indicate a mismatch between guest.wedding_id and wedding._id")
                 return
 
             planner_email = wedding.get("assigned_planner_email")
@@ -171,8 +172,7 @@ class RSVPService:
                 logger.debug(f"No planner assigned to wedding {wedding_id} ({couple_names})")
                 return
 
-            logger.info(f"Sending RSVP notification: planner={planner_email}, wedding={couple_names}, "
-                       f"guest={guest_name}, status={status}, count={guest_count}")
+            logger.info(f"Sending RSVP notification: planner={planner_email}, wedding={couple_names}, guest={guest_name}, status={status}, count={guest_count}")
 
             # Import here to avoid circular imports
             from app.services.planner_notification_service import planner_notification_service
@@ -186,6 +186,16 @@ class RSVPService:
                 guest_id=guest_id
             )
             logger.info(f"RSVP notification sent successfully to {planner_email} for wedding {wedding_id}")
+
+            # Log activity for planner dashboard
+            await activity_log_service.log_rsvp_received(
+                wedding_id=wedding_id,
+                guest_name=guest_name,
+                response=status,
+                planner_email=planner_email,
+                plus_ones=guest_count - 1 if guest_count > 1 else 0,
+                metadata={"guest_id": guest_id, "couple_names": couple_names}
+            )
 
         except Exception as e:
             # Don't fail the RSVP submission if notification fails

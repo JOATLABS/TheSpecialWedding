@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comprehensive Activity Logging System for Planner Dashboard** (`app/services/activity_log_service.py`, `app/services/rsvp_service.py`, `app/api/guest.py`, `app/api/reminder_twilio.py`):
+  - **Problem**: Planner activity dashboard (`/admin/planner/activity-log`) only showed support ticket logs - no RSVP, guest, or SMS activity
+  - **New service** (`app/services/activity_log_service.py`):
+    - Standardized `ActivityLogService` for logging to `activity_logs` collection
+    - Activity type constants: `RSVP_RECEIVED`, `RSVP_UPDATED`, `GUEST_ADDED`, `GUEST_UPDATED`, `GUEST_DELETED`, `GUEST_IMPORTED`, `SMS_SENT`, `EMAIL_SENT`, `REMINDER_SENT`
+    - Convenience methods: `log_rsvp_received()`, `log_guest_added()`, `log_guest_updated()`, `log_guest_deleted()`, `log_guests_imported()`, `log_sms_sent()`, `log_reminder_sent()`, `log_email_sent()`
+  - **RSVP logging** (`app/services/rsvp_service.py`):
+    - Added `log_rsvp_received()` call in `_notify_planner_rsvp()` method
+    - Logs guest name, response status, plus-one count, and couple names
+  - **Guest logging** (`app/api/guest.py`):
+    - Added activity logging to `create_guest`, `update_guest`, and `delete_guest` endpoints
+    - Logs guest name, changes made, and who performed the action
+  - **SMS reminder logging** (`app/api/reminder_twilio.py`):
+    - Added activity logging to `send_individual_reminders` endpoint
+    - Groups SMS sends by wedding for cleaner activity feed
+    - Logs recipient count, reminder type, and channel
+  - **Impact**: Planner dashboard now shows comprehensive activity feed with RSVP submissions, guest management, and SMS sends
+
+- **Activity/Audit Log Cleanup & Export Endpoints** (`app/api/admin_activity.py`, `app/api/admin_platform_metrics.py`):
+  - **Problem**: No mechanism to prune old logs or export for audit compliance
+  - **Admin activity log endpoints** (`app/api/admin_activity.py`):
+    - `DELETE /admin/activity-log/cleanup` - Remove activities older than N days (default 90, range 7-365)
+    - `GET /admin/activity-log/export` - Export activities as JSON or CSV with filters (action_type, entity_type, date range)
+  - **Platform metrics endpoints** (`app/api/admin_platform_metrics.py`):
+    - `DELETE /admin/platform/audit-logs/cleanup` - Cleanup audit logs (default 30 days)
+    - `DELETE /admin/platform/security-logs/cleanup` - Cleanup security audit logs (default 180 days)
+    - `GET /admin/platform/errors/export` - Export error logs as JSON or CSV
+    - `POST /admin/platform/errors/{error_id}/acknowledge-and-delete` - Acknowledge single error with export
+    - `POST /admin/platform/errors/acknowledge-and-delete-bulk` - Bulk acknowledge errors with export
+  - **Export format**: JSON returns array of records; CSV returns downloadable format with headers
+  - **Impact**: ROOT_ADMIN can now manage log retention and export for compliance auditing
+
+- **TTL Indexes for Automatic Log Cleanup** (`app/core/database_indexes.py`, `app/utils/migrations.py`):
+  - **Problem**: Activity and audit log collections grow indefinitely without cleanup
+  - **New indexes** (`app/core/database_indexes.py`):
+    - `create_admin_activity_log_indexes()` - Query indexes + 90-day TTL on `created_at`
+    - `create_activity_logs_indexes()` - Query indexes + 90-day TTL on `timestamp`
+    - `create_audit_logs_indexes()` - Query indexes + 30-day TTL on `timestamp`
+    - `create_security_audit_logs_indexes()` - Query indexes + 180-day TTL on `timestamp`
+    - `create_errors_indexes()` - Query indexes + 30-day TTL on `acknowledged_at`
+  - **Migration 006** (`app/utils/migrations.py`):
+    - Creates all TTL indexes on first deploy
+    - Handles `IndexKeySpecsConflict` for existing indexes
+  - **Retention policy**:
+
+    | Collection | TTL | Reason |
+    | ---------- | --- | ------ |
+    | `admin_activity_log` | 90 days | Admin action history |
+    | `activity_logs` | 90 days | Planner activity |
+    | `audit_logs` | 30 days | High-volume HTTP logging |
+    | `security_audit_logs` | 180 days | Security compliance |
+    | `errors` | 30 days | After acknowledgment |
+
+  - **Impact**: Database automatically prunes old logs, preventing storage bloat
+
+- **Support Ticket Response Notifications for Planners** (`app/services/support_service.py`, `app/services/planner_notification_service.py`, `app/models/planner_notification.py`, `app/admin/notifications/page.tsx`):
+  - **Problem**: When ROOT_ADMIN responded to a planner's support ticket, the planner received no notification
+  - **New notification type**: Added `support_ticket_response` to `PlannerNotificationTypes` and `NotificationType` Literal
+  - **New helper method**: `notify_support_ticket_response()` in `PlannerNotificationService` creates in-app notification with ticket details
+  - **Modified `add_comment()` method**: Now triggers notification when ROOT_ADMIN responds (excludes internal comments and self-responses)
+  - **Email notification**: New `_send_ticket_response_email()` method sends formatted HTML email to planner with ticket details and response content
+  - **Activity logging**: Comments are now logged to `activity_logs` collection for audit trail
+  - **Frontend**: Added `support_ticket_response` to TypeScript interface with teal color indicator
+  - **Flow**: ROOT_ADMIN adds comment → In-app notification + Email + Web Push (automatic via existing service) → Planner sees response in bell icon and receives email
+  - **Guards**: Only non-internal comments trigger notifications; planner's own follow-up comments don't trigger self-notification
+
 - **Request RSVP Link Feature** (`app/components/RequestRSVPLinkModal.tsx`, `app/components/landing-page/ThemedHeroSection.tsx`, `app/components/landing-page/LandingLayout.tsx`, `app/api/guest_verification.py`, `app/services/guest_verification_service.py`):
   - **Purpose**: Allow guests who lost their invitation link to request it via phone or email
   - **User flow**: Guest visits `/{slug}` landing page → clicks "Celebrate with us" button → enters phone/email → receives RSVP link via SMS or email
@@ -42,6 +108,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Impact**: Guests can now recover their RSVP link without contacting the couple directly
 
 ### Changed
+
+- **Defensive Field Access in Admin Activity Service** (`app/services/admin_activity_service.py`):
+  - **Problem**: Direct dictionary access (`doc["field"]`) on MongoDB documents caused `KeyError` when documents had missing fields, resulting in 500 errors on activity log endpoints
+  - **Fix**: Changed all field access in `get_activity_log()` and `get_recent_activities()` to use `.get()` with sensible defaults
+  - **Example**: `doc["action_type"]` → `doc.get("action_type", "unknown")`
+  - **Fields protected**: `admin_id`, `action_type`, `title`, `message`, `entity_type`, `entity_id`, `metadata`, `is_read`, `created_at`
+  - **Impact**: Activity log endpoints now gracefully handle malformed or legacy documents
+
+- **Enhanced Activity Type Color Mapping in Planner Dashboard** (`app/admin/planner/activity-log/page.tsx`):
+  - **Problem**: Frontend only had colors for 4 activity types; new activity types showed default purple
+  - **Added color mapping** for all activity types:
+    - RSVP events: `rsvp_received` (green-500), `rsvp_updated` (green-400)
+    - Guest events: `guest_added` (blue-500), `guest_updated` (blue-400), `guest_deleted` (blue-300), `guest_imported` (blue-600)
+    - Communication: `email_sent` (yellow-500), `sms_sent` (orange-500), `reminder_sent` (amber-500)
+    - Support: `support_ticket_created` (red-500), `support_ticket_comment` (red-400)
+    - Wedding: `wedding_created` (indigo-500), `wedding_updated` (indigo-400)
+  - **Impact**: Activity feed now shows visually distinct colors for each activity type
 
 - **Platform Metrics Response Time Unit Standardization** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
   - **Eliminated redundant unit conversions**: Backend stored ms → API converted to seconds → Frontend converted back to ms
@@ -131,6 +214,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixes "Attending: None" display issue in admin dashboard for plus-ones
 
 ### Fixed
+
+- **Type Annotation Fixes in Twilio Reminder API** (`app/api/reminder_twilio.py`):
+  - **Problem**: Pylance/mypy reported type errors for optional service instances and untyped dictionary
+  - **Fix 1**: Added `Optional[TwilioReminderService]` and `Optional[TwilioRSVPReminderHelper]` type annotations for conditionally-initialized service variables
+  - **Fix 2**: Added `dict[str, int]` type annotation to `wedding_sent_counts` dictionary
+  - **Fix 3**: Removed unused `wedding_ids_logged` variable (dead code from previous implementation)
+  - **Impact**: Clean type checking with no Pylance/mypy/Flake8 warnings
+
+- **500 Errors on Activity Log Endpoints** (`app/services/admin_activity_service.py`, `app/api/admin_activity.py`):
+  - **Root cause**: Direct dictionary access (`doc["field"]`) on MongoDB documents with missing fields raised `KeyError`, causing 500 responses on `/admin/activity-log` endpoints
+  - **Fix** (`app/services/admin_activity_service.py`): Changed to defensive `.get()` access with defaults in `get_activity_log()` and `get_recent_activities()`
+  - **Fix** (`app/api/admin_activity.py`): Added try-catch error handling to return graceful errors instead of 500
+  - **Affected endpoints**: `GET /admin/activity-log`, `GET /admin/activity-log/recent`
+  - **Impact**: Activity log endpoints now handle malformed documents gracefully and return empty results instead of crashing
+
+- **RSVP Link SMS Status Check Bug** (`app/services/guest_verification_service.py`):
+  - **Root cause**: Twilio `_send_sms()` returns `"status": "failed: {error}"` on failure, but code checked `!= "failed"` which always evaluated to `True`
+  - **Fix**: Changed status check from `result.get("status") != "failed"` to `result.get("status") == "success"`
+  - **Impact**: SMS send failures are now correctly detected and logged
+
+- **RSVP Link SMS Phone Format Bug** (`app/services/guest_verification_service.py`):
+  - **Root cause**: Service passed raw user input (e.g., `(319) 529-6088`) to Twilio, which added `+1` prefix creating invalid `+1(319) 529-6088`
+  - **Fix**: Changed to pass `digits_only` (extracted digits) to Twilio, which then correctly formats as `+13195296088`
+  - **Impact**: SMS delivery now works regardless of how user formats their phone number input
 
 - **Gallery S3 Operations Failing on Cloudflare R2** (`app/services/gallery_upload_service.py`, `app/services/vendor_service.py`):
   - **Root cause**: Cloudflare R2 requires S3 Signature Version 4 (`s3v4`) for all operations, but boto3 defaults to v2

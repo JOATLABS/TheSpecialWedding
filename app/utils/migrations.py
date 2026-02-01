@@ -390,3 +390,92 @@ async def migration_005_users_indexes(db):
     logger.info("Created compound index for trial expiration queries")
 
     logger.info("All users collection indexes created successfully")
+
+
+@migration_registry.register(
+    "006",
+    "Add activity and audit log indexes with TTL",
+    "Creates indexes for admin_activity_log, activity_logs, audit_logs, and security_audit_logs with TTL for automatic cleanup"
+)
+async def migration_006_activity_log_indexes(db):
+    """
+    Add indexes for all activity/audit log collections
+    Including TTL indexes for automatic document expiration
+    """
+    from pymongo import ASCENDING, DESCENDING
+
+    # admin_activity_log indexes (90 day retention)
+    logger.info("Creating indexes for admin_activity_log collection...")
+    await db["admin_activity_log"].create_index([("created_at", DESCENDING)])
+    await db["admin_activity_log"].create_index([("action_type", ASCENDING), ("created_at", DESCENDING)])
+    await db["admin_activity_log"].create_index([("entity_type", ASCENDING), ("created_at", DESCENDING)])
+    await db["admin_activity_log"].create_index([("admin_id", ASCENDING), ("created_at", DESCENDING)])
+    # TTL index - 90 days retention
+    await db["admin_activity_log"].create_index(
+        [("created_at", 1)],
+        expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
+        name="admin_activity_log_ttl"
+    )
+    logger.info("Created admin_activity_log indexes with 90-day TTL")
+
+    # activity_logs indexes (90 day retention) - planner activity
+    logger.info("Creating indexes for activity_logs collection...")
+    await db["activity_logs"].create_index([("timestamp", DESCENDING)])
+    await db["activity_logs"].create_index([("created_at", DESCENDING)])
+    await db["activity_logs"].create_index([("wedding_id", ASCENDING), ("timestamp", DESCENDING)])
+    await db["activity_logs"].create_index([("planner_email", ASCENDING), ("timestamp", DESCENDING)])
+    await db["activity_logs"].create_index([("actor_email", ASCENDING), ("timestamp", DESCENDING)])
+    await db["activity_logs"].create_index([("type", ASCENDING), ("timestamp", DESCENDING)])
+    # TTL index - 90 days retention
+    await db["activity_logs"].create_index(
+        [("timestamp", 1)],
+        expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
+        name="activity_logs_ttl"
+    )
+    logger.info("Created activity_logs indexes with 90-day TTL")
+
+    # audit_logs indexes (30 day retention) - high volume HTTP request logging
+    logger.info("Creating indexes for audit_logs collection...")
+    await db["audit_logs"].create_index([("timestamp", DESCENDING)])
+    await db["audit_logs"].create_index([("event_type", ASCENDING), ("timestamp", DESCENDING)])
+    await db["audit_logs"].create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
+    await db["audit_logs"].create_index([("method", ASCENDING), ("path", ASCENDING)])
+    await db["audit_logs"].create_index([("response_status", ASCENDING), ("timestamp", DESCENDING)])
+    # TTL index - 30 days retention (high volume)
+    await db["audit_logs"].create_index(
+        [("timestamp", 1)],
+        expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
+        name="audit_logs_ttl"
+    )
+    logger.info("Created audit_logs indexes with 30-day TTL")
+
+    # security_audit_logs indexes (180 day retention) - security compliance
+    logger.info("Creating indexes for security_audit_logs collection...")
+    await db["security_audit_logs"].create_index([("timestamp", DESCENDING)])
+    await db["security_audit_logs"].create_index([("event_type", ASCENDING), ("timestamp", DESCENDING)])
+    await db["security_audit_logs"].create_index([("severity", ASCENDING), ("timestamp", DESCENDING)])
+    await db["security_audit_logs"].create_index([("user_email", ASCENDING), ("timestamp", DESCENDING)])
+    await db["security_audit_logs"].create_index([("ip_address", ASCENDING)])
+    # TTL index - 180 days retention (security compliance)
+    await db["security_audit_logs"].create_index(
+        [("timestamp", 1)],
+        expireAfterSeconds=180 * 24 * 60 * 60,  # 180 days
+        name="security_audit_logs_ttl"
+    )
+    logger.info("Created security_audit_logs indexes with 180-day TTL")
+
+    # errors collection TTL index (30 day retention)
+    # Note: Other indexes already exist from migration 001
+    logger.info("Adding TTL index to errors collection...")
+    try:
+        await db["errors"].create_index(
+            [("timestamp", 1)],
+            expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
+            name="errors_ttl"
+        )
+        logger.info("Created errors TTL index with 30-day retention")
+    except Exception as e:
+        # May already exist or conflict with existing index
+        logger.warning(f"Could not create errors TTL index: {str(e)}")
+
+    logger.info("All activity/audit log indexes created successfully")

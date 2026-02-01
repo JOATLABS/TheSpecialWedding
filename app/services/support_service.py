@@ -333,6 +333,37 @@ class SupportService:
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to add comment")
 
+            # Notify planner when ROOT_ADMIN responds (not internal comments)
+            if current_user.role == "ROOT_ADMIN" and not comment_data.get("is_internal", False):
+                # Only notify if the planner is not the commenter
+                if ticket["created_by"] != current_user.email:
+                    try:
+                        await self._notify_planner_ticket_response(ticket, comment, current_user)
+                    except Exception as notif_error:
+                        logger.error(f"Failed to send ticket response notification: {str(notif_error)}")
+                        # Don't fail the comment if notification fails
+
+            # Log activity for all comments
+            try:
+                activity_logs_collection = mongo.db["activity_logs"]
+                await activity_logs_collection.insert_one({
+                    "type": "support_ticket_comment",
+                    "message": f"Comment added to ticket {ticket.get('ticket_number', 'Unknown')}",
+                    "timestamp": datetime.utcnow(),
+                    "created_at": datetime.utcnow(),
+                    "planner_email": ticket["created_by"],
+                    "actor_email": current_user.email,
+                    "metadata": {
+                        "ticket_number": ticket.get("ticket_number"),
+                        "ticket_id": ticket_id,
+                        "comment_id": comment["id"],
+                        "is_internal": comment_data.get("is_internal", False)
+                    }
+                })
+            except Exception as activity_error:
+                logger.error(f"Failed to log activity for comment: {str(activity_error)}")
+                # Don't fail the comment if activity logging fails
+
             return {
                 "message": "Comment added successfully",
                 "comment_id": comment["id"]
@@ -664,8 +695,7 @@ class SupportService:
                     creator_name = creator_info["company_name"]
                 else:
                     creator_name = (
-                        f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip()
-                        or created_by
+                        f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip() or created_by
                     )
 
             priority = (ticket.get("priority") or "medium").lower()
@@ -759,3 +789,136 @@ class SupportService:
         except Exception as e:
             logger.error(f"Failed to send support ticket notification: {str(e)}")
             raise
+
+    async def _notify_planner_ticket_response(
+        self,
+        ticket: dict,
+        comment: dict,
+        responder
+    ) -> None:
+        """Notify planner when root admin responds to their support ticket"""
+        try:
+            planner_email = ticket["created_by"]
+            ticket_number = ticket.get("ticket_number", "Unknown")
+            ticket_subject = ticket.get("subject", "No Subject")
+            ticket_id = str(ticket["_id"])
+
+            # Get responder name
+            responder_info = await self.users_collection.find_one(
+                {"email": responder.email},
+                {"first_name": 1, "last_name": 1}
+            )
+            responder_name = "Support Team"
+            if responder_info:
+                responder_name = f"{responder_info.get('first_name', '')} {responder_info.get('last_name', '')}".strip()
+                if not responder_name:
+                    responder_name = "Support Team"
+
+            # 1. Create in-app planner notification
+            from app.services.planner_notification_service import planner_notification_service
+            await planner_notification_service.notify_support_ticket_response(
+                planner_id=planner_email,
+                ticket_number=ticket_number,
+                ticket_subject=ticket_subject,
+                responder_name=responder_name,
+                ticket_id=ticket_id,
+                message_preview=comment.get("message")
+            )
+            logger.info(f"Planner notification created for ticket response: {ticket_number}")
+
+            # 2. Send email notification
+            await self._send_ticket_response_email(
+                planner_email=planner_email,
+                ticket=ticket,
+                comment=comment,
+                responder_name=responder_name
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to notify planner about ticket response: {str(e)}")
+            raise
+
+    async def _send_ticket_response_email(
+        self,
+        planner_email: str,
+        ticket: dict,
+        comment: dict,
+        responder_name: str
+    ) -> None:
+        """Send email notification to planner when admin responds to their ticket"""
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            email_service = ResendEmailService()
+
+            ticket_number = ticket.get("ticket_number", "Unknown")
+            ticket_subject = ticket.get("subject", "No Subject")
+            message_content = comment.get("message", "")
+
+            frontend_url = (os.getenv("FRONTEND_URL") or "").rstrip("/")
+            support_url = f"{frontend_url}/admin/support" if frontend_url else ""
+
+            html_content = f"""
+            <!doctype html>
+            <html>
+            <body style="font-family: Arial, sans-serif; background-color: #ffffff; color: #111827; margin: 0; padding: 0;">
+                <div style="max-width: 640px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
+                    <div style="background: linear-gradient(135deg, #10b981, #059669); padding: 24px; text-align: center;">
+                        <h1 style="color: white; margin: 0; font-size: 22px;">Support Response</h1>
+                    </div>
+
+                    <div style="padding: 24px;">
+                        <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; width: 120px;">Ticket #:</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{ticket_number}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Subject:</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{ticket_subject}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Responded by:</td>
+                                    <td style="padding: 6px 0;">{responder_name}</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <h2 style="margin: 20px 0 10px 0; font-size: 16px; color: #374151;">Response:</h2>
+
+                        <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 16px; border-radius: 0 8px 8px 0;">
+                            <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{message_content}</p>
+                        </div>
+
+                        {f'''
+                        <div style="text-align: center; margin-top: 24px;">
+                            <a href="{support_url}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                View in Support Center
+                            </a>
+                        </div>
+                        ''' if support_url else ''}
+                    </div>
+
+                    <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e5e7eb;">
+                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
+                            This email was sent from TheSpecialWedding Support System
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            await email_service.send_email(
+                to_email=planner_email,
+                subject=f"Support Response: {ticket_subject} (#{ticket_number})",
+                html_content=html_content,
+                from_name="TheSpecialWedding Support",
+                email_type="support_ticket_response"
+            )
+
+            logger.info(f"Ticket response email sent to {planner_email} for ticket {ticket_number}")
+
+        except Exception as e:
+            logger.error(f"Failed to send ticket response email: {str(e)}")

@@ -397,6 +397,281 @@ async def create_reminders_sent_indexes():
         return False
 
 
+async def create_admin_activity_log_indexes():
+    """
+    Create indexes for admin_activity_log collection (ROOT_ADMIN actions)
+
+    Key queries:
+    1. Get activities sorted by created_at (recent first)
+    2. Filter by action_type
+    3. Filter by entity_type
+    4. Filter by admin_id
+
+    TTL index: Automatically delete entries older than 90 days
+    """
+    collection = mongo.db["admin_activity_log"]
+    try:
+        # 1. Created at sorting (most common query)
+        await collection.create_index(
+            [("created_at", DESCENDING)],
+            name="idx_admin_activity_created"
+        )
+        logger.info("Created index: idx_admin_activity_created")
+
+        # 2. Action type filter + created_at
+        await collection.create_index(
+            [("action_type", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_action_type_created"
+        )
+        logger.info("Created index: idx_action_type_created")
+
+        # 3. Entity type filter + created_at
+        await collection.create_index(
+            [("entity_type", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_entity_type_created"
+        )
+        logger.info("Created index: idx_entity_type_created")
+
+        # 4. Admin ID filter + created_at
+        await collection.create_index(
+            [("admin_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_admin_id_created"
+        )
+        logger.info("Created index: idx_admin_id_created")
+
+        # 5. TTL index - Auto-delete after 90 days
+        await collection.create_index(
+            [("created_at", ASCENDING)],
+            name="idx_admin_activity_ttl",
+            expireAfterSeconds=90 * 24 * 60 * 60  # 90 days
+        )
+        logger.info("Created TTL index: idx_admin_activity_ttl (90 days)")
+
+        logger.info("All admin_activity_log indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating admin_activity_log indexes: {str(e)}")
+        return False
+
+
+async def create_activity_logs_indexes():
+    """
+    Create indexes for activity_logs collection (planner activities)
+
+    Key queries:
+    1. Get activities by planner_email
+    2. Get activities by wedding_id
+    3. Sort by timestamp
+
+    TTL index: Automatically delete entries older than 90 days
+    """
+    collection = mongo.db["activity_logs"]
+    try:
+        # 1. Timestamp sorting (most common query)
+        await collection.create_index(
+            [("timestamp", DESCENDING)],
+            name="idx_activity_timestamp"
+        )
+        logger.info("Created index: idx_activity_timestamp")
+
+        # 2. Created_at fallback sorting
+        await collection.create_index(
+            [("created_at", DESCENDING)],
+            name="idx_activity_created_at"
+        )
+        logger.info("Created index: idx_activity_created_at")
+
+        # 3. Wedding ID + timestamp
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_wedding_timestamp"
+        )
+        logger.info("Created index: idx_wedding_timestamp")
+
+        # 4. Planner email + timestamp
+        await collection.create_index(
+            [("planner_email", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_planner_timestamp"
+        )
+        logger.info("Created index: idx_planner_timestamp")
+
+        # 5. Actor email + timestamp
+        await collection.create_index(
+            [("actor_email", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_actor_timestamp"
+        )
+        logger.info("Created index: idx_actor_timestamp")
+
+        # 6. Activity type + timestamp
+        await collection.create_index(
+            [("type", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_type_timestamp"
+        )
+        logger.info("Created index: idx_type_timestamp")
+
+        # 7. TTL index - Auto-delete after 90 days
+        await collection.create_index(
+            [("timestamp", ASCENDING)],
+            name="idx_activity_logs_ttl",
+            expireAfterSeconds=90 * 24 * 60 * 60  # 90 days
+        )
+        logger.info("Created TTL index: idx_activity_logs_ttl (90 days)")
+
+        logger.info("All activity_logs indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating activity_logs indexes: {str(e)}")
+        return False
+
+
+async def create_audit_logs_indexes():
+    """
+    Create indexes for audit_logs collection (HTTP request auditing)
+
+    Key queries:
+    1. Get logs by timestamp
+    2. Filter by response_status (errors)
+    3. Filter by path (endpoint analysis)
+
+    TTL index: Automatically delete entries older than 30 days (high volume)
+    """
+    collection = mongo.db["audit_logs"]
+    try:
+        # 1. Timestamp sorting
+        await collection.create_index(
+            [("timestamp", DESCENDING)],
+            name="idx_audit_timestamp"
+        )
+        logger.info("Created index: idx_audit_timestamp")
+
+        # 2. Response status + timestamp (for error filtering)
+        await collection.create_index(
+            [("response_status", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_status_timestamp"
+        )
+        logger.info("Created index: idx_status_timestamp")
+
+        # 3. Path + timestamp (for endpoint analysis)
+        await collection.create_index(
+            [("path", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_path_timestamp"
+        )
+        logger.info("Created index: idx_path_timestamp")
+
+        # 4. TTL index - Auto-delete after 30 days (high volume collection)
+        await collection.create_index(
+            [("timestamp", ASCENDING)],
+            name="idx_audit_logs_ttl",
+            expireAfterSeconds=30 * 24 * 60 * 60  # 30 days
+        )
+        logger.info("Created TTL index: idx_audit_logs_ttl (30 days)")
+
+        logger.info("All audit_logs indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating audit_logs indexes: {str(e)}")
+        return False
+
+
+async def create_security_audit_logs_indexes():
+    """
+    Create indexes for security_audit_logs collection
+
+    TTL index: Automatically delete entries older than 180 days (compliance)
+    """
+    collection = mongo.db["security_audit_logs"]
+    try:
+        # 1. Timestamp sorting
+        await collection.create_index(
+            [("timestamp", DESCENDING)],
+            name="idx_security_timestamp"
+        )
+        logger.info("Created index: idx_security_timestamp")
+
+        # 2. Event type + timestamp
+        await collection.create_index(
+            [("event_type", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_event_type_timestamp"
+        )
+        logger.info("Created index: idx_event_type_timestamp")
+
+        # 3. Severity + timestamp
+        await collection.create_index(
+            [("severity", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_severity_timestamp"
+        )
+        logger.info("Created index: idx_severity_timestamp")
+
+        # 4. TTL index - Auto-delete after 180 days (security compliance)
+        await collection.create_index(
+            [("timestamp", ASCENDING)],
+            name="idx_security_audit_logs_ttl",
+            expireAfterSeconds=180 * 24 * 60 * 60  # 180 days
+        )
+        logger.info("Created TTL index: idx_security_audit_logs_ttl (180 days)")
+
+        logger.info("All security_audit_logs indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating security_audit_logs indexes: {str(e)}")
+        return False
+
+
+async def create_errors_indexes():
+    """
+    Create indexes for errors collection
+
+    TTL index: Automatically delete acknowledged errors after 30 days
+    """
+    collection = mongo.db["errors"]
+    try:
+        # 1. Timestamp sorting
+        await collection.create_index(
+            [("timestamp", DESCENDING)],
+            name="idx_errors_timestamp"
+        )
+        logger.info("Created index: idx_errors_timestamp")
+
+        # 2. Error ID lookup
+        await collection.create_index(
+            [("error_id", ASCENDING)],
+            name="idx_error_id",
+            unique=True,
+            sparse=True
+        )
+        logger.info("Created index: idx_error_id")
+
+        # 3. Acknowledged status + timestamp (for cleanup queries)
+        await collection.create_index(
+            [("acknowledged", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_acknowledged_timestamp"
+        )
+        logger.info("Created index: idx_acknowledged_timestamp")
+
+        # 4. Severity + timestamp
+        await collection.create_index(
+            [("severity", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_errors_severity_timestamp"
+        )
+        logger.info("Created index: idx_errors_severity_timestamp")
+
+        # 5. TTL index - Auto-delete after 30 days
+        # Note: This will delete ALL errors (acknowledged or not) after 30 days
+        # If you only want to delete acknowledged errors, use the manual cleanup endpoint
+        await collection.create_index(
+            [("timestamp", ASCENDING)],
+            name="idx_errors_ttl",
+            expireAfterSeconds=30 * 24 * 60 * 60  # 30 days
+        )
+        logger.info("Created TTL index: idx_errors_ttl (30 days)")
+
+        logger.info("All errors indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating errors indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -409,6 +684,12 @@ async def create_all_indexes():
         await create_subscription_indexes()
         await create_user_indexes()
         await create_reminders_sent_indexes()  # SMS delivery tracking
+        # Activity/Audit logging indexes with TTL for auto-pruning
+        await create_admin_activity_log_indexes()
+        await create_activity_logs_indexes()
+        await create_audit_logs_indexes()
+        await create_security_audit_logs_indexes()
+        await create_errors_indexes()
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
