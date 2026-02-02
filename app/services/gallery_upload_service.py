@@ -13,9 +13,16 @@ from fastapi.responses import StreamingResponse
 logger = logging.getLogger(__name__)
 
 # Get MEDIA_DOMAIN from environment - no fallback
-MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN")
-if not MEDIA_DOMAIN:
+_raw_media_domain = os.getenv("MEDIA_DOMAIN")
+if not _raw_media_domain:
     logger.warning("MEDIA_DOMAIN environment variable is not set")
+    MEDIA_DOMAIN = None
+else:
+    # Ensure MEDIA_DOMAIN has https:// protocol
+    if _raw_media_domain.startswith(('http://', 'https://')):
+        MEDIA_DOMAIN = _raw_media_domain.rstrip('/')
+    else:
+        MEDIA_DOMAIN = f"https://{_raw_media_domain}".rstrip('/')
 
 
 class GalleryUploadService:
@@ -142,4 +149,3 @@ class GalleryUploadService:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')
             logger.error(f"S3 upload error ({error_code}): {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
-
