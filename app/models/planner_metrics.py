@@ -99,6 +99,7 @@ class PlannerWeddingModel(BaseModel):
     faqs: List[Any] = Field(default_factory=list)
     our_story: Optional[Dict[str, Any]] = None
     wedding_party: List[Any] = Field(default_factory=list)
+    featured_image: Optional[str] = Field(None, description="S3 key for the featured background image")
 
     class Config:
         populate_by_name = True

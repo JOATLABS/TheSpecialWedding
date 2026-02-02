@@ -550,7 +550,8 @@ async def get_planner_weddings(
                 registries=wedding.get("registries", []),
                 faqs=wedding.get("faqs", []),
                 our_story=wedding.get("our_story"),
-                wedding_party=wedding.get("wedding_party", [])
+                wedding_party=wedding.get("wedding_party", []),
+                featured_image=wedding.get("featured_image")
             ))
 
         # Sort by date (upcoming first)
