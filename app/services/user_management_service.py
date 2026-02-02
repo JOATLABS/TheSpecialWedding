@@ -1277,6 +1277,14 @@ class UserManagementService:
                 if "/" in timezone_str or timezone_str in ("UTC", "GMT"):
                     update_data["timezone"] = timezone_str
 
+            # Handle onboarding fields (for wedding planners)
+            if "onboarding_completed" in profile_data:
+                update_data["onboarding_completed"] = profile_data["onboarding_completed"]
+            if "onboarding_completed_at" in profile_data:
+                update_data["onboarding_completed_at"] = profile_data["onboarding_completed_at"]
+            if "onboarding_steps_completed" in profile_data:
+                update_data["onboarding_steps_completed"] = profile_data["onboarding_steps_completed"]
+
             if not update_data:
                 raise HTTPException(status_code=400, detail="No valid profile data provided")
 

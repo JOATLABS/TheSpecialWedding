@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Critical: Migration 006 Index Conflict Causing 502 Bad Gateway** (`app/utils/migrations.py`):
+  - **Problem**: Production backend failed to start due to MongoDB `IndexOptionsConflict` error in migration 006
+  - **Root cause**: Migration 006 created indexes without explicit names, while `database_indexes.py` created the same indexes with names (e.g., `idx_admin_activity_created`). MongoDB rejects duplicate indexes with different names.
+  - **Solution**: Refactored migration 006 to only create TTL indexes (its unique purpose). Non-TTL indexes are now solely managed by `create_all_indexes()` in `database_indexes.py`.
+  - **Changes**:
+    - Removed duplicate non-TTL index creation for `admin_activity_log`, `activity_logs`, `audit_logs`, and `security_audit_logs`
+    - Added `safe_create_ttl_index()` helper function with graceful error handling for "already exists" scenarios
+    - Removed unused `down_func_name` variable (fixed linter warning)
+  - **Impact**: Production backend starts successfully; planners can log in again
+
 ### Changed
 
 - **Platform Branding Update** (`app/layout.tsx`, `app/admin/components/Sidebar.tsx`, `public/favicon.svg`):
