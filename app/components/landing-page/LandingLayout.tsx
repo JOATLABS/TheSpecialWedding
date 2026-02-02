@@ -27,7 +27,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
-    ? `${process.env.MEDIA_DOMAIN}/${wedding.featured_image}`
+    ? `${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${wedding.featured_image}`
     : images.length > 0 ? images[0].url : undefined;
 
   return (
