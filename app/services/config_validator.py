@@ -50,6 +50,7 @@ CRITICAL_ENV_VARS = {
 RECOMMENDED_ENV_VARS = {
     "VAPID_PUBLIC_KEY": "Web Push VAPID public key for notifications",
     "VAPID_PRIVATE_KEY": "Web Push VAPID private key for notifications",
+    "API_KEY": "General API key (fallback for metrics token)",
     "RESEND_API_KEY": "Email service API key",
     "STRIPE_SECRET_KEY": "Payment processing API key",
     "STRIPE_WEBHOOK_SECRET": "Stripe webhook signature verification",
