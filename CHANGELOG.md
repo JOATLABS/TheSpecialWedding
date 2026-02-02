@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Onboarding Modal Not Staying Closed** (`app/admin/planner/page.tsx`):
+  - **Problem**: The onboarding modal kept reappearing after planners dismissed it, making it impossible to close
+  - **Root cause**: Race condition between the API call to mark onboarding complete and the profile refetch. If the profile returned before MongoDB reflected the update, the useEffect would reopen the modal with stale `onboarding_completed: false` data
+  - **Solution**: Added `hasUserDismissedOnboarding` local state flag that tracks when the user has dismissed the modal in the current session, preventing the useEffect from reopening it even if profile data is momentarily stale
+  - **Impact**: Planners can now dismiss the onboarding tour and it stays closed
+
 - **Critical: Knowledge Base Model MRO Conflict** (`app/models/knowledge_base.py`):
   - **Problem**: App failed to import due to `TypeError: Cannot create a consistent method resolution order (MRO) for bases MongoModel, UserRelatedModel`
   - **Root cause**: `KnowledgeBaseArticleModel` inherited from both `MongoModel` and `UserRelatedModel`, but `UserRelatedModel` already inherits from `MongoModel` (diamond inheritance)

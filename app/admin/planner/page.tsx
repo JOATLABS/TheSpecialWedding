@@ -65,6 +65,7 @@ export default function WeddingPlannerDashboard() {
 
  // Onboarding modal state
  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+ const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
 
  const fetchMyWeddings = useCallback(async () => {
  try {
@@ -170,13 +171,14 @@ export default function WeddingPlannerDashboard() {
 
  // Check if onboarding should be shown (one-time only for new planners)
  useEffect(() => {
-   if (userProfile && userProfile.is_wedding_planner && !userProfile.onboarding_completed) {
+   if (userProfile && userProfile.is_wedding_planner && !userProfile.onboarding_completed && !hasUserDismissedOnboarding) {
      setIsOnboardingOpen(true);
    }
- }, [userProfile]);
+ }, [userProfile, hasUserDismissedOnboarding]);
 
  // Handler for when onboarding is completed or skipped
  const handleOnboardingComplete = () => {
+   setHasUserDismissedOnboarding(true); // Track that user dismissed it
    setIsOnboardingOpen(false);
    // Refresh user profile to get updated onboarding status
    fetchUserProfile();
