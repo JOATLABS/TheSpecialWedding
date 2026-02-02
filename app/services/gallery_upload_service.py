@@ -86,7 +86,8 @@ class GalleryUploadService:
             files = [
                 {
                     "key": obj["Key"],
-                    "url": f"{MEDIA_DOMAIN}/{obj['Key']}" if MEDIA_DOMAIN else obj["Key"]
+                    "url": f"{MEDIA_DOMAIN}/{obj['Key']}" if MEDIA_DOMAIN else obj["Key"],
+                    "size": obj.get("Size", 0)
                 }
                 for obj in response["Contents"]
             ]
