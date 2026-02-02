@@ -83,7 +83,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                   <Image
                   src={wedding.our_story.image_url.startsWith('http')
                     ? wedding.our_story.image_url
-                    : `${process.env.MEDIA_DOMAIN}/${wedding.our_story.image_url}`}
+                    : `${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${wedding.our_story.image_url}`}
                   alt="Couple"
                   fill
                   className="object-cover"
@@ -119,7 +119,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                         <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                           {member.image_url ? (
                             <Image
-                              src={`${process.env.MEDIA_DOMAIN}/${member.image_url}`}
+                              src={`${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${member.image_url}`}
                               alt={member.name}
                               fill
                               className="object-cover"
@@ -153,7 +153,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                         <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                             {member.image_url ? (
                             <Image
-                              src={`${process.env.MEDIA_DOMAIN}/${member.image_url}`}
+                              src={`${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${member.image_url}`}
                               alt={member.name}
                               fill
                               className="object-cover"
