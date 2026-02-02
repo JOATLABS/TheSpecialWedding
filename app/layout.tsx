@@ -1,6 +1,16 @@
 // app/layout.tsx
 import './styles/globals.css'
 import Script from 'next/script'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Special Wedding',
+  description: 'Professional Wedding Planning Platform',
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/logo_all.png',
+  },
+}
 
 export default function RootLayout({
   children,

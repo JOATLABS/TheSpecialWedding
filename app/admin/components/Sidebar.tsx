@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -138,18 +139,27 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
       >
         {/* Logo Section */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-slate-200/50 dark:border-slate-700/50">
-          <Link href="/admin/planner" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center">
-              <Heart className="w-5 h-5 text-white" />
-            </div>
-            {isOpen && (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="font-heading font-bold text-lg text-slate-800 dark:text-white"
-              >
-                WeddingApp
-              </motion.span>
+          <Link href="/admin/planner" className="flex items-center">
+            {isOpen ? (
+              <NextImage
+                src="/logo_all.png"
+                alt="The Special Wedding"
+                width={160}
+                height={40}
+                className="object-contain"
+                priority
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl overflow-hidden">
+                <NextImage
+                  src="/logo_all.png"
+                  alt="The Special Wedding"
+                  width={40}
+                  height={40}
+                  className="object-cover"
+                  priority
+                />
+              </div>
             )}
           </Link>
 

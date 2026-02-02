@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8B4B8"/>
+      <stop offset="100%" style="stop-color:#D4A5A9"/>
+    </linearGradient>
+  </defs>
+  <!-- Left ring with heart shape -->
+  <g stroke="url(#ringGradient)" stroke-width="4" fill="none">
+    <!-- Left ring -->
+    <circle cx="24" cy="32" r="16"/>
+    <!-- Right ring -->
+    <circle cx="40" cy="32" r="16"/>
+  </g>
+  <!-- Heart accent in center overlap -->
+  <path
+    d="M32 28 C30 24, 26 24, 26 28 C26 32, 32 38, 32 38 C32 38, 38 32, 38 28 C38 24, 34 24, 32 28"
+    fill="url(#ringGradient)"
+  />
+</svg>

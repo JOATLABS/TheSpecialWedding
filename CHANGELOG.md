@@ -7,7 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Platform Branding Update** (`app/layout.tsx`, `app/admin/components/Sidebar.tsx`, `public/favicon.svg`):
+  - **Browser Favicon**: Added SVG favicon with interlinked rings icon in pink/rose gradient colors
+  - **Root Layout Metadata**: Added Next.js metadata export with favicon (`/favicon.svg`) and apple touch icon (`/logo_all.png`)
+  - **Admin Sidebar Logo**: Replaced Heart icon with "The Special Wedding" logo image
+    - Expanded sidebar: Shows full logo with text (160x40)
+    - Collapsed sidebar: Shows cropped logo icon (40x40)
+  - **Files**:
+    - Created `public/favicon.svg` - SVG rings icon for browser tab
+    - Modified `app/layout.tsx` - Added metadata with icons configuration
+    - Modified `app/admin/components/Sidebar.tsx` - Replaced Heart icon with NextImage component
+  - **Impact**: Consistent branding across browser tabs and admin/planner dashboards
+
 ### Added
+
+- **Seating Chart PDF Export Feature** (`app/services/seating_export_service.py`, `app/api/tables.py`, `app/admin/seating/page.tsx`):
+  - **Purpose**: Allow planners to export seating charts as printable PDFs for large venue display posters
+  - **New service** (`app/services/seating_export_service.py`):
+    - `SeatingExportService` class with `generate_seating_chart_pdf()` method
+    - Two layout styles: `visual` (floor plan with positioned tables) and `list` (table-by-table guest list)
+    - Two paper sizes: `poster` (24×18 inches for venue display) and `tabloid` (11×17 inches for print shops)
+    - Elegant styling with gold accents (#d4af37), wedding name header, and guest counts
+    - HTML escaping via `_escape_html()` to prevent XSS in guest/table names
+    - Supports round and rectangle table shapes with proper CSS styling
+  - **New API endpoint** (`app/api/tables.py`):
+    - `GET /admin/tables/{wedding_id}/export/pdf` - Export seating chart as PDF
+    - Query parameters: `layout` (visual/list), `size` (poster/tabloid)
+    - Returns PDF with `Content-Disposition: attachment` for download
+    - Handles both string and ObjectId wedding formats for compatibility
+  - **Frontend UI** (`app/admin/seating/page.tsx`):
+    - New "Export PDF ▾" dropdown button in PageHeader actions
+    - Poster and Tabloid size options with descriptions
+    - Loading state during PDF generation
+    - Dark mode support for dropdown menu
+  - **Dependencies**:
+    - Added `weasyprint>=62.0` to `requirements.txt`
+    - Added system libraries to `Dockerfile.coolify`: libcairo2, libpango, libgdk-pixbuf2.0, libffi
+  - **Impact**: Planners can print professional seating charts for venue escort tables
 
 - **Comprehensive Activity Logging System for Planner Dashboard** (`app/services/activity_log_service.py`, `app/services/rsvp_service.py`, `app/api/guest.py`, `app/api/reminder_twilio.py`):
   - **Problem**: Planner activity dashboard (`/admin/planner/activity-log`) only showed support ticket logs - no RSVP, guest, or SMS activity
@@ -214,6 +252,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixes "Attending: None" display issue in admin dashboard for plus-ones
 
 ### Fixed
+
+- **Wedding ID Lookup Consistency** (`app/api/tables.py`, `app/api/guest_export.py`):
+  - **Problem**: PDF export endpoints only queried weddings by string `_id`, failing for ObjectId-based weddings
+  - **Solution**: Added dual-format lookup pattern: `ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id`
+  - **Files updated**: Seating chart PDF export endpoint, Guest list PDF export endpoint
+  - **Impact**: PDF exports now work regardless of whether wedding IDs are stored as strings or ObjectIds
 
 - **Type Annotation Fixes in Twilio Reminder API** (`app/api/reminder_twilio.py`):
   - **Problem**: Pylance/mypy reported type errors for optional service instances and untyped dictionary
