@@ -8,7 +8,7 @@ import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
 import { Sidebar } from '@/admin/components/seating/Sidebar';
 import { GlassButton } from '@/admin/components/ui/glass/GlassButton';
-import { Plus, Download, Printer, Sparkles, X, Check } from 'lucide-react';
+import { Plus, Download, Printer, Sparkles, X, Check, FileText } from 'lucide-react';
 
 interface Wedding {
   id?: string;
@@ -54,6 +54,10 @@ export default function SeatingPage() {
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [showAiModal, setShowAiModal] = useState(false);
+
+  // PDF export state
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
 
   // Fetch weddings on mount
   const fetchWeddings = useCallback(async () => {
@@ -157,6 +161,44 @@ export default function SeatingPage() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    }
+  };
+
+  // PDF Export Handler
+  const handleExportPDF = async (size: 'poster' | 'tabloid') => {
+    if (!selectedWedding) return;
+
+    setPdfLoading(true);
+    setPdfMenuOpen(false);
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(
+        `${baseUrl}/admin/tables/${selectedWedding}/export/pdf?layout=visual&size=${size}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to export PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `seating_chart_${size}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      setAiError('Failed to export PDF. Please try again.');
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -285,8 +327,38 @@ export default function SeatingPage() {
               Print
             </GlassButton>
             <GlassButton onClick={handleExport} variant="secondary" size="sm" icon={<Download className="w-4 h-4" />}>
-              Export
+              Export CSV
             </GlassButton>
+            <div className="relative">
+              <GlassButton
+                onClick={() => setPdfMenuOpen(!pdfMenuOpen)}
+                variant="secondary"
+                size="sm"
+                icon={<FileText className="w-4 h-4" />}
+                disabled={pdfLoading}
+              >
+                {pdfLoading ? 'Generating...' : 'Export PDF ▾'}
+              </GlassButton>
+
+              {pdfMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-700 rounded-lg shadow-lg border border-gray-200 dark:border-slate-600 z-20 overflow-hidden">
+                  <button
+                    onClick={() => handleExportPDF('poster')}
+                    className="w-full px-4 py-3 text-left text-sm hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">Poster Size</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">24×18 inches (Large venue display)</span>
+                  </button>
+                  <button
+                    onClick={() => handleExportPDF('tabloid')}
+                    className="w-full px-4 py-3 text-left text-sm hover:bg-gray-100 dark:hover:bg-slate-600 border-t border-gray-100 dark:border-slate-600 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">Tabloid Size</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">11×17 inches (Standard print shop)</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <GlassButton onClick={handleAddTable} size="sm" icon={<Plus className="w-4 h-4" />}>
               Add Table
             </GlassButton>

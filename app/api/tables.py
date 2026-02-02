@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query, Response
 from typing import List
+import logging
 from app.models.table import TableModel, UpdateTableRequest, AssignGuestsRequest
 from app.dependencies.auth_extended import (
     require_admin_or_planner,
@@ -8,8 +9,12 @@ from app.dependencies.auth_extended import (
 )
 from app.core.database import mongo
 from bson import ObjectId
+from bson.errors import InvalidId
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 @router.get("/tables/{wedding_id}", tags=["Seating"])
 async def list_tables(
@@ -30,6 +35,7 @@ async def list_tables(
             del table["_id"]
 
     return tables
+
 
 @router.post("/tables", tags=["Seating"])
 async def create_table(
@@ -58,6 +64,7 @@ async def create_table(
 
     return response_data
 
+
 @router.put("/tables/{table_id}", tags=["Seating"])
 async def update_table(
     table_id: str,
@@ -67,7 +74,7 @@ async def update_table(
     """Update table properties"""
     try:
         oid = ObjectId(table_id)
-    except:
+    except InvalidId:
         raise HTTPException(status_code=400, detail="Invalid table ID")
 
     # First get the table to check wedding_id access
@@ -88,6 +95,7 @@ async def update_table(
 
     return {"message": "Table updated successfully"}
 
+
 @router.delete("/tables/{table_id}", tags=["Seating"])
 async def delete_table(
     table_id: str,
@@ -96,7 +104,7 @@ async def delete_table(
     """Delete a table and unassign its guests"""
     try:
         oid = ObjectId(table_id)
-    except:
+    except InvalidId:
         raise HTTPException(status_code=400, detail="Invalid table ID")
 
     # First get the table to check wedding_id access
@@ -118,6 +126,7 @@ async def delete_table(
 
     return {"message": "Table deleted and guests unassigned"}
 
+
 @router.post("/tables/assign", tags=["Seating"])
 async def assign_guests(
     request: AssignGuestsRequest,
@@ -126,7 +135,7 @@ async def assign_guests(
     """Bulk assign guests to a table"""
     try:
         table_oid = ObjectId(request.table_id)
-    except:
+    except InvalidId:
         raise HTTPException(status_code=400, detail="Invalid table ID")
 
     # Validate table exists and check access
@@ -142,7 +151,7 @@ async def assign_guests(
     for gid in request.guest_ids:
         try:
             guest_object_ids.append(ObjectId(gid))
-        except:
+        except InvalidId:
             continue
 
     if not guest_object_ids:
@@ -180,6 +189,7 @@ async def assign_guests(
 
     return {"message": f"Assigned {len(guest_object_ids)} guests to table", "assigned": len(guest_object_ids)}
 
+
 @router.post("/tables/unassign", tags=["Seating"])
 async def unassign_guests(
     guest_ids: List[str] = Body(...),
@@ -194,7 +204,7 @@ async def unassign_guests(
     for gid in guest_ids:
         try:
             guest_object_ids.append(ObjectId(gid))
-        except:
+        except InvalidId:
             continue
 
     if guest_object_ids:
@@ -204,3 +214,73 @@ async def unassign_guests(
         )
 
     return {"message": f"Unassigned {len(guest_object_ids)} guests"}
+
+
+@router.get("/tables/{wedding_id}/export/pdf", tags=["Seating"])
+async def export_seating_chart_pdf(
+    wedding_id: str,
+    layout: str = Query("visual", description="Layout style: visual (floor plan) or list (table-by-table)"),
+    size: str = Query("poster", description="Paper size: poster (24x18 inches) or tabloid (11x17 inches)"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Export seating chart as a printable PDF.
+
+    Layout options:
+    - **visual**: Floor plan layout with positioned tables (best for venue display)
+    - **list**: Table-by-table guest list format (best for printing/reference)
+
+    Size options:
+    - **poster**: 24x18 inches (large venue display)
+    - **tabloid**: 11x17 inches (standard print shop)
+    """
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    try:
+        # Import service here to avoid circular imports and handle missing dependency
+        from app.services.seating_export_service import seating_export_service
+
+        # Get wedding name for PDF header (handle both string and ObjectId formats)
+        wedding_oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
+        wedding = await mongo.db["weddings"].find_one({"_id": wedding_oid})
+        wedding_name = wedding.get("couple_names", "Wedding") if wedding else "Wedding"
+
+        # Validate parameters
+        if layout not in ("visual", "list"):
+            layout = "visual"
+        if size not in ("poster", "tabloid"):
+            size = "poster"
+
+        # Generate PDF
+        pdf_bytes = await seating_export_service.generate_seating_chart_pdf(
+            wedding_id=wedding_id,
+            wedding_name=wedding_name,
+            layout_style=layout,
+            paper_size=size
+        )
+
+        # Create safe filename
+        safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_name)
+        filename = f"{safe_name}_seating_chart_{size}.pdf"
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+
+    except ImportError as e:
+        logger.error(f"PDF generation dependency missing: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail="PDF generation not available. WeasyPrint may not be installed."
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate seating chart PDF: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate PDF: {str(e)}"
+        )

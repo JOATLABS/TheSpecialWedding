@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
 from app.services.guest_export_service import guest_export_service
 from app.core.database import mongo
+from bson import ObjectId
 from pydantic import BaseModel
 from typing import List, Optional
 from io import BytesIO
@@ -106,8 +107,9 @@ async def export_guest_list_pdf(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     try:
-        # Get wedding name for the PDF header
-        wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
+        # Get wedding name for the PDF header (handle both string and ObjectId formats)
+        wedding_oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
+        wedding = await mongo.db["weddings"].find_one({"_id": wedding_oid})
         wedding_name = wedding.get("couple_names", "Wedding") if wedding else "Wedding"
 
         pdf_bytes = await guest_export_service.generate_guest_list_pdf(
