@@ -17,7 +17,7 @@ jobs:
   # ===========================================
   build:
     name: Build and Push Docker Image
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     # Only run if pushing to the configured deployment branch
     if: github.ref == format('refs/heads/{0}', vars.DEPLOY_BRANCH || 'feature-twilio-otp-improvements-final-submitted')
     permissions:
@@ -71,7 +71,7 @@ jobs:
   # ===========================================
   deploy:
     name: Deploy to Production
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     needs: build
     environment: production  # Use production environment for secrets
 
@@ -345,7 +345,7 @@ jobs:
   # ===========================================
   database-setup:
     name: Setup Database
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     needs: deploy
     environment: production
 
@@ -368,7 +368,7 @@ jobs:
   # ===========================================
   health-check:
     name: Verify Deployment
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     needs: deploy
     environment: production
 
