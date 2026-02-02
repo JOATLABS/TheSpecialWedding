@@ -181,8 +181,7 @@ class MigrationRegistry:
                 )
         """
         def decorator(up_func: Callable):
-            # Look for corresponding down function
-            down_func_name = f"rollback_{up_func.__name__}"
+            # Rollback functions not yet implemented
             down_func = None
 
             migration = Migration(
@@ -226,7 +225,7 @@ class MigrationRegistry:
             down_func = getattr(migration_class, 'down', None)
 
             if not up_func:
-                raise ValueError(f"Migration class must have 'up' method")
+                raise ValueError("Migration class must have 'up' method")
 
             migration = Migration(
                 version=version,
@@ -395,87 +394,71 @@ async def migration_005_users_indexes(db):
 @migration_registry.register(
     "006",
     "Add activity and audit log indexes with TTL",
-    "Creates indexes for admin_activity_log, activity_logs, audit_logs, and security_audit_logs with TTL for automatic cleanup"
+    "Creates TTL indexes for admin_activity_log, activity_logs, audit_logs, and security_audit_logs for automatic cleanup"
 )
 async def migration_006_activity_log_indexes(db):
     """
-    Add indexes for all activity/audit log collections
-    Including TTL indexes for automatic document expiration
+    Add TTL indexes for all activity/audit log collections.
+
+    Note: Non-TTL indexes are created by create_all_indexes() in database_indexes.py.
+    This migration only creates TTL indexes for automatic document expiration.
     """
-    from pymongo import ASCENDING, DESCENDING
+    from pymongo import ASCENDING
 
-    # admin_activity_log indexes (90 day retention)
-    logger.info("Creating indexes for admin_activity_log collection...")
-    await db["admin_activity_log"].create_index([("created_at", DESCENDING)])
-    await db["admin_activity_log"].create_index([("action_type", ASCENDING), ("created_at", DESCENDING)])
-    await db["admin_activity_log"].create_index([("entity_type", ASCENDING), ("created_at", DESCENDING)])
-    await db["admin_activity_log"].create_index([("admin_id", ASCENDING), ("created_at", DESCENDING)])
-    # TTL index - 90 days retention
-    await db["admin_activity_log"].create_index(
-        [("created_at", 1)],
-        expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
-        name="admin_activity_log_ttl"
+    async def safe_create_ttl_index(collection_name: str, field: str, expire_seconds: int, index_name: str):
+        """Helper to safely create TTL index, handling 'already exists' errors gracefully."""
+        try:
+            await db[collection_name].create_index(
+                [(field, ASCENDING)],
+                expireAfterSeconds=expire_seconds,
+                name=index_name
+            )
+            logger.info(f"Created TTL index {index_name} on {collection_name}")
+        except Exception as e:
+            error_str = str(e).lower()
+            if "already exists" in error_str or "indexoptionsconflict" in error_str:
+                logger.info(f"TTL index {index_name} already exists on {collection_name}, skipping")
+            else:
+                raise
+
+    # admin_activity_log - 90 day TTL
+    logger.info("Creating TTL index for admin_activity_log collection...")
+    await safe_create_ttl_index(
+        "admin_activity_log", "created_at",
+        90 * 24 * 60 * 60,  # 90 days
+        "admin_activity_log_ttl"
     )
-    logger.info("Created admin_activity_log indexes with 90-day TTL")
 
-    # activity_logs indexes (90 day retention) - planner activity
-    logger.info("Creating indexes for activity_logs collection...")
-    await db["activity_logs"].create_index([("timestamp", DESCENDING)])
-    await db["activity_logs"].create_index([("created_at", DESCENDING)])
-    await db["activity_logs"].create_index([("wedding_id", ASCENDING), ("timestamp", DESCENDING)])
-    await db["activity_logs"].create_index([("planner_email", ASCENDING), ("timestamp", DESCENDING)])
-    await db["activity_logs"].create_index([("actor_email", ASCENDING), ("timestamp", DESCENDING)])
-    await db["activity_logs"].create_index([("type", ASCENDING), ("timestamp", DESCENDING)])
-    # TTL index - 90 days retention
-    await db["activity_logs"].create_index(
-        [("timestamp", 1)],
-        expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
-        name="activity_logs_ttl"
+    # activity_logs - 90 day TTL
+    logger.info("Creating TTL index for activity_logs collection...")
+    await safe_create_ttl_index(
+        "activity_logs", "timestamp",
+        90 * 24 * 60 * 60,  # 90 days
+        "activity_logs_ttl"
     )
-    logger.info("Created activity_logs indexes with 90-day TTL")
 
-    # audit_logs indexes (30 day retention) - high volume HTTP request logging
-    logger.info("Creating indexes for audit_logs collection...")
-    await db["audit_logs"].create_index([("timestamp", DESCENDING)])
-    await db["audit_logs"].create_index([("event_type", ASCENDING), ("timestamp", DESCENDING)])
-    await db["audit_logs"].create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
-    await db["audit_logs"].create_index([("method", ASCENDING), ("path", ASCENDING)])
-    await db["audit_logs"].create_index([("response_status", ASCENDING), ("timestamp", DESCENDING)])
-    # TTL index - 30 days retention (high volume)
-    await db["audit_logs"].create_index(
-        [("timestamp", 1)],
-        expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
-        name="audit_logs_ttl"
+    # audit_logs - 30 day TTL (high volume)
+    logger.info("Creating TTL index for audit_logs collection...")
+    await safe_create_ttl_index(
+        "audit_logs", "timestamp",
+        30 * 24 * 60 * 60,  # 30 days
+        "audit_logs_ttl"
     )
-    logger.info("Created audit_logs indexes with 30-day TTL")
 
-    # security_audit_logs indexes (180 day retention) - security compliance
-    logger.info("Creating indexes for security_audit_logs collection...")
-    await db["security_audit_logs"].create_index([("timestamp", DESCENDING)])
-    await db["security_audit_logs"].create_index([("event_type", ASCENDING), ("timestamp", DESCENDING)])
-    await db["security_audit_logs"].create_index([("severity", ASCENDING), ("timestamp", DESCENDING)])
-    await db["security_audit_logs"].create_index([("user_email", ASCENDING), ("timestamp", DESCENDING)])
-    await db["security_audit_logs"].create_index([("ip_address", ASCENDING)])
-    # TTL index - 180 days retention (security compliance)
-    await db["security_audit_logs"].create_index(
-        [("timestamp", 1)],
-        expireAfterSeconds=180 * 24 * 60 * 60,  # 180 days
-        name="security_audit_logs_ttl"
+    # security_audit_logs - 180 day TTL (security compliance)
+    logger.info("Creating TTL index for security_audit_logs collection...")
+    await safe_create_ttl_index(
+        "security_audit_logs", "timestamp",
+        180 * 24 * 60 * 60,  # 180 days
+        "security_audit_logs_ttl"
     )
-    logger.info("Created security_audit_logs indexes with 180-day TTL")
 
-    # errors collection TTL index (30 day retention)
-    # Note: Other indexes already exist from migration 001
-    logger.info("Adding TTL index to errors collection...")
-    try:
-        await db["errors"].create_index(
-            [("timestamp", 1)],
-            expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
-            name="errors_ttl"
-        )
-        logger.info("Created errors TTL index with 30-day retention")
-    except Exception as e:
-        # May already exist or conflict with existing index
-        logger.warning(f"Could not create errors TTL index: {str(e)}")
+    # errors - 30 day TTL
+    logger.info("Creating TTL index for errors collection...")
+    await safe_create_ttl_index(
+        "errors", "timestamp",
+        30 * 24 * 60 * 60,  # 30 days
+        "errors_ttl"
+    )
 
-    logger.info("All activity/audit log indexes created successfully")
+    logger.info("All TTL indexes created successfully")
