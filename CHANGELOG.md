@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Critical: Knowledge Base Model MRO Conflict** (`app/models/knowledge_base.py`):
+  - **Problem**: App failed to import due to `TypeError: Cannot create a consistent method resolution order (MRO) for bases MongoModel, UserRelatedModel`
+  - **Root cause**: `KnowledgeBaseArticleModel` inherited from both `MongoModel` and `UserRelatedModel`, but `UserRelatedModel` already inherits from `MongoModel` (diamond inheritance)
+  - **Solution**: Changed inheritance to only `UserRelatedModel` since it already includes `MongoModel`
+  - **Impact**: Knowledge base feature now loads correctly
+
 - **Critical: Migration 006 Index Conflict Causing 502 Bad Gateway** (`app/utils/migrations.py`):
   - **Problem**: Production backend failed to start due to MongoDB `IndexOptionsConflict` error in migration 006
   - **Root cause**: Migration 006 created indexes without explicit names, while `database_indexes.py` created the same indexes with names (e.g., `idx_admin_activity_created`). MongoDB rejects duplicate indexes with different names.

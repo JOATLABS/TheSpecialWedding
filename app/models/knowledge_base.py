@@ -2,10 +2,10 @@
 Knowledge Base Models for Community-Driven Documentation System
 Provides Pydantic models with validation for KB articles
 """
-from pydantic import BaseModel, Field, field_validator, field_serializer
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
-from datetime import datetime
-from app.models.base import MongoModel, UserRelatedModel
+from datetime import datetime, timezone
+from app.models.base import UserRelatedModel
 
 
 # Valid categories for KB articles
@@ -28,24 +28,26 @@ KB_CATEGORIES = [
 
 
 class ArticleFeedbackModel(BaseModel):
-    """Individual feedback entry for an article"""
+    """Individual feedback entry for an article (embedded document)"""
     user_email: str = Field(..., max_length=254, description="Email of user who gave feedback")
     helpful: bool = Field(..., description="Whether the article was helpful")
-    feedback_at: datetime = Field(default_factory=datetime.utcnow, description="When feedback was given")
+    feedback_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When feedback was given")
     comment: Optional[str] = Field(None, max_length=500, description="Optional feedback comment")
 
-    @field_serializer('feedback_at', when_used='json')
-    def serialize_datetime(self, dt: datetime) -> str:
-        return dt.isoformat() if dt else None
 
-
-class KnowledgeBaseArticleModel(MongoModel, UserRelatedModel):
+class KnowledgeBaseArticleModel(UserRelatedModel):
     """
     Knowledge Base Article Model
     Community-driven documentation where all planners can contribute
 
     Multi-tenant: Articles are visible to all planners
     Authorization: Authors can edit their own articles, ROOT_ADMIN can edit all
+
+    Inherits from UserRelatedModel which provides:
+    - id (_id alias), created_at, updated_at from MongoModel/TimestampedModel
+    - created_by, updated_by from UserRelatedModel
+    - model_config with populate_by_name=True
+    - datetime serialization
     """
 
     # Article Content
@@ -56,7 +58,7 @@ class KnowledgeBaseArticleModel(MongoModel, UserRelatedModel):
 
     # Classification
     category: str = Field(default="general", description="Article category")
-    tags: List[str] = Field(default_factory=list, max_length=10, description="Article tags for search")
+    tags: List[str] = Field(default_factory=list, description="Article tags for search")
 
     # Status & Visibility
     status: str = Field(default="published", description="Article status: draft, published, pending_review")
@@ -64,6 +66,7 @@ class KnowledgeBaseArticleModel(MongoModel, UserRelatedModel):
     featured: bool = Field(default=False, description="Highlight important articles")
 
     # Author Information (extends UserRelatedModel's created_by)
+    author_email: str = Field(..., max_length=254, description="Author email for identification")
     author_name: str = Field(..., max_length=100, description="Display name for attribution")
     author_id: str = Field(..., description="User ID reference for author")
 
@@ -72,7 +75,7 @@ class KnowledgeBaseArticleModel(MongoModel, UserRelatedModel):
     helpful_count: int = Field(default=0, ge=0, description="Count of helpful votes")
     not_helpful_count: int = Field(default=0, ge=0, description="Count of not helpful votes")
 
-    # Feedback History (optional - can store individual feedback)
+    # Feedback History (embedded documents)
     feedback: List[ArticleFeedbackModel] = Field(default_factory=list, description="User feedback entries")
 
     # Ordering
@@ -117,33 +120,6 @@ class KnowledgeBaseArticleModel(MongoModel, UserRelatedModel):
             # Limit to 10 tags
             return cleaned[:10]
         return v
-
-    class Config:
-        populate_by_name = True
-        json_schema_extra = {
-            "example": {
-                "_id": "507f1f77bcf86cd799439011",
-                "title": "Getting Started with Guest Management",
-                "slug": "getting-started-guest-management",
-                "content": "# Guest Management Guide\n\nLearn how to manage your wedding guests...",
-                "excerpt": "Learn how to add, organize, and manage your wedding guest list effectively.",
-                "category": "guest-management",
-                "tags": ["guests", "getting-started", "beginner"],
-                "status": "published",
-                "is_official": True,
-                "featured": True,
-                "author_name": "The Special Wedding Team",
-                "author_id": "user_001",
-                "created_by": "admin@thespecialwedding.io",
-                "view_count": 150,
-                "helpful_count": 45,
-                "not_helpful_count": 2,
-                "order": 1,
-                "estimated_read_minutes": 5,
-                "created_at": "2025-01-19T10:30:00Z",
-                "updated_at": "2025-01-19T10:30:00Z"
-            }
-        }
 
 
 class KnowledgeBaseArticleCreateModel(BaseModel):

@@ -5,7 +5,7 @@ Handles CRUD operations, search, and feedback for KB articles
 from fastapi import HTTPException
 from app.core.database import mongo
 from typing import Dict, Optional, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 import logging
 import re
@@ -15,7 +15,6 @@ from app.models.knowledge_base import (
     KB_CATEGORIES,
     CATEGORY_DISPLAY_NAMES,
     generate_slug,
-    KnowledgeBaseArticleModel,
     KnowledgeBaseArticleCreateModel,
     KnowledgeBaseArticleUpdateModel,
 )
@@ -74,8 +73,8 @@ class KnowledgeBaseService:
                 "feedback": [],
                 "order": 0,
                 "estimated_read_minutes": estimated_read_minutes,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
             }
 
             result = await self.articles_collection.insert_one(article)
@@ -91,8 +90,8 @@ class KnowledgeBaseService:
                 await activity_logs_collection.insert_one({
                     "type": "kb_article_created",
                     "message": f"Knowledge Base article created: {article_data.title[:50]}",
-                    "timestamp": datetime.utcnow(),
-                    "created_at": datetime.utcnow(),
+                    "timestamp": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
                     "planner_email": author_email,
                     "actor_email": author_email,
                     "metadata": {
@@ -301,7 +300,7 @@ class KnowledgeBaseService:
                         counter += 1
                     update_dict["slug"] = new_slug
 
-            update_dict["updated_at"] = datetime.utcnow()
+            update_dict["updated_at"] = datetime.now(timezone.utc)
             update_dict["updated_by"] = current_user.email
 
             result = await self.articles_collection.update_one(
@@ -309,8 +308,8 @@ class KnowledgeBaseService:
                 {"$set": update_dict}
             )
 
-            if result.modified_count == 0:
-                raise HTTPException(status_code=400, detail="Article update failed")
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Article not found")
 
             logger.info(f"KB article '{existing['title']}' updated by {current_user.email}")
 
@@ -401,7 +400,7 @@ class KnowledgeBaseService:
                     {
                         "$set": {
                             "feedback.$.helpful": helpful,
-                            "feedback.$.feedback_at": datetime.utcnow(),
+                            "feedback.$.feedback_at": datetime.now(timezone.utc),
                             "feedback.$.comment": comment
                         },
                         "$inc": inc_update if inc_update else {}
@@ -412,7 +411,7 @@ class KnowledgeBaseService:
                 feedback_entry = {
                     "user_email": user_email,
                     "helpful": helpful,
-                    "feedback_at": datetime.utcnow(),
+                    "feedback_at": datetime.now(timezone.utc),
                     "comment": comment
                 }
 
@@ -453,7 +452,7 @@ class KnowledgeBaseService:
                 {
                     "$set": {
                         "is_official": is_official,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                         "updated_by": current_user.email
                     }
                 }
@@ -473,7 +472,7 @@ class KnowledgeBaseService:
             logger.error(f"Error marking article as official: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error updating article: {str(e)}")
 
-    async def get_categories_with_counts(self, status: str = "published") -> List[dict]:
+    async def get_categories_with_counts(self, status: str = "published") -> dict:
         """Get all categories with article counts"""
         try:
             pipeline = [
@@ -495,7 +494,7 @@ class KnowledgeBaseService:
                 })
 
             # Calculate total
-            total_count = sum(c["article_count"] for c in categories)
+            total_count = sum(int(c["article_count"]) for c in categories)
 
             return {
                 "categories": categories,

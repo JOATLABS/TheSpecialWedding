@@ -5,8 +5,7 @@ Provides Pydantic models with validation for multi-tenant support tickets
 from pydantic import BaseModel, Field, field_validator, field_serializer
 from typing import Optional, List
 from datetime import datetime
-from app.models.base import MongoModel, WeddingRelatedModel, UserRelatedModel
-from app.utils.pydantic_objectid import PyObjectId
+from app.models.base import MongoModel, UserRelatedModel
 import re
 
 
@@ -27,7 +26,7 @@ class SMSResponseModel(BaseModel):
         return v
 
     @field_serializer('sent_at', when_used='json')
-    def serialize_datetime(self, dt: datetime) -> str:
+    def serialize_datetime(self, dt: datetime) -> str | None:
         return dt.isoformat() if dt else None
 
 
@@ -155,7 +154,7 @@ class SupportTicketModel(MongoModel):
         }
 
 
-class GeneralSupportTicketModel(MongoModel, UserRelatedModel):
+class GeneralSupportTicketModel(UserRelatedModel):
     """
     General Support Ticket Model (Web-based)
     For platform support tickets created through web forms
