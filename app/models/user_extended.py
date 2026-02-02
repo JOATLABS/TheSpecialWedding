@@ -79,6 +79,11 @@ class UserModel(BaseModel):
     # SMS Support Configuration (for wedding planners)
     support_phone: Optional[str] = Field(None, description="Phone number for guests to call when they need help (shown in HELP responses)")
 
+    # Onboarding (for wedding planners)
+    onboarding_completed: bool = Field(default=False, description="Whether planner has completed onboarding tour")
+    onboarding_completed_at: Optional[datetime] = Field(None, description="When onboarding was completed")
+    onboarding_steps_completed: List[str] = Field(default_factory=list, description="List of completed onboarding step IDs")
+
     # System fields
     is_active: bool = Field(default=True, description="Whether account is active")
     email_verified: bool = Field(default=False, description="Whether email is verified")

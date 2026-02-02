@@ -672,6 +672,80 @@ async def create_errors_indexes():
         return False
 
 
+async def create_kb_articles_indexes():
+    """
+    Create indexes for kb_articles collection (Knowledge Base)
+
+    Key queries that need optimization:
+    1. List published articles by category (main listing)
+    2. Search by title/content (full-text search)
+    3. Get article by slug (single article view)
+    4. Get user's own articles (my articles)
+    5. Featured/official articles sorting
+    """
+    collection = mongo.db["kb_articles"]
+
+    try:
+        # 1. Unique slug index (for URL lookup)
+        await collection.create_index(
+            [("slug", ASCENDING)],
+            name="idx_slug_unique",
+            unique=True
+        )
+        logger.info("Created index: idx_slug_unique")
+
+        # 2. Category + status + created_at (main listing query)
+        await collection.create_index(
+            [("status", ASCENDING), ("category", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_status_category_created"
+        )
+        logger.info("Created index: idx_status_category_created")
+
+        # 3. Author's articles (my articles)
+        await collection.create_index(
+            [("created_by", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_author_status_created"
+        )
+        logger.info("Created index: idx_author_status_created")
+
+        # 4. Featured articles
+        await collection.create_index(
+            [("status", ASCENDING), ("featured", DESCENDING), ("created_at", DESCENDING)],
+            name="idx_featured_articles"
+        )
+        logger.info("Created index: idx_featured_articles")
+
+        # 5. Official platform docs
+        await collection.create_index(
+            [("status", ASCENDING), ("is_official", DESCENDING), ("order", ASCENDING)],
+            name="idx_official_docs"
+        )
+        logger.info("Created index: idx_official_docs")
+
+        # 6. Full-text search on title and content
+        await collection.create_index(
+            [("title", TEXT), ("content", TEXT), ("excerpt", TEXT)],
+            name="idx_kb_text_search",
+            default_language="english",
+            weights={"title": 10, "excerpt": 5, "content": 1}
+        )
+        logger.info("Created index: idx_kb_text_search (full-text search)")
+
+        # 7. View count for popular articles
+        await collection.create_index(
+            [("status", ASCENDING), ("view_count", DESCENDING)],
+            name="idx_popular_articles"
+        )
+        logger.info("Created index: idx_popular_articles")
+
+        logger.info("All KB articles indexes created successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating KB articles indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -690,6 +764,7 @@ async def create_all_indexes():
         await create_audit_logs_indexes()
         await create_security_audit_logs_indexes()
         await create_errors_indexes()
+        await create_kb_articles_indexes()  # Knowledge Base articles
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")

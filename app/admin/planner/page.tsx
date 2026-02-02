@@ -6,6 +6,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
+import OnboardingModal from '../components/OnboardingModal';
 
 interface Wedding {
  id: string;
@@ -61,6 +62,9 @@ export default function WeddingPlannerDashboard() {
  const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
  const [insightsLoading, setInsightsLoading] = useState(false);
  const [insightsError, setInsightsError] = useState('');
+
+ // Onboarding modal state
+ const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
 
  const fetchMyWeddings = useCallback(async () => {
  try {
@@ -163,6 +167,20 @@ export default function WeddingPlannerDashboard() {
 
  fetchMyWeddings();
  }, [fetchMyWeddings, fetchUserProfile, router, token, userProfile]);
+
+ // Check if onboarding should be shown (one-time only for new planners)
+ useEffect(() => {
+   if (userProfile && userProfile.is_wedding_planner && !userProfile.onboarding_completed) {
+     setIsOnboardingOpen(true);
+   }
+ }, [userProfile]);
+
+ // Handler for when onboarding is completed or skipped
+ const handleOnboardingComplete = () => {
+   setIsOnboardingOpen(false);
+   // Refresh user profile to get updated onboarding status
+   fetchUserProfile();
+ };
 
   const formatDisplayDate = (dateString: string) => {
     return formatUtcDate(dateString, {
@@ -620,6 +638,13 @@ export default function WeddingPlannerDashboard() {
  </button>
  </div>
  </div>
+
+      {/* Onboarding Modal - shows one-time for new planners */}
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+        onComplete={handleOnboardingComplete}
+      />
  </div>
  );
 }

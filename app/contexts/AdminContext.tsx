@@ -19,6 +19,10 @@ interface UserProfile {
     first_name?: string;
     last_name?: string;
     timezone?: string; // IANA timezone string (e.g., 'America/Chicago')
+    // Onboarding fields (for wedding planners)
+    onboarding_completed?: boolean;
+    onboarding_completed_at?: string;
+    onboarding_steps_completed?: string[];
 }
 
 type AdminContextType = {
