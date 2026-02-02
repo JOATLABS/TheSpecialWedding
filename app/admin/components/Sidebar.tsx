@@ -138,28 +138,26 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         `}
       >
         {/* Logo Section */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-slate-200/50 dark:border-slate-700/50">
-          <Link href="/admin/planner" className="flex items-center">
+        <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
+          <Link href="/admin/planner" className="flex items-center flex-1 min-w-0 mr-2">
             {isOpen ? (
               <NextImage
-                src="/logo_all.png"
+                src="/logo.svg"
                 alt="The Special Wedding"
-                width={160}
-                height={40}
-                className="object-contain"
+                width={140}
+                height={36}
+                className="h-9 w-auto"
                 priority
               />
             ) : (
-              <div className="w-10 h-10 rounded-xl overflow-hidden">
-                <NextImage
-                  src="/logo_all.png"
-                  alt="The Special Wedding"
-                  width={40}
-                  height={40}
-                  className="object-cover"
-                  priority
-                />
-              </div>
+              <NextImage
+                src="/favicon.svg"
+                alt="The Special Wedding"
+                width={32}
+                height={32}
+                className="h-8 w-8"
+                priority
+              />
             )}
           </Link>
 
