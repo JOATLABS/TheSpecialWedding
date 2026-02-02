@@ -13,7 +13,7 @@ on:
 jobs:
   deploy-workers:
     name: Deploy Cloudflare Workers
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     # Run on main, development branches, or the current feature branch
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/') || github.ref == 'refs/heads/feature-twilio-otp-improvements-final-submitted'
 
