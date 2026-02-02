@@ -119,7 +119,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               type="text"
-              autoFocus
+              autoFocus // Auto-focus for better keyboard accessibility
               value={urlLabel}
               onChange={(e) => setUrlLabel(e.target.value)}
               placeholder="Link label (optional)"
