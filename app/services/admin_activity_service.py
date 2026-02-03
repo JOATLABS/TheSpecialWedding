@@ -12,7 +12,7 @@ This provides audit trail and dashboard display for admin actions.
 from fastapi import HTTPException
 from app.core.database import mongo
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class AdminActivityService:
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "metadata": metadata or {},
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
                 "is_read": False
             }
 

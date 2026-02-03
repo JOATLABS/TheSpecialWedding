@@ -5,7 +5,7 @@ Generates PDF snapshots of signed contracts using WeasyPrint.
 Uploads to cloud storage (R2/S3) and returns the document URL.
 """
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import io
 from app.core.settings import settings
@@ -345,7 +345,7 @@ class ContractPDFService:
 
             <div class="footer">
                 <p>This document was digitally signed and is legally binding.</p>
-                <p>Contract ID: {contract.get('id', 'N/A')} | Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</p>
+                <p>Contract ID: {contract.get('id', 'N/A')} | Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</p>
             </div>
         </body>
         </html>
@@ -390,7 +390,7 @@ class ContractPDFService:
             pdf_bytes = HTML(string=html_content).write_pdf()
 
             # Upload to S3/R2
-            filename = f"contracts/{contract_id}/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_signed.pdf"
+            filename = f"contracts/{contract_id}/{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_signed.pdf"
 
             s3 = self._get_s3_client()
             s3.put_object(
@@ -412,7 +412,7 @@ class ContractPDFService:
                 {
                     "$set": {
                         "document_url": document_url,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )

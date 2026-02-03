@@ -5,7 +5,7 @@ Content-addressed caching for AI responses with TTL support.
 Reduces costs by avoiding redundant AI calls for identical inputs.
 """
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
@@ -52,7 +52,7 @@ class AICacheService:
 
             cached = await self.cache.find_one({
                 "_id": cache_key,
-                "expires_at": {"$gt": datetime.utcnow()}
+                "expires_at": {"$gt": datetime.now(timezone.utc)}
             })
 
             if cached:
@@ -102,8 +102,8 @@ class AICacheService:
                     json.dumps(context, sort_keys=True, default=str).encode()
                 ).hexdigest(),
                 "response": response,
-                "created_at": datetime.utcnow(),
-                "expires_at": datetime.utcnow() + timedelta(hours=ttl_hours),
+                "created_at": datetime.now(timezone.utc),
+                "expires_at": datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
                 "hit_count": 0
             }
 
@@ -172,7 +172,7 @@ class AICacheService:
         """
         try:
             result = await self.cache.delete_many({
-                "expires_at": {"$lt": datetime.utcnow()}
+                "expires_at": {"$lt": datetime.now(timezone.utc)}
             })
 
             if result.deleted_count > 0:

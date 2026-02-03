@@ -11,7 +11,7 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 from app.core.database import mongo
 from app.services.planner_notification_service import planner_notification_service
@@ -41,7 +41,7 @@ class TaskReminderService:
         Returns:
             Dict with processing results
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         results = {
             "processed_at": now.isoformat(),
             "tasks_checked": 0,
@@ -185,12 +185,12 @@ class TaskReminderService:
             "task_id": task_id,
             "planner_email": planner_email,
             "reminder_time": reminder_time,
-            "sent_at": datetime.utcnow()
+            "sent_at": datetime.now(timezone.utc)
         })
 
     async def cleanup_old_records(self, days_old: int = 7) -> int:
         """Remove old sent reminder records to prevent collection bloat"""
-        cutoff = datetime.utcnow() - timedelta(days=days_old)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_old)
         result = await self.sent_reminders_collection.delete_many({
             "sent_at": {"$lt": cutoff}
         })

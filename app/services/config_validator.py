@@ -9,7 +9,7 @@ of any missing configuration through:
 
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 from app.core.database import mongo
 
@@ -153,7 +153,7 @@ async def _create_root_admin_notification(title: str, message: str, priority: st
                 {
                     "$set": {
                         "message": message,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -167,8 +167,8 @@ async def _create_root_admin_notification(title: str, message: str, priority: st
             "type": "system_config",
             "target_audience": "root_admin",
             "created_by": "system",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
             "is_dismissible": True,
             "priority": priority,
             "status": "active",
@@ -219,7 +219,7 @@ async def clear_config_notifications():
         notifications_collection = mongo.db["notifications"]
         result = await notifications_collection.update_many(
             {"type": "system_config", "status": "active"},
-            {"$set": {"status": "resolved", "resolved_at": datetime.utcnow()}}
+            {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc)}}
         )
         if result.modified_count > 0:
             logger.info(f"Cleared {result.modified_count} resolved config notifications")

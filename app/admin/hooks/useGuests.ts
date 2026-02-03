@@ -79,7 +79,14 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
           role: g.role,
           rsvp_status: g.rsvp_status,
           dietary_restrictions: g.dietary_restrictions,
-          notes: g.notes
+          notes: g.notes,
+          // Seating constraint fields
+          must_sit_with: g.must_sit_with || [],
+          must_sit_apart: g.must_sit_apart || [],
+          accessibility_needs: g.accessibility_needs,
+          seating_preference: g.seating_preference,
+          age_group: g.age_group,
+          language_preference: g.language_preference
         })));
       }
     } catch (e) {

@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.services.email_service_resend import ResendEmailService
 from typing import List, Dict, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import logging
 
@@ -28,8 +28,8 @@ class NotificationService:
                 "wedding_id": notification_data.get("wedding_id"),
                 "user_id": notification_data.get("user_id"),
                 "created_by": created_by,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "expiry_date": notification_data.get("expiry_date"),
                 "is_dismissible": notification_data["is_dismissible"],
                 "priority": notification_data["priority"],
@@ -141,7 +141,7 @@ class NotificationService:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
             # Prepare update data
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
             update_data["updated_by"] = updated_by
 
             # Update notification
@@ -199,7 +199,7 @@ class NotificationService:
             if not recipients:
                 raise HTTPException(status_code=400, detail="No active recipients found for this notification")
 
-            dispatch_started = datetime.utcnow()
+            dispatch_started = datetime.now(timezone.utc)
             sent = []
             failed = []
 
@@ -257,7 +257,7 @@ class NotificationService:
                     "$set": {
                         "status": "sent",
                         "sent_at": dispatch_started,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                         "delivery_summary": delivery_summary,
                         "total_recipients": len(recipients),
                     },
@@ -311,7 +311,7 @@ class NotificationService:
                         "$or": [
                             {"expiry_date": {"$exists": False}},
                             {"expiry_date": None},
-                            {"expiry_date": {"$gt": datetime.utcnow()}}
+                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}}
                         ]
                     },
                     # Check target audience
@@ -387,7 +387,7 @@ class NotificationService:
                     "$push": {
                         "read_by": {
                             "user_id": user_id,
-                            "read_at": datetime.utcnow()
+                            "read_at": datetime.now(timezone.utc)
                         }
                     }
                 }
@@ -417,7 +417,7 @@ class NotificationService:
                     "$addToSet": {
                         "read_by": {
                             "user_id": user_id,
-                            "read_at": datetime.utcnow()
+                            "read_at": datetime.now(timezone.utc)
                         }
                     }
                 }
@@ -465,7 +465,7 @@ class NotificationService:
                     "$push": {
                         "dismissed_by": {
                             "user_id": user_id,
-                            "dismissed_at": datetime.utcnow()
+                            "dismissed_at": datetime.now(timezone.utc)
                         }
                     }
                 }
@@ -511,7 +511,7 @@ class NotificationService:
                         "$or": [
                             {"expiry_date": {"$exists": False}},
                             {"expiry_date": None},
-                            {"expiry_date": {"$gt": datetime.utcnow()}}
+                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}}
                         ]
                     },
                     {"$or": audience_conditions},
@@ -632,7 +632,7 @@ class NotificationService:
                   <td style=\"padding:0 40px 32px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:rgba(15,23,42,0.56);\">
                     <hr style=\"border:none;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.8),rgba(255,255,255,0));margin:0 0 20px;\" />
                     <p style=\"margin:0 0 12px;\">You are receiving this message because your account has access to platform announcements.</p>
-                    <p style=\"margin:0;color:rgba(15,23,42,0.45);\">© {datetime.utcnow().year} The Special Wedding. All rights reserved.</p>
+                    <p style=\"margin:0;color:rgba(15,23,42,0.45);\">© {datetime.now(timezone.utc).year} The Special Wedding. All rights reserved.</p>
                   </td>
                 </tr>
               </table>
@@ -676,8 +676,8 @@ class NotificationService:
                 "variables": template_data.get("variables", []),
                 "is_active": template_data.get("is_active", True),
                 "created_by": created_by,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
             }
 
             result = await self.templates_collection.insert_one(template)
@@ -765,7 +765,7 @@ class NotificationService:
             if not existing:
                 raise HTTPException(status_code=404, detail="Template not found")
 
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
             update_data["updated_by"] = updated_by
 
             result = await self.templates_collection.update_one(

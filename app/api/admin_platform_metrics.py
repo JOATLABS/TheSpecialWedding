@@ -8,7 +8,7 @@ Provides comprehensive metrics for the ROOT_ADMIN dashboard.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional, Iterable
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
 from bson import ObjectId
@@ -403,7 +403,7 @@ async def get_platform_health(
         - Business metrics (users, subscriptions, MRR/ARR)
         - Performance metrics (slow endpoints)
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     day_ago = now - timedelta(days=1)
     week_ago = now - timedelta(days=7)
 
@@ -412,9 +412,9 @@ async def get_platform_health(
 
         # Database health check
         try:
-            db_start = datetime.utcnow()
+            db_start = datetime.now(timezone.utc)
             await mongo.db.command('ping')
-            db_latency = (datetime.utcnow() - db_start).total_seconds() * 1000
+            db_latency = (datetime.now(timezone.utc) - db_start).total_seconds() * 1000
             db_status = "healthy" if db_latency < 100 else "degraded"
         except Exception as e:
             logger.error(f"Database health check failed: {str(e)}")
@@ -868,7 +868,7 @@ async def get_metrics_history(
     Args:
         days: Number of days to retrieve (1-90)
     """
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get stored metrics snapshots
     cursor = mongo.db["platform_metrics"].find({
@@ -916,7 +916,7 @@ async def save_metrics_snapshot(
     # Save to platform_metrics collection
     snapshot = {
         **metrics,
-        "snapshot_time": datetime.utcnow()
+        "snapshot_time": datetime.now(timezone.utc)
     }
 
     result = await mongo.db["platform_metrics"].insert_one(snapshot)
@@ -1033,7 +1033,7 @@ async def get_recent_errors(
         severity: Filter by severity level
         acknowledged: Filter by acknowledged status
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     default_cutoff = now - timedelta(days=30)
 
     # Build base query for errors collection
@@ -1227,7 +1227,7 @@ async def acknowledge_error(
     """Mark an error as acknowledged in errors or audit_logs collection"""
 
     try:
-        acknowledged_at = datetime.utcnow()
+        acknowledged_at = datetime.now(timezone.utc)
         update_payload = {
             "$set": {
                 "acknowledged": True,
@@ -1291,7 +1291,7 @@ async def acknowledge_errors_bulk(
     """Acknowledge multiple errors in both errors and audit_logs collections"""
 
     try:
-        acknowledged_at = datetime.utcnow()
+        acknowledged_at = datetime.now(timezone.utc)
         update_payload = {
             "$set": {
                 "acknowledged": True,
@@ -1356,7 +1356,7 @@ async def export_errors(
         days: Export errors from the last N days (default: 30)
     """
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Build query
         query: Dict[str, Any] = {"timestamp": {"$gte": cutoff_date}}
@@ -1414,7 +1414,7 @@ async def export_errors(
             "total_count": len(exported_errors),
             "date_range": {
                 "from": cutoff_date.isoformat() + "Z",
-                "to": datetime.utcnow().isoformat() + "Z"
+                "to": datetime.now(timezone.utc).isoformat() + "Z"
             },
             "filters": {
                 "acknowledged": acknowledged,
@@ -1422,7 +1422,7 @@ async def export_errors(
             },
             "data": exported_errors if format.lower() == "json" else None,
             "csv_data": csv_data if format.lower() == "csv" else None,
-            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "exported_at": datetime.now(timezone.utc).isoformat() + "Z",
             "exported_by": current_user.email
         }
 
@@ -1442,7 +1442,7 @@ async def acknowledge_and_delete_error(
     Use the export endpoint first if you need to keep the data for audit compliance.
     """
     try:
-        acknowledged_at = datetime.utcnow()
+        acknowledged_at = datetime.now(timezone.utc)
 
         # Find and delete from errors collection
         error = None
@@ -1485,7 +1485,7 @@ async def acknowledge_and_delete_errors_bulk(
     Use the export endpoint first if you need to keep the data for audit compliance.
     """
     try:
-        acknowledged_at = datetime.utcnow()
+        acknowledged_at = datetime.now(timezone.utc)
 
         # Build filter for both error_id and ObjectId matches
         object_ids = [ObjectId(eid) for eid in request.error_ids if ObjectId.is_valid(eid)]
@@ -1535,7 +1535,7 @@ async def cleanup_old_errors(
     Args:
         days: Delete errors older than this many days (default: 30)
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Delete from errors collection
     result = await mongo.db["errors"].delete_many({
@@ -1561,7 +1561,7 @@ async def cleanup_old_audit_logs(
     Args:
         days: Delete audit logs older than this many days (default: 30)
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     result = await mongo.db["audit_logs"].delete_many({
         "timestamp": {"$lt": cutoff_date}
@@ -1588,7 +1588,7 @@ async def cleanup_old_security_logs(
     Args:
         days: Delete security logs older than this many days (default: 180)
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     result = await mongo.db["security_audit_logs"].delete_many({
         "timestamp": {"$lt": cutoff_date}

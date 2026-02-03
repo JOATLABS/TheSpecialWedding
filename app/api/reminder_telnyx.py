@@ -54,7 +54,7 @@ async def send_reminder_telnyx(payload: TelnyxReminderModel, current_user: Exten
     if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    return telnyx_reminder_service.send_reminders(payload.event_type, payload.message, payload.target_group)
+    return await telnyx_reminder_service.send_reminders(payload.event_type, payload.message, payload.target_group)
 
 @router.post("/reminders/telnyx/send-invites", tags=["Admin"])
 async def send_invites_telnyx(payload: SlugModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):

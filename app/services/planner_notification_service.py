@@ -15,7 +15,7 @@ from app.models.planner_notification import (
     NotificationType
 )
 from typing import Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 import logging
 import asyncio
@@ -245,7 +245,7 @@ class PlannerNotificationService:
         try:
             result = await self.collection.update_one(
                 {"_id": obj_id, "planner_id": planner_id},
-                {"$set": {"is_read": True, "read_at": datetime.utcnow()}}
+                {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc)}}
             )
 
             if result.matched_count == 0:
@@ -268,7 +268,7 @@ class PlannerNotificationService:
 
             result = await self.collection.update_many(
                 query,
-                {"$set": {"is_read": True, "read_at": datetime.utcnow()}}
+                {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc)}}
             )
 
             return {

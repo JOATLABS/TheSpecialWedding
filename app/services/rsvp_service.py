@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from app.services.activity_log_service import activity_log_service
@@ -39,31 +39,31 @@ class RSVPService:
                     "wedding_id": wedding_id_str,
                     "attending": rsvp_data.attending,
                     "dietary": rsvp_data.dietary,
-                    "submitted_at": datetime.utcnow()
+                    "submitted_at": datetime.now(timezone.utc)
                 }},
                 upsert=True
             )
 
             update_data: dict[str, object] = {
                 "phone": rsvp_data.phone,
-                "updated_at": datetime.utcnow()
+                "updated_at": datetime.now(timezone.utc)
             }
 
             # Handle SMS opt-in
             if hasattr(rsvp_data, 'sms_opt_in'):
                 update_data["sms_opt_in"] = rsvp_data.sms_opt_in
                 if rsvp_data.sms_opt_in:
-                    update_data["sms_opt_in_date"] = datetime.utcnow()
+                    update_data["sms_opt_in_date"] = datetime.now(timezone.utc)
                 elif rsvp_data.sms_opt_in is False:
-                    update_data["sms_opt_out_date"] = datetime.utcnow()
+                    update_data["sms_opt_out_date"] = datetime.now(timezone.utc)
 
             # Handle Email opt-in
             if hasattr(rsvp_data, 'email_opt_in'):
                 update_data["email_opt_in"] = rsvp_data.email_opt_in
                 if rsvp_data.email_opt_in:
-                    update_data["email_opt_in_date"] = datetime.utcnow()
+                    update_data["email_opt_in_date"] = datetime.now(timezone.utc)
                 elif rsvp_data.email_opt_in is False:
-                    update_data["email_opt_out_date"] = datetime.utcnow()
+                    update_data["email_opt_out_date"] = datetime.now(timezone.utc)
 
             await self.guest_collection.update_one(
                 {"_id": guest_id},
@@ -92,7 +92,7 @@ class RSVPService:
                 # Insert all new plus-ones
                 plus_ones_to_insert = []
                 for plus_one_data in rsvp_data.plus_ones:
-                    now = datetime.utcnow()
+                    now = datetime.now(timezone.utc)
                     plus_one_doc: dict[str, object] = {
                         "guest_id": str(guest_id),
                         "name": plus_one_data.name,

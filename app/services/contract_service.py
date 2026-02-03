@@ -5,7 +5,7 @@ Manages contract lifecycle from creation to completion.
 Handles signing, payment method capture, and status transitions.
 """
 from typing import List, Dict, Optional, Any
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 import logging
 from bson import ObjectId
@@ -137,8 +137,8 @@ class ContractService:
                     {
                         "$set": {
                             "status": "viewed",
-                            "viewed_at": datetime.utcnow(),
-                            "updated_at": datetime.utcnow()
+                            "viewed_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -193,7 +193,7 @@ class ContractService:
             # Create signature
             signature = ContractSignature(
                 signed_by=signature_name,
-                signed_at=datetime.utcnow(),
+                signed_at=datetime.now(timezone.utc),
                 ip_address=ip_address,
                 user_agent=user_agent[:500] if user_agent else ""
             )
@@ -205,12 +205,12 @@ class ContractService:
                     "$set": {
                         "status": "signed",
                         "signature": signature.model_dump(),
-                        "signed_at": datetime.utcnow(),
+                        "signed_at": datetime.now(timezone.utc),
                         "stripe_customer_id": stripe_customer_id,
                         "stripe_payment_method_id": stripe_payment_method_id,
                         "payment_method_last4": payment_method_last4,
                         "payment_method_brand": payment_method_brand,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -298,7 +298,7 @@ class ContractService:
             currency = package_snapshot.get("currency", "usd")
 
             wedding_date = contract.get("wedding_date")
-            signed_at = contract.get("signed_at") or datetime.utcnow()
+            signed_at = contract.get("signed_at") or datetime.now(timezone.utc)
 
             created_payments = []
 
@@ -426,7 +426,7 @@ class ContractService:
             if due_date and hasattr(due_date, 'date'):
                 due_date = due_date.date()
 
-            if due_date and due_date > datetime.utcnow().date():
+            if due_date and due_date > datetime.now(timezone.utc).date():
                 logger.info(f"First payment not due yet (due: {due_date})")
                 return {"success": True, "message": "First payment not due yet"}
 
@@ -484,9 +484,9 @@ class ContractService:
                     {
                         "$set": {
                             "status": "succeeded",
-                            "paid_at": datetime.utcnow(),
+                            "paid_at": datetime.now(timezone.utc),
                             "stripe_payment_intent_id": payment_intent.id,
-                            "updated_at": datetime.utcnow()
+                            "updated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -506,7 +506,7 @@ class ContractService:
                         "$set": {
                             "status": "failed" if payment_intent.status == "canceled" else "processing",
                             "stripe_payment_intent_id": payment_intent.id,
-                            "updated_at": datetime.utcnow()
+                            "updated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -602,7 +602,7 @@ class ContractService:
                 {
                     "$set": {
                         "wedding_date": new_wedding_date,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -638,7 +638,7 @@ class ContractService:
                             "name": schedule_item.get("name"),
                             "status": "scheduled"
                         },
-                        {"$set": {"due_date": new_due_date, "updated_at": datetime.utcnow()}}
+                        {"$set": {"due_date": new_due_date, "updated_at": datetime.now(timezone.utc)}}
                     )
 
         except Exception as e:
@@ -673,7 +673,7 @@ class ContractService:
             if contract.get("status") in ["completed", "cancelled"]:
                 raise ValueError(f"Cannot cancel contract in status: {contract['status']}")
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Cancel contract
             await self.contracts.update_one(
@@ -747,7 +747,7 @@ class ContractService:
             if payment.get("status") not in ["scheduled", "failed"]:
                 raise ValueError(f"Cannot mark payment with status '{payment.get('status')}' as paid externally")
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Update the payment
             await self.scheduled_payments.update_one(
@@ -841,7 +841,7 @@ class ContractService:
 
             refund = stripe.Refund.create(**refund_params)
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Update payment record
             update_data = {
@@ -914,7 +914,7 @@ class ContractService:
                     "_id": ObjectId(payment_id),
                     "status": "failed"  # Only update if still in failed state
                 },
-                {"$set": {"status": "scheduled", "updated_at": datetime.utcnow()}}
+                {"$set": {"status": "scheduled", "updated_at": datetime.now(timezone.utc)}}
             )
 
             # Check if another process already started retrying
@@ -970,7 +970,7 @@ class ContractService:
             if payment.get("status") not in ["scheduled", "failed"]:
                 raise ValueError(f"Cannot cancel payment with status '{payment.get('status')}'. Only scheduled or failed payments can be cancelled.")
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             await self.scheduled_payments.update_one(
                 {"_id": ObjectId(payment_id)},

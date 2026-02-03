@@ -21,7 +21,7 @@ Usage:
     )
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from bson import ObjectId
 import logging
@@ -93,7 +93,7 @@ class ActivityLogService:
             metadata: Additional context data
         """
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             doc = {
                 "type": activity_type,
                 "message": message,

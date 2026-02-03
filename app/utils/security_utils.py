@@ -7,17 +7,18 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 import bleach
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 
 logger = logging.getLogger(__name__)
+
 
 class SecurityConfig:
     """Security configuration constants"""
 
     # HTML sanitization settings
     ALLOWED_TAGS = ['b', 'i', 'u', 'em', 'strong', 'p', 'br', 'ul', 'ol', 'li']
-    ALLOWED_ATTRIBUTES = {}
+    ALLOWED_ATTRIBUTES: Dict[str, List[str]] = {}
 
     # Input length limits
     MAX_FORM_NAME_LENGTH = 100
@@ -65,6 +66,7 @@ class InputSanitizer:
         else:
             # Escape all HTML entities
             return html.escape(text, quote=True)
+    
     @staticmethod
     def sanitize_text(text: str, max_length: Optional[int] = None) -> str:
         """
@@ -180,6 +182,7 @@ class InputSanitizer:
             return parsed.scheme in ['http', 'https'] and parsed.netloc
         except Exception:
             return False
+    
     @staticmethod
     def generate_secure_token(length: int = 32) -> str:
         """
@@ -213,7 +216,7 @@ class FormSecurityValidator:
         if not isinstance(form_data, dict):
             raise ValueError("Form data must be a dictionary")
 
-        sanitized = {}
+        sanitized: Dict[str, Any] = {}
 
         # Validate form name
         name = form_data.get('name', '')
@@ -276,7 +279,7 @@ class FormSecurityValidator:
         Returns:
             Sanitized settings data
         """
-        sanitized = {}
+        sanitized: Dict[str, Any] = {}
         # Required fields
         title = settings.get('title', '')
         if not title:
@@ -333,7 +336,7 @@ class FormSecurityValidator:
         if not isinstance(field, dict):
             raise ValueError("Field must be a dictionary")
 
-        sanitized = {}
+        sanitized: Dict[str, Any] = {}
 
         # Required fields
         field_id = field.get('id', '')
@@ -411,7 +414,7 @@ class FormSecurityValidator:
         if not isinstance(response_data, dict):
             raise ValueError("Response data must be a dictionary")
 
-        sanitized = {}
+        sanitized: Dict[str, Any] = {}
         field_map = {field['id']: field for field in form_fields}
 
         for field_id, value in response_data.items():
@@ -511,7 +514,7 @@ class RateLimitTracker:
         Returns:
             True if within limit, False otherwise
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=window_seconds)
         # Clean old entries
         if key in self._requests:

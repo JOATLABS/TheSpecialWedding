@@ -9,7 +9,7 @@ import os
 import secrets
 import string
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -102,7 +102,7 @@ class VendorService:
 
     def _generate_contract_number(self) -> str:
         """Generate a unique contract number"""
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         random_suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"CON-{timestamp}-{random_suffix}"
 
@@ -188,7 +188,7 @@ class VendorService:
             "sent_to": sent_to,
             "attachments": attachments or [],
             "created_by": created_by,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         }
         await self.vendor_communications.insert_one(comm)
 
@@ -205,8 +205,8 @@ class VendorService:
                 "weddings_count": 0,
                 "total_revenue": 0.0,
                 "is_active": True,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
             }
 
             result = await self.vendor_profiles.insert_one(vendor)
@@ -284,7 +284,7 @@ class VendorService:
         try:
             # Remove None values
             update_data = {k: v for k, v in data.items() if v is not None}
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             result = await self.vendor_profiles.find_one_and_update(
                 {"_id": ObjectId(vendor_id), "created_by": created_by},
@@ -309,7 +309,7 @@ class VendorService:
         try:
             result = await self.vendor_profiles.find_one_and_update(
                 {"_id": ObjectId(vendor_id), "created_by": created_by},
-                {"$set": {"is_active": False, "updated_at": datetime.utcnow()}},
+                {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}},
                 return_document=True
             )
 
@@ -471,8 +471,8 @@ class VendorService:
                 "contracted_amount": None,
                 "paid_amount": 0.0,
                 "created_by": created_by,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
             }
 
             result = await self.vendor_assignments.insert_one(assignment)
@@ -483,7 +483,7 @@ class VendorService:
                 {"_id": ObjectId(vendor_profile_id)},
                 {
                     "$inc": {"weddings_count": 1},
-                    "$set": {"last_used_at": datetime.utcnow()}
+                    "$set": {"last_used_at": datetime.now(timezone.utc)}
                 }
             )
 
@@ -524,7 +524,7 @@ class VendorService:
         try:
             result = await self.vendor_assignments.find_one_and_update(
                 {"_id": ObjectId(assignment_id)},
-                {"$set": {"status": status, "updated_at": datetime.utcnow()}},
+                {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
                 return_document=True
             )
 
@@ -554,8 +554,8 @@ class VendorService:
                 "is_public": False,
                 "is_active": True,
                 "usage_count": 0,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
             }
 
             result = await self.contract_templates.insert_one(template)
@@ -638,7 +638,7 @@ class VendorService:
             "{{planner_name}}": data.get("planner_name", ""),
             "{{planner_email}}": data.get("planner_email", ""),
             "{{planner_company}}": data.get("planner_company", ""),
-            "{{contract_date}}": datetime.utcnow().strftime("%B %d, %Y"),
+            "{{contract_date}}": datetime.now(timezone.utc).strftime("%B %d, %Y"),
             "{{contract_number}}": data.get("contract_number", ""),
         }
 
@@ -738,7 +738,7 @@ class VendorService:
             deposit_due_date = None
             if deposit_percentage and total_amount:
                 deposit_amount = total_amount * deposit_percentage / 100
-                deposit_due_date = datetime.utcnow() + timedelta(
+                deposit_due_date = datetime.now(timezone.utc) + timedelta(
                     days=planner_settings["deposit_due_days"]
                 )
 
@@ -764,14 +764,14 @@ class VendorService:
                 "deposit_due_date": deposit_due_date,
                 "status": ContractStatus.DRAFT.value,
                 "access_token": self._generate_token(),
-                "token_expires_at": datetime.utcnow() + timedelta(
+                "token_expires_at": datetime.now(timezone.utc) + timedelta(
                     days=planner_settings["token_expiry_days"]
                 ),
                 "service_date": service_date,
                 "service_location": service_location,
                 "created_by": created_by,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
             }
 
             result = await self.vendor_contracts.insert_one(contract)
@@ -781,7 +781,7 @@ class VendorService:
             if quote_id:
                 await self.vendor_quotes.update_one(
                     {"_id": ObjectId(quote_id)},
-                    {"$set": {"status": QuoteStatus.CONVERTED.value, "updated_at": datetime.utcnow()}}
+                    {"$set": {"status": QuoteStatus.CONVERTED.value, "updated_at": datetime.now(timezone.utc)}}
                 )
 
             logger.info(f"Created contract {contract['contract_number']} for vendor {vendor['business_name']}")
@@ -868,16 +868,16 @@ class VendorService:
                 raise HTTPException(status_code=404, detail="Contract not found or invalid token")
 
             # Check expiration
-            if contract.get("token_expires_at") and contract["token_expires_at"] < datetime.utcnow():
+            if contract.get("token_expires_at") and contract["token_expires_at"] < datetime.now(timezone.utc):
                 raise HTTPException(status_code=403, detail="Contract link has expired")
 
             # Mark as viewed if first time
             if not contract.get("viewed_at"):
                 await self.vendor_contracts.update_one(
                     {"_id": ObjectId(contract_id)},
-                    {"$set": {"viewed_at": datetime.utcnow(), "status": ContractStatus.VIEWED.value}}
+                    {"$set": {"viewed_at": datetime.now(timezone.utc), "status": ContractStatus.VIEWED.value}}
                 )
-                contract["viewed_at"] = datetime.utcnow()
+                contract["viewed_at"] = datetime.now(timezone.utc)
                 contract["status"] = ContractStatus.VIEWED.value
 
             contract["_id"] = str(contract["_id"])
@@ -986,8 +986,8 @@ class VendorService:
                     {
                         "$set": {
                             "status": ContractStatus.SENT.value,
-                            "sent_at": datetime.utcnow(),
-                            "updated_at": datetime.utcnow()
+                            "sent_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -1050,11 +1050,11 @@ class VendorService:
                 {
                     "$set": {
                         "status": ContractStatus.SIGNED.value,
-                        "signed_at": datetime.utcnow(),
+                        "signed_at": datetime.now(timezone.utc),
                         "signed_by_name": signer_name,
                         "signed_by_email": signer_email,
                         "signature_ip": signature_ip,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -1071,7 +1071,7 @@ class VendorService:
                             "status": "contracted",
                             "contract_id": contract_id,
                             "contracted_amount": contract["total_amount"],
-                            "updated_at": datetime.utcnow()
+                            "updated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -1087,7 +1087,7 @@ class VendorService:
                 <div style="background: #f3f4f6; padding: 15px; border-radius: 6px;">
                     <p><strong>Contract:</strong> {contract['contract_title']}</p>
                     <p><strong>Signed by:</strong> {signer_name}</p>
-                    <p><strong>Signed at:</strong> {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}</p>
+                    <p><strong>Signed at:</strong> {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M UTC')}</p>
                 </div>
                 <p>Log in to your dashboard to view the signed contract.</p>
             </body>
@@ -1103,7 +1103,7 @@ class VendorService:
 
             return {
                 "message": "Contract signed successfully",
-                "signed_at": datetime.utcnow().isoformat()
+                "signed_at": datetime.now(timezone.utc).isoformat()
             }
 
         except HTTPException:
@@ -1142,7 +1142,7 @@ class VendorService:
             ]
 
             update_data = {k: v for k, v in data.items() if k in allowed_fields and v is not None}
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
@@ -1189,7 +1189,7 @@ class VendorService:
 
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
-                {"$set": {"sections": processed_sections, "updated_at": datetime.utcnow()}}
+                {"$set": {"sections": processed_sections, "updated_at": datetime.now(timezone.utc)}}
             )
 
             return await self.get_contract(contract_id, created_by=updated_by)
@@ -1372,7 +1372,7 @@ class VendorService:
                         "terms_and_conditions": terms,
                         "form_data_applied": True,
                         "form_submission_id": form_submission_id,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -1422,8 +1422,8 @@ class VendorService:
                     "vendor_name": contract["vendor_name"],
                     "vendor_email": contract["vendor_email"],
                     "created_by": created_by,
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
                 }
 
                 result = await self.payment_milestones.insert_one(milestone)
@@ -1457,7 +1457,7 @@ class VendorService:
 
             # Track IDs of milestones that need status update
             overdue_milestone_ids = []
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             for m in milestones:
                 m["_id"] = str(m["_id"])
@@ -1524,10 +1524,10 @@ class VendorService:
                 "paid_amount": new_paid_amount,
                 "status": new_status,
                 "payment_method": payment_method,
-                "paid_at": payment_date or datetime.utcnow(),
+                "paid_at": payment_date or datetime.now(timezone.utc),
                 "notes": notes,
                 "receipt_url": receipt_url,
-                "updated_at": datetime.utcnow()
+                "updated_at": datetime.now(timezone.utc)
             }
 
             if stripe_payment_intent_id:
@@ -1588,7 +1588,7 @@ class VendorService:
         """Upload a contract document to S3"""
         try:
             # Generate unique key
-            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             filename = f"contracts/{contract_id}/{document_type}_{timestamp}_{file.filename}"
 
             # Upload to S3
@@ -1606,7 +1606,7 @@ class VendorService:
             field = f"{document_type}_document_url"
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
-                {"$set": {field: file_url, "updated_at": datetime.utcnow()}}
+                {"$set": {field: file_url, "updated_at": datetime.now(timezone.utc)}}
             )
 
             return {"url": file_url, "key": filename}
@@ -1691,7 +1691,7 @@ class VendorService:
                 raise HTTPException(status_code=400, detail="File too large. Maximum 10MB")
 
             # Generate unique filename
-            timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
             safe_filename = f"contracts/{wedding_id}/{timestamp}_{file.filename}"
 
             # Upload to S3
@@ -1727,15 +1727,15 @@ class VendorService:
                 "deposit_amount": deposit_amount,
                 "status": ContractStatus.DRAFT.value,
                 "access_token": self._generate_token(),
-                "token_expires_at": datetime.utcnow() + timedelta(
+                "token_expires_at": datetime.now(timezone.utc) + timedelta(
                     days=planner_settings["token_expiry_days"]
                 ),
                 "service_date": service_date,
                 "service_location": service_location,
                 "internal_notes": notes,
                 "created_by": created_by,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "form_submission_ids": [],
                 "form_data_mappings": {}
             }
@@ -1828,7 +1828,7 @@ class VendorService:
             if due_date:
                 expires_at = due_date + timedelta(days=7)
             else:
-                expires_at = datetime.utcnow() + timedelta(days=TOKEN_EXPIRY_DAYS)
+                expires_at = datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRY_DAYS)
 
             # Create payment link record
             payment_link_doc = {
@@ -1855,8 +1855,8 @@ class VendorService:
                 "email_message": email_message,
                 "access_token": self._generate_token(),
                 "created_by": created_by,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "reminder_sent_count": 0
             }
 
@@ -1953,8 +1953,8 @@ class VendorService:
                 {
                     "$set": {
                         "status": PaymentLinkStatus.SENT.value,
-                        "sent_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
+                        "sent_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -2027,10 +2027,10 @@ class VendorService:
                         {
                             "$set": {
                                 "status": PaymentLinkStatus.PAID.value,
-                                "paid_at": datetime.utcnow(),
+                                "paid_at": datetime.now(timezone.utc),
                                 "stripe_checkout_session_id": data.get("id"),
                                 "stripe_payment_intent_id": data.get("payment_intent"),
-                                "updated_at": datetime.utcnow()
+                                "updated_at": datetime.now(timezone.utc)
                             }
                         }
                     )
@@ -2044,9 +2044,9 @@ class VendorService:
                                 "$set": {
                                     "status": PaymentMilestoneStatus.PAID.value,
                                     "paid_amount": payment_link["amount"],
-                                    "paid_at": datetime.utcnow(),
+                                    "paid_at": datetime.now(timezone.utc),
                                     "payment_method": "stripe",
-                                    "updated_at": datetime.utcnow()
+                                    "updated_at": datetime.now(timezone.utc)
                                 }
                             }
                         )

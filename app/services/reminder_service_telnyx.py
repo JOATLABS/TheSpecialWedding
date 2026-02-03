@@ -3,7 +3,7 @@
 import os
 import telnyx
 from fastapi import HTTPException
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import mongo
 import logging
 
@@ -35,19 +35,19 @@ class TelnyxReminderService:
         self.plus_one_collection = mongo.db["plus_ones"]
         self.log_collection = mongo.db["reminders_sent"]
     
-    def send_reminders(self, event_type: str, message: str, target_group: str):
+    async def send_reminders(self, event_type: str, message: str, target_group: str):
         if event_type not in {"traditional", "white_wedding", "reception"}:
             raise HTTPException(status_code=400, detail="Invalid event type")
         if target_group not in {"guests", "plus-ones", "all"}:
             raise HTTPException(status_code=400, detail="Invalid target group")
-        
+
         logs = []
-        now = datetime.utcnow()
-        
+        now = datetime.now(timezone.utc)
+
         # Guests
         if target_group in {"guests", "all"}:
-            for guest in self.guest_collection.find({}):
-                rsvp = self.rsvp_collection.find_one({"guest_id": guest["_id"]})
+            async for guest in self.guest_collection.find({}):
+                rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
                 if rsvp and event_type in rsvp.get("attending", []):
                     phone = guest.get("phone")
                     # Check if guest has opted in for SMS reminders
@@ -63,10 +63,10 @@ class TelnyxReminderService:
                             status,
                             now,
                         ))
-        
+
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
-            for po in self.plus_one_collection.find({}):
+            async for po in self.plus_one_collection.find({}):
                 if event_type in po.get("attending", []):
                     phone = po.get("phone")
                     if phone:
@@ -80,10 +80,10 @@ class TelnyxReminderService:
                             status,
                             now,
                         ))
-        
+
         if logs:
-            self.log_collection.insert_many(logs)
-        
+            await self.log_collection.insert_many(logs)
+
         return {"sent": len(logs), "provider": "telnyx"}
     
     def _send_sms(self, to: str, body: str) -> str:

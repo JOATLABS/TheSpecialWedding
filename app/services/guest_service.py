@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from app.core.database import mongo
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import logging
 from app.utils.token_generator import generate_token
@@ -65,9 +65,9 @@ class GuestService:
     
     async def update_guest_timestamps(self, guest_id, created=False):
         """Update guest timestamps"""
-        update_data = {"updated_at": datetime.utcnow()}
+        update_data = {"updated_at": datetime.now(timezone.utc)}
         if created:
-            update_data["created_at"] = datetime.utcnow()
+            update_data["created_at"] = datetime.now(timezone.utc)
         
         await self.collection.update_one(
             {"_id": guest_id},
@@ -95,7 +95,7 @@ class GuestService:
             update_data.pop("wedding_id", None)  # Don't allow wedding changes
             
             # Add timestamp
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
             
             result = await self.collection.update_one(
                 {"_id": ObjectId(guest_id)},
@@ -241,8 +241,8 @@ class GuestService:
                 "plus_one_submitted": False,
                 "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "email_opt_in": True,  # Default to opted-in, guest can opt-out later
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
             }
 
             result = await self.collection.insert_one(doc)

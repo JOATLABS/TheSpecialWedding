@@ -3,7 +3,7 @@ import io
 from bson import ObjectId
 from fastapi import HTTPException
 from app.core.database import mongo
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 
@@ -177,7 +177,7 @@ class AdminRSVPService:
                 "wedding_id": wedding_id,
                 "attending": attending,
                 "dietary": dietary,
-                "submitted_at": datetime.utcnow(),
+                "submitted_at": datetime.now(timezone.utc),
                 "confirmed_by_admin": confirmed_by_admin
             }
 

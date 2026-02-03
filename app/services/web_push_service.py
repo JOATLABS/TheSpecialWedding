@@ -12,7 +12,7 @@ import os
 import json
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from pywebpush import webpush, WebPushException
 from app.core.database import mongo
 
@@ -52,7 +52,7 @@ class WebPushService:
             "vapid_email": self.vapid_email,
             "error": None,
             "total_subscriptions": 0,
-            "checked_at": datetime.utcnow().isoformat()
+            "checked_at": datetime.now(timezone.utc).isoformat()
         }
 
         if not self.enabled:
@@ -100,10 +100,10 @@ class WebPushService:
                         "user_id": user_id,
                         "subscription": subscription,
                         "user_agent": user_agent,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                     },
                     "$setOnInsert": {
-                        "created_at": datetime.utcnow(),
+                        "created_at": datetime.now(timezone.utc),
                     }
                 },
                 upsert=True
@@ -172,7 +172,7 @@ class WebPushService:
             "title": title,
             "body": body,
             "url": url or "/",
-            "tag": tag or f"notification-{datetime.utcnow().timestamp()}",
+            "tag": tag or f"notification-{datetime.now(timezone.utc).timestamp()}",
             "icon": icon or "/icon-192x192.png",
             **(data or {})
         })

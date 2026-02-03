@@ -7,6 +7,7 @@ Public endpoints allow couples to view and sign contracts without authentication
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from typing import Optional
 from pydantic import BaseModel, Field
+from datetime import timezone
 from app.services.contract_service import contract_service
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
@@ -1009,7 +1010,7 @@ async def confirm_payment_method_update(
                     "stripe_payment_method_id": update_data.payment_method_id,
                     "payment_method_last4": update_data.payment_method_last4,
                     "payment_method_brand": update_data.payment_method_brand,
-                    "payment_method_updated_at": datetime.utcnow()
+                    "payment_method_updated_at": datetime.now(timezone.utc)
                 }
             }
         )

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import mongo
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.stripe_service import stripe_service
@@ -54,7 +54,7 @@ async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(re
             # Using current period ensures:
             # 1. Retries for THIS month are idempotent (won't double-bill this month)
             # 2. If last month failed and we're now in a new month, we bill for new month
-            current_billing_period = datetime.utcnow().strftime("%Y-%m")
+            current_billing_period = datetime.now(timezone.utc).strftime("%Y-%m")
             idempotency_key = f"meter_retry_{wedding.get('_id')}_{sub['stripe_customer_id']}_{current_billing_period}"
 
             meter_result = stripe_service.report_meter_event(
@@ -70,8 +70,8 @@ async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(re
                 await mongo.db["weddings"].update_one(
                     {"_id": wedding.get("_id")},
                     {"$set": {
-                        "last_billed_at": datetime.utcnow(),
-                        "billed_period": datetime.utcnow().strftime("%Y-%m"),
+                        "last_billed_at": datetime.now(timezone.utc),
+                        "billed_period": datetime.now(timezone.utc).strftime("%Y-%m"),
                         "meter_pending": False,
                         "meter_pending_reason": None
                     }}

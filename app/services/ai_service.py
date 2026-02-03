@@ -15,7 +15,7 @@ Model Strategy:
 - Low credits (<10%): gemini-2.0-flash (faster, more economical)
 """
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
 from app.core.settings import settings
@@ -874,7 +874,7 @@ class AIService:
             raise ValueError(f"Unknown AI feature: {feature}")
 
         feature_config = AI_FEATURES[feature]
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         # Check cache first if feature is cacheable
         if feature_config["cacheable"] and not force_refresh:
@@ -917,7 +917,7 @@ class AIService:
         # Make AI API call
         try:
             response = await self._call_gemini(feature, prompt, context, model)
-            latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            latency_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             # Deduct credits
             await self.subscription_service.increment_usage(
@@ -971,7 +971,7 @@ class AIService:
         except InsufficientCreditsError:
             raise
         except Exception as e:
-            latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            latency_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             # Log error (no credits charged)
             await self._log_usage(
@@ -1212,7 +1212,7 @@ class AIService:
                 "status": status,
                 "model": model,
                 "error": error,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             }
             await self.usage_log.insert_one(log_entry)
         except Exception as e:
@@ -1230,7 +1230,7 @@ class AIService:
         """
         try:
             # Get current billing period (first of the month)
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             billing_period = now.strftime("%Y-%m")
 
             # Check if we already sent a notification this billing cycle
@@ -1294,7 +1294,7 @@ class AIService:
         """
         from datetime import timedelta
 
-        start_date = datetime.utcnow() - timedelta(days=period_days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=period_days)
 
         query = {"created_at": {"$gte": start_date}}
         if tenant_id:
@@ -1392,7 +1392,7 @@ class AIService:
             "top_tenants": top_tenants,
             "feature_breakdown": feature_breakdown,
             "model_breakdown": model_breakdown,
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat()
         }
 
 

@@ -1,7 +1,7 @@
 # app/services/checkin_service.py
 
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from bson import ObjectId
 from app.core.database import mongo
@@ -23,7 +23,7 @@ class CheckInService:
 
         await self.checkin_collection.insert_one({
             "guest_id": guest_id,
-            "checked_in_at": datetime.utcnow(),
+            "checked_in_at": datetime.now(timezone.utc),
             "method": "manual",
             "by": admin_email
         })

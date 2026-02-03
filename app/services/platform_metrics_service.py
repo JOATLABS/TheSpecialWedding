@@ -66,12 +66,12 @@ class PlatformMetricsService:
         )
         snapshot_time = self._parse_datetime(snapshot_time_candidate)
         if snapshot_time is None:
-            snapshot_time = datetime.utcnow()
+            snapshot_time = datetime.now(timezone.utc)
         snapshot_time = self._normalize_to_utc(snapshot_time)
 
         document["snapshot_time"] = snapshot_time
 
-        ingested_at = datetime.utcnow()
+        ingested_at = datetime.now(timezone.utc)
         document["ingested_at"] = ingested_at
 
         document.setdefault(
@@ -115,7 +115,7 @@ class PlatformMetricsService:
         await self._ensure_indexes()
 
         period_days = self._resolve_timeframe(timeframe)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         period_start = now - timedelta(days=period_days)
 
         users_task = asyncio.create_task(self._compile_user_metrics(period_start))

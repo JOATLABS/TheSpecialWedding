@@ -4,7 +4,7 @@ import os
 from typing import Optional
 from twilio.rest import Client  # type: ignore
 from fastapi import HTTPException
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import mongo
 import logging
 
@@ -54,7 +54,7 @@ class TwilioReminderService:
             raise HTTPException(status_code=400, detail="Invalid target group")
 
         logs = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Guests
         if target_group in {"guests", "all"}:
@@ -235,7 +235,7 @@ class TwilioRSVPReminderHelper:
             token = guest.get("token")
             phone = guest.get("phone")
             guest_id = guest.get("_id")
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Skip if no token or phone
             if not token or not phone:

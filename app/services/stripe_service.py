@@ -3,7 +3,7 @@
 import stripe
 from fastapi import HTTPException
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.settings import settings
 from app.core.database import mongo
 from bson import ObjectId
@@ -95,8 +95,8 @@ class StripeService:
                         "user_id": user_id,
                         "stripe_customer_id": customer.id,
                         "email": email,
-                        "created_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
+                        "created_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 },
                 upsert=True
@@ -325,7 +325,7 @@ class StripeService:
         try:
             # Current timestamp if not provided
             if not timestamp:
-                timestamp = datetime.utcnow()
+                timestamp = datetime.now(timezone.utc)
 
             # Build meter event params
             meter_params: Dict[str, Any] = {
@@ -479,7 +479,7 @@ class StripeService:
                 {
                     "$set": {
                         "stripe_checkout_session_id": checkout_session.id,
-                        "stripe_checkout_created_at": datetime.utcnow()
+                        "stripe_checkout_created_at": datetime.now(timezone.utc)
                     }
                 },
                 upsert=True
@@ -539,7 +539,7 @@ class StripeService:
     ) -> Dict[str, Any]:
         """Persist subscription details so MongoDB mirrors Stripe's lifecycle."""
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         subscription = subscription or {}
 
         if not plan_id:
@@ -724,12 +724,12 @@ class StripeService:
                 metadata={
                     "billing_interval": new_billing_interval,
                     "changed_from": current_interval,
-                    "changed_at": datetime.utcnow().isoformat()
+                    "changed_at": datetime.now(timezone.utc).isoformat()
                 }
             )
 
             # Calculate new period end based on interval
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             if new_billing_interval == "yearly":
                 from datetime import timedelta
                 period_end = now + timedelta(days=365)
@@ -936,7 +936,7 @@ class StripeService:
                     "stripe_subscription_id": subscription_id,
                     "payment_status": session.get("payment_status"),
                     "stripe_checkout_session_id": session.get("id"),
-                    "stripe_checkout_completed_at": datetime.utcnow(),
+                    "stripe_checkout_completed_at": datetime.now(timezone.utc),
                 }
             )
 
@@ -1004,7 +1004,7 @@ class StripeService:
                 customer_id=subscription.get("customer"),
                 extra_updates={
                     "status": SubscriptionStatus.CANCELLED.value,
-                    "cancelled_at": datetime.utcnow(),
+                    "cancelled_at": datetime.now(timezone.utc),
                 }
             )
 
@@ -1028,7 +1028,7 @@ class StripeService:
                 subscription=subscription,
                 customer_id=subscription.get("customer"),
                 extra_updates={
-                    "trial_will_end_notified_at": datetime.utcnow()
+                    "trial_will_end_notified_at": datetime.now(timezone.utc)
                 }
             )
 
@@ -1063,7 +1063,7 @@ class StripeService:
                     customer_id=subscription.get("customer"),
                     extra_updates={
                         "payment_status": "paid",
-                        "last_payment_date": datetime.utcnow(),
+                        "last_payment_date": datetime.now(timezone.utc),
                     }
                 )
             else:
@@ -1071,8 +1071,8 @@ class StripeService:
                     {"stripe_subscription_id": subscription_id},
                     {"$set": {
                         "payment_status": "paid",
-                        "last_payment_date": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
+                        "last_payment_date": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc)
                     }}
                 )
 
@@ -1111,7 +1111,7 @@ class StripeService:
                     customer_id=subscription.get("customer"),
                     extra_updates={
                         "payment_status": "past_due",
-                        "last_payment_attempt": datetime.utcnow(),
+                        "last_payment_attempt": datetime.now(timezone.utc),
                     }
                 )
             else:
@@ -1119,8 +1119,8 @@ class StripeService:
                     {"stripe_subscription_id": subscription_id},
                     {"$set": {
                         "payment_status": "past_due",
-                        "last_payment_attempt": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
+                        "last_payment_attempt": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc)
                     }}
                 )
 
@@ -1172,8 +1172,8 @@ class StripeService:
                 {
                     "$set": {
                         "status": "succeeded",
-                        "paid_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow(),
+                        "paid_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
                         "amount_received": payment_intent.get("amount_received", 0) / 100,
                         "payment_method_type": payment_intent.get("payment_method_types", [None])[0]
                     }
@@ -1236,7 +1236,7 @@ class StripeService:
                         "status": "failed",
                         "failure_reason": error_message,
                         "failure_code": error_code,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -1274,8 +1274,8 @@ class StripeService:
                         "stripe_connect_charges_enabled": charges_enabled,
                         "stripe_connect_payouts_enabled": payouts_enabled,
                         "stripe_connect_details_submitted": details_submitted,
-                        "stripe_connect_updated_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
+                        "stripe_connect_updated_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -1380,7 +1380,7 @@ class StripeService:
                     plan_name=plan_name,
                     amount=amount,
                     currency=currency,
-                    invoice_date=datetime.utcnow().strftime("%B %d, %Y"),
+                    invoice_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
                     invoice_pdf=invoice.get("invoice_pdf") if invoice else None
                 )
             else:  # payment_failed
@@ -1445,8 +1445,8 @@ class StripeService:
                     "target_audience": "specific_user",
                     "user_id": user_email,  # Target specific user by email
                     "created_by": "system",
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
                     "expiry_date": None,
                     "is_dismissible": True,
                     "priority": "low",
@@ -1469,8 +1469,8 @@ class StripeService:
                     "target_audience": "specific_user",
                     "user_id": user_email,  # Target specific user by email
                     "created_by": "system",
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
                     "expiry_date": None,
                     "is_dismissible": False,  # Payment failures should not be easily dismissed
                     "priority": "urgent",  # High priority for failed payments
@@ -1607,7 +1607,7 @@ class StripeService:
                 <tr>
                   <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;">
                     <p style="margin:0;">If you have any questions, please contact our support team.</p>
-                    <p style="margin:12px 0 0;">© {datetime.utcnow().year} The Special Wedding. All rights reserved.</p>
+                    <p style="margin:12px 0 0;">© {datetime.now(timezone.utc).year} The Special Wedding. All rights reserved.</p>
                   </td>
                 </tr>
               </table>
@@ -1666,7 +1666,7 @@ class StripeService:
                 <tr>
                   <td style="padding:32px 40px;font-family:'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;">
                     <p style="margin:0;">If you believe this is an error or need assistance, please contact our support team.</p>
-                    <p style="margin:12px 0 0;">© {datetime.utcnow().year} The Special Wedding. All rights reserved.</p>
+                    <p style="margin:12px 0 0;">© {datetime.now(timezone.utc).year} The Special Wedding. All rights reserved.</p>
                   </td>
                 </tr>
               </table>
@@ -1711,7 +1711,7 @@ class StripeService:
             # Save account ID to user record
             await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
-                {"$set": {"stripe_connect_id": account.id, "updated_at": datetime.utcnow()}}
+                {"$set": {"stripe_connect_id": account.id, "updated_at": datetime.now(timezone.utc)}}
             )
 
             logger.info(f"Created Stripe connected account {account.id} for user {user_id}")

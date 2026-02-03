@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { useAdmin } from '@/contexts/AdminContext';
 import PageHeader from '../components/PageHeader';
 import { useTables } from '@/admin/hooks/useTables';
@@ -8,7 +9,9 @@ import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
 import { Sidebar } from '@/admin/components/seating/Sidebar';
 import { GlassButton } from '@/admin/components/ui/glass/GlassButton';
-import { Plus, Download, Printer, Sparkles, X, Check, FileText } from 'lucide-react';
+import { SeatingConstraintsModal } from '@/admin/components/seating/SeatingConstraintsModal';
+import { Plus, Download, Printer, Sparkles, X, Check, FileText, Users } from 'lucide-react';
+import { Table, Guest } from '@/types/table';
 
 interface Wedding {
   id?: string;
@@ -47,7 +50,7 @@ export default function SeatingPage() {
     setTables
   } = useTables(selectedWedding);
 
-  const { guests, setGuests } = useGuests(selectedWedding);
+  const { guests, setGuests, refetch: refetchGuests } = useGuests(selectedWedding);
 
   // AI state
   const [aiLoading, setAiLoading] = useState(false);
@@ -58,6 +61,42 @@ export default function SeatingPage() {
   // PDF export state
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+
+  // Seating constraints modal state
+  const [showConstraintsModal, setShowConstraintsModal] = useState(false);
+
+  // DnD-kit sensors for drag-and-drop
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    })
+  );
+
+  // Handle drag end for both tables and guests
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over, delta } = event;
+
+    if (!active || !active.data.current) return;
+
+    const type = active.data.current.type;
+
+    if (type === 'table') {
+      const table = active.data.current.table as Table;
+      handleTableMove(table.id, table.x + delta.x, table.y + delta.y);
+    } else if (type === 'guest' && over) {
+      const guest = active.data.current.guest as Guest;
+
+      // Check if dropped on a table drop zone
+      if (over.data.current && over.data.current.type === 'table-drop') {
+        const tableId = over.data.current.tableId;
+        if (tableId !== guest.table_id) {
+          handleGuestAssign(guest.id, tableId);
+        }
+      }
+    }
+  };
 
   // Fetch weddings on mount
   const fetchWeddings = useCallback(async () => {
@@ -315,6 +354,14 @@ export default function SeatingPage() {
         {selectedWedding && (
           <div className="flex gap-2 print:hidden">
             <GlassButton
+              onClick={() => setShowConstraintsModal(true)}
+              variant="secondary"
+              size="sm"
+              icon={<Users className="w-4 h-4" />}
+            >
+              Constraints
+            </GlassButton>
+            <GlassButton
               onClick={handleAISuggest}
               variant="secondary"
               size="sm"
@@ -403,20 +450,21 @@ export default function SeatingPage() {
 
       {/* Seating Canvas - only show when wedding selected */}
       {selectedWedding ? (
-        <div className="flex h-[calc(100vh-280px)] overflow-hidden print:h-auto print:overflow-visible bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700">
-          <div className="print:hidden">
-            <Sidebar guests={guests} />
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <div className="flex h-[calc(100vh-280px)] overflow-hidden print:h-auto print:overflow-visible bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700">
+            <div className="print:hidden">
+              <Sidebar guests={guests} />
+            </div>
+            <div className="flex-1 relative">
+              <SeatingCanvas
+                tables={tables}
+                guests={guests}
+                onTableMove={handleTableMove}
+                onTableDelete={handleTableDelete}
+              />
+            </div>
           </div>
-          <div className="flex-1 relative">
-            <SeatingCanvas
-              tables={tables}
-              guests={guests}
-              onTableMove={handleTableMove}
-              onGuestAssign={handleGuestAssign}
-              onTableDelete={handleTableDelete}
-            />
-          </div>
-        </div>
+        </DndContext>
       ) : (
         <div className="flex items-center justify-center h-[calc(100vh-280px)] bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700">
           <div className="text-center">
@@ -492,6 +540,19 @@ export default function SeatingPage() {
           </div>
         </div>
       )}
+
+      {/* Seating Constraints Modal */}
+      <SeatingConstraintsModal
+        isOpen={showConstraintsModal}
+        onClose={() => setShowConstraintsModal(false)}
+        weddingId={selectedWedding}
+        guests={guests}
+        token={token || ''}
+        onConstraintsUpdated={() => {
+          // Refetch guests to get updated constraint data
+          refetchGuests();
+        }}
+      />
     </div>
   );
 }
