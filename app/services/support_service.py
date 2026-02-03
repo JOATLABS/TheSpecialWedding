@@ -1,7 +1,7 @@
 from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
 from typing import Dict, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import secrets
 import string
@@ -24,7 +24,7 @@ class SupportService:
     def generate_ticket_number(self) -> str:
         """Generate a unique ticket number"""
         prefix = "TKT"
-        timestamp = datetime.utcnow().strftime("%Y%m%d")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
         random_suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"{prefix}-{timestamp}-{random_suffix}"
 
@@ -51,8 +51,8 @@ class SupportService:
                 "assigned_to": None,
                 "wedding_id": ticket_data.get("wedding_id"),
                 "attachments": ticket_data.get("attachments", []),
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "resolved_at": None,
                 "comments": [],
                 "tags": [],
@@ -73,8 +73,8 @@ class SupportService:
                 await activity_logs_collection.insert_one({
                     "type": "support_ticket_created",
                     "message": f"Support ticket created: {ticket['subject'][:50]}",
-                    "timestamp": datetime.utcnow(),
-                    "created_at": datetime.utcnow(),
+                    "timestamp": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
                     "planner_email": created_by,
                     "actor_email": created_by,
                     "metadata": {
@@ -261,12 +261,12 @@ class SupportService:
                     raise HTTPException(status_code=403, detail="Access denied")
 
             # Prepare update data
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             # Handle status changes
             if "status" in update_data:
                 if update_data["status"] in ["resolved", "closed"] and not existing.get("resolved_at"):
-                    update_data["resolved_at"] = datetime.utcnow()
+                    update_data["resolved_at"] = datetime.now(timezone.utc)
                 elif update_data["status"] not in ["resolved", "closed"] and existing.get("resolved_at"):
                     update_data["resolved_at"] = None
 
@@ -317,7 +317,7 @@ class SupportService:
                 "id": str(ObjectId()),
                 "user_id": current_user.email,
                 "message": comment_data["message"],
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
                 "is_internal": comment_data.get("is_internal", False)
             }
 
@@ -326,7 +326,7 @@ class SupportService:
                 {"_id": obj_id},
                 {
                     "$push": {"comments": comment},
-                    "$set": {"updated_at": datetime.utcnow()}
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
                 }
             )
 
@@ -349,8 +349,8 @@ class SupportService:
                 await activity_logs_collection.insert_one({
                     "type": "support_ticket_comment",
                     "message": f"Comment added to ticket {ticket.get('ticket_number', 'Unknown')}",
-                    "timestamp": datetime.utcnow(),
-                    "created_at": datetime.utcnow(),
+                    "timestamp": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
                     "planner_email": ticket["created_by"],
                     "actor_email": current_user.email,
                     "metadata": {
@@ -435,7 +435,7 @@ class SupportService:
                 {
                     "$set": {
                         "assigned_to": agent_email,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                         "status": new_status
                     }
                 }
@@ -457,7 +457,7 @@ class SupportService:
     async def get_analytics(self, period: str = "30d") -> dict:
         """Get support analytics"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             if period == "7d":
                 start_date = now - timedelta(days=7)
             elif period == "30d":
@@ -547,7 +547,7 @@ class SupportService:
     async def get_dashboard_metrics(self) -> dict:
         """Get support dashboard metrics"""
         try:
-            today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
             metrics: Dict[str, Any] = {
                 "open_tickets": await self.tickets_collection.count_documents({"status": "open"}),
@@ -609,7 +609,7 @@ class SupportService:
             upload_dir = os.getenv("SUPPORT_ATTACHMENTS_DIR", "uploads/support_attachments")
             os.makedirs(upload_dir, exist_ok=True)
 
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             safe_name = os.path.basename(file.filename or "attachment")
             stored_filename = f"{ticket_id}_{timestamp}_{safe_name}"
             file_path = os.path.join(upload_dir, stored_filename)
@@ -630,12 +630,12 @@ class SupportService:
                             "path": file_path,
                             "url": file_url,
                             "uploaded_by": current_user.email,
-                            "uploaded_at": datetime.utcnow(),
+                            "uploaded_at": datetime.now(timezone.utc),
                             "file_size": file_size,
                             "content_type": file.content_type,
                         }
                     },
-                    "$set": {"updated_at": datetime.utcnow()},
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
                 },
             )
 
@@ -653,7 +653,7 @@ class SupportService:
     def _is_ticket_overdue(self, ticket: dict) -> bool:
         """Check if ticket is overdue based on priority and creation time"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             created = ticket["created_at"]
             priority = ticket.get("priority", "medium")
 

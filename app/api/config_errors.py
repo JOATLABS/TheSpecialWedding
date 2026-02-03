@@ -9,7 +9,7 @@ import logging
 import uuid
 import re
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, field_validator
 from fastapi import APIRouter, Request, HTTPException
@@ -76,7 +76,7 @@ class ConfigErrorReport(BaseModel):
 
 
 def _is_duplicate(report: ConfigErrorReport) -> bool:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=DEDUP_WINDOW)
 
     expired = [k for k, v in _recent_errors.items() if v < cutoff]
@@ -110,7 +110,7 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
         return {"error_id": None, "reported": False, "reason": "duplicate"}
 
     error_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Check for existing unacknowledged error
     existing = await mongo.db["errors"].find_one({

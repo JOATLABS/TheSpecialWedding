@@ -5,7 +5,7 @@ Generates QR codes for RSVP links, guest list PDFs, and bulk QR code ZIP files.
 Used by planners for physical invitations and printable guest lists.
 """
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 import zipfile
 import logging
@@ -287,7 +287,7 @@ class GuestExportService:
             <body>
                 <div class="header">
                     <h1>{wedding_name} - Guest List</h1>
-                    <p>Generated on {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}</p>
+                    <p>Generated on {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M UTC')}</p>
                 </div>
 
                 <table>

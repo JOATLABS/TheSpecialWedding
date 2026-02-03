@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import secrets
 import logging
@@ -49,7 +49,7 @@ class GuestVerificationService:
 
     def _check_rate_limit(self, identifier: str) -> bool:
         """Check if request is rate limited. Returns True if allowed."""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
 
         if identifier in self._failed_attempts:
             attempt_data = self._failed_attempts[identifier]
@@ -70,7 +70,7 @@ class GuestVerificationService:
 
     def _record_failed_attempt(self, identifier: str):
         """Record a failed authentication attempt"""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
 
         if identifier in self._failed_attempts:
             self._failed_attempts[identifier]["count"] += 1
@@ -88,7 +88,7 @@ class GuestVerificationService:
         try:
             log_entry = {
                 "event_type": event_type,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "details": details
             }
             # Only log event type to console, not the sensitive details
@@ -413,7 +413,7 @@ class GuestVerificationService:
                 "wedding_id": wedding_id,
                 "guest_id": guest_id,
                 "verification_method": method,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "type": "guest_verification"
             }
             await mongo.db["access_logs"].insert_one(log_entry)
@@ -489,7 +489,7 @@ class GuestVerificationService:
                 {
                     "$set": {
                         "privacy_settings": privacy_settings,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )

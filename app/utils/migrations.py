@@ -11,7 +11,7 @@ Usage:
     await migration_manager.run_migrations()
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, List, Dict, Any, Optional
 import logging
 from app.core.database import mongo
@@ -74,7 +74,7 @@ class MigrationManager:
                         "version": migration.version,
                         "name": migration.name,
                         "description": migration.description,
-                        "applied_at": datetime.utcnow(),
+                        "applied_at": datetime.now(timezone.utc),
                         "status": "success"
                     })
 
@@ -88,7 +88,7 @@ class MigrationManager:
                         "version": migration.version,
                         "name": migration.name,
                         "description": migration.description,
-                        "applied_at": datetime.utcnow(),
+                        "applied_at": datetime.now(timezone.utc),
                         "status": "failed",
                         "error": str(e)
                     })

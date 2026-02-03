@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from typing import Optional
 from bson import ObjectId
 from pydantic import BaseModel, Field
+import stripe
 from app.services.stripe_service import stripe_service
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 import logging
@@ -42,7 +43,7 @@ class CreatePaymentIntentRequest(BaseModel):
     currency: str = Field(default="usd", description="Currency code")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     description: Optional[str] = Field(None, description="Payment description")
-    metadata: Optional[dict] = Field(default_factory=dict, description="Additional metadata")
+    metadata: Optional[dict] = Field(default=None, description="Additional metadata")
     destination_user_id: Optional[str] = Field(None, description="Internal ID of the user to receive funds (Connect account)")
 
 
@@ -51,6 +52,7 @@ class ConnectOnboardRequest(BaseModel):
     country: str = Field(default="US", description="Two-letter country code")
     return_url: str = Field(..., description="Return URL after onboarding")
     refresh_url: str = Field(..., description="Refresh URL if onboarding fails")
+
 
 class VendorPaymentRequest(BaseModel):
     """Request model for paying a vendor"""
@@ -80,8 +82,8 @@ async def create_checkout_session(
             user_id=user_id,
             plan_id=request.plan_id,
             billing_interval=request.billing_interval,
-            success_url=request.success_url,
-            cancel_url=request.cancel_url,
+            success_url=request.success_url or "",
+            cancel_url=request.cancel_url or "",
             trial_days=request.trial_days
         )
 
@@ -118,8 +120,8 @@ async def create_public_checkout_session(
             user_id=str(pending_user["_id"]),
             plan_id=request.plan_id,
             billing_interval=request.billing_interval,
-            success_url=request.success_url,
-            cancel_url=request.cancel_url,
+            success_url=request.success_url or "",
+            cancel_url=request.cancel_url or "",
             trial_days=request.trial_days
         )
 
@@ -168,6 +170,7 @@ async def get_checkout_session(
         logger.error(f"Error retrieving checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve session: {str(e)}")
 
+
 @router.get("/payment-intent/{id}")
 async def get_payment_intent_details(id: str):
     """
@@ -179,7 +182,7 @@ async def get_payment_intent_details(id: str):
         from app.core.settings import settings
 
         if not settings.stripe_secret_key:
-             raise HTTPException(status_code=503, detail="Stripe is not configured")
+            raise HTTPException(status_code=503, detail="Stripe is not configured")
 
         stripe.api_key = settings.stripe_secret_key
 
@@ -219,8 +222,8 @@ async def create_portal_session(
 
         portal_session = await stripe_service.create_portal_session(
             user_id=user_id,
-            return_url=request.return_url,
-            flow_type=request.flow_type
+            return_url=request.return_url or "",
+            flow_type=request.flow_type or "payment_method_update"
         )
 
         return {
@@ -298,6 +301,8 @@ async def create_connect_account_link(
     try:
         user_id = str(current_user.user_data.get("_id"))
         email = current_user.user_data.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="User email is required for Connect onboarding")
 
         # Create or get connected account
         account_id = await stripe_service.create_connected_account(
@@ -333,9 +338,10 @@ async def get_connect_status(
     try:
         user_id = str(current_user.user_data.get("_id"))
         from app.core.database import mongo
-        from bson import ObjectId
 
         user = await mongo.db["users"].find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
         connect_id = user.get("stripe_connect_id")
 
         if not connect_id:
@@ -368,7 +374,6 @@ async def pay_vendor(
         sender_id = str(current_user.user_data.get("_id"))
 
         from app.core.database import mongo
-        from bson import ObjectId
 
         # 1. Try finding as User first (direct ID match)
         vendor_user = await mongo.db["users"].find_one({"_id": ObjectId(request.vendor_user_id)})
@@ -387,7 +392,7 @@ async def pay_vendor(
             if vendor_profile:
                 vendor_email = vendor_profile.get("email")
                 if vendor_email:
-                     vendor_user = await mongo.db["users"].find_one({"email": vendor_email})
+                    vendor_user = await mongo.db["users"].find_one({"email": vendor_email})
 
         if not vendor_user:
             raise HTTPException(status_code=404, detail="Vendor user account not found. The vendor must be a registered user to receive payments.")
@@ -404,7 +409,7 @@ async def pay_vendor(
             vendor_connect_id=vendor_connect_id,
             amount=request.amount,
             currency=request.currency,
-            description=request.description
+            description=request.description or ""
         )
 
         return {
@@ -466,35 +471,40 @@ async def create_payment_intent(
         if request.destination_user_id:
             # Look up connect ID for this user
             from app.core.database import mongo
-            from bson import ObjectId
             dest_user = await mongo.db["users"].find_one({"_id": ObjectId(request.destination_user_id)})
             if dest_user and dest_user.get("stripe_connect_id"):
                 destination_account_id = dest_user.get("stripe_connect_id")
 
+        if not request.wedding_id:
+            raise HTTPException(status_code=400, detail="wedding_id is required")
+
+        wedding_id: str = request.wedding_id
+        description: str = request.description or ""
+
         payment_intent = stripe_service.create_payment_intent_for_couple(
             amount=request.amount,
             currency=request.currency,
-            wedding_id=request.wedding_id,
-            description=request.description,
-            metadata=request.metadata,
-            destination_account_id=destination_account_id
+            wedding_id=wedding_id,
+            description=description,
+            metadata=request.metadata or {},
+            destination_account_id=destination_account_id or ""
         )
 
         # Save payment request record to Mongo
         from app.core.database import mongo
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         await mongo.db["payment_requests"].insert_one({
             "user_id": str(current_user.user_data.get("_id")),
             "payment_intent_id": payment_intent["payment_intent_id"],
             "amount": request.amount,
             "currency": request.currency,
-            "status": "pending", # Initial status
-            "wedding_id": request.wedding_id,
+            "status": "pending",  # Initial status
+            "wedding_id": wedding_id,
             "description": request.description,
             "client_secret": payment_intent["client_secret"],
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
         })
 
         return {
@@ -571,7 +581,6 @@ async def get_invoices(
         import stripe
         from app.core.settings import settings
         from app.core.database import mongo
-        from bson import ObjectId
 
         if not settings.stripe_enabled or not settings.stripe_secret_key:
             return []
@@ -624,10 +633,8 @@ async def get_payment_method(
     Returns masked card information (last 4 digits, brand, expiry).
     """
     try:
-        import stripe
         from app.core.settings import settings
         from app.core.database import mongo
-        from bson import ObjectId
 
         if not settings.stripe_enabled or not settings.stripe_secret_key:
             return {"has_payment_method": False}
@@ -645,12 +652,27 @@ async def get_payment_method(
         # Get customer to find default payment method
         customer = stripe.Customer.retrieve(customer_id)
 
-        default_pm_id = customer.invoice_settings.default_payment_method
+        # Safely get default payment method from invoice_settings
+        default_pm_id: Optional[str] = None
+        invoice_settings = customer.invoice_settings
+        if invoice_settings is not None:
+            pm_ref = invoice_settings.default_payment_method
+            # Could be a string ID or an expanded PaymentMethod object
+            if isinstance(pm_ref, str):
+                default_pm_id = pm_ref
+            elif pm_ref is not None:
+                # Expanded PaymentMethod object - get its ID
+                default_pm_id = pm_ref.id
+
         if not default_pm_id:
             # Try to get from subscriptions
             subscriptions = stripe.Subscription.list(customer=customer_id, limit=1)
             if subscriptions.data:
-                default_pm_id = subscriptions.data[0].default_payment_method
+                sub_pm = subscriptions.data[0].default_payment_method
+                if isinstance(sub_pm, str):
+                    default_pm_id = sub_pm
+                elif sub_pm is not None:
+                    default_pm_id = sub_pm.id
 
         if not default_pm_id:
             return {"has_payment_method": False}
@@ -658,21 +680,26 @@ async def get_payment_method(
         # Retrieve payment method details
         pm = stripe.PaymentMethod.retrieve(default_pm_id)
 
+        # Safely access card details with explicit None checks
         if pm.type == "card":
-            return {
-                "has_payment_method": True,
-                "type": "card",
-                "card_brand": pm.card.brand.capitalize() if pm.card.brand else "Card",
-                "card_last_four": pm.card.last4,
-                "card_exp_month": pm.card.exp_month,
-                "card_exp_year": pm.card.exp_year,
-                "card_funding": pm.card.funding
-            }
-        else:
-            return {
-                "has_payment_method": True,
-                "type": pm.type
-            }
+            card = pm.card
+            if card is not None:
+                card_brand = card.brand
+                return {
+                    "has_payment_method": True,
+                    "type": "card",
+                    "card_brand": card_brand.capitalize() if card_brand else "Card",
+                    "card_last_four": card.last4,
+                    "card_exp_month": card.exp_month,
+                    "card_exp_year": card.exp_year,
+                    "card_funding": card.funding
+                }
+
+        # Non-card payment method
+        return {
+            "has_payment_method": True,
+            "type": pm.type
+        }
 
     except Exception as e:
         logger.error(f"Error fetching payment method: {str(e)}")
@@ -692,8 +719,6 @@ async def get_subscription_details(
         import stripe
         from app.core.settings import settings
         from app.core.database import mongo
-        from bson import ObjectId
-        from datetime import datetime
 
         if not settings.stripe_enabled or not settings.stripe_secret_key:
             raise HTTPException(status_code=503, detail="Stripe is not enabled")
@@ -719,22 +744,37 @@ async def get_subscription_details(
             try:
                 customer = stripe.Customer.retrieve(customer_record["stripe_customer_id"])
 
-                # Get default payment method
-                default_pm_id = customer.invoice_settings.default_payment_method
+                # Safely get default payment method from invoice_settings
+                default_pm_id: str | None = None
+                invoice_settings = customer.invoice_settings
+                if invoice_settings is not None:
+                    pm_ref = invoice_settings.default_payment_method
+                    if isinstance(pm_ref, str):
+                        default_pm_id = pm_ref
+                    elif pm_ref is not None:
+                        default_pm_id = pm_ref.id
+
                 if not default_pm_id:
                     subs = stripe.Subscription.list(customer=customer.id, limit=1)
                     if subs.data:
-                        default_pm_id = subs.data[0].default_payment_method
+                        sub_pm = subs.data[0].default_payment_method
+                        if isinstance(sub_pm, str):
+                            default_pm_id = sub_pm
+                        elif sub_pm is not None:
+                            default_pm_id = sub_pm.id
 
                 if default_pm_id:
                     pm = stripe.PaymentMethod.retrieve(default_pm_id)
                     if pm.type == "card":
-                        card_info = {
-                            "card_brand": pm.card.brand.capitalize() if pm.card.brand else "Card",
-                            "card_last_four": pm.card.last4,
-                            "card_exp_month": pm.card.exp_month,
-                            "card_exp_year": pm.card.exp_year
-                        }
+                        card = pm.card
+                        if card is not None:
+                            card_brand = card.brand
+                            card_info = {
+                                "card_brand": card_brand.capitalize() if card_brand else "Card",
+                                "card_last_four": card.last4,
+                                "card_exp_month": card.exp_month,
+                                "card_exp_year": card.exp_year
+                            }
             except Exception as e:
                 logger.warning(f"Could not fetch Stripe card info: {e}")
 

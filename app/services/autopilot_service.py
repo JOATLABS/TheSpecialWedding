@@ -5,7 +5,7 @@ Handles automatic payment processing, scheduling, retries, and notifications.
 This is the core engine for the Wedding Finance Autopilot feature.
 """
 from typing import Dict, Any, List, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 import logging
 from bson import ObjectId
@@ -146,7 +146,7 @@ class AutopilotService:
             List of due payment records
         """
         if as_of_date is None:
-            as_of_date = datetime.utcnow().date()
+            as_of_date = datetime.now(timezone.utc).date()
 
         # Convert to datetime for MongoDB query
         as_of_datetime = datetime.combine(as_of_date, datetime.max.time())
@@ -179,7 +179,7 @@ class AutopilotService:
             "failed": 0,
             "skipped": 0,
             "errors": [],
-            "processed_at": datetime.utcnow().isoformat()
+            "processed_at": datetime.now(timezone.utc).isoformat()
         }
 
         for payment in due_payments:
@@ -244,7 +244,7 @@ class AutopilotService:
                     "_id": ObjectId(payment_id),
                     "status": "scheduled"  # Only process if still in scheduled state
                 },
-                {"$set": {"status": "processing", "updated_at": datetime.utcnow()}}
+                {"$set": {"status": "processing", "updated_at": datetime.now(timezone.utc)}}
             )
 
             # Skip if another process already grabbed this payment
@@ -297,7 +297,7 @@ class AutopilotService:
                         "$set": {
                             "status": "processing",
                             "stripe_payment_intent_id": payment_intent.id,
-                            "updated_at": datetime.utcnow()
+                            "updated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -334,10 +334,10 @@ class AutopilotService:
             {
                 "$set": {
                     "status": "succeeded",
-                    "paid_at": datetime.utcnow(),
+                    "paid_at": datetime.now(timezone.utc),
                     "stripe_payment_intent_id": payment_intent_id,
                     "receipt_url": receipt_url,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -404,7 +404,7 @@ class AutopilotService:
         Returns:
             List of upcoming payment records
         """
-        target_date = datetime.utcnow().date() + timedelta(days=days_ahead)
+        target_date = datetime.now(timezone.utc).date() + timedelta(days=days_ahead)
         start = datetime.combine(target_date, datetime.min.time())
         end = datetime.combine(target_date, datetime.max.time())
 
@@ -435,7 +435,7 @@ class AutopilotService:
             "total_found": len(upcoming),
             "reminders_sent": 0,
             "errors": 0,
-            "processed_at": datetime.utcnow().isoformat()
+            "processed_at": datetime.now(timezone.utc).isoformat()
         }
 
         for payment in upcoming:
@@ -506,7 +506,7 @@ class AutopilotService:
             # Mark reminder as sent
             await self.scheduled_payments.update_one(
                 {"_id": ObjectId(payment.get("id"))},
-                {"$set": {"reminder_sent_at": datetime.utcnow()}}
+                {"$set": {"reminder_sent_at": datetime.now(timezone.utc)}}
             )
 
             return True
@@ -536,7 +536,7 @@ class AutopilotService:
         # Calculate next retry date
         if new_attempt_count <= MAX_RETRY_ATTEMPTS:
             retry_days = RETRY_SCHEDULE[min(attempt_count - 1, len(RETRY_SCHEDULE) - 1)]
-            next_retry = datetime.utcnow() + timedelta(days=retry_days)
+            next_retry = datetime.now(timezone.utc) + timedelta(days=retry_days)
 
             await self.scheduled_payments.update_one(
                 {"_id": ObjectId(payment_id)},
@@ -547,7 +547,7 @@ class AutopilotService:
                         "failure_reason": error_message,
                         "failure_code": error_code,
                         "next_retry_at": next_retry,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -564,7 +564,7 @@ class AutopilotService:
                         "failure_reason": error_message,
                         "failure_code": error_code,
                         "max_retries_reached": True,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -587,7 +587,7 @@ class AutopilotService:
 
     async def get_payments_for_retry(self) -> List[Dict]:
         """Get failed payments that are due for retry."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         query = {
             "status": "failed",
@@ -609,7 +609,7 @@ class AutopilotService:
             "retried": 0,
             "succeeded": 0,
             "failed": 0,
-            "processed_at": datetime.utcnow().isoformat()
+            "processed_at": datetime.now(timezone.utc).isoformat()
         }
 
         for payment in payments_to_retry:
@@ -620,7 +620,7 @@ class AutopilotService:
                     "_id": ObjectId(payment.get("id")),
                     "status": "failed"  # Only update if still in failed state
                 },
-                {"$set": {"status": "scheduled", "updated_at": datetime.utcnow()}}
+                {"$set": {"status": "scheduled", "updated_at": datetime.now(timezone.utc)}}
             )
 
             # Skip if another process already grabbed this payment
@@ -833,7 +833,7 @@ class AutopilotService:
                 <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin: 20px 0;">
                     <p style="margin: 0;"><strong>Payment:</strong> {payment.get('name', 'Scheduled Payment')}</p>
                     <p style="margin: 10px 0 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
-                    <p style="margin: 10px 0 0;"><strong>Date:</strong> {datetime.utcnow().strftime('%B %d, %Y')}</p>
+                    <p style="margin: 10px 0 0;"><strong>Date:</strong> {datetime.now(timezone.utc).strftime('%B %d, %Y')}</p>
                 </div>
                 {f'<a href="{receipt_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px;">View Receipt</a>' if receipt_url else ''}
             </body>
@@ -946,7 +946,7 @@ class AutopilotService:
                 new_due_date = wedding_date - timedelta(days=days_before)
 
                 # Check if new due date is in the past
-                if new_due_date < datetime.utcnow().date():
+                if new_due_date < datetime.now(timezone.utc).date():
                     past_due_count += 1
                     logger.warning(
                         f"Payment {payment['_id']} new due date {new_due_date} is in the past"
@@ -958,8 +958,8 @@ class AutopilotService:
                     {
                         "$set": {
                             "due_date": datetime.combine(new_due_date, datetime.min.time()),
-                            "updated_at": datetime.utcnow(),
-                            "recalculated_at": datetime.utcnow()
+                            "updated_at": datetime.now(timezone.utc),
+                            "recalculated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -1073,7 +1073,7 @@ class AutopilotService:
                     }
                     for p in history
                 ],
-                "current_date": datetime.utcnow().isoformat()
+                "current_date": datetime.now(timezone.utc).isoformat()
             }
 
             # Call AI service (no credits - internal feature)
@@ -1116,7 +1116,7 @@ class AutopilotService:
             if card_added:
                 if isinstance(card_added, str):
                     card_added = datetime.fromisoformat(card_added)
-                days_since_card_added = (datetime.utcnow() - card_added).days
+                days_since_card_added = (datetime.now(timezone.utc) - card_added).days
 
             # Get payment history
             history = []
@@ -1146,7 +1146,7 @@ class AutopilotService:
                     "failed_payments": failed,
                     "success_rate": round(successful / max(successful + failed, 1) * 100, 1)
                 },
-                "current_date": datetime.utcnow().isoformat()
+                "current_date": datetime.now(timezone.utc).isoformat()
             }
 
             # Call AI service (no credits - internal feature)
@@ -1189,7 +1189,7 @@ class AutopilotService:
                             "ai_risk_assessment": {
                                 "probability": prediction.get("success_probability"),
                                 "risk_level": prediction.get("risk_level"),
-                                "assessed_at": datetime.utcnow()
+                                "assessed_at": datetime.now(timezone.utc)
                             }
                         }
                     }
@@ -1221,7 +1221,7 @@ class AutopilotService:
                 "payment_id": payment_id,
                 "event_type": event_type,
                 "details": details,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc)
             })
         except Exception as e:
             logger.error(f"Failed to log payment event: {str(e)}")

@@ -2,7 +2,7 @@
 Base model classes and utilities for Pydantic v2 models.
 Provides common functionality and optimizations for all models.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
@@ -14,11 +14,11 @@ class TimestampedModel(BaseModel):
     Provides created_at and updated_at fields for all models.
     """
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Record creation timestamp"
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Record last update timestamp"
     )
 
@@ -41,12 +41,12 @@ class TimestampedModel(BaseModel):
 
     def refresh_updated_at(self):
         """Manually update the updated_at timestamp."""
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
     @property
     def age_minutes(self) -> float:
         """Get the age of this record in minutes (not serialized)."""
-        delta = datetime.utcnow() - self.created_at
+        delta = datetime.now(timezone.utc) - self.created_at
         return delta.total_seconds() / 60
 
     @field_serializer('created_at', 'updated_at', when_used='json')

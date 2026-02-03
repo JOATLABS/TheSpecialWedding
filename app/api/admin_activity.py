@@ -6,7 +6,7 @@ Provides endpoints for root admins to view their activity history.
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.admin_activity_service import admin_activity_service
 import logging
@@ -87,7 +87,7 @@ async def cleanup_old_activities(
         days: Delete activities older than this many days (default 90, min 7, max 365)
     """
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         result = await admin_activity_service.collection.delete_many({
             "created_at": {"$lt": cutoff_date}
@@ -130,7 +130,7 @@ async def export_activity_log(
         days: Export activities from the last N days (default 90)
     """
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         query: Dict[str, Any] = {"created_at": {"$gte": cutoff_date}}
 
@@ -175,7 +175,7 @@ async def export_activity_log(
                 "format": "csv",
                 "content": output.getvalue(),
                 "count": len(activities),
-                "exported_at": datetime.utcnow().isoformat() + "Z",
+                "exported_at": datetime.now(timezone.utc).isoformat() + "Z",
                 "filters": {
                     "days": days,
                     "action_type": action_type,
@@ -187,7 +187,7 @@ async def export_activity_log(
                 "format": "json",
                 "activities": activities,
                 "count": len(activities),
-                "exported_at": datetime.utcnow().isoformat() + "Z",
+                "exported_at": datetime.now(timezone.utc).isoformat() + "Z",
                 "filters": {
                     "days": days,
                     "action_type": action_type,

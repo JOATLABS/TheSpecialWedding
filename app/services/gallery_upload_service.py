@@ -7,7 +7,7 @@ from io import BytesIO
 from botocore.exceptions import ClientError
 from botocore.config import Config
 from fastapi import HTTPException, UploadFile
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class GalleryUploadService:
     def create_presigned_url(self, filename: str, expires_in: int = 300):
         """Legacy method - creates presigned URL without wedding_slug (deprecated)"""
         try:
-            key = f"gallery/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{filename}"
+            key = f"gallery/{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{filename}"
             url = self.s3.generate_presigned_url(
                 ClientMethod="put_object",
                 Params={"Bucket": self.bucket_name, "Key": key},
@@ -52,7 +52,7 @@ class GalleryUploadService:
     def create_presigned_url_with_wedding(self, filename: str, wedding_slug: str, folder: str = "gallery", expires_in: int = 300):
         """Creates presigned URL with wedding_slug in the key for proper authorization"""
         try:
-            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             key = f"{folder}/{wedding_slug}/{timestamp}_{filename}"
             url = self.s3.generate_presigned_url(
                 ClientMethod="put_object",
@@ -139,7 +139,7 @@ class GalleryUploadService:
 
     def upload_file_direct(self, file: UploadFile, wedding_slug: str, folder: str = "gallery"):
         try:
-            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             filename = os.path.basename(str(file.filename))
             key = f"{folder}/{wedding_slug}/{timestamp}_{filename}"
 

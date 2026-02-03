@@ -13,7 +13,7 @@ These are SEPARATE from platform notifications (root admin announcements).
 
 from pydantic import BaseModel, Field
 from typing import Optional, Literal, Final
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 
 
@@ -111,6 +111,6 @@ def create_notification_document(
         "priority": priority,
         "action_url": action_url,
         "is_read": False,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "read_at": None
     }

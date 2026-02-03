@@ -155,7 +155,7 @@ class SecurityAuditService:
                 resource=resource,
                 action=action,
                 details=details or {},
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 success=success,
                 error_message=error_message,
                 session_id=session_id,
@@ -380,7 +380,7 @@ class SecurityAuditService:
             Suspicious activity analysis
         """
         try:
-            cutoff_time = datetime.utcnow() - timedelta(minutes=time_window_minutes)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=time_window_minutes)
             query = {
                 'ip_address': ip_address,
                 'timestamp': {'$gte': cutoff_time}

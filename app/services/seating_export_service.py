@@ -5,7 +5,7 @@ Generates printable PDF seating charts with visual floor plan layout
 for wedding venue display.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from typing import Dict, List, Optional
 
@@ -253,7 +253,7 @@ class SeatingExportService:
 <body>
     <div class="header">
         <h1>{self._escape_html(wedding_name)}</h1>
-        <p class="subtitle">Seating Chart &bull; {datetime.utcnow().strftime('%B %d, %Y')}</p>
+        <p class="subtitle">Seating Chart &bull; {datetime.now(timezone.utc).strftime('%B %d, %Y')}</p>
     </div>
 
     <div class="canvas">
@@ -484,7 +484,7 @@ class SeatingExportService:
 <body>
     <div class="header">
         <h1>{self._escape_html(wedding_name)} - Seating List</h1>
-        <p>Generated on {datetime.utcnow().strftime('%B %d, %Y at %H:%M UTC')}</p>
+        <p>Generated on {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M UTC')}</p>
     </div>
 
     <div class="tables-grid">

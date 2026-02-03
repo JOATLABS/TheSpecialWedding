@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.utils.auth_utils import verify_password, create_access_token
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class AuthService:
         user = await self.authenticate_user(email, password)
 
         # Update last_login timestamp
-        login_time = datetime.utcnow()
+        login_time = datetime.now(timezone.utc)
         try:
             await self.users_collection.update_one(
                 {"_id": user["_id"]},

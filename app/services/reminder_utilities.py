@@ -97,7 +97,7 @@ class RSVPReminderHelper:
                 "guest_id": guest_id,
                 "attending": attending,
                 "dietary": dietary,
-                "submitted_at": datetime.utcnow()
+                "submitted_at": datetime.now(timezone.utc)
             }},
             upsert=True
         )

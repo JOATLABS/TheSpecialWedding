@@ -4,7 +4,7 @@ Unified Security Headers Middleware with CSP nonce support and threat logging.
 
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import Request, Response
@@ -234,7 +234,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return any(pattern in query_lower for pattern in suspicious_patterns)
 
     def _is_excessive_requests(self, client_ip: str) -> bool:
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         if client_ip not in self.suspicious_requests:
             self.suspicious_requests[client_ip] = {
                 "count": 1,

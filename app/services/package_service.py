@@ -5,7 +5,7 @@ CRUD operations for wedding service packages.
 Handles package lifecycle from creation to sending to couples.
 """
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import secrets
 import logging
@@ -168,7 +168,7 @@ class PackageService:
             if "total_amount" in update_data:
                 update_data["total_amount"] = float(update_data["total_amount"])
 
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             await self.packages.update_one(
                 {"_id": ObjectId(package_id)},
@@ -334,7 +334,7 @@ class PackageService:
                 wedding_date=parsed_wedding_date,
                 package_snapshot=package_snapshot,
                 status="sent",
-                sent_at=datetime.utcnow()
+                sent_at=datetime.now(timezone.utc)
             )
 
             contract_dict = contract.model_dump(by_alias=True)

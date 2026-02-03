@@ -399,7 +399,7 @@ async def upload_profile_image(
 ):
     """Upload a profile image for the current user"""
     import os
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -428,7 +428,7 @@ async def upload_profile_image(
 
     # Generate unique filename using user ID
     user_id = current_user.user_data.get("_id", current_user.email.replace("@", "_at_"))
-    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
     ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
     key = f"profile-images/{user_id}/{timestamp}{ext}"
 

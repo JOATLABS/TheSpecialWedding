@@ -24,6 +24,13 @@ class GuestModel(BaseModel):
     email_opt_out_date: Optional[datetime] = Field(None, description="When guest opted out of email")
     invite_sent: Optional[bool] = Field(default=False, description="Whether initial invitation was sent")
     invite_sent_date: Optional[datetime] = Field(None, description="When initial invitation was sent")
+    # Seating optimization fields
+    must_sit_with: Optional[list[str]] = Field(default_factory=lambda: [], description="Guest IDs that this guest must sit with (e.g., spouse, partner)")
+    must_sit_apart: Optional[list[str]] = Field(default_factory=lambda: [], description="Guest IDs that this guest should NOT sit near (e.g., ex-partners, conflicts)")
+    accessibility_needs: Optional[str] = Field(None, description="Accessibility requirements (e.g., wheelchair, near exit, quiet area)")
+    seating_preference: Optional[str] = Field(None, description="Seating preference (e.g., near_dance_floor, quiet_corner, near_bar)")
+    age_group: Optional[str] = Field(None, description="Age group for seating (child, young_adult, adult, elder)")
+    language_preference: Optional[str] = Field(None, description="Primary language for multilingual wedding seating")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -68,6 +75,13 @@ class UpdateGuestRequest(BaseModel):
     number_of_plus_ones_allowed: Optional[int] = Field(None, ge=0, le=10)
     sms_opt_in: Optional[bool] = None
     email_opt_in: Optional[bool] = None
+    # Seating optimization fields
+    must_sit_with: Optional[list[str]] = Field(None, description="Guest IDs that this guest must sit with")
+    must_sit_apart: Optional[list[str]] = Field(None, description="Guest IDs that this guest should NOT sit near")
+    accessibility_needs: Optional[str] = Field(None, description="Accessibility requirements")
+    seating_preference: Optional[str] = Field(None, description="Seating preference")
+    age_group: Optional[str] = Field(None, description="Age group (child, young_adult, adult, elder)")
+    language_preference: Optional[str] = Field(None, description="Primary language for seating")
 
     @field_validator("phone")
     def validate_phone(cls, value):
