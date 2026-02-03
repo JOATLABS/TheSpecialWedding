@@ -403,10 +403,18 @@ class PlatformMetricsService:
                 active += 1
 
             event_date = self._parse_datetime(wedding.get("date"))
+            # Ensure event_date is timezone-aware for comparison if needed
+            if event_date and event_date.tzinfo is None and now.tzinfo is not None:
+                event_date = event_date.replace(tzinfo=timezone.utc)
+
             if event_date and event_date.date() >= now.date():
                 upcoming += 1
 
             created_at = self._parse_datetime(wedding.get("created_at"))
+            # Ensure created_at is timezone-aware for comparison
+            if created_at and created_at.tzinfo is None and period_start.tzinfo is not None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+
             if created_at and created_at >= period_start:
                 created += 1
 

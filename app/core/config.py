@@ -11,8 +11,8 @@ class Settings:
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://mongo:27017")
     MONGO_DB: str = os.getenv("MONGO_DB", "wedding")
     SECRET_KEY: Optional[str] = os.getenv("SECRET_KEY")
-    API_KEY: str = os.getenv("API_KEY", "default-api-key")
-    PLATFORM_METRICS_TOKEN: str = (
+    API_KEY: Optional[str] = os.getenv("API_KEY")
+    PLATFORM_METRICS_TOKEN: Optional[str] = (
         os.getenv("PLATFORM_METRICS_TOKEN")
         or os.getenv("API_TOKEN")
         or API_KEY

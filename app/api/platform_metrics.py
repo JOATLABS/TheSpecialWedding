@@ -16,6 +16,9 @@ router = APIRouter()
 
 
 def _require_metrics_token(authorization: Optional[str] = Header(None)) -> None:
+    if settings.PLATFORM_METRICS_TOKEN is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Metrics token not configured")
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing metrics token")
 

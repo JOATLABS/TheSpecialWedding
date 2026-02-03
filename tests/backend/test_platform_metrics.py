@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 from types import SimpleNamespace
 import sys
+from unittest.mock import AsyncMock
 
 import mongomock
 import pytest
@@ -19,8 +20,10 @@ os.environ.setdefault("API_KEY", "test-api-key")
 
 import app.api.saas_config as saas_config  # noqa: E402
 import app.api.platform_metrics as platform_metrics_api  # noqa: E402
+import app.api.admin_platform_metrics as admin_platform_metrics_api  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.dependencies.auth import require_admin  # noqa: E402
+from app.dependencies.auth_extended import require_root_admin  # noqa: E402
 from app.services.platform_metrics_service import PlatformMetricsService  # noqa: E402
 import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
 
@@ -85,13 +88,18 @@ def snapshot_test_client(monkeypatch):
     monkeypatch.setattr(platform_metrics_api, "metrics_service", service)
     monkeypatch.setattr(settings, "PLATFORM_METRICS_TOKEN", "metrics-test-token")
 
+    # Mock get_platform_health to avoid DB connection in fallback
+    mock_health = AsyncMock(return_value={"status": "ok", "db": "ok"})
+    monkeypatch.setattr(admin_platform_metrics_api, "get_platform_health", mock_health)
+
     app = FastAPI()
     app.include_router(platform_metrics_api.router)
 
     async def override_require_admin():
-        return SimpleNamespace(role="admin")
+        return SimpleNamespace(role="admin", is_root_admin=True, email="root@example.com")
 
     app.dependency_overrides[require_admin] = override_require_admin
+    app.dependency_overrides[require_root_admin] = override_require_admin
 
     return TestClient(app)
 
@@ -99,7 +107,8 @@ def snapshot_test_client(monkeypatch):
 @pytest.mark.anyio("asyncio")
 async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
     fake_mongo, db = mongo_fixture
-    now = datetime.utcnow()
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
 
     # Users
     users = fake_mongo.get_users_collection()
@@ -263,7 +272,8 @@ def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client):
     assert response.status_code == 404
 
     admin_response = client.get("/admin/platform/metrics")
-    assert admin_response.status_code == 404
+    # Falls back to live health data if snapshot missing
+    assert admin_response.status_code == 200
 
     history_response = client.get("/admin/platform/metrics/history")
     assert history_response.status_code == 200
