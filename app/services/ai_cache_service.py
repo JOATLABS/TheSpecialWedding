@@ -142,6 +142,31 @@ class AICacheService:
             logger.error(f"Cache invalidation error: {str(e)}")
             return 0
 
+    async def invalidate_by_features(self, features: list[str], tenant_id: str) -> int:
+        """
+        Invalidate all cache entries for multiple features and tenant.
+
+        Args:
+            features: List of feature names
+            tenant_id: Tenant ID
+
+        Returns:
+            Number of entries deleted
+        """
+        try:
+            result = await self.cache.delete_many({
+                "feature": {"$in": features},
+                "tenant_id": tenant_id
+            })
+
+            if result.deleted_count > 0:
+                logger.info(f"Invalidated {result.deleted_count} cache entries for features {features}/{tenant_id}")
+            return result.deleted_count
+
+        except Exception as e:
+            logger.error(f"Cache batch invalidation error: {str(e)}")
+            return 0
+
     async def invalidate_by_tenant(self, tenant_id: str) -> int:
         """
         Invalidate all cache entries for a tenant.

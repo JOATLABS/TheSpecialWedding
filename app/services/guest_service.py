@@ -28,9 +28,11 @@ class GuestService:
         """Invalidate AI cache when guest data changes (affects seating optimization)."""
         try:
             cache_service = _get_ai_cache_service()
-            # Invalidate all seating-related caches
-            for feature in ["seating_small", "seating_medium", "seating_large"]:
-                await cache_service.invalidate_by_feature(feature, wedding_id)
+            # Invalidate all seating-related caches in one batch query
+            await cache_service.invalidate_by_features(
+                ["seating_small", "seating_medium", "seating_large"],
+                wedding_id
+            )
             logger.debug(f"Invalidated seating cache for wedding {wedding_id}")
         except Exception as e:
             # Cache invalidation failures should not break main operations
