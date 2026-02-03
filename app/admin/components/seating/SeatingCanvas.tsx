@@ -8,13 +8,15 @@ interface SeatingCanvasProps {
   guests: Guest[];
   onTableMove: (id: string, x: number, y: number) => void;
   onTableDelete: (id: string) => void;
+  onGuestAssign?: (guestId: string, tableId: string) => void;
 }
 
 export function SeatingCanvas({
   tables,
   guests,
   onTableMove,
-  onTableDelete
+  onTableDelete,
+  onGuestAssign
 }: SeatingCanvasProps) {
   // DndContext is now provided by parent (page.tsx) to include both Sidebar and Canvas
   return (
