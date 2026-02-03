@@ -711,12 +711,19 @@ class AIService:
         if settings.ai_enabled:
             try:
                 from google import genai
+                from google.genai import types
 
                 # New SDK: Use Client pattern with explicit API key
                 # The client can also read from GEMINI_API_KEY or GOOGLE_API_KEY env vars
                 api_key = settings.ai_api_key
                 if api_key:
-                    self._client = genai.Client(api_key=api_key)
+                    # Configure HTTP options with Referer header to satisfy API key restrictions
+                    # The Referer must match what's configured in Google Cloud Console
+                    http_options = types.HttpOptions(
+                        headers={"Referer": settings.frontend_url or "https://thespecialwedding.io"}
+                    )
+                    self._client = genai.Client(api_key=api_key, http_options=http_options)
+                    logger.info(f"Gemini client configured with Referer: {settings.frontend_url or 'https://thespecialwedding.io'}")
                 else:
                     # Try to use environment variable automatically
                     self._client = genai.Client()
