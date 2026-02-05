@@ -253,11 +253,13 @@ async def stripe_webhook(
     - Failed payments
     - Subscription changes
     - Customer updates
+    - Product/price changes
 
     IMPORTANT: Configure this endpoint in your Stripe Dashboard:
     https://dashboard.stripe.com/webhooks
 
-    Endpoint URL: https://yourdomain.com/api/stripe/webhook
+    Endpoint URL: https://yourdomain.com/stripe/webhook
+    (Also available at: https://yourdomain.com/api/stripe/webhook)
 
     Events to listen for:
     - checkout.session.completed
@@ -265,8 +267,15 @@ async def stripe_webhook(
     - customer.subscription.updated
     - customer.subscription.deleted
     - customer.subscription.trial_will_end
+    - customer.updated
     - invoice.paid
     - invoice.payment_failed
+    - payment_intent.succeeded
+    - payment_intent.payment_failed
+    - product.updated
+    - price.created
+    - price.updated
+    - account.updated
     """
     if not stripe_signature:
         raise HTTPException(status_code=400, detail="Missing stripe-signature header")
@@ -277,6 +286,15 @@ async def stripe_webhook(
 
         # Process webhook
         result = await stripe_service.handle_webhook_event(payload, stripe_signature)
+
+        # Check if the handler reported an internal failure.
+        # Return 500 so Stripe retries instead of silently losing the event.
+        if isinstance(result, dict) and result.get("status") == "error":
+            logger.error(f"Webhook handler returned error: {result.get('message', 'unknown')}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Webhook handler error: {result.get('message', 'unknown')}"
+            )
 
         return {"status": "success", "result": result}
 
