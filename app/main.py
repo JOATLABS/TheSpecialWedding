@@ -255,6 +255,7 @@ app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoint
 app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
 app.include_router(twilio_webhooks_router, tags=["Webhooks"])  # Twilio SMS delivery webhooks
 app.include_router(stripe_router, prefix="/stripe", tags=["Payments"])
+app.include_router(stripe_router, prefix="/api/stripe", tags=["Payments"])  # Alias so webhooks work at /api/stripe/webhook too
 app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingestion and snapshots
 app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
 app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
