@@ -82,7 +82,7 @@ async def process_daily_usage_check():
             # If current_period_start is naive, make it aware (assume UTC)
             # If current_period_start is naive, make it aware (assume UTC)
             if current_period_start.tzinfo is None:
-                current_period_start = current_period_start.replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo)
+                current_period_start = current_period_start.replace(tzinfo=timezone.utc)
 
             async for wedding in weddings:
                 last_billed = wedding.get("last_billed_at")
@@ -95,7 +95,7 @@ async def process_daily_usage_check():
                     # Ensure last_billed is timezone aware for comparison
                     if last_billed.tzinfo is None:
                         # Assume UTC if naive, as database typically stores UTC
-                        last_billed = last_billed.replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo)
+                        last_billed = last_billed.replace(tzinfo=timezone.utc)
 
                     if last_billed < current_period_start:
                         needs_billing = True

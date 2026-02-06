@@ -84,7 +84,7 @@ export function CollectPaymentModal({
       }
 
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/stripe/create-payment-intent`,
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/create-payment-intent`,
         {
           method: 'POST',
           headers: {

@@ -52,7 +52,7 @@ export default function StripeConnectCard() {
       const token = localStorage.getItem('admin_token');
       if (!token) return;
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/stripe/connect/status`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/connect/status`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -74,7 +74,7 @@ export default function StripeConnectCard() {
       setLoading(true);
       const token = localStorage.getItem('admin_token');
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/stripe/connect/onboard`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/connect/onboard`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
