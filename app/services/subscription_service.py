@@ -1,9 +1,12 @@
+import logging
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.services.stripe_service import stripe_service
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
+
+logger = logging.getLogger(__name__)
 
 
 class SubscriptionService:
@@ -129,7 +132,7 @@ class SubscriptionService:
                     stripe_service.archive_stripe_product(stripe_product_id)
                 except Exception as e:
                     # Log but don't block deletion - Stripe sync can be fixed manually
-                    print(f"Warning: Failed to archive Stripe product {stripe_product_id}: {e}")
+                    logger.warning(f"Failed to archive Stripe product {stripe_product_id}: {e}")
 
             result = await self.plans_collection.delete_one({"_id": plan_id})
 
@@ -254,11 +257,32 @@ class SubscriptionService:
             raise HTTPException(status_code=500, detail=f"Error retrieving subscription: {str(e)}")
 
     async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
-        """Cancel user subscription"""
+        """Cancel user subscription in both local DB and Stripe"""
         try:
             now = datetime.now(timezone.utc)
-            result = await self.subscriptions_collection.update_one(
-                {"user_id": user_id, "status": {"$in": ["active", "trial"]}},
+
+            # Find the subscription first to get Stripe subscription ID
+            subscription = await self.subscriptions_collection.find_one(
+                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+            )
+
+            if not subscription:
+                raise HTTPException(status_code=404, detail="No active subscription found")
+
+            # Cancel in Stripe if there's a Stripe subscription
+            stripe_sub_id = subscription.get("stripe_subscription_id")
+            if stripe_sub_id:
+                try:
+                    import stripe
+                    stripe.Subscription.cancel(stripe_sub_id)
+                    logger.info(f"Cancelled Stripe subscription {stripe_sub_id} for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Failed to cancel Stripe subscription {stripe_sub_id}: {str(e)}")
+                    # Still proceed with local cancellation to avoid inconsistent state
+
+            # Update local subscription
+            await self.subscriptions_collection.update_one(
+                {"_id": subscription["_id"]},
                 {"$set": {
                     "status": "cancelled",
                     "cancelled_at": now,
@@ -266,9 +290,6 @@ class SubscriptionService:
                     "cancellation_reason": reason
                 }}
             )
-
-            if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="No active subscription found")
 
             # Update user status
             await self.users_collection.update_one(

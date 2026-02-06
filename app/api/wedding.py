@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from app.models.wedding import WeddingModel
 from app.services.wedding_service import WeddingService
@@ -13,6 +14,8 @@ from app.models.subscription import SubscriptionStatus
 from app.core.database import mongo
 from datetime import datetime, timezone
 from bson import ObjectId
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 wedding_service = WeddingService()
@@ -125,7 +128,7 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                                 }}
                             )
         except Exception as e:
-            print(f"Error reporting meter event on creation: {e}")
+            logger.error(f"Error reporting meter event on creation: {e}")
 
     return result
 
@@ -192,7 +195,7 @@ async def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser =
                             }}
                         )
     except Exception as exc:
-        print(f"Meter reversal on cancellation failed: {exc}")
+        logger.error(f"Meter reversal on cancellation failed: {exc}")
 
     # Preserve billing marker; do not decrement usage to avoid gaming billing
     await mongo.db["weddings"].update_one(

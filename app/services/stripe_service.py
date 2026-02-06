@@ -473,13 +473,16 @@ class StripeService:
                 }
             )
 
-            # Save session reference
+            # Save session reference with billing interval and customer for consistency
             await self.subscriptions_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$set": {
                         "stripe_checkout_session_id": checkout_session.id,
-                        "stripe_checkout_created_at": datetime.now(timezone.utc)
+                        "stripe_checkout_created_at": datetime.now(timezone.utc),
+                        "stripe_customer_id": customer_id,
+                        "billing_interval": billing_interval,
+                        "plan_id": plan_id,
                     }
                 },
                 upsert=True
@@ -527,7 +530,11 @@ class StripeService:
             "canceled": SubscriptionStatus.CANCELLED.value,
             "cancelled": SubscriptionStatus.CANCELLED.value,
         }
-        return mapping.get(stripe_status, SubscriptionStatus.ACTIVE.value)
+        mapped = mapping.get(stripe_status)
+        if mapped is None:
+            logger.warning(f"Unknown Stripe subscription status '{stripe_status}', defaulting to ACTIVE")
+            return SubscriptionStatus.ACTIVE.value
+        return mapped
 
     async def _sync_subscription_state(
         self,
@@ -614,9 +621,10 @@ class StripeService:
 
             if internal_status == SubscriptionStatus.TRIAL.value:
                 user_updates["trial_end_date"] = trial_end
-                user_updates["trial_warning_sent"] = False
+                # Don't reset trial_warning_sent during trial - the trial cron job manages it
             else:
                 user_updates["trial_end_date"] = None
+                # Reset flag only when leaving trial state
                 user_updates["trial_warning_sent"] = False
 
             unset_fields: Dict[str, Any] = {}
@@ -694,8 +702,8 @@ class StripeService:
             if not plan:
                 raise HTTPException(status_code=404, detail="Subscription plan not found")
 
-            # Get the new price ID
-            new_price_field = f"stripe_{new_billing_interval}_price_id"
+            # Get the new price ID (field format: stripe_price_id_monthly / stripe_price_id_yearly)
+            new_price_field = f"stripe_price_id_{new_billing_interval}"
             new_price_id = plan.get(new_price_field)
 
             if not new_price_id:
@@ -728,16 +736,10 @@ class StripeService:
                 }
             )
 
-            # Calculate new period end based on interval
-            now = datetime.now(timezone.utc)
-            if new_billing_interval == "yearly":
-                from datetime import timedelta
-                period_end = now + timedelta(days=365)
-            else:
-                if now.month == 12:
-                    period_end = now.replace(year=now.year + 1, month=1)
-                else:
-                    period_end = now.replace(month=now.month + 1)
+            # Use Stripe's actual period dates instead of naive calculation
+            period_end = datetime.fromtimestamp(
+                updated_stripe_sub["current_period_end"], tz=timezone.utc
+            )
 
             # Update local subscription record
             await self.subscriptions_collection.update_one(
@@ -1498,7 +1500,8 @@ class StripeService:
                     "message": f"Your payment of ${amount:.2f} {currency} for {plan_name} was processed successfully.",
                     "type": "billing",
                     "target_audience": "specific_user",
-                    "user_id": user_email,  # Target specific user by email
+                    "user_id": user_id,
+                    "user_email": user_email,
                     "created_by": "system",
                     "created_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),
@@ -1522,7 +1525,8 @@ class StripeService:
                     "message": f"We couldn't process your payment of ${amount:.2f} {currency} for {plan_name}. Please update your payment method.",
                     "type": "billing",
                     "target_audience": "specific_user",
-                    "user_id": user_email,  # Target specific user by email
+                    "user_id": user_id,
+                    "user_email": user_email,
                     "created_by": "system",
                     "created_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),

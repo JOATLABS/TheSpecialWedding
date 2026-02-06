@@ -31,7 +31,7 @@ export default function BillingSuccessPage() {
         }
 
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/stripe/checkout-session/${sessionId}`,
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/checkout-session/${sessionId}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
