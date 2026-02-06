@@ -1,0 +1,4 @@
+## 2025-02-19 - Hardcoded Default API Key
+**Vulnerability:** The `API_KEY` configuration variable had a hardcoded default value "default-api-key" in `app/core/config.py`. This meant if the environment variable was missing, the application would default to a known insecure key, potentially allowing unauthorized access to metrics endpoints.
+**Learning:** Default values for security-critical configuration (secrets, keys, tokens) should never be hardcoded strings. They should default to `None` or raise an error if missing.
+**Prevention:** Always use `Optional[str] = os.getenv("KEY")` or `Field(..., min_length=32)` without a default value for secrets. Ensure tests verify that missing environment variables result in safe failures (e.g., startup error or access denied) rather than insecure defaults.

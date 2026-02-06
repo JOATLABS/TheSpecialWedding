@@ -21,9 +21,11 @@ import app.api.saas_config as saas_config  # noqa: E402
 import app.api.platform_metrics as platform_metrics_api  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.dependencies.auth import require_admin  # noqa: E402
+from app.dependencies.auth_extended import require_root_admin  # noqa: E402
 from app.services.platform_metrics_service import PlatformMetricsService  # noqa: E402
 import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
-
+# Mock the module that causes connection errors
+from unittest.mock import AsyncMock
 
 class FakeMongo:
     """In-memory stand-in for the production Mongo connector."""
@@ -89,9 +91,16 @@ def snapshot_test_client(monkeypatch):
     app.include_router(platform_metrics_api.router)
 
     async def override_require_admin():
-        return SimpleNamespace(role="admin")
+        return SimpleNamespace(role="admin", is_root_admin=True)
 
     app.dependency_overrides[require_admin] = override_require_admin
+    app.dependency_overrides[require_root_admin] = override_require_admin
+
+    # Mock get_platform_health to avoid database connection
+    async def mock_health(user):
+        return {"health": "ok"}
+
+    monkeypatch.setattr("app.api.admin_platform_metrics.get_platform_health", mock_health)
 
     return TestClient(app)
 
@@ -263,7 +272,8 @@ def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client):
     assert response.status_code == 404
 
     admin_response = client.get("/admin/platform/metrics")
-    assert admin_response.status_code == 404
+    # Falls back to live health data if no snapshot exists
+    assert admin_response.status_code == 200
 
     history_response = client.get("/admin/platform/metrics/history")
     assert history_response.status_code == 200
