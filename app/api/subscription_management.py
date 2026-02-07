@@ -268,7 +268,8 @@ async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depen
             },
             "is_featured": False,
             "is_active": True,
-            "display_order": 0
+            "display_order": 0,
+            "sort_order": 0
         },
         {
             "name": "Starter",
@@ -299,7 +300,8 @@ async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depen
             },
             "is_featured": False,
             "is_active": True,
-            "display_order": 1
+            "display_order": 1,
+            "sort_order": 1
         },
         {
             "name": "Professional",
@@ -330,7 +332,8 @@ async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depen
             },
             "is_featured": True,
             "is_active": True,
-            "display_order": 2
+            "display_order": 2,
+            "sort_order": 2
         },
         {
             "name": "Enterprise",
@@ -361,7 +364,8 @@ async def seed_default_subscription_plans(current_user: ExtendedAuthUser = Depen
             },
             "is_featured": False,
             "is_active": True,
-            "display_order": 3
+            "display_order": 3,
+            "sort_order": 3
         }
     ]
 

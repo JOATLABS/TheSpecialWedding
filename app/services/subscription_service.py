@@ -51,8 +51,9 @@ class SubscriptionService:
         """List all subscription plans"""
         try:
             query = {} if include_inactive else {"is_active": True}
-            cursor = self.plans_collection.find(query).sort("sort_order", 1)
-            plans = await cursor.to_list(length=None)
+            plans = await self.plans_collection.find(query).to_list(length=None)
+            # Sort by sort_order or display_order (plans may use either field)
+            plans.sort(key=lambda p: p.get("sort_order", p.get("display_order", 999)))
             return plans
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing plans: {str(e)}")
@@ -197,6 +198,48 @@ class SubscriptionService:
                 "snapshot_date": now,
             }
 
+            # Create Stripe subscription with trial if plan has Stripe price IDs
+            stripe_subscription_id = None
+            stripe_customer_id = None
+            price_field = f"stripe_price_id_{billing_interval}"
+            stripe_price_id = plan.get(price_field)
+
+            if stripe_price_id:
+                try:
+                    # Get or create Stripe customer
+                    stripe_customer_id = await stripe_service.get_or_create_customer(
+                        user_id=user_id,
+                        email=user["email"],
+                        name=user.get("full_name") or user.get("email")
+                    )
+
+                    if stripe_customer_id:
+                        import stripe as stripe_lib
+                        sub_params = {
+                            "customer": stripe_customer_id,
+                            "items": [{"price": stripe_price_id}],
+                            "metadata": {"user_id": user_id, "plan_id": plan_id},
+                        }
+                        if trial_days > 0:
+                            sub_params["trial_end"] = int(trial_end.timestamp())
+
+                        stripe_sub = stripe_lib.Subscription.create(**sub_params)
+                        stripe_subscription_id = stripe_sub.id
+                        logger.info(
+                            f"Created Stripe subscription {stripe_subscription_id} "
+                            f"for user {user_id} with {trial_days} day trial"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not create Stripe subscription for admin-assigned plan: {e}. "
+                        f"Proceeding with local-only subscription."
+                    )
+            else:
+                logger.info(
+                    f"Plan {plan_id} has no Stripe price for {billing_interval} billing. "
+                    f"Creating local-only subscription."
+                )
+
             subscription_data = {
                 "_id": f"sub_{user_id}_{plan_id}_{int(now.timestamp())}",
                 "user_id": user_id,
@@ -209,6 +252,8 @@ class SubscriptionService:
                 "trial_end_date": trial_end if trial_days > 0 else None,
                 "current_period_start": now,
                 "current_period_end": period_end,
+                "stripe_subscription_id": stripe_subscription_id,
+                "stripe_customer_id": stripe_customer_id,
                 "usage": {
                     "weddings_created": 0,
                     "ai_credits_used": 0,
@@ -233,6 +278,8 @@ class SubscriptionService:
                 "is_active": True,
                 "updated_at": now,
             }
+            if stripe_customer_id:
+                user_updates["stripe_customer_id"] = stripe_customer_id
             if trial_days > 0:
                 user_updates["trial_end_date"] = trial_end
                 user_updates["trial_warning_sent"] = False

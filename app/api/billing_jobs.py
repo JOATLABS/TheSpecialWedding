@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, BackgroundTasks
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.stripe_service import stripe_service
 from app.core.database import mongo
 from app.models.subscription import SubscriptionStatus
+import stripe as stripe_lib
 import logging
 
 logger = logging.getLogger(__name__)
@@ -131,3 +132,92 @@ async def process_daily_usage_check():
             logger.error(f"Error processing subscription {sub.get('_id')}: {e}")
 
     logger.info(f"Daily usage sync complete. Processed {count_processed} subs, reported {count_reported} events.")
+
+
+@router.post("/billing/cleanup-orphaned-customers")
+async def cleanup_orphaned_stripe_customers(
+    background_tasks: BackgroundTasks,
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """
+    Clean up orphaned Stripe customers from abandoned signups.
+    Finds Stripe customer records where the user never completed checkout
+    (no active subscription) and deletes them from Stripe.
+    Should be called periodically (e.g., weekly) via cron or manually.
+    """
+    background_tasks.add_task(process_orphaned_customer_cleanup)
+    return {"status": "accepted", "message": "Orphaned customer cleanup started in background"}
+
+
+async def process_orphaned_customer_cleanup():
+    """Find and clean up Stripe customers who never completed a subscription."""
+    logger.info("Starting orphaned Stripe customer cleanup...")
+
+    # Cutoff: only clean up customers older than 48 hours to avoid
+    # removing customers who are still in the middle of checkout
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+
+    stripe_customers = mongo.db["stripe_customers"]
+    user_subscriptions = mongo.db["user_subscriptions"]
+    users_collection = mongo.get_users_collection()
+
+    # Find all local Stripe customer mappings created before cutoff
+    cursor = stripe_customers.find({"created_at": {"$lt": cutoff}})
+    orphaned_count = 0
+    checked_count = 0
+    errors = 0
+
+    async for record in cursor:
+        checked_count += 1
+        user_id = record.get("user_id")
+        customer_id = record.get("stripe_customer_id")
+
+        if not customer_id:
+            continue
+
+        try:
+            # Check if user has ANY subscription (active, trial, cancelled, etc.)
+            has_subscription = await user_subscriptions.find_one({
+                "user_id": user_id,
+                "status": {"$in": ["active", "trial"]}
+            })
+
+            if has_subscription:
+                continue  # User has a valid subscription, skip
+
+            # Check if user exists and is still pending
+            from bson import ObjectId
+            try:
+                user = await users_collection.find_one({"_id": ObjectId(user_id)})
+            except Exception:
+                user = None
+
+            if user and user.get("subscription_status") not in ("pending_payment", "pending", None):
+                continue  # User has progressed beyond pending, skip
+
+            # Verify in Stripe that customer has no subscriptions
+            try:
+                stripe_subs = stripe_lib.Subscription.list(customer=customer_id, limit=1)
+                if stripe_subs.data:
+                    continue  # Has Stripe subscriptions, skip
+            except stripe_lib.error.InvalidRequestError:
+                # Customer doesn't exist in Stripe anymore - just clean local record
+                await stripe_customers.delete_one({"_id": record["_id"]})
+                orphaned_count += 1
+                logger.info(f"Removed stale local customer record for {customer_id}")
+                continue
+
+            # Safe to delete - no subscriptions anywhere
+            stripe_lib.Customer.delete(customer_id)
+            await stripe_customers.delete_one({"_id": record["_id"]})
+            orphaned_count += 1
+            logger.info(f"Cleaned up orphaned Stripe customer {customer_id} (user: {user_id})")
+
+        except Exception as e:
+            errors += 1
+            logger.error(f"Error cleaning up customer {customer_id}: {e}")
+
+    logger.info(
+        f"Orphaned customer cleanup complete. "
+        f"Checked {checked_count}, cleaned {orphaned_count}, errors {errors}"
+    )

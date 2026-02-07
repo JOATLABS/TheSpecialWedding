@@ -882,6 +882,8 @@ class StripeService:
             # Handle different event types
             if event_type == "checkout.session.completed":
                 return await self._handle_checkout_completed(data)
+            elif event_type == "checkout.session.expired":
+                return await self._handle_checkout_expired(data)
             elif event_type == "customer.subscription.created":
                 return await self._handle_subscription_created(data)
             elif event_type == "customer.subscription.updated":
@@ -1155,6 +1157,61 @@ class StripeService:
         except Exception as e:
             logger.error(f"Error handling price event: {str(e)}")
             return {"status": "error", "message": str(e)}
+
+    async def _handle_checkout_expired(self, session: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle expired checkout session - clean up pending subscription records
+        and optionally delete orphaned Stripe customers who never completed payment."""
+        session_id = session.get("id")
+        user_id = session.get("metadata", {}).get("user_id")
+        customer_id = session.get("customer")
+
+        logger.info(f"Checkout session expired: {session_id} for user {user_id}")
+
+        # Clean up any pending subscription record tied to this checkout session
+        if session_id:
+            result = await self.subscriptions_collection.update_one(
+                {
+                    "stripe_checkout_session_id": session_id,
+                    "status": {"$in": ["pending", "pending_payment"]}
+                },
+                {"$set": {
+                    "status": "expired",
+                    "updated_at": datetime.now(timezone.utc),
+                    "expired_reason": "checkout_session_expired"
+                }}
+            )
+            if result.modified_count > 0:
+                logger.info(f"Marked pending subscription as expired for session {session_id}")
+
+        # Update user status back to pending_payment if they never completed checkout
+        if user_id:
+            user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+            if user and user.get("subscription_status") in ("pending_payment", "pending"):
+                await self.users_collection.update_one(
+                    {"_id": ObjectId(user_id)},
+                    {"$set": {
+                        "checkout_expired_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    }}
+                )
+
+        # Check if this Stripe customer has any active subscriptions
+        # If not, they're orphaned and should be cleaned up
+        if customer_id:
+            try:
+                subs = stripe.Subscription.list(customer=customer_id, limit=1)
+                if not subs.data:
+                    # No subscriptions at all - delete the orphaned Stripe customer
+                    stripe.Customer.delete(customer_id)
+                    # Remove from local mapping
+                    await self.stripe_customers_collection.delete_one(
+                        {"stripe_customer_id": customer_id}
+                    )
+                    logger.info(f"Cleaned up orphaned Stripe customer {customer_id}")
+            except stripe.error.StripeError as e:
+                logger.warning(f"Could not clean up Stripe customer {customer_id}: {str(e)}")
+
+        return {"status": "processed", "session_id": session_id}
 
     async def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle successful invoice payment"""

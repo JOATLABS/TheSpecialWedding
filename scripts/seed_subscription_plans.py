@@ -53,6 +53,51 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
 db = client[db_name]
 collection = db["subscription_plans"]
 
+# ---- Deduplication cleanup ----
+# Remove duplicate plans (same name, different IDs) keeping the canonical _id.
+# This handles cases where plans were created through both seed script and API endpoints.
+canonical_ids = {"plan_boutique", "plan_signature", "plan_enterprise"}
+all_existing = list(collection.find({}))
+seen_names = {}
+duplicates_removed = 0
+
+for plan in all_existing:
+    name = plan.get("name", "").lower().strip()
+    pid = plan["_id"]
+    if name in seen_names:
+        # Keep the canonical ID, remove the other
+        existing_pid = seen_names[name]
+        if pid in canonical_ids and existing_pid not in canonical_ids:
+            # Current plan has canonical ID - remove the previous one
+            collection.delete_one({"_id": existing_pid})
+            seen_names[name] = pid
+            duplicates_removed += 1
+            print(f"  [DEDUP] Removed duplicate plan '{existing_pid}' (keeping '{pid}')")
+        elif pid not in canonical_ids:
+            # Current plan doesn't have canonical ID - remove it
+            collection.delete_one({"_id": pid})
+            duplicates_removed += 1
+            print(f"  [DEDUP] Removed duplicate plan '{pid}' (keeping '{existing_pid}')")
+    else:
+        seen_names[name] = pid
+
+# Also fix any legacy wrong field names from previous seed runs
+legacy_fix = collection.update_many(
+    {"stripe_monthly_price_id": {"$exists": True}},
+    [{"$set": {
+        "stripe_price_id_monthly": "$stripe_monthly_price_id",
+        "stripe_price_id_yearly": "$stripe_yearly_price_id",
+    }},
+    {"$unset": ["stripe_monthly_price_id", "stripe_yearly_price_id"]}]
+)
+if legacy_fix.modified_count > 0:
+    print(f"[FIX] Migrated {legacy_fix.modified_count} plans from legacy field names")
+
+if duplicates_removed > 0:
+    print(f"[DEDUP] Removed {duplicates_removed} duplicate plans")
+else:
+    print("[OK] No duplicate plans found")
+
 # Configure Stripe if available
 stripe_secret = os.getenv("STRIPE_SECRET_KEY")
 stripe_enabled = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
@@ -99,8 +144,8 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
 
             return {
                 "stripe_product_id": product.id,
-                "stripe_monthly_price_id": monthly_price,
-                "stripe_yearly_price_id": yearly_price
+                "stripe_price_id_monthly": monthly_price,
+                "stripe_price_id_yearly": yearly_price
             }
     except StripeError as e:
         print(f"[WARN] Error searching Stripe products: {e}")
@@ -139,8 +184,8 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
 
         return {
             "stripe_product_id": product.id,
-            "stripe_monthly_price_id": new_monthly_price.id,
-            "stripe_yearly_price_id": new_yearly_price.id
+            "stripe_price_id_monthly": new_monthly_price.id,
+            "stripe_price_id_yearly": new_yearly_price.id
         }
 
     except StripeError as e:
@@ -326,10 +371,10 @@ for plan in plans:
                 "is_featured": plan_with_stripe.get("is_featured", False),
                 "sort_order": plan_with_stripe.get("sort_order", 0),
                 "updated_at": datetime.now(timezone.utc),
-                # Only update Stripe IDs if we have them
+                # Only update Stripe IDs if we have them (field names must match codebase convention)
                 **({"stripe_product_id": stripe_ids["stripe_product_id"]} if stripe_ids.get("stripe_product_id") else {}),
-                **({"stripe_monthly_price_id": stripe_ids["stripe_monthly_price_id"]} if stripe_ids.get("stripe_monthly_price_id") else {}),
-                **({"stripe_yearly_price_id": stripe_ids["stripe_yearly_price_id"]} if stripe_ids.get("stripe_yearly_price_id") else {}),
+                **({"stripe_price_id_monthly": stripe_ids["stripe_price_id_monthly"]} if stripe_ids.get("stripe_price_id_monthly") else {}),
+                **({"stripe_price_id_yearly": stripe_ids["stripe_price_id_yearly"]} if stripe_ids.get("stripe_price_id_yearly") else {}),
             }
         },
         upsert=True  # Atomic: creates if not exists, updates if exists
