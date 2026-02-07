@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from app.core.database import mongo
-from app.utils.auth_utils import verify_password, create_access_token
+from app.utils.auth_utils import verify_password, create_access_token, DUMMY_PASSWORD_HASH
 from datetime import timedelta, datetime, timezone
 import logging
 
@@ -15,11 +15,15 @@ class AuthService:
         # Find user in unified collection
         user = await self.users_collection.find_one({"email": email})
         if not user:
+            # Timing attack mitigation: simulate password verification
+            verify_password(password, DUMMY_PASSWORD_HASH)
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         # Check password - support both password_hash (new) and hashed_password (legacy)
         password_field = user.get("password_hash") or user.get("hashed_password")
         if not password_field:
+            # Timing attack mitigation: simulate password verification
+            verify_password(password, DUMMY_PASSWORD_HASH)
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         if not verify_password(password, password_field):

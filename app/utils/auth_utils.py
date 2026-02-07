@@ -14,6 +14,9 @@ if not SECRET_KEY:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
+# Dummy hash for timing attack mitigation (bcrypt with 12 rounds)
+DUMMY_PASSWORD_HASH = "$2b$12$yNW3t.rcnB39ldqF4GhutOCJ.hf3pD7zhfoB0Rmi/Tb8SdqIngjVy"
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash using bcrypt directly"""
