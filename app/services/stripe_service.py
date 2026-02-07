@@ -941,18 +941,58 @@ class StripeService:
             except stripe.error.StripeError as e:
                 logger.error(f"Unable to retrieve subscription {subscription_id}: {str(e)}")
 
+        # Build plan snapshot for grandfathering before syncing
+        plan_snapshot = None
+        try:
+            plan = await self.plans_collection.find_one({"_id": plan_id})
+            if plan:
+                plan_snapshot = {
+                    "plan_name": plan.get("name"),
+                    "max_weddings": plan.get("max_weddings", 1),
+                    "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
+                    "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
+                    "storage_gb": plan.get("storage_gb", 1),
+                    "staff_seats": plan.get("staff_seats", 0),
+                    "features": plan.get("features", {}),
+                    "price_monthly": plan.get("price_monthly", 0),
+                    "price_yearly": plan.get("price_yearly"),
+                    "stripe_price_id_monthly": plan.get("stripe_price_id_monthly"),
+                    "stripe_price_id_yearly": plan.get("stripe_price_id_yearly"),
+                    "snapshot_date": datetime.now(timezone.utc),
+                }
+        except Exception as e:
+            logger.error(f"Failed to build plan snapshot for plan {plan_id}: {str(e)}")
+
+        extra_updates = {
+            "stripe_subscription_id": subscription_id,
+            "payment_status": session.get("payment_status"),
+            "stripe_checkout_session_id": session.get("id"),
+            "stripe_checkout_completed_at": datetime.now(timezone.utc),
+        }
+        if plan_snapshot:
+            extra_updates["plan_snapshot"] = plan_snapshot
+
         sync_result = await self._sync_subscription_state(
             user_id=user_id,
             subscription=subscription,
             customer_id=session.get("customer"),
             plan_id=plan_id,
-            extra_updates={
-                "stripe_subscription_id": subscription_id,
-                "payment_status": session.get("payment_status"),
-                "stripe_checkout_session_id": session.get("id"),
-                "stripe_checkout_completed_at": datetime.now(timezone.utc),
-            }
+            extra_updates=extra_updates,
         )
+
+        # Initialize usage tracking for the new subscription
+        try:
+            from app.services.subscription_service import SubscriptionService
+            sub_service = SubscriptionService()
+            local_sub = await self.subscriptions_collection.find_one({
+                "user_id": user_id,
+                "stripe_subscription_id": subscription_id,
+            })
+            if local_sub:
+                await sub_service.initialize_usage_tracking(user_id, local_sub["_id"])
+                logger.info(f"Initialized usage tracking for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize usage tracking for user {user_id}: {str(e)}")
 
         logger.info(
             "Checkout completed for user %s, subscription %s (status: %s)",

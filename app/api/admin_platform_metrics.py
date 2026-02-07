@@ -592,7 +592,8 @@ async def get_platform_health(
             "created_at": {"$gte": week_ago}
         })
 
-        # Subscription statistics
+        # Subscription statistics (collection is "user_subscriptions", not "subscriptions")
+        # Status values: "active", "trial", "cancelled", "expired", "suspended"
         subscription_pipeline = [
             {
                 "$facet": {
@@ -600,16 +601,28 @@ async def get_platform_health(
                         {"$match": {"status": "active"}},
                         {"$count": "count"}
                     ],
-                    "trialing": [
-                        {"$match": {"status": "trialing"}},
+                    "trial": [
+                        {"$match": {"status": "trial"}},
                         {"$count": "count"}
                     ],
-                    "canceled": [
-                        {"$match": {"status": "canceled"}},
+                    "cancelled": [
+                        {"$match": {"status": "cancelled"}},
+                        {"$count": "count"}
+                    ],
+                    "expired": [
+                        {"$match": {"status": "expired"}},
+                        {"$count": "count"}
+                    ],
+                    "suspended": [
+                        {"$match": {"status": "suspended"}},
+                        {"$count": "count"}
+                    ],
+                    "past_due": [
+                        {"$match": {"payment_status": "past_due"}},
                         {"$count": "count"}
                     ],
                     "by_plan": [
-                        {"$match": {"status": "active"}},
+                        {"$match": {"status": {"$in": ["active", "trial"]}}},
                         {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
                         {"$sort": {"count": -1}}
                     ]
@@ -617,39 +630,44 @@ async def get_platform_health(
             }
         ]
 
-        sub_cursor = mongo.db["subscriptions"].aggregate(subscription_pipeline)
+        sub_cursor = mongo.db["user_subscriptions"].aggregate(subscription_pipeline)
         sub_stats_list = await sub_cursor.to_list(length=1)
         sub_stats = sub_stats_list[0] if sub_stats_list else {}
 
         active_subscriptions = sub_stats.get("active", [{}])[0].get("count", 0) if sub_stats.get("active") else 0
-        trial_subscriptions = sub_stats.get("trialing", [{}])[0].get("count", 0) if sub_stats.get("trialing") else 0
-        canceled_subscriptions = sub_stats.get("canceled", [{}])[0].get("count", 0) if sub_stats.get("canceled") else 0
+        trial_subscriptions = sub_stats.get("trial", [{}])[0].get("count", 0) if sub_stats.get("trial") else 0
+        canceled_subscriptions = sub_stats.get("cancelled", [{}])[0].get("count", 0) if sub_stats.get("cancelled") else 0
+        expired_subscriptions = sub_stats.get("expired", [{}])[0].get("count", 0) if sub_stats.get("expired") else 0
+        suspended_subscriptions = sub_stats.get("suspended", [{}])[0].get("count", 0) if sub_stats.get("suspended") else 0
+        past_due_count = sub_stats.get("past_due", [{}])[0].get("count", 0) if sub_stats.get("past_due") else 0
 
-        # Calculate MRR/ARR
-        # Get all active subscriptions with amounts
-        active_subs_cursor = mongo.db["subscriptions"].find({
+        # Calculate MRR/ARR from plan_snapshot pricing
+        active_subs_cursor = mongo.db["user_subscriptions"].find({
             "status": "active"
         })
         active_subs = await active_subs_cursor.to_list(length=None)
 
         mrr = 0
         for sub in active_subs:
-            amount = sub.get("amount", 0)
+            # Try plan_snapshot first (grandfathered price), then fallback to direct amount
+            snapshot = sub.get("plan_snapshot", {})
             interval = sub.get("billing_interval", "monthly")
 
             if interval == "monthly":
+                amount = snapshot.get("price_monthly") or sub.get("amount", 0) or 0
                 mrr += amount
             elif interval == "yearly":
+                amount = snapshot.get("price_yearly") or sub.get("amount", 0) or 0
                 mrr += amount / 12  # Convert yearly to monthly
 
         arr = mrr * 12
 
         # Trial conversion rate
-        total_trials = await mongo.db["subscriptions"].count_documents({
-            "trial_end": {"$exists": True}
+        total_trials = await mongo.db["user_subscriptions"].count_documents({
+            "trial_end_date": {"$exists": True, "$ne": None}
         })
-        converted_trials = await mongo.db["subscriptions"].count_documents({
-            "trial_end": {"$exists": True},
+        converted_trials = await mongo.db["user_subscriptions"].count_documents({
+            "trial_end_date": {"$exists": True, "$ne": None},
             "status": "active"
         })
         conversion_rate = (converted_trials / total_trials * 100) if total_trials > 0 else 0
@@ -827,6 +845,9 @@ async def get_platform_health(
                 "active_subscriptions": active_subscriptions,
                 "trial_subscriptions": trial_subscriptions,
                 "canceled_subscriptions": canceled_subscriptions,
+                "expired_subscriptions": expired_subscriptions,
+                "suspended_subscriptions": suspended_subscriptions,
+                "past_due_payments": past_due_count,
                 "conversion_rate": round(conversion_rate, 2),
                 "mrr": round(mrr, 2),
                 "arr": round(arr, 2),
@@ -970,6 +991,9 @@ async def save_metrics_snapshot(
             "active_subscriptions": business_metrics.get("active_subscriptions"),
             "trial_subscriptions": business_metrics.get("trial_subscriptions"),
             "canceled_subscriptions": business_metrics.get("canceled_subscriptions"),
+            "expired_subscriptions": business_metrics.get("expired_subscriptions"),
+            "suspended_subscriptions": business_metrics.get("suspended_subscriptions"),
+            "past_due_payments": business_metrics.get("past_due_payments"),
             "conversion_rate": business_metrics.get("conversion_rate"),
             "mrr": business_metrics.get("mrr"),
             "arr": business_metrics.get("arr"),
