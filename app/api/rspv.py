@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Path, HTTPException
-from app.services.rsvp_service import RSVPService
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Path
+
 from app.models.rsvp import RSVPModel
-from fastapi import Body
+from app.services.rsvp_service import RSVPService
 
 router = APIRouter()
 
@@ -10,11 +10,12 @@ rsvp_service = RSVPService()
 
 @router.post("/invite/{token}/rsvp", tags=["RSVP"])
 async def submit_rsvp(
+    background_tasks: BackgroundTasks,
     token: str = Path(...),
-    rsvp: RSVPModel = Body(...)
+    rsvp: RSVPModel = Body(...),
 ):
     try:
-        return await rsvp_service.submit_rsvp(token, rsvp)
+        return await rsvp_service.submit_rsvp(token, rsvp, background_tasks)
     except HTTPException as e:
         raise e
     except Exception:
