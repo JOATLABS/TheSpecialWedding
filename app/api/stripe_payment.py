@@ -263,6 +263,7 @@ async def stripe_webhook(
 
     Events to listen for:
     - checkout.session.completed
+    - checkout.session.expired
     - customer.subscription.created
     - customer.subscription.updated
     - customer.subscription.deleted

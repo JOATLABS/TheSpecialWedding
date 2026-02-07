@@ -324,7 +324,7 @@ const SaasAdminDashboard = () => {
         'Content-Type': 'application/json'
       };
 
-      const plansResponse = await fetch(`${baseUrl}/subscription-plans`, { headers });
+      const plansResponse = await fetch(`${baseUrl}/subscription-plans?include_inactive=true`, { headers });
       if (plansResponse.ok) {
         const plansData = await plansResponse.json();
         console.log('[SaaS Admin] Subscription plans loaded:', plansData.length, 'plans');
