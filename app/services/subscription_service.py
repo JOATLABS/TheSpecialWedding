@@ -225,14 +225,21 @@ class SubscriptionService:
             # Initialize usage tracking
             await self.initialize_usage_tracking(user_id, subscription_data["_id"])
 
-            # Update user subscription info
+            # Update user subscription info (must include trial_end_date so
+            # trial_expiration_service can find and expire trials correctly)
+            user_updates: dict = {
+                "plan_id": plan_id,
+                "subscription_status": subscription_data["status"],
+                "is_active": True,
+                "updated_at": now,
+            }
+            if trial_days > 0:
+                user_updates["trial_end_date"] = trial_end
+                user_updates["trial_warning_sent"] = False
+
             await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
-                {"$set": {
-                    "plan_id": plan_id,
-                    "subscription_status": subscription_data["status"],
-                    "updated_at": now
-                }}
+                {"$set": user_updates}
             )
             return {
                 "message": "Subscription assigned successfully",
