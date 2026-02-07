@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { LinkIcon, MapPinIcon, DocumentTextIcon, XMarkIcon, PlusIcon } from '@heroicons/react/24/outline';
 
 interface EnrichmentItem {
@@ -15,6 +15,7 @@ interface MessageEnrichmentProps {
 }
 
 export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmentProps) {
+  const id = useId();
   const [activePanel, setActivePanel] = useState<'url' | 'location' | 'form' | null>(null);
   const [url, setUrl] = useState('');
   const [urlLabel, setUrlLabel] = useState('');
@@ -82,6 +83,8 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
             key={type}
             type="button"
             onClick={() => setActivePanel(activePanel === type ? null : type)}
+            aria-expanded={activePanel === type}
+            aria-controls={`${id}-${type}-panel`}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
               activePanel === type
                 ? `${color} text-white shadow-md`
@@ -96,7 +99,12 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
 
       {/* URL Panel */}
       {activePanel === 'url' && (
-        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 space-y-3">
+        <div
+          id={`${id}-url-panel`}
+          role="region"
+          aria-label="Link insertion panel"
+          className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 space-y-3"
+        >
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-blue-900 dark:text-blue-300 flex items-center gap-2">
               <LinkIcon className="h-4 w-4" />
@@ -105,6 +113,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
             <button
               type="button"
               onClick={() => setActivePanel(null)}
+              aria-label="Close panel"
               className="text-blue-600 dark:text-blue-400 hover:text-blue-800"
             >
               <XMarkIcon className="h-5 w-5" />
@@ -113,6 +122,8 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               type="text"
+              autoFocus
+              aria-label="Link label (optional)"
               value={urlLabel}
               onChange={(e) => setUrlLabel(e.target.value)}
               placeholder="Link label (optional)"
@@ -120,6 +131,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
             />
             <input
               type="url"
+              aria-label="Link URL"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
@@ -140,7 +152,12 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
 
       {/* Location Panel */}
       {activePanel === 'location' && (
-        <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 space-y-3">
+        <div
+          id={`${id}-location-panel`}
+          role="region"
+          aria-label="Location insertion panel"
+          className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 space-y-3"
+        >
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-green-900 dark:text-green-300 flex items-center gap-2">
               <MapPinIcon className="h-4 w-4" />
@@ -149,6 +166,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
             <button
               type="button"
               onClick={() => setActivePanel(null)}
+              aria-label="Close panel"
               className="text-green-600 dark:text-green-400 hover:text-green-800"
             >
               <XMarkIcon className="h-5 w-5" />
@@ -157,6 +175,8 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
           <div className="space-y-3">
             <input
               type="text"
+              autoFocus
+              aria-label="Venue name or address"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Venue name or address"
@@ -164,6 +184,7 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
             />
             <input
               type="url"
+              aria-label="Google Maps link (optional)"
               value={locationUrl}
               onChange={(e) => setLocationUrl(e.target.value)}
               placeholder="Google Maps link (optional)"
@@ -184,7 +205,12 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
 
       {/* Form Panel */}
       {activePanel === 'form' && (
-        <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800 space-y-3">
+        <div
+          id={`${id}-form-panel`}
+          role="region"
+          aria-label="Form link insertion panel"
+          className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800 space-y-3"
+        >
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-purple-900 dark:text-purple-300 flex items-center gap-2">
               <DocumentTextIcon className="h-4 w-4" />
@@ -193,12 +219,15 @@ export function MessageEnrichment({ onInsert, className = '' }: MessageEnrichmen
             <button
               type="button"
               onClick={() => setActivePanel(null)}
+              aria-label="Close panel"
               className="text-purple-600 dark:text-purple-400 hover:text-purple-800"
             >
               <XMarkIcon className="h-5 w-5" />
             </button>
           </div>
           <select
+            autoFocus
+            aria-label="Select a form to insert"
             value={selectedForm}
             onChange={(e) => setSelectedForm(e.target.value)}
             className="w-full px-3 py-2 rounded-md border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
