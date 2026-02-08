@@ -61,17 +61,18 @@ function WeddingLandingContent() {
  }, [slug, contextWedding]);
 
  useEffect(() => {
-   if (rsvpTokenParam) {
+   if (rsvpTokenParam && !accessGranted) {
      // Store token in state and clean URL to prevent refresh issues
+     // Guard: only fetch once (accessGranted prevents re-fetch if contextWedding updates)
      setRsvpToken(rsvpTokenParam);
      window.history.replaceState({}, '', `/${slug}`);
      fetchWeddingByToken(rsvpTokenParam);
-   } else if (contextWedding?.privacy_mode === 'public') {
+   } else if (!rsvpTokenParam && contextWedding?.privacy_mode === 'public') {
      // Wedding is explicitly set to public, grant access immediately
      setWedding(contextWedding);
      setAccessGranted(true);
      setLoading(false);
-   } else {
+   } else if (!rsvpTokenParam && !accessGranted) {
      // Wedding requires authentication (default: private)
      setLoading(false);
    }

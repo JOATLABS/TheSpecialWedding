@@ -207,11 +207,27 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
   const onSubmit = async (data: any) => {
     setError(null);
 
-    // Validate plus-one names before submitting
-    const emptyPlusOnes = plusOnes.filter(p => !p.name.trim());
-    if (emptyPlusOnes.length > 0) {
-      setError('Please enter a name for each additional guest you added, or remove empty guest cards.');
-      return;
+    // Validate plus-one fields before submitting
+    const phonePattern = /^\+?\d{10,15}$/;
+    for (let i = 0; i < plusOnes.length; i++) {
+      const p = plusOnes[i];
+      const guestLabel = `Guest ${i + 1}`;
+      if (!p.name.trim()) {
+        setError(`${guestLabel}: Please enter a name, or remove empty guest cards.`);
+        return;
+      }
+      if (p.name.trim().length < 2) {
+        setError(`${guestLabel}: Name must be at least 2 characters.`);
+        return;
+      }
+      if (p.name.trim().length > 100) {
+        setError(`${guestLabel}: Name must be 100 characters or fewer.`);
+        return;
+      }
+      if (p.phone && p.phone.trim() && !phonePattern.test(p.phone.trim())) {
+        setError(`${guestLabel}: Phone number must be 10-15 digits, optionally starting with +.`);
+        return;
+      }
     }
 
     try {
@@ -453,13 +469,14 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
                   <div className="space-y-4">
                     <div>
                       <input
-                        className={`w-full px-4 py-3 rounded-xl border ${!plusOne.name.trim() && error?.includes('additional guest') ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur`}
+                        className={`w-full px-4 py-3 rounded-xl border ${!plusOne.name.trim() && error?.includes('Guest') ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur`}
                         type="text"
                         placeholder="Full name (required)"
+                        maxLength={100}
                         value={plusOne.name}
                         onChange={(e) => { const n = [...plusOnes]; n[index].name = e.target.value; setPlusOnes(n); }}
                       />
-                      <p className="text-xs text-slate-500 mt-1">Required. Enter your guest&apos;s full name.</p>
+                      <p className="text-xs text-slate-500 mt-1">Required. Enter your guest&apos;s full name (at least 2 characters).</p>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>

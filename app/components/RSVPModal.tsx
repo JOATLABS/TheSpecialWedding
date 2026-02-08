@@ -128,6 +128,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
       }
 
       // Re-fetch to get latest guest data (in case planner updated it)
+      let latestRsvp = rsvpData;
       const accessRes = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
       if (accessRes.ok) {
         const data = await accessRes.json();
@@ -143,13 +144,13 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
           };
           setWeddingData(weddingForContext);
         }
-        if (data.rsvp) {
-          setRsvpData(data.rsvp);
-        }
+        // Always update rsvpData (even if null) to avoid stale state
+        latestRsvp = data.rsvp || null;
+        setRsvpData(latestRsvp);
       }
 
-      // Determine next step
-      if (rsvpData?.has_rsvp && !editMode) {
+      // Determine next step using freshly fetched data (not stale state)
+      if (latestRsvp?.has_rsvp && !editMode) {
         setStep('already_rsvped');
       } else {
         setStep('rsvp_form');
