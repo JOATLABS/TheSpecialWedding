@@ -17,6 +17,8 @@ const eventLabels: Record<string, string> = {
   traditional: 'Traditional Ceremony',
   white_wedding: 'White Wedding',
   reception: 'Reception',
+  engagement: 'Engagement Party',
+  rehearsal: 'Rehearsal Dinner',
 };
 
 export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWeddingPage }: AlreadyRSVPedScreenProps) {
