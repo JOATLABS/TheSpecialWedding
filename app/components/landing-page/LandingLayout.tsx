@@ -16,14 +16,16 @@ import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
 import RequestRSVPLinkModal from '@/components/RequestRSVPLinkModal';
+import RSVPModal from '@/components/RSVPModal';
 
-export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
+export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, rsvpToken }) => {
   // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
   useTheme(wedding);
 
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
+  const [showRSVPModal, setShowRSVPModal] = useState(!!rsvpToken);
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
@@ -283,6 +285,14 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       coupleName={wedding.couple_names}
       themeConfig={wedding.theme_config}
     />
+    {rsvpToken && (
+      <RSVPModal
+        isOpen={showRSVPModal}
+        token={rsvpToken}
+        slug={wedding.slug}
+        onClose={() => setShowRSVPModal(false)}
+      />
+    )}
     </>
   );
 };

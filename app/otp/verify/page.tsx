@@ -190,9 +190,14 @@ function VerifyOTPContent() {
                 guest={guestData}
                 rsvp={rsvpData}
                 onEditClick={() => setEditMode(true)}
+                onViewWeddingPage={() => { window.location.href = `/${slug}`; }}
               />
             ) : (
-              <RSVPForm guest={guestData} token={token} />
+              <RSVPForm
+                guest={guestData}
+                token={token}
+                onViewWeddingPage={() => { window.location.href = `/${slug}`; }}
+              />
             )}
           </div>
         </div>

@@ -10,6 +10,7 @@ interface AlreadyRSVPedScreenProps {
     dietary?: string;
   };
   onEditClick: () => void;
+  onViewWeddingPage?: () => void;
 }
 
 const eventLabels: Record<string, string> = {
@@ -18,7 +19,7 @@ const eventLabels: Record<string, string> = {
   reception: 'Reception',
 };
 
-export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick }: AlreadyRSVPedScreenProps) {
+export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWeddingPage }: AlreadyRSVPedScreenProps) {
   const formatDate = (dateStr: string) => {
     try {
       return new Date(dateStr).toLocaleDateString('en-US', {
@@ -92,9 +93,19 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick }: Alread
         Edit My RSVP
       </button>
 
+      {/* View Wedding Page Button */}
+      {onViewWeddingPage && (
+        <button
+          onClick={onViewWeddingPage}
+          className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:border-wedding-rose/50 hover:text-white transition-all"
+        >
+          View Wedding Page
+        </button>
+      )}
+
       {/* Footer note */}
       <p className="text-center text-sm text-slate-500">
-        Need to make changes? Click above to update your response.
+        Need to make changes? Click &quot;Edit My RSVP&quot; above to update your response.
       </p>
     </div>
   );
