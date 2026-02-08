@@ -229,6 +229,7 @@ plans = [
         "is_active": True,
         "is_featured": False,
         "sort_order": 1,
+        "display_order": 1,
         "created_by": "system",
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc)
@@ -273,6 +274,7 @@ plans = [
         "is_active": True,
         "is_featured": True,
         "sort_order": 2,
+        "display_order": 2,
         "created_by": "system",
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc)
@@ -321,6 +323,7 @@ plans = [
         "is_active": True,
         "is_featured": False,
         "sort_order": 3,
+        "display_order": 3,
         "created_by": "system",
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc)
@@ -370,6 +373,7 @@ for plan in plans:
                 "is_active": plan_with_stripe.get("is_active", True),
                 "is_featured": plan_with_stripe.get("is_featured", False),
                 "sort_order": plan_with_stripe.get("sort_order", 0),
+                "display_order": plan_with_stripe.get("display_order", plan_with_stripe.get("sort_order", 0)),
                 "updated_at": datetime.now(timezone.utc),
                 # Only update Stripe IDs if we have them (field names must match codebase convention)
                 **({"stripe_product_id": stripe_ids["stripe_product_id"]} if stripe_ids.get("stripe_product_id") else {}),
