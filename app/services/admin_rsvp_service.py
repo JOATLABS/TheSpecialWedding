@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from datetime import datetime, timezone
 from typing import List, Optional
+from app.utils.csv_export import CSVExportUtils
 
 
 class AdminRSVPService:
@@ -58,14 +59,13 @@ class AdminRSVPService:
     async def export_rsvps_to_csv(self):
         try:
             guests = await self.get_all_rsvps()
-            output = io.StringIO()
-            writer = csv.writer(output)
 
-            writer.writerow(["Guest Name", "Phone", "Attending", "Dietary", "Token", "Plus-One Name", "Plus-One Attending", "Plus-One Dietary"])
+            headers = ["Guest Name", "Phone", "Attending", "Dietary", "Token", "Plus-One Name", "Plus-One Attending", "Plus-One Dietary"]
+            rows = []
 
             for entry in guests:
                 plus_one = entry.get("plus_one")
-                writer.writerow([
+                rows.append([
                     entry["name"],
                     entry.get("phone", ""),
                     ", ".join(entry.get("attending", [])),
@@ -76,8 +76,7 @@ class AdminRSVPService:
                     plus_one.get("dietary") if plus_one else ""
                 ])
 
-            output.seek(0)
-            return output.read()
+            return CSVExportUtils.generate_csv_content(headers, rows)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to export RSVPs: {str(e)}")
     
