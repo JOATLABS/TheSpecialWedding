@@ -52,7 +52,7 @@ class PlusOneModel(BaseModel):
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception"}
+        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
         if not all(event in valid_events for event in v):
             raise ValueError("Invalid event(s) in attending list")
         return v
