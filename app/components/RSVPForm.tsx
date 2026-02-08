@@ -54,7 +54,15 @@ function FormCard({ title, children, className = '' }: {
 
 export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }: RSVPFormProps) {
   const wedding = useWedding();
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
+    defaultValues: {
+      attending: [],
+      phone: guest.phone || '',
+      dietary: '',
+      sms_opt_in: false,
+      email_opt_in: false,
+    },
+  });
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
@@ -238,10 +246,18 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
         .filter(p => p.name.trim())
         .map(p => ({ ...p, attending: data.attending || [] }));
 
+      const submissionData = {
+        ...data,
+        attending: data.attending || [],
+        sms_opt_in: !!data.sms_opt_in,
+        email_opt_in: !!data.email_opt_in,
+        plus_ones: filledPlusOnes,
+      };
+
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, plus_ones: filledPlusOnes })
+        body: JSON.stringify(submissionData)
       });
 
       if (!res.ok) {
@@ -378,7 +394,6 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
               </label>
               <input
                 type="tel"
-                defaultValue={guest.phone}
                 {...register('phone', { required: 'Phone number is required', pattern: { value: /^\+?\d{10,15}$/, message: 'Enter 10-15 digits, optionally starting with +' } })}
                 placeholder="+15551234567"
                 className={`w-full px-4 py-3 rounded-xl border ${errors.phone ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur`}
@@ -410,7 +425,6 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
                 <input
                   type="checkbox"
                   {...register('sms_opt_in')}
-                  defaultChecked={false}
                   className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                 />
                 <div>
@@ -431,7 +445,6 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
                 <input
                   type="checkbox"
                   {...register('email_opt_in')}
-                  defaultChecked={false}
                   className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                 />
                 <div>

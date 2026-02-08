@@ -8,7 +8,7 @@ import RSVPForm from '@/components/RSVPForm';
 import AlreadyRSVPedScreen from '@/components/AlreadyRSVPedScreen';
 import { WeddingContext } from '@/contexts/WeddingContext';
 
-type ModalStep = 'loading' | 'otp_request' | 'otp_verify' | 'rsvp_form' | 'already_rsvped' | 'success';
+type ModalStep = 'loading' | 'otp_request' | 'otp_verify' | 'rsvp_form' | 'already_rsvped';
 
 interface RSVPModalProps {
   isOpen: boolean;
@@ -28,6 +28,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const [otp, setOtp] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
   const [editMode, setEditMode] = useState(false);
+  const [formCompleted, setFormCompleted] = useState(false);
   const isSubmittingRef = useRef(false);
 
   const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace('/admin', '');
@@ -166,7 +167,6 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const handleResendOTP = async () => {
     setLoading(true);
     setError('');
-    setResendCooldown(65);
 
     try {
       const response = await fetch(`${apiBase}/otp/request`, {
@@ -179,6 +179,8 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.detail || 'Failed to resend code');
       }
+
+      setResendCooldown(65);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to resend code');
     } finally {
@@ -187,7 +189,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   };
 
   const handleRSVPSuccess = () => {
-    setStep('success');
+    setFormCompleted(true);
   };
 
   const handleEditRSVP = () => {
@@ -195,8 +197,8 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setStep('rsvp_form');
   };
 
-  // Modal can only be dismissed after success or when viewing already-RSVPed state
-  const canDismiss = step === 'success' || (step === 'already_rsvped' && !editMode);
+  // Modal can only be dismissed after RSVP submitted or when viewing already-RSVPed state
+  const canDismiss = formCompleted || (step === 'already_rsvped' && !editMode);
 
   const renderStep = () => {
     switch (step) {
@@ -324,10 +326,6 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
             onViewWeddingPage={onClose}
           />
         );
-
-      case 'success':
-        // Handled by RSVPForm's internal submitted state (which includes onViewWeddingPage button)
-        return null;
 
       default:
         return null;

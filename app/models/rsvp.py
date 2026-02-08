@@ -8,7 +8,7 @@ class PlusOneInputModel(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     attending: List[str] = Field(default_factory=list)
-    dietary: Optional[str] = None
+    dietary: Optional[str] = Field(default=None, max_length=250)
     sms_opt_in: Optional[bool] = Field(default=None, description="Opt-in for SMS reminders")
     email_opt_in: Optional[bool] = Field(default=None, description="Opt-in for email updates")
 
