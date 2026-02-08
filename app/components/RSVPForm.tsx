@@ -5,10 +5,13 @@
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
 import { useWedding } from '@/hooks/useWedding';
+import { formatDate } from '@/utils/dateFormat';
 
 interface RSVPFormProps {
   guest: any;
   token: string;
+  onSuccess?: () => void;
+  onViewWeddingPage?: () => void;
 }
 
 interface PlusOneData {
@@ -20,6 +23,14 @@ interface PlusOneData {
   sms_opt_in?: boolean;
   email_opt_in?: boolean;
 }
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  traditional: 'Traditional Ceremony',
+  white_wedding: 'White Wedding',
+  reception: 'Reception',
+  engagement: 'Engagement Party',
+  rehearsal: 'Rehearsal Dinner',
+};
 
 // Glass card component matching SaaS landing page design
 function FormCard({ title, children, className = '' }: {
@@ -41,12 +52,27 @@ function FormCard({ title, children, className = '' }: {
   );
 }
 
-export default function RSVPForm({ guest, token }: RSVPFormProps) {
+export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }: RSVPFormProps) {
   const wedding = useWedding();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
+
+  // Build dynamic event list from wedding data
+  const eventOptions = wedding.events && wedding.events.length > 0
+    ? wedding.events.map((e: any) => ({
+        value: e.type,
+        label: EVENT_TYPE_LABELS[e.type] || e.type.replace('_', ' '),
+        date: e.date,
+        time: e.details?.time,
+        venue: e.details?.venue_name,
+      }))
+    : [
+        { value: 'traditional', label: 'Traditional Ceremony' },
+        { value: 'white_wedding', label: 'White Wedding' },
+        { value: 'reception', label: 'Reception' },
+      ];
 
   const addPlusOne = () => {
     if (plusOnes.length < guest.number_of_plus_ones_allowed) {
@@ -109,14 +135,6 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         return `${year}${pad(month)}${pad(day)}T${pad(hour)}${pad(min)}00`;
       };
 
-      const eventTypeLabels: Record<string, string> = {
-        traditional: 'Traditional Ceremony',
-        white_wedding: 'White Wedding',
-        reception: 'Reception',
-        engagement: 'Engagement Party',
-        rehearsal: 'Rehearsal Dinner',
-      };
-
       const timestamp = Date.now();
       const vevents = events.map((event, index) => {
         const eventDate = event.date || wedding.date;
@@ -129,19 +147,17 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
         // Calculate end time (3 hours after start)
         let endHour = startHour + 3;
-        let endDay = day;
-        let endMonth = month;
-        let endYear = year;
+        const endDay = day;
+        const endMonth = month;
+        const endYear = year;
         if (endHour >= 24) {
           endHour -= 24;
-          endDay += 1;
-          // Simple day overflow handling (not accounting for month lengths, but events rarely cross midnight)
         }
 
         // Get event-specific timezone or fall back to wedding timezone
         const eventTimezone = event.details?.timezone || weddingTimezone;
 
-        const eventLabel = eventTypeLabels[event.type] || event.type.replace('_', ' ');
+        const eventLabel = EVENT_TYPE_LABELS[event.type] || event.type.replace('_', ' ');
         const summary = `${eventLabel} - ${wedding.couple_names || 'Wedding'}`;
         const location = event.details?.venue_name || event.details?.location || 'Wedding Venue';
         const attire = event.details?.attire ? `Attire: ${event.details.attire}` : '';
@@ -189,6 +205,15 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
   };
 
   const onSubmit = async (data: any) => {
+    setError(null);
+
+    // Validate plus-one names before submitting
+    const emptyPlusOnes = plusOnes.filter(p => !p.name.trim());
+    if (emptyPlusOnes.length > 0) {
+      setError('Please enter a name for each additional guest you added, or remove empty guest cards.');
+      return;
+    }
+
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const apiUrl = baseUrl.replace('/admin', '');
@@ -203,10 +228,42 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         body: JSON.stringify({ ...data, wedding_id: wedding.id, plus_ones: filledPlusOnes })
       });
 
-      if (!res.ok) throw new Error('RSVP failed');
+      if (!res.ok) {
+        let errorMessage = 'Failed to submit RSVP. Please check all required fields and try again.';
+        try {
+          const errorData = await res.json();
+          if (errorData.detail) {
+            if (typeof errorData.detail === 'string') {
+              errorMessage = errorData.detail;
+            } else if (Array.isArray(errorData.detail)) {
+              // Pydantic validation errors come as array of objects with loc, msg, type
+              const fieldLabels: Record<string, string> = {
+                phone: 'Phone number',
+                attending: 'Events',
+                dietary: 'Dietary restrictions',
+                name: 'Name',
+                email: 'Email',
+                plus_ones: 'Additional guests',
+              };
+              errorMessage = errorData.detail
+                .map((err: any) => {
+                  const field = err.loc?.slice(-1)[0] || 'Unknown field';
+                  const label = fieldLabels[field] || field;
+                  return `${label}: ${err.msg}`;
+                })
+                .join('. ');
+            }
+          }
+        } catch {
+          // JSON parse failed, use default message
+        }
+        throw new Error(errorMessage);
+      }
+
       localStorage.setItem(`rsvp-${token}`, 'true');
       setSubmitted(true);
       generateICS();
+      onSuccess?.();
     } catch (err: any) {
       setError(err.message);
     }
@@ -222,9 +279,28 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         </div>
         <h2 className="text-2xl font-semibold text-white mb-3">Thank you, {guest.name}</h2>
         <p className="text-slate-200 mb-1">Your RSVP has been received.</p>
-        <p className="text-sm text-slate-400">A calendar invite has been downloaded.</p>
-        <div className="mt-8 pt-6 border-t border-white/10">
+        <p className="text-sm text-slate-400 mb-6">A calendar invite has been downloaded.</p>
+
+        <div className="mt-8 pt-6 border-t border-white/10 space-y-4">
           <p className="text-sm text-slate-300">We look forward to celebrating with you.</p>
+
+          {onViewWeddingPage && (
+            <button
+              type="button"
+              onClick={onViewWeddingPage}
+              className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush transition-all"
+            >
+              View {wedding.couple_names ? `${wedding.couple_names}'s` : 'Wedding'} Page
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={generateICS}
+            className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:border-wedding-rose/50 hover:text-white transition-all"
+          >
+            Download Calendar Invite Again
+          </button>
         </div>
       </div>
     );
@@ -235,31 +311,43 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
       {/* Header */}
       <div className="text-center pb-6 border-b border-white/10">
         <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-xs uppercase tracking-[0.3em] backdrop-blur mb-4">
-          You're Invited
+          You&apos;re Invited
         </div>
         <h1 className="text-3xl font-semibold text-white mb-2">Welcome, {guest.name}</h1>
-        <p className="text-slate-200">
-          Please RSVP for <span className="font-semibold text-wedding-rose">{wedding.couple_names}'s</span> wedding
+        <p className="text-slate-200 mb-4">
+          Please RSVP for <span className="font-semibold text-wedding-rose">{wedding.couple_names}&apos;s</span> wedding
+        </p>
+        <p className="text-sm text-slate-400">
+          Fields marked with <span className="text-wedding-rose font-bold">*</span> are required.
+          Please select the events you will attend and provide your contact details.
         </p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Events */}
         <FormCard title="Events">
+          <p className="text-sm text-slate-400 mb-4">
+            Select the events you plan to attend. If you cannot attend any events, you may leave all unchecked.
+          </p>
           <div className="space-y-3">
-            {[
-              { value: 'traditional', label: 'Traditional Ceremony' },
-              { value: 'white_wedding', label: 'White Wedding' },
-              { value: 'reception', label: 'Reception' },
-            ].map((event) => (
-              <label key={event.value} className="flex items-center p-4 rounded-2xl border border-white/10 bg-white/5 hover:border-wedding-rose/40 hover:bg-wedding-rose/10 cursor-pointer transition-all">
+            {eventOptions.map((event: any) => (
+              <label key={event.value} className="flex items-start p-4 rounded-2xl border border-white/10 bg-white/5 hover:border-wedding-rose/40 hover:bg-wedding-rose/10 cursor-pointer transition-all">
                 <input
                   type="checkbox"
                   value={event.value}
                   {...register('attending')}
-                  className="w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
+                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
                 />
-                <span className="ml-3 text-slate-200">{event.label}</span>
+                <div className="ml-3">
+                  <span className="text-slate-200 block">{event.label}</span>
+                  {event.date && (
+                    <span className="text-xs text-slate-500 block mt-0.5">
+                      {formatDate(event.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                      {event.time && ` at ${event.time}`}
+                      {event.venue && ` \u2022 ${event.venue}`}
+                    </span>
+                  )}
+                </div>
               </label>
             ))}
           </div>
@@ -269,6 +357,20 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         <FormCard title="Your Details">
           <div className="space-y-5">
             <div>
+              <label className="block text-sm text-slate-200 mb-2">
+                Phone Number <span className="text-wedding-rose font-bold">*</span>
+              </label>
+              <input
+                type="tel"
+                defaultValue={guest.phone}
+                {...register('phone', { required: 'Phone number is required', pattern: { value: /^\+?\d{10,15}$/, message: 'Enter 10-15 digits, optionally starting with +' } })}
+                placeholder="+15551234567"
+                className={`w-full px-4 py-3 rounded-xl border ${errors.phone ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur`}
+              />
+              <p className="text-xs text-slate-500 mt-1">Enter digits only (10-15 digits). Example: +15551234567</p>
+              {errors.phone && <p className="text-wedding-rose text-xs mt-1">{(errors.phone as any).message || 'Please enter a valid phone number'}</p>}
+            </div>
+            <div>
               <label className="block text-sm text-slate-200 mb-2">Dietary Restrictions</label>
               <input
                 type="text"
@@ -276,26 +378,16 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                 placeholder="e.g., Vegetarian, Gluten-free"
                 className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur"
               />
-              <p className="text-xs text-slate-500 mt-1">Leave blank if none</p>
-            </div>
-            <div>
-              <label className="block text-sm text-slate-200 mb-2">
-                Phone Number <span className="text-wedding-rose">*</span>
-              </label>
-              <input
-                type="tel"
-                defaultValue={guest.phone}
-                {...register('phone', { required: true, pattern: /^\+?\d{10,15}$/ })}
-                placeholder="+1 (555) 123-4567"
-                className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur"
-              />
-              {errors.phone && <p className="text-wedding-rose text-xs mt-1">Please enter a valid phone number</p>}
+              <p className="text-xs text-slate-500 mt-1">Optional. Leave blank if you have no dietary restrictions.</p>
             </div>
           </div>
         </FormCard>
 
         {/* Notifications */}
         <FormCard title="Notifications">
+          <p className="text-sm text-slate-400 mb-4">
+            Optional. Choose how you&apos;d like to receive wedding updates and reminders.
+          </p>
           <div className="space-y-4">
             <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
               <label className="flex items-start gap-3 cursor-pointer">
@@ -341,6 +433,7 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
           <FormCard title="Additional Guests">
             <p className="text-sm text-slate-400 mb-4">
               You may bring up to {guest.number_of_plus_ones_allowed} additional {guest.number_of_plus_ones_allowed === 1 ? 'guest' : 'guests'}.
+              Click &quot;+ Add Guest&quot; below to add your guests. A name is required for each guest you add.
             </p>
 
             <div className="space-y-4">
@@ -358,28 +451,35 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                   </div>
 
                   <div className="space-y-4">
-                    <input
-                      className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur"
-                      type="text"
-                      placeholder="Full name"
-                      value={plusOne.name}
-                      onChange={(e) => { const n = [...plusOnes]; n[index].name = e.target.value; setPlusOnes(n); }}
-                    />
+                    <div>
+                      <input
+                        className={`w-full px-4 py-3 rounded-xl border ${!plusOne.name.trim() && error?.includes('additional guest') ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur`}
+                        type="text"
+                        placeholder="Full name (required)"
+                        value={plusOne.name}
+                        onChange={(e) => { const n = [...plusOnes]; n[index].name = e.target.value; setPlusOnes(n); }}
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Required. Enter your guest&apos;s full name.</p>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <input
-                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
-                        type="tel"
-                        placeholder="Phone (optional)"
-                        value={plusOne.phone}
-                        onChange={(e) => { const n = [...plusOnes]; n[index].phone = e.target.value; setPlusOnes(n); }}
-                      />
-                      <input
-                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
-                        type="email"
-                        placeholder="Email (optional)"
-                        value={plusOne.email || ''}
-                        onChange={(e) => { const n = [...plusOnes]; n[index].email = e.target.value; setPlusOnes(n); }}
-                      />
+                      <div>
+                        <input
+                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                          type="tel"
+                          placeholder="Phone (optional)"
+                          value={plusOne.phone}
+                          onChange={(e) => { const n = [...plusOnes]; n[index].phone = e.target.value; setPlusOnes(n); }}
+                        />
+                      </div>
+                      <div>
+                        <input
+                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                          type="email"
+                          placeholder="Email (optional)"
+                          value={plusOne.email || ''}
+                          onChange={(e) => { const n = [...plusOnes]; n[index].email = e.target.value; setPlusOnes(n); }}
+                        />
+                      </div>
                     </div>
                     <input
                       className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
@@ -428,7 +528,15 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
 
         {error && (
           <div className="rounded-2xl border border-wedding-rose/40 bg-wedding-rose/10 p-4 backdrop-blur">
-            <p className="text-sm text-wedding-rose">{error}</p>
+            <div className="flex gap-3">
+              <svg className="w-5 h-5 text-wedding-rose flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-wedding-rose mb-1">RSVP could not be submitted</p>
+                <p className="text-sm text-wedding-rose/80">{error}</p>
+              </div>
+            </div>
           </div>
         )}
 
