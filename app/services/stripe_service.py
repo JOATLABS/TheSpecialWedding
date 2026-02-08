@@ -505,12 +505,12 @@ class StripeService:
             raise HTTPException(status_code=500, detail=f"Error creating checkout session: {str(e)}")
 
     def _parse_timestamp(self, timestamp: Optional[int]) -> Optional[datetime]:
-        """Convert Stripe timestamps to naive UTC datetimes."""
+        """Convert Stripe timestamps to timezone-aware UTC datetimes."""
 
         if not timestamp:
             return None
         try:
-            return datetime.utcfromtimestamp(timestamp)
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
         except Exception:
             return None
 
@@ -737,8 +737,12 @@ class StripeService:
             )
 
             # Use Stripe's actual period dates instead of naive calculation
+            now = datetime.now(timezone.utc)
             period_end = datetime.fromtimestamp(
                 updated_stripe_sub["current_period_end"], tz=timezone.utc
+            )
+            period_start = datetime.fromtimestamp(
+                updated_stripe_sub["current_period_start"], tz=timezone.utc
             )
 
             # Update local subscription record
@@ -747,7 +751,7 @@ class StripeService:
                 {
                     "$set": {
                         "billing_interval": new_billing_interval,
-                        "current_period_start": now,
+                        "current_period_start": period_start,
                         "current_period_end": period_end,
                         "updated_at": now,
                     }
@@ -1105,7 +1109,7 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error handling customer.updated: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            raise
 
     async def _handle_product_updated(self, product: Dict[str, Any]) -> Dict[str, Any]:
         """Handle product.updated/product.created - sync product changes to local plans."""
@@ -1135,7 +1139,7 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error handling product.updated: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            raise
 
     async def _handle_price_changed(self, price: Dict[str, Any]) -> Dict[str, Any]:
         """Handle price.created/price.updated - log price changes for audit trail."""
@@ -1156,7 +1160,7 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error handling price event: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            raise
 
     async def _handle_checkout_expired(self, session: Dict[str, Any]) -> Dict[str, Any]:
         """Handle expired checkout session - clean up pending subscription records

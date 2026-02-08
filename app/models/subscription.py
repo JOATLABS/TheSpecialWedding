@@ -49,7 +49,8 @@ class SubscriptionPlanModel(BaseModel):
     # System fields
     is_active: bool = Field(True, description="Whether plan is available for new subscriptions")
     is_featured: bool = Field(False, description="Whether to highlight this plan")
-    sort_order: int = Field(0, description="Display order")
+    sort_order: int = Field(0, description="Sort order for backend queries")
+    display_order: Optional[int] = Field(None, description="Display order for frontend (falls back to sort_order)")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this plan")
@@ -110,6 +111,8 @@ class UserSubscriptionModel(BaseModel):
     current_period_start: datetime = Field(default_factory=datetime.utcnow, description="Current billing period start")
     current_period_end: datetime = Field(..., description="Current billing period end")
     cancelled_at: Optional[datetime] = Field(None, description="Cancellation date")
+    trial_expired_at: Optional[datetime] = Field(None, description="When trial was expired by system")
+    cancellation_reason: Optional[str] = Field(None, description="Reason for cancellation")
 
     # Usage tracking
     usage: Dict[str, Any] = Field(default_factory=dict, description="Current usage statistics")
@@ -117,6 +120,8 @@ class UserSubscriptionModel(BaseModel):
     # Payment integration
     stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
     stripe_subscription_id: Optional[str] = Field(None, description="Stripe subscription ID")
+    stripe_checkout_session_id: Optional[str] = Field(None, description="Stripe checkout session ID")
+    payment_status: Optional[str] = Field(None, description="Payment status from Stripe (paid, unpaid, past_due)")
 
     # System fields
     created_at: datetime = Field(default_factory=datetime.utcnow)

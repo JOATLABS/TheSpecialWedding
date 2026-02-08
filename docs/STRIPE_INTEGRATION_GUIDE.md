@@ -66,8 +66,8 @@ STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
 ## API Endpoints
 
 ### Base URL
-- Development: `http://localhost:8000/admin/stripe`
-- Production: `https://your-domain.com/admin/stripe`
+- Development: `http://localhost:8000/stripe` (also available at `/api/stripe`)
+- Production: `https://your-domain.com/stripe` (also available at `/api/stripe`)
 
 ### Authentication
 All endpoints (except webhooks) require Bearer token authentication:
@@ -79,7 +79,7 @@ Authorization: Bearer <your_jwt_token>
 
 #### 1. Get Stripe Config
 ```http
-GET /admin/stripe/config
+GET /stripe/config
 ```
 Returns the publishable key for frontend initialization.
 
@@ -93,7 +93,7 @@ Returns the publishable key for frontend initialization.
 
 #### 2. Create Checkout Session
 ```http
-POST /admin/stripe/create-checkout-session
+POST /stripe/create-checkout-session
 ```
 
 **Request Body:**
@@ -129,7 +129,7 @@ POST /admin/stripe/create-checkout-session
 
 #### 3. Get Checkout Session
 ```http
-GET /admin/stripe/checkout-session/{session_id}
+GET /stripe/checkout-session/{session_id}
 ```
 
 **Response:**
@@ -149,7 +149,7 @@ GET /admin/stripe/checkout-session/{session_id}
 
 #### 4. Create Customer Portal Session
 ```http
-POST /admin/stripe/create-portal-session
+POST /stripe/create-portal-session
 ```
 
 **Request Body:**
@@ -169,7 +169,7 @@ POST /admin/stripe/create-portal-session
 
 #### 5. Create Payment Intent (for Couple Payments)
 ```http
-POST /admin/stripe/create-payment-intent
+POST /stripe/create-payment-intent
 ```
 
 **Request Body:**
@@ -202,7 +202,7 @@ POST /admin/stripe/create-payment-intent
 
 #### 6. Webhook Endpoint
 ```http
-POST /admin/stripe/webhook
+POST /stripe/webhook
 ```
 
 **Headers:**
@@ -212,11 +212,19 @@ stripe-signature: t=1234567890,v1=abcdef...
 
 This endpoint is called by Stripe for events like:
 - `checkout.session.completed`
+- `checkout.session.expired`
 - `customer.subscription.created`
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
+- `customer.subscription.trial_will_end`
+- `customer.updated`
 - `invoice.paid`
 - `invoice.payment_failed`
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `account.updated`
+- `product.updated` / `product.created`
+- `price.created` / `price.updated`
 
 ---
 
@@ -227,8 +235,8 @@ This endpoint is called by Stripe for events like:
 1. Go to [Stripe Dashboard → Developers → Webhooks](https://dashboard.stripe.com/webhooks)
 2. Click "Add endpoint"
 3. Enter your webhook URL:
-   - Development: `http://localhost:8000/admin/stripe/webhook`
-   - Production: `https://your-domain.com/admin/stripe/webhook`
+   - Development: `http://localhost:8000/stripe/webhook`
+   - Production: `https://your-domain.com/stripe/webhook`
 
 ### Step 2: Select Events
 
@@ -236,12 +244,19 @@ Select these events to listen for:
 
 #### Subscription Events
 - ✅ `checkout.session.completed` - Payment successful, subscription created
+- ✅ `checkout.session.expired` - Checkout abandoned, cleanup pending records
 - ✅ `customer.subscription.created` - Subscription activated
 - ✅ `customer.subscription.updated` - Subscription changed (upgrade/downgrade)
 - ✅ `customer.subscription.deleted` - Subscription cancelled
 - ✅ `customer.subscription.trial_will_end` - Stripe reminder that a trial is ending
+- ✅ `customer.updated` - Customer email/name changed
 - ✅ `invoice.paid` - Recurring payment successful
 - ✅ `invoice.payment_failed` - Payment failed, retry needed
+- ✅ `payment_intent.succeeded` - One-time payment successful
+- ✅ `payment_intent.payment_failed` - One-time payment failed
+- ✅ `account.updated` - Connect account status changed
+- ✅ `product.updated` / `product.created` - Plan product synced
+- ✅ `price.created` / `price.updated` - Price changes logged
 
 ### Step 3: Get Webhook Secret
 
@@ -266,7 +281,7 @@ brew install stripe/stripe-cli/stripe
 stripe login
 
 # Forward webhooks to local server
-stripe listen --forward-to localhost:8000/admin/stripe/webhook
+stripe listen --forward-to localhost:8000/stripe/webhook
 
 # Trigger test events
 stripe trigger checkout.session.completed
@@ -358,7 +373,7 @@ Use these test cards in Stripe Checkout:
 4. **Payment Collection**
    ```bash
    # Use API to create payment intent
-   curl -X POST http://localhost:8000/admin/stripe/create-payment-intent \
+   curl -X POST http://localhost:8000/stripe/create-payment-intent \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -394,7 +409,7 @@ Use these test cards in Stripe Checkout:
 
 ### Production Webhook Setup
 
-1. Create webhook in live mode: `https://your-domain.com/admin/stripe/webhook`
+1. Create webhook in live mode: `https://your-domain.com/stripe/webhook`
 2. Select same events as test mode
 3. Get live webhook secret (`whsec_...`)
 4. Update `STRIPE_WEBHOOK_SECRET` in production
@@ -537,7 +552,7 @@ session = stripe_service.create_checkout_session(
 
 ```typescript
 const handleSubscribe = async (planId: string) => {
-  const response = await fetch('/admin/stripe/create-checkout-session', {
+  const response = await fetch('/stripe/create-checkout-session', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
