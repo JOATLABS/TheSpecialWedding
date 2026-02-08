@@ -198,28 +198,6 @@ export default function PlannerBillingPage() {
               setCurrentPlan(planDetail || null);
               generateBillingAlerts(subData, planDetail);
             }
-          } else {
-            // Try alternative endpoint
-            const altResponse = await fetch(
-              `${baseUrl}/admin/planner/subscription`,
-              {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                },
-                credentials: 'include'
-              }
-            );
-
-            if (altResponse.ok) {
-              const altData = await altResponse.json();
-              if (altData && altData.plan_id) {
-                setCurrentSubscription(altData);
-                const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === altData.plan_id);
-                setCurrentPlan(planDetail || null);
-                generateBillingAlerts(altData, planDetail);
-              }
-            }
           }
         }
       }
