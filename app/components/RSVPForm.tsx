@@ -241,7 +241,7 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, wedding_id: wedding.id, plus_ones: filledPlusOnes })
+        body: JSON.stringify({ ...data, plus_ones: filledPlusOnes })
       });
 
       if (!res.ok) {
