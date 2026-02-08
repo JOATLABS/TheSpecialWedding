@@ -139,8 +139,8 @@ class UserSubscriptionModel(BaseModel):
                 "status": "active",
                 "billing_interval": "monthly",
                 "usage": {
-                    "weddings_created": 2,
-                    "ai_credits_used": 45,
+                    "weddings_count": 2,
+                    "ai_credits_used_month": 45,
                     "storage_used_gb": 2.3,
                     "staff_seats_used": 1
                 },

@@ -255,8 +255,8 @@ class SubscriptionService:
                 "stripe_subscription_id": stripe_subscription_id,
                 "stripe_customer_id": stripe_customer_id,
                 "usage": {
-                    "weddings_created": 0,
-                    "ai_credits_used": 0,
+                    "weddings_count": 0,
+                    "ai_credits_used_month": 0,
                     "storage_used_gb": 0,
                     "staff_seats_used": 0
                 },
