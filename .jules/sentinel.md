@@ -1,0 +1,4 @@
+## 2026-02-09 - Default Cache-Control Vulnerability
+**Vulnerability:** The application was setting `Cache-Control: public, max-age=300` for all endpoints not starting with `/api/`. This included sensitive admin routes (e.g., `/admin/users`) and guest verification endpoints, exposing sensitive data to intermediate caches.
+**Learning:** Default-allow caching policies based on path prefixes are dangerous. When middleware logic uses negative checks (e.g., "if not api, then cache"), it can inadvertently cache sensitive routes that don't match the prefix (e.g., `/admin` mounted at root).
+**Prevention:** Always default to `no-store, no-cache` for all dynamic content. Only enable caching explicitly for static assets or specific public endpoints using positive checks (e.g., "if static file extension, then cache").

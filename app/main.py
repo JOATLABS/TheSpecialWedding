@@ -349,10 +349,9 @@ async def add_cache_headers(request: Request, call_next):
 
         if any(path.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2']):
             response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}"
-        elif path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         else:
-            response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes for other content
+            # Default to no-cache for all API endpoints and dynamic content
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
 
