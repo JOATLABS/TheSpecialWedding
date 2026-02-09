@@ -18,6 +18,12 @@ class RSVPService:
         self.wedding_collection = mongo.db["weddings"]
 
     async def submit_rsvp(self, token: str, rsvp_data: RSVPModel, background_tasks: BackgroundTasks | None = None):
+        """
+        Process an RSVP submission.
+
+        If background_tasks is provided, the planner notification is queued as a background task
+        to improve response latency.
+        """
         try:
             logger.info(f"Processing RSVP submission for token: {token[:8]}...")
 
