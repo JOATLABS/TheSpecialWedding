@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, BackgroundTasks
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
 from bson import ObjectId
@@ -17,7 +17,7 @@ class RSVPService:
         self.plus_one_collection = mongo.db["plus_ones"]
         self.wedding_collection = mongo.db["weddings"]
 
-    async def submit_rsvp(self, token: str, rsvp_data: RSVPModel):
+    async def submit_rsvp(self, token: str, rsvp_data: RSVPModel, background_tasks: BackgroundTasks | None = None):
         try:
             logger.info(f"Processing RSVP submission for token: {token[:8]}...")
 
@@ -128,13 +128,23 @@ class RSVPService:
                     )
 
             # Notify planner about the RSVP update
-            await self._notify_planner_rsvp(
-                wedding_id=wedding_id_str,
-                guest_name=guest.get("name", "A guest"),
-                status="confirmed" if rsvp_data.attending else "declined",
-                guest_count=1 + len(rsvp_data.plus_ones) if rsvp_data.plus_ones else 1,
-                guest_id=guest_id_str
-            )
+            if background_tasks:
+                background_tasks.add_task(
+                    self._notify_planner_rsvp,
+                    wedding_id=wedding_id_str,
+                    guest_name=guest.get("name", "A guest"),
+                    status="confirmed" if rsvp_data.attending else "declined",
+                    guest_count=1 + len(rsvp_data.plus_ones) if rsvp_data.plus_ones else 1,
+                    guest_id=guest_id_str
+                )
+            else:
+                await self._notify_planner_rsvp(
+                    wedding_id=wedding_id_str,
+                    guest_name=guest.get("name", "A guest"),
+                    status="confirmed" if rsvp_data.attending else "declined",
+                    guest_count=1 + len(rsvp_data.plus_ones) if rsvp_data.plus_ones else 1,
+                    guest_id=guest_id_str
+                )
 
             logger.info(f"RSVP submitted successfully for guest {guest_id_str} to wedding {wedding_id_str}")
             return {"message": "RSVP submitted successfully"}
