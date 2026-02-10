@@ -20,25 +20,50 @@ class AdminRSVPService:
             guests = await self.guest_collection.find(query).to_list(length=None)
             result = []
 
+            if not guests:
+                return []
+
+            # ⚡ Performance Optimization: Batch fetch RSVPs and PlusOnes to avoid N+1 queries
+            # Collect all guest IDs (both ObjectId and string formats to support legacy data)
+            guest_ids_obj = [g["_id"] for g in guests]
+            guest_ids_str = [str(g["_id"]) for g in guests]
+            all_guest_ids = guest_ids_obj + guest_ids_str
+
+            # Batch fetch RSVPs
+            # use $in operator to fetch all relevant RSVPs in a single query
+            rsvps_cursor = self.rsvp_collection.find({"guest_id": {"$in": all_guest_ids}})
+            rsvps_list = await rsvps_cursor.to_list(length=None)
+
+            # Map RSVPs by guest_id (normalize keys to string for O(1) lookup)
+            rsvp_map = {}
+            for r in rsvps_list:
+                gid = r.get("guest_id")
+                # Store by string representation for consistent lookup regardless of stored type
+                rsvp_map[str(gid)] = r
+
+            # Batch fetch PlusOnes
+            plus_ones_cursor = self.plus_one_collection.find({"guest_id": {"$in": all_guest_ids}})
+            plus_ones_list = await plus_ones_cursor.to_list(length=None)
+
+            # Map PlusOnes by guest_id
+            plus_one_map = {}
+            for p in plus_ones_list:
+                if "_id" in p:
+                    p["_id"] = str(p["_id"])
+                gid = p.get("guest_id")
+                plus_one_map[str(gid)] = p
+
             for guest in guests:
                 guest_id = guest["_id"]
                 guest_id_str = str(guest_id)
                 
-                # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
-                rsvp = await self.rsvp_collection.find_one({
-                    "$or": [
-                        {"guest_id": guest_id},      # Old format: ObjectId
-                        {"guest_id": guest_id_str}   # New format: string
-                    ]
-                })
+                # Lookup RSVP from map (O(1)) instead of database query
+                rsvp = rsvp_map.get(guest_id_str)
                 
                 # Only include guests who have actually RSVP'd
                 if rsvp:
-                    plus_one = await self.plus_one_collection.find_one({"guest_id": guest_id_str})
-                    
-                    # Convert plus_one _id to string if it exists
-                    if plus_one and "_id" in plus_one:
-                        plus_one["_id"] = str(plus_one["_id"])
+                    # Lookup PlusOne from map (O(1))
+                    plus_one = plus_one_map.get(guest_id_str)
                     
                     result.append({
                         "guest_id": guest_id_str,
