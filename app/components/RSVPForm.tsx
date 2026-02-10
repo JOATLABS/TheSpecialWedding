@@ -4,6 +4,7 @@
 
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useWedding } from '@/hooks/useWedding';
 
 interface RSVPFormProps {
@@ -279,17 +280,24 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
               <p className="text-xs text-slate-500 mt-1">Leave blank if none</p>
             </div>
             <div>
-              <label className="block text-sm text-slate-200 mb-2">
+              <label htmlFor="phone-input" className="block text-sm text-slate-200 mb-2">
                 Phone Number <span className="text-wedding-rose">*</span>
               </label>
               <input
+                id="phone-input"
                 type="tel"
                 defaultValue={guest.phone}
                 {...register('phone', { required: true, pattern: /^\+?\d{10,15}$/ })}
                 placeholder="+1 (555) 123-4567"
+                aria-invalid={errors.phone ? "true" : "false"}
+                aria-describedby={errors.phone ? "phone-error" : undefined}
                 className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur"
               />
-              {errors.phone && <p className="text-wedding-rose text-xs mt-1">Please enter a valid phone number</p>}
+              {errors.phone && (
+                <p id="phone-error" className="text-wedding-rose text-xs mt-1">
+                  Please enter a valid phone number
+                </p>
+              )}
             </div>
           </div>
         </FormCard>
@@ -352,42 +360,59 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
                       type="button"
                       onClick={() => removePlusOne(index)}
                       className="text-xs text-wedding-rose hover:text-wedding-rose/80 font-medium transition-colors"
+                      aria-label={`Remove guest ${index + 1}`}
                     >
                       Remove
                     </button>
                   </div>
 
                   <div className="space-y-4">
-                    <input
-                      className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur"
-                      type="text"
-                      placeholder="Full name"
-                      value={plusOne.name}
-                      onChange={(e) => { const n = [...plusOnes]; n[index].name = e.target.value; setPlusOnes(n); }}
-                    />
-                    <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor={`plus-one-name-${index}`} className="sr-only">Guest {index + 1} Name</label>
                       <input
-                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
-                        type="tel"
-                        placeholder="Phone (optional)"
-                        value={plusOne.phone}
-                        onChange={(e) => { const n = [...plusOnes]; n[index].phone = e.target.value; setPlusOnes(n); }}
-                      />
-                      <input
-                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
-                        type="email"
-                        placeholder="Email (optional)"
-                        value={plusOne.email || ''}
-                        onChange={(e) => { const n = [...plusOnes]; n[index].email = e.target.value; setPlusOnes(n); }}
+                        id={`plus-one-name-${index}`}
+                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur"
+                        type="text"
+                        placeholder="Full name"
+                        value={plusOne.name}
+                        onChange={(e) => { const n = [...plusOnes]; n[index].name = e.target.value; setPlusOnes(n); }}
                       />
                     </div>
-                    <input
-                      className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
-                      type="text"
-                      placeholder="Dietary restrictions (optional)"
-                      value={plusOne.dietary}
-                      onChange={(e) => { const n = [...plusOnes]; n[index].dietary = e.target.value; setPlusOnes(n); }}
-                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor={`plus-one-phone-${index}`} className="sr-only">Guest {index + 1} Phone (optional)</label>
+                        <input
+                          id={`plus-one-phone-${index}`}
+                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                          type="tel"
+                          placeholder="Phone (optional)"
+                          value={plusOne.phone}
+                          onChange={(e) => { const n = [...plusOnes]; n[index].phone = e.target.value; setPlusOnes(n); }}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor={`plus-one-email-${index}`} className="sr-only">Guest {index + 1} Email (optional)</label>
+                        <input
+                          id={`plus-one-email-${index}`}
+                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                          type="email"
+                          placeholder="Email (optional)"
+                          value={plusOne.email || ''}
+                          onChange={(e) => { const n = [...plusOnes]; n[index].email = e.target.value; setPlusOnes(n); }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor={`plus-one-dietary-${index}`} className="sr-only">Guest {index + 1} Dietary restrictions (optional)</label>
+                      <input
+                        id={`plus-one-dietary-${index}`}
+                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                        type="text"
+                        placeholder="Dietary restrictions (optional)"
+                        value={plusOne.dietary}
+                        onChange={(e) => { const n = [...plusOnes]; n[index].dietary = e.target.value; setPlusOnes(n); }}
+                      />
+                    </div>
 
                     <div className="flex gap-6 pt-2">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -435,9 +460,16 @@ export default function RSVPForm({ guest, token }: RSVPFormProps) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
         >
-          {isSubmitting ? 'Submitting...' : 'Confirm RSVP'}
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Submitting...</span>
+            </>
+          ) : (
+            'Confirm RSVP'
+          )}
         </button>
       </form>
     </div>
