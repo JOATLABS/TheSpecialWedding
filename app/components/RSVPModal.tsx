@@ -21,6 +21,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const [step, setStep] = useState<ModalStep>('loading');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isTokenExpired, setIsTokenExpired] = useState(false);
   const [guestData, setGuestData] = useState<any>(null);
   const [weddingData, setWeddingData] = useState<any>(null);
   const [rsvpData, setRsvpData] = useState<any>(null);
@@ -30,6 +31,17 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const [editMode, setEditMode] = useState(false);
   const [formCompleted, setFormCompleted] = useState(false);
   const isSubmittingRef = useRef(false);
+
+  // Reset all state when modal closes
+  const handleClose = () => {
+    // Reset state for next open
+    setEditMode(false);
+    setFormCompleted(false);
+    setError('');
+    setIsTokenExpired(false);
+    setOtp('');
+    onClose();
+  };
 
   const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace('/admin', '');
 
@@ -53,11 +65,25 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const fetchInitialData = async () => {
     setLoading(true);
     setError('');
+    setIsTokenExpired(false);
     try {
       const res = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Unable to load your invitation. Please check the link and try again.');
+        const errorMessage = errorData.detail || '';
+
+        // Detect token expiry or invalid token errors
+        const isExpired = res.status === 401 || res.status === 404 ||
+          errorMessage.toLowerCase().includes('expired') ||
+          errorMessage.toLowerCase().includes('invalid') ||
+          errorMessage.toLowerCase().includes('not found');
+
+        if (isExpired) {
+          setIsTokenExpired(true);
+          throw new Error('Your invitation link has expired or is no longer valid. Please contact the couple for a new link.');
+        }
+
+        throw new Error(errorMessage || 'Unable to load your invitation. Please check the link and try again.');
       }
       const data = await res.json();
       const { wedding, guest, rsvp } = data;
@@ -197,8 +223,12 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setStep('rsvp_form');
   };
 
-  // Modal can only be dismissed after RSVP submitted or when viewing already-RSVPed state
-  const canDismiss = formCompleted || (step === 'already_rsvped' && !editMode);
+  // Modal can be dismissed after RSVP submitted, when viewing already-RSVPed state,
+  // or when there's an error (so users don't get stuck)
+  const canDismiss = formCompleted ||
+    (step === 'already_rsvped' && !editMode) ||
+    (error && !loading) ||
+    isTokenExpired;
 
   const renderStep = () => {
     switch (step) {
@@ -218,12 +248,22 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
                   </svg>
                 </div>
                 <p className="text-wedding-rose mb-4">{error}</p>
-                <button
-                  onClick={fetchInitialData}
-                  className="px-6 py-3 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg hover:bg-wedding-blush transition-all"
-                >
-                  Try Again
-                </button>
+                <div className="flex flex-col gap-3">
+                  {!isTokenExpired && (
+                    <button
+                      onClick={fetchInitialData}
+                      className="px-6 py-3 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg hover:bg-wedding-blush transition-all"
+                    >
+                      Try Again
+                    </button>
+                  )}
+                  <button
+                    onClick={handleClose}
+                    className="px-6 py-3 border border-white/20 text-white font-semibold rounded-full hover:bg-white/10 transition-all"
+                  >
+                    {isTokenExpired ? 'Close' : 'Cancel'}
+                  </button>
+                </div>
               </>
             ) : null}
           </div>
@@ -263,6 +303,13 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
             >
               {loading ? 'Sending...' : 'Send Verification Code'}
             </button>
+            <button
+              onClick={handleClose}
+              disabled={loading}
+              className="w-full mt-3 py-3 border border-white/20 text-white/70 text-sm rounded-full hover:bg-white/10 disabled:opacity-50 transition-all"
+            >
+              Cancel
+            </button>
           </div>
         );
 
@@ -294,7 +341,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
                 {loading ? 'Verifying...' : 'Verify & Continue'}
               </button>
               {error && <p className="text-wedding-rose text-center text-sm">{error}</p>}
-              <div className="text-center mt-2">
+              <div className="text-center mt-2 space-y-2">
                 <button
                   onClick={handleResendOTP}
                   disabled={loading || resendCooldown > 0}
@@ -302,6 +349,15 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
                 >
                   {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}
                 </button>
+                <div>
+                  <button
+                    onClick={handleClose}
+                    disabled={loading}
+                    className="text-sm text-white/50 hover:text-white/70 disabled:opacity-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -314,7 +370,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
             token={token}
             existingRsvp={editMode ? rsvpData : null}
             onSuccess={handleRSVPSuccess}
-            onViewWeddingPage={onClose}
+            onViewWeddingPage={handleClose}
           />
         );
 
@@ -324,7 +380,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
             guest={guestData}
             rsvp={rsvpData}
             onEditClick={handleEditRSVP}
-            onViewWeddingPage={onClose}
+            onViewWeddingPage={handleClose}
           />
         );
 
@@ -338,7 +394,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
       <Dialog
         as="div"
         className="relative z-50"
-        onClose={() => { if (canDismiss) onClose(); }}
+        onClose={() => { if (canDismiss) handleClose(); }}
       >
         {/* Backdrop */}
         <Transition.Child
