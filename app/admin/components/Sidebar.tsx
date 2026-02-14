@@ -162,13 +162,19 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
           </Link>
 
           {isMobile ? (
-            <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+            <button
+              onClick={() => setIsOpen(false)}
+              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+              aria-label="Close sidebar"
+            >
               <X size={20} />
             </button>
           ) : (
             <button
               onClick={() => setIsOpen(!isOpen)}
               className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-expanded={isOpen}
             >
               <ChevronLeft className={`w-5 h-5 transition-transform ${!isOpen ? 'rotate-180' : ''}`} />
             </button>

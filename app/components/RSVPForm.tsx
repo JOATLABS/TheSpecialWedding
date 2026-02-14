@@ -4,6 +4,7 @@
 
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useWedding } from '@/hooks/useWedding';
 import { formatDate } from '@/utils/dateFormat';
 
@@ -389,17 +390,20 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
         <FormCard title="Your Details">
           <div className="space-y-5">
             <div>
-              <label className="block text-sm text-slate-200 mb-2">
+              <label htmlFor="phone-input" className="block text-sm text-slate-200 mb-2">
                 Phone Number <span className="text-wedding-rose font-bold">*</span>
               </label>
               <input
+                id="phone-input"
                 type="tel"
                 {...register('phone', { required: 'Phone number is required', pattern: { value: /^\+?\d{10,15}$/, message: 'Enter 10-15 digits, optionally starting with +' } })}
                 placeholder="+15551234567"
+                aria-invalid={errors.phone ? "true" : "false"}
+                aria-describedby={errors.phone ? "phone-error" : "phone-hint"}
                 className={`w-full px-4 py-3 rounded-xl border ${errors.phone ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur`}
               />
-              <p className="text-xs text-slate-500 mt-1">Enter digits only (10-15 digits). Example: +15551234567</p>
-              {errors.phone && <p className="text-wedding-rose text-xs mt-1">{(errors.phone as any).message || 'Please enter a valid phone number'}</p>}
+              <p id="phone-hint" className="text-xs text-slate-500 mt-1">Enter digits only (10-15 digits). Example: +15551234567</p>
+              {errors.phone && <p id="phone-error" className="text-wedding-rose text-xs mt-1">{(errors.phone as any).message || 'Please enter a valid phone number'}</p>}
             </div>
             <div>
               <label className="block text-sm text-slate-200 mb-2">Dietary Restrictions</label>
@@ -474,6 +478,7 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
                       type="button"
                       onClick={() => removePlusOne(index)}
                       className="text-xs text-wedding-rose hover:text-wedding-rose/80 font-medium transition-colors"
+                      aria-label={`Remove guest ${index + 1}`}
                     >
                       Remove
                     </button>
@@ -481,7 +486,9 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
 
                   <div className="space-y-4">
                     <div>
+                      <label htmlFor={`plus-one-name-${index}`} className="sr-only">Guest {index + 1} Name</label>
                       <input
+                        id={`plus-one-name-${index}`}
                         className={`w-full px-4 py-3 rounded-xl border ${!plusOne.name.trim() && error?.includes('Guest') ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur`}
                         type="text"
                         placeholder="Full name (required)"
@@ -493,7 +500,9 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
+                        <label htmlFor={`plus-one-phone-${index}`} className="sr-only">Guest {index + 1} Phone (optional)</label>
                         <input
+                          id={`plus-one-phone-${index}`}
                           className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
                           type="tel"
                           placeholder="Phone (optional)"
@@ -502,7 +511,9 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
                         />
                       </div>
                       <div>
+                        <label htmlFor={`plus-one-email-${index}`} className="sr-only">Guest {index + 1} Email (optional)</label>
                         <input
+                          id={`plus-one-email-${index}`}
                           className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
                           type="email"
                           placeholder="Email (optional)"
@@ -511,13 +522,17 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
                         />
                       </div>
                     </div>
-                    <input
-                      className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
-                      type="text"
-                      placeholder="Dietary restrictions (optional)"
-                      value={plusOne.dietary}
-                      onChange={(e) => { const n = [...plusOnes]; n[index].dietary = e.target.value; setPlusOnes(n); }}
-                    />
+                    <div>
+                      <label htmlFor={`plus-one-dietary-${index}`} className="sr-only">Guest {index + 1} Dietary restrictions (optional)</label>
+                      <input
+                        id={`plus-one-dietary-${index}`}
+                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                        type="text"
+                        placeholder="Dietary restrictions (optional)"
+                        value={plusOne.dietary}
+                        onChange={(e) => { const n = [...plusOnes]; n[index].dietary = e.target.value; setPlusOnes(n); }}
+                      />
+                    </div>
 
                     <div className="flex gap-6 pt-2">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -573,9 +588,16 @@ export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }:
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
         >
-          {isSubmitting ? 'Submitting...' : 'Confirm RSVP'}
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Submitting...</span>
+            </>
+          ) : (
+            'Confirm RSVP'
+          )}
         </button>
       </form>
     </div>

@@ -20,21 +20,47 @@ class AdminRSVPService:
             guests = await self.guest_collection.find(query).to_list(length=None)
             result = []
 
+            if not guests:
+                return []
+
+            # Batch fetch RSVPs and PlusOnes to avoid N+1 queries
+            guest_ids_obj = [g["_id"] for g in guests]
+            guest_ids_str = [str(g["_id"]) for g in guests]
+
+            # 1. Batch fetch RSVPs (check both ObjectId and string formats)
+            rsvps_cursor = self.rsvp_collection.find({
+                "$or": [
+                    {"guest_id": {"$in": guest_ids_obj}},
+                    {"guest_id": {"$in": guest_ids_str}}
+                ]
+            })
+            rsvps_list = await rsvps_cursor.to_list(length=None)
+
+            # Map RSVPs by guest_id (normalize to string for lookup)
+            rsvps_map = {}
+            for rsvp in rsvps_list:
+                gid = rsvp.get("guest_id")
+                rsvps_map[str(gid)] = rsvp
+
+            # 2. Batch fetch PlusOnes
+            plus_ones_cursor = self.plus_one_collection.find({
+                "guest_id": {"$in": guest_ids_str}
+            })
+            plus_ones_list = await plus_ones_cursor.to_list(length=None)
+
+            # Map PlusOnes by guest_id
+            plus_ones_map = {p["guest_id"]: p for p in plus_ones_list}
+
             for guest in guests:
                 guest_id = guest["_id"]
                 guest_id_str = str(guest_id)
                 
-                # Look for RSVP with either ObjectId or string guest_id for backwards compatibility
-                rsvp = await self.rsvp_collection.find_one({
-                    "$or": [
-                        {"guest_id": guest_id},      # Old format: ObjectId
-                        {"guest_id": guest_id_str}   # New format: string
-                    ]
-                })
+                # Look up RSVP from map
+                rsvp = rsvps_map.get(guest_id_str)
                 
                 # Only include guests who have actually RSVP'd
                 if rsvp:
-                    plus_one = await self.plus_one_collection.find_one({"guest_id": guest_id_str})
+                    plus_one = plus_ones_map.get(guest_id_str)
                     
                     # Convert plus_one _id to string if it exists
                     if plus_one and "_id" in plus_one:
@@ -55,6 +81,19 @@ class AdminRSVPService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve RSVPs: {str(e)}")
 
+    def sanitize_csv_field(self, field_value: Optional[str]) -> str:
+        """
+        Sanitize CSV field to prevent Formula Injection (CSV Injection).
+        If the field starts with =, +, -, or @, prepend a single quote.
+        """
+        if not field_value:
+            return ""
+
+        value = str(field_value)
+        if value.startswith(("=", "+", "-", "@")):
+            return f"'{value}"
+        return value
+
     async def export_rsvps_to_csv(self):
         try:
             guests = await self.get_all_rsvps()
@@ -65,7 +104,8 @@ class AdminRSVPService:
 
             for entry in guests:
                 plus_one = entry.get("plus_one")
-                writer.writerow([
+
+                row_data = [
                     entry["name"],
                     entry.get("phone", ""),
                     ", ".join(entry.get("attending", [])),
@@ -74,7 +114,10 @@ class AdminRSVPService:
                     plus_one.get("name") if plus_one else "",
                     ", ".join(plus_one.get("attending", [])) if plus_one else "",
                     plus_one.get("dietary") if plus_one else ""
-                ])
+                ]
+
+                sanitized_row = [self.sanitize_csv_field(val) for val in row_data]
+                writer.writerow(sanitized_row)
 
             output.seek(0)
             return output.read()
