@@ -2,23 +2,33 @@
 
 'use client';
 
+interface PlusOneInfo {
+  name: string;
+  attending?: string[];
+  dietary?: string;
+}
+
 interface AlreadyRSVPedScreenProps {
   guest: { name: string };
   rsvp: {
     submitted_at: string;
     attending: string[];
     dietary?: string;
+    plus_ones?: PlusOneInfo[];
   };
   onEditClick: () => void;
+  onViewWeddingPage?: () => void;
 }
 
 const eventLabels: Record<string, string> = {
   traditional: 'Traditional Ceremony',
   white_wedding: 'White Wedding',
   reception: 'Reception',
+  engagement: 'Engagement Party',
+  rehearsal: 'Rehearsal Dinner',
 };
 
-export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick }: AlreadyRSVPedScreenProps) {
+export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWeddingPage }: AlreadyRSVPedScreenProps) {
   const formatDate = (dateStr: string) => {
     try {
       return new Date(dateStr).toLocaleDateString('en-US', {
@@ -81,6 +91,31 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick }: Alread
               <p className="text-white font-medium">{rsvp.dietary}</p>
             </div>
           )}
+
+          {rsvp.plus_ones && rsvp.plus_ones.length > 0 && (
+            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+              <p className="text-xs text-slate-400 uppercase tracking-wider mb-3">
+                Additional Guests ({rsvp.plus_ones.length})
+              </p>
+              <div className="space-y-3">
+                {rsvp.plus_ones.map((po, index) => (
+                  <div key={index} className="p-3 rounded-xl border border-white/5 bg-white/5">
+                    <p className="text-white font-medium">{po.name}</p>
+                    {po.attending && po.attending.length > 0 && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        Attending: {po.attending.map(e => eventLabels[e] || e).join(', ')}
+                      </p>
+                    )}
+                    {po.dietary && (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Dietary: {po.dietary}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -92,9 +127,19 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick }: Alread
         Edit My RSVP
       </button>
 
+      {/* View Wedding Page Button */}
+      {onViewWeddingPage && (
+        <button
+          onClick={onViewWeddingPage}
+          className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:border-wedding-rose/50 hover:text-white transition-all"
+        >
+          View Wedding Page
+        </button>
+      )}
+
       {/* Footer note */}
       <p className="text-center text-sm text-slate-500">
-        Need to make changes? Click above to update your response.
+        Need to make changes? Click &quot;Edit My RSVP&quot; above to update your response.
       </p>
     </div>
   );
