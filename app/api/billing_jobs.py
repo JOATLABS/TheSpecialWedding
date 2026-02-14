@@ -176,10 +176,11 @@ async def process_orphaned_customer_cleanup():
             continue
 
         try:
-            # Check if user has ANY subscription (active, trial, cancelled, etc.)
+            # Check if user has ANY subscription record (any status means they
+            # completed signup at some point - keep their Stripe customer for
+            # billing history, reactivation, and portal access)
             has_subscription = await user_subscriptions.find_one({
                 "user_id": user_id,
-                "status": {"$in": ["active", "trial"]}
             })
 
             if has_subscription:
