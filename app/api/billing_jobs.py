@@ -175,6 +175,12 @@ async def process_orphaned_customer_cleanup():
         if not customer_id:
             continue
 
+        # Skip invitation-sourced records - they're handled by Part 2.
+        # These have user_id like "invitation_{token}" which isn't a valid
+        # ObjectId and would fail the user lookup silently.
+        if record.get("source") == "invitation":
+            continue
+
         try:
             # Check if user has ANY subscription record (any status means they
             # completed signup at some point - keep their Stripe customer for

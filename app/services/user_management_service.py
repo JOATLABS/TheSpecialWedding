@@ -655,6 +655,19 @@ class UserManagementService:
             result = await self.users_collection.insert_one(user_data)
             user_id = str(result.inserted_id)
 
+            # Update stripe_customers record with real user_id (replaces invitation
+            # placeholder "invitation_{token}"). This ensures get_or_create_customer()
+            # in assign_subscription finds the existing customer instead of creating
+            # a duplicate.
+            if stripe_customer_id:
+                try:
+                    await mongo.db["stripe_customers"].update_one(
+                        {"stripe_customer_id": stripe_customer_id},
+                        {"$set": {"user_id": user_id, "updated_at": datetime.now(timezone.utc)}}
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to update stripe_customers user_id: {e}")
+
             # Create subscription record if trial granted
             if trial_days > 0 and plan_id:
                 try:
@@ -682,10 +695,14 @@ class UserManagementService:
                     detail="Trial requires a subscription plan. Please contact the administrator."
                 )
 
-            # Mark invitation as completed
+            # Mark invitation as completed and clear expires_at to prevent
+            # TTL index from deleting accepted invitation records
             await self.invitations_collection.update_one(
                 {"token": token},
-                {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)},
+                    "$unset": {"expires_at": ""}
+                }
             )
 
             # Build response
