@@ -113,6 +113,7 @@ class UserSubscriptionModel(BaseModel):
     cancelled_at: Optional[datetime] = Field(None, description="Cancellation date")
     trial_expired_at: Optional[datetime] = Field(None, description="When trial was expired by system")
     cancellation_reason: Optional[str] = Field(None, description="Reason for cancellation")
+    archived_at: Optional[datetime] = Field(None, description="When subscription was archived for cleanup")
 
     # Usage tracking
     usage: Dict[str, Any] = Field(default_factory=dict, description="Current usage statistics")

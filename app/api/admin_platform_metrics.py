@@ -792,6 +792,17 @@ async def get_platform_health(
             "status": {"$ne": "archived"}
         })
 
+        # Data cleanup metrics (for admin visibility into stale data)
+        archived_subscriptions = await mongo.db["user_subscriptions"].count_documents(
+            {"archived_at": {"$exists": True}}
+        )
+        stale_expired_subscriptions = await mongo.db["user_subscriptions"].count_documents(
+            {"status": "expired", "expired_reason": "checkout_session_expired"}
+        )
+        expired_invitations = await mongo.db["user_invitations"].count_documents(
+            {"expires_at": {"$lt": now}}
+        )
+
         # ==================== SERVICE HEALTH ====================
 
         # Web Push notification service health
@@ -852,7 +863,10 @@ async def get_platform_health(
                 "mrr": round(mrr, 2),
                 "arr": round(arr, 2),
                 "total_weddings": total_weddings,
-                "active_weddings": active_weddings
+                "active_weddings": active_weddings,
+                "archived_subscriptions": archived_subscriptions,
+                "stale_expired_subscriptions": stale_expired_subscriptions,
+                "expired_invitations": expired_invitations
             },
             "performance": {
                 "summary": {
@@ -999,6 +1013,9 @@ async def save_metrics_snapshot(
             "arr": business_metrics.get("arr"),
             "total_weddings": business_metrics.get("total_weddings"),
             "active_weddings": business_metrics.get("active_weddings"),
+            "archived_subscriptions": business_metrics.get("archived_subscriptions"),
+            "stale_expired_subscriptions": business_metrics.get("stale_expired_subscriptions"),
+            "expired_invitations": business_metrics.get("expired_invitations"),
         },
         "performance": {
             "slow_endpoints": [

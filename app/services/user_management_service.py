@@ -161,6 +161,26 @@ class UserManagementService:
             result = await self.invitations_collection.insert_one(invitation)
             invitation_id = str(result.inserted_id)
 
+            # Store invitation-created Stripe customer in stripe_customers collection
+            # so the orphaned cleanup job can track it even after invitation TTL-deletion.
+            # Uses placeholder user_id (invitation_{token}) so existing cleanup logic
+            # correctly identifies it as orphaned (no matching user or subscription).
+            if stripe_customer_id:
+                try:
+                    await mongo.db["stripe_customers"].update_one(
+                        {"stripe_customer_id": stripe_customer_id},
+                        {"$set": {
+                            "stripe_customer_id": stripe_customer_id,
+                            "user_id": f"invitation_{invitation_token}",
+                            "email": email,
+                            "created_at": datetime.now(timezone.utc),
+                            "source": "invitation",
+                        }},
+                        upsert=True
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to store invitation Stripe customer mapping: {e}")
+
             # Send invitation email with trial info if applicable
             trial_info = f" with a {trial_days}-day free trial" if trial_days > 0 else ""
             email_success = await self.send_invitation_email(
