@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from 'next/image';
 
@@ -26,6 +26,13 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
   const [showRSVPModal, setShowRSVPModal] = useState(!!rsvpToken);
+
+  // Sync modal open state when rsvpToken arrives after initial render
+  useEffect(() => {
+    if (rsvpToken) {
+      setShowRSVPModal(true);
+    }
+  }, [rsvpToken]);
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
