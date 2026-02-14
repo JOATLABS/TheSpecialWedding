@@ -803,14 +803,16 @@ async def create_invitation_indexes():
         )
         logger.info("Created index: idx_invitation_email_created")
 
-        # 3. TTL: Auto-delete expired invitations
+        # 3. TTL: Auto-delete expired invitations (pending only)
         # expires_at is 7 days from creation; 7-day grace after = 14 days total
+        # partialFilterExpression ensures accepted/completed invitations are preserved
         await collection.create_index(
             [("expires_at", ASCENDING)],
             name="idx_invitation_expires_ttl",
-            expireAfterSeconds=7 * 24 * 60 * 60  # 7 days grace after expires_at
+            expireAfterSeconds=7 * 24 * 60 * 60,  # 7 days grace after expires_at
+            partialFilterExpression={"status": "pending"}
         )
-        logger.info("Created TTL index: idx_invitation_expires_ttl (7 days grace)")
+        logger.info("Created TTL index: idx_invitation_expires_ttl (7 days grace, pending only)")
 
         logger.info("All invitation indexes created successfully")
         return True

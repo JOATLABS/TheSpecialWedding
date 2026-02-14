@@ -800,7 +800,7 @@ async def get_platform_health(
             {"status": "expired", "expired_reason": "checkout_session_expired"}
         )
         expired_invitations = await mongo.db["user_invitations"].count_documents(
-            {"expires_at": {"$lt": now}}
+            {"expires_at": {"$lt": now}, "status": "pending"}
         )
 
         # ==================== SERVICE HEALTH ====================
