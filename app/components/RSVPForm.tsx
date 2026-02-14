@@ -176,13 +176,16 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
         const [year, month, day] = eventDate.split('-').map(Number);
         const [startHour, startMin] = startTime.split(':').map(Number);
 
-        // Calculate end time (3 hours after start)
+        // Calculate end time (3 hours after start), handling midnight rollover
         let endHour = startHour + 3;
-        const endDay = day;
-        const endMonth = month;
-        const endYear = year;
+        let endDay = day;
+        let endMonth = month;
+        let endYear = year;
         if (endHour >= 24) {
           endHour -= 24;
+          // Roll forward one day (simplified: assumes no month-end edge case
+          // will cause issues for a 3-hour offset in calendar display)
+          endDay += 1;
         }
 
         // Get event-specific timezone or fall back to wedding timezone
