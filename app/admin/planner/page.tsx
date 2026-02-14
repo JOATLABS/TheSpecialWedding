@@ -6,6 +6,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
+import OnboardingModal from '../components/OnboardingModal';
 
 interface Wedding {
  id: string;
@@ -61,6 +62,10 @@ export default function WeddingPlannerDashboard() {
  const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
  const [insightsLoading, setInsightsLoading] = useState(false);
  const [insightsError, setInsightsError] = useState('');
+
+ // Onboarding modal state
+ const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+ const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
 
  const fetchMyWeddings = useCallback(async () => {
  try {
@@ -163,6 +168,21 @@ export default function WeddingPlannerDashboard() {
 
  fetchMyWeddings();
  }, [fetchMyWeddings, fetchUserProfile, router, token, userProfile]);
+
+ // Check if onboarding should be shown (one-time only for new planners)
+ useEffect(() => {
+   if (userProfile && userProfile.is_wedding_planner && !userProfile.onboarding_completed && !hasUserDismissedOnboarding) {
+     setIsOnboardingOpen(true);
+   }
+ }, [userProfile, hasUserDismissedOnboarding]);
+
+ // Handler for when onboarding is completed or skipped
+ const handleOnboardingComplete = () => {
+   setHasUserDismissedOnboarding(true); // Track that user dismissed it
+   setIsOnboardingOpen(false);
+   // Refresh user profile to get updated onboarding status
+   fetchUserProfile();
+ };
 
   const formatDisplayDate = (dateString: string) => {
     return formatUtcDate(dateString, {
@@ -590,6 +610,7 @@ export default function WeddingPlannerDashboard() {
  activity.type === 'rsvp_received' ? 'bg-green-500' :
  activity.type === 'guest_updated' ? 'bg-blue-500' :
  activity.type === 'email_sent' ? 'bg-yellow-500' :
+ activity.type === 'support_ticket_created' ? 'bg-red-500' :
  'bg-purple-500'
  }`}></div>
  <div>
@@ -619,6 +640,13 @@ export default function WeddingPlannerDashboard() {
  </button>
  </div>
  </div>
+
+      {/* Onboarding Modal - shows one-time for new planners */}
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+        onComplete={handleOnboardingComplete}
+      />
  </div>
  );
 }

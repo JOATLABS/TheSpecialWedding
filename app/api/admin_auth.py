@@ -36,6 +36,7 @@ def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_curren
         "company_name": user_data.get("company_name"),
         "profile_image_url": user_data.get("profile_image_url"),
         "push_notifications_enabled": user_data.get("push_notifications_enabled", True),  # Default to True
+        "timezone": user_data.get("timezone", "America/Chicago"),  # IANA timezone for display
         "user_data": serialize_mongo_doc(current_user.user_data)
     }
     # Add cache-busting headers to prevent browser caching of user profile data

@@ -2,7 +2,7 @@
 Comprehensive observability system with metrics, tracing, and health checks
 """
 from typing import Dict, List, Any, Optional, Callable
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import asyncio
 import logging
@@ -33,7 +33,7 @@ class HealthCheck:
     message: str
     details: Dict[str, Any] = field(default_factory=dict)
     response_time_ms: float = 0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -41,7 +41,7 @@ class MetricData:
     """Metric data point"""
     name: str
     value: float
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tags: Dict[str, str] = field(default_factory=dict)
     metric_type: str = "gauge"  # gauge, counter, histogram
 
@@ -148,7 +148,7 @@ class MetricsCollector:
                 name: self.get_histogram_stats(name)
                 for name in self.histograms.keys()
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -254,7 +254,7 @@ class SystemMonitor:
     """Monitor system resources"""
 
     def __init__(self):
-        self.start_time = datetime.utcnow()
+        self.start_time = datetime.now(timezone.utc)
 
     async def get_system_metrics(self) -> Dict[str, Any]:
         """Get system resource metrics"""
@@ -286,7 +286,7 @@ class SystemMonitor:
             process_memory = process.memory_info()
 
             return {
-                "uptime_seconds": (datetime.utcnow() - self.start_time).total_seconds(),
+                "uptime_seconds": (datetime.now(timezone.utc) - self.start_time).total_seconds(),
                 "cpu": {
                     "percent": cpu_percent,
                     "count": cpu_count
@@ -464,7 +464,7 @@ class ObservabilityManager:
         app_metrics = await self.metrics.export_metrics()
         return {
             "status": overall_status.value,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "health_checks": {
                 name: {
                     "status": check.status.value,

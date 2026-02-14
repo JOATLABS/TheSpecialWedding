@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
-import { formatDate } from '@/utils/dateFormat';
+import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 
 interface Wedding {
@@ -881,7 +881,7 @@ export default function AdminWeddingsPage() {
                         )}
                         {wedding.last_billed_at && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-green-50 text-green-700 dark:text-green-300">
-                            Last billed: {new Date(wedding.last_billed_at).toLocaleString()}
+                            Last billed: {formatAdminTimestamp(wedding.last_billed_at)}
                           </span>
                         )}
                         {wedding.meter_pending && (

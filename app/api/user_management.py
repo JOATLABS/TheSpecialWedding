@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from typing import List, Optional
+from typing import List, Optional, Any
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.user_management_service import UserManagementService
 from app.services.gallery_upload_service import GalleryUploadService
@@ -148,6 +148,12 @@ class ProfileInfoModel(BaseModel):
     phone: Optional[str] = None
     support_phone: Optional[str] = None  # Phone number guests see when they text HELP
     push_notifications_enabled: Optional[bool] = None  # Enable/disable push notifications
+
+
+class OnboardingUpdateModel(BaseModel):
+    """Model for updating onboarding status"""
+    completed: bool = Field(..., description="Whether onboarding has been completed")
+    steps_completed: Optional[List[str]] = Field(None, description="List of completed step IDs")
 
 
 @router.post("/users/invite", tags=["ROOT_ADMIN"])
@@ -393,7 +399,7 @@ async def upload_profile_image(
 ):
     """Upload a profile image for the current user"""
     import os
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -422,7 +428,7 @@ async def upload_profile_image(
 
     # Generate unique filename using user ID
     user_id = current_user.user_data.get("_id", current_user.email.replace("@", "_at_"))
-    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
     ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
     key = f"profile-images/{user_id}/{timestamp}{ext}"
 
@@ -489,3 +495,55 @@ async def delete_profile_image(current_user: ExtendedAuthUser = Depends(require_
     )
 
     return {"message": "Profile image deleted successfully"}
+
+
+# ==================== ONBOARDING ====================
+
+
+@router.put("/profile/onboarding", tags=["Profile"])
+async def update_onboarding_status(
+    onboarding_data: OnboardingUpdateModel,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Update user's onboarding status
+    - Called when planner completes or skips the onboarding tour
+    - One-time only: once completed, cannot be uncompleted
+    """
+    from datetime import datetime, timezone
+
+    # Build update data with mixed types
+    update_data: dict[str, Any] = {}
+    update_data["onboarding_completed"] = onboarding_data.completed
+
+    # Only set completion timestamp if completing (not when skipping)
+    if onboarding_data.completed:
+        update_data["onboarding_completed_at"] = datetime.now(timezone.utc)
+
+    # Update steps if provided
+    if onboarding_data.steps_completed is not None:
+        update_data["onboarding_steps_completed"] = onboarding_data.steps_completed
+
+    await user_service.update_profile_info(
+        current_user.email,
+        update_data
+    )
+
+    return {
+        "message": "Onboarding status updated",
+        "onboarding_completed": onboarding_data.completed
+    }
+
+
+@router.get("/profile/onboarding", tags=["Profile"])
+async def get_onboarding_status(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """Get current user's onboarding status"""
+    user_profile = await user_service.get_user_profile(current_user.email)
+
+    return {
+        "onboarding_completed": user_profile.get("onboarding_completed", False),
+        "onboarding_completed_at": user_profile.get("onboarding_completed_at"),
+        "onboarding_steps_completed": user_profile.get("onboarding_steps_completed", [])
+    }

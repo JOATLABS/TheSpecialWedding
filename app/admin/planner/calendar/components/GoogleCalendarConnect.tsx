@@ -8,6 +8,7 @@ import {
   GoogleCalendarStatus,
 } from '@/services/calendarApi';
 import { useAdmin } from '@/contexts/AdminContext';
+import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 
 interface GoogleCalendarConnectProps {
   onStatusChange?: (status: GoogleCalendarStatus) => void;
@@ -149,7 +150,7 @@ export default function GoogleCalendarConnect({
                 {status.last_sync && (
                   <p className="text-xs text-gray-400 dark:text-gray-500">
                     Last sync:{' '}
-                    {new Date(status.last_sync).toLocaleString()}
+                    {formatAdminTimestamp(status.last_sync)}
                   </p>
                 )}
               </div>

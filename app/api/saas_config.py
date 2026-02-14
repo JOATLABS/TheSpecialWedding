@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -348,7 +348,7 @@ async def update_saas_config(
         # Add metadata
         config_data["type"] = "main_config"
         config_data["updated_by"] = current_user.email
-        config_data["updated_at"] = datetime.utcnow()
+        config_data["updated_at"] = datetime.now(timezone.utc)
         # Update or insert configuration
         await mongo.db["saas_config"].update_one(
             {"type": "main_config"},
@@ -389,7 +389,7 @@ async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_
                     "is_active": True,
                     "display_order": 1,
                     "updated_by": "system",
-                    "updated_at": datetime.utcnow().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 },
                 {
                     "id": "features_section",
@@ -401,7 +401,7 @@ async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_
                     "is_active": True,
                     "display_order": 2,
                     "updated_by": "system",
-                    "updated_at": datetime.utcnow().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
             ]
 
@@ -421,7 +421,7 @@ async def update_content_section(
     try:
         # Add metadata
         section_data["updated_by"] = current_user.email
-        section_data["updated_at"] = datetime.utcnow()
+        section_data["updated_at"] = datetime.now(timezone.utc)
         # Update section
         await mongo.db["content_sections"].update_one(
             {"section": section_id},
@@ -461,7 +461,7 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
                 "max_weddings": planner.get("max_weddings", 0),
                 "assigned_weddings_count": weddings_count,
                 "is_active": planner.get("is_active", True),
-                "created_at": planner.get("created_at", datetime.utcnow()).isoformat(),
+                "created_at": planner.get("created_at", datetime.now(timezone.utc)).isoformat(),
                 "last_login": planner.get("last_login").isoformat() if planner.get("last_login") else None
             }
             formatted_planners.append(formatted_planner)
@@ -495,7 +495,7 @@ async def create_wedding_planner(
             "subscription_status": "inactive",
             "is_active": True,
             "created_by": current_user.email,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         }
 
         # Insert user
@@ -532,7 +532,7 @@ async def toggle_planner_status(
                 "$set": {
                     "is_active": new_status,
                     "updated_by": current_user.email,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -684,7 +684,7 @@ async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require
                 "arpu_yearly": arpu_yearly
             },
             "plan_breakdown": plan_revenue,
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")

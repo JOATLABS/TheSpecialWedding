@@ -2,9 +2,9 @@
 Base model classes and utilities for Pydantic v2 models.
 Provides common functionality and optimizations for all models.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, computed_field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 
 
@@ -14,11 +14,11 @@ class TimestampedModel(BaseModel):
     Provides created_at and updated_at fields for all models.
     """
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Record creation timestamp"
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Record last update timestamp"
     )
 
@@ -41,18 +41,18 @@ class TimestampedModel(BaseModel):
 
     def refresh_updated_at(self):
         """Manually update the updated_at timestamp."""
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
-    @computed_field
     @property
     def age_minutes(self) -> float:
-        """Get the age of this record in minutes."""
-        delta = datetime.utcnow() - self.created_at
+        """Get the age of this record in minutes (not serialized)."""
+        delta = datetime.now(timezone.utc) - self.created_at
         return delta.total_seconds() / 60
+
     @field_serializer('created_at', 'updated_at', when_used='json')
     def serialize_datetime(self, dt: datetime) -> str:
         """Serialize datetime fields to ISO format for JSON."""
-        return dt.isoformat() if dt else None
+        return dt.isoformat()
 
 
 class MongoModel(TimestampedModel):
@@ -65,19 +65,22 @@ class MongoModel(TimestampedModel):
         alias="_id",
         description="MongoDB ObjectId"
     )
+
     @field_serializer('id', when_used='json')
     def serialize_id(self, value: PyObjectId) -> str:
         """Serialize ObjectId to string for JSON output."""
-        return str(value) if value else None
+        return str(value)
+
     @classmethod
     def create_with_id(cls, object_id: str, **kwargs):
         """Create instance with specific ObjectId."""
-        from ..utils.pydantic_objectid import PyObjectId
-        return cls(id=PyObjectId(object_id), **kwargs)
+        return cls(_id=PyObjectId(object_id), **kwargs)
+
     def to_mongo_dict(self) -> Dict[str, Any]:
         """Convert to MongoDB-ready dictionary."""
         data = self.model_dump(by_alias=True, exclude_unset=True)
         return data
+
     @classmethod
     def from_mongo_dict(cls, data: Dict[str, Any]):
         """Create instance from MongoDB dictionary."""
@@ -95,10 +98,11 @@ class WeddingRelatedModel(MongoModel):
         min_length=24,  # MongoDB ObjectId length
         max_length=24
     )
+
     @field_serializer('wedding_id', when_used='json')
     def serialize_wedding_id(self, value: str) -> str:
         """Ensure wedding_id is always a string."""
-        return str(value) if value else None
+        return str(value)
 
 
 class UserRelatedModel(MongoModel):
@@ -116,6 +120,7 @@ class UserRelatedModel(MongoModel):
         description="Email of the user who last updated this record",
         max_length=254
     )
+
     def mark_updated_by(self, user_email: str):
         """Mark record as updated by specific user."""
         self.updated_by = user_email
@@ -130,7 +135,7 @@ class ValidatedModel(BaseModel):
     model_config = ConfigDict(
         # Strict validation for security
         validate_assignment=True,
-        str_strict=False,           # Allow string coercion
+        strict=False,               # Allow type coercion
         str_strip_whitespace=True,  # Auto-strip whitespace
         str_to_lower=False,         # Don't auto-lowercase
         str_to_upper=False,         # Don't auto-uppercase
@@ -142,15 +147,16 @@ class ValidatedModel(BaseModel):
         use_enum_values=True,
         arbitrary_types_allowed=True
     )
+
     def model_dump_safe(self, exclude_sensitive: bool = True) -> Dict[str, Any]:
         """
         Safe model dump that can exclude sensitive fields.
         Override in subclasses to define sensitive fields.
         """
-        exclude_fields = set()
+        exclude_fields: set[str] = set()
         if exclude_sensitive:
             # Add common sensitive fields
-            sensitive_fields = getattr(self, '_sensitive_fields', set())
+            sensitive_fields: set[str] = getattr(self, '_sensitive_fields', set())
             exclude_fields.update(sensitive_fields)
 
         return self.model_dump(exclude=exclude_fields)

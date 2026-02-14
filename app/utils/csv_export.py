@@ -10,7 +10,7 @@ import io
 import html
 import re
 from typing import List, Dict, Any, Optional, Union
-from datetime import datetime
+from datetime import datetime, timezone
 from app.utils.security_utils import InputSanitizer
 import logging
 
@@ -327,7 +327,7 @@ class CSVExportUtils:
             str: Safe filename for the CSV export
         """
         if timestamp is None:
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(timezone.utc)
         # Sanitize form name for filename
         safe_name = re.sub(r'[^\w\-_\. ]', '', form_name)
         safe_name = safe_name.strip()[:50]  # Limit length
@@ -407,7 +407,7 @@ class FormResponseCSVExporter:
                 'size': len(csv_content.encode('utf-8')),
                 'total_responses': total_responses,
                 'exported_count': filtered_count,
-                'export_timestamp': datetime.utcnow().isoformat(),
+                'export_timestamp': datetime.now(timezone.utc).isoformat(),
                 'options': options
             }
 

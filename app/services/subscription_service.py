@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.services.stripe_service import stripe_service
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 
 
@@ -20,8 +20,8 @@ class SubscriptionService:
         try:
             plan_data["_id"] = f"plan_{plan_data['name'].lower().replace(' ', '_')}"
             plan_data["created_by"] = creator_email
-            plan_data["created_at"] = datetime.utcnow()
-            plan_data["updated_at"] = datetime.utcnow()
+            plan_data["created_at"] = datetime.now(timezone.utc)
+            plan_data["updated_at"] = datetime.now(timezone.utc)
             # Check if plan ID already exists
             existing = await self.plans_collection.find_one({"_id": plan_data["_id"]})
             if existing:
@@ -74,7 +74,7 @@ class SubscriptionService:
             for field in protected_fields:
                 update_data.pop(field, None)
 
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             # Retrieve existing plan to merge with update data for Stripe sync
             existing_plan = await self.plans_collection.find_one({"_id": plan_id})
@@ -166,7 +166,7 @@ class SubscriptionService:
                 raise HTTPException(status_code=400, detail="User already has an active subscription")
 
             # Create subscription
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             trial_end = now + timedelta(days=trial_days) if trial_days > 0 else now
 
             if billing_interval == "yearly":
@@ -256,7 +256,7 @@ class SubscriptionService:
     async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
         """Cancel user subscription"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             result = await self.subscriptions_collection.update_one(
                 {"user_id": user_id, "status": {"$in": ["active", "trial"]}},
                 {"$set": {
@@ -290,7 +290,7 @@ class SubscriptionService:
     async def initialize_usage_tracking(self, user_id: str, subscription_id: str) -> dict:
         """Initialize usage tracking for a new subscription"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             current_month = now.strftime("%Y-%m")
             # Calculate next month for credits reset
             if now.month == 12:
@@ -324,7 +324,7 @@ class SubscriptionService:
     async def get_usage_stats(self, user_id: str) -> dict:
         """Get current usage statistics for user"""
         try:
-            current_month = datetime.utcnow().strftime("%Y-%m")
+            current_month = datetime.now(timezone.utc).strftime("%Y-%m")
             usage = await self.usage_collection.find_one({
                 "user_id": user_id,
                 "current_month": current_month
@@ -416,7 +416,7 @@ class SubscriptionService:
     async def increment_usage(self, user_id: str, resource_type: str, amount: int = 1) -> dict:
         """Increment usage for a specific resource"""
         try:
-            current_month = datetime.utcnow().strftime("%Y-%m")
+            current_month = datetime.now(timezone.utc).strftime("%Y-%m")
             # Map resource types to database fields
             field_mapping = {
                 "weddings": "weddings_count",
@@ -433,7 +433,7 @@ class SubscriptionService:
                 {"user_id": user_id, "current_month": current_month},
                 {
                     "$inc": {field_name: amount},
-                    "$set": {"last_updated": datetime.utcnow()}
+                    "$set": {"last_updated": datetime.now(timezone.utc)}
                 }
             )
 
@@ -450,7 +450,7 @@ class SubscriptionService:
     async def reset_monthly_usage(self, user_id: str) -> dict:
         """Reset monthly usage counters (called on subscription renewal)"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             current_month = now.strftime("%Y-%m")
             # Calculate next reset date
             if now.month == 12:
@@ -548,7 +548,7 @@ class SubscriptionService:
                     "monthly_subscribers": monthly_sub_count,
                     "yearly_subscribers": yearly_sub_count
                 },
-                "generated_at": datetime.utcnow()
+                "generated_at": datetime.now(timezone.utc)
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error generating analytics: {str(e)}")

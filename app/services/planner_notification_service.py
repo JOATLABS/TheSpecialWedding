@@ -4,7 +4,7 @@ Planner Activity Notifications Service
 Handles CRUD operations and triggers for planner-specific notifications.
 These are wedding activity notifications (RSVPs, forms, payments), NOT platform announcements.
 
-Now with Ntfy push notification support!
+Includes Web Push notification support for instant browser notifications.
 """
 
 from fastapi import HTTPException
@@ -15,7 +15,7 @@ from app.models.planner_notification import (
     NotificationType
 )
 from typing import Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 import logging
 import asyncio
@@ -70,7 +70,7 @@ class PlannerNotificationService:
         wedding_name: Optional[str] = None,
         action_url: Optional[str] = None
     ):
-        """Send push notification via Ntfy (non-blocking)"""
+        """Send push notification via Web Push API (non-blocking)"""
         try:
             # Check if user has push notifications enabled
             if not await self._check_push_enabled(planner_id):
@@ -78,16 +78,18 @@ class PlannerNotificationService:
                 return
 
             # Late import to avoid circular dependencies
-            from app.services.ntfy_service import ntfy_service
+            from app.services.web_push_service import web_push_service
 
-            if ntfy_service.enabled:
-                await ntfy_service.send_notification(
-                    planner_id=planner_id,
+            if web_push_service.enabled:
+                # Build full message with wedding name if provided
+                full_message = f"[{wedding_name}] {message}" if wedding_name else message
+
+                await web_push_service.send_notification(
+                    user_id=planner_id,
                     title=title,
-                    message=message,
-                    notification_type=notification_type,
-                    wedding_name=wedding_name,
-                    click_url=action_url
+                    body=full_message,
+                    url=action_url,
+                    tag=notification_type
                 )
         except Exception as e:
             # Don't fail the main notification if push fails
@@ -243,7 +245,7 @@ class PlannerNotificationService:
         try:
             result = await self.collection.update_one(
                 {"_id": obj_id, "planner_id": planner_id},
-                {"$set": {"is_read": True, "read_at": datetime.utcnow()}}
+                {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc)}}
             )
 
             if result.matched_count == 0:
@@ -266,7 +268,7 @@ class PlannerNotificationService:
 
             result = await self.collection.update_many(
                 query,
-                {"$set": {"is_read": True, "read_at": datetime.utcnow()}}
+                {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc)}}
             )
 
             return {
@@ -510,6 +512,36 @@ class PlannerNotificationService:
             },
             priority="high",
             action_url="/admin/planner/calendar"
+        )
+
+    async def notify_support_ticket_response(
+        self,
+        planner_id: str,
+        ticket_number: str,
+        ticket_subject: str,
+        responder_name: str,
+        ticket_id: str,
+        message_preview: Optional[str] = None
+    ):
+        """Notify planner when root admin responds to their support ticket"""
+        preview = ""
+        if message_preview:
+            preview = f": {message_preview[:80]}..." if len(message_preview) > 80 else f": {message_preview}"
+
+        return await self.create_notification(
+            planner_id=planner_id,
+            notification_type=PlannerNotificationTypes.SUPPORT_TICKET_RESPONSE,
+            title=f"Support Response: {ticket_subject[:50]}",
+            message=f"{responder_name} responded to ticket #{ticket_number}{preview}",
+            wedding_id=None,
+            metadata={
+                "ticket_number": ticket_number,
+                "ticket_id": ticket_id,
+                "responder_name": responder_name,
+                "ticket_subject": ticket_subject
+            },
+            priority="high",
+            action_url="/admin/support"
         )
 
 

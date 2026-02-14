@@ -92,44 +92,32 @@ async def delete_activity_notification(
     )
 
 
-# ==================== PUSH NOTIFICATIONS (NTFY) ====================
+# ==================== PUSH NOTIFICATIONS (WEB PUSH) ====================
+# Note: Main Web Push endpoints are in /admin/web-push/*
+# These are convenience aliases for the planner notification context
 
-@router.get("/planner/push-subscription", tags=["Planner Notifications"])
-async def get_push_subscription_info(
+@router.get("/planner/push-status", tags=["Planner Notifications"])
+async def get_push_status(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
-    Get push notification subscription info for the current planner.
+    Get push notification status for the current planner.
 
-    Returns the Ntfy topic URL that the planner can subscribe to
-    using the Ntfy mobile app or web interface.
-
-    Instructions:
-    1. Download the Ntfy app (iOS/Android) or use https://ntfy.sh web
-    2. Subscribe to the topic URL returned by this endpoint
-    3. You'll receive instant push notifications for wedding activities
+    Returns whether Web Push is enabled on the server and if the user has subscribed.
+    Use /admin/web-push/subscribe to enable browser push notifications.
     """
-    from app.services.ntfy_service import ntfy_service
+    from app.services.web_push_service import web_push_service
 
-    if not ntfy_service.enabled:
-        return {
-            "enabled": False,
-            "message": "Push notifications are not configured on this server"
-        }
-
-    subscription_url = ntfy_service.get_subscription_url(current_user.email)
-    topic = ntfy_service._get_planner_topic(current_user.email)
+    is_subscribed = await web_push_service.check_user_subscribed(current_user.email)
 
     return {
-        "enabled": True,
-        "subscription_url": subscription_url,
-        "topic": topic,
-        "server_url": ntfy_service.server_url,
-        "instructions": {
-            "mobile": f"1. Download the Ntfy app\n2. Add subscription: {subscription_url}",
-            "web": f"Visit {subscription_url} in your browser to subscribe",
-            "cli": f"ntfy subscribe {subscription_url}"
-        }
+        "enabled": web_push_service.enabled,
+        "subscribed": is_subscribed,
+        "message": (
+            "Push notifications active" if is_subscribed
+            else "Not subscribed - enable in Account Settings" if web_push_service.enabled
+            else "Push notifications not configured on server"
+        )
     }
 
 
@@ -140,25 +128,25 @@ async def send_test_push_notification(
     """
     Send a test push notification to verify your subscription is working.
 
-    Make sure you've subscribed to your topic first (see /planner/push-subscription).
+    Make sure you've enabled push notifications in Account Settings first.
     """
-    from app.services.ntfy_service import ntfy_service
+    from app.services.web_push_service import web_push_service
 
-    if not ntfy_service.enabled:
+    if not web_push_service.enabled:
         return {
             "success": False,
             "message": "Push notifications are not configured on this server"
         }
 
-    success = await ntfy_service.send_notification(
-        planner_id=current_user.email,
+    result = await web_push_service.send_notification(
+        user_id=current_user.email,
         title="Test Notification",
-        message="If you see this, push notifications are working!",
-        tags=["white_check_mark", "tada"],
-        priority="default"
+        body="Push notifications are working!",
+        url="/admin/planner",
+        tag="test-notification"
     )
 
     return {
-        "success": success,
-        "message": "Test notification sent!" if success else "Failed to send test notification"
+        "success": result.get("success", False),
+        "message": f"Test notification sent to {result.get('sent', 0)} device(s)!" if result.get("success") else result.get("error", "No active subscriptions found")
     }

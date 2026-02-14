@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.core.database import mongo
 from app.services.email_service_resend import ResendEmailService
 import os
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class TrialExpirationService:
     def __init__(self):
@@ -17,8 +18,9 @@ class TrialExpirationService:
             config = await mongo.db["saas_config"].find_one({"type": "main_config"})
             if config and "trial_settings" in config:
                 return config["trial_settings"]
-        except:
+        except Exception:
             pass
+
         # Return defaults if config not found
         return {
             "default_trial_days": 30,
@@ -35,7 +37,7 @@ class TrialExpirationService:
             if not trial_settings.get("auto_expire_trials", True):
                 return {"message": "Auto trial expiration is disabled"}
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             expired_count = 0
 
             # Find users with expired trials using Motor async cursor
@@ -58,13 +60,13 @@ class TrialExpirationService:
                 )
 
                 # Send trial expired email
-                self.send_trial_expired_email(user)
+                await self.send_trial_expired_email(user)
                 expired_count += 1
 
                 logger.info(f"Expired trial for user: {user['email']}")
 
             return {
-                "message": f"Trial expiration check completed",
+                "message": "Trial expiration check completed",
                 "expired_trials": expired_count,
                 "checked_at": now.isoformat()
             }
@@ -79,7 +81,7 @@ class TrialExpirationService:
             trial_settings = await self.get_trial_settings()
             warning_days = trial_settings.get("trial_warning_days", 7)
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             warning_date = now + timedelta(days=warning_days)
 
             # Find users whose trials expire within warning period using Motor async cursor
@@ -98,7 +100,7 @@ class TrialExpirationService:
                 days_remaining = (user["trial_end_date"] - now).days
 
                 # Send warning email
-                if self.send_trial_warning_email(user, days_remaining):
+                if await self.send_trial_warning_email(user, days_remaining):
                     # Mark warning as sent
                     await self.users_collection.update_one(
                         {"_id": user["_id"]},
@@ -108,7 +110,7 @@ class TrialExpirationService:
                     logger.info(f"Sent trial warning to user: {user['email']}")
 
             return {
-                "message": f"Trial warning check completed",
+                "message": "Trial warning check completed",
                 "warnings_sent": warning_count,
                 "checked_at": now.isoformat()
             }
@@ -117,7 +119,7 @@ class TrialExpirationService:
             logger.error(f"Error in trial warning check: {str(e)}")
             return {"error": str(e)}
 
-    def send_trial_warning_email(self, user: dict, days_remaining: int) -> bool:
+    async def send_trial_warning_email(self, user: dict, days_remaining: int) -> bool:
         """Send trial warning email to user"""
         try:
             if not self.email_service.configured:
@@ -134,7 +136,7 @@ class TrialExpirationService:
 
             subject = f" Your Special Wedding Trial Expires in {days_remaining} Days"
 
-            result = self.email_service.send_email(
+            result = await self.email_service.send_email(
                 to_email=email,
                 subject=subject,
                 html_content=html_content,
@@ -148,7 +150,7 @@ class TrialExpirationService:
             logger.error(f"Error sending trial warning email to {user.get('email', 'unknown')}: {str(e)}")
             return False
 
-    def send_trial_expired_email(self, user: dict) -> bool:
+    async def send_trial_expired_email(self, user: dict) -> bool:
         """Send trial expired email to user"""
         try:
             if not self.email_service.configured:
@@ -164,7 +166,7 @@ class TrialExpirationService:
 
             subject = "Your Special Wedding Trial Has Expired - Upgrade to Continue"
 
-            result = self.email_service.send_email(
+            result = await self.email_service.send_email(
                 to_email=email,
                 subject=subject,
                 html_content=html_content,
@@ -232,6 +234,7 @@ class TrialExpirationService:
         </body>
         </html>
         """
+
     def _generate_trial_expired_email_html(self, email: str, first_name: str) -> str:
         """Generate trial expired email HTML"""
         return f"""

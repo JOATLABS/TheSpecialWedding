@@ -10,6 +10,7 @@ Provides endpoints for automated payment processing:
 from fastapi import APIRouter, Depends, Header, HTTPException
 from typing import Dict, Any, Optional
 from datetime import datetime
+from datetime import timezone
 import logging
 import os
 
@@ -63,7 +64,7 @@ async def process_due_payments(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -71,7 +72,7 @@ async def process_due_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -94,7 +95,7 @@ async def send_payment_reminders(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -102,7 +103,7 @@ async def send_payment_reminders(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -124,7 +125,7 @@ async def retry_failed_payments(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -132,7 +133,7 @@ async def retry_failed_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -155,7 +156,7 @@ async def recalculate_payment_schedules(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -163,7 +164,7 @@ async def recalculate_payment_schedules(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -190,7 +191,7 @@ async def get_autopilot_status(
         succeeded_today = await autopilot_service.scheduled_payments.count_documents({
             "status": "succeeded",
             "paid_at": {
-                "$gte": datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                "$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
             }
         })
 
@@ -202,7 +203,7 @@ async def get_autopilot_status(
                 "pending_retries": pending_retry_count,
                 "succeeded_today": succeeded_today
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -210,7 +211,7 @@ async def get_autopilot_status(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -225,7 +226,7 @@ async def get_due_payments(
             "status": "success",
             "count": len(due_payments),
             "payments": due_payments,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -233,7 +234,7 @@ async def get_due_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -249,7 +250,7 @@ async def get_upcoming_reminders(
             "status": "success",
             "count": len(upcoming),
             "payments": upcoming,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -257,7 +258,7 @@ async def get_upcoming_reminders(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -272,7 +273,7 @@ async def get_failed_payments(
             "status": "success",
             "count": len(failed),
             "payments": failed,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -280,7 +281,7 @@ async def get_failed_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -313,7 +314,7 @@ async def get_optimal_retry_timing(
             return {
                 "status": "error",
                 "error": "Payment not found",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         result = await autopilot_service.get_optimal_retry_timing(payment)
@@ -322,7 +323,7 @@ async def get_optimal_retry_timing(
             "status": "success",
             "payment_id": payment_id,
             "suggestion": result,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -330,7 +331,7 @@ async def get_optimal_retry_timing(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -354,7 +355,7 @@ async def predict_payment_success(
         return {
             "status": "success" if result.get("success") else "error",
             **result,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -362,7 +363,7 @@ async def predict_payment_success(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -395,7 +396,7 @@ async def assess_all_scheduled_payments(
             "status": "success",
             "assessed": assessed,
             "errors": errors,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -403,5 +404,5 @@ async def assess_all_scheduled_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }

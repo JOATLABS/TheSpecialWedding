@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
+import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { toast } from 'sonner';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -551,12 +552,7 @@ export default function MoneyDashboard() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    return formatAdminDate(dateString, DEFAULT_TIMEZONE);
   };
 
   const getStatusBadge = (status: string) => {

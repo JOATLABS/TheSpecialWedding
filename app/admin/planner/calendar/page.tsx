@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import { formatDate, formatDateTime, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
   PlannerTask,
   getMonthTasks,
@@ -644,12 +645,9 @@ export default function PlannerCalendarPage() {
                           {task.title}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {new Date(task.start_date).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: task.all_day ? undefined : 'numeric',
-                            minute: task.all_day ? undefined : '2-digit',
-                          })}
+                          {task.all_day
+                            ? formatAdminDate(task.start_date)
+                            : formatDateTime(task.start_date, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }, 'en-US', DEFAULT_TIMEZONE)}
                         </p>
                         {task.wedding_name && (
                           <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
@@ -997,8 +995,8 @@ export default function PlannerCalendarPage() {
                             {aiTimeline.key_dates.map((d, i) => (
                               <div key={i} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                                 <div className="w-16 text-center">
-                                  <div className="text-xs text-gray-500">{new Date(d.date).toLocaleDateString('en-US', { month: 'short' })}</div>
-                                  <div className="text-lg font-bold text-blue-600">{new Date(d.date).getDate()}</div>
+                                  <div className="text-xs text-gray-500">{formatDate(d.date, { month: 'short' }, 'en-US', DEFAULT_TIMEZONE)}</div>
+                                  <div className="text-lg font-bold text-blue-600">{formatDate(d.date, { day: 'numeric' }, 'en-US', DEFAULT_TIMEZONE)}</div>
                                 </div>
                                 <div>
                                   <p className="font-medium text-gray-900 dark:text-gray-100">{d.event}</p>
@@ -1020,7 +1018,7 @@ export default function PlannerCalendarPage() {
                                 <div className="bg-gray-50 dark:bg-slate-700 px-4 py-2 flex items-center justify-between">
                                   <span className="font-medium text-gray-900 dark:text-gray-100">{phase.phase}</span>
                                   <span className="text-sm text-gray-500">
-                                    {new Date(phase.start_date).toLocaleDateString()} - {new Date(phase.end_date).toLocaleDateString()}
+                                    {formatAdminDate(phase.start_date)} - {formatAdminDate(phase.end_date)}
                                   </span>
                                 </div>
                                 <div className="p-4 space-y-2">

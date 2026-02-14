@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
+import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -534,12 +535,11 @@ export default function PlannerBillingPage() {
     return 'bg-blue-500';
   };
 
+  // Get planner's timezone from user profile or use default
+  const plannerTimezone = userProfile?.user_data?.timezone || DEFAULT_TIMEZONE;
+
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    return formatAdminDate(dateString, plannerTimezone);
   };
 
   const getMemberSinceDate = () => {
@@ -963,7 +963,7 @@ export default function PlannerBillingPage() {
                               {req.description || 'Payment Request'}
                             </p>
                             <p className="text-sm text-gray-500">
-                              {new Date(req.created_at).toLocaleDateString()}
+                              {formatDate(req.created_at)}
                               {req.wedding_title && ` • ${req.wedding_title}`}
                             </p>
                           </div>

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -9,7 +10,6 @@ import {
   LayoutDashboard,
   Users,
   Wallet,
-  Settings,
   LogOut,
   ChevronLeft,
   Heart,
@@ -25,6 +25,7 @@ import {
   Calendar,
   Image,
   Package,
+  LayoutGrid,
   type LucideIcon
 } from 'lucide-react';
 
@@ -68,7 +69,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Vendors', href: '/admin/vendors', icon: Store },
   { name: 'Reminders', href: '/admin/reminders', icon: Bell },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
-  { name: 'Settings', href: '/admin/profile', icon: Settings },
+  { name: 'Seating', href: '/admin/seating', icon: LayoutGrid },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
 ];
 
@@ -137,30 +138,43 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         `}
       >
         {/* Logo Section */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-slate-200/50 dark:border-slate-700/50">
-          <Link href="/admin/planner" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center">
-              <Heart className="w-5 h-5 text-white" />
-            </div>
-            {isOpen && (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="font-heading font-bold text-lg text-slate-800 dark:text-white"
-              >
-                WeddingApp
-              </motion.span>
+        <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
+          <Link href="/admin/planner" className="flex items-center flex-1 min-w-0 mr-2">
+            {isOpen ? (
+              <NextImage
+                src="/logo.svg"
+                alt="The Special Wedding"
+                width={140}
+                height={36}
+                className="h-9 w-auto"
+                priority
+              />
+            ) : (
+              <NextImage
+                src="/favicon.svg"
+                alt="The Special Wedding"
+                width={32}
+                height={32}
+                className="h-8 w-8"
+                priority
+              />
             )}
           </Link>
 
           {isMobile ? (
-            <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+            <button
+              onClick={() => setIsOpen(false)}
+              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+              aria-label="Close sidebar"
+            >
               <X size={20} />
             </button>
           ) : (
             <button
               onClick={() => setIsOpen(!isOpen)}
               className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-expanded={isOpen}
             >
               <ChevronLeft className={`w-5 h-5 transition-transform ${!isOpen ? 'rotate-180' : ''}`} />
             </button>

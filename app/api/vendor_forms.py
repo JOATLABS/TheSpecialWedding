@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 import secrets
 import string
@@ -32,8 +32,8 @@ class VendorFormService:
                 **form_data,
                 "access_token": self.generate_form_token(),
                 "created_by": created_by,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "sent_at": None,
                 "submitted_at": None,
                 "submission_data": None
@@ -180,8 +180,8 @@ class VendorFormService:
                     {
                         "$set": {
                             "status": "sent",
-                            "sent_at": datetime.utcnow(),
-                            "updated_at": datetime.utcnow()
+                            "sent_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc)
                         }
                     }
                 )
@@ -291,7 +291,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
             "vendor_name": form["vendor_name"],
             "wedding_id": form["wedding_id"],
             "submission_data": submission_data,
-            "submitted_at": datetime.utcnow(),
+            "submitted_at": datetime.now(timezone.utc),
             "status": "submitted"
         }
 
@@ -303,9 +303,9 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
             {
                 "$set": {
                     "status": "submitted",
-                    "submitted_at": datetime.utcnow(),
+                    "submitted_at": datetime.now(timezone.utc),
                     "submission_data": submission_data,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -333,7 +333,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                             <p><strong>Service Type:</strong> {form['vendor_type'].replace('_', ' ').title()}</p>
                             <p><strong>Wedding:</strong> {wedding['couple_names'] if wedding else 'Unknown'}</p>
                             <p><strong>Form:</strong> {form['form_name']}</p>
-                            <p><strong>Submitted:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
+                            <p><strong>Submitted:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
                         </div>
 
                         <p>Please log in to your dashboard to review the vendor's submission and take appropriate action.</p>
@@ -355,7 +355,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                     from_name="Wedding Platform"
                 )
 
-                # Send Ntfy push notification to planner
+                # Send push notification to planner
                 try:
                     from app.services.planner_notification_service import planner_notification_service
                     await planner_notification_service.notify_vendor_response(
@@ -365,9 +365,9 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
                         response_type=f"submitted {form['form_name']}",
                         vendor_id=str(result.inserted_id)
                     )
-                except Exception as ntfy_error:
-                    logging.warning(f"Failed to send Ntfy notification: {str(ntfy_error)}")
-                    # Continue even if Ntfy fails
+                except Exception as push_error:
+                    logging.warning(f"Failed to send push notification: {str(push_error)}")
+                    # Continue even if push notification fails
 
         except Exception as e:
             logging.error(f"Failed to send notification email: {str(e)}")

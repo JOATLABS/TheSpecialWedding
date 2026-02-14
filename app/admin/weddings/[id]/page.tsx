@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
+import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 
 // Wedding party group mappings for sync
 // Wedding party = bridesmaids, groomsmen, maid of honor, best man
@@ -1267,7 +1268,7 @@ export default function WeddingDetailsPage() {
  </div>
  {wedding.wedding_party_sync?.last_synced_at && (
  <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">
- Last synced: {new Date(wedding.wedding_party_sync.last_synced_at).toLocaleString()}
+ Last synced: {formatAdminTimestamp(wedding.wedding_party_sync.last_synced_at)}
  </p>
  )}
  </div>

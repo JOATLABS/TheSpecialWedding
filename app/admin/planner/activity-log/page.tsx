@@ -74,14 +74,28 @@ export default function PlannerActivityLogPage() {
   }, [fetchActivities, fetchUserProfile, router, token, userProfile]);
 
   const renderStatusDot = (type: string) => {
-    const color =
-      type === 'rsvp_received'
-        ? 'bg-green-500'
-        : type === 'guest_updated'
-        ? 'bg-blue-500'
-        : type === 'email_sent'
-        ? 'bg-yellow-500'
-        : 'bg-purple-500';
+    // Activity type color mapping
+    const colorMap: Record<string, string> = {
+      // RSVP events - green
+      'rsvp_received': 'bg-green-500',
+      'rsvp_updated': 'bg-green-400',
+      // Guest events - blue
+      'guest_added': 'bg-blue-500',
+      'guest_updated': 'bg-blue-400',
+      'guest_deleted': 'bg-blue-300',
+      'guest_imported': 'bg-blue-600',
+      // Communication events - yellow/orange
+      'email_sent': 'bg-yellow-500',
+      'sms_sent': 'bg-orange-500',
+      'reminder_sent': 'bg-amber-500',
+      // Support events - red
+      'support_ticket_created': 'bg-red-500',
+      'support_ticket_comment': 'bg-red-400',
+      // Wedding events - indigo
+      'wedding_created': 'bg-indigo-500',
+      'wedding_updated': 'bg-indigo-400',
+    };
+    const color = colorMap[type] || 'bg-purple-500';
     return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
   };
 

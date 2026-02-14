@@ -8,6 +8,7 @@ class EventDetailsModel(BaseModel):
     location: Optional[str] = Field(default=None, description="Address or location of the venue")
     time: Optional[str] = Field(default=None, description="Event time (e.g., '3:00 PM')")
     attire: Optional[str] = Field(default=None, description="Dress code/attire details")
+    timezone: Optional[str] = Field(default=None, description="IANA timezone for this event (e.g., 'America/Chicago')")
 
 
 class EventModel(BaseModel):
@@ -103,6 +104,7 @@ class WeddingModel(BaseModel):
         description="Cultural wedding style: nigerian, indian, jewish, mexican, chinese, korean, filipino, greek, italian, western, interfaith, or custom"
     )
     region: Optional[str] = Field(None, description="Geographic region for pricing context (e.g., 'Oklahoma City, OK', 'Lagos, Nigeria')")
+    timezone: Optional[str] = Field(default="America/Chicago", description="IANA timezone for wedding events (e.g., 'America/Chicago', 'Africa/Lagos')")
     # Billing fields
     last_billed_at: Optional[datetime] = Field(None, description="Timestamp of last metered usage report")
     billed_period: Optional[str] = Field(None, description="YYYY-MM period when last metered")

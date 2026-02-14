@@ -8,6 +8,8 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import PageHeader from '../../components/PageHeader';
+import { toast } from 'sonner';
+import { Upload, Images, ChevronDown, Heart, FolderOpen } from 'lucide-react';
 
 interface Wedding {
   id?: string;
@@ -23,7 +25,6 @@ export default function AdminGalleryUploadPage() {
   const router = useRouter();
 
   const [files, setFiles] = useState<File[]>([]);
-  const [status, setStatus] = useState<string>('');
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -54,7 +55,7 @@ export default function AdminGalleryUploadPage() {
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
-      setStatus('Failed to load weddings');
+      toast.error('Failed to load weddings');
     }
   }, [token]);
 
@@ -123,7 +124,7 @@ export default function AdminGalleryUploadPage() {
       );
       
       if (response.ok) {
-        setStatus((s) => `${s}Deleted ${imageKey}\n`);
+        toast.success('Image deleted successfully');
         // Refresh the image list
         if (selectedWeddingSlug) {
           fetchUploadedImages(selectedWeddingSlug);
@@ -135,7 +136,7 @@ export default function AdminGalleryUploadPage() {
       }
     } catch (err: any) {
       console.error('Delete error:', err);
-      setStatus(`Error: ${err.message}`);
+      toast.error(`Failed to delete: ${err.message}`);
     }
   };
 
@@ -152,18 +153,18 @@ export default function AdminGalleryUploadPage() {
 
   const handleUpload = async () => {
     if (!token || !files.length || !selectedWeddingSlug) {
-      setStatus('Error: Please select a wedding and files to upload');
+      toast.error('Please select a wedding and files to upload');
       return;
     }
     setUploading(true);
-    setStatus('');
     try {
+      let successCount = 0;
       for (const file of files) {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('wedding_slug', selectedWeddingSlug);
         fd.append('folder', selectedFolder);
-        
+
         const baseUrl = getApiBaseUrl();
         const res = await fetch(
           `${baseUrl}/admin/gallery/upload`,
@@ -177,16 +178,16 @@ export default function AdminGalleryUploadPage() {
           const errorData = await res.json();
           throw new Error(errorData.detail || 'Upload failed');
         }
-        const result = await res.json();
-        setStatus((s) => `${s}Uploaded ${file.name} -> ${result.key || 'uploaded'}\n`);
+        successCount++;
       }
+      toast.success(`Successfully uploaded ${successCount} image${successCount > 1 ? 's' : ''}`);
       setFiles([]);
       // Refresh the uploaded images list
       if (selectedWeddingSlug) {
         fetchUploadedImages(selectedWeddingSlug);
       }
     } catch (err: any) {
-      setStatus(`Error: ${err.message}`);
+      toast.error(`Upload failed: ${err.message}`);
     } finally {
       setUploading(false);
     }
@@ -201,159 +202,181 @@ export default function AdminGalleryUploadPage() {
       <div className="w-full max-w-6xl mx-auto">
 
         {/* Wedding Selection - Global */}
-        <Card className="mb-6">
-          <div className="p-6">
-            <label className="block text-sm font-medium text-wedding-navy dark:text-gray-300 mb-2">
+        <Card className="mb-8 shadow-lg border-0">
+          <div className="p-8">
+            <label className="flex items-center gap-2 text-sm font-semibold text-wedding-navy dark:text-gray-200 mb-3">
+              <Heart className="w-4 h-4 text-wedding-rose" />
               Select Wedding
             </label>
-            <select
-              value={selectedWedding}
-              onChange={(e) => handleWeddingChange(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
-              required
-            >
-              <option value="">Choose a wedding...</option>
-              {weddings.map((wedding) => (
-                <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                  {wedding.couple_names} - {wedding.date}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedWedding}
+                onChange={(e) => handleWeddingChange(e.target.value)}
+                className="w-full px-5 py-4 pr-12 border border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 appearance-none cursor-pointer focus:ring-2 focus:ring-wedding-sage/50 focus:border-wedding-sage hover:border-wedding-sage/50 transition-all duration-200 shadow-sm text-base font-medium"
+                required
+              >
+                <option value="">Choose a wedding...</option>
+                {weddings.map((wedding) => (
+                  <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
+                    {wedding.couple_names} - {wedding.date}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+            </div>
           </div>
         </Card>
 
         {selectedWedding && (
           <>
             {/* Tabs */}
-            <div className="flex gap-4 mb-6">
+            <div className="flex gap-3 mb-8 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-xl w-fit">
               <button
                 onClick={() => setActiveTab('upload')}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
                   activeTab === 'upload'
-                    ? 'bg-wedding-sage text-white'
-                    : 'bg-white dark:bg-slate-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-slate-600'
+                    ? 'bg-white dark:bg-slate-700 text-wedding-sage shadow-md'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-wedding-navy dark:hover:text-gray-200'
                 }`}
               >
+                <Upload className="w-4 h-4" />
                 Upload Images
               </button>
               <button
                 onClick={() => setActiveTab('manage')}
-                className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
                   activeTab === 'manage'
-                    ? 'bg-wedding-sage text-white'
-                    : 'bg-white dark:bg-slate-700 text-wedding-navy dark:text-gray-100 hover:bg-wedding-ivory dark:hover:bg-slate-600'
+                    ? 'bg-white dark:bg-slate-700 text-wedding-sage shadow-md'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-wedding-navy dark:hover:text-gray-200'
                 }`}
               >
-                Manage Gallery ({uploadedImages.length})
+                <Images className="w-4 h-4" />
+                Manage Gallery
+                {uploadedImages.length > 0 && (
+                  <span className="ml-1 px-2 py-0.5 text-xs bg-wedding-sage/10 text-wedding-sage rounded-full">
+                    {uploadedImages.length}
+                  </span>
+                )}
               </button>
             </div>
 
             {/* Upload Tab */}
             {activeTab === 'upload' && (
-              <Card className="backdrop-blur-sm bg-white/60 dark:bg-slate-800/60">
-                <div className="space-y-4 p-6">
+              <Card className="shadow-lg border-0 overflow-hidden">
+                <div className="space-y-6 p-8">
                   {/* Folder Selection */}
                   <div>
-                    <label className="block text-sm font-medium text-wedding-navy dark:text-gray-300 mb-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-wedding-navy dark:text-gray-200 mb-3">
+                      <FolderOpen className="w-4 h-4 text-wedding-sage" />
                       Upload to Folder
                     </label>
-                    <select
-                      value={selectedFolder}
-                      onChange={(e) => setSelectedFolder(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
-                    >
-                      <option value="gallery">Public Gallery</option>
-                      <option value="our-story">Our Story</option>
-                      <option value="wedding-party">Wedding Party</option>
-                    </select>
-                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                      • <strong>Public Gallery</strong>: Photos visible to all guests
-                      <br />
-                      • <strong>Our Story</strong>: Couple photos for the story section
-                      <br />
-                      • <strong>Wedding Party</strong>: Individual member photos
+                    <div className="relative mb-4">
+                      <select
+                        value={selectedFolder}
+                        onChange={(e) => setSelectedFolder(e.target.value)}
+                        className="w-full px-5 py-4 pr-12 border border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 appearance-none cursor-pointer focus:ring-2 focus:ring-wedding-sage/50 focus:border-wedding-sage hover:border-wedding-sage/50 transition-all duration-200 shadow-sm text-base font-medium"
+                      >
+                        <option value="gallery">Public Gallery</option>
+                        <option value="our-story">Our Story</option>
+                        <option value="wedding-party">Wedding Party</option>
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
+                        <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Public Gallery</p>
+                        <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-0.5">Photos visible to all guests</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-pink-50 dark:bg-pink-900/20 border border-pink-100 dark:border-pink-800">
+                        <p className="text-sm font-medium text-pink-700 dark:text-pink-300">Our Story</p>
+                        <p className="text-xs text-pink-600/70 dark:text-pink-400/70 mt-0.5">Couple photos for story section</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800">
+                        <p className="text-sm font-medium text-purple-700 dark:text-purple-300">Wedding Party</p>
+                        <p className="text-xs text-purple-600/70 dark:text-purple-400/70 mt-0.5">Individual member photos</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* File Input */}
+                  <div className="border-2 border-dashed border-slate-200 dark:border-slate-600 rounded-xl p-6 text-center hover:border-wedding-sage/50 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleFileChange}
+                      className="w-full text-sm file:mr-4 file:py-2.5 file:px-5
+                                 file:rounded-full file:border-0
+                                 file:text-sm file:font-semibold
+                                 file:bg-wedding-sage file:text-white
+                                 hover:file:bg-wedding-sage/90 file:cursor-pointer
+                                 file:transition-colors file:shadow-md"
+                    />
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Drag and drop or click to select multiple images
                     </p>
                   </div>
 
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFileChange}
-                    className="w-full text-sm file:py-2 file:px-4
-                               file:rounded-full file:border-0
-                               file:text-sm file:font-medium
-                               file:bg-wedding-sage file:text-wedding-navy
-                               hover:file:bg-wedding-rose"
-                  />
-
+                  {/* Preview Grid */}
                   {previews.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      {previews.map((url, i) => (
-                        <div
-                          key={i}
-                          className="relative h-40 overflow-hidden rounded-lg shadow-lg"
-                        >
-                          <Image
-                            src={url}
-                            alt={`Preview ${i + 1}`}
-                            fill
-                            className="object-cover"
-                            sizes="(min-width: 640px) 33vw, 50vw"
-                          />
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const key = decodeURIComponent(
-                                url.split('/').pop() || ''
-                              );
-                              try {
-                                const base = getApiBaseUrl();
-                                const res = await fetch(
-                                  `${base}/gallery?key=${encodeURIComponent(
-                                    'gallery/' + key
-                                  )}`,
-                                  {
-                                    method: 'DELETE',
-                                    headers: { Authorization: `Bearer ${token}` },
-                                  }
-                                );
-                                if (!res.ok) throw new Error('Delete failed');
-                                setStatus((s) => `${s}Deleted ${key}\n`);
-                                setFiles((f) => f.filter((_, idx) => idx !== i));
-                              } catch (err: any) {
-                                setStatus(`Error: ${err.message}`);
-                              }
-                            }}
-                            className="absolute top-2 right-2 bg-red-600
-                                       text-white text-xs px-2 py-1 rounded
-                                       hover:bg-red-700"
+                    <div>
+                      <p className="text-sm font-medium text-wedding-navy dark:text-gray-200 mb-3">
+                        Ready to upload ({previews.length} image{previews.length > 1 ? 's' : ''})
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {previews.map((url, i) => (
+                          <div
+                            key={i}
+                            className="relative aspect-square overflow-hidden rounded-xl shadow-lg group"
                           >
-                            Delete
-                          </button>
-                        </div>
-                      ))}
+                            <Image
+                              src={url}
+                              alt={`Preview ${i + 1}`}
+                              fill
+                              className="object-cover transition-transform group-hover:scale-105"
+                              sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFiles((f) => f.filter((_, idx) => idx !== i));
+                                toast.success('Removed from upload queue');
+                              }}
+                              className="absolute top-2 right-2 bg-red-600/90 backdrop-blur-sm
+                                         text-white text-xs px-3 py-1.5 rounded-lg
+                                         hover:bg-red-700 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
                   <Button
                     onClick={handleUpload}
                     disabled={!files.length || uploading || !selectedWedding}
-                    className="w-full"
+                    className="w-full py-4 text-base font-semibold"
                   >
-                    {uploading ? 'Uploading…' : 'Upload Images'}
+                    {uploading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Uploading...
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        <Upload className="w-5 h-5" />
+                        Upload Images
+                      </span>
+                    )}
                   </Button>
 
                   {!selectedWedding && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
-                      Please select a wedding before uploading images
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-lg p-3">
+                      Please select a wedding above before uploading images
                     </p>
-                  )}
-
-                  {status && (
-                    <pre className="mt-2 text-sm whitespace-pre-wrap text-wedding-navy dark:text-gray-300">
-                      {status}
-                    </pre>
                   )}
                 </div>
               </Card>
@@ -361,9 +384,9 @@ export default function AdminGalleryUploadPage() {
 
             {/* Gallery Management Tab */}
             {activeTab === 'manage' && (
-              <Card className="backdrop-blur-sm bg-white/60 dark:bg-slate-800/60">
-                <div className="p-6">
-                  <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-4">
+              <Card className="shadow-lg border-0 overflow-hidden">
+                <div className="p-8">
+                  <h2 className="text-xl font-semibold text-wedding-navy dark:text-gray-100 mb-6">
                     Uploaded Images for {weddings.find(w => (w.id || w._id) === selectedWedding)?.couple_names}
                   </h2>
 
@@ -434,11 +457,8 @@ export default function AdminGalleryUploadPage() {
 
                           {/* Delete Button */}
                           <button
-                            onClick={() => {
-                              console.log('Delete button clicked for:', image.key || image.filename);
-                              handleDeleteImage(image.key || image.filename);
-                            }}
-                            className="absolute top-2 right-2 bg-red-600 text-white text-xs px-2 py-1 rounded hover:bg-red-700 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                            onClick={() => handleDeleteImage(image.key || image.filename)}
+                            className="absolute top-2 right-2 bg-red-600/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors opacity-0 group-hover:opacity-100 shadow-lg z-10"
                           >
                             Delete
                           </button>
@@ -446,11 +466,10 @@ export default function AdminGalleryUploadPage() {
                           {/* Copy URL Button */}
                           <button
                             onClick={() => {
-                              console.log('Copy URL button clicked for:', image.key);
                               navigator.clipboard.writeText(image.url || image.file_url || '');
-                              setStatus((s) => `${s}Copied URL for ${image.key}\n`);
+                              toast.success('URL copied to clipboard');
                             }}
-                            className="absolute top-2 left-2 bg-wedding-sage text-white text-xs px-2 py-1 rounded hover:bg-wedding-rose opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                            className="absolute top-2 left-2 bg-wedding-sage/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg hover:bg-wedding-rose transition-colors opacity-0 group-hover:opacity-100 shadow-lg z-10"
                           >
                             Copy URL
                           </button>
@@ -458,8 +477,6 @@ export default function AdminGalleryUploadPage() {
                           {/* Set as Featured Button */}
                           <button
                             onClick={async () => {
-                              console.log('Set as Background clicked for:', image.key || image.filename);
-                              console.log('Selected wedding ID:', selectedWedding);
                               try {
                                 const baseUrl = getApiBaseUrl();
                                 const response = await fetch(`${baseUrl}/admin/weddings/${selectedWedding}`, {
@@ -473,21 +490,17 @@ export default function AdminGalleryUploadPage() {
                                   }),
                                 });
 
-                                console.log('Response status:', response.status);
                                 if (!response.ok) {
-                                  const errorText = await response.text();
-                                  console.error('Failed to set featured image:', errorText);
                                   throw new Error('Failed to set featured image');
                                 }
 
-                                setStatus((s) => `${s}Set ${image.key} as featured background\n`);
+                                toast.success('Featured background updated');
                                 setCurrentFeaturedImage(image.key || image.filename);
                               } catch (err: any) {
-                                console.error('Error setting featured image:', err);
-                                setStatus(`Error: ${err.message}`);
+                                toast.error(`Failed to update: ${err.message}`);
                               }
                             }}
-                            className="absolute bottom-2 left-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded hover:bg-purple-700 opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                            className="absolute bottom-2 left-2 right-2 bg-purple-600/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors opacity-0 group-hover:opacity-100 shadow-lg z-20"
                           >
                             Set as Background
                           </button>

@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends, Request
+from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from app.services.guest_verification_service import GuestVerificationService
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser, check_wedding_access
@@ -25,6 +25,13 @@ class PrivacySettingsUpdate(BaseModel):
     allow_guest_sharing: bool = Field(default=False)
     require_phone_verification: bool = Field(default=True)
     require_name_verification: bool = Field(default=True)
+
+
+class RequestRSVPLinkRequest(BaseModel):
+    """Request model for guest RSVP link request."""
+    slug: str = Field(..., description="Wedding slug")
+    contact: str = Field(..., description="Phone number or email address")
+    contact_type: Literal["phone", "email"] = Field(..., description="Type of contact: phone or email")
 
 
 @router.post("/weddings/verify-guest-access/{slug}", tags=["Guest"])
@@ -104,12 +111,54 @@ async def get_wedding_with_token_access(slug: str, token: str):
 
         return {
             "wedding": result["wedding"],
-            "guest": result.get("guest")
+            "guest": result.get("guest"),
+            "rsvp": result.get("rsvp")  # Include existing RSVP data if guest already submitted
         }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Token verification error: {str(e)}")
+
+
+@router.post("/guests/request-rsvp-link", tags=["Guest"])
+async def request_rsvp_link(
+    request_data: RequestRSVPLinkRequest,
+    http_request: Request
+):
+    """
+    Request personal RSVP link to be sent via SMS or email.
+
+    This endpoint allows guests who have lost their invitation link to
+    request it again by providing their phone number or email address.
+
+    Security features:
+    - Rate limited (3 requests per contact per 10 minutes)
+    - Always returns success to prevent guest enumeration
+    - Only sends to the provided contact method (no cross-channel leakage)
+    - Logged for security auditing
+
+    Returns:
+        Generic success message regardless of whether guest was found
+    """
+    try:
+        # Get client IP for rate limiting
+        client_ip = http_request.client.host if http_request.client else "unknown"
+
+        result = await verification_service.request_and_send_rsvp_link(
+            slug=request_data.slug,
+            contact=request_data.contact,
+            contact_type=request_data.contact_type,
+            client_ip=client_ip
+        )
+
+        return result
+
+    except Exception as e:
+        # Even on errors, return generic success to prevent enumeration
+        return {
+            "success": True,
+            "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+        }
 
 
 @router.put("/weddings/{wedding_id}/privacy-settings", tags=["Admin"])

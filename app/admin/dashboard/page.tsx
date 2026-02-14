@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader';
 import { GlassCard } from '@/admin/components/ui/glass/GlassCard';
 import { GlassTable } from '@/admin/components/ui/glass/GlassTable';
 // import { Database, Server, Activity, Clock } from 'lucide-react';
+import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 // import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface MetricsSnapshot {
@@ -50,10 +51,10 @@ const getValueFromPaths = (
   return undefined;
 };
 
-const formatTimestamp = (value?: string | null) => {
+const formatTimestamp = (value?: string | null, timezone: string = DEFAULT_TIMEZONE) => {
   if (!value) return 'Unknown';
-  const parsed = new Date(value);
-  return isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  const formatted = formatAdminTimestamp(value, timezone);
+  return formatted || value;
 };
 
 export default function AdminMetricsDashboard() {
@@ -230,7 +231,7 @@ export default function AdminMetricsDashboard() {
   // Transform history for chart
   const latencyHistoryData = useMemo(() => {
     return history.map(snap => ({
-      time: new Date(snap.snapshot_time || snap.timestamp || '').toLocaleTimeString(),
+      time: formatTimestamp(snap.snapshot_time || snap.timestamp).split(' ').slice(-2).join(' '),
       latency: getValueFromPaths(snap.metrics as Record<string, unknown>, [
         ['health', 'database', 'latency_ms'],
         ['health', 'database_latency_ms'],

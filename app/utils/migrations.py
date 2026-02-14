@@ -11,7 +11,7 @@ Usage:
     await migration_manager.run_migrations()
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, List, Dict, Any, Optional
 import logging
 from app.core.database import mongo
@@ -74,7 +74,7 @@ class MigrationManager:
                         "version": migration.version,
                         "name": migration.name,
                         "description": migration.description,
-                        "applied_at": datetime.utcnow(),
+                        "applied_at": datetime.now(timezone.utc),
                         "status": "success"
                     })
 
@@ -88,7 +88,7 @@ class MigrationManager:
                         "version": migration.version,
                         "name": migration.name,
                         "description": migration.description,
-                        "applied_at": datetime.utcnow(),
+                        "applied_at": datetime.now(timezone.utc),
                         "status": "failed",
                         "error": str(e)
                     })
@@ -181,8 +181,7 @@ class MigrationRegistry:
                 )
         """
         def decorator(up_func: Callable):
-            # Look for corresponding down function
-            down_func_name = f"rollback_{up_func.__name__}"
+            # Rollback functions not yet implemented
             down_func = None
 
             migration = Migration(
@@ -226,7 +225,7 @@ class MigrationRegistry:
             down_func = getattr(migration_class, 'down', None)
 
             if not up_func:
-                raise ValueError(f"Migration class must have 'up' method")
+                raise ValueError("Migration class must have 'up' method")
 
             migration = Migration(
                 version=version,
@@ -390,3 +389,76 @@ async def migration_005_users_indexes(db):
     logger.info("Created compound index for trial expiration queries")
 
     logger.info("All users collection indexes created successfully")
+
+
+@migration_registry.register(
+    "006",
+    "Add activity and audit log indexes with TTL",
+    "Creates TTL indexes for admin_activity_log, activity_logs, audit_logs, and security_audit_logs for automatic cleanup"
+)
+async def migration_006_activity_log_indexes(db):
+    """
+    Add TTL indexes for all activity/audit log collections.
+
+    Note: Non-TTL indexes are created by create_all_indexes() in database_indexes.py.
+    This migration only creates TTL indexes for automatic document expiration.
+    """
+    from pymongo import ASCENDING
+
+    async def safe_create_ttl_index(collection_name: str, field: str, expire_seconds: int, index_name: str):
+        """Helper to safely create TTL index, handling 'already exists' errors gracefully."""
+        try:
+            await db[collection_name].create_index(
+                [(field, ASCENDING)],
+                expireAfterSeconds=expire_seconds,
+                name=index_name
+            )
+            logger.info(f"Created TTL index {index_name} on {collection_name}")
+        except Exception as e:
+            error_str = str(e).lower()
+            if "already exists" in error_str or "indexoptionsconflict" in error_str:
+                logger.info(f"TTL index {index_name} already exists on {collection_name}, skipping")
+            else:
+                raise
+
+    # admin_activity_log - 90 day TTL
+    logger.info("Creating TTL index for admin_activity_log collection...")
+    await safe_create_ttl_index(
+        "admin_activity_log", "created_at",
+        90 * 24 * 60 * 60,  # 90 days
+        "admin_activity_log_ttl"
+    )
+
+    # activity_logs - 90 day TTL
+    logger.info("Creating TTL index for activity_logs collection...")
+    await safe_create_ttl_index(
+        "activity_logs", "timestamp",
+        90 * 24 * 60 * 60,  # 90 days
+        "activity_logs_ttl"
+    )
+
+    # audit_logs - 30 day TTL (high volume)
+    logger.info("Creating TTL index for audit_logs collection...")
+    await safe_create_ttl_index(
+        "audit_logs", "timestamp",
+        30 * 24 * 60 * 60,  # 30 days
+        "audit_logs_ttl"
+    )
+
+    # security_audit_logs - 180 day TTL (security compliance)
+    logger.info("Creating TTL index for security_audit_logs collection...")
+    await safe_create_ttl_index(
+        "security_audit_logs", "timestamp",
+        180 * 24 * 60 * 60,  # 180 days
+        "security_audit_logs_ttl"
+    )
+
+    # errors - 30 day TTL
+    logger.info("Creating TTL index for errors collection...")
+    await safe_create_ttl_index(
+        "errors", "timestamp",
+        30 * 24 * 60 * 60,  # 30 days
+        "errors_ttl"
+    )
+
+    logger.info("All TTL indexes created successfully")

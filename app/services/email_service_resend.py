@@ -3,7 +3,7 @@
 import asyncio
 import os
 import resend
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any, cast
 import logging
 from app.core.database import mongo
@@ -83,7 +83,7 @@ class ResendEmailService:
                 "from_name": from_name,
                 "wedding_id": wedding_id,
                 "email_type": email_type,
-                "sent_at": datetime.utcnow(),
+                "sent_at": datetime.now(timezone.utc),
                 "status": "success",
                 "resend_id": email_response.get("id"),
                 "provider": "resend"
@@ -104,7 +104,7 @@ class ResendEmailService:
                 "from_name": from_name,
                 "wedding_id": wedding_id,
                 "email_type": email_type,
-                "sent_at": datetime.utcnow(),
+                "sent_at": datetime.now(timezone.utc),
                 "status": "failed",
                 "error": str(e),
                 "provider": "resend"
@@ -191,7 +191,7 @@ class ResendEmailService:
                 if not guest.get("invite_sent"):
                     await self.guest_collection.update_one(
                         {"_id": guest["_id"]},
-                        {"$set": {"invite_sent": True, "invite_sent_date": datetime.utcnow()}}
+                        {"$set": {"invite_sent": True, "invite_sent_date": datetime.now(timezone.utc)}}
                     )
                     logger.info(f"Set invite_sent=True for guest {guest.get('name', 'Unknown')}")
             else:

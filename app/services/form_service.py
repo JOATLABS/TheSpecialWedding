@@ -15,7 +15,7 @@ from app.utils.security_utils import (
     FormSecurityValidator, InputSanitizer, rate_limiter
 )
 from app.utils.csv_export import FormResponseCSVExporter, CSVSecurityError
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from copy import deepcopy
 import logging
@@ -92,8 +92,8 @@ class FormService:
                 "wedding_id": sanitized_data.get('wedding_id'),
                 "template_type": sanitized_data.get('template_type'),
                 "is_active": True,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "submission_count": 0,
                 "planner_state": planner_state,
             }
@@ -279,7 +279,7 @@ class FormService:
                 raise HTTPException(status_code=404, detail="Form not found")
 
             # Build update document with sanitization
-            update_doc: Dict[str, Any] = {"updated_at": datetime.utcnow()}
+            update_doc: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
 
             if form_data.name is not None:
                 sanitized_name = InputSanitizer.sanitize_text(form_data.name, 100)
@@ -354,7 +354,7 @@ class FormService:
                 logger.info(f"Form details: _id={existing_form.get('_id')}, created_by={existing_form.get('created_by')}, is_active={existing_form.get('is_active')}")
             result = await self.forms_collection.update_one(
                 query,
-                {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
+                {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}}
             )
             logger.info(f"Update result: matched_count={result.matched_count}, modified_count={result.modified_count}")
 
@@ -397,7 +397,7 @@ class FormService:
                         "form_id": form_id,
                         "recipient_email": recipient_email,
                         "wedding_id": send_data.wedding_id,
-                        "sent_at": datetime.utcnow(),
+                        "sent_at": datetime.now(timezone.utc),
                         "status": "sending"
                     }
 
@@ -543,10 +543,10 @@ class FormService:
                 "wedding_id": form.get("wedding_id"),
                 "ip_address": safe_ip,
                 "user_agent": safe_user_agent,
-                "submitted_at": datetime.utcnow(),
+                "submitted_at": datetime.now(timezone.utc),
                 "metadata": {
                     "security_validated": True,
-                    "sanitized_at": datetime.utcnow()
+                    "sanitized_at": datetime.now(timezone.utc)
                 }
             }
 
@@ -559,7 +559,7 @@ class FormService:
                     {"_id": form_id},
                     {
                         "$inc": {"submission_count": 1},
-                        "$set": {"updated_at": datetime.utcnow()},
+                        "$set": {"updated_at": datetime.now(timezone.utc)},
                     },
                 )
 
@@ -567,7 +567,7 @@ class FormService:
                 if submitted_by_email:
                     await self.distributions_collection.update_one(
                         {"form_id": form_id, "recipient_email": submitted_by_email},
-                        {"$set": {"submitted_at": datetime.utcnow(), "status": "submitted"}}
+                        {"$set": {"submitted_at": datetime.now(timezone.utc), "status": "submitted"}}
                     )
 
                 # Log successful submission for security monitoring
@@ -678,7 +678,7 @@ class FormService:
         if not form.get("is_active", True) and not is_root_admin:
             raise HTTPException(status_code=404, detail="Form not found")
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         update_fields: Dict[str, Any] = {}
 
         total_submissions = int(form.get("submission_count", 0) or 0)

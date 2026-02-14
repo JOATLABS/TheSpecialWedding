@@ -7,20 +7,394 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Onboarding Modal Not Staying Closed** (`app/admin/planner/page.tsx`):
+  - **Problem**: The onboarding modal kept reappearing after planners dismissed it, making it impossible to close
+  - **Root cause**: Race condition between the API call to mark onboarding complete and the profile refetch. If the profile returned before MongoDB reflected the update, the useEffect would reopen the modal with stale `onboarding_completed: false` data
+  - **Solution**: Added `hasUserDismissedOnboarding` local state flag that tracks when the user has dismissed the modal in the current session, preventing the useEffect from reopening it even if profile data is momentarily stale
+  - **Impact**: Planners can now dismiss the onboarding tour and it stays closed
+
+- **Critical: Knowledge Base Model MRO Conflict** (`app/models/knowledge_base.py`):
+  - **Problem**: App failed to import due to `TypeError: Cannot create a consistent method resolution order (MRO) for bases MongoModel, UserRelatedModel`
+  - **Root cause**: `KnowledgeBaseArticleModel` inherited from both `MongoModel` and `UserRelatedModel`, but `UserRelatedModel` already inherits from `MongoModel` (diamond inheritance)
+  - **Solution**: Changed inheritance to only `UserRelatedModel` since it already includes `MongoModel`
+  - **Impact**: Knowledge base feature now loads correctly
+
+- **Critical: Migration 006 Index Conflict Causing 502 Bad Gateway** (`app/utils/migrations.py`):
+  - **Problem**: Production backend failed to start due to MongoDB `IndexOptionsConflict` error in migration 006
+  - **Root cause**: Migration 006 created indexes without explicit names, while `database_indexes.py` created the same indexes with names (e.g., `idx_admin_activity_created`). MongoDB rejects duplicate indexes with different names.
+  - **Solution**: Refactored migration 006 to only create TTL indexes (its unique purpose). Non-TTL indexes are now solely managed by `create_all_indexes()` in `database_indexes.py`.
+  - **Changes**:
+    - Removed duplicate non-TTL index creation for `admin_activity_log`, `activity_logs`, `audit_logs`, and `security_audit_logs`
+    - Added `safe_create_ttl_index()` helper function with graceful error handling for "already exists" scenarios
+    - Removed unused `down_func_name` variable (fixed linter warning)
+  - **Impact**: Production backend starts successfully; planners can log in again
+
 ### Changed
 
-- **RSVP Form Modern Redesign** (`app/components/RSVPForm.tsx`, `app/otp/verify/page.tsx`):
-  - **Page layout wrapper**: Added gradient background (`wedding-ivory` to `wedding-blush/30`) with centered container
-  - **Header card**: Welcoming header with guest name greeting, couple names, decorative gradient border
-  - **FormCard component**: Reusable card wrapper with themed headers for visual hierarchy
-  - **Events section**: Clickable rows with hover states for each event checkbox (Traditional, White Wedding, Reception)
-  - **Contact section**: Clean inputs with helpful placeholder text and validation feedback
-  - **Notifications section**: Redesigned SMS and Email opt-in boxes with compliance text
-  - **Plus-ones section**: Info banner showing allowed count, dashed border guest cards, modern "Add Guest" button
-  - **Submit button**: Gradient background, shadow effects, hover/active animations, loading spinner
-  - **Success state**: Modern card with checkmark icon, personalized thank you message, decorative heart divider
+- **Platform Branding Update** (`app/layout.tsx`, `app/admin/components/Sidebar.tsx`, `public/favicon.svg`):
+  - **Browser Favicon**: Added SVG favicon with interlinked rings icon in pink/rose gradient colors
+  - **Root Layout Metadata**: Added Next.js metadata export with favicon (`/favicon.svg`) and apple touch icon (`/logo_all.png`)
+  - **Admin Sidebar Logo**: Replaced Heart icon with "The Special Wedding" logo image
+    - Expanded sidebar: Shows full logo with text (160x40)
+    - Collapsed sidebar: Shows cropped logo icon (40x40)
+  - **Files**:
+    - Created `public/favicon.svg` - SVG rings icon for browser tab
+    - Modified `app/layout.tsx` - Added metadata with icons configuration
+    - Modified `app/admin/components/Sidebar.tsx` - Replaced Heart icon with NextImage component
+  - **Impact**: Consistent branding across browser tabs and admin/planner dashboards
+
+### Added
+
+- **Seating Chart PDF Export Feature** (`app/services/seating_export_service.py`, `app/api/tables.py`, `app/admin/seating/page.tsx`):
+  - **Purpose**: Allow planners to export seating charts as printable PDFs for large venue display posters
+  - **New service** (`app/services/seating_export_service.py`):
+    - `SeatingExportService` class with `generate_seating_chart_pdf()` method
+    - Two layout styles: `visual` (floor plan with positioned tables) and `list` (table-by-table guest list)
+    - Two paper sizes: `poster` (24×18 inches for venue display) and `tabloid` (11×17 inches for print shops)
+    - Elegant styling with gold accents (#d4af37), wedding name header, and guest counts
+    - HTML escaping via `_escape_html()` to prevent XSS in guest/table names
+    - Supports round and rectangle table shapes with proper CSS styling
+  - **New API endpoint** (`app/api/tables.py`):
+    - `GET /admin/tables/{wedding_id}/export/pdf` - Export seating chart as PDF
+    - Query parameters: `layout` (visual/list), `size` (poster/tabloid)
+    - Returns PDF with `Content-Disposition: attachment` for download
+    - Handles both string and ObjectId wedding formats for compatibility
+  - **Frontend UI** (`app/admin/seating/page.tsx`):
+    - New "Export PDF ▾" dropdown button in PageHeader actions
+    - Poster and Tabloid size options with descriptions
+    - Loading state during PDF generation
+    - Dark mode support for dropdown menu
+  - **Dependencies**:
+    - Added `weasyprint>=62.0` to `requirements.txt`
+    - Added system libraries to `Dockerfile.coolify`: libcairo2, libpango, libgdk-pixbuf2.0, libffi
+  - **Impact**: Planners can print professional seating charts for venue escort tables
+
+- **Comprehensive Activity Logging System for Planner Dashboard** (`app/services/activity_log_service.py`, `app/services/rsvp_service.py`, `app/api/guest.py`, `app/api/reminder_twilio.py`):
+  - **Problem**: Planner activity dashboard (`/admin/planner/activity-log`) only showed support ticket logs - no RSVP, guest, or SMS activity
+  - **New service** (`app/services/activity_log_service.py`):
+    - Standardized `ActivityLogService` for logging to `activity_logs` collection
+    - Activity type constants: `RSVP_RECEIVED`, `RSVP_UPDATED`, `GUEST_ADDED`, `GUEST_UPDATED`, `GUEST_DELETED`, `GUEST_IMPORTED`, `SMS_SENT`, `EMAIL_SENT`, `REMINDER_SENT`
+    - Convenience methods: `log_rsvp_received()`, `log_guest_added()`, `log_guest_updated()`, `log_guest_deleted()`, `log_guests_imported()`, `log_sms_sent()`, `log_reminder_sent()`, `log_email_sent()`
+  - **RSVP logging** (`app/services/rsvp_service.py`):
+    - Added `log_rsvp_received()` call in `_notify_planner_rsvp()` method
+    - Logs guest name, response status, plus-one count, and couple names
+  - **Guest logging** (`app/api/guest.py`):
+    - Added activity logging to `create_guest`, `update_guest`, and `delete_guest` endpoints
+    - Logs guest name, changes made, and who performed the action
+  - **SMS reminder logging** (`app/api/reminder_twilio.py`):
+    - Added activity logging to `send_individual_reminders` endpoint
+    - Groups SMS sends by wedding for cleaner activity feed
+    - Logs recipient count, reminder type, and channel
+  - **Impact**: Planner dashboard now shows comprehensive activity feed with RSVP submissions, guest management, and SMS sends
+
+- **Activity/Audit Log Cleanup & Export Endpoints** (`app/api/admin_activity.py`, `app/api/admin_platform_metrics.py`):
+  - **Problem**: No mechanism to prune old logs or export for audit compliance
+  - **Admin activity log endpoints** (`app/api/admin_activity.py`):
+    - `DELETE /admin/activity-log/cleanup` - Remove activities older than N days (default 90, range 7-365)
+    - `GET /admin/activity-log/export` - Export activities as JSON or CSV with filters (action_type, entity_type, date range)
+  - **Platform metrics endpoints** (`app/api/admin_platform_metrics.py`):
+    - `DELETE /admin/platform/audit-logs/cleanup` - Cleanup audit logs (default 30 days)
+    - `DELETE /admin/platform/security-logs/cleanup` - Cleanup security audit logs (default 180 days)
+    - `GET /admin/platform/errors/export` - Export error logs as JSON or CSV
+    - `POST /admin/platform/errors/{error_id}/acknowledge-and-delete` - Acknowledge single error with export
+    - `POST /admin/platform/errors/acknowledge-and-delete-bulk` - Bulk acknowledge errors with export
+  - **Export format**: JSON returns array of records; CSV returns downloadable format with headers
+  - **Impact**: ROOT_ADMIN can now manage log retention and export for compliance auditing
+
+- **TTL Indexes for Automatic Log Cleanup** (`app/core/database_indexes.py`, `app/utils/migrations.py`):
+  - **Problem**: Activity and audit log collections grow indefinitely without cleanup
+  - **New indexes** (`app/core/database_indexes.py`):
+    - `create_admin_activity_log_indexes()` - Query indexes + 90-day TTL on `created_at`
+    - `create_activity_logs_indexes()` - Query indexes + 90-day TTL on `timestamp`
+    - `create_audit_logs_indexes()` - Query indexes + 30-day TTL on `timestamp`
+    - `create_security_audit_logs_indexes()` - Query indexes + 180-day TTL on `timestamp`
+    - `create_errors_indexes()` - Query indexes + 30-day TTL on `acknowledged_at`
+  - **Migration 006** (`app/utils/migrations.py`):
+    - Creates all TTL indexes on first deploy
+    - Handles `IndexKeySpecsConflict` for existing indexes
+  - **Retention policy**:
+
+    | Collection | TTL | Reason |
+    | ---------- | --- | ------ |
+    | `admin_activity_log` | 90 days | Admin action history |
+    | `activity_logs` | 90 days | Planner activity |
+    | `audit_logs` | 30 days | High-volume HTTP logging |
+    | `security_audit_logs` | 180 days | Security compliance |
+    | `errors` | 30 days | After acknowledgment |
+
+  - **Impact**: Database automatically prunes old logs, preventing storage bloat
+
+- **Support Ticket Response Notifications for Planners** (`app/services/support_service.py`, `app/services/planner_notification_service.py`, `app/models/planner_notification.py`, `app/admin/notifications/page.tsx`):
+  - **Problem**: When ROOT_ADMIN responded to a planner's support ticket, the planner received no notification
+  - **New notification type**: Added `support_ticket_response` to `PlannerNotificationTypes` and `NotificationType` Literal
+  - **New helper method**: `notify_support_ticket_response()` in `PlannerNotificationService` creates in-app notification with ticket details
+  - **Modified `add_comment()` method**: Now triggers notification when ROOT_ADMIN responds (excludes internal comments and self-responses)
+  - **Email notification**: New `_send_ticket_response_email()` method sends formatted HTML email to planner with ticket details and response content
+  - **Activity logging**: Comments are now logged to `activity_logs` collection for audit trail
+  - **Frontend**: Added `support_ticket_response` to TypeScript interface with teal color indicator and legend entry
+  - **Flow**: ROOT_ADMIN adds comment → In-app notification + Email + Web Push (automatic via existing service) → Planner sees response in bell icon and receives email
+  - **Guards**: Only non-internal comments trigger notifications; planner's own follow-up comments don't trigger self-notification
+
+- **Request RSVP Link Feature** (`app/components/RequestRSVPLinkModal.tsx`, `app/components/landing-page/ThemedHeroSection.tsx`, `app/components/landing-page/LandingLayout.tsx`, `app/api/guest_verification.py`, `app/services/guest_verification_service.py`):
+  - **Purpose**: Allow guests who lost their invitation link to request it via phone or email
+  - **User flow**: Guest visits `/{slug}` landing page → clicks "Celebrate with us" button → enters phone/email → receives RSVP link via SMS or email
+  - **New modal component** (`app/components/RequestRSVPLinkModal.tsx`):
+    - Luxury/modern glassmorphism design with wedding theme colors
+    - Phone/email toggle with auto-detection based on input
+    - Loading spinner, success state, error handling
+    - Dark mode support with gradient decorative border
+  - **ThemedHeroSection update** (`app/components/landing-page/ThemedHeroSection.tsx`):
+    - Added `onCelebrateClick?: () => void` prop to interface
+    - Changed decorative div to interactive button with click handler
+  - **LandingLayout integration** (`app/components/landing-page/LandingLayout.tsx`):
+    - Added `showRSVPLinkModal` state management
+    - Wired modal to ThemedHeroSection's `onCelebrateClick` callback
+  - **New API endpoint** (`app/api/guest_verification.py`):
+    - `POST /guests/request-rsvp-link` - Request RSVP link via phone or email
+    - Pydantic model: `RequestRSVPLinkRequest` with `slug`, `contact`, `contact_type` fields
+    - Always returns generic success message to prevent guest enumeration
+  - **New service method** (`app/services/guest_verification_service.py`):
+    - `request_and_send_rsvp_link()` - Core logic for guest lookup and link delivery
+    - **Phone lookup**: Tries multiple stored formats (original, digits-only, E.164 with +1)
+    - **Email lookup**: Case-insensitive MongoDB regex query
+    - **SMS delivery**: Uses `TwilioReminderService._send_sms()`
+    - **Email delivery**: Uses `ResendEmailService.send_email()` with HTML template
+    - `_generate_rsvp_link_email_html()` - Professional email template with RSVP button
+  - **Security features**:
+    - Rate limiting: 3 requests per contact per 10 minutes (hashed contact)
+    - Generic success messages prevent guest enumeration attacks
+    - No cross-channel leakage (only sends to provided contact type)
+    - Security event logging for audit trail
+  - **Impact**: Guests can now recover their RSVP link without contacting the couple directly
+
+### Changed
+
+- **Defensive Field Access in Admin Activity Service** (`app/services/admin_activity_service.py`):
+  - **Problem**: Direct dictionary access (`doc["field"]`) on MongoDB documents caused `KeyError` when documents had missing fields, resulting in 500 errors on activity log endpoints
+  - **Fix**: Changed all field access in `get_activity_log()` and `get_recent_activities()` to use `.get()` with sensible defaults
+  - **Example**: `doc["action_type"]` → `doc.get("action_type", "unknown")`
+  - **Fields protected**: `admin_id`, `action_type`, `title`, `message`, `entity_type`, `entity_id`, `metadata`, `is_read`, `created_at`
+  - **Impact**: Activity log endpoints now gracefully handle malformed or legacy documents
+
+- **Enhanced Activity Type Color Mapping in Planner Dashboard** (`app/admin/planner/activity-log/page.tsx`):
+  - **Problem**: Frontend only had colors for 4 activity types; new activity types showed default purple
+  - **Added color mapping** for all activity types:
+    - RSVP events: `rsvp_received` (green-500), `rsvp_updated` (green-400)
+    - Guest events: `guest_added` (blue-500), `guest_updated` (blue-400), `guest_deleted` (blue-300), `guest_imported` (blue-600)
+    - Communication: `email_sent` (yellow-500), `sms_sent` (orange-500), `reminder_sent` (amber-500)
+    - Support: `support_ticket_created` (red-500), `support_ticket_comment` (red-400)
+    - Wedding: `wedding_created` (indigo-500), `wedding_updated` (indigo-400)
+  - **Impact**: Activity feed now shows visually distinct colors for each activity type
+
+- **Platform Metrics Response Time Unit Standardization** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+  - **Eliminated redundant unit conversions**: Backend stored ms → API converted to seconds → Frontend converted back to ms
+  - **New flow**: Backend stores ms → API returns ms directly → Frontend displays ms
+  - **Field name changes** for clarity (explicit `_ms` suffix):
+
+    | Old Name                    | New Name                       |
+    | --------------------------- | ------------------------------ |
+    | `avg_response_time`         | `avg_response_time_ms`         |
+    | `min_response_time`         | `min_response_time_ms`         |
+    | `max_response_time`         | `max_response_time_ms`         |
+    | `p50`, `p95`, `p99`         | `p50_ms`, `p95_ms`, `p99_ms`   |
+    | `overall_avg_response_time` | `overall_avg_response_time_ms` |
+
+  - **Backend changes** (`app/api/admin_platform_metrics.py`):
+    - Removed `/1000` divisions when returning response times
+    - Updated field names in `_calculate_performance_metrics()` and `_calculate_endpoint_performance()`
+  - **Frontend changes** (`app/admin/platform/page.tsx`):
+    - Updated TypeScript interfaces (`PerformanceSummary`, `EndpointPerformance`) with new field names
+    - Removed `* 1000` multiplications when displaying values
+  - **Why**: Reduces cognitive overhead, prevents floating-point precision issues, and follows the principle of keeping data in its natural unit until display
+
+- **AI Chat Service Availability & Health Monitoring** (`app/api/ai.py`):
+  - **503 Service Unavailable**: When Google Gemini API is unavailable (network errors, API key issues, quota exceeded), the endpoint now returns proper 503 status instead of 500
+  - **Why**: Frontend can detect 503 and show "AI temporarily unavailable" message instead of generic error; follows same pattern as Stripe, Telnyx, and email services in the codebase
+  - **New endpoint**: `GET /admin/ai/health` - Health check for AI service monitoring
+    - Returns: `{ status: "healthy"|"degraded"|"unhealthy", model, configured, api_key_set, error? }`
+    - Tests actual API connectivity by making a minimal request to Gemini
+    - Used by platform metrics dashboard for service status monitoring
+  - **Enhanced error handling**:
+    - `google.api_core.exceptions.GoogleAPIError` for API-level failures (quota, permissions)
+    - `requests.exceptions.RequestException` for network connectivity issues
+    - Both return 503 with `detail: "AI service temporarily unavailable"`
+  - **Platform metrics integration**: AI health status now available alongside other service health checks (Stripe, Twilio, Web Push, Email)
+
+- **Web Push Notifications (Replaces Ntfy)** (`app/services/web_push_service.py`, `app/api/web_push.py`, `app/admin/components/AccountSettingsModal.tsx`, `public/sw.js`):
+  - **Complete replacement**: Removed self-hosted Ntfy server dependency in favor of standard Web Push API with VAPID authentication
+  - **Why**: Ntfy required users to download a separate app, copy/paste subscription URLs, and perform manual setup - poor UX. Web Push is the industry standard (used by Gmail, YouTube, etc.) where users just click "Allow" and notifications work automatically
+  - **New service** (`app/services/web_push_service.py`):
+    - VAPID-based authentication using `pywebpush` library
+    - Subscriptions stored in MongoDB `push_subscriptions` collection (per user, per device)
+    - Methods: `save_subscription()`, `remove_subscription()`, `send_notification()`, `health_check()`
+    - Handles expired subscriptions (404/410 responses) with automatic cleanup
+  - **New API endpoints** (`app/api/web_push.py`):
+    - `GET /admin/web-push/vapid-public-key` - Get VAPID public key for browser subscription
+    - `POST /admin/web-push/subscribe` - Save browser push subscription
+    - `DELETE /admin/web-push/unsubscribe` - Remove subscription by endpoint
+    - `GET /admin/web-push/health` - Health check for monitoring
+  - **Service worker** (`public/sw.js`):
+    - Handles `push` events with JSON payload parsing
+    - Handles `notificationclick` to focus/open app window
+    - Handles `pushsubscriptionchange` for subscription renewal
+  - **Frontend toggle fix** (`app/admin/components/AccountSettingsModal.tsx`):
+    - Toggle now checks actual browser subscription state when modal opens
+    - Previously showed DB preference which could be stale on different devices
+    - Uses `navigator.serviceWorker.getRegistration()` and `pushManager.getSubscription()`
+  - **Platform metrics updated** (`app/admin/platform/page.tsx`, `app/api/admin_platform_metrics.py`):
+    - Changed `NtfyHealth` interface to `WebPushHealth`
+    - Shows: configured, enabled, has_public_key, has_private_key, vapid_email, total_subscriptions
+  - **Config validator updated** (`app/services/config_validator.py`, `app/api/config_errors.py`):
+    - Replaced Ntfy alert sending with Web Push
+    - Fixed type error: changed `False` sentinel to separate `_web_push_checked` flag
+  - **Environment variables**:
+    - Removed: `SERVICE_URL_NTFY`
+    - Added: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`
+  - **Dependencies**: Added `pywebpush>=1.14.0` to `requirements.txt`
+  - **Files removed**: `app/services/ntfy_service.py` (deleted)
+  - **Generate VAPID keys**: `python -c "from pywebpush import generate_vapid_keys; k=generate_vapid_keys(); print(f'VAPID_PRIVATE_KEY={k[\"private_key\"]}\\nVAPID_PUBLIC_KEY={k[\"public_key\"]}')"`
+
+- **RSVP Form Glassmorphism Redesign** (`app/components/RSVPForm.tsx`, `app/otp/verify/page.tsx`):
+  - **Glass design system**: Complete redesign to match SaaS landing page aesthetic
+  - **Dark theme**: `bg-slate-950` background with radial gradient overlays and subtle grid pattern
+  - **Glass cards**: `backdrop-blur-xl`, `bg-white/5`, `border-white/10`, `rounded-3xl` styling
+  - **FormCard component**: Glass card wrapper with wedding-rose uppercase tracking labels
+  - **Events section**: Glass checkboxes with hover states (`hover:border-wedding-rose/40 hover:bg-wedding-rose/10`)
+  - **Form inputs**: Dark glass inputs (`bg-white/5 text-white placeholder-slate-500`)
+  - **Notifications section**: Glass opt-in cards with proper dark theme contrast
+  - **Plus-ones section**: Glass guest cards with matching input styling
+  - **Submit button**: `rounded-full` with `shadow-wedding-rose/40` glow effect
+  - **Success state**: Glass card with wedding-rose accent checkmark and gradient bar
+  - **OTP verify page**: Full glass design with matching background effects and animations
+
+- **Plus-One Events Auto-Inherit** (`app/components/RSVPForm.tsx`):
+  - Plus-ones now automatically inherit the main guest's selected events on RSVP submission
+  - Previously: Plus-ones were submitted with empty `attending: []` array
+  - Now: `filledPlusOnes.map(p => ({ ...p, attending: data.attending || [] }))`
+  - Fixes "Attending: None" display issue in admin dashboard for plus-ones
 
 ### Fixed
+
+- **Wedding ID Lookup Consistency** (`app/api/tables.py`, `app/api/guest_export.py`):
+  - **Problem**: PDF export endpoints only queried weddings by string `_id`, failing for ObjectId-based weddings
+  - **Solution**: Added dual-format lookup pattern: `ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id`
+  - **Files updated**: Seating chart PDF export endpoint, Guest list PDF export endpoint
+  - **Impact**: PDF exports now work regardless of whether wedding IDs are stored as strings or ObjectIds
+
+- **Type Annotation Fixes in Twilio Reminder API** (`app/api/reminder_twilio.py`):
+  - **Problem**: Pylance/mypy reported type errors for optional service instances and untyped dictionary
+  - **Fix 1**: Added `Optional[TwilioReminderService]` and `Optional[TwilioRSVPReminderHelper]` type annotations for conditionally-initialized service variables
+  - **Fix 2**: Added `dict[str, int]` type annotation to `wedding_sent_counts` dictionary
+  - **Fix 3**: Removed unused `wedding_ids_logged` variable (dead code from previous implementation)
+  - **Impact**: Clean type checking with no Pylance/mypy/Flake8 warnings
+
+- **500 Errors on Activity Log Endpoints** (`app/services/admin_activity_service.py`, `app/api/admin_activity.py`):
+  - **Root cause**: Direct dictionary access (`doc["field"]`) on MongoDB documents with missing fields raised `KeyError`, causing 500 responses on `/admin/activity-log` endpoints
+  - **Fix** (`app/services/admin_activity_service.py`): Changed to defensive `.get()` access with defaults in `get_activity_log()` and `get_recent_activities()`
+  - **Fix** (`app/api/admin_activity.py`): Added try-catch error handling to return graceful errors instead of 500
+  - **Affected endpoints**: `GET /admin/activity-log`, `GET /admin/activity-log/recent`
+  - **Impact**: Activity log endpoints now handle malformed documents gracefully and return empty results instead of crashing
+
+- **RSVP Link SMS Status Check Bug** (`app/services/guest_verification_service.py`):
+  - **Root cause**: Twilio `_send_sms()` returns `"status": "failed: {error}"` on failure, but code checked `!= "failed"` which always evaluated to `True`
+  - **Fix**: Changed status check from `result.get("status") != "failed"` to `result.get("status") == "success"`
+  - **Impact**: SMS send failures are now correctly detected and logged
+
+- **RSVP Link SMS Phone Format Bug** (`app/services/guest_verification_service.py`):
+  - **Root cause**: Service passed raw user input (e.g., `(319) 529-6088`) to Twilio, which added `+1` prefix creating invalid `+1(319) 529-6088`
+  - **Fix**: Changed to pass `digits_only` (extracted digits) to Twilio, which then correctly formats as `+13195296088`
+  - **Impact**: SMS delivery now works regardless of how user formats their phone number input
+
+- **Gallery S3 Operations Failing on Cloudflare R2** (`app/services/gallery_upload_service.py`, `app/services/vendor_service.py`):
+  - **Root cause**: Cloudflare R2 requires S3 Signature Version 4 (`s3v4`) for all operations, but boto3 defaults to v2
+  - **Symptom**: `AccessDenied` errors on upload, list, and delete operations despite correct credentials
+  - **Fix**: Added `config=Config(signature_version='s3v4')` to boto3 client initialization in both services
+  - **Fix**: Added error code logging for better diagnostics on S3 operation failures
+  - **Impact**: Gallery uploads, listing, and deletion now work correctly with Cloudflare R2
+
+- **Gallery Image Delete Returning 405 Method Not Allowed** (`app/admin/gallery/upload/page.tsx`):
+  - **Root cause**: Frontend called `DELETE /gallery` but the admin endpoint is registered at `DELETE /admin/gallery`
+  - **Fix**: Changed delete endpoint from `/gallery` to `/admin/gallery` (line 313)
+  - **Impact**: Planners can now delete gallery images from the upload management page
+
+- **Private Wedding Gallery Page Returning 403 for Verified Guests** (`app/[slug]/gallery/page.tsx`):
+  - **Root cause**: Gallery page was server-side rendered (SSR) and only called `GET /gallery` without guest verification
+  - **Symptom**: Guest verifies on landing page → clicks "View Full Gallery" → 403 error because verification state wasn't persisted
+  - **Fix**: Converted gallery page to client-side rendering (`'use client'`)
+  - **Fix**: Added same verification flow as landing page using `WeddingContext` and `GuestVerificationModal`
+  - **Fix**: Public weddings use `GET /gallery?wedding_slug={slug}`
+  - **Fix**: Private weddings show verification modal, then use `POST /gallery/verified` with guest token/name/phone
+  - **Alignment verified**:
+    - `GuestVerificationModal` props: `slug`, `onVerified(wedding, guest?)` ✅
+    - `WeddingContext` provides `privacy_mode` field ✅
+    - `GalleryGrid` expects `images: {key, url}[]` ✅
+    - Backend returns `[{key, url}]` from `gallery/{slug}/` prefix ✅
+  - **Impact**: Guests on private weddings can now access the full gallery page after verification
+
+- **Root Admin In-App Notifications Not Displaying** (`app/services/notification_service.py`, `app/services/support_service.py`, `app/utils/secure_error_handler.py`):
+  - **Root cause**: Schema mismatch between notification creation and retrieval
+    - Notifications created with `target_audience: "root_admin"` but fetched using `user_id` field
+    - Root admin has no `user_id` in notifications collection - they use audience-based targeting
+  - **Fix** (`app/services/notification_service.py`):
+    - Added `get_root_admin_notifications()` method that queries by `target_audience: "root_admin"`
+    - Updated `get_notifications()` to handle root admin case with proper audience query
+    - Updated `mark_as_read()` and `mark_all_as_read()` to use audience-based queries for root admin
+    - Added `delete_notification()` method with proper root admin support
+  - **Fix** (`app/services/support_service.py`):
+    - Changed notification `target_audience` from `"admin"` to `"root_admin"` for consistency
+    - Root admin notifications now use correct audience identifier throughout
+  - **Fix** (`app/utils/secure_error_handler.py`):
+    - Changed notification `target_audience` from `"admin"` to `"root_admin"` for config error alerts
+  - **Impact**: Root admin can now see notification bell count and all in-app notifications for:
+    - Support ticket submissions from planners
+    - Contact form submissions from public users
+    - Configuration error alerts from the system
+
+- **Notification System Schema Alignment** (Multiple files):
+  - **API Validation** (`app/api/notification_management.py`):
+    - Added `root_admin` to valid `target_audience` values in both `NotificationCreateModel` and `NotificationUpdateModel` validators
+    - Previously API would reject notifications with `target_audience: "root_admin"` even though backend services created them
+  - **TypeScript Interface** (`app/admin/notifications/page.tsx`):
+    - Added `support_ticket`, `system_config`, and `sales_contact` to `PlannerNotification.type` union
+    - These types are used by root admin notifications but were missing from the TypeScript interface
+  - **Priority Value Standardization** (`app/models/support_ticket.py`, `app/api/reminder.py`, `app/api/twilio_webhooks.py`):
+    - Changed default priority from `"normal"` to `"medium"` to match notification system
+    - Standardized priority enum to `["low", "medium", "high", "urgent"]` across all systems
+    - Previously support tickets used `"normal"` while notifications used `"medium"`
+  - **ROOT_ADMIN_EMAIL Fallback** (`app/services/support_service.py`):
+    - Updated fallback email domain from `.com` to `.io` to match SAAS platform domain
+    - Changed from `thedeveloper@thespecialwedding.com` to `admin@thespecialwedding.io`
+  - **Impact**: Full schema alignment between database models, API validation, and frontend TypeScript interfaces
+
+- **Notification Recipient Dropdown Misaligned with Schema** (`app/admin/notifications/page.tsx`):
+  - **Root cause**: Dropdown showed `"Trial Users"` and `"Premium Users"` options that don't exist in subscription schema
+  - **Subscription status enum**: `PENDING_PAYMENT`, `TRIAL`, `ACTIVE`, `CANCELLED`, `EXPIRED`, `SUSPENDED` - no "premium"
+  - **Fix**: Simplified dropdown to match backend `target_audience` values exactly:
+    - `all` → All Users
+    - `wedding_planners` → Wedding Planners
+    - `vendors` → Vendors
+  - **Fix**: Removed stale mapping logic - `recipientFilter` now passes directly to `target_audience`
+  - **Fix**: Updated default state from `'all_users'` to `'all'`
+  - **Impact**: Frontend dropdown now matches backend API validation and subscription schema
+
+- **Root Admin Receiving Own Platform Notifications** (`app/services/notification_service.py`):
+  - **Root cause**: Notification retrieval logic included `target_audience: "all"` for root admin
+  - **Problem**: When root admin sends notification to "all users", they would also see it in their bell
+  - **Fix**: Separated audience logic by role:
+    - **Root admin** only sees: `target_audience: "root_admin"` (system alerts) + direct `user_id` targeting
+    - **Planners/Vendors** see: `target_audience: "all"` + their role + direct targeting
+  - **Fix**: Applied to both `get_user_notifications()` and `get_user_notification_count()` methods
+  - **Impact**: Root admin notification bell only shows system alerts (support tickets, config errors, contact forms), not their own platform announcements
+
+- **QR Code Preview Not Displaying in Guest Management** (`app/admin/guests/page.tsx`):
+  - **Root cause**: The QR code modal used `<img src>` pointing directly to the authenticated API endpoint, but browsers don't send Authorization headers with image requests
+  - **Fix**: Added state variables `qrImageUrl` and `qrImageLoading` to track fetched QR image
+  - **Fix**: Added `useEffect` that fetches QR code with proper `Authorization: Bearer ${token}` header when modal opens
+  - **Fix**: Converts response blob to object URL for display in the modal
+  - **Fix**: Shows loading spinner while fetching, error state if fetch fails
+  - **Fix**: Properly cleans up blob URL when modal closes to prevent memory leaks
 
 - **Calendar Invite Download Not Working** (`app/components/RSVPForm.tsx`):
   - **Root cause 1**: Backend `EventDetailsModel.time` uses 12-hour format (`"3:00 PM"`) but frontend expected 24-hour (`"15:00"`)
@@ -33,7 +407,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix**: Proper ICS format with `\r\n` line endings and required headers (PRODID, CALSCALE, METHOD)
   - **Fix**: Added error handling and URL cleanup with `URL.revokeObjectURL()`
 
+- **Calendar ICS Generates Only One Event with Wrong Time** (`app/components/RSVPForm.tsx`):
+  - **Root cause 1**: `generateICS()` only picked one event (white_wedding or first) instead of all configured events
+  - **Root cause 2**: `parseTimeToISO()` regex required colon - formats like "6PM" failed, defaulting to 12:00
+  - **Symptom**: Planner configured Traditional (05/29 6PM), White Wedding (05/30 5PM), Reception - calendar showed only one event at 12:00PM
+  - **Fix**: Enhanced `parseTimeToISO()` to handle hour-only formats: "6PM", "5pm", "6 PM" via new regex `/^(\d{1,2})\s*(am|pm)$/i`
+  - **Fix**: Refactored `generateICS()` to loop through ALL `wedding.events` and create multiple VEVENT blocks
+  - **Fix**: Each calendar event now has unique UID (`timestamp-index@wedding-rsvp`), event-specific title (e.g., "Traditional Ceremony - Peace & Emmanuel"), and correct time/location/attire
+  - **Result**: Downloaded ICS now contains all wedding events with correct dates and times
+
+- **Calendar ICS Missing Timezone Information** (`app/components/RSVPForm.tsx`, `app/models/wedding.py`, `app/types/wedding.ts`):
+  - **Root cause**: ICS dates like `20260529T180000` had no timezone indicator - calendar apps interpreted in user's local timezone
+  - **Impact**: Guests in different timezones would see wrong event times (e.g., 6 PM Chicago showing as 6 PM Lagos)
+  - **Fix**: Added `timezone` field to `WeddingModel` (defaults to `America/Chicago`) and `EventDetailsModel` for per-event override
+  - **Fix**: Added `timezone` field to TypeScript `Wedding` and `EventDetails` interfaces
+  - **Fix**: ICS now includes `DTSTART;TZID=America/Chicago:20260529T180000` format with explicit timezone
+  - **Fix**: Added `X-WR-TIMEZONE` header for calendar app compatibility (Google Calendar, Apple Calendar, Outlook)
+  - **Result**: Calendar events now display in the correct wedding venue timezone regardless of guest's location
+
 ### Added
+
+- **Wedding Timezone Configuration** (`app/models/wedding.py`, `app/types/wedding.ts`):
+  - **New field**: `timezone` on `WeddingModel` - IANA timezone string (e.g., `America/Chicago`, `Africa/Lagos`)
+  - **Default value**: `America/Chicago` (US Central Time) for backward compatibility
+  - **Per-event override**: `EventDetailsModel.timezone` allows different timezones for events at different venues
+  - **Frontend types**: Updated `Wedding` and `EventDetails` TypeScript interfaces
+  - **Use case**: Planners can configure the correct timezone for their wedding venue, ensuring calendar downloads show accurate local times
+
+- **Planner Timezone Preference** (`app/models/user_extended.py`, `app/admin/users/page.tsx`, `app/admin/saas/page.tsx`):
+  - **New field**: `timezone` on `UserModel` - IANA timezone for display preferences (default: `America/Chicago`)
+  - **Frontend types**: Added `timezone` to `Planner` and `WeddingPlanner` TypeScript interfaces
+  - **Use case**: Planners see timestamps in their preferred timezone across the dashboard
+
+- **Admin Dashboard Timestamp Consistency** (`app/utils/dateFormat.ts`, 20+ admin pages):
+  - **Problem**: ~27 instances of browser-local `.toLocaleString()` caused different users to see different times for the same record
+  - **Root cause**: Mix of UTC formatting (centralized utility) and browser-local formatting (direct `.toLocaleString()`)
+  - **Enhanced utility** (`app/utils/dateFormat.ts`):
+    - Added `getTimezoneAbbreviation()` - Gets timezone abbreviation (CST, EST, WAT) for display
+    - Added `formatDateTimeWithTz()` - Format with timezone suffix (e.g., "Jan 30, 2026, 3:00 PM CST")
+    - Added `formatAdminTimestamp()` - Primary function for admin dashboard timestamps with timezone indicator
+    - Added `formatAdminDate()` - Date-only formatting for admin displays
+    - Added `formatListTimestamp()` - Shorter format for tables/lists
+    - All functions accept optional timezone parameter (defaults to `America/Chicago`)
+  - **Pages updated**:
+    - Root admin: `app/admin/page.tsx`, `app/admin/dashboard/page.tsx`
+    - Weddings: `app/admin/weddings/page.tsx`, `app/admin/weddings/[id]/page.tsx`
+    - Billing: `app/admin/billing/page.tsx`, `app/admin/money/page.tsx`, `app/admin/planner/billing/page.tsx`
+    - Vendors: `app/admin/vendors/contracts/[id]/page.tsx`, `app/admin/vendors/contracts/new/page.tsx`, `app/admin/vendors/components/PaymentMilestones.tsx`, `app/admin/vendors/components/VendorPaymentModal.tsx`
+    - Users: `app/admin/users/page.tsx`
+    - Planner: `app/admin/planner/calendar/page.tsx`, `app/admin/planner/calendar/components/GoogleCalendarConnect.tsx`
+    - Forms: `app/admin/forms/[id]/edit/page.tsx`
+    - Notifications: `app/admin/notifications/page.tsx`
+    - Packages: `app/admin/packages/[id]/send/page.tsx`
+  - **Result**: All admin timestamps now show consistent timezone-aware formatting with abbreviation suffix (e.g., "Jan 30, 2026, 3:00 PM CST")
+
+- **Already RSVPed Detection** (`app/components/AlreadyRSVPedScreen.tsx`, `app/otp/verify/page.tsx`, `app/services/guest_verification_service.py`):
+  - **Problem solved**: Guests re-visiting RSVP link after submission would go through OTP verification again (Twilio SMS cost ~$0.0079 each)
+  - **Backend enhancement**: `get_rsvp_access_by_token()` now checks for existing RSVP in `rsvps` collection
+    - Returns `rsvp: { has_rsvp, submitted_at, attending, dietary, plus_ones }` in response
+    - Fetches associated plus-ones from `plus_ones` collection
+  - **New component**: `AlreadyRSVPedScreen` shows existing RSVP status with glass design
+    - Displays guest name, submission date, events attending, dietary restrictions
+    - "Edit My RSVP" button to switch to edit mode
+  - **Edit mode flow**: `editMode` state allows guests to modify their existing RSVP
+  - **Cost savings**: Prevents unnecessary OTP SMS costs for return visitors
 
 - **Twilio SMS Delivery Tracking** (`app/api/twilio_webhooks.py`, `app/services/reminder_service_twilio.py`, `app/core/database_indexes.py`):
   - **StatusCallback webhooks**: Track SMS delivery status (delivered/failed/undelivered) via Twilio webhooks

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, File, UploadFile
 from pydantic import BaseModel, Field, validator
-from typing import Optional, List
-from datetime import datetime
+from typing import Any, Dict, Optional, List
+from datetime import datetime, timezone
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.support_service import SupportService
 import logging
@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 support_service = SupportService()
+
 
 class TicketCreateModel(BaseModel):
     subject: str = Field(..., min_length=1, max_length=200, description="Ticket subject")
@@ -30,6 +31,7 @@ class TicketCreateModel(BaseModel):
         if v not in ['technical', 'billing', 'feature_request', 'bug_report', 'general']:
             raise ValueError('Category must be one of: technical, billing, feature_request, bug_report, general')
         return v
+
 
 class TicketUpdateModel(BaseModel):
     subject: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -57,19 +59,25 @@ class TicketUpdateModel(BaseModel):
             raise ValueError('Status must be one of: open, in_progress, resolved, closed')
         return v
 
+
 class CommentCreateModel(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000, description="Comment message")
     is_internal: bool = Field(default=False, description="Whether this is an internal admin comment")
 
 # ==================== ADMIN SUPPORT MANAGEMENT ====================
 
+
 @router.post("/tickets", tags=["Support"])
 async def create_ticket(ticket_data: TicketCreateModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Create a new support ticket - Authenticated users only"""
-    return await support_service.create_ticket(
+    logger.info(f"Creating support ticket for user: {current_user.email}, subject: {ticket_data.subject}")
+    result = await support_service.create_ticket(
         ticket_data.dict(),
         created_by=current_user.email
     )
+    logger.info(f"Support ticket created successfully: {result.get('ticket_number', 'unknown')}")
+    return result
+
 
 @router.get("/tickets", tags=["Support"])
 async def get_tickets(
@@ -108,10 +116,12 @@ async def get_tickets(
         filters=filters
     )
 
+
 @router.get("/tickets/{ticket_id}", tags=["Support"])
 async def get_ticket(ticket_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get specific ticket details with comments"""
     return await support_service.get_ticket(ticket_id, current_user)
+
 
 @router.put("/tickets/{ticket_id}", tags=["Support"])
 async def update_ticket(
@@ -126,6 +136,7 @@ async def update_ticket(
         current_user
     )
 
+
 @router.post("/tickets/{ticket_id}/comments", tags=["Support"])
 async def add_comment(
     ticket_id: str,
@@ -138,6 +149,7 @@ async def add_comment(
         comment_data.dict(),
         current_user
     )
+
 
 @router.get("/tickets/{ticket_id}/comments", tags=["Support"])
 async def get_comments(
@@ -154,6 +166,7 @@ async def get_comments(
 
 # ==================== ADMIN-ONLY ENDPOINTS ====================
 
+
 @router.get("/analytics", tags=["Support Admin"])
 async def get_support_analytics(
     period: str = Query("30d", description="Time period: 7d, 30d, 90d, 1y"),
@@ -162,10 +175,12 @@ async def get_support_analytics(
     """Get support analytics and metrics - ROOT_ADMIN only"""
     return await support_service.get_analytics(period)
 
+
 @router.get("/agents", tags=["Support Admin"])
 async def get_support_agents(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get list of support agents - ROOT_ADMIN only"""
     return await support_service.get_support_agents()
+
 
 @router.put("/tickets/{ticket_id}/assign", tags=["Support Admin"])
 async def assign_ticket(
@@ -175,6 +190,7 @@ async def assign_ticket(
 ):
     """Assign ticket to support agent - ROOT_ADMIN only"""
     return await support_service.assign_ticket(ticket_id, agent_email, current_user.email)
+
 
 @router.put("/tickets/{ticket_id}/priority", tags=["Support Admin"])
 async def update_ticket_priority(
@@ -192,12 +208,14 @@ async def update_ticket_priority(
         current_user
     )
 
+
 @router.get("/metrics/dashboard", tags=["Support Admin"])
 async def get_support_dashboard(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get support dashboard metrics - ROOT_ADMIN only"""
     return await support_service.get_dashboard_metrics()
 
 # ==================== FILE UPLOAD ====================
+
 
 @router.post("/tickets/{ticket_id}/attachments", tags=["Support"])
 async def upload_attachment(
@@ -209,6 +227,7 @@ async def upload_attachment(
     return await support_service.upload_attachment(ticket_id, file, current_user)
 
 # ==================== USER ENDPOINTS ====================
+
 
 @router.get("/my-tickets", tags=["User Support"])
 async def get_my_tickets(
@@ -227,6 +246,7 @@ async def get_my_tickets(
         limit=limit,
         filters=filters
     )
+
 
 @router.get("/categories", tags=["Support"])
 async def get_ticket_categories(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
@@ -249,9 +269,11 @@ async def get_ticket_categories(current_user: ExtendedAuthUser = Depends(require
 
 # ==================== SMS SUPPORT TICKETS (NEW) ====================
 
+
 class SMSResponseModel(BaseModel):
     message: str = Field(..., min_length=1, max_length=1600, description="SMS response message (max 1600 chars)")
     mark_resolved: bool = Field(default=True, description="Mark ticket as resolved after sending")
+
 
 @router.get("/sms-tickets", tags=["SMS Support"])
 async def get_sms_tickets(
@@ -266,7 +288,6 @@ async def get_sms_tickets(
     - ROOT_ADMIN sees all tickets
     """
     from app.core.database import mongo
-    from bson import ObjectId
 
     # Build query
     query = {"source": "sms"}
@@ -281,13 +302,14 @@ async def get_sms_tickets(
     # Pagination
     skip = (page - 1) * limit
 
-    tickets = list(
+    cursor = (
         mongo.db["support_tickets"]
         .find(query)
         .sort("created_at", -1)
         .skip(skip)
         .limit(limit)
     )
+    tickets = await cursor.to_list(length=limit)
 
     # Convert ObjectId to string
     for ticket in tickets:
@@ -297,7 +319,7 @@ async def get_sms_tickets(
         if "wedding_id" in ticket and ticket["wedding_id"]:
             ticket["wedding_id"] = str(ticket["wedding_id"])
 
-    total = mongo.db["support_tickets"].count_documents(query)
+    total = await mongo.db["support_tickets"].count_documents(query)
 
     return {
         "tickets": tickets,
@@ -307,6 +329,7 @@ async def get_sms_tickets(
         "limit": limit
     }
 
+
 @router.get("/sms-tickets/{ticket_id}", tags=["SMS Support"])
 async def get_sms_ticket(
     ticket_id: str,
@@ -315,10 +338,9 @@ async def get_sms_ticket(
     """Get specific SMS ticket with full details and response history"""
     from app.core.database import mongo
     from bson import ObjectId
-
     try:
-        ticket = mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
-    except:
+        ticket = await mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
     if not ticket:
@@ -338,6 +360,7 @@ async def get_sms_ticket(
 
     return {"ticket": ticket}
 
+
 @router.post("/sms-tickets/{ticket_id}/respond", tags=["SMS Support"])
 async def respond_to_sms_ticket(
     ticket_id: str,
@@ -354,12 +377,10 @@ async def respond_to_sms_ticket(
     from app.core.database import mongo
     from bson import ObjectId
     from app.services.sms_service import SMSService
-    from datetime import datetime, timezone
-
     # Get ticket
     try:
-        ticket = mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
-    except:
+        ticket = await mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
     if not ticket:
@@ -392,7 +413,7 @@ async def respond_to_sms_ticket(
         response_time_minutes = int(delta.total_seconds() / 60)
 
     # Build update
-    update = {
+    update: Dict[str, Any] = {
         "$push": {
             "responses": {
                 "message": response_data.message,
@@ -423,7 +444,7 @@ async def respond_to_sms_ticket(
             update["$set"]["resolution_time_minutes"] = response_time_minutes
 
     # Update ticket
-    mongo.db["support_tickets"].update_one(
+    await mongo.db["support_tickets"].update_one(
         {"_id": ObjectId(ticket_id)},
         update
     )
@@ -437,6 +458,7 @@ async def respond_to_sms_ticket(
         "ticket_status": "resolved" if response_data.mark_resolved else ticket.get("status"),
         "response_time_minutes": response_time_minutes
     }
+
 
 @router.put("/sms-tickets/{ticket_id}/status", tags=["SMS Support"])
 async def update_sms_ticket_status(
@@ -454,8 +476,8 @@ async def update_sms_ticket_status(
 
     # Get ticket
     try:
-        ticket = mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
-    except:
+        ticket = await mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
     if not ticket:
@@ -476,7 +498,7 @@ async def update_sms_ticket_status(
     if status == "resolved" and not ticket.get("resolved_at"):
         update["resolved_at"] = datetime.now(timezone.utc)
 
-    mongo.db["support_tickets"].update_one(
+    await mongo.db["support_tickets"].update_one(
         {"_id": ObjectId(ticket_id)},
         {"$set": update}
     )
@@ -490,6 +512,7 @@ async def update_sms_ticket_status(
         "new_status": status
     }
 
+
 @router.get("/sms-tickets/stats/summary", tags=["SMS Support"])
 async def get_sms_ticket_stats(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Get summary statistics for SMS support tickets"""
@@ -501,10 +524,10 @@ async def get_sms_ticket_stats(current_user: ExtendedAuthUser = Depends(require_
         base_query["assigned_to"] = current_user.email
 
     # Get counts by status
-    new_count = mongo.db["support_tickets"].count_documents({**base_query, "status": "new"})
-    in_progress_count = mongo.db["support_tickets"].count_documents({**base_query, "status": "in_progress"})
-    resolved_count = mongo.db["support_tickets"].count_documents({**base_query, "status": "resolved"})
-    total_count = mongo.db["support_tickets"].count_documents(base_query)
+    new_count = await mongo.db["support_tickets"].count_documents({**base_query, "status": "new"})
+    in_progress_count = await mongo.db["support_tickets"].count_documents({**base_query, "status": "in_progress"})
+    resolved_count = await mongo.db["support_tickets"].count_documents({**base_query, "status": "resolved"})
+    total_count = await mongo.db["support_tickets"].count_documents(base_query)
 
     # Calculate average response time for resolved tickets
     pipeline = [
@@ -517,8 +540,11 @@ async def get_sms_ticket_stats(current_user: ExtendedAuthUser = Depends(require_
         }}
     ]
 
-    response_stats = list(mongo.db["support_tickets"].aggregate(pipeline))
+    cursor = mongo.db["support_tickets"].aggregate(pipeline)
+    response_stats = await cursor.to_list(length=None)
     avg_response = response_stats[0] if response_stats else {}
+
+    unread_count = await mongo.db["support_tickets"].count_documents({**base_query, "is_read": False})
 
     return {
         "total": total_count,
@@ -532,5 +558,5 @@ async def get_sms_ticket_stats(current_user: ExtendedAuthUser = Depends(require_
             "min_minutes": avg_response.get("min_response_time", 0),
             "max_minutes": avg_response.get("max_response_time", 0)
         },
-        "unread_count": mongo.db["support_tickets"].count_documents({**base_query, "is_read": False})
+        "unread_count": unread_count
     }

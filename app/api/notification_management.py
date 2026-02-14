@@ -30,8 +30,8 @@ class NotificationCreateModel(BaseModel):
 
     @validator('target_audience')
     def validate_target_audience(cls, v):
-        if v not in ['all', 'wedding_planners', 'vendors']:
-            raise ValueError('Target audience must be one of: all, wedding_planners, vendors')
+        if v not in ['all', 'wedding_planners', 'vendors', 'root_admin']:
+            raise ValueError('Target audience must be one of: all, wedding_planners, vendors, root_admin')
         return v
 
     @validator('priority')
@@ -57,8 +57,8 @@ class NotificationUpdateModel(BaseModel):
 
     @validator('target_audience')
     def validate_target_audience(cls, v):
-        if v is not None and v not in ['all', 'wedding_planners', 'vendors']:
-            raise ValueError('Target audience must be one of: all, wedding_planners, vendors')
+        if v is not None and v not in ['all', 'wedding_planners', 'vendors', 'root_admin']:
+            raise ValueError('Target audience must be one of: all, wedding_planners, vendors, root_admin')
         return v
 
     @validator('priority')

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
+import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { Button } from '../../../../components/ui/Button';
 import { Card } from '../../../../components/ui/Card';
 import {
@@ -354,7 +355,7 @@ export default function SendPackagePage() {
                     <option value="">Select a wedding...</option>
                     {weddings.map((wedding) => (
                       <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                        {wedding.couple_names} ({wedding.date ? new Date(wedding.date).toLocaleDateString() : 'No date'})
+                        {wedding.couple_names} ({wedding.date ? formatAdminDate(wedding.date) : 'No date'})
                       </option>
                     ))}
                   </select>

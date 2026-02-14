@@ -14,8 +14,8 @@ reminder_service = ReminderService()
 
 
 @router.post("/reminders/send", tags=["Admin"])
-def send_reminder(event_type: str, message: str, target_group: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    return reminder_service.send_reminders(event_type, message, target_group)
+async def send_reminder(event_type: str, message: str, target_group: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    return await reminder_service.send_reminders(event_type, message, target_group)
 
 
 @router.get("/reminders/logs", tags=["Admin"])
@@ -52,7 +52,6 @@ async def handle_sms_callback(request: Request):
             # Twilio format - redirect to new endpoint handler
             logger.warning("DEPRECATED: Twilio webhook received at /admin/reminders/sms-callback - update Twilio console to use /webhook/twilio/incoming")
             from app.api.twilio_webhooks import handle_twilio_incoming_message
-            from fastapi import Header
             x_twilio_signature = request.headers.get("X-Twilio-Signature")
             return await handle_twilio_incoming_message(request, x_twilio_signature)
 
@@ -215,7 +214,7 @@ async def handle_sms_callback(request: Request):
                         "source": "sms",
                         "provider": "telnyx",
                         "is_read": False,
-                        "priority": "normal"
+                        "priority": "medium"
                     }
                     await mongo.db["support_tickets"].insert_one(support_ticket)
                     logger.info(f"Support ticket created from {from_number} for planner {assigned_planner_email}: {text}")
@@ -326,7 +325,7 @@ async def _notify_root_admin_support_ticket(ticket: dict):
                             {"type": "mrkdwn", "text": f"*From:*\n{ticket['phone']}"},
                             {"type": "mrkdwn", "text": f"*Wedding:*\n{ticket.get('wedding_name', 'Unknown')}"},
                             {"type": "mrkdwn", "text": f"*Message:*\n{ticket['message']}"},
-                            {"type": "mrkdwn", "text": f"*Status:*\nNeeds Planner Assignment"}
+                            {"type": "mrkdwn", "text": "*Status:*\nNeeds Planner Assignment"}
                         ]
                     },
                     {
