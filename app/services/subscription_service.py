@@ -571,9 +571,14 @@ class SubscriptionService:
         try:
             # Total subscriptions by status
             status_counts = {}
-            for status in ["trial", "active", "cancelled", "expired"]:
+            for status in ["trial", "active", "cancelled", "expired", "suspended"]:
                 count = await self.subscriptions_collection.count_documents({"status": status})
                 status_counts[status] = count
+
+            # Archived count (separate dimension - archived subs keep their original status)
+            archived_count = await self.subscriptions_collection.count_documents(
+                {"archived_at": {"$exists": True}}
+            )
             # Total subscriptions by plan
             plan_pipeline = [
                 {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
@@ -614,6 +619,7 @@ class SubscriptionService:
             return {
                 "total_subscriptions": sum(status_counts.values()),
                 "status_breakdown": status_counts,
+                "archived_subscriptions": archived_count,
                 "plan_breakdown": {item["_id"]: item["count"] for item in plan_counts},
                 "monthly_recurring_revenue": round(mrr, 2),
                 "annual_recurring_revenue": round(arr, 2),
@@ -634,7 +640,12 @@ class SubscriptionService:
             # Build query
             query = {}
             if status_filter and status_filter != "all":
-                query["status"] = status_filter
+                if status_filter == "archived":
+                    # Archived subs retain original status (cancelled/expired);
+                    # archived_at field marks them as archived
+                    query["archived_at"] = {"$exists": True}
+                else:
+                    query["status"] = status_filter
 
             # Fetch all subscriptions
             subscriptions = await self.subscriptions_collection.find(query).to_list(length=None)
