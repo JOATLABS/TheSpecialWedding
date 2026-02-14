@@ -895,23 +895,32 @@ async def get_platform_health(
 @router.get("/metrics/history")
 async def get_metrics_history(
     days: int = Query(7, ge=1, le=90, description="Number of days of history"),
+    start_date: Optional[str] = Query(None, description="ISO start date (overrides days param)"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
     Get historical metrics for charts/trends
 
     Args:
-        days: Number of days to retrieve (1-90)
+        days: Number of days to retrieve (1-90), used when start_date is not provided
+        start_date: ISO formatted start date (e.g., 2025-01-01T00:00:00.000Z)
     """
-    start_date = datetime.now(timezone.utc) - timedelta(days=days)
+    since: datetime
+    if start_date:
+        try:
+            since = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+        except ValueError:
+            since = datetime.now(timezone.utc) - timedelta(days=days)
+    else:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get stored metrics snapshots
     cursor = mongo.db["platform_metrics"].find({
         "$or": [
-            {"snapshot_time": {"$gte": start_date}},
+            {"snapshot_time": {"$gte": since}},
             {
                 "snapshot_time": {"$exists": False},
-                "timestamp": {"$gte": start_date.isoformat()}
+                "timestamp": {"$gte": since.isoformat()}
             }
         ]
     }).sort([

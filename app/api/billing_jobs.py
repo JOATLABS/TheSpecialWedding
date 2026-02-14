@@ -315,15 +315,19 @@ async def process_subscription_archival(retention_days: int = 90):
     subscriptions = mongo.db["user_subscriptions"]
     usage_tracking = mongo.db["usage_tracking"]
 
-    # Find cancelled/expired subscriptions older than cutoff that aren't already archived.
-    # Uses $or to catch both paths:
+    # Find cancelled/expired/suspended subscriptions older than cutoff that aren't already archived.
+    # Uses $or to catch all terminal paths:
     # - Cancelled subs (including Stripe-cancelled trials where trial_expired_at is never set)
-    # - Expired subs (from trial_expiration_service)
+    # - Expired subs from trial_expiration_service (have trial_expired_at)
+    # - Expired subs from abandoned checkout (have expired_reason, use updated_at as timestamp)
+    # - Suspended subs that have been inactive past the retention period (use updated_at)
     query = {
         "archived_at": {"$exists": False},
         "$or": [
             {"status": "cancelled", "cancelled_at": {"$lt": cutoff}},
             {"status": "expired", "trial_expired_at": {"$lt": cutoff}},
+            {"status": "expired", "expired_reason": "checkout_session_expired", "updated_at": {"$lt": cutoff}},
+            {"status": "suspended", "updated_at": {"$lt": cutoff}},
         ]
     }
 
