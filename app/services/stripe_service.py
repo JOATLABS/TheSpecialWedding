@@ -1187,13 +1187,14 @@ class StripeService:
             if result.modified_count > 0:
                 logger.info(f"Marked pending subscription as expired for session {session_id}")
 
-        # Update user status back to pending_payment if they never completed checkout
+        # Sync user status to "expired" to match subscription record
         if user_id:
             user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
             if user and user.get("subscription_status") in ("pending_payment", "pending"):
                 await self.users_collection.update_one(
                     {"_id": ObjectId(user_id)},
                     {"$set": {
+                        "subscription_status": "expired",
                         "checkout_expired_at": datetime.now(timezone.utc),
                         "updated_at": datetime.now(timezone.utc),
                     }}

@@ -31,6 +31,11 @@ class SubscriptionPlanModel(BaseModel):
     price_monthly: float = Field(0, description="Monthly price in USD")
     price_yearly: Optional[float] = Field(None, description="Yearly price in USD (if different from 12x monthly)")
 
+    # Stripe Integration
+    stripe_product_id: Optional[str] = Field(None, description="Stripe product ID")
+    stripe_price_id_monthly: Optional[str] = Field(None, description="Stripe price ID for monthly billing")
+    stripe_price_id_yearly: Optional[str] = Field(None, description="Stripe price ID for yearly billing")
+
     # Metered Billing Support
     is_metered: bool = Field(False, description="Whether this plan uses metered billing")
     meter_event_name: Optional[str] = Field(None, description="Stripe Meter Event Name for usage reporting")
@@ -107,6 +112,7 @@ class UserSubscriptionModel(BaseModel):
 
     # Dates
     start_date: datetime = Field(default_factory=datetime.utcnow, description="Subscription start date")
+    trial_start_date: Optional[datetime] = Field(None, description="Trial start date from Stripe")
     trial_end_date: Optional[datetime] = Field(None, description="Trial expiration date")
     current_period_start: datetime = Field(default_factory=datetime.utcnow, description="Current billing period start")
     current_period_end: datetime = Field(..., description="Current billing period end")
@@ -114,6 +120,9 @@ class UserSubscriptionModel(BaseModel):
     trial_expired_at: Optional[datetime] = Field(None, description="When trial was expired by system")
     cancellation_reason: Optional[str] = Field(None, description="Reason for cancellation")
     archived_at: Optional[datetime] = Field(None, description="When subscription was archived for cleanup")
+    stripe_checkout_completed_at: Optional[datetime] = Field(None, description="When Stripe checkout was completed")
+    last_payment_date: Optional[datetime] = Field(None, description="Date of last successful payment")
+    last_payment_attempt: Optional[datetime] = Field(None, description="Date of last payment attempt")
 
     # Usage tracking
     usage: Dict[str, Any] = Field(default_factory=dict, description="Current usage statistics")
@@ -121,8 +130,11 @@ class UserSubscriptionModel(BaseModel):
     # Payment integration
     stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
     stripe_subscription_id: Optional[str] = Field(None, description="Stripe subscription ID")
+    stripe_status: Optional[str] = Field(None, description="Raw Stripe subscription status")
     stripe_checkout_session_id: Optional[str] = Field(None, description="Stripe checkout session ID")
     payment_status: Optional[str] = Field(None, description="Payment status from Stripe (paid, unpaid, past_due)")
+    expired_reason: Optional[str] = Field(None, description="Reason for expiration (e.g., checkout_session_expired)")
+    trial_will_end_notified_at: Optional[datetime] = Field(None, description="When trial ending notification was sent")
 
     # System fields
     created_at: datetime = Field(default_factory=datetime.utcnow)

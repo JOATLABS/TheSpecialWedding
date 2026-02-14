@@ -366,6 +366,20 @@ async def create_user_indexes():
         )
         logger.info("Created index: idx_user_email")
 
+        # 2. TTL: Auto-delete stale pending signups
+        # Users with subscription_status=pending_payment who never complete checkout
+        # are automatically removed once pending_expires_at passes (set to 48h after registration)
+        await collection.create_index(
+            [("pending_expires_at", ASCENDING)],
+            name="idx_pending_payment_ttl",
+            expireAfterSeconds=0,
+            partialFilterExpression={
+                "subscription_status": "pending_payment",
+                "pending_expires_at": {"$exists": True}
+            }
+        )
+        logger.info("Created TTL index: idx_pending_payment_ttl (pending signups)")
+
         return True
     except Exception as e:
         logger.error(f"Error creating user indexes: {str(e)}")
