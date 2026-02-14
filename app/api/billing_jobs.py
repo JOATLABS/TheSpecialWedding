@@ -1,16 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import List, Optional
-from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, BackgroundTasks
+from datetime import datetime, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.stripe_service import stripe_service
 from app.core.database import mongo
 from app.models.subscription import SubscriptionStatus
-from bson import ObjectId
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 @router.post("/billing/sync-usage")
 async def sync_usage_to_stripe(
@@ -26,6 +25,7 @@ async def sync_usage_to_stripe(
     background_tasks.add_task(process_daily_usage_check)
 
     return {"status": "accepted", "message": "Usage sync started in background"}
+
 
 async def process_daily_usage_check():
     """
@@ -63,7 +63,7 @@ async def process_daily_usage_check():
             # 2. Get active weddings for this user
             weddings = mongo.db["weddings"].find({
                 "created_by": user_id,  # Assuming created_by or owner field
-                "status": "active" # Only active weddings
+                "status": "active"  # Only active weddings
             })
 
             # 3. Check if billing is needed
@@ -73,16 +73,16 @@ async def process_daily_usage_check():
                 # If missing (legacy?), fetch from Stripe? Or skip?
                 continue
 
-            # Ensure it's datetime and aware
             if isinstance(current_period_start, str):
                 try:
                     current_period_start = datetime.fromisoformat(current_period_start.replace('Z', '+00:00'))
-                except:
+                except ValueError:
                     continue
 
             # If current_period_start is naive, make it aware (assume UTC)
+            # If current_period_start is naive, make it aware (assume UTC)
             if current_period_start.tzinfo is None:
-                current_period_start = current_period_start.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
+                current_period_start = current_period_start.replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo)
 
             async for wedding in weddings:
                 last_billed = wedding.get("last_billed_at")
@@ -94,8 +94,8 @@ async def process_daily_usage_check():
                 else:
                     # Ensure last_billed is timezone aware for comparison
                     if last_billed.tzinfo is None:
-                         # Assume UTC if naive, as database typically stores UTC
-                         last_billed = last_billed.replace(tzinfo=datetime.utcnow().astimezone().tzinfo)
+                        # Assume UTC if naive, as database typically stores UTC
+                        last_billed = last_billed.replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo)
 
                     if last_billed < current_period_start:
                         needs_billing = True
@@ -121,7 +121,7 @@ async def process_daily_usage_check():
                         # Update last_billed_at
                         await mongo.db["weddings"].update_one(
                             {"_id": wedding["_id"]},
-                            {"$set": {"last_billed_at": datetime.utcnow()}}
+                            {"$set": {"last_billed_at": datetime.now(timezone.utc)}}
                         )
                         count_reported += 1
 

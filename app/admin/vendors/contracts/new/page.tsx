@@ -5,6 +5,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/utils/env';
+import { formatAdminDate, formatDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
   getVendorDirectory,
   getContractTemplates,
@@ -431,7 +432,7 @@ Contract Reference: {{contract_number}}`,
       '{{planner_name}}': `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() || 'Planner Name',
       '{{planner_email}}': userProfile?.email || 'planner@example.com',
       '{{planner_company}}': (userProfile?.user_data?.company_name as string) || 'Planning Company',
-      '{{contract_date}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+      '{{contract_date}}': formatDate(new Date().toISOString(), { year: 'numeric', month: 'long', day: 'numeric' }, 'en-US', DEFAULT_TIMEZONE),
       '{{contract_number}}': 'CON-PREVIEW-001',
     };
 
@@ -566,7 +567,7 @@ Contract Reference: {{contract_number}}`,
                   <option value="">Select a wedding</option>
                   {weddings?.map((wedding) => (
                     <option key={wedding._id} value={wedding._id}>
-                      {wedding.couple_names || wedding.partner1_name} - {new Date(wedding.date).toLocaleDateString()}
+                      {wedding.couple_names || wedding.partner1_name} - {formatAdminDate(wedding.date)}
                     </option>
                   ))}
                 </select>
@@ -1089,7 +1090,7 @@ Contract Reference: {{contract_number}}`,
                   <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-xl">
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Service Date</div>
                     <div className="font-semibold text-gray-900 dark:text-gray-100">
-                      {draft.serviceDate ? new Date(draft.serviceDate).toLocaleDateString() : 'Not set'}
+                      {draft.serviceDate ? formatAdminDate(draft.serviceDate) : 'Not set'}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400 truncate">
                       {draft.serviceLocation || 'Location not set'}

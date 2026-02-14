@@ -5,7 +5,7 @@ Handles AI-drafted follow-up emails for unsigned contracts.
 Integrates with cron jobs to check for stale contracts.
 """
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from bson import ObjectId
 from app.core.database import mongo
@@ -42,7 +42,7 @@ class ContractFollowupService:
             List of unsigned contracts that need follow-up
         """
         try:
-            cutoff_date = datetime.utcnow() - timedelta(days=days_threshold)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_threshold)
 
             # Find contracts sent before cutoff that are still in sent/viewed status
             query = {
@@ -121,7 +121,7 @@ class ContractFollowupService:
 
             # Calculate days since sent for urgency context
             sent_at = contract.get("sent_at")
-            days_since_sent = (datetime.utcnow() - sent_at).days if sent_at else 0
+            days_since_sent = (datetime.now(timezone.utc) - sent_at).days if sent_at else 0
 
             context = {
                 "couple_name": couple.get("name", ""),
@@ -208,8 +208,8 @@ Warm regards,
                 "subject": f"Following up on your {package.get('name', 'wedding package')} agreement",
                 "body": email_text,
                 "status": "pending",  # pending, sent, dismissed
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "ai_generated": True,
                 "credits_used": result.get("credits_used", 0) if 'result' in dir() else 0
             }
@@ -245,7 +245,7 @@ Warm regards,
                 "total_found": len(contracts),
                 "drafts_created": 0,
                 "errors": 0,
-                "processed_at": datetime.utcnow().isoformat()
+                "processed_at": datetime.now(timezone.utc).isoformat()
             }
 
             if not contracts:
@@ -372,7 +372,7 @@ Warm regards,
                 k: v for k, v in updates.items()
                 if k in allowed_fields
             }
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             result = await self.followup_drafts.find_one_and_update(
                 {
@@ -442,8 +442,8 @@ Warm regards,
                 {
                     "$set": {
                         "status": "sent",
-                        "sent_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
+                        "sent_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )

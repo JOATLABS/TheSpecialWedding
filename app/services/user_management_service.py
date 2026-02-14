@@ -106,7 +106,7 @@ class UserManagementService:
             existing_invitation = await self.invitations_collection.find_one({
                 "email": email,
                 "status": "pending",
-                "expires_at": {"$gt": datetime.utcnow()}
+                "expires_at": {"$gt": datetime.now(timezone.utc)}
             })
             if existing_invitation:
                 raise HTTPException(status_code=400, detail="Pending invitation already exists for this email")
@@ -147,8 +147,8 @@ class UserManagementService:
                 "token": invitation_token,
                 "invite_data": invite_data,
                 "invited_by": inviter_email,
-                "created_at": datetime.utcnow(),
-                "expires_at": datetime.utcnow() + timedelta(days=7),
+                "created_at": datetime.now(timezone.utc),
+                "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
                 "status": "pending",
                 # Store Stripe customer ID for use during account setup
                 "stripe_customer_id": stripe_customer_id,
@@ -178,7 +178,7 @@ class UserManagementService:
                 {"_id": result.inserted_id},
                 {"$set": {
                     "email_status": email_status,
-                    "email_sent_at": datetime.utcnow() if email_success else None
+                    "email_sent_at": datetime.now(timezone.utc) if email_success else None
                 }}
             )
 
@@ -312,7 +312,7 @@ class UserManagementService:
                 update_data.pop(field, None)
 
             # Add update timestamp
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             result = await self.users_collection.update_one(
                 {"_id": obj_id},
@@ -432,7 +432,7 @@ class UserManagementService:
 
             result = await self.users_collection.update_one(
                 {"_id": obj_id},
-                {"$set": {"is_active": False, "is_suspended": True, "updated_at": datetime.utcnow()}}
+                {"$set": {"is_active": False, "is_suspended": True, "updated_at": datetime.now(timezone.utc)}}
             )
 
             if result.matched_count == 0:
@@ -458,7 +458,7 @@ class UserManagementService:
 
             result = await self.users_collection.update_one(
                 {"_id": obj_id},
-                {"$set": {"is_active": True, "is_suspended": False, "updated_at": datetime.utcnow()}}
+                {"$set": {"is_active": True, "is_suspended": False, "updated_at": datetime.now(timezone.utc)}}
             )
 
             if result.matched_count == 0:
@@ -477,7 +477,7 @@ class UserManagementService:
             invitation = await self.invitations_collection.find_one({
                 "token": token,
                 "status": "pending",
-                "expires_at": {"$gt": datetime.utcnow()}
+                "expires_at": {"$gt": datetime.now(timezone.utc)}
             })
 
             if not invitation:
@@ -507,7 +507,7 @@ class UserManagementService:
             invitation = await self.invitations_collection.find_one({
                 "token": token,
                 "status": "pending",
-                "expires_at": {"$gt": datetime.utcnow()}
+                "expires_at": {"$gt": datetime.now(timezone.utc)}
             })
 
             if not invitation:
@@ -527,7 +527,7 @@ class UserManagementService:
 
             # Determine subscription status based on trial configuration
             subscription_status = "trial" if trial_days > 0 else "inactive"
-            trial_end_date = datetime.utcnow() + timedelta(days=trial_days) if trial_days > 0 else None
+            trial_end_date = datetime.now(timezone.utc) + timedelta(days=trial_days) if trial_days > 0 else None
             stripe_subscription_id = None
 
             # Create Stripe Subscription with trial if configured
@@ -593,9 +593,9 @@ class UserManagementService:
                                     "$set": {
                                         "stripe_customer_id": stripe_customer_id,
                                         "email": invitation["email"],
-                                        "updated_at": datetime.utcnow()
+                                        "updated_at": datetime.now(timezone.utc)
                                     },
-                                    "$setOnInsert": {"created_at": datetime.utcnow()}
+                                    "$setOnInsert": {"created_at": datetime.now(timezone.utc)}
                                 },
                                 upsert=True
                             )
@@ -628,8 +628,8 @@ class UserManagementService:
                 "email_verified": True,  # Invited users are pre-verified by admin
                 "invited_by": invitation.get("invited_by"),
                 "admin_notes": invite_data.get("admin_notes"),
-                "created_at": datetime.utcnow(),
-                "setup_completed_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "setup_completed_at": datetime.now(timezone.utc)
             }
 
             result = await self.users_collection.insert_one(user_data)
@@ -665,7 +665,7 @@ class UserManagementService:
             # Mark invitation as completed
             await self.invitations_collection.update_one(
                 {"token": token},
-                {"$set": {"status": "completed", "completed_at": datetime.utcnow()}}
+                {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)}}
             )
 
             # Build response
@@ -712,11 +712,11 @@ class UserManagementService:
 
             # Generate email verification token
             verification_token = self.generate_invitation_token()
-            verification_expires = datetime.utcnow() + timedelta(hours=48)  # 48 hours to verify
+            verification_expires = datetime.now(timezone.utc) + timedelta(hours=48)  # 48 hours to verify
 
             # Create user account (pending until Stripe checkout + verification)
             password_hash = get_password_hash(registration_data["password"])
-            pending_expires_at = datetime.utcnow() + timedelta(hours=48)
+            pending_expires_at = datetime.now(timezone.utc) + timedelta(hours=48)
             user_data = {
                 "email": email,
                 "password_hash": password_hash,
@@ -733,7 +733,7 @@ class UserManagementService:
                 "email_verification_token": verification_token,
                 "verification_token_expires": verification_expires,
                 "pending_expires_at": pending_expires_at,
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
                 "registration_source": "public_signup"
             }
 
@@ -750,7 +750,7 @@ class UserManagementService:
                         {"_id": pending_invitation["_id"]},
                         {"$set": {
                             "status": "completed",
-                            "completed_at": datetime.utcnow(),
+                            "completed_at": datetime.now(timezone.utc),
                             "completion_method": "public_registration"
                         }}
                     )
@@ -804,7 +804,7 @@ class UserManagementService:
                 raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
             # Check if token has expired
-            if user.get("verification_token_expires") and user["verification_token_expires"] < datetime.utcnow():
+            if user.get("verification_token_expires") and user["verification_token_expires"] < datetime.now(timezone.utc):
                 raise HTTPException(status_code=400, detail="Verification token has expired. Please register again.")
 
             # Update user to verified status
@@ -814,7 +814,7 @@ class UserManagementService:
                     "$set": {
                         "email_verified": True,
                         "is_active": True,
-                        "verified_at": datetime.utcnow()
+                        "verified_at": datetime.now(timezone.utc)
                     },
                     "$unset": {
                         "email_verification_token": "",
@@ -843,7 +843,7 @@ class UserManagementService:
             return {
                 "message": "Email verified successfully! Your account is now active. You can log in.",
                 "email": user["email"],
-                "verified_at": datetime.utcnow().isoformat()
+                "verified_at": datetime.now(timezone.utc).isoformat()
             }
         except HTTPException:
             raise
@@ -1076,7 +1076,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "password_hash": new_password_hash,
-                        "password_changed_at": datetime.utcnow()
+                        "password_changed_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -1096,7 +1096,7 @@ class UserManagementService:
                 print(f"Failed to publish password change event: {e}")
             return {
                 "message": "Password changed successfully",
-                "changed_at": datetime.utcnow().isoformat()
+                "changed_at": datetime.now(timezone.utc).isoformat()
             }
         except HTTPException:
             raise
@@ -1122,7 +1122,7 @@ class UserManagementService:
 
             # Generate email verification token for new email
             verification_token = self.generate_invitation_token()
-            verification_expires = datetime.utcnow() + timedelta(hours=24)  # 24 hours to verify
+            verification_expires = datetime.now(timezone.utc) + timedelta(hours=24)  # 24 hours to verify
 
             # Update user with new email (but keep it unverified until verification)
             result = await self.users_collection.update_one(
@@ -1132,7 +1132,7 @@ class UserManagementService:
                         "pending_email": new_email,
                         "email_change_token": verification_token,
                         "email_change_token_expires": verification_expires,
-                        "email_change_requested_at": datetime.utcnow()
+                        "email_change_requested_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -1174,7 +1174,7 @@ class UserManagementService:
                 raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
             # Check if token has expired
-            if user.get("email_change_token_expires") and user["email_change_token_expires"] < datetime.utcnow():
+            if user.get("email_change_token_expires") and user["email_change_token_expires"] < datetime.now(timezone.utc):
                 raise HTTPException(status_code=400, detail="Verification token has expired. Please request a new email change.")
 
             # Update user email to the new email
@@ -1186,7 +1186,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "email": new_email,
-                        "email_changed_at": datetime.utcnow()
+                        "email_changed_at": datetime.now(timezone.utc)
                     },
                     "$unset": {
                         "pending_email": "",
@@ -1211,7 +1211,7 @@ class UserManagementService:
                 "message": "Email address changed successfully",
                 "old_email": old_email,
                 "new_email": new_email,
-                "changed_at": datetime.utcnow().isoformat()
+                "changed_at": datetime.now(timezone.utc).isoformat()
             }
         except HTTPException:
             raise
@@ -1270,12 +1270,26 @@ class UserManagementService:
             # Handle push notifications preference
             if "push_notifications_enabled" in profile_data:
                 update_data["push_notifications_enabled"] = profile_data["push_notifications_enabled"]
+            # Handle timezone preference (IANA timezone string)
+            if profile_data.get("timezone") is not None:
+                timezone_str = profile_data["timezone"].strip()
+                # Basic validation: should look like a valid IANA timezone
+                if "/" in timezone_str or timezone_str in ("UTC", "GMT"):
+                    update_data["timezone"] = timezone_str
+
+            # Handle onboarding fields (for wedding planners)
+            if "onboarding_completed" in profile_data:
+                update_data["onboarding_completed"] = profile_data["onboarding_completed"]
+            if "onboarding_completed_at" in profile_data:
+                update_data["onboarding_completed_at"] = profile_data["onboarding_completed_at"]
+            if "onboarding_steps_completed" in profile_data:
+                update_data["onboarding_steps_completed"] = profile_data["onboarding_steps_completed"]
 
             if not update_data:
                 raise HTTPException(status_code=400, detail="No valid profile data provided")
 
             # Add updated timestamp
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             # Update user profile
             result = await self.users_collection.update_one(
@@ -1354,7 +1368,7 @@ class UserManagementService:
 
                 # Determine actual status (check if expired)
                 actual_status = doc.get("status", "pending")
-                if actual_status == "pending" and doc.get("expires_at", datetime.utcnow()) < datetime.utcnow():
+                if actual_status == "pending" and doc.get("expires_at", datetime.now(timezone.utc)) < datetime.now(timezone.utc):
                     actual_status = "expired"
 
                 invitations.append({
@@ -1395,7 +1409,7 @@ class UserManagementService:
     async def get_invitation_stats(self) -> dict:
         """Get invitation counts by status"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Pending (not expired)
             pending = await self.invitations_collection.count_documents({
@@ -1461,7 +1475,7 @@ class UserManagementService:
 
             # Generate new token and reset expiration
             new_token = self.generate_invitation_token()
-            new_expires = datetime.utcnow() + timedelta(days=7)
+            new_expires = datetime.now(timezone.utc) + timedelta(days=7)
 
             # Send new email
             invite_data = invitation.get("invite_data", {})
@@ -1480,7 +1494,7 @@ class UserManagementService:
                 "expires_at": new_expires,
                 "status": "pending",
                 "email_status": "sent" if email_success else "failed",
-                "last_resent_at": datetime.utcnow(),
+                "last_resent_at": datetime.now(timezone.utc),
                 "resent_by": resent_by
             }
 
@@ -1556,7 +1570,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "status": "cancelled",
-                        "cancelled_at": datetime.utcnow(),
+                        "cancelled_at": datetime.now(timezone.utc),
                         "cancelled_by": cancelled_by,
                         "cancellation_reason": reason
                     }
@@ -1574,7 +1588,7 @@ class UserManagementService:
                         # Don't delete, just update metadata to mark as cancelled
                         stripe.Customer.modify(
                             stripe_customer_id,
-                            metadata={"invitation_cancelled": "true", "cancelled_at": datetime.utcnow().isoformat()}
+                            metadata={"invitation_cancelled": "true", "cancelled_at": datetime.now(timezone.utc).isoformat()}
                         )
                 except Exception as stripe_error:
                     self.logger.warning(f"Failed to update Stripe customer for cancelled invitation: {str(stripe_error)}")
@@ -1594,7 +1608,7 @@ class UserManagementService:
             return {
                 "message": f"Invitation for {invitation['email']} cancelled",
                 "invitation_id": invitation_id,
-                "cancelled_at": datetime.utcnow().isoformat()
+                "cancelled_at": datetime.now(timezone.utc).isoformat()
             }
 
         except HTTPException:
@@ -1635,7 +1649,7 @@ class UserManagementService:
 
             # Generate reset token
             reset_token = self.generate_invitation_token()
-            reset_expires = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry
+            reset_expires = datetime.now(timezone.utc) + timedelta(hours=1)  # 1 hour expiry
 
             # Store reset token in user document
             await self.users_collection.update_one(
@@ -1644,7 +1658,7 @@ class UserManagementService:
                     "$set": {
                         "password_reset_token": reset_token,
                         "password_reset_expires": reset_expires,
-                        "password_reset_requested_at": datetime.utcnow()
+                        "password_reset_requested_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -1704,7 +1718,7 @@ class UserManagementService:
                 raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
             # Check if token has expired
-            if user.get("password_reset_expires") and user["password_reset_expires"] < datetime.utcnow():
+            if user.get("password_reset_expires") and user["password_reset_expires"] < datetime.now(timezone.utc):
                 # Clean up expired token
                 await self.users_collection.update_one(
                     {"_id": user["_id"]},
@@ -1727,7 +1741,7 @@ class UserManagementService:
                 {
                     "$set": {
                         "password_hash": new_password_hash,
-                        "password_changed_at": datetime.utcnow()
+                        "password_changed_at": datetime.now(timezone.utc)
                     },
                     "$unset": {
                         "password_reset_token": "",
@@ -1792,7 +1806,7 @@ class UserManagementService:
                 raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
             # Check if token has expired
-            if user.get("password_reset_expires") and user["password_reset_expires"] < datetime.utcnow():
+            if user.get("password_reset_expires") and user["password_reset_expires"] < datetime.now(timezone.utc):
                 raise HTTPException(status_code=400, detail="Password reset token has expired. Please request a new one.")
 
             # Mask email for privacy (show first 2 chars and domain)

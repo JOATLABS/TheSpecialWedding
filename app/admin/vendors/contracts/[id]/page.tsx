@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'sonner';
+import { formatAdminTimestamp, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
   getContract,
   updateContract,
@@ -381,7 +382,7 @@ export default function ContractDetailPage() {
                       />
                     ) : (
                       <p className="text-gray-900 dark:text-gray-100">
-                        {contract.service_date ? new Date(contract.service_date).toLocaleDateString() : 'Not set'}
+                        {contract.service_date ? formatAdminDate(contract.service_date) : 'Not set'}
                       </p>
                     )}
                   </div>
@@ -471,7 +472,7 @@ export default function ContractDetailPage() {
                     </div>
                     <div>
                       <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Created</div>
-                      <div className="text-xs text-gray-500">{new Date(contract.created_at).toLocaleString()}</div>
+                      <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.created_at)}</div>
                     </div>
                   </div>
 
@@ -484,7 +485,7 @@ export default function ContractDetailPage() {
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Sent</div>
-                        <div className="text-xs text-gray-500">{new Date(contract.sent_at).toLocaleString()}</div>
+                        <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.sent_at)}</div>
                       </div>
                     </div>
                   )}
@@ -499,7 +500,7 @@ export default function ContractDetailPage() {
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Viewed</div>
-                        <div className="text-xs text-gray-500">{new Date(contract.viewed_at).toLocaleString()}</div>
+                        <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.viewed_at)}</div>
                       </div>
                     </div>
                   )}
@@ -513,7 +514,7 @@ export default function ContractDetailPage() {
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Signed</div>
-                        <div className="text-xs text-gray-500">{new Date(contract.signed_at).toLocaleString()}</div>
+                        <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.signed_at)}</div>
                         {contract.signed_by_name && (
                           <div className="text-xs text-gray-500">by {contract.signed_by_name}</div>
                         )}
@@ -654,7 +655,7 @@ export default function ContractDetailPage() {
                 </div>
                 <div>
                   <p className="text-gray-900 dark:text-gray-100">Contract created</p>
-                  <p className="text-sm text-gray-500">{new Date(contract.created_at).toLocaleString()}</p>
+                  <p className="text-sm text-gray-500">{formatAdminTimestamp(contract.created_at)}</p>
                 </div>
               </div>
 
@@ -667,7 +668,7 @@ export default function ContractDetailPage() {
                   </div>
                   <div>
                     <p className="text-gray-900 dark:text-gray-100">Contract updated</p>
-                    <p className="text-sm text-gray-500">{new Date(contract.updated_at).toLocaleString()}</p>
+                    <p className="text-sm text-gray-500">{formatAdminTimestamp(contract.updated_at)}</p>
                   </div>
                 </div>
               )}

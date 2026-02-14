@@ -33,6 +33,10 @@ google-auth>=2.25.0
 google-genai>=1.0.0
 # Calendar Export (iCal)
 icalendar>=5.0.0
+# PDF Generation (Seating Chart Export)
+weasyprint>=62.0
+# Web Push Notifications (VAPID)
+pywebpush>=1.14.0
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

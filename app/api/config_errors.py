@@ -9,8 +9,8 @@ import logging
 import uuid
 import re
 import hashlib
-from datetime import datetime, timedelta
-from typing import Optional, Dict
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, field_validator
 from fastapi import APIRouter, Request, HTTPException
 
@@ -26,18 +26,23 @@ router = APIRouter()
 _recent_errors: Dict[str, datetime] = {}
 DEDUP_WINDOW = 300  # 5 minutes
 
-_ntfy_service = None
+_web_push_service = None
+_web_push_checked = False
+
+# Root admin email for push alerts
+ROOT_ADMIN_EMAIL = "thedeveloper@thespecialwedding.com"
 
 
-def _get_ntfy_service():
-    global _ntfy_service
-    if _ntfy_service is None:
+def _get_web_push_service():
+    global _web_push_service, _web_push_checked
+    if not _web_push_checked:
+        _web_push_checked = True
         try:
-            from app.services.ntfy_service import ntfy_service
-            _ntfy_service = ntfy_service
+            from app.services.web_push_service import web_push_service
+            _web_push_service = web_push_service
         except ImportError:
-            _ntfy_service = False
-    return _ntfy_service if _ntfy_service else None
+            _web_push_service = None
+    return _web_push_service
 
 
 def _sanitize(value: Optional[str], max_len: int = 500) -> Optional[str]:
@@ -71,7 +76,7 @@ class ConfigErrorReport(BaseModel):
 
 
 def _is_duplicate(report: ConfigErrorReport) -> bool:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=DEDUP_WINDOW)
 
     expired = [k for k, v in _recent_errors.items() if v < cutoff]
@@ -105,7 +110,7 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
         return {"error_id": None, "reported": False, "reason": "duplicate"}
 
     error_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Check for existing unacknowledged error
     existing = await mongo.db["errors"].find_one({
@@ -146,7 +151,7 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
         raise HTTPException(status_code=500, detail="Failed to log error")
 
     await _create_notification(error_id, report, now)
-    await _send_ntfy_alert(report)
+    await _send_push_alert(report)
 
     return {"error_id": error_id, "reported": True}
 
@@ -166,7 +171,7 @@ async def _create_notification(error_id: str, report: ConfigErrorReport, timesta
             )
             return
 
-        notification = {
+        notification: Dict[str, Any] = {
             "title": f"CRITICAL: {_sanitize(report.error_type, 50)}",
             "message": _sanitize(report.message, 500),
             "type": "system_config",
@@ -191,20 +196,22 @@ async def _create_notification(error_id: str, report: ConfigErrorReport, timesta
         logger.error(f"Failed to create notification: {e}")
 
 
-async def _send_ntfy_alert(report: ConfigErrorReport):
-    ntfy = _get_ntfy_service()
-    if not ntfy:
+async def _send_push_alert(report: ConfigErrorReport):
+    """Send Web Push notification for critical config errors to root admin"""
+    web_push = _get_web_push_service()
+    if not web_push or not web_push.enabled:
         return
 
     try:
-        await ntfy.send_admin_alert(
+        await web_push.send_notification(
+            user_id=ROOT_ADMIN_EMAIL,
             title=f"Config Error: {_sanitize(report.variable_name, 50)}",
-            message=f"{_sanitize(report.message, 200)}\nHost: {_sanitize(report.hostname, 50)}",
-            priority="urgent",
-            tags=["rotating_light", "gear"]
+            body=f"{_sanitize(report.message, 150)}\nHost: {_sanitize(report.hostname, 50)}",
+            url="/admin/platform",
+            tag="config-error"
         )
     except Exception as e:
-        logger.error(f"Failed to send Ntfy alert: {e}")
+        logger.error(f"Failed to send Web Push alert: {e}")
 
 
 def _get_client_ip(request: Request) -> str:

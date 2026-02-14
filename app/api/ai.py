@@ -22,8 +22,11 @@ from app.services.ai_service import (
     AIServiceUnavailableError,
     AIQuotaExceededError,
     AITimeoutError,
-    AIInvalidResponseError
+    AIInvalidResponseError,
+    MODEL_PRIMARY,
+    MODEL_ECONOMY
 )
+from app.core.settings import settings
 from app.dependencies.auth_extended import require_admin_or_planner, check_wedding_access, ExtendedAuthUser
 from app.core.database import mongo
 from bson import ObjectId
@@ -214,7 +217,7 @@ def validate_seating_suggestions(
         tid = t.get("id") or t.get("_id")
         if tid and str(tid) != "None":
             table_capacities[str(tid)] = t.get("capacity", 10)
-            table_names[str(tid)] = t.get("name", f"Table {i+1}")
+            table_names[str(tid)] = t.get("name", f"Table {i + 1}")
 
     validated_tables = []
     warnings = []
@@ -512,6 +515,17 @@ async def get_budget_insights(
     Returns 3 actionable insights about the budget allocation.
     Cost: 3 credits
     """
+    # Check if AI service is properly initialized
+    if not ai_service._client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_not_configured",
+                "message": "AI service is not configured. Please contact the administrator.",
+                "hint": "GEMINI_API_KEY environment variable may be missing."
+            }
+        )
+
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 
@@ -621,6 +635,17 @@ async def get_dashboard_insights(
 
     Cost: 2 credits
     """
+    # Check if AI service is properly initialized
+    if not ai_service._client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_not_configured",
+                "message": "AI service is not configured. Please contact the administrator.",
+                "hint": "GEMINI_API_KEY environment variable may be missing."
+            }
+        )
+
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 
@@ -657,8 +682,8 @@ async def get_dashboard_insights(
         ]
 
         # Get upcoming vendor payments
-        from datetime import datetime, timedelta
-        upcoming_deadline = datetime.utcnow() + timedelta(days=30)
+        from datetime import datetime, timedelta, timezone
+        upcoming_deadline = datetime.now(timezone.utc) + timedelta(days=30)
 
         scheduled_payments = await mongo.db["scheduled_payments"].find({
             "wedding_id": wedding_id,
@@ -681,9 +706,9 @@ async def get_dashboard_insights(
         wedding_date_str = wedding.get("date")
         if wedding_date_str and isinstance(wedding_date_str, str):
             try:
-                from datetime import datetime as dt
-                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d")
-                days_until_wedding = (wedding_date - dt.utcnow()).days
+                from datetime import datetime as dt, timezone
+                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                days_until_wedding = (wedding_date - dt.now(timezone.utc)).days
             except (ValueError, TypeError):
                 # Ignore if date format is wrong
                 pass
@@ -768,7 +793,7 @@ async def optimize_seating(
 
         if not request.guests or not request.tables:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Guests and tables are required for optimization"
             )
 
@@ -782,19 +807,72 @@ async def optimize_seating(
         else:
             feature = "seating_large"
 
-        # Sanitize guest data to remove PII (email, phone) and reduce token usage
-        # Only send fields relevant to seating logic
-        sanitized_guests = [
-            {
-                "id": g.get("id") or g.get("_id"),
+        # Fetch RSVP data to get dietary restrictions
+        guest_ids = [g.get("id") or g.get("_id") for g in request.guests]
+        rsvp_cursor = mongo.db["rsvps"].find({
+            "wedding_id": wedding_id,
+            "guest_id": {"$in": guest_ids}
+        })
+        rsvps = await rsvp_cursor.to_list(length=None)
+
+        # Create lookup map for dietary info
+        dietary_map: dict[str, str] = {}
+        for rsvp in rsvps:
+            rsvp_guest_id = rsvp.get("guest_id")
+            dietary = rsvp.get("dietary")
+            if rsvp_guest_id and dietary:
+                dietary_map[rsvp_guest_id] = dietary
+
+        # Sanitize guest data with enhanced seating fields
+        # Include dietary, accessibility, relationships, and preferences
+        sanitized_guests: list[dict] = []
+        relationship_constraints: dict[str, list] = {
+            "must_sit_together": [],  # Pairs of guest IDs
+            "must_sit_apart": []      # Pairs of guest IDs to separate
+        }
+
+        for g in request.guests:
+            guest_id: str = g.get("id") or g.get("_id") or ""
+
+            guest_data = {
+                "id": guest_id,
                 "name": g.get("name"),
                 "group": g.get("group_id"),
                 "role": g.get("role"),
                 "plus_one": g.get("plus_one_allowed"),
-                "party_size": 1 + (g.get("number_of_plus_ones_allowed", 0) if g.get("plus_one_allowed") else 0)
+                "party_size": 1 + (g.get("number_of_plus_ones_allowed", 0) if g.get("plus_one_allowed") else 0),
+                # Enhanced fields for smarter seating
+                "dietary": dietary_map.get(guest_id) if guest_id else None,
+                "accessibility": g.get("accessibility_needs"),
+                "age_group": g.get("age_group"),
+                "language": g.get("language_preference"),
+                "seating_pref": g.get("seating_preference")
             }
-            for g in request.guests
-        ]
+            sanitized_guests.append(guest_data)
+
+            # Collect relationship constraints
+            must_sit_with: list[str] = g.get("must_sit_with") or []
+            must_sit_apart_list: list[str] = g.get("must_sit_apart") or []
+
+            for partner_id in must_sit_with:
+                if partner_id:  # Ensure partner_id is not None
+                    pair = tuple(sorted([guest_id, str(partner_id)]))
+                    if pair not in relationship_constraints["must_sit_together"]:
+                        relationship_constraints["must_sit_together"].append(pair)
+
+            for conflict_id in must_sit_apart_list:
+                if conflict_id:  # Ensure conflict_id is not None
+                    pair = tuple(sorted([guest_id, str(conflict_id)]))
+                    if pair not in relationship_constraints["must_sit_apart"]:
+                        relationship_constraints["must_sit_apart"].append(pair)
+
+        # Convert tuples to lists for JSON serialization
+        relationship_constraints["must_sit_together"] = [list(p) for p in relationship_constraints["must_sit_together"]]
+        relationship_constraints["must_sit_apart"] = [list(p) for p in relationship_constraints["must_sit_apart"]]
+
+        # Count special needs for context
+        dietary_count = sum(1 for g in sanitized_guests if g.get("dietary"))
+        accessibility_count = sum(1 for g in sanitized_guests if g.get("accessibility"))
 
         # Build context
         context = {
@@ -803,14 +881,29 @@ async def optimize_seating(
             "table_count": len(request.tables),
             "guests": sanitized_guests,
             "tables": request.tables,
-            "constraints": request.constraints or {}
+            "constraints": request.constraints or {},
+            "relationship_constraints": relationship_constraints,
+            "special_needs_summary": {
+                "guests_with_dietary_restrictions": dietary_count,
+                "guests_with_accessibility_needs": accessibility_count,
+                "total_must_sit_together_pairs": len(relationship_constraints["must_sit_together"]),
+                "total_must_sit_apart_pairs": len(relationship_constraints["must_sit_apart"])
+            }
         }
 
-        # Enhanced prompt with explicit constraints
+        # Enhanced prompt with comprehensive constraints
         system_prompt = (
-            "Create an optimal seating arrangement. Rules: 1. Keep guests with the same 'group' together where possible. "
-            "2. Ensure VIPs/Family are at appropriate tables. 3. Strictly respect table capacity limits. "
-            "4. Keep plus-ones with their primary guest."
+            "Create an optimal seating arrangement. CRITICAL RULES (in priority order): "
+            "1. MUST respect 'must_sit_together' pairs - these guests MUST be at the same table. "
+            "2. MUST respect 'must_sit_apart' pairs - these guests must be at DIFFERENT tables. "
+            "3. Guests with accessibility needs should be placed at accessible tables (near exits, ground level). "
+            "4. Keep guests with the same 'group' together where possible. "
+            "5. Ensure VIPs/Family are at appropriate tables. "
+            "6. Consider grouping guests with similar dietary restrictions for easier serving. "
+            "7. Strictly respect table capacity limits. "
+            "8. Keep plus-ones with their primary guest. "
+            "9. Consider age groups - seat children near family, elders in quieter areas. "
+            "10. Group guests by language preference for multilingual weddings."
         )
 
         # Generate seating arrangement
@@ -1345,13 +1438,13 @@ async def prioritize_tasks(
             raise HTTPException(status_code=404, detail="Wedding not found")
 
         # Calculate days until wedding
-        from datetime import datetime as dt, timedelta
+        from datetime import datetime as dt, timedelta, timezone
         days_until_wedding = None
         wedding_date_str = wedding.get("date")
         if wedding_date_str and isinstance(wedding_date_str, str):
             try:
-                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d")
-                days_until_wedding = (wedding_date - dt.utcnow()).days
+                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                days_until_wedding = (wedding_date - dt.now(timezone.utc)).days
             except Exception:
                 pass
 
@@ -1374,7 +1467,7 @@ async def prioritize_tasks(
         ]
 
         # Get upcoming vendor payments/deadlines
-        upcoming_deadline = dt.utcnow() + timedelta(days=60)
+        upcoming_deadline = dt.now(timezone.utc) + timedelta(days=60)
         vendor_deadlines = await mongo.db["scheduled_payments"].find({
             "wedding_id": wedding_id,
             "status": {"$in": ["scheduled", "pending"]},
@@ -1399,7 +1492,7 @@ async def prioritize_tasks(
             "days_until_wedding": days_until_wedding,
             "cultural_style": wedding.get("cultural_style", "western"),
             "guest_count": wedding.get("guest_count"),
-            "current_date": dt.utcnow().strftime("%Y-%m-%d"),
+            "current_date": dt.now(timezone.utc).strftime("%Y-%m-%d"),
             "pending_tasks": pending_tasks,
             "vendor_deadlines": deadlines
         }
@@ -1482,9 +1575,9 @@ async def generate_timeline(
             )
 
         # Calculate timeline parameters
-        from datetime import datetime as dt
-        wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d")
-        current_date = dt.utcnow()
+        from datetime import datetime as dt, timezone
+        wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        current_date = dt.now(timezone.utc)
         days_until_wedding = (wedding_date - current_date).days
         months_until_wedding = days_until_wedding / 30
 
@@ -1580,7 +1673,7 @@ async def get_payment_forecast(
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 
-        from datetime import datetime as dt
+        from datetime import datetime as dt, timezone
 
         # Get all scheduled payments
         scheduled_payments = await mongo.db["scheduled_payments"].find({
@@ -1594,7 +1687,7 @@ async def get_payment_forecast(
         }).to_list(length=100)
 
         # Format payments data
-        now = dt.utcnow()
+        now = dt.now(timezone.utc)
         payments_data = []
         for p in scheduled_payments:
             due_date = p.get("due_date")
@@ -1878,6 +1971,17 @@ async def chat_with_ai(
     - 1 credit per message
     - Culturally-aware responses when wedding context is provided
     """
+    # Check if AI service is properly initialized
+    if not ai_service._client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_not_configured",
+                "message": "AI service is not configured. Please contact the administrator.",
+                "hint": "GEMINI_API_KEY environment variable may be missing."
+            }
+        )
+
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 
@@ -1999,7 +2103,7 @@ class GenerateMessageRequest(BaseModel):
 @router.post("/generate-message")
 async def generate_message(
     request: GenerateMessageRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Generate a personalized wedding communication message.
@@ -2007,7 +2111,7 @@ async def generate_message(
     Cost: 1 credit
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, request.wedding_id):
@@ -2078,7 +2182,7 @@ class GenerateFormQuestionsRequest(BaseModel):
 @router.post("/generate-form-questions")
 async def generate_form_questions(
     request: GenerateFormQuestionsRequest,
-    current_user: dict = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Generate smart form questions based on form type and wedding context.
@@ -2086,7 +2190,7 @@ async def generate_form_questions(
     Cost: 1 credit
     """
     try:
-        user_id = str(current_user.user_data.get("_id", ""))
+        user_id = str((current_user.user_data or {}).get("_id", ""))
 
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, request.wedding_id):
@@ -2144,3 +2248,48 @@ async def generate_form_questions(
     except Exception as e:
         logger.error(f"Error generating form questions: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate form questions")
+
+
+# =========================================================================
+# AI HEALTH CHECK (Diagnostic Endpoint)
+# =========================================================================
+
+@router.get("/health")
+async def ai_health_check(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Check AI service health and configuration status.
+
+    Returns diagnostic information about the AI service:
+    - Whether AI is enabled (API key configured)
+    - Whether the Gemini client initialized successfully
+    - API connection status (if client is initialized)
+
+    Cost: 0 credits (diagnostic only)
+    """
+    status = {
+        "ai_enabled": settings.ai_enabled,
+        "api_key_configured": bool(settings.ai_api_key),
+        "client_initialized": ai_service._client is not None,
+        "primary_model": MODEL_PRIMARY,
+        "economy_model": MODEL_ECONOMY,
+    }
+
+    # Try a lightweight API test if client is initialized
+    if ai_service._client:
+        try:
+            # List models to verify API key works (synchronous call)
+            models_response = ai_service._client.models.list()
+            models = list(models_response)
+            status["api_connection"] = "ok"
+            status["available_models"] = len(models)
+        except Exception as e:
+            status["api_connection"] = "error"
+            status["api_error"] = str(e)
+            logger.error(f"AI health check - API connection error: {str(e)}")
+    else:
+        status["api_connection"] = "not_initialized"
+        status["api_error"] = "Gemini client not initialized. Check GEMINI_API_KEY environment variable."
+
+    return status

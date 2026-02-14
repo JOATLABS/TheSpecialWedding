@@ -13,7 +13,7 @@ import logging
 import os
 import traceback
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from fastapi import HTTPException, Request
@@ -143,7 +143,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         return bool(re.match(ipv6_pattern, ip))
 
     def _track_error(self, client_ip: str) -> None:
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         if client_ip not in self.error_tracking:
             self.error_tracking[client_ip] = {
                 "error_count": 0,
@@ -180,7 +180,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "error": {
                     "code": "IP_BLOCKED",
                     "message": "Your IP has been temporarily blocked due to excessive errors. Please try again later.",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
                     "retry_after": 3600,
                 }
             },
@@ -188,7 +188,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         )
 
     def _cleanup_old_tracking(self) -> None:
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         cutoff_time = current_time - timedelta(hours=1)
         expired_ips = [ip for ip, data in self.error_tracking.items() if data["first_error"] < cutoff_time]
         for ip in expired_ips:
@@ -206,7 +206,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         """Persist unexpected errors to MongoDB when available."""
         error_doc = {
             "error_id": error_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "error_type": type(exc).__name__,
             "error_message": str(exc),
             "stack_trace": traceback.format_exc(),

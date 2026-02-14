@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import logging
 
@@ -70,7 +70,7 @@ async def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root
         from datetime import datetime, timedelta
 
         users_collection = mongo.db["users"]
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Count trials by status
         active_trials = await users_collection.count_documents({
@@ -135,14 +135,14 @@ async def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
             "message": "Trial maintenance completed successfully",
             "warning_results": warning_result,
             "expiration_results": expiration_result,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Error in trial maintenance cron: {str(e)}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -161,14 +161,14 @@ async def cron_send_trial_warnings(_: bool = Depends(verify_cron_auth)):
         return {
             "status": "success",
             "results": result,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Error in trial warnings cron: {str(e)}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -187,12 +187,12 @@ async def cron_check_expired_trials(_: bool = Depends(verify_cron_auth)):
         return {
             "status": "success",
             "results": result,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Error in trial expiration cron: {str(e)}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }

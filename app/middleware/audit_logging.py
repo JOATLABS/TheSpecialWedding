@@ -7,7 +7,7 @@ from starlette.responses import Response
 import json
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from app.core.database import mongo
 import hashlib
@@ -132,7 +132,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
     ) -> Dict[str, Any]:
         """Create audit log entry"""
         return {
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "event_type": self._determine_event_type(request_info["method"], request_info["path"]),
             "user_id": user_id,
             "ip_address": request_info["ip_address"],
@@ -265,7 +265,7 @@ class AuditEventLogger:
     ):
         """Log login attempt"""
         await self.audit_collection.insert_one({
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "event_type": "login_attempt",
             "email": email,
             "success": success,
@@ -282,7 +282,7 @@ class AuditEventLogger:
     ):
         """Log data access event"""
         await self.audit_collection.insert_one({
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "event_type": "data_access",
             "user_id": user_id,
             "resource_type": resource_type,
@@ -301,7 +301,7 @@ class AuditEventLogger:
     ):
         """Log security event"""
         await self.audit_collection.insert_one({
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "event_type": "security_event",
             "security_event_type": event_type,
             "severity": severity,

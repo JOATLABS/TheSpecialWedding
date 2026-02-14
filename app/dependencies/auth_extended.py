@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import mongo
 from bson import ObjectId
 
@@ -94,20 +94,24 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
             if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
                 trial_end_date = user_data.get("trial_end_date")
                 if trial_end_date:
-                    # Handle both datetime objects and ISO strings
+                    # Handle both datetime objects and ISO strings, ensuring timezone-aware
                     if isinstance(trial_end_date, str):
                         try:
                             trial_end_date = datetime.fromisoformat(trial_end_date.replace('Z', '+00:00'))
                         except ValueError:
-                            trial_end_date = datetime.fromisoformat(trial_end_date)
-                    if datetime.utcnow() > trial_end_date:
+                            # Parse and assume UTC if no timezone info
+                            trial_end_date = datetime.fromisoformat(trial_end_date).replace(tzinfo=timezone.utc)
+                    elif isinstance(trial_end_date, datetime) and trial_end_date.tzinfo is None:
+                        # Handle naive datetime objects from MongoDB
+                        trial_end_date = trial_end_date.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) > trial_end_date:
                         # Auto-expire the trial
                         await mongo.get_users_collection().update_one(
                             {"email": email},
                             {"$set": {
                                 "subscription_status": "expired",
                                 "is_active": False,
-                                "trial_expired_at": datetime.utcnow()
+                                "trial_expired_at": datetime.now(timezone.utc)
                             }}
                         )
                         raise HTTPException(

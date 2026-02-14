@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Loader2, DollarSign, Send, Calendar, Mail, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createPaymentLink, sendPaymentLink, type PayerType, type RecipientType } from '@/services/vendorManagementApi';
+import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 
 interface VendorPaymentModalProps {
   open: boolean;
@@ -304,7 +305,7 @@ export function VendorPaymentModal({
                 {dueDate && (
                   <div className="flex justify-between">
                     <span className="text-gray-500">Due date:</span>
-                    <span>{new Date(dueDate).toLocaleDateString()}</span>
+                    <span>{formatAdminDate(dueDate)}</span>
                   </div>
                 )}
               </div>

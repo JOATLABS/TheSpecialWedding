@@ -20,6 +20,7 @@ import {
   Plus,
   Loader2
 } from 'lucide-react';
+import KnowledgeBase from '../components/kb/KnowledgeBase';
 
 interface SupportTicket {
   _id: string;
@@ -183,7 +184,12 @@ export default function SupportPage() {
 
     try {
       setCreating(true);
-      await apiRequest('/admin/tickets', 'POST', newTicket);
+      const result = await apiRequest<{ id: string; ticket_number: string; message: string }>('/admin/tickets', 'POST', newTicket);
+
+      // Validate the response contains expected fields
+      if (!result || !result.ticket_number) {
+        throw new Error('Failed to create ticket - invalid response from server');
+      }
 
       // Reset form and close modal
       setNewTicket({
@@ -194,10 +200,10 @@ export default function SupportPage() {
       });
       setShowCreateModal(false);
 
-      // Refresh tickets list
-      fetchData();
+      // Refresh tickets list - await to ensure list updates before showing success
+      await fetchData();
 
-      alert('Support ticket created successfully! Our team will respond soon.');
+      alert(`Support ticket ${result.ticket_number} created successfully! Our team will respond soon.`);
     } catch (error) {
       console.error('Error creating ticket:', error);
       alert('Failed to create support ticket. Please try again.');
@@ -532,23 +538,7 @@ export default function SupportPage() {
 
       {/* Knowledge Base Tab */}
       {activeTab === 'knowledge_base' && (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Knowledge Base</h2>
-            {isRootAdmin && (
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                Create Article
-              </button>
-            )}
-          </div>
-          <Card className="p-8 text-center">
-            <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Knowledge Base Coming Soon</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Help articles, FAQs, and documentation will be available here.
-            </p>
-          </Card>
-        </div>
+        <KnowledgeBase isRootAdmin={isRootAdmin || false} />
       )}
 
       {/* Response Modal */}

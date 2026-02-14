@@ -7,6 +7,7 @@ import { formatDate } from '@/utils/dateFormat';
 
 interface ThemedHeroSectionProps {
   wedding: Wedding;
+  onCelebrateClick?: () => void;
 }
 
 // Helper to lighten a hex color for dark mode
@@ -18,7 +19,7 @@ function lightenColor(hex: string, percent: number): string {
   return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
 }
 
-export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding }) => {
+export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding, onCelebrateClick }) => {
   const theme = wedding.theme_config;
 
   const primaryColor = theme?.primary_color || '#1e3a5f';
@@ -114,19 +115,18 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding })
           </p>
         )}
         <div className="mt-8 sm:mt-12">
-          <div
-            className="inline-block px-6 py-3 rounded-full transition-all duration-300 hover:scale-105"
+          <button
+            onClick={onCelebrateClick}
+            className="inline-block px-6 py-3 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg cursor-pointer"
             style={{
               backgroundColor: accentColor,
               color: '#ffffff'
             }}
           >
-            <p
-              className="text-sm sm:text-base font-medium text-white"
-            >
+            <span className="text-sm sm:text-base font-medium text-white">
               Celebrate with us
-            </p>
-          </div>
+            </span>
+          </button>
         </div>
       </GlassCard>
     </section>

@@ -1,6 +1,6 @@
 # app/services/reminder_utilities_telnyx.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
@@ -101,7 +101,7 @@ class TelnyxRSVPReminderHelper:
                 "guest_id": guest_id,
                 "attending": attending,
                 "dietary": dietary,
-                "submitted_at": datetime.utcnow()
+                "submitted_at": datetime.now(timezone.utc)
             }},
             upsert=True
         )

@@ -11,9 +11,8 @@ This provides audit trail and dashboard display for admin actions.
 
 from fastapi import HTTPException
 from app.core.database import mongo
-from typing import List, Dict, Optional
-from datetime import datetime
-from bson import ObjectId
+from typing import List, Optional
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,7 @@ class AdminActivityService:
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "metadata": metadata or {},
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
                 "is_read": False
             }
 
@@ -137,18 +136,21 @@ class AdminActivityService:
             activities = []
 
             async for doc in cursor:
+                # Use defensive .get() access to prevent KeyError on malformed documents
+                doc_id = doc.get("_id", "")
+                created_at = doc.get("created_at")
                 activities.append({
-                    "_id": str(doc["_id"]),
-                    "id": str(doc["_id"]),
-                    "admin_id": doc["admin_id"],
-                    "action_type": doc["action_type"],
-                    "title": doc["title"],
-                    "message": doc["message"],
+                    "_id": str(doc_id) if doc_id else "",
+                    "id": str(doc_id) if doc_id else "",
+                    "admin_id": doc.get("admin_id", ""),
+                    "action_type": doc.get("action_type", "unknown"),
+                    "title": doc.get("title", ""),
+                    "message": doc.get("message", ""),
                     "entity_type": doc.get("entity_type"),
                     "entity_id": doc.get("entity_id"),
                     "metadata": doc.get("metadata", {}),
                     "is_read": doc.get("is_read", False),
-                    "created_at": doc["created_at"].isoformat() if doc.get("created_at") else None
+                    "created_at": created_at.isoformat() if created_at else None
                 })
 
             return {
@@ -159,7 +161,7 @@ class AdminActivityService:
             }
 
         except Exception as e:
-            logger.error(f"Error getting activity log: {str(e)}")
+            logger.error(f"Error getting activity log: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error retrieving activity log: {str(e)}")
 
     async def get_recent_activities(self, limit: int = 10) -> List[dict]:
@@ -174,23 +176,26 @@ class AdminActivityService:
             activities = []
 
             async for doc in cursor:
+                # Use defensive .get() access to prevent KeyError on malformed documents
+                doc_id = doc.get("_id", "")
+                created_at = doc.get("created_at")
                 activities.append({
-                    "_id": str(doc["_id"]),
-                    "id": str(doc["_id"]),
-                    "admin_id": doc["admin_id"],
-                    "action_type": doc["action_type"],
-                    "title": doc["title"],
-                    "message": doc["message"],
+                    "_id": str(doc_id) if doc_id else "",
+                    "id": str(doc_id) if doc_id else "",
+                    "admin_id": doc.get("admin_id", ""),
+                    "action_type": doc.get("action_type", "unknown"),
+                    "title": doc.get("title", ""),
+                    "message": doc.get("message", ""),
                     "entity_type": doc.get("entity_type"),
                     "entity_id": doc.get("entity_id"),
                     "metadata": doc.get("metadata", {}),
-                    "created_at": doc["created_at"].isoformat() if doc.get("created_at") else None
+                    "created_at": created_at.isoformat() if created_at else None
                 })
 
             return activities
 
         except Exception as e:
-            logger.error(f"Error getting recent activities: {str(e)}")
+            logger.error(f"Error getting recent activities: {str(e)}", exc_info=True)
             return []
 
     # ==================== CONVENIENCE METHODS ====================

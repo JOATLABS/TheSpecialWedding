@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import PageHeader from './components/PageHeader';
+import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 
 interface MetricsSnapshot {
   id?: string;
@@ -58,10 +59,10 @@ const getValueFromPaths = (
   return undefined;
 };
 
-const formatTimestamp = (value?: string | null) => {
+const formatTimestamp = (value?: string | null, timezone: string = DEFAULT_TIMEZONE) => {
   if (!value) return 'Unknown';
-  const parsed = new Date(value);
-  return isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  const formatted = formatAdminTimestamp(value, timezone);
+  return formatted || value;
 };
 
 export default function AdminMetricsDashboard() {
@@ -481,9 +482,9 @@ function CollapsibleMetric({ metricKey, value, isObject }: CollapsibleMetricProp
     if (typeof val === 'string') {
       // Check if it's a timestamp
       if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(val)) {
-        const date = new Date(val);
-        if (!isNaN(date.getTime())) {
-          return <span className="text-emerald-600 dark:text-emerald-400">{date.toLocaleString()}</span>;
+        const formatted = formatAdminTimestamp(val);
+        if (formatted) {
+          return <span className="text-emerald-600 dark:text-emerald-400">{formatted}</span>;
         }
       }
       return <span className="text-emerald-600 dark:text-emerald-400">&quot;{val}&quot;</span>;
@@ -675,12 +676,7 @@ function ActivityItem({ activity }: ActivityItemProps) {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
 
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return formatAdminTimestamp(dateString);
   };
 
   return (

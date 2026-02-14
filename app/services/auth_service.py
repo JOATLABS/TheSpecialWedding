@@ -1,8 +1,11 @@
-from fastapi import HTTPException
-from app.core.database import mongo
-from app.utils.auth_utils import verify_password, create_access_token
-from datetime import timedelta, datetime
 import logging
+from datetime import datetime, timedelta, timezone
+
+from fastapi import HTTPException
+
+from app.core.database import mongo
+from app.utils.auth_utils import (DUMMY_PASSWORD_HASH, create_access_token,
+                                  verify_password)
 
 logger = logging.getLogger(__name__)
 
@@ -14,24 +17,35 @@ class AuthService:
     async def authenticate_user(self, email: str, password: str):
         # Find user in unified collection
         user = await self.users_collection.find_one({"email": email})
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
 
         # Check password - support both password_hash (new) and hashed_password (legacy)
-        password_field = user.get("password_hash") or user.get("hashed_password")
-        if not password_field:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+        password_field = None
+        if user:
+            password_field = user.get("password_hash") or user.get("hashed_password")
 
-        if not verify_password(password, password_field):
+        # Use dummy hash if user doesn't exist or has no password to prevent timing attacks
+        target_hash = password_field if password_field else DUMMY_PASSWORD_HASH
+
+        # Always verify password to ensure constant time execution (approx)
+        is_valid_password = verify_password(password, target_hash)
+
+        if not user or not password_field or not is_valid_password:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         # Check if account is active (default to True for backward compatibility with legacy users)
         if user.get("is_active") == False:  # Explicitly check for False, not just falsy
-            raise HTTPException(status_code=401, detail="Account is not active. Please contact support.")
+            raise HTTPException(
+                status_code=401, detail="Account is not active. Please contact support."
+            )
 
         # Check if email is verified for public registrations
-        if user.get("registration_source") == "public_signup" and not user.get("email_verified", False):
-            raise HTTPException(status_code=401, detail="Please verify your email address before logging in. Check your email for the verification link.")
+        if user.get("registration_source") == "public_signup" and not user.get(
+            "email_verified", False
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail="Please verify your email address before logging in. Check your email for the verification link.",
+            )
 
         return user
 
@@ -39,11 +53,10 @@ class AuthService:
         user = await self.authenticate_user(email, password)
 
         # Update last_login timestamp
-        login_time = datetime.utcnow()
+        login_time = datetime.now(timezone.utc)
         try:
             await self.users_collection.update_one(
-                {"_id": user["_id"]},
-                {"$set": {"last_login": login_time}}
+                {"_id": user["_id"]}, {"$set": {"last_login": login_time}}
             )
             logger.info(f"Updated last_login for user: {email}")
         except Exception as e:

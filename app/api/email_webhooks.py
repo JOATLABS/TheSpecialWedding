@@ -10,7 +10,7 @@ Event Types: email.sent, email.delivered, email.bounced, email.delivery_delayed,
 
 from fastapi import APIRouter, Request, HTTPException, Header
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import mongo
 from bson import ObjectId
 import logging
@@ -99,7 +99,7 @@ async def handle_resend_webhook(
         created_at_str = verified_payload.get("created_at")
 
         # Parse timestamp
-        created_at = datetime.utcnow()
+        created_at = datetime.now(timezone.utc)
         if created_at_str and isinstance(created_at_str, str):
             try:
                 created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
@@ -117,7 +117,7 @@ async def handle_resend_webhook(
             "from": event_data.get("from"),
             "subject": event_data.get("subject"),
             "created_at": created_at,
-            "received_at": datetime.utcnow(),
+            "received_at": datetime.now(timezone.utc),
             "raw_payload": verified_payload,
             "processed": False
         }
@@ -158,7 +158,7 @@ async def handle_resend_webhook(
         # Mark event as processed
         await email_events_collection.update_one(
             {"_id": ObjectId(event_id)},
-            {"$set": {"processed": True, "processed_at": datetime.utcnow()}}
+            {"$set": {"processed": True, "processed_at": datetime.now(timezone.utc)}}
         )
 
         logger.info(f"✅ Processed {event_type} for {event_data.get('to')} (ID: {event_id})")
@@ -240,7 +240,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "recipient": recipient_email,
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now(timezone.utc)
                 }
             },
             "email.delivered": {
@@ -250,7 +250,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "recipient": recipient_email,
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now(timezone.utc)
                 }
             },
             "email.bounced": {
@@ -262,7 +262,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "event_id": event_id,
                     "bounce_type": event_data.get("bounce_type"),
                     "reason": event_data.get("reason"),
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now(timezone.utc)
                 }
             },
             "email.delivery_delayed": {
@@ -274,7 +274,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "event_id": event_id,
                     "attempt": event_data.get("attempt"),
                     "reason": event_data.get("reason"),
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now(timezone.utc)
                 }
             },
             "email.opened": {
@@ -284,7 +284,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "recipient": recipient_email,
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now(timezone.utc)
                 }
             },
             "email.clicked": {
@@ -295,7 +295,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
                     "link": event_data.get("link"),
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now(timezone.utc)
                 }
             },
             "email.complained": {
@@ -306,7 +306,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
                     "email_id": event_data.get("email_id"),
                     "event_id": event_id,
                     "feedback_type": event_data.get("feedback_type"),
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now(timezone.utc)
                 }
             }
         }
@@ -320,7 +320,7 @@ async def _update_notification_status(event_type: str, event_data: dict, event_i
         update_operation = {
             "$inc": {f"delivery_summary.{mapping['counter']}": 1},
             "$push": {"delivery_events": mapping['event_data']},
-            "$set": {"updated_at": datetime.utcnow()}
+            "$set": {"updated_at": datetime.now(timezone.utc)}
         }
 
         # Update all notifications that were sent to this recipient

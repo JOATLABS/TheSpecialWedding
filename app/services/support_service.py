@@ -1,7 +1,7 @@
 from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
 from typing import Dict, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import secrets
 import string
@@ -12,7 +12,8 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 # Root admin email for support notifications
-ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+# Default fallback uses .io domain (SAAS platform) - should be configured via env var
+ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "admin@thespecialwedding.io")
 
 
 class SupportService:
@@ -23,7 +24,7 @@ class SupportService:
     def generate_ticket_number(self) -> str:
         """Generate a unique ticket number"""
         prefix = "TKT"
-        timestamp = datetime.utcnow().strftime("%Y%m%d")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
         random_suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"{prefix}-{timestamp}-{random_suffix}"
 
@@ -50,8 +51,8 @@ class SupportService:
                 "assigned_to": None,
                 "wedding_id": ticket_data.get("wedding_id"),
                 "attachments": ticket_data.get("attachments", []),
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "resolved_at": None,
                 "comments": [],
                 "tags": [],
@@ -63,6 +64,50 @@ class SupportService:
 
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create ticket")
+
+            logger.info(f"Support ticket {ticket_number} created successfully by {created_by}")
+
+            # Log activity for planner dashboard (activity_logs collection)
+            try:
+                activity_logs_collection = mongo.db["activity_logs"]
+                await activity_logs_collection.insert_one({
+                    "type": "support_ticket_created",
+                    "message": f"Support ticket created: {ticket['subject'][:50]}",
+                    "timestamp": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
+                    "planner_email": created_by,
+                    "actor_email": created_by,
+                    "metadata": {
+                        "ticket_number": ticket_number,
+                        "ticket_id": str(result.inserted_id),
+                        "priority": ticket['priority'],
+                        "category": ticket['category']
+                    }
+                })
+                logger.info(f"Activity logged for support ticket {ticket_number}")
+            except Exception as activity_error:
+                logger.error(f"Failed to log activity for ticket {ticket_number}: {str(activity_error)}")
+                # Don't fail ticket creation if activity logging fails
+
+            # Create in-app notification for ROOT_ADMIN
+            try:
+                from app.services.notification_service import NotificationService
+                notification_service = NotificationService()
+                await notification_service.create_notification(
+                    notification_data={
+                        "title": f"New Support Ticket: {ticket['subject'][:50]}",
+                        "message": f"Ticket #{ticket_number} from {created_by} - Priority: {ticket['priority'].upper()}",
+                        "type": "support_ticket",
+                        "target_audience": "root_admin",
+                        "is_dismissible": True,
+                        "priority": "high" if ticket['priority'] in ['urgent', 'high'] else "medium"
+                    },
+                    created_by="system"
+                )
+                logger.info(f"In-app notification created for support ticket {ticket_number}")
+            except Exception as notif_error:
+                logger.error(f"Failed to create notification for ticket {ticket_number}: {str(notif_error)}")
+                # Don't fail ticket creation if notification fails
 
             # Send email notification to root admin
             try:
@@ -216,12 +261,12 @@ class SupportService:
                     raise HTTPException(status_code=403, detail="Access denied")
 
             # Prepare update data
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             # Handle status changes
             if "status" in update_data:
                 if update_data["status"] in ["resolved", "closed"] and not existing.get("resolved_at"):
-                    update_data["resolved_at"] = datetime.utcnow()
+                    update_data["resolved_at"] = datetime.now(timezone.utc)
                 elif update_data["status"] not in ["resolved", "closed"] and existing.get("resolved_at"):
                     update_data["resolved_at"] = None
 
@@ -272,7 +317,7 @@ class SupportService:
                 "id": str(ObjectId()),
                 "user_id": current_user.email,
                 "message": comment_data["message"],
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
                 "is_internal": comment_data.get("is_internal", False)
             }
 
@@ -281,12 +326,43 @@ class SupportService:
                 {"_id": obj_id},
                 {
                     "$push": {"comments": comment},
-                    "$set": {"updated_at": datetime.utcnow()}
+                    "$set": {"updated_at": datetime.now(timezone.utc)}
                 }
             )
 
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to add comment")
+
+            # Notify planner when ROOT_ADMIN responds (not internal comments)
+            if current_user.role == "ROOT_ADMIN" and not comment_data.get("is_internal", False):
+                # Only notify if the planner is not the commenter
+                if ticket["created_by"] != current_user.email:
+                    try:
+                        await self._notify_planner_ticket_response(ticket, comment, current_user)
+                    except Exception as notif_error:
+                        logger.error(f"Failed to send ticket response notification: {str(notif_error)}")
+                        # Don't fail the comment if notification fails
+
+            # Log activity for all comments
+            try:
+                activity_logs_collection = mongo.db["activity_logs"]
+                await activity_logs_collection.insert_one({
+                    "type": "support_ticket_comment",
+                    "message": f"Comment added to ticket {ticket.get('ticket_number', 'Unknown')}",
+                    "timestamp": datetime.now(timezone.utc),
+                    "created_at": datetime.now(timezone.utc),
+                    "planner_email": ticket["created_by"],
+                    "actor_email": current_user.email,
+                    "metadata": {
+                        "ticket_number": ticket.get("ticket_number"),
+                        "ticket_id": ticket_id,
+                        "comment_id": comment["id"],
+                        "is_internal": comment_data.get("is_internal", False)
+                    }
+                })
+            except Exception as activity_error:
+                logger.error(f"Failed to log activity for comment: {str(activity_error)}")
+                # Don't fail the comment if activity logging fails
 
             return {
                 "message": "Comment added successfully",
@@ -359,7 +435,7 @@ class SupportService:
                 {
                     "$set": {
                         "assigned_to": agent_email,
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": datetime.now(timezone.utc),
                         "status": new_status
                     }
                 }
@@ -381,7 +457,7 @@ class SupportService:
     async def get_analytics(self, period: str = "30d") -> dict:
         """Get support analytics"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             if period == "7d":
                 start_date = now - timedelta(days=7)
             elif period == "30d":
@@ -471,7 +547,7 @@ class SupportService:
     async def get_dashboard_metrics(self) -> dict:
         """Get support dashboard metrics"""
         try:
-            today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
             metrics: Dict[str, Any] = {
                 "open_tickets": await self.tickets_collection.count_documents({"status": "open"}),
@@ -533,7 +609,7 @@ class SupportService:
             upload_dir = os.getenv("SUPPORT_ATTACHMENTS_DIR", "uploads/support_attachments")
             os.makedirs(upload_dir, exist_ok=True)
 
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             safe_name = os.path.basename(file.filename or "attachment")
             stored_filename = f"{ticket_id}_{timestamp}_{safe_name}"
             file_path = os.path.join(upload_dir, stored_filename)
@@ -554,12 +630,12 @@ class SupportService:
                             "path": file_path,
                             "url": file_url,
                             "uploaded_by": current_user.email,
-                            "uploaded_at": datetime.utcnow(),
+                            "uploaded_at": datetime.now(timezone.utc),
                             "file_size": file_size,
                             "content_type": file.content_type,
                         }
                     },
-                    "$set": {"updated_at": datetime.utcnow()},
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
                 },
             )
 
@@ -577,7 +653,7 @@ class SupportService:
     def _is_ticket_overdue(self, ticket: dict) -> bool:
         """Check if ticket is overdue based on priority and creation time"""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             created = ticket["created_at"]
             priority = ticket.get("priority", "medium")
 
@@ -619,8 +695,7 @@ class SupportService:
                     creator_name = creator_info["company_name"]
                 else:
                     creator_name = (
-                        f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip()
-                        or created_by
+                        f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip() or created_by
                     )
 
             priority = (ticket.get("priority") or "medium").lower()
@@ -714,3 +789,136 @@ class SupportService:
         except Exception as e:
             logger.error(f"Failed to send support ticket notification: {str(e)}")
             raise
+
+    async def _notify_planner_ticket_response(
+        self,
+        ticket: dict,
+        comment: dict,
+        responder
+    ) -> None:
+        """Notify planner when root admin responds to their support ticket"""
+        try:
+            planner_email = ticket["created_by"]
+            ticket_number = ticket.get("ticket_number", "Unknown")
+            ticket_subject = ticket.get("subject", "No Subject")
+            ticket_id = str(ticket["_id"])
+
+            # Get responder name
+            responder_info = await self.users_collection.find_one(
+                {"email": responder.email},
+                {"first_name": 1, "last_name": 1}
+            )
+            responder_name = "Support Team"
+            if responder_info:
+                responder_name = f"{responder_info.get('first_name', '')} {responder_info.get('last_name', '')}".strip()
+                if not responder_name:
+                    responder_name = "Support Team"
+
+            # 1. Create in-app planner notification
+            from app.services.planner_notification_service import planner_notification_service
+            await planner_notification_service.notify_support_ticket_response(
+                planner_id=planner_email,
+                ticket_number=ticket_number,
+                ticket_subject=ticket_subject,
+                responder_name=responder_name,
+                ticket_id=ticket_id,
+                message_preview=comment.get("message")
+            )
+            logger.info(f"Planner notification created for ticket response: {ticket_number}")
+
+            # 2. Send email notification
+            await self._send_ticket_response_email(
+                planner_email=planner_email,
+                ticket=ticket,
+                comment=comment,
+                responder_name=responder_name
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to notify planner about ticket response: {str(e)}")
+            raise
+
+    async def _send_ticket_response_email(
+        self,
+        planner_email: str,
+        ticket: dict,
+        comment: dict,
+        responder_name: str
+    ) -> None:
+        """Send email notification to planner when admin responds to their ticket"""
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            email_service = ResendEmailService()
+
+            ticket_number = ticket.get("ticket_number", "Unknown")
+            ticket_subject = ticket.get("subject", "No Subject")
+            message_content = comment.get("message", "")
+
+            frontend_url = (os.getenv("FRONTEND_URL") or "").rstrip("/")
+            support_url = f"{frontend_url}/admin/support" if frontend_url else ""
+
+            html_content = f"""
+            <!doctype html>
+            <html>
+            <body style="font-family: Arial, sans-serif; background-color: #ffffff; color: #111827; margin: 0; padding: 0;">
+                <div style="max-width: 640px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
+                    <div style="background: linear-gradient(135deg, #10b981, #059669); padding: 24px; text-align: center;">
+                        <h1 style="color: white; margin: 0; font-size: 22px;">Support Response</h1>
+                    </div>
+
+                    <div style="padding: 24px;">
+                        <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; width: 120px;">Ticket #:</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{ticket_number}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Subject:</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{ticket_subject}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Responded by:</td>
+                                    <td style="padding: 6px 0;">{responder_name}</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <h2 style="margin: 20px 0 10px 0; font-size: 16px; color: #374151;">Response:</h2>
+
+                        <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 16px; border-radius: 0 8px 8px 0;">
+                            <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{message_content}</p>
+                        </div>
+
+                        {f'''
+                        <div style="text-align: center; margin-top: 24px;">
+                            <a href="{support_url}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                View in Support Center
+                            </a>
+                        </div>
+                        ''' if support_url else ''}
+                    </div>
+
+                    <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e5e7eb;">
+                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
+                            This email was sent from TheSpecialWedding Support System
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            await email_service.send_email(
+                to_email=planner_email,
+                subject=f"Support Response: {ticket_subject} (#{ticket_number})",
+                html_content=html_content,
+                from_name="TheSpecialWedding Support",
+                email_type="support_ticket_response"
+            )
+
+            logger.info(f"Ticket response email sent to {planner_email} for ticket {ticket_number}")
+
+        except Exception as e:
+            logger.error(f"Failed to send ticket response email: {str(e)}")

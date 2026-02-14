@@ -6,6 +6,7 @@ export interface EventDetails {
   time?: string;
   endTime?: string;
   attire?: string;
+  timezone?: string;
 }
 
 export interface WeddingEvent {
@@ -78,6 +79,7 @@ export interface Wedding {
   slug: string;
   couple_names: string;
   date: string;
+  timezone?: string;
   events: WeddingEvent[];
   rsvp_config?: RSVPConfig;
   privacy_settings?: PrivacySettings;

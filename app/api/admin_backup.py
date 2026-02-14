@@ -12,7 +12,7 @@ Zero-cost backup solution:
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from typing import Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
 import subprocess
@@ -58,14 +58,14 @@ async def trigger_backup(
         raise HTTPException(status_code=500, detail="Backup system not configured")
 
     if token != BACKUP_SECRET:
-        logger.warning(f"Invalid backup secret attempt")
+        logger.warning("Invalid backup secret attempt")
         raise HTTPException(status_code=401, detail="Invalid backup secret")
 
     try:
         logger.info("Starting database backup...")
 
         # Create backup filename with timestamp
-        timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         backup_filename = f"mongodb-backup-{timestamp}.gz"
         backup_path = f"/tmp/{backup_filename}"
 
@@ -161,7 +161,7 @@ async def trigger_backup(
         # Save backup record to database
         backup_record = {
             "backup_id": timestamp,
-            "backup_date": datetime.utcnow(),
+            "backup_date": datetime.now(timezone.utc),
             "filename": backup_filename,
             "file_size_bytes": file_size,
             "file_size_mb": file_size_mb,
@@ -178,7 +178,7 @@ async def trigger_backup(
 
         return {
             "status": "success",
-            "backup_date": datetime.utcnow().isoformat(),
+            "backup_date": datetime.now(timezone.utc).isoformat(),
             "filename": backup_filename,
             "file_size_mb": round(file_size_mb, 2),
             "storage_location": "R2",
@@ -191,7 +191,7 @@ async def trigger_backup(
         # Log failure to database
         try:
             await mongo.db["backup_history"].insert_one({
-                "backup_date": datetime.utcnow(),
+                "backup_date": datetime.now(timezone.utc),
                 "status": "failed",
                 "error": str(e)
             })
@@ -211,7 +211,7 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
         bucket_name: R2 bucket name
     """
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         logger.info(f"Cleaning up backups older than {cutoff_date.isoformat()}")
 
         # List all backups in R2
@@ -252,7 +252,7 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
                         # Update database record
                         await mongo.db["backup_history"].update_one(
                             {"storage_key": obj['Key']},
-                            {"$set": {"deleted_at": datetime.utcnow(), "status": "deleted"}}
+                            {"$set": {"deleted_at": datetime.now(timezone.utc), "status": "deleted"}}
                         )
 
                 except Exception as e:
@@ -318,7 +318,7 @@ async def get_latest_backup(
         backup["_id"] = str(backup["_id"])
 
     # Calculate age
-    age_hours = (datetime.utcnow() - backup["backup_date"]).total_seconds() / 3600
+    age_hours = (datetime.now(timezone.utc) - backup["backup_date"]).total_seconds() / 3600
 
     return {
         **backup,
@@ -426,6 +426,8 @@ async def manual_cleanup_old_backups(
         )
 
         bucket_name = os.getenv("S3_BUCKET_NAME")
+        if not bucket_name:
+            raise HTTPException(status_code=500, detail="S3_BUCKET_NAME environment variable not configured")
 
         await cleanup_old_backups(days, s3_client, bucket_name)
 

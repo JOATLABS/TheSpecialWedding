@@ -1,8 +1,8 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.wedding import WeddingModel
-from typing import List
-from datetime import datetime
+from typing import List, Dict, Any, Union
+from datetime import datetime, timezone
 
 # import re
 
@@ -26,12 +26,12 @@ class WeddingService:
             # Safety limit to prevent infinite loops
             if counter > 100:
                 # Use timestamp as fallback
-                slug = f"{base_slug}-{int(datetime.utcnow().timestamp())}"
+                slug = f"{base_slug}-{int(datetime.now(timezone.utc).timestamp())}"
                 break
 
         return slug
 
-    async def create_wedding(self, wedding: WeddingModel):
+    async def create_wedding(self, wedding: Union[WeddingModel, Dict[str, Any]]):
         """Create a new wedding"""
         try:
             if isinstance(wedding, dict):
@@ -44,7 +44,7 @@ class WeddingService:
                 wedding_dict["_id"] = str(wedding_dict["_id"])
             # Track billing period marker
             if "billed_period" not in wedding_dict:
-                current_month = datetime.utcnow().strftime("%Y-%m")
+                current_month = datetime.now(timezone.utc).strftime("%Y-%m")
                 wedding_dict["billed_period"] = current_month
             wedding_dict.setdefault("meter_pending", False)
 

@@ -5,8 +5,7 @@ Provides Pydantic models with validation for multi-tenant support tickets
 from pydantic import BaseModel, Field, field_validator, field_serializer
 from typing import Optional, List
 from datetime import datetime
-from app.models.base import MongoModel, WeddingRelatedModel, UserRelatedModel
-from app.utils.pydantic_objectid import PyObjectId
+from app.models.base import MongoModel, UserRelatedModel
 import re
 
 
@@ -27,7 +26,7 @@ class SMSResponseModel(BaseModel):
         return v
 
     @field_serializer('sent_at', when_used='json')
-    def serialize_datetime(self, dt: datetime) -> str:
+    def serialize_datetime(self, dt: datetime) -> str | None:
         return dt.isoformat() if dt else None
 
 
@@ -60,7 +59,7 @@ class SupportTicketModel(MongoModel):
 
     # Ticket Management
     status: str = Field(default="new", description="Ticket status")
-    priority: str = Field(default="normal", description="Priority level")
+    priority: str = Field(default="medium", description="Priority level")
     category: Optional[str] = Field(None, max_length=50, description="Category: ceremony, venue, dietary, etc.")
     is_read: bool = Field(default=False, description="Whether planner has read this ticket")
 
@@ -119,7 +118,7 @@ class SupportTicketModel(MongoModel):
     @classmethod
     def validate_priority(cls, v):
         """Validate priority level"""
-        valid_priorities = ["low", "normal", "high", "urgent"]
+        valid_priorities = ["low", "medium", "high", "urgent"]
         if v not in valid_priorities:
             raise ValueError(f"Priority must be one of: {', '.join(valid_priorities)}")
         return v
@@ -146,7 +145,7 @@ class SupportTicketModel(MongoModel):
                 "assigned_to": "planner@dreamweddings.com",
                 "planner_name": "Dream Weddings LLC",
                 "status": "new",
-                "priority": "normal",
+                "priority": "medium",
                 "is_read": False,
                 "responses": [],
                 "created_at": "2025-01-19T10:30:00Z",
@@ -155,7 +154,7 @@ class SupportTicketModel(MongoModel):
         }
 
 
-class GeneralSupportTicketModel(MongoModel, UserRelatedModel):
+class GeneralSupportTicketModel(UserRelatedModel):
     """
     General Support Ticket Model (Web-based)
     For platform support tickets created through web forms

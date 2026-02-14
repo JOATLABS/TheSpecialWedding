@@ -448,8 +448,22 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
         return;
       }
 
+      if (response.status === 503) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData?.detail?.message || 'AI service is temporarily unavailable.';
+        setError(message);
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error('Failed to get response');
+        // Extract detailed error message from response
+        const errorData = await response.json().catch(() => ({}));
+        const detail = errorData?.detail;
+        let errorMessage = 'Failed to get response';
+        if (detail) {
+          errorMessage = typeof detail === 'string' ? detail : (detail.message || JSON.stringify(detail));
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -475,7 +489,8 @@ export function AIChatWidget({ weddingId: propWeddingId, weddingName: propWeddin
       }
 
     } catch (err) {
-      setError('Failed to get response. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to get response';
+      setError(`${errorMessage}. Please try again.`);
       toast.error('AI chat failed');
     } finally {
       setIsLoading(false);

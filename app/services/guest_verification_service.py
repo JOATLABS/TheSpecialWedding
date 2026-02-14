@@ -1,10 +1,12 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import secrets
 import logging
+import hashlib
+import os
 from app.services.guest_service import GuestService
 from app.services.wedding_service import WeddingService
 from app.services.otp_service import OTPService
@@ -21,6 +23,8 @@ class GuestVerificationService:
         self.otp_service = OTPService()
         self.weddings_collection = mongo.db["weddings"]
         self.guests_collection = mongo.get_guest_collection()
+        self.rsvp_collection = mongo.db["rsvps"]
+        self.plus_ones_collection = mongo.db["plus_ones"]
 
         # Security configuration
         self._failed_attempts = {}  # In-memory rate limiting (use Redis in production)
@@ -45,7 +49,7 @@ class GuestVerificationService:
 
     def _check_rate_limit(self, identifier: str) -> bool:
         """Check if request is rate limited. Returns True if allowed."""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
 
         if identifier in self._failed_attempts:
             attempt_data = self._failed_attempts[identifier]
@@ -66,7 +70,7 @@ class GuestVerificationService:
 
     def _record_failed_attempt(self, identifier: str):
         """Record a failed authentication attempt"""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
 
         if identifier in self._failed_attempts:
             self._failed_attempts[identifier]["count"] += 1
@@ -84,7 +88,7 @@ class GuestVerificationService:
         try:
             log_entry = {
                 "event_type": event_type,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "details": details
             }
             # Only log event type to console, not the sensitive details
@@ -153,6 +157,35 @@ class GuestVerificationService:
                 "guest_id": str(guest.get("id"))
             })
 
+            # Check if guest has already RSVPed
+            guest_id_str = str(guest.get("id"))
+            existing_rsvp = await self.rsvp_collection.find_one({
+                "$or": [
+                    {"guest_id": guest_id_str},
+                    {"guest_id": guest.get("id")}
+                ]
+            })
+
+            # Get plus-ones if RSVP exists
+            plus_ones = []
+            if existing_rsvp:
+                plus_ones_cursor = self.plus_ones_collection.find({"guest_id": guest_id_str})
+                plus_ones = await plus_ones_cursor.to_list(length=20)
+                # Convert ObjectId to string for JSON serialization
+                for po in plus_ones:
+                    po["id"] = str(po.pop("_id", ""))
+
+            # Build RSVP response
+            rsvp_data = None
+            if existing_rsvp:
+                rsvp_data = {
+                    "has_rsvp": True,
+                    "submitted_at": existing_rsvp.get("submitted_at"),
+                    "attending": existing_rsvp.get("attending", []),
+                    "dietary": existing_rsvp.get("dietary"),
+                    "plus_ones": plus_ones
+                }
+
             # Return wedding and guest data
             wedding_response = {
                 **wedding,
@@ -163,6 +196,7 @@ class GuestVerificationService:
                 "access": True,
                 "wedding": wedding_response,
                 "guest": guest,
+                "rsvp": rsvp_data,
                 "auth_method": "token"
             }
 
@@ -379,7 +413,7 @@ class GuestVerificationService:
                 "wedding_id": wedding_id,
                 "guest_id": guest_id,
                 "verification_method": method,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "type": "guest_verification"
             }
             await mongo.db["access_logs"].insert_one(log_entry)
@@ -455,7 +489,7 @@ class GuestVerificationService:
                 {
                     "$set": {
                         "privacy_settings": privacy_settings,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(timezone.utc)
                     }
                 }
             )
@@ -469,6 +503,242 @@ class GuestVerificationService:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating privacy settings: {str(e)}")
+
+    # =========================================================================
+    # REQUEST RSVP LINK - Guest lookup and RSVP link delivery
+    # Used by: POST /guests/request-rsvp-link
+    # Purpose: Allow guests to request their RSVP link via phone/email
+    # =========================================================================
+    async def request_and_send_rsvp_link(
+        self,
+        slug: str,
+        contact: str,
+        contact_type: str,
+        client_ip: str
+    ) -> Dict[str, Any]:
+        """
+        Look up guest by contact (phone or email) and send their RSVP link.
+
+        Security:
+        - Rate limited: 3 requests per contact per 10 minutes
+        - Always returns generic success message (prevents guest enumeration)
+        - Only sends to the provided contact type (no cross-channel leakage)
+
+        Args:
+            slug: Wedding slug
+            contact: Phone number or email address
+            contact_type: "phone" or "email"
+            client_ip: Client IP for rate limiting
+
+        Returns:
+            Dict with success=True and generic message (regardless of whether guest found)
+        """
+        # Sanitize inputs
+        slug = self._sanitize_input(slug, "slug", max_length=100)
+        contact = self._sanitize_input(contact, "contact", max_length=100)
+
+        if not contact or contact_type not in ["phone", "email"]:
+            return {
+                "success": True,
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+            }
+
+        # Rate limiting by contact hash (more restrictive for this feature)
+        contact_hash = hashlib.sha256(contact.encode()).hexdigest()[:16]
+        rate_limit_key = f"rsvp_link_request:{contact_hash}"
+
+        if not self._check_rate_limit(rate_limit_key):
+            await self._log_security_event("RSVP_LINK_RATE_LIMITED", {
+                "slug": slug,
+                "contact_type": contact_type
+            })
+            # Return success to prevent enumeration
+            return {
+                "success": True,
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+            }
+
+        try:
+            # Get wedding by slug
+            wedding = await self.wedding_service.get_wedding_by_slug(slug)
+            if not wedding:
+                return {
+                    "success": True,
+                    "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                }
+
+            wedding_id = wedding.get("_id")
+
+            # Look up guest by contact
+            guest = None
+            if contact_type == "phone":
+                # Phones may be stored in various formats, try multiple lookups
+                # Extract digits only from input
+                digits_only = re.sub(r'\D', '', contact)
+
+                # Try different phone formats that might be in the database
+                phone_variants = [
+                    contact.strip(),  # Original input
+                    digits_only,  # Just digits
+                    f"+1{digits_only}" if len(digits_only) == 10 else digits_only,  # E.164 format
+                    f"+{digits_only}" if digits_only.startswith('1') and len(digits_only) == 11 else digits_only,
+                ]
+                # Remove duplicates while preserving order
+                phone_variants = list(dict.fromkeys(phone_variants))
+
+                for phone_variant in phone_variants:
+                    guest = await self.guests_collection.find_one({
+                        "wedding_id": wedding_id,
+                        "phone": phone_variant
+                    })
+                    if guest:
+                        break
+            else:
+                # Email lookup - try case-insensitive with regex
+                email_cleaned = contact.strip()
+                guest = await self.guests_collection.find_one({
+                    "wedding_id": wedding_id,
+                    "email": {"$regex": f"^{re.escape(email_cleaned)}$", "$options": "i"}
+                })
+
+            if not guest:
+                # Log but return success to prevent enumeration
+                await self._log_security_event("RSVP_LINK_GUEST_NOT_FOUND", {
+                    "slug": slug,
+                    "contact_type": contact_type
+                })
+                return {
+                    "success": True,
+                    "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                }
+
+            # Guest found - build RSVP URL
+            token = guest.get("token")
+            if not token:
+                security_logger.warning(f"Guest found but missing token for wedding {slug}")
+                return {
+                    "success": True,
+                    "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                }
+
+            frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
+            rsvp_url = f"{frontend_url}/{slug}/invite/{token}"
+            couple_names = wedding.get("couple_names", "the couple")
+            guest_name = guest.get("name", "Guest")
+
+            # Send via appropriate channel
+            send_success = False
+            if contact_type == "phone":
+                try:
+                    from app.services.reminder_service_twilio import TwilioReminderService
+                    twilio_service = TwilioReminderService()
+                    message = f"Hi {guest_name}! Here's your personal RSVP link for {couple_names}'s wedding: {rsvp_url}"
+                    # Use digits_only for Twilio - it will add +1 prefix for E.164 format
+                    result = twilio_service._send_sms(digits_only, message)
+                    send_success = result.get("status") == "success"
+                except Exception as e:
+                    security_logger.error(f"Failed to send SMS: {str(e)}")
+            else:
+                try:
+                    from app.services.email_service_resend import ResendEmailService
+                    email_service = ResendEmailService()
+                    html_content = self._generate_rsvp_link_email_html(
+                        guest_name=guest_name,
+                        rsvp_url=rsvp_url,
+                        couple_names=couple_names
+                    )
+                    result = await email_service.send_email(
+                        to_email=contact,
+                        subject=f"Your RSVP Link - {couple_names}'s Wedding",
+                        html_content=html_content,
+                        wedding_id=str(wedding_id),
+                        email_type="rsvp_link_request"
+                    )
+                    send_success = result.get("success", False)
+                except Exception as e:
+                    security_logger.error(f"Failed to send email: {str(e)}")
+
+            # Log success/failure
+            if send_success:
+                await self._log_security_event("RSVP_LINK_SENT", {
+                    "slug": slug,
+                    "contact_type": contact_type,
+                    "wedding_id": str(wedding_id),
+                    "guest_id": str(guest.get("_id"))
+                })
+            else:
+                await self._log_security_event("RSVP_LINK_SEND_FAILED", {
+                    "slug": slug,
+                    "contact_type": contact_type
+                })
+
+            # Always return success message
+            return {
+                "success": True,
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+            }
+
+        except Exception as e:
+            security_logger.error(f"Error in request_and_send_rsvp_link: {str(e)}")
+            return {
+                "success": True,
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+            }
+
+    def _generate_rsvp_link_email_html(
+        self,
+        guest_name: str,
+        rsvp_url: str,
+        couple_names: str
+    ) -> str:
+        """Generate HTML email content for RSVP link request."""
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f8f9fa;">
+            <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 40px 20px;">
+                        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                            <tr>
+                                <td style="padding: 40px; text-align: center;">
+                                    <h1 style="color: #1e3a5f; margin: 0 0 20px; font-size: 28px;">
+                                        Your RSVP Link
+                                    </h1>
+                                    <p style="color: #64748b; font-size: 16px; line-height: 1.6; margin: 0 0 30px;">
+                                        Hi {guest_name},<br><br>
+                                        You requested your personal RSVP link for {couple_names}'s wedding.
+                                        Click the button below to RSVP:
+                                    </p>
+                                    <a href="{rsvp_url}" style="display: inline-block; background-color: #c8847e; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                                        RSVP Now
+                                    </a>
+                                    <p style="color: #94a3b8; font-size: 14px; margin: 30px 0 0;">
+                                        Or copy this link: <br>
+                                        <a href="{rsvp_url}" style="color: #64748b; word-break: break-all;">{rsvp_url}</a>
+                                    </p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 20px 40px; background-color: #f8fafc; border-radius: 0 0 12px 12px;">
+                                    <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
+                                        This is your personal invitation link. Please do not share it with others.
+                                        <br><br>
+                                        Sent by TheSpecialWedding
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        """
 
     # =========================================================================
     # BACKWARD COMPATIBILITY WRAPPER

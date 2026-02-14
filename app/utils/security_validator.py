@@ -10,7 +10,7 @@ import hashlib
 import secrets
 import time
 from typing import Any, Dict, List, Optional, Union, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from bson.errors import InvalidId
 import logging
@@ -407,7 +407,7 @@ class SecurityValidator:
     def log_security_event(self, event_type: str, details: Dict[str, Any], severity: str = "INFO"):
         """Log security events with structured data"""
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type,
             "severity": severity,
             "details": details

@@ -2,8 +2,10 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
+
+from app.services.activity_log_service import activity_log_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +30,7 @@ class RSVPService:
             guest_id_str = str(guest_id)
             wedding_id_str = str(guest.get("wedding_id", ""))
 
-            logger.info(f"RSVP for guest: {guest.get('name', 'Unknown')} (id={guest_id_str}), "
-                       f"wedding_id={wedding_id_str}, attending={rsvp_data.attending}")
+            logger.info(f"RSVP for guest: {guest.get('name', 'Unknown')} (id={guest_id_str}), wedding_id={wedding_id_str}, attending={rsvp_data.attending}")
 
             await self.rsvp_collection.update_one(
                 {"guest_id": guest_id_str},
@@ -38,31 +39,31 @@ class RSVPService:
                     "wedding_id": wedding_id_str,
                     "attending": rsvp_data.attending,
                     "dietary": rsvp_data.dietary,
-                    "submitted_at": datetime.utcnow()
+                    "submitted_at": datetime.now(timezone.utc)
                 }},
                 upsert=True
             )
 
             update_data: dict[str, object] = {
                 "phone": rsvp_data.phone,
-                "updated_at": datetime.utcnow()
+                "updated_at": datetime.now(timezone.utc)
             }
 
             # Handle SMS opt-in
             if hasattr(rsvp_data, 'sms_opt_in'):
                 update_data["sms_opt_in"] = rsvp_data.sms_opt_in
                 if rsvp_data.sms_opt_in:
-                    update_data["sms_opt_in_date"] = datetime.utcnow()
+                    update_data["sms_opt_in_date"] = datetime.now(timezone.utc)
                 elif rsvp_data.sms_opt_in is False:
-                    update_data["sms_opt_out_date"] = datetime.utcnow()
+                    update_data["sms_opt_out_date"] = datetime.now(timezone.utc)
 
             # Handle Email opt-in
             if hasattr(rsvp_data, 'email_opt_in'):
                 update_data["email_opt_in"] = rsvp_data.email_opt_in
                 if rsvp_data.email_opt_in:
-                    update_data["email_opt_in_date"] = datetime.utcnow()
+                    update_data["email_opt_in_date"] = datetime.now(timezone.utc)
                 elif rsvp_data.email_opt_in is False:
-                    update_data["email_opt_out_date"] = datetime.utcnow()
+                    update_data["email_opt_out_date"] = datetime.now(timezone.utc)
 
             await self.guest_collection.update_one(
                 {"_id": guest_id},
@@ -91,7 +92,7 @@ class RSVPService:
                 # Insert all new plus-ones
                 plus_ones_to_insert = []
                 for plus_one_data in rsvp_data.plus_ones:
-                    now = datetime.utcnow()
+                    now = datetime.now(timezone.utc)
                     plus_one_doc: dict[str, object] = {
                         "guest_id": str(guest_id),
                         "name": plus_one_data.name,
@@ -161,7 +162,7 @@ class RSVPService:
             wedding = await self.wedding_collection.find_one({"_id": wedding_id})
             if not wedding:
                 logger.warning(f"Wedding {wedding_id} not found for RSVP notification. "
-                             f"This may indicate a mismatch between guest.wedding_id and wedding._id")
+                               f"This may indicate a mismatch between guest.wedding_id and wedding._id")
                 return
 
             planner_email = wedding.get("assigned_planner_email")
@@ -171,8 +172,7 @@ class RSVPService:
                 logger.debug(f"No planner assigned to wedding {wedding_id} ({couple_names})")
                 return
 
-            logger.info(f"Sending RSVP notification: planner={planner_email}, wedding={couple_names}, "
-                       f"guest={guest_name}, status={status}, count={guest_count}")
+            logger.info(f"Sending RSVP notification: planner={planner_email}, wedding={couple_names}, guest={guest_name}, status={status}, count={guest_count}")
 
             # Import here to avoid circular imports
             from app.services.planner_notification_service import planner_notification_service
@@ -186,6 +186,16 @@ class RSVPService:
                 guest_id=guest_id
             )
             logger.info(f"RSVP notification sent successfully to {planner_email} for wedding {wedding_id}")
+
+            # Log activity for planner dashboard
+            await activity_log_service.log_rsvp_received(
+                wedding_id=wedding_id,
+                guest_name=guest_name,
+                response=status,
+                planner_email=planner_email,
+                plus_ones=guest_count - 1 if guest_count > 1 else 0,
+                metadata={"guest_id": guest_id, "couple_names": couple_names}
+            )
 
         except Exception as e:
             # Don't fail the RSVP submission if notification fails

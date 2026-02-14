@@ -74,9 +74,15 @@ class UserModel(BaseModel):
     first_name: Optional[str] = Field(None, description="User's first name")
     last_name: Optional[str] = Field(None, description="User's last name")
     profile_image_url: Optional[str] = Field(None, description="S3/R2 URL for profile image")
+    timezone: Optional[str] = Field(default="America/Chicago", description="IANA timezone for display (e.g., 'America/Chicago', 'Africa/Lagos')")
 
     # SMS Support Configuration (for wedding planners)
     support_phone: Optional[str] = Field(None, description="Phone number for guests to call when they need help (shown in HELP responses)")
+
+    # Onboarding (for wedding planners)
+    onboarding_completed: bool = Field(default=False, description="Whether planner has completed onboarding tour")
+    onboarding_completed_at: Optional[datetime] = Field(None, description="When onboarding was completed")
+    onboarding_steps_completed: List[str] = Field(default_factory=list, description="List of completed onboarding step IDs")
 
     # System fields
     is_active: bool = Field(default=True, description="Whether account is active")

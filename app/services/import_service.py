@@ -4,7 +4,7 @@ import csv
 from fastapi import UploadFile, HTTPException
 from app.core.database import mongo
 from app.utils.token_generator import generate_token
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class GuestImportService:
@@ -58,8 +58,8 @@ class GuestImportService:
                 "plus_one_submitted": False,
                 "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "email_opt_in": True,  # Default to opted-in, guest can opt-out later
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
             }
 
             try:

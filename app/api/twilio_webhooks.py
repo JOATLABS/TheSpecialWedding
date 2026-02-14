@@ -394,7 +394,7 @@ async def handle_twilio_incoming_message(
                 "provider": "twilio",
                 "message_sid": message_sid,
                 "is_read": False,
-                "priority": "normal"
+                "priority": "medium"
             }
             await mongo.db["support_tickets"].insert_one(support_ticket)
             logger.info(f"Support ticket created from {from_number} for planner {assigned_planner_email}")

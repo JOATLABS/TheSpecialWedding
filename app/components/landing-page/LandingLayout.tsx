@@ -15,6 +15,7 @@ import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
+import RequestRSVPLinkModal from '@/components/RequestRSVPLinkModal';
 
 export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
   // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
@@ -22,10 +23,11 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
 
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
-    ? `${process.env.MEDIA_DOMAIN}/${wedding.featured_image}`
+    ? `${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${wedding.featured_image}`
     : images.length > 0 ? images[0].url : undefined;
 
   return (
@@ -45,7 +47,10 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
         <AnchorNav sections={["rsvp", "story", "gallery", "registry", "venue", "faq"]} />
 
         {/* Hero */}
-        <ThemedHeroSection wedding={wedding} />
+        <ThemedHeroSection
+          wedding={wedding}
+          onCelebrateClick={() => setShowRSVPLinkModal(true)}
+        />
 
         {/* RSVP */}
         <SectionWrapper id="rsvp">
@@ -266,10 +271,17 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       onClose={() => setShowTerms(false)} 
       weddingName={wedding.couple_names}
     />
-    <PrivacyModal 
-      isOpen={showPrivacy} 
-      onClose={() => setShowPrivacy(false)} 
+    <PrivacyModal
+      isOpen={showPrivacy}
+      onClose={() => setShowPrivacy(false)}
       weddingName={wedding.couple_names}
+    />
+    <RequestRSVPLinkModal
+      isOpen={showRSVPLinkModal}
+      onClose={() => setShowRSVPLinkModal(false)}
+      slug={wedding.slug}
+      coupleName={wedding.couple_names}
+      themeConfig={wedding.theme_config}
     />
     </>
   );

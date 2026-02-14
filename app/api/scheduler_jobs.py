@@ -16,7 +16,7 @@ import os
 import logging
 from fastapi import APIRouter, HTTPException, Header, Query, BackgroundTasks
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.services.task_reminder_service import task_reminder_service
 
@@ -54,11 +54,11 @@ async def process_task_reminders(
     sync: bool = Query(False, description="If true, run synchronously instead of in background")
 ):
     """
-    Process task reminders and send Ntfy notifications.
+    Process task reminders and send push notifications.
 
     This endpoint should be called by an external scheduler (cron job) every 5-15 minutes.
     It checks for calendar tasks with reminder_minutes set that are due for notification
-    and sends push notifications via Ntfy.
+    and sends push notifications via Web Push API.
 
     Headers:
         X-Scheduler-Key: Required scheduler API key
@@ -82,7 +82,7 @@ async def process_task_reminders(
         return {
             "status": "accepted",
             "message": "Task reminder processing started in background",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -103,7 +103,7 @@ async def cleanup_old_reminders(
     return {
         "status": "success",
         "deleted_count": deleted_count,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -118,5 +118,5 @@ async def scheduler_health():
     return {
         "status": "healthy",
         "scheduler_configured": scheduler_configured,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
