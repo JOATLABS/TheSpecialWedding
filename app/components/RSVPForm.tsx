@@ -8,9 +8,18 @@ import { Loader2 } from 'lucide-react';
 import { useWedding } from '@/hooks/useWedding';
 import { formatDate } from '@/utils/dateFormat';
 
+interface ExistingRsvpData {
+  has_rsvp?: boolean;
+  submitted_at?: string;
+  attending?: string[];
+  dietary?: string;
+  plus_ones?: PlusOneData[];
+}
+
 interface RSVPFormProps {
   guest: any;
   token: string;
+  existingRsvp?: ExistingRsvpData | null;
   onSuccess?: () => void;
   onViewWeddingPage?: () => void;
 }
@@ -53,20 +62,33 @@ function FormCard({ title, children, className = '' }: {
   );
 }
 
-export default function RSVPForm({ guest, token, onSuccess, onViewWeddingPage }: RSVPFormProps) {
+export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onViewWeddingPage }: RSVPFormProps) {
   const wedding = useWedding();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
-      attending: [],
+      attending: existingRsvp?.attending || [],
       phone: guest.phone || '',
-      dietary: '',
-      sms_opt_in: false,
-      email_opt_in: false,
+      dietary: existingRsvp?.dietary || '',
+      sms_opt_in: !!guest.sms_opt_in,
+      email_opt_in: !!guest.email_opt_in,
     },
   });
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [plusOnes, setPlusOnes] = useState<PlusOneData[]>([]);
+
+  // Initialize plus-ones from existing RSVP data if editing
+  const initialPlusOnes: PlusOneData[] = existingRsvp?.plus_ones
+    ? existingRsvp.plus_ones.map((po: any) => ({
+        name: po.name || '',
+        phone: po.phone || '',
+        email: po.email || '',
+        attending: po.attending || [],
+        dietary: po.dietary || '',
+        sms_opt_in: !!po.sms_opt_in,
+        email_opt_in: !!po.email_opt_in,
+      }))
+    : [];
+  const [plusOnes, setPlusOnes] = useState<PlusOneData[]>(initialPlusOnes);
 
   // Build dynamic event list from wedding data
   const eventOptions = wedding.events && wedding.events.length > 0

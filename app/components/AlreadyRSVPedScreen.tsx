@@ -2,12 +2,19 @@
 
 'use client';
 
+interface PlusOneInfo {
+  name: string;
+  attending?: string[];
+  dietary?: string;
+}
+
 interface AlreadyRSVPedScreenProps {
   guest: { name: string };
   rsvp: {
     submitted_at: string;
     attending: string[];
     dietary?: string;
+    plus_ones?: PlusOneInfo[];
   };
   onEditClick: () => void;
   onViewWeddingPage?: () => void;
@@ -82,6 +89,31 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
             <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
               <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Dietary Restrictions</p>
               <p className="text-white font-medium">{rsvp.dietary}</p>
+            </div>
+          )}
+
+          {rsvp.plus_ones && rsvp.plus_ones.length > 0 && (
+            <div className="p-4 rounded-2xl border border-white/10 bg-white/5">
+              <p className="text-xs text-slate-400 uppercase tracking-wider mb-3">
+                Additional Guests ({rsvp.plus_ones.length})
+              </p>
+              <div className="space-y-3">
+                {rsvp.plus_ones.map((po, index) => (
+                  <div key={index} className="p-3 rounded-xl border border-white/5 bg-white/5">
+                    <p className="text-white font-medium">{po.name}</p>
+                    {po.attending && po.attending.length > 0 && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        Attending: {po.attending.map(e => eventLabels[e] || e).join(', ')}
+                      </p>
+                    )}
+                    {po.dietary && (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Dietary: {po.dietary}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

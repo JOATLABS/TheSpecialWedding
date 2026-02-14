@@ -70,6 +70,10 @@ class RSVPService:
                 {"$set": update_data}
             )
 
+            # Always delete old plus-ones on re-RSVP so they don't accumulate.
+            # This runs even when the new submission has zero plus-ones (guest removed them).
+            await self.plus_one_collection.delete_many({"guest_id": guest_id_str})
+
             if rsvp_data.plus_ones and len(rsvp_data.plus_ones) > 0:
                 if not guest.get("plus_one_allowed", False):
                     raise HTTPException(status_code=403, detail="Plus-ones not allowed for this guest")
@@ -79,22 +83,20 @@ class RSVPService:
                 if max_plus_ones == 0:
                     raise HTTPException(status_code=403, detail="No plus-ones allowed for this guest")
 
-                # Count existing plus-ones
-                existing_count = await self.plus_one_collection.count_documents({"guest_id": str(guest_id)})
+                # Validate count of new plus-ones against the limit (not cumulative)
                 new_plus_ones_count = len(rsvp_data.plus_ones)
-
-                if existing_count + new_plus_ones_count > max_plus_ones:
+                if new_plus_ones_count > max_plus_ones:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Cannot add {new_plus_ones_count} plus-ones. Maximum allowed: {max_plus_ones}, already have: {existing_count}"
+                        detail=f"Cannot add {new_plus_ones_count} plus-one(s). Maximum allowed: {max_plus_ones}"
                     )
 
-                # Insert all new plus-ones
+                # Insert all new plus-ones with timestamps
+                now = datetime.now(timezone.utc)
                 plus_ones_to_insert = []
                 for plus_one_data in rsvp_data.plus_ones:
-                    now = datetime.now(timezone.utc)
                     plus_one_doc: dict[str, object] = {
-                        "guest_id": str(guest_id),
+                        "guest_id": guest_id_str,
                         "name": plus_one_data.name,
                         "phone": plus_one_data.phone,
                         "email": plus_one_data.email,
@@ -102,6 +104,8 @@ class RSVPService:
                         "dietary": plus_one_data.dietary,
                         "sms_opt_in": plus_one_data.sms_opt_in,
                         "email_opt_in": plus_one_data.email_opt_in,
+                        "created_at": now,
+                        "updated_at": now,
                     }
 
                     # Add opt-in timestamps
@@ -126,6 +130,12 @@ class RSVPService:
                         {"_id": guest_id},
                         {"$set": {"plus_one_submitted": True}}
                     )
+            else:
+                # No plus-ones in this submission; mark plus_one_submitted as False
+                await self.guest_collection.update_one(
+                    {"_id": guest_id},
+                    {"$set": {"plus_one_submitted": False}}
+                )
 
             # Notify planner about the RSVP update
             await self._notify_planner_rsvp(

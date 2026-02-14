@@ -65,16 +65,26 @@ function WeddingLandingContent() {
      // Store token in state and clean URL to prevent refresh issues
      // Guard: only fetch once (accessGranted prevents re-fetch if contextWedding updates)
      setRsvpToken(rsvpTokenParam);
+     // Persist token in sessionStorage so it survives page refresh
+     try { sessionStorage.setItem('rsvp_token_' + slug, rsvpTokenParam); } catch {}
      window.history.replaceState({}, '', `/${slug}`);
      fetchWeddingByToken(rsvpTokenParam);
-   } else if (!rsvpTokenParam && contextWedding?.privacy_mode === 'public') {
-     // Wedding is explicitly set to public, grant access immediately
-     setWedding(contextWedding);
-     setAccessGranted(true);
-     setLoading(false);
    } else if (!rsvpTokenParam && !accessGranted) {
-     // Wedding requires authentication (default: private)
-     setLoading(false);
+     // Check sessionStorage for a persisted token (survives page refresh)
+     let storedToken: string | null = null;
+     try { storedToken = sessionStorage.getItem('rsvp_token_' + slug); } catch {}
+     if (storedToken) {
+       setRsvpToken(storedToken);
+       fetchWeddingByToken(storedToken);
+     } else if (contextWedding?.privacy_mode === 'public') {
+       // Wedding is explicitly set to public, grant access immediately
+       setWedding(contextWedding);
+       setAccessGranted(true);
+       setLoading(false);
+     } else {
+       // Wedding requires authentication (default: private)
+       setLoading(false);
+     }
    }
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [contextWedding, rsvpTokenParam, slug]);

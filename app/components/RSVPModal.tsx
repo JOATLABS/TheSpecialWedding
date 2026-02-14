@@ -312,6 +312,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
           <RSVPForm
             guest={guestData}
             token={token}
+            existingRsvp={editMode ? rsvpData : null}
             onSuccess={handleRSVPSuccess}
             onViewWeddingPage={onClose}
           />
