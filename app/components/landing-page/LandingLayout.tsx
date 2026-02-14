@@ -297,7 +297,11 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
         isOpen={showRSVPModal}
         token={rsvpToken}
         slug={wedding.slug}
-        onClose={() => setShowRSVPModal(false)}
+        onClose={() => {
+          setShowRSVPModal(false);
+          // Clear persisted token after modal closes (RSVP completed or dismissed)
+          try { sessionStorage.removeItem('rsvp_token_' + wedding.slug); } catch {}
+        }}
       />
     )}
     </>

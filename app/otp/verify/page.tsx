@@ -8,14 +8,15 @@ import RSVPForm from '@/components/RSVPForm';
 import AlreadyRSVPedScreen from '@/components/AlreadyRSVPedScreen';
 import { WeddingContext } from '@/contexts/WeddingContext';
 
-// Get API base URL - fallback to empty string for relative URLs in single-container deployment
+// Get API base URL - strip /admin suffix for public endpoints
+// NEXT_PUBLIC_API_BASE_URL typically ends with /admin for admin panel use
 const getApiBase = (): string => {
   const url = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!url) {
     console.warn('NEXT_PUBLIC_API_BASE_URL not set, using relative URLs');
     return '';
   }
-  return url;
+  return url.replace('/admin', '');
 };
 
 const apiBase = getApiBase();
