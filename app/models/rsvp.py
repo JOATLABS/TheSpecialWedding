@@ -8,7 +8,7 @@ class PlusOneInputModel(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     attending: List[str] = Field(default_factory=list)
-    dietary: Optional[str] = None
+    dietary: Optional[str] = Field(default=None, max_length=250)
     sms_opt_in: Optional[bool] = Field(default=None, description="Opt-in for SMS reminders")
     email_opt_in: Optional[bool] = Field(default=None, description="Opt-in for email updates")
 
@@ -29,7 +29,7 @@ class PlusOneInputModel(BaseModel):
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception"}
+        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
         if not all(event in valid_events for event in v):
             raise ValueError("Invalid event(s) in attending list")
         return v
@@ -45,7 +45,7 @@ class RSVPModel(BaseModel):
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception"}
+        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
         # Allow empty list (guest not attending any events) or valid events
         if v and not all(event in valid_events for event in v):
             raise ValueError("Invalid event(s) in attending list")

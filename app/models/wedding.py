@@ -12,7 +12,7 @@ class EventDetailsModel(BaseModel):
 
 
 class EventModel(BaseModel):
-    type: str = Field(..., description="Event type: traditional, white_wedding, reception")
+    type: str = Field(..., description="Event type: traditional, white_wedding, reception, engagement, rehearsal")
     date: str = Field(..., description="Event date in YYYY-MM-DD format")
     details: Optional[EventDetailsModel] = Field(default=None, description="Additional event details")
 
