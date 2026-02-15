@@ -213,14 +213,24 @@ class PlatformMetricsService:
         subscriptions_collection = self._mongo.db.get_collection("user_subscriptions")
         plans_collection = self._mongo.get_subscription_plans_collection()
 
+        # Filter out null/missing statuses and group by actual status values
         status_docs = await self._safe_aggregate(
             subscriptions_collection,
-            [{"$group": {"_id": {"$ifNull": ["$status", "unknown"]}, "count": {"$sum": 1}}}],
+            [
+                {"$match": {"status": {"$ne": None, "$exists": True}}},
+                {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+            ],
         )
 
         status_breakdown: Dict[str, int] = {
             str(doc.get("_id")): int(doc.get("count", 0)) for doc in status_docs
         }
+
+        # Ensure all expected status keys exist with default 0 to prevent NaN in frontend
+        expected_statuses = ["active", "trial", "cancelled", "expired", "suspended", "pending_payment"]
+        for status in expected_statuses:
+            if status not in status_breakdown:
+                status_breakdown[status] = 0
 
         total_subscriptions = sum(status_breakdown.values())
 
@@ -527,7 +537,8 @@ class PlatformMetricsService:
         self, subscriptions_collection: Any, plans_collection: Any
     ) -> Dict[str, Any]:
         pipeline: List[Dict[str, Any]] = [
-            {"$match": {"status": "active"}},
+            # Include both active and trial subscriptions in plan breakdown
+            {"$match": {"status": {"$in": ["active", "trial"]}}},
             {
                 "$lookup": {
                     "from": plans_collection.name
@@ -666,7 +677,7 @@ class PlatformMetricsService:
 
         async for subscription in self._iterate_documents(
             subscriptions_collection,
-            {"status": "active"},
+            {"status": {"$in": ["active", "trial"]}},
             {"plan_id": 1, "billing_interval": 1},
         ):
             plan = plans_lookup.get(subscription.get("plan_id"), {})
