@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **OTP Verification API Optimization** (`app/services/otp_service.py`, `app/api/otp.py`, `app/components/RSVPModal.tsx`, `app/otp/verify/page.tsx`):
+  - **Problem**: After OTP verification, frontend made a redundant API call to `/weddings/guest-access/{slug}/{token}` to fetch guest data that was already available
+  - **Root cause**: `/otp/verify` endpoint only returned `{"message": "OTP verified"}` with no guest data, forcing frontend to re-fetch
+  - **Solution**: Refactored `verify_otp_by_guest_id()` to return full guest data and auth method
+  - **Backend changes**:
+    - `generate_otp()` now stores `contact_type` in OTP record for accurate auth method tracking
+    - `send_otp()` passes contact_type to generate_otp() and updates record on email fallback
+    - `verify_otp_by_guest_id()` now returns `{success, guest, auth_method}` instead of `bool`
+    - `/otp/verify` endpoint returns guest data and auth_method on success
+  - **Frontend changes**:
+    - RSVPModal and OTP verify page now use guest data directly from verify response
+    - Eliminated redundant API call after OTP verification
+  - **Impact**: Faster RSVP flow, reduced server load, accurate auth method tracking (phone_otp vs email_otp)
+
+- **Platform Branding Update** (`app/layout.tsx`, `app/admin/components/Sidebar.tsx`, `public/favicon.svg`):
+  - **Browser Favicon**: Added SVG favicon with interlinked rings icon in pink/rose gradient colors
+  - **Root Layout Metadata**: Added Next.js metadata export with favicon (`/favicon.svg`) and apple touch icon (`/logo_all.png`)
+  - **Admin Sidebar Logo**: Replaced Heart icon with "The Special Wedding" logo image
+    - Expanded sidebar: Shows full logo with text (160x40)
+    - Collapsed sidebar: Shows cropped logo icon (40x40)
+  - **Files**:
+    - Created `public/favicon.svg` - SVG rings icon for browser tab
+    - Modified `app/layout.tsx` - Added metadata with icons configuration
+    - Modified `app/admin/components/Sidebar.tsx` - Replaced Heart icon with NextImage component
+  - **Impact**: Consistent branding across browser tabs and admin/planner dashboards
+
 ### Fixed
 
 - **Onboarding Modal Not Staying Closed** (`app/admin/planner/page.tsx`):
@@ -30,20 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added `safe_create_ttl_index()` helper function with graceful error handling for "already exists" scenarios
     - Removed unused `down_func_name` variable (fixed linter warning)
   - **Impact**: Production backend starts successfully; planners can log in again
-
-### Changed
-
-- **Platform Branding Update** (`app/layout.tsx`, `app/admin/components/Sidebar.tsx`, `public/favicon.svg`):
-  - **Browser Favicon**: Added SVG favicon with interlinked rings icon in pink/rose gradient colors
-  - **Root Layout Metadata**: Added Next.js metadata export with favicon (`/favicon.svg`) and apple touch icon (`/logo_all.png`)
-  - **Admin Sidebar Logo**: Replaced Heart icon with "The Special Wedding" logo image
-    - Expanded sidebar: Shows full logo with text (160x40)
-    - Collapsed sidebar: Shows cropped logo icon (40x40)
-  - **Files**:
-    - Created `public/favicon.svg` - SVG rings icon for browser tab
-    - Modified `app/layout.tsx` - Added metadata with icons configuration
-    - Modified `app/admin/components/Sidebar.tsx` - Replaced Heart icon with NextImage component
-  - **Impact**: Consistent branding across browser tabs and admin/planner dashboards
 
 ### Added
 

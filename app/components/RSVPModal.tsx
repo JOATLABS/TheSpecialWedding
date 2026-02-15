@@ -30,6 +30,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const [resendCooldown, setResendCooldown] = useState(0);
   const [editMode, setEditMode] = useState(false);
   const [formCompleted, setFormCompleted] = useState(false);
+  const [otpContactType, setOtpContactType] = useState<'phone' | 'email' | ''>('');
   const isSubmittingRef = useRef(false);
 
   // Reset all state when modal closes
@@ -40,6 +41,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setError('');
     setIsTokenExpired(false);
     setOtp('');
+    setOtpContactType('');
     onClose();
   };
 
@@ -122,10 +124,14 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         body: JSON.stringify({ guest_id: guestId }),
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to send verification code');
+        throw new Error(data.detail || 'Failed to send verification code');
       }
+
+      // Capture contact type from response (phone or email)
+      setOtpContactType(data.contact_type || 'phone');
 
       setResendCooldown(65);
       setStep('otp_verify');
@@ -149,20 +155,24 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         body: JSON.stringify({ guest_id: guestId, otp }),
       });
 
+      const verifyData = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Invalid verification code');
+        throw new Error(verifyData.detail || 'Invalid verification code');
       }
 
-      // Re-fetch to get latest guest data (in case planner updated it)
+      // Use guest data from OTP verify response directly (eliminates redundant fetch)
+      if (verifyData.guest) {
+        setGuestData(verifyData.guest);
+        setGuestId(verifyData.guest.id || verifyData.guest._id);
+      }
+
+      // Still fetch RSVP status (Option B: keep RSVP check separate)
       let latestRsvp = rsvpData;
       const accessRes = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
       if (accessRes.ok) {
         const data = await accessRes.json();
-        if (data.guest) {
-          setGuestData(data.guest);
-          setGuestId(data.guest.id || data.guest._id);
-        }
+        // Only use wedding and RSVP data from this call (guest already set above)
         if (data.wedding) {
           const weddingForContext = {
             ...data.wedding,
@@ -201,9 +211,15 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         body: JSON.stringify({ guest_id: guestId }),
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to resend code');
+        throw new Error(data.detail || 'Failed to resend code');
+      }
+
+      // Capture contact type from response (might change if phone fails and email is used)
+      if (data.contact_type) {
+        setOtpContactType(data.contact_type);
       }
 
       setResendCooldown(65);
@@ -287,7 +303,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
               You&apos;re invited to <span className="text-wedding-rose font-semibold">{weddingData?.couple_names}&apos;s</span> wedding!
             </p>
             <p className="text-sm text-slate-400 mb-8">
-              To protect your privacy, we&apos;ll send a verification code to your phone before you can RSVP.
+              To protect your privacy, we&apos;ll send a verification code to your {guestData?.phone ? 'phone' : 'email'} before you can RSVP.
             </p>
 
             {error && (
@@ -321,7 +337,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
             </div>
             <h2 className="text-2xl font-semibold text-white text-center mb-4">Enter Verification Code</h2>
             <p className="text-center text-slate-300 mb-6">
-              A 6-digit code was sent to your phone. Enter it below to continue.
+              A 6-digit code was sent to your {otpContactType || 'phone'}. Enter it below to continue.
             </p>
             <div className="flex flex-col gap-4">
               <input
