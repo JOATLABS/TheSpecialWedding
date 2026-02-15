@@ -285,9 +285,20 @@ class UserManagementService:
 
             users = await self.users_collection.find(query, {"password_hash": 0, "password": 0}).to_list(length=None)  # Exclude password fields
 
-            # Convert ObjectId to string for JSON serialization
+            # Convert ObjectId to string and calculate wedding_count for each user
             for user in users:
                 user["_id"] = str(user["_id"])
+
+                # Count weddings assigned to this user (by email or user ID)
+                user_email = user.get("email")
+                user_id = user["_id"]
+                wedding_count = await self.weddings_collection.count_documents({
+                    "$or": [
+                        {"assigned_planner_email": user_email},
+                        {"assigned_planner_id": user_id}
+                    ]
+                })
+                user["wedding_count"] = wedding_count
 
             return users
         except Exception as e:
