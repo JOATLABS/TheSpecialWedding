@@ -473,13 +473,16 @@ class StripeService:
                 }
             )
 
-            # Save session reference
+            # Save session reference with billing interval and customer for consistency
             await self.subscriptions_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$set": {
                         "stripe_checkout_session_id": checkout_session.id,
-                        "stripe_checkout_created_at": datetime.now(timezone.utc)
+                        "stripe_checkout_created_at": datetime.now(timezone.utc),
+                        "stripe_customer_id": customer_id,
+                        "billing_interval": billing_interval,
+                        "plan_id": plan_id,
                     }
                 },
                 upsert=True
@@ -502,12 +505,12 @@ class StripeService:
             raise HTTPException(status_code=500, detail=f"Error creating checkout session: {str(e)}")
 
     def _parse_timestamp(self, timestamp: Optional[int]) -> Optional[datetime]:
-        """Convert Stripe timestamps to naive UTC datetimes."""
+        """Convert Stripe timestamps to timezone-aware UTC datetimes."""
 
         if not timestamp:
             return None
         try:
-            return datetime.utcfromtimestamp(timestamp)
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
         except Exception:
             return None
 
@@ -527,7 +530,11 @@ class StripeService:
             "canceled": SubscriptionStatus.CANCELLED.value,
             "cancelled": SubscriptionStatus.CANCELLED.value,
         }
-        return mapping.get(stripe_status, SubscriptionStatus.ACTIVE.value)
+        mapped = mapping.get(stripe_status)
+        if mapped is None:
+            logger.warning(f"Unknown Stripe subscription status '{stripe_status}', defaulting to ACTIVE")
+            return SubscriptionStatus.ACTIVE.value
+        return mapped
 
     async def _sync_subscription_state(
         self,
@@ -614,9 +621,10 @@ class StripeService:
 
             if internal_status == SubscriptionStatus.TRIAL.value:
                 user_updates["trial_end_date"] = trial_end
-                user_updates["trial_warning_sent"] = False
+                # Don't reset trial_warning_sent during trial - the trial cron job manages it
             else:
                 user_updates["trial_end_date"] = None
+                # Reset flag only when leaving trial state
                 user_updates["trial_warning_sent"] = False
 
             unset_fields: Dict[str, Any] = {}
@@ -694,8 +702,8 @@ class StripeService:
             if not plan:
                 raise HTTPException(status_code=404, detail="Subscription plan not found")
 
-            # Get the new price ID
-            new_price_field = f"stripe_{new_billing_interval}_price_id"
+            # Get the new price ID (field format: stripe_price_id_monthly / stripe_price_id_yearly)
+            new_price_field = f"stripe_price_id_{new_billing_interval}"
             new_price_id = plan.get(new_price_field)
 
             if not new_price_id:
@@ -728,16 +736,14 @@ class StripeService:
                 }
             )
 
-            # Calculate new period end based on interval
+            # Use Stripe's actual period dates instead of naive calculation
             now = datetime.now(timezone.utc)
-            if new_billing_interval == "yearly":
-                from datetime import timedelta
-                period_end = now + timedelta(days=365)
-            else:
-                if now.month == 12:
-                    period_end = now.replace(year=now.year + 1, month=1)
-                else:
-                    period_end = now.replace(month=now.month + 1)
+            period_end = datetime.fromtimestamp(
+                updated_stripe_sub["current_period_end"], tz=timezone.utc
+            )
+            period_start = datetime.fromtimestamp(
+                updated_stripe_sub["current_period_start"], tz=timezone.utc
+            )
 
             # Update local subscription record
             await self.subscriptions_collection.update_one(
@@ -745,7 +751,7 @@ class StripeService:
                 {
                     "$set": {
                         "billing_interval": new_billing_interval,
-                        "current_period_start": now,
+                        "current_period_start": period_start,
                         "current_period_end": period_end,
                         "updated_at": now,
                     }
@@ -865,6 +871,7 @@ class StripeService:
             logger.error("Webhook secret not configured")
             raise HTTPException(status_code=500, detail="Webhook configuration error")
 
+        event_type = "unknown"
         try:
             # Verify webhook signature
             event = stripe.Webhook.construct_event(
@@ -879,6 +886,8 @@ class StripeService:
             # Handle different event types
             if event_type == "checkout.session.completed":
                 return await self._handle_checkout_completed(data)
+            elif event_type == "checkout.session.expired":
+                return await self._handle_checkout_expired(data)
             elif event_type == "customer.subscription.created":
                 return await self._handle_subscription_created(data)
             elif event_type == "customer.subscription.updated":
@@ -887,6 +896,8 @@ class StripeService:
                 return await self._handle_subscription_deleted(data)
             elif event_type == "customer.subscription.trial_will_end":
                 return await self._handle_subscription_trial_will_end(data)
+            elif event_type == "customer.updated":
+                return await self._handle_customer_updated(data)
             elif event_type == "invoice.paid":
                 return await self._handle_invoice_paid(data)
             elif event_type == "invoice.payment_failed":
@@ -897,6 +908,14 @@ class StripeService:
                 return await self._handle_payment_intent_failed(data)
             elif event_type == "account.updated":
                 return await self._handle_account_updated(data)
+            elif event_type in ("product.updated", "product.created"):
+                return await self._handle_product_updated(data)
+            elif event_type in ("price.created", "price.updated"):
+                return await self._handle_price_changed(data)
+            elif event_type in ("plan.created", "plan.updated"):
+                # Legacy Stripe plan events map to price/product - acknowledge them
+                logger.info(f"Acknowledged legacy plan event: {event_type} for {data.get('id')}")
+                return {"status": "acknowledged", "event_type": event_type}
             else:
                 logger.info(f"Unhandled event type: {event_type}")
                 return {"status": "ignored", "event_type": event_type}
@@ -904,400 +923,540 @@ class StripeService:
         except stripe.error.SignatureVerificationError as e:
             logger.error(f"Invalid webhook signature: {str(e)}")
             raise HTTPException(status_code=400, detail="Invalid signature")
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Error processing webhook: {str(e)}")
+            logger.error(f"Error processing webhook event {event_type}: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Webhook processing error: {str(e)}")
 
     async def _handle_checkout_completed(self, session: Dict[str, Any]) -> Dict[str, Any]:
         """Handle successful checkout session completion"""
-        try:
-            user_id = session["metadata"].get("user_id")
-            plan_id = session["metadata"].get("plan_id")
-            subscription_id = session.get("subscription")
+        user_id = session.get("metadata", {}).get("user_id")
+        plan_id = session.get("metadata", {}).get("plan_id")
+        subscription_id = session.get("subscription")
 
-            if not user_id or not plan_id:
-                logger.error("Missing metadata in checkout session")
-                return {"status": "error", "message": "Missing metadata"}
+        if not user_id or not plan_id:
+            logger.error("Missing metadata in checkout session")
+            return {"status": "error", "message": "Missing user_id or plan_id metadata in checkout session"}
 
-            subscription: Optional[Dict[str, Any]] = None
+        subscription: Optional[Dict[str, Any]] = None
 
-            if subscription_id:
-                try:
-                    subscription = stripe.Subscription.retrieve(subscription_id)
-                except stripe.error.StripeError as e:
-                    logger.error(f"Unable to retrieve subscription {subscription_id}: {str(e)}")
-
-            sync_result = await self._sync_subscription_state(
-                user_id=user_id,
-                subscription=subscription,
-                customer_id=session.get("customer"),
-                plan_id=plan_id,
-                extra_updates={
-                    "stripe_subscription_id": subscription_id,
-                    "payment_status": session.get("payment_status"),
-                    "stripe_checkout_session_id": session.get("id"),
-                    "stripe_checkout_completed_at": datetime.now(timezone.utc),
-                }
-            )
-
-            logger.info(
-                "Checkout completed for user %s, subscription %s (status: %s)",
-                user_id,
-                subscription_id,
-                sync_result.get("stripe_status") or sync_result.get("status")
-            )
-            return {"status": "success", "user_id": user_id, "subscription_id": subscription_id}
-
-        except Exception as e:
-            logger.error(f"Error handling checkout completed: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def _handle_subscription_created(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle new subscription creation"""
-        try:
-            result = await self._sync_subscription_state(
-                user_id=subscription.get("metadata", {}).get("user_id"),
-                subscription=subscription,
-                customer_id=subscription.get("customer")
-            )
-
-            logger.info(
-                "Subscription %s created (user=%s, status=%s)",
-                subscription.get("id"),
-                result.get("user_id"),
-                result.get("stripe_status") or result.get("status")
-            )
-            return {"status": "success", "user_id": result.get("user_id")}
-
-        except Exception as e:
-            logger.error(f"Error handling subscription created: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def _handle_subscription_updated(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle subscription updates"""
-        try:
-            result = await self._sync_subscription_state(
-                user_id=subscription.get("metadata", {}).get("user_id"),
-                subscription=subscription,
-                customer_id=subscription.get("customer")
-            )
-
-            logger.info(
-                "Subscription %s updated (status=%s)",
-                subscription.get("id"),
-                result.get("stripe_status") or result.get("status")
-            )
-            return {"status": "success", "subscription_id": subscription.get("id")}
-
-        except Exception as e:
-            logger.error(f"Error handling subscription updated: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def _handle_subscription_deleted(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle subscription cancellation/deletion"""
-        try:
-            stripe_sub_id = subscription["id"]
-
-            result = await self._sync_subscription_state(
-                user_id=subscription.get("metadata", {}).get("user_id"),
-                subscription=subscription,
-                customer_id=subscription.get("customer"),
-                extra_updates={
-                    "status": SubscriptionStatus.CANCELLED.value,
-                    "cancelled_at": datetime.now(timezone.utc),
-                }
-            )
-
-            logger.info(
-                "Subscription %s cancelled (user=%s)",
-                stripe_sub_id,
-                result.get("user_id")
-            )
-            return {"status": "success", "subscription_id": stripe_sub_id}
-
-        except Exception as e:
-            logger.error(f"Error handling subscription deleted: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def _handle_subscription_trial_will_end(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
-        """Record trial end reminders for alignment with internal notifications."""
-
-        try:
-            result = await self._sync_subscription_state(
-                user_id=subscription.get("metadata", {}).get("user_id"),
-                subscription=subscription,
-                customer_id=subscription.get("customer"),
-                extra_updates={
-                    "trial_will_end_notified_at": datetime.now(timezone.utc)
-                }
-            )
-
-            logger.info(
-                "Trial will end soon for subscription %s (user=%s)",
-                subscription.get("id"),
-                result.get("user_id")
-            )
-            return {"status": "success", "subscription_id": subscription.get("id")}
-
-        except Exception as e:
-            logger.error(f"Error handling subscription trial end notice: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle successful invoice payment"""
-        try:
-            subscription_id = invoice.get("subscription")
-            if not subscription_id:
-                return {"status": "ignored"}
-
-            subscription = None
+        if subscription_id:
             try:
                 subscription = stripe.Subscription.retrieve(subscription_id)
             except stripe.error.StripeError as e:
-                logger.error(f"Unable to refresh subscription {subscription_id} during invoice.paid: {str(e)}")
+                logger.error(f"Unable to retrieve subscription {subscription_id}: {str(e)}")
 
-            if subscription:
-                await self._sync_subscription_state(
-                    user_id=subscription.get("metadata", {}).get("user_id"),
-                    subscription=subscription,
-                    customer_id=subscription.get("customer"),
-                    extra_updates={
-                        "payment_status": "paid",
-                        "last_payment_date": datetime.now(timezone.utc),
-                    }
-                )
+        # Build plan snapshot for grandfathering before syncing
+        plan_snapshot = None
+        try:
+            plan = await self.plans_collection.find_one({"_id": plan_id})
+            if plan:
+                plan_snapshot = {
+                    "plan_name": plan.get("name"),
+                    "max_weddings": plan.get("max_weddings", 1),
+                    "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
+                    "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
+                    "storage_gb": plan.get("storage_gb", 1),
+                    "staff_seats": plan.get("staff_seats", 0),
+                    "features": plan.get("features", {}),
+                    "price_monthly": plan.get("price_monthly", 0),
+                    "price_yearly": plan.get("price_yearly"),
+                    "stripe_price_id_monthly": plan.get("stripe_price_id_monthly"),
+                    "stripe_price_id_yearly": plan.get("stripe_price_id_yearly"),
+                    "snapshot_date": datetime.now(timezone.utc),
+                }
+        except Exception as e:
+            logger.error(f"Failed to build plan snapshot for plan {plan_id}: {str(e)}")
+
+        extra_updates = {
+            "stripe_subscription_id": subscription_id,
+            "payment_status": session.get("payment_status"),
+            "stripe_checkout_session_id": session.get("id"),
+            "stripe_checkout_completed_at": datetime.now(timezone.utc),
+        }
+        if plan_snapshot:
+            extra_updates["plan_snapshot"] = plan_snapshot
+
+        sync_result = await self._sync_subscription_state(
+            user_id=user_id,
+            subscription=subscription,
+            customer_id=session.get("customer"),
+            plan_id=plan_id,
+            extra_updates=extra_updates,
+        )
+
+        # Initialize usage tracking for the new subscription
+        try:
+            from app.services.subscription_service import SubscriptionService
+            sub_service = SubscriptionService()
+            local_sub = await self.subscriptions_collection.find_one({
+                "user_id": user_id,
+                "stripe_subscription_id": subscription_id,
+            })
+            if local_sub:
+                await sub_service.initialize_usage_tracking(user_id, local_sub["_id"])
+                logger.info(f"Initialized usage tracking for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize usage tracking for user {user_id}: {str(e)}")
+
+        logger.info(
+            "Checkout completed for user %s, subscription %s (status: %s)",
+            user_id,
+            subscription_id,
+            sync_result.get("stripe_status") or sync_result.get("status")
+        )
+        return {"status": "success", "user_id": user_id, "subscription_id": subscription_id}
+
+    async def _handle_subscription_created(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle new subscription creation"""
+        result = await self._sync_subscription_state(
+            user_id=subscription.get("metadata", {}).get("user_id"),
+            subscription=subscription,
+            customer_id=subscription.get("customer")
+        )
+
+        logger.info(
+            "Subscription %s created (user=%s, status=%s)",
+            subscription.get("id"),
+            result.get("user_id"),
+            result.get("stripe_status") or result.get("status")
+        )
+        return {"status": "success", "user_id": result.get("user_id")}
+
+    async def _handle_subscription_updated(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle subscription updates"""
+        result = await self._sync_subscription_state(
+            user_id=subscription.get("metadata", {}).get("user_id"),
+            subscription=subscription,
+            customer_id=subscription.get("customer")
+        )
+
+        logger.info(
+            "Subscription %s updated (status=%s)",
+            subscription.get("id"),
+            result.get("stripe_status") or result.get("status")
+        )
+        return {"status": "success", "subscription_id": subscription.get("id")}
+
+    async def _handle_subscription_deleted(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle subscription cancellation/deletion"""
+        stripe_sub_id = subscription["id"]
+
+        result = await self._sync_subscription_state(
+            user_id=subscription.get("metadata", {}).get("user_id"),
+            subscription=subscription,
+            customer_id=subscription.get("customer"),
+            extra_updates={
+                "status": SubscriptionStatus.CANCELLED.value,
+                "cancelled_at": datetime.now(timezone.utc),
+            }
+        )
+
+        logger.info(
+            "Subscription %s cancelled (user=%s)",
+            stripe_sub_id,
+            result.get("user_id")
+        )
+        return {"status": "success", "subscription_id": stripe_sub_id}
+
+    async def _handle_subscription_trial_will_end(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+        """Record trial end reminders for alignment with internal notifications."""
+        result = await self._sync_subscription_state(
+            user_id=subscription.get("metadata", {}).get("user_id"),
+            subscription=subscription,
+            customer_id=subscription.get("customer"),
+            extra_updates={
+                "trial_will_end_notified_at": datetime.now(timezone.utc)
+            }
+        )
+
+        logger.info(
+            "Trial will end soon for subscription %s (user=%s)",
+            subscription.get("id"),
+            result.get("user_id")
+        )
+        return {"status": "success", "subscription_id": subscription.get("id")}
+
+    async def _handle_customer_updated(self, customer: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle customer.updated - sync email/name changes from Stripe back to our DB."""
+        try:
+            customer_id = customer.get("id")
+            if not customer_id:
+                return {"status": "ignored", "reason": "no customer_id"}
+
+            new_email = customer.get("email")
+            new_name = customer.get("name")
+
+            # Update our stripe_customers mapping
+            update_fields: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+            if new_email:
+                update_fields["email"] = new_email
+            if new_name:
+                update_fields["name"] = new_name
+
+            result = await self.stripe_customers_collection.update_one(
+                {"stripe_customer_id": customer_id},
+                {"$set": update_fields}
+            )
+
+            if result.modified_count > 0:
+                logger.info(f"Customer {customer_id} details synced (email={new_email})")
             else:
-                await self.subscriptions_collection.update_one(
-                    {"stripe_subscription_id": subscription_id},
+                logger.debug(f"No local record found for Stripe customer {customer_id}")
+
+            return {"status": "success", "customer_id": customer_id}
+
+        except Exception as e:
+            logger.error(f"Error handling customer.updated: {str(e)}")
+            raise
+
+    async def _handle_product_updated(self, product: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle product.updated/product.created - sync product changes to local plans."""
+        try:
+            product_id = product.get("id")
+            if not product_id:
+                return {"status": "ignored", "reason": "no product_id"}
+
+            plan_id = product.get("metadata", {}).get("plan_id")
+            is_active = product.get("active", True)
+
+            if plan_id:
+                # Update local plan's active status to match Stripe
+                result = await self.plans_collection.update_one(
+                    {"_id": plan_id, "stripe_product_id": product_id},
                     {"$set": {
-                        "payment_status": "paid",
-                        "last_payment_date": datetime.now(timezone.utc),
+                        "is_active": is_active,
                         "updated_at": datetime.now(timezone.utc)
                     }}
                 )
+                if result.modified_count > 0:
+                    logger.info(f"Plan {plan_id} synced from Stripe product {product_id} (active={is_active})")
+            else:
+                logger.debug(f"Product {product_id} has no plan_id metadata, skipping local sync")
 
-            logger.info(f"Invoice paid for subscription {subscription_id}")
+            return {"status": "success", "product_id": product_id}
 
-            # Send payment success notification to user
+        except Exception as e:
+            logger.error(f"Error handling product.updated: {str(e)}")
+            raise
+
+    async def _handle_price_changed(self, price: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle price.created/price.updated - log price changes for audit trail."""
+        try:
+            price_id = price.get("id")
+            product_id = price.get("product")
+            is_active = price.get("active", True)
+
+            if not price_id:
+                return {"status": "ignored", "reason": "no price_id"}
+
+            logger.info(
+                f"Price {price_id} changed: product={product_id}, "
+                f"active={is_active}, amount={price.get('unit_amount')}"
+            )
+
+            return {"status": "acknowledged", "price_id": price_id}
+
+        except Exception as e:
+            logger.error(f"Error handling price event: {str(e)}")
+            raise
+
+    async def _handle_checkout_expired(self, session: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle expired checkout session - clean up pending subscription records
+        and optionally delete orphaned Stripe customers who never completed payment."""
+        session_id = session.get("id")
+        user_id = session.get("metadata", {}).get("user_id")
+        customer_id = session.get("customer")
+
+        logger.info(f"Checkout session expired: {session_id} for user {user_id}")
+
+        # Clean up any pending subscription record tied to this checkout session
+        if session_id:
+            result = await self.subscriptions_collection.update_one(
+                {
+                    "stripe_checkout_session_id": session_id,
+                    "status": {"$in": ["pending", "pending_payment"]}
+                },
+                {"$set": {
+                    "status": "expired",
+                    "updated_at": datetime.now(timezone.utc),
+                    "expired_reason": "checkout_session_expired"
+                }}
+            )
+            if result.modified_count > 0:
+                logger.info(f"Marked pending subscription as expired for session {session_id}")
+
+        # Sync user status to "expired" to match subscription record
+        if user_id:
+            user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+            if user and user.get("subscription_status") in ("pending_payment", "pending"):
+                await self.users_collection.update_one(
+                    {"_id": ObjectId(user_id)},
+                    {"$set": {
+                        "subscription_status": "expired",
+                        "checkout_expired_at": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    }}
+                )
+
+        # Check if this Stripe customer has any active subscriptions
+        # If not, they're orphaned and should be cleaned up
+        if customer_id:
+            try:
+                subs = stripe.Subscription.list(customer=customer_id, limit=1)
+                if not subs.data:
+                    # No subscriptions at all - delete the orphaned Stripe customer
+                    stripe.Customer.delete(customer_id)
+                    # Remove from local mapping
+                    await self.stripe_customers_collection.delete_one(
+                        {"stripe_customer_id": customer_id}
+                    )
+                    logger.info(f"Cleaned up orphaned Stripe customer {customer_id}")
+            except stripe.error.StripeError as e:
+                logger.warning(f"Could not clean up Stripe customer {customer_id}: {str(e)}")
+
+        return {"status": "processed", "session_id": session_id}
+
+    async def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle successful invoice payment"""
+        subscription_id = invoice.get("subscription")
+        if not subscription_id:
+            return {"status": "ignored", "reason": "no subscription on invoice"}
+
+        subscription = None
+        try:
+            subscription = stripe.Subscription.retrieve(subscription_id)
+        except stripe.error.StripeError as e:
+            logger.error(f"Unable to refresh subscription {subscription_id} during invoice.paid: {str(e)}")
+
+        if subscription:
+            await self._sync_subscription_state(
+                user_id=subscription.get("metadata", {}).get("user_id"),
+                subscription=subscription,
+                customer_id=subscription.get("customer"),
+                extra_updates={
+                    "payment_status": "paid",
+                    "last_payment_date": datetime.now(timezone.utc),
+                }
+            )
+        else:
+            await self.subscriptions_collection.update_one(
+                {"stripe_subscription_id": subscription_id},
+                {"$set": {
+                    "payment_status": "paid",
+                    "last_payment_date": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
+                }}
+            )
+
+        logger.info(f"Invoice paid for subscription {subscription_id}")
+
+        # Send payment success notification (best-effort, don't fail webhook)
+        try:
             await self._send_payment_notification(
                 subscription_id=subscription_id,
                 notification_type="payment_success",
                 invoice=invoice
             )
-
-            return {"status": "success", "subscription_id": subscription_id}
-
         except Exception as e:
-            logger.error(f"Error handling invoice paid: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            logger.error(f"Failed to send payment success notification: {str(e)}")
+
+        return {"status": "success", "subscription_id": subscription_id}
 
     async def _handle_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle failed invoice payment"""
+        subscription_id = invoice.get("subscription")
+        if not subscription_id:
+            return {"status": "ignored", "reason": "no subscription on invoice"}
+
+        subscription = None
         try:
-            subscription_id = invoice.get("subscription")
-            if not subscription_id:
-                return {"status": "ignored"}
+            subscription = stripe.Subscription.retrieve(subscription_id)
+        except stripe.error.StripeError as e:
+            logger.error(f"Unable to refresh subscription {subscription_id} during invoice.payment_failed: {str(e)}")
 
-            subscription = None
-            try:
-                subscription = stripe.Subscription.retrieve(subscription_id)
-            except stripe.error.StripeError as e:
-                logger.error(f"Unable to refresh subscription {subscription_id} during invoice.payment_failed: {str(e)}")
+        if subscription:
+            await self._sync_subscription_state(
+                user_id=subscription.get("metadata", {}).get("user_id"),
+                subscription=subscription,
+                customer_id=subscription.get("customer"),
+                extra_updates={
+                    "payment_status": "past_due",
+                    "last_payment_attempt": datetime.now(timezone.utc),
+                }
+            )
+        else:
+            await self.subscriptions_collection.update_one(
+                {"stripe_subscription_id": subscription_id},
+                {"$set": {
+                    "payment_status": "past_due",
+                    "last_payment_attempt": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
+                }}
+            )
 
-            if subscription:
-                await self._sync_subscription_state(
-                    user_id=subscription.get("metadata", {}).get("user_id"),
-                    subscription=subscription,
-                    customer_id=subscription.get("customer"),
-                    extra_updates={
-                        "payment_status": "past_due",
-                        "last_payment_attempt": datetime.now(timezone.utc),
-                    }
-                )
-            else:
-                await self.subscriptions_collection.update_one(
-                    {"stripe_subscription_id": subscription_id},
-                    {"$set": {
-                        "payment_status": "past_due",
-                        "last_payment_attempt": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc)
-                    }}
-                )
+        logger.warning(f"Invoice payment failed for subscription {subscription_id}")
 
-            logger.warning(f"Invoice payment failed for subscription {subscription_id}")
-
-            # Send payment failed notification to user
+        # Send payment failed notification (best-effort, don't fail webhook)
+        try:
             await self._send_payment_notification(
                 subscription_id=subscription_id,
                 notification_type="payment_failed",
                 invoice=invoice
             )
-
-            return {"status": "success", "subscription_id": subscription_id}
-
         except Exception as e:
-            logger.error(f"Error handling invoice payment failed: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            logger.error(f"Failed to send payment failure notification: {str(e)}")
+
+        return {"status": "success", "subscription_id": subscription_id}
 
     async def _handle_payment_intent_succeeded(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle successful payment intent - updates payment_requests collection
         for couple payments created by planners, and handles autopilot scheduled payments.
         """
-        try:
-            payment_intent_id = payment_intent.get("id")
-            if not payment_intent_id:
-                return {"status": "ignored", "reason": "no payment_intent_id"}
+        payment_intent_id = payment_intent.get("id")
+        if not payment_intent_id:
+            return {"status": "ignored", "reason": "no payment_intent_id"}
 
-            # Get receipt URL from charges
-            receipt_url = None
-            if payment_intent.get("charges", {}).get("data"):
-                receipt_url = payment_intent["charges"]["data"][0].get("receipt_url")
+        # Get receipt URL from charges
+        receipt_url = None
+        if payment_intent.get("charges", {}).get("data"):
+            receipt_url = payment_intent["charges"]["data"][0].get("receipt_url")
 
-            # Check if this is an autopilot scheduled payment
-            metadata = payment_intent.get("metadata", {})
-            if metadata.get("payment_type") == "scheduled":
-                from app.services.autopilot_service import autopilot_service
-                await autopilot_service.handle_payment_succeeded(
-                    payment_intent_id=payment_intent_id,
-                    receipt_url=receipt_url
-                )
-                logger.info(f"Autopilot scheduled payment {payment_intent_id} succeeded")
-                return {"status": "success", "payment_intent_id": payment_intent_id, "type": "scheduled"}
-
-            # Update payment request status in our collection
-            payment_requests_collection = mongo.db["payment_requests"]
-            result = await payment_requests_collection.update_one(
-                {"payment_intent_id": payment_intent_id},
-                {
-                    "$set": {
-                        "status": "succeeded",
-                        "paid_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
-                        "amount_received": payment_intent.get("amount_received", 0) / 100,
-                        "payment_method_type": payment_intent.get("payment_method_types", [None])[0]
-                    }
-                }
+        # Check if this is an autopilot scheduled payment
+        metadata = payment_intent.get("metadata", {})
+        if metadata.get("payment_type") == "scheduled":
+            from app.services.autopilot_service import autopilot_service
+            await autopilot_service.handle_payment_succeeded(
+                payment_intent_id=payment_intent_id,
+                receipt_url=receipt_url
             )
+            logger.info(f"Autopilot scheduled payment {payment_intent_id} succeeded")
+            return {"status": "success", "payment_intent_id": payment_intent_id, "type": "scheduled"}
 
-            if result.modified_count > 0:
-                logger.info(f"Payment request {payment_intent_id} marked as succeeded")
+        # Update payment request status in our collection
+        payment_requests_collection = mongo.db["payment_requests"]
+        result = await payment_requests_collection.update_one(
+            {"payment_intent_id": payment_intent_id},
+            {
+                "$set": {
+                    "status": "succeeded",
+                    "paid_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                    "amount_received": payment_intent.get("amount_received", 0) / 100,
+                    "payment_method_type": payment_intent.get("payment_method_types", [None])[0]
+                }
+            }
+        )
 
-                # Notify planner about the payment
+        if result.modified_count > 0:
+            logger.info(f"Payment request {payment_intent_id} marked as succeeded")
+
+            # Notify planner (best-effort, don't fail webhook)
+            try:
                 await self._notify_planner_payment_received(
                     payment_intent_id=payment_intent_id,
                     amount=payment_intent.get("amount_received", 0) / 100,
                     payer_name=metadata.get("customer_name", "Customer")
                 )
+            except Exception as e:
+                logger.error(f"Failed to notify planner of payment: {str(e)}")
 
-                return {"status": "success", "payment_intent_id": payment_intent_id}
-            else:
-                # This payment intent might not be from our payment requests (could be subscription)
-                logger.debug(f"No payment request found for {payment_intent_id} - may be a subscription payment")
-                return {"status": "ignored", "reason": "not_a_payment_request"}
-
-        except Exception as e:
-            logger.error(f"Error handling payment intent succeeded: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            return {"status": "success", "payment_intent_id": payment_intent_id}
+        else:
+            # This payment intent might not be from our payment requests (could be subscription)
+            logger.debug(f"No payment request found for {payment_intent_id} - may be a subscription payment")
+            return {"status": "ignored", "reason": "not_a_payment_request"}
 
     async def _handle_payment_intent_failed(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle failed payment intent - handles autopilot scheduled payment failures
         with retry logic.
         """
-        try:
-            payment_intent_id = payment_intent.get("id")
-            if not payment_intent_id:
-                return {"status": "ignored", "reason": "no payment_intent_id"}
+        payment_intent_id = payment_intent.get("id")
+        if not payment_intent_id:
+            return {"status": "ignored", "reason": "no payment_intent_id"}
 
-            # Get error details
-            last_error = payment_intent.get("last_payment_error", {})
-            error_code = last_error.get("code", "unknown")
-            error_message = last_error.get("message", "Payment failed")
+        # Get error details
+        last_error = payment_intent.get("last_payment_error", {})
+        error_code = last_error.get("code", "unknown")
+        error_message = last_error.get("message", "Payment failed")
 
-            # Check if this is an autopilot scheduled payment
-            metadata = payment_intent.get("metadata", {})
-            if metadata.get("payment_type") == "scheduled":
-                from app.services.autopilot_service import autopilot_service
-                await autopilot_service.handle_payment_failed(
-                    payment_intent_id=payment_intent_id,
-                    error_code=error_code,
-                    error_message=error_message
-                )
-                logger.info(f"Autopilot scheduled payment {payment_intent_id} failed: {error_message}")
-                return {"status": "handled", "payment_intent_id": payment_intent_id, "type": "scheduled"}
-
-            # Update payment request status for non-autopilot payments
-            payment_requests_collection = mongo.db["payment_requests"]
-            result = await payment_requests_collection.update_one(
-                {"payment_intent_id": payment_intent_id},
-                {
-                    "$set": {
-                        "status": "failed",
-                        "failure_reason": error_message,
-                        "failure_code": error_code,
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                }
+        # Check if this is an autopilot scheduled payment
+        metadata = payment_intent.get("metadata", {})
+        if metadata.get("payment_type") == "scheduled":
+            from app.services.autopilot_service import autopilot_service
+            await autopilot_service.handle_payment_failed(
+                payment_intent_id=payment_intent_id,
+                error_code=error_code,
+                error_message=error_message
             )
+            logger.info(f"Autopilot scheduled payment {payment_intent_id} failed: {error_message}")
+            return {"status": "handled", "payment_intent_id": payment_intent_id, "type": "scheduled"}
 
-            if result.modified_count > 0:
-                logger.info(f"Payment request {payment_intent_id} marked as failed")
-                return {"status": "handled", "payment_intent_id": payment_intent_id}
-            else:
-                logger.debug(f"No payment request found for failed {payment_intent_id}")
-                return {"status": "ignored", "reason": "not_a_payment_request"}
+        # Update payment request status for non-autopilot payments
+        payment_requests_collection = mongo.db["payment_requests"]
+        result = await payment_requests_collection.update_one(
+            {"payment_intent_id": payment_intent_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "failure_reason": error_message,
+                    "failure_code": error_code,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
 
-        except Exception as e:
-            logger.error(f"Error handling payment intent failed: {str(e)}")
-            return {"status": "error", "message": str(e)}
+        if result.modified_count > 0:
+            logger.info(f"Payment request {payment_intent_id} marked as failed")
+            return {"status": "handled", "payment_intent_id": payment_intent_id}
+        else:
+            logger.debug(f"No payment request found for failed {payment_intent_id}")
+            return {"status": "ignored", "reason": "not_a_payment_request"}
 
     async def _handle_account_updated(self, account: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle Stripe Connect account updates - syncs onboarding status
         when account.updated event fires (e.g., after user completes onboarding).
         """
-        try:
-            account_id = account.get("id")
-            if not account_id:
-                return {"status": "ignored", "reason": "no account_id"}
+        account_id = account.get("id")
+        if not account_id:
+            return {"status": "ignored", "reason": "no account_id"}
 
-            charges_enabled = account.get("charges_enabled", False)
-            payouts_enabled = account.get("payouts_enabled", False)
-            details_submitted = account.get("details_submitted", False)
+        charges_enabled = account.get("charges_enabled", False)
+        payouts_enabled = account.get("payouts_enabled", False)
+        details_submitted = account.get("details_submitted", False)
 
-            # Find and update user with this connect account
-            result = await self.users_collection.update_one(
-                {"stripe_connect_id": account_id},
-                {
-                    "$set": {
-                        "stripe_connect_charges_enabled": charges_enabled,
-                        "stripe_connect_payouts_enabled": payouts_enabled,
-                        "stripe_connect_details_submitted": details_submitted,
-                        "stripe_connect_updated_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc)
-                    }
+        # Find and update user with this connect account
+        result = await self.users_collection.update_one(
+            {"stripe_connect_id": account_id},
+            {
+                "$set": {
+                    "stripe_connect_charges_enabled": charges_enabled,
+                    "stripe_connect_payouts_enabled": payouts_enabled,
+                    "stripe_connect_details_submitted": details_submitted,
+                    "stripe_connect_updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
                 }
+            }
+        )
+
+        if result.modified_count > 0:
+            logger.info(
+                f"Connect account {account_id} updated: charges={charges_enabled}, "
+                f"payouts={payouts_enabled}, details_submitted={details_submitted}"
             )
-
-            if result.modified_count > 0:
-                logger.info(
-                    f"Connect account {account_id} updated: charges={charges_enabled}, "
-                    f"payouts={payouts_enabled}, details_submitted={details_submitted}"
-                )
-                return {
-                    "status": "success",
-                    "account_id": account_id,
-                    "charges_enabled": charges_enabled,
-                    "payouts_enabled": payouts_enabled
-                }
-            else:
-                logger.warning(f"No user found with stripe_connect_id: {account_id}")
-                return {"status": "ignored", "reason": "user_not_found"}
-
-        except Exception as e:
-            logger.error(f"Error handling account updated: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            return {
+                "status": "success",
+                "account_id": account_id,
+                "charges_enabled": charges_enabled,
+                "payouts_enabled": payouts_enabled
+            }
+        else:
+            logger.warning(f"No user found with stripe_connect_id: {account_id}")
+            return {"status": "ignored", "reason": "user_not_found"}
 
     # ==================== PAYMENT NOTIFICATIONS ====================
 
@@ -1443,7 +1602,8 @@ class StripeService:
                     "message": f"Your payment of ${amount:.2f} {currency} for {plan_name} was processed successfully.",
                     "type": "billing",
                     "target_audience": "specific_user",
-                    "user_id": user_email,  # Target specific user by email
+                    "user_id": user_id,
+                    "user_email": user_email,
                     "created_by": "system",
                     "created_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),
@@ -1467,7 +1627,8 @@ class StripeService:
                     "message": f"We couldn't process your payment of ${amount:.2f} {currency} for {plan_name}. Please update your payment method.",
                     "type": "billing",
                     "target_audience": "specific_user",
-                    "user_id": user_email,  # Target specific user by email
+                    "user_id": user_id,
+                    "user_email": user_email,
                     "created_by": "system",
                     "created_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),

@@ -72,7 +72,7 @@ export default function AdminMetricsDashboard() {
     setLoading(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/platform/metrics`, {
+      const response = await fetch(`${baseUrl}/admin/platform/health`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },

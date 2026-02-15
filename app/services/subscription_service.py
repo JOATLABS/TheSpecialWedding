@@ -1,9 +1,12 @@
+import logging
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.services.stripe_service import stripe_service
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
+
+logger = logging.getLogger(__name__)
 
 
 class SubscriptionService:
@@ -48,8 +51,9 @@ class SubscriptionService:
         """List all subscription plans"""
         try:
             query = {} if include_inactive else {"is_active": True}
-            cursor = self.plans_collection.find(query).sort("sort_order", 1)
-            plans = await cursor.to_list(length=None)
+            plans = await self.plans_collection.find(query).to_list(length=None)
+            # Sort by sort_order or display_order (plans may use either field)
+            plans.sort(key=lambda p: p.get("sort_order", p.get("display_order", 999)))
             return plans
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing plans: {str(e)}")
@@ -129,7 +133,7 @@ class SubscriptionService:
                     stripe_service.archive_stripe_product(stripe_product_id)
                 except Exception as e:
                     # Log but don't block deletion - Stripe sync can be fixed manually
-                    print(f"Warning: Failed to archive Stripe product {stripe_product_id}: {e}")
+                    logger.warning(f"Failed to archive Stripe product {stripe_product_id}: {e}")
 
             result = await self.plans_collection.delete_one({"_id": plan_id})
 
@@ -194,6 +198,48 @@ class SubscriptionService:
                 "snapshot_date": now,
             }
 
+            # Create Stripe subscription with trial if plan has Stripe price IDs
+            stripe_subscription_id = None
+            stripe_customer_id = None
+            price_field = f"stripe_price_id_{billing_interval}"
+            stripe_price_id = plan.get(price_field)
+
+            if stripe_price_id:
+                try:
+                    # Get or create Stripe customer
+                    stripe_customer_id = await stripe_service.get_or_create_customer(
+                        user_id=user_id,
+                        email=user["email"],
+                        name=user.get("full_name") or user.get("email")
+                    )
+
+                    if stripe_customer_id:
+                        import stripe as stripe_lib
+                        sub_params = {
+                            "customer": stripe_customer_id,
+                            "items": [{"price": stripe_price_id}],
+                            "metadata": {"user_id": user_id, "plan_id": plan_id},
+                        }
+                        if trial_days > 0:
+                            sub_params["trial_end"] = int(trial_end.timestamp())
+
+                        stripe_sub = stripe_lib.Subscription.create(**sub_params)
+                        stripe_subscription_id = stripe_sub.id
+                        logger.info(
+                            f"Created Stripe subscription {stripe_subscription_id} "
+                            f"for user {user_id} with {trial_days} day trial"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not create Stripe subscription for admin-assigned plan: {e}. "
+                        f"Proceeding with local-only subscription."
+                    )
+            else:
+                logger.info(
+                    f"Plan {plan_id} has no Stripe price for {billing_interval} billing. "
+                    f"Creating local-only subscription."
+                )
+
             subscription_data = {
                 "_id": f"sub_{user_id}_{plan_id}_{int(now.timestamp())}",
                 "user_id": user_id,
@@ -206,9 +252,11 @@ class SubscriptionService:
                 "trial_end_date": trial_end if trial_days > 0 else None,
                 "current_period_start": now,
                 "current_period_end": period_end,
+                "stripe_subscription_id": stripe_subscription_id,
+                "stripe_customer_id": stripe_customer_id,
                 "usage": {
-                    "weddings_created": 0,
-                    "ai_credits_used": 0,
+                    "weddings_count": 0,
+                    "ai_credits_used_month": 0,
                     "storage_used_gb": 0,
                     "staff_seats_used": 0
                 },
@@ -222,14 +270,23 @@ class SubscriptionService:
             # Initialize usage tracking
             await self.initialize_usage_tracking(user_id, subscription_data["_id"])
 
-            # Update user subscription info
+            # Update user subscription info (must include trial_end_date so
+            # trial_expiration_service can find and expire trials correctly)
+            user_updates: dict = {
+                "plan_id": plan_id,
+                "subscription_status": subscription_data["status"],
+                "is_active": True,
+                "updated_at": now,
+            }
+            if stripe_customer_id:
+                user_updates["stripe_customer_id"] = stripe_customer_id
+            if trial_days > 0:
+                user_updates["trial_end_date"] = trial_end
+                user_updates["trial_warning_sent"] = False
+
             await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
-                {"$set": {
-                    "plan_id": plan_id,
-                    "subscription_status": subscription_data["status"],
-                    "updated_at": now
-                }}
+                {"$set": user_updates}
             )
             return {
                 "message": "Subscription assigned successfully",
@@ -254,11 +311,32 @@ class SubscriptionService:
             raise HTTPException(status_code=500, detail=f"Error retrieving subscription: {str(e)}")
 
     async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
-        """Cancel user subscription"""
+        """Cancel user subscription in both local DB and Stripe"""
         try:
             now = datetime.now(timezone.utc)
-            result = await self.subscriptions_collection.update_one(
-                {"user_id": user_id, "status": {"$in": ["active", "trial"]}},
+
+            # Find the subscription first to get Stripe subscription ID
+            subscription = await self.subscriptions_collection.find_one(
+                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+            )
+
+            if not subscription:
+                raise HTTPException(status_code=404, detail="No active subscription found")
+
+            # Cancel in Stripe if there's a Stripe subscription
+            stripe_sub_id = subscription.get("stripe_subscription_id")
+            if stripe_sub_id:
+                try:
+                    import stripe
+                    stripe.Subscription.cancel(stripe_sub_id)
+                    logger.info(f"Cancelled Stripe subscription {stripe_sub_id} for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Failed to cancel Stripe subscription {stripe_sub_id}: {str(e)}")
+                    # Still proceed with local cancellation to avoid inconsistent state
+
+            # Update local subscription
+            await self.subscriptions_collection.update_one(
+                {"_id": subscription["_id"]},
                 {"$set": {
                     "status": "cancelled",
                     "cancelled_at": now,
@@ -266,9 +344,6 @@ class SubscriptionService:
                     "cancellation_reason": reason
                 }}
             )
-
-            if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="No active subscription found")
 
             # Update user status
             await self.users_collection.update_one(
@@ -496,9 +571,14 @@ class SubscriptionService:
         try:
             # Total subscriptions by status
             status_counts = {}
-            for status in ["trial", "active", "cancelled", "expired"]:
+            for status in ["trial", "active", "cancelled", "expired", "suspended"]:
                 count = await self.subscriptions_collection.count_documents({"status": status})
                 status_counts[status] = count
+
+            # Archived count (separate dimension - archived subs keep their original status)
+            archived_count = await self.subscriptions_collection.count_documents(
+                {"archived_at": {"$exists": True}}
+            )
             # Total subscriptions by plan
             plan_pipeline = [
                 {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
@@ -539,6 +619,7 @@ class SubscriptionService:
             return {
                 "total_subscriptions": sum(status_counts.values()),
                 "status_breakdown": status_counts,
+                "archived_subscriptions": archived_count,
                 "plan_breakdown": {item["_id"]: item["count"] for item in plan_counts},
                 "monthly_recurring_revenue": round(mrr, 2),
                 "annual_recurring_revenue": round(arr, 2),
@@ -559,7 +640,12 @@ class SubscriptionService:
             # Build query
             query = {}
             if status_filter and status_filter != "all":
-                query["status"] = status_filter
+                if status_filter == "archived":
+                    # Archived subs retain original status (cancelled/expired);
+                    # archived_at field marks them as archived
+                    query["archived_at"] = {"$exists": True}
+                else:
+                    query["status"] = status_filter
 
             # Fetch all subscriptions
             subscriptions = await self.subscriptions_collection.find(query).to_list(length=None)

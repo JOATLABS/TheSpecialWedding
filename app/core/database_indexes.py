@@ -315,6 +315,37 @@ async def create_subscription_indexes():
         )
         logger.info("Created usage_tracking indexes")
 
+        # TTL: Auto-delete archived subscriptions 180 days after archival
+        await subs_collection.create_index(
+            [("archived_at", ASCENDING)],
+            name="idx_subscription_archived_ttl",
+            expireAfterSeconds=180 * 24 * 60 * 60,  # 180 days
+            partialFilterExpression={"archived_at": {"$exists": True}}
+        )
+        logger.info("Created TTL index: idx_subscription_archived_ttl (180 days)")
+
+        # TTL: Auto-delete abandoned checkout subscriptions after 30 days
+        # Targets ONLY records expired by checkout timeout (expired_reason set at
+        # stripe_service._handle_checkout_expired). These records have no
+        # stripe_subscription_id, so _sync_subscription_state won't touch updated_at.
+        await subs_collection.create_index(
+            [("updated_at", ASCENDING)],
+            name="idx_abandoned_checkout_ttl",
+            expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
+            partialFilterExpression={
+                "status": "expired",
+                "expired_reason": "checkout_session_expired"
+            }
+        )
+        logger.info("Created TTL index: idx_abandoned_checkout_ttl (30 days)")
+
+        # Regular index for archival job query performance
+        await subs_collection.create_index(
+            [("status", ASCENDING), ("cancelled_at", ASCENDING)],
+            name="idx_status_cancelled_at"
+        )
+        logger.info("Created index: idx_status_cancelled_at")
+
         return True
     except Exception as e:
         logger.error(f"Error creating subscription indexes: {str(e)}")
@@ -334,6 +365,20 @@ async def create_user_indexes():
             unique=True
         )
         logger.info("Created index: idx_user_email")
+
+        # 2. TTL: Auto-delete stale pending signups
+        # Users with subscription_status=pending_payment who never complete checkout
+        # are automatically removed once pending_expires_at passes (set to 48h after registration)
+        await collection.create_index(
+            [("pending_expires_at", ASCENDING)],
+            name="idx_pending_payment_ttl",
+            expireAfterSeconds=0,
+            partialFilterExpression={
+                "subscription_status": "pending_payment",
+                "pending_expires_at": {"$exists": True}
+            }
+        )
+        logger.info("Created TTL index: idx_pending_payment_ttl (pending signups)")
 
         return True
     except Exception as e:
@@ -746,6 +791,50 @@ async def create_kb_articles_indexes():
         return False
 
 
+async def create_invitation_indexes():
+    """
+    Create indexes for user_invitations collection
+
+    Key queries:
+    1. Token lookup (signup flow)
+    2. Email lookup (check existing invitations)
+    3. TTL cleanup for expired invitations
+    """
+    collection = mongo.db["user_invitations"]
+    try:
+        # 1. Token lookup (unique, for signup flow)
+        await collection.create_index(
+            [("token", ASCENDING)],
+            name="idx_invitation_token",
+            unique=True
+        )
+        logger.info("Created index: idx_invitation_token")
+
+        # 2. Email lookup (check existing invitations)
+        await collection.create_index(
+            [("email", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_invitation_email_created"
+        )
+        logger.info("Created index: idx_invitation_email_created")
+
+        # 3. TTL: Auto-delete expired invitations (pending only)
+        # expires_at is 7 days from creation; 7-day grace after = 14 days total
+        # partialFilterExpression ensures accepted/completed invitations are preserved
+        await collection.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_invitation_expires_ttl",
+            expireAfterSeconds=7 * 24 * 60 * 60,  # 7 days grace after expires_at
+            partialFilterExpression={"status": "pending"}
+        )
+        logger.info("Created TTL index: idx_invitation_expires_ttl (7 days grace, pending only)")
+
+        logger.info("All invitation indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating invitation indexes: {e}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -765,6 +854,7 @@ async def create_all_indexes():
         await create_security_audit_logs_indexes()
         await create_errors_indexes()
         await create_kb_articles_indexes()  # Knowledge Base articles
+        await create_invitation_indexes()  # User invitation cleanup
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")

@@ -49,12 +49,24 @@ class TrialExpirationService:
             expired_users = await cursor.to_list(length=None)
 
             for user in expired_users:
-                # Mark trial as expired
+                user_id = str(user["_id"])
+
+                # Mark trial as expired in users collection
                 await self.users_collection.update_one(
                     {"_id": user["_id"]},
                     {"$set": {
                         "subscription_status": "expired",
                         "is_active": False,
+                        "trial_expired_at": now
+                    }}
+                )
+
+                # Also update the user_subscriptions collection to keep state consistent
+                await mongo.db["user_subscriptions"].update_one(
+                    {"user_id": user_id, "status": {"$in": ["trial", "active"]}},
+                    {"$set": {
+                        "status": "expired",
+                        "updated_at": now,
                         "trial_expired_at": now
                     }}
                 )
