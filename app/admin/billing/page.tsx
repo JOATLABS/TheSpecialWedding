@@ -95,7 +95,7 @@ export default function AdminBillingDashboard() {
       };
 
       // Fetch platform metrics which includes business/billing data
-      const metricsResponse = await fetch(`${baseUrl}/admin/platform/metrics`, { headers });
+      const metricsResponse = await fetch(`${baseUrl}/admin/platform/health`, { headers });
 
       if (metricsResponse.ok) {
         const metricsData = await metricsResponse.json();
