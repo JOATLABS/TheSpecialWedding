@@ -125,17 +125,24 @@ function VerifyOTPContent() {
         body: JSON.stringify({ guest_id, otp }),
       });
 
+      const verifyData = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('OTP verification failed:', errorData);
-        throw new Error(errorData.detail || 'Failed to verify OTP');
+        console.error('OTP verification failed:', verifyData);
+        throw new Error(verifyData.detail || 'Failed to verify OTP');
       }
 
-      console.log('OTP verified successfully, fetching wedding data...');
+      console.log('OTP verified successfully');
       // OTP verified successfully - mark this so user doesn't need to re-enter
       setOtpVerified(true);
 
-      // Now fetch wedding + guest data
+      // Use guest data from OTP verify response if available
+      if (verifyData.guest) {
+        setGuestData(verifyData.guest);
+        console.log('Guest data loaded from OTP verify response:', verifyData.guest.id);
+      }
+
+      // Still fetch wedding data and RSVP status (Option B: keep RSVP check separate)
       await fetchWeddingData();
     } catch (err) {
       console.error('handleVerifyOTP error:', err);
