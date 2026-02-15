@@ -204,6 +204,7 @@ function VerifyOTPContent() {
               <RSVPForm
                 guest={guestData}
                 token={token}
+                existingRsvp={editMode ? rsvpData : null}
                 onViewWeddingPage={() => { window.location.href = `/${slug}`; }}
               />
             )}

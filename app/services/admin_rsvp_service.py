@@ -210,7 +210,7 @@ class AdminRSVPService:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             # Validate attending events
-            valid_events = {"traditional", "white_wedding", "reception"}
+            valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
             if attending and not all(event in valid_events for event in attending):
                 raise HTTPException(status_code=400, detail="Invalid event(s) in attending list")
 
