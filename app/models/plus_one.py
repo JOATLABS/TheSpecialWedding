@@ -37,8 +37,8 @@ class PlusOneModel(BaseModel):
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\d{10,15}$", value):
-            raise ValueError("Phone number must be 10 to 15 digits")
+        if value and not re.match(r"^\+?\d{10,15}$", value):
+            raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
 
     @field_validator("email")
@@ -52,7 +52,7 @@ class PlusOneModel(BaseModel):
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception"}
+        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
         if not all(event in valid_events for event in v):
             raise ValueError("Invalid event(s) in attending list")
         return v
