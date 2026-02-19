@@ -216,8 +216,8 @@ export default function MoneyDashboard() {
       // Fetch all money data in parallel
       const [summaryRes, incomingRes, contractsRes] = await Promise.all([
         fetch(`${baseUrl}/admin/autopilot/status`, { headers }),
-        fetch(`${baseUrl}/admin/contracts?status=signed`, { headers }),
-        fetch(`${baseUrl}/admin/contracts?status=active`, { headers })
+        fetch(`${baseUrl}/contracts?status=signed`, { headers }),
+        fetch(`${baseUrl}/contracts?status=active`, { headers })
       ]);
 
       // Process incoming payments from contracts
@@ -229,7 +229,7 @@ export default function MoneyDashboard() {
         // Fetch scheduled payments for each contract
         const paymentsPromises = allContracts.map(async (contract: { id: string; couple?: { name?: string }; package_snapshot?: { name?: string } }) => {
           try {
-            const paymentsRes = await fetch(`${baseUrl}/admin/contracts/${contract.id}/payments`, { headers });
+            const paymentsRes = await fetch(`${baseUrl}/contracts/${contract.id}/payments`, { headers });
             if (paymentsRes.ok) {
               const paymentsData = await paymentsRes.json();
               return (paymentsData.payments || []).map((p: ScheduledPayment) => ({
@@ -456,7 +456,7 @@ export default function MoneyDashboard() {
     setActionLoading(payment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/admin/payments/${payment.id}/retry`, {
+      const res = await fetch(`${baseUrl}/payments/${payment.id}/retry`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,
@@ -484,7 +484,7 @@ export default function MoneyDashboard() {
     setActionLoading(payment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/admin/payments/${payment.id}/cancel`, {
+      const res = await fetch(`${baseUrl}/payments/${payment.id}/cancel`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,
@@ -510,7 +510,7 @@ export default function MoneyDashboard() {
     setActionLoading(selectedPayment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/admin/payments/${selectedPayment.id}/mark-paid-externally`, {
+      const res = await fetch(`${baseUrl}/payments/${selectedPayment.id}/mark-paid-externally`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,

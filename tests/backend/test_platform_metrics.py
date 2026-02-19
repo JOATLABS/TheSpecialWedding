@@ -20,7 +20,9 @@ os.environ.setdefault("API_KEY", "test-api-key")
 import app.api.saas_config as saas_config  # noqa: E402
 import app.api.platform_metrics as platform_metrics_api  # noqa: E402
 from app.core.config import settings  # noqa: E402
+import app.core.database as database_module  # noqa: E402
 from app.dependencies.auth import require_admin  # noqa: E402
+from app.dependencies.auth_extended import require_root_admin  # noqa: E402
 from app.services.platform_metrics_service import PlatformMetricsService  # noqa: E402
 import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
 
@@ -84,14 +86,16 @@ def snapshot_test_client(monkeypatch):
     monkeypatch.setattr(platform_metrics_service, "service", service)
     monkeypatch.setattr(platform_metrics_api, "metrics_service", service)
     monkeypatch.setattr(settings, "PLATFORM_METRICS_TOKEN", "metrics-test-token")
+    monkeypatch.setattr(database_module, "mongo", fake)
 
     app = FastAPI()
     app.include_router(platform_metrics_api.router)
 
     async def override_require_admin():
-        return SimpleNamespace(role="admin")
+        return SimpleNamespace(role="admin", is_root_admin=True)
 
     app.dependency_overrides[require_admin] = override_require_admin
+    app.dependency_overrides[require_root_admin] = override_require_admin
 
     return TestClient(app)
 
@@ -255,15 +259,27 @@ def test_metrics_snapshot_endpoints_roundtrip(snapshot_test_client):
     assert history and history[0]["id"] == body["id"]
 
 
-def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client):
+def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client, monkeypatch):
     client = snapshot_test_client
     headers = {"Authorization": "Bearer metrics-test-token"}
+
+    # Mock live health generation to succeed
+    async def mock_get_health(current_user):
+        return {
+            "health": {"status": "healthy"},
+            "metrics": {},
+            "timestamp": "2024-01-01T00:00:00Z"
+        }
+
+    monkeypatch.setattr("app.api.admin_platform_metrics.get_platform_health", mock_get_health)
 
     response = client.get("/metrics/snapshot", headers=headers)
     assert response.status_code == 404
 
+    # Admin endpoint should fall back to live health data (200), not 404
     admin_response = client.get("/admin/platform/metrics")
-    assert admin_response.status_code == 404
+    assert admin_response.status_code == 200
+    assert admin_response.json()["metrics"] == {"health": {"status": "healthy"}, "metrics": {}, "timestamp": "2024-01-01T00:00:00Z"}
 
     history_response = client.get("/admin/platform/metrics/history")
     assert history_response.status_code == 200

@@ -12,7 +12,7 @@ let stripePromise: Promise<Stripe | null> | null = null;
 const getStripePromise = (): Promise<Stripe | null> | null => {
   if (!stripePromise) {
     const init = async (): Promise<Stripe | null> => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/stripe/config`);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/config`);
       if (res.ok) {
         const { publishable_key } = await res.json();
         return loadStripe(publishable_key);

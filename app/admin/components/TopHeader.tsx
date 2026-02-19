@@ -267,6 +267,7 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
             <button
               onClick={() => setShowDropdown(!showDropdown)}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              aria-label="User menu"
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-secondary-400 flex items-center justify-center overflow-hidden">
                 {userProfile?.profile_image_url ? (

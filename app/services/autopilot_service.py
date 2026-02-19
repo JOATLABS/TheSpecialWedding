@@ -254,7 +254,7 @@ class AutopilotService:
 
             # Create and confirm PaymentIntent
             # Use idempotency key to prevent double-charging on retries/duplicate requests
-            attempt_count = payment.get("attempt_count", 1)
+            attempt_count = payment.get("attempt_count", 0)
             idempotency_key = f"autopilot_{payment_id}_attempt_{attempt_count}"
 
             payment_intent_params = {
@@ -530,12 +530,12 @@ class AutopilotService:
         if not payment:
             return
 
-        attempt_count = payment.get("attempt_count", 1)
+        attempt_count = payment.get("attempt_count", 0)
         new_attempt_count = attempt_count + 1
 
-        # Calculate next retry date
+        # Calculate next retry date using exponential backoff (1, 2, 4, 7 days)
         if new_attempt_count <= MAX_RETRY_ATTEMPTS:
-            retry_days = RETRY_SCHEDULE[min(attempt_count - 1, len(RETRY_SCHEDULE) - 1)]
+            retry_days = RETRY_SCHEDULE[min(attempt_count, len(RETRY_SCHEDULE) - 1)]
             next_retry = datetime.now(timezone.utc) + timedelta(days=retry_days)
 
             await self.scheduled_payments.update_one(

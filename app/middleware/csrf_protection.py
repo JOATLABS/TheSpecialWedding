@@ -35,6 +35,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
             "/weddings/privacy-info",         # Public privacy info
             "/weddings/guest-access",         # Token-based access
             "/stripe/",                       # Stripe endpoints use signatures
+            "/api/stripe/",                   # Stripe alias endpoints use signatures
             "/rsvp/",                         # RSVP endpoints use token auth
             "/admin/auth",                    # Auth endpoints
             "/public/",                       # Public endpoints

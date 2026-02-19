@@ -8,14 +8,15 @@ import RSVPForm from '@/components/RSVPForm';
 import AlreadyRSVPedScreen from '@/components/AlreadyRSVPedScreen';
 import { WeddingContext } from '@/contexts/WeddingContext';
 
-// Get API base URL - fallback to empty string for relative URLs in single-container deployment
+// Get API base URL - strip /admin suffix for public endpoints
+// NEXT_PUBLIC_API_BASE_URL typically ends with /admin for admin panel use
 const getApiBase = (): string => {
   const url = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!url) {
     console.warn('NEXT_PUBLIC_API_BASE_URL not set, using relative URLs');
     return '';
   }
-  return url;
+  return url.replace('/admin', '');
 };
 
 const apiBase = getApiBase();
@@ -124,17 +125,24 @@ function VerifyOTPContent() {
         body: JSON.stringify({ guest_id, otp }),
       });
 
+      const verifyData = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('OTP verification failed:', errorData);
-        throw new Error(errorData.detail || 'Failed to verify OTP');
+        console.error('OTP verification failed:', verifyData);
+        throw new Error(verifyData.detail || 'Failed to verify OTP');
       }
 
-      console.log('OTP verified successfully, fetching wedding data...');
+      console.log('OTP verified successfully');
       // OTP verified successfully - mark this so user doesn't need to re-enter
       setOtpVerified(true);
 
-      // Now fetch wedding + guest data
+      // Use guest data from OTP verify response if available
+      if (verifyData.guest) {
+        setGuestData(verifyData.guest);
+        console.log('Guest data loaded from OTP verify response:', verifyData.guest.id);
+      }
+
+      // Still fetch wedding data and RSVP status (Option B: keep RSVP check separate)
       await fetchWeddingData();
     } catch (err) {
       console.error('handleVerifyOTP error:', err);
@@ -190,9 +198,15 @@ function VerifyOTPContent() {
                 guest={guestData}
                 rsvp={rsvpData}
                 onEditClick={() => setEditMode(true)}
+                onViewWeddingPage={() => { window.location.href = `/${slug}`; }}
               />
             ) : (
-              <RSVPForm guest={guestData} token={token} />
+              <RSVPForm
+                guest={guestData}
+                token={token}
+                existingRsvp={editMode ? rsvpData : null}
+                onViewWeddingPage={() => { window.location.href = `/${slug}`; }}
+              />
             )}
           </div>
         </div>

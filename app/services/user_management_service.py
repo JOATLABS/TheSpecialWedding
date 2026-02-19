@@ -161,6 +161,26 @@ class UserManagementService:
             result = await self.invitations_collection.insert_one(invitation)
             invitation_id = str(result.inserted_id)
 
+            # Store invitation-created Stripe customer in stripe_customers collection
+            # so the orphaned cleanup job can track it even after invitation TTL-deletion.
+            # Uses placeholder user_id (invitation_{token}) so existing cleanup logic
+            # correctly identifies it as orphaned (no matching user or subscription).
+            if stripe_customer_id:
+                try:
+                    await mongo.db["stripe_customers"].update_one(
+                        {"stripe_customer_id": stripe_customer_id},
+                        {"$set": {
+                            "stripe_customer_id": stripe_customer_id,
+                            "user_id": f"invitation_{invitation_token}",
+                            "email": email,
+                            "created_at": datetime.now(timezone.utc),
+                            "source": "invitation",
+                        }},
+                        upsert=True
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to store invitation Stripe customer mapping: {e}")
+
             # Send invitation email with trial info if applicable
             trial_info = f" with a {trial_days}-day free trial" if trial_days > 0 else ""
             email_success = await self.send_invitation_email(
@@ -265,9 +285,20 @@ class UserManagementService:
 
             users = await self.users_collection.find(query, {"password_hash": 0, "password": 0}).to_list(length=None)  # Exclude password fields
 
-            # Convert ObjectId to string for JSON serialization
+            # Convert ObjectId to string and calculate wedding_count for each user
             for user in users:
                 user["_id"] = str(user["_id"])
+
+                # Count weddings assigned to this user (by email or user ID)
+                user_email = user.get("email")
+                user_id = user["_id"]
+                wedding_count = await self.weddings_collection.count_documents({
+                    "$or": [
+                        {"assigned_planner_email": user_email},
+                        {"assigned_planner_id": user_id}
+                    ]
+                })
+                user["wedding_count"] = wedding_count
 
             return users
         except Exception as e:
@@ -635,6 +666,19 @@ class UserManagementService:
             result = await self.users_collection.insert_one(user_data)
             user_id = str(result.inserted_id)
 
+            # Update stripe_customers record with real user_id (replaces invitation
+            # placeholder "invitation_{token}"). This ensures get_or_create_customer()
+            # in assign_subscription finds the existing customer instead of creating
+            # a duplicate.
+            if stripe_customer_id:
+                try:
+                    await mongo.db["stripe_customers"].update_one(
+                        {"stripe_customer_id": stripe_customer_id},
+                        {"$set": {"user_id": user_id, "updated_at": datetime.now(timezone.utc)}}
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to update stripe_customers user_id: {e}")
+
             # Create subscription record if trial granted
             if trial_days > 0 and plan_id:
                 try:
@@ -662,10 +706,14 @@ class UserManagementService:
                     detail="Trial requires a subscription plan. Please contact the administrator."
                 )
 
-            # Mark invitation as completed
+            # Mark invitation as completed and clear expires_at to prevent
+            # TTL index from deleting accepted invitation records
             await self.invitations_collection.update_one(
                 {"token": token},
-                {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)},
+                    "$unset": {"expires_at": ""}
+                }
             )
 
             # Build response

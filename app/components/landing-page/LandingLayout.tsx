@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from 'next/image';
 
@@ -16,14 +16,23 @@ import { useTheme } from '@/hooks/useTheme';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
 import RequestRSVPLinkModal from '@/components/RequestRSVPLinkModal';
+import RSVPModal from '@/components/RSVPModal';
 
-export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images }) => {
+export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, rsvpToken }) => {
   // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
   useTheme(wedding);
 
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
+  const [showRSVPModal, setShowRSVPModal] = useState(!!rsvpToken);
+
+  // Sync modal open state when rsvpToken arrives after initial render
+  useEffect(() => {
+    if (rsvpToken) {
+      setShowRSVPModal(true);
+    }
+  }, [rsvpToken]);
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
@@ -283,6 +292,18 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images })
       coupleName={wedding.couple_names}
       themeConfig={wedding.theme_config}
     />
+    {rsvpToken && (
+      <RSVPModal
+        isOpen={showRSVPModal}
+        token={rsvpToken}
+        slug={wedding.slug}
+        onClose={() => {
+          setShowRSVPModal(false);
+          // Clear persisted token after modal closes (RSVP completed or dismissed)
+          try { sessionStorage.removeItem('rsvp_token_' + wedding.slug); } catch {}
+        }}
+      />
+    )}
     </>
   );
 };
