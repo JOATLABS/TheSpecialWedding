@@ -51,6 +51,10 @@ interface MessageLog {
  delivery_status_updated_at?: string;
  error_code?: number;
  error_message?: string;
+ // Fallback tracking
+ fallback_channel?: 'email';
+ fallback_status?: 'sent' | 'failed';
+ fallback_email?: string;
 }
 
 export default function AdminRemindersPage() {
@@ -940,6 +944,64 @@ export default function AdminRemindersPage() {
  {activeTab === 'history' && (
  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Message History</h2>
+
+ {/* Delivery Health Summary Banner */}
+ {messageHistory.length > 0 && (() => {
+  const last24h = messageHistory.filter(log => {
+   const sentAt = new Date(log.sent_at);
+   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+   return sentAt >= oneDayAgo;
+  });
+  const totalSent = last24h.length;
+  const delivered = last24h.filter(l => l.delivery_status === 'delivered' || (l.status === 'success' && !l.delivery_status)).length;
+  const failed = last24h.filter(l => l.delivery_status === 'failed' || l.delivery_status === 'undelivered' || (l.status && l.status.startsWith('failed'))).length;
+  const pending = last24h.filter(l => l.delivery_status === 'queued' || l.delivery_status === 'accepted' || l.delivery_status === 'sending' || l.delivery_status === 'sent').length;
+  const withFallback = last24h.filter(l => l.fallback_channel === 'email' && l.fallback_status === 'sent').length;
+  const completed = delivered + failed;
+  const rate = completed > 0 ? Math.round((delivered / completed) * 100) : 100;
+  const isHealthy = rate >= 95;
+  const isDegraded = rate >= 80 && rate < 95;
+
+  if (totalSent === 0) return null;
+  return (
+   <div className={`rounded-lg p-4 mb-6 border ${
+    isHealthy ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' :
+    isDegraded ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800' :
+    'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
+   }`}>
+    <div className="flex flex-wrap items-center gap-4">
+     <div className="flex items-center gap-2">
+      <div className={`w-3 h-3 rounded-full ${isHealthy ? 'bg-green-500' : isDegraded ? 'bg-yellow-500' : 'bg-red-500'}`} />
+      <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">Last 24h Delivery</span>
+     </div>
+     <div className="flex flex-wrap gap-3 text-sm">
+      <span className="text-gray-600 dark:text-gray-300">Rate: <strong className={isHealthy ? 'text-green-700 dark:text-green-400' : isDegraded ? 'text-yellow-700 dark:text-yellow-400' : 'text-red-700 dark:text-red-400'}>{rate}%</strong></span>
+      <span className="text-gray-600 dark:text-gray-300">Sent: <strong>{totalSent}</strong></span>
+      <span className="text-green-700 dark:text-green-400">Delivered: <strong>{delivered}</strong></span>
+      {failed > 0 && <span className="text-red-700 dark:text-red-400">Failed: <strong>{failed}</strong></span>}
+      {pending > 0 && <span className="text-yellow-700 dark:text-yellow-400">Pending: <strong>{pending}</strong></span>}
+      {withFallback > 0 && <span className="text-blue-700 dark:text-blue-400">Email fallbacks: <strong>{withFallback}</strong></span>}
+     </div>
+    </div>
+    {failed > 0 && (
+     <button
+      onClick={() => {
+       const failedLogs = last24h.filter(l => l.delivery_status === 'failed' || l.delivery_status === 'undelivered' || (l.status && l.status.startsWith('failed')));
+       const subject = `Bulk SMS Delivery Failures (${failed} messages)`;
+       const description = failedLogs.slice(0, 10).map(l =>
+        `- ${l.phone || l.to || 'N/A'}: ${l.error_message || l.status || 'Unknown'}`
+       ).join('\n');
+       window.open(`/admin/support?action=create&subject=${encodeURIComponent(subject)}&description=${encodeURIComponent(description)}&category=technical&priority=high`, '_blank');
+      }}
+      className="mt-2 inline-flex items-center px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 dark:text-red-300 dark:bg-red-900/40 dark:border-red-700"
+     >
+      Report {failed} Failed Deliveries
+     </button>
+    )}
+   </div>
+  );
+ })()}
+
  {messageHistory.length === 0 ? (
  <p className="text-gray-500 dark:text-gray-400 dark:text-gray-400">No messages sent yet.</p>
  ) : (
@@ -992,6 +1054,31 @@ export default function AdminRemindersPage() {
  <span className="text-xs text-gray-600 dark:text-gray-400 dark:text-gray-400">{log.event_type || log.email_type || ''}</span>
  </div>
  <div className="text-sm text-gray-700 dark:text-gray-300 break-words">{log.message || log.subject || ''}</div>
+ {log.fallback_channel === 'email' && (
+ <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded mt-1 ${
+  log.fallback_status === 'sent' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+ }`}>
+  Email fallback {log.fallback_status}
+ </span>
+ )}
+ {(log.delivery_status === 'failed' || log.delivery_status === 'undelivered' || (log.status && log.status.startsWith('failed'))) && (
+ <button
+  onClick={() => {
+   const subject = `SMS Delivery Failure: ${log.error_message || 'Unknown error'}`;
+   const description = [
+    `Phone: ${log.phone || 'N/A'}`,
+    `Error Code: ${log.error_code || 'N/A'}`,
+    `Error: ${log.error_message || 'N/A'}`,
+    `Message SID: ${log.message_sid || 'N/A'}`,
+    `Sent At: ${log.sent_at}`,
+   ].join('\n');
+   window.open(`/admin/support?action=create&subject=${encodeURIComponent(subject)}&description=${encodeURIComponent(description)}&category=technical&priority=high`, '_blank');
+  }}
+  className="inline-flex items-center px-2 py-1 mt-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100"
+ >
+  Report Issue
+ </button>
+ )}
  </div>
  ))}
  </div>
@@ -1021,6 +1108,9 @@ export default function AdminRemindersPage() {
  </th>
  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
  Content
+ </th>
+ <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+ Actions
  </th>
  </tr>
  </thead>
@@ -1078,6 +1168,36 @@ export default function AdminRemindersPage() {
  </td>
  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">
  {log.message || log.subject || ''}
+ </td>
+ <td className="px-6 py-4 whitespace-nowrap text-sm">
+ <div className="flex flex-col gap-1">
+ {log.fallback_channel === 'email' && (
+ <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
+  log.fallback_status === 'sent' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
+ }`}>
+  Email fallback {log.fallback_status}
+ </span>
+ )}
+ {(log.delivery_status === 'failed' || log.delivery_status === 'undelivered' || (log.status && log.status.startsWith('failed'))) && (
+ <button
+  onClick={() => {
+   const subject = `SMS Delivery Failure: ${log.error_message || 'Unknown error'}`;
+   const description = [
+    `Phone: ${log.phone || 'N/A'}`,
+    `Error Code: ${log.error_code || 'N/A'}`,
+    `Error: ${log.error_message || 'N/A'}`,
+    `Message SID: ${log.message_sid || 'N/A'}`,
+    `Sent At: ${log.sent_at}`,
+    `Delivery Status: ${log.delivery_status || log.status}`,
+   ].join('\n');
+   window.open(`/admin/support?action=create&subject=${encodeURIComponent(subject)}&description=${encodeURIComponent(description)}&category=technical&priority=high`, '_blank');
+  }}
+  className="inline-flex items-center px-2 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100 dark:text-red-300 dark:bg-red-900/30 dark:border-red-800 dark:hover:bg-red-900/50"
+ >
+  Report Issue
+ </button>
+ )}
+ </div>
  </td>
  </tr>
  ))}
