@@ -149,7 +149,9 @@ class SubscriptionService:
 
     # User Subscription Management
     async def assign_subscription(self, user_id: str, plan_id: str, billing_interval: str = "monthly",
-                                  trial_days: int = 0, creator_email: str = "") -> dict:
+                                  trial_days: int = 0, creator_email: str = "",
+                                  existing_stripe_subscription_id: str = None,
+                                  existing_stripe_customer_id: str = None) -> dict:
         """Assign subscription plan to user"""
         try:
             # Verify user exists
@@ -198,13 +200,30 @@ class SubscriptionService:
                 "snapshot_date": now,
             }
 
-            # Create Stripe subscription with trial if plan has Stripe price IDs
-            stripe_subscription_id = None
-            stripe_customer_id = None
+            # Reuse existing Stripe subscription if caller already created one
+            # (e.g., complete_account_setup pre-creates the Stripe subscription
+            # before calling assign_subscription to avoid double-billing).
+            stripe_subscription_id = existing_stripe_subscription_id
+            stripe_customer_id = existing_stripe_customer_id
             price_field = f"stripe_price_id_{billing_interval}"
             stripe_price_id = plan.get(price_field)
 
-            if stripe_price_id:
+            if stripe_subscription_id:
+                # Stripe subscription already exists — just ensure we have the customer ID
+                if not stripe_customer_id:
+                    try:
+                        stripe_customer_id = await stripe_service.get_or_create_customer(
+                            user_id=user_id,
+                            email=user["email"],
+                            name=user.get("full_name") or user.get("email")
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not resolve Stripe customer for existing sub: {e}")
+                logger.info(
+                    f"Using existing Stripe subscription {stripe_subscription_id} "
+                    f"for user {user_id} (skipped duplicate creation)"
+                )
+            elif stripe_price_id:
                 try:
                     # Get or create Stripe customer
                     stripe_customer_id = await stripe_service.get_or_create_customer(

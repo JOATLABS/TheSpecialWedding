@@ -116,20 +116,34 @@ export default function WeddingPlannerDashboard() {
        },
      });
 
-     if (response.status === 402) {
-       setInsightsError('Insufficient AI credits');
-       setAiInsights([]);
-       return;
-     }
-
      if (response.ok) {
        const data = await response.json();
        setAiInsights(data.insights || []);
+       // Show warning if using cached fallback
+       if (data.warning) {
+         setInsightsError('');  // Clear any previous error
+       }
      } else {
-       setInsightsError('Failed to fetch insights');
+       const errorData = await response.json().catch(() => ({}));
+       const detail = errorData.detail;
+       const message = typeof detail === 'object' ? detail?.message : detail;
+
+       if (response.status === 402) {
+         setInsightsError(message || 'Insufficient AI credits. Upgrade your plan for more.');
+       } else if (response.status === 429) {
+         setInsightsError(message || 'AI is busy. Please wait a moment and try again.');
+       } else if (response.status === 503) {
+         setInsightsError(message || 'AI service temporarily unavailable. Try again shortly.');
+       } else if (response.status === 504) {
+         setInsightsError(message || 'AI request timed out. Try again.');
+       } else {
+         setInsightsError(message || 'Unable to load insights. Try refreshing.');
+       }
+       // Don't clear existing insights on error — keep showing previous insights
+       // so the planner still has something useful to look at
      }
    } catch {
-     setInsightsError('Failed to fetch insights');
+     setInsightsError('Network error. Check your connection and try again.');
    } finally {
      setInsightsLoading(false);
    }
@@ -456,23 +470,25 @@ export default function WeddingPlannerDashboard() {
             </div>
           )}
 
-          {/* Error State */}
+          {/* Error State — shown as a banner above any existing insights */}
           {insightsError && !insightsLoading && (
-            <div className="text-center py-6 text-slate-500 dark:text-slate-400">
-              <svg className="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p className="text-sm">{insightsError}</p>
+            <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="text-sm text-amber-800 dark:text-amber-200">{insightsError}</p>
+              </div>
               <button
                 onClick={() => fetchAIInsights(selectedInsightWedding)}
-                className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+                className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 whitespace-nowrap ml-3"
               >
                 Try again
               </button>
             </div>
           )}
 
-          {/* Empty State */}
+          {/* Empty State — only show when no insights AND no error */}
           {!insightsLoading && !insightsError && aiInsights.length === 0 && (
             <div className="text-center py-6 text-slate-500 dark:text-slate-400">
               <svg className="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -482,8 +498,8 @@ export default function WeddingPlannerDashboard() {
             </div>
           )}
 
-          {/* Insights List */}
-          {!insightsLoading && !insightsError && aiInsights.length > 0 && (
+          {/* Insights List — show even with error banner (previous insights still useful) */}
+          {!insightsLoading && aiInsights.length > 0 && (
             <div className="space-y-3">
               {aiInsights.map((insight, index) => {
                 // Icon mapping

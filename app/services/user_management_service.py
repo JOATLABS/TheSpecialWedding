@@ -688,7 +688,12 @@ class UserManagementService:
                         plan_id=plan_id,
                         billing_interval="monthly",
                         trial_days=trial_days,
-                        creator_email=invitation.get("invited_by", "system")
+                        creator_email=invitation.get("invited_by", "system"),
+                        # Pass existing Stripe subscription to avoid double-billing.
+                        # complete_account_setup already created the Stripe subscription
+                        # above (line ~593) — assign_subscription must reuse it.
+                        existing_stripe_subscription_id=stripe_subscription_id,
+                        existing_stripe_customer_id=stripe_customer_id,
                     )
                 except Exception as sub_error:
                     self.logger.error(f"Failed to create subscription record: {str(sub_error)}")

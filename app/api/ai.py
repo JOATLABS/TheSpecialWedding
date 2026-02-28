@@ -581,6 +581,20 @@ async def get_budget_insights(
             "budget": budget_data
         }
 
+        # Stable cache key — uses budget totals rather than full category details
+        # to prevent cache misses when minor budget changes occur.
+        # Full budget data is still sent to the AI for analysis.
+        cache_context = {
+            "wedding_id": wedding_id,
+            "cultural_style": cultural_style or "western",
+            "location": location,
+            "season": season or "unknown",
+            "total_budget": wedding.get("total_budget"),
+            "budget_total": budget_data.get("total_budget", 0),
+            "budget_spent": budget_data.get("total_spent", 0),
+            "categories_count": len(budget_data.get("categories", [])),
+        }
+
         # Generate insights with cultural context in prompt
         cultural_prompt = f"Analyze this {cultural_style or 'wedding'} budget"
         if location:
@@ -595,7 +609,8 @@ async def get_budget_insights(
             feature="budget_insights",
             prompt=cultural_prompt,
             context=context,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
+            cache_context=cache_context
         )
 
         return {
@@ -713,7 +728,7 @@ async def get_dashboard_insights(
                 # Ignore if date format is wrong
                 pass
 
-        # Build context for AI
+        # Build context for AI (full data for the AI model)
         context = {
             "wedding_id": wedding_id,
             "couple_names": wedding.get("couple_names"),
@@ -728,6 +743,21 @@ async def get_dashboard_insights(
             "vendor_payments": vendor_payments
         }
 
+        # Stable cache key context — excludes volatile data like upcoming_tasks,
+        # vendor_payments, and computed days_until_wedding to prevent unnecessary
+        # cache misses on page reload. The TTL handles staleness.
+        cache_context = {
+            "wedding_id": wedding_id,
+            "wedding_date": wedding.get("date"),
+            "guest_count": wedding.get("guest_count"),
+            "cultural_style": wedding.get("cultural_style", "western"),
+            "total_budget": wedding.get("total_budget"),
+            "budget_total": budget_data.get("total_budget", 0),
+            "budget_spent": budget_data.get("total_spent", 0),
+            "rsvp_total": rsvp_data.get("total_guests", 0),
+            "rsvp_confirmed": rsvp_data.get("accepted", 0),
+        }
+
         # Generate insights
         result = await ai_service.generate(
             user_id=user_id,
@@ -735,7 +765,8 @@ async def get_dashboard_insights(
             feature="dashboard_insights",
             prompt="Analyze this wedding's current status and generate actionable insights for the planner.",
             context=context,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
+            cache_context=cache_context
         )
 
         response = result["response"]

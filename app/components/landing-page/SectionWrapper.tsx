@@ -1,7 +1,7 @@
 import React from "react";
 
 interface SectionWrapperProps {
-  id: string;
+  id?: string;
   children: React.ReactNode;
   backgroundColor?: string;
   glassEffect?: boolean;
