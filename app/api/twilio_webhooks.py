@@ -142,6 +142,15 @@ async def handle_twilio_status_callback(
 
         logger.info(f"Updated delivery status for {message_sid}: {message_status}")
 
+        # Take error-based actions for failed/undelivered messages
+        if message_status in ("failed", "undelivered") and error_code:
+            await _handle_delivery_failure(
+                message_sid=message_sid,
+                error_code=int(error_code),
+                to_number=to_number,
+                log_collection=log_collection,
+            )
+
         return {
             "status": "success",
             "message_sid": message_sid,
@@ -199,6 +208,470 @@ def _validate_twilio_signature(
     except Exception as e:
         logger.error(f"Signature validation error: {str(e)}")
         return False
+
+
+# ==================== DELIVERY FAILURE HANDLER ====================
+
+async def _handle_delivery_failure(
+    message_sid: str,
+    error_code: int,
+    to_number: Optional[str],
+    log_collection,
+):
+    """
+    Take action based on the type of delivery failure.
+
+    Actions by error category:
+    - account_level: Log critical error + alert ROOT_ADMIN
+    - permanent_recipient: Flag guest phone as unverified
+    - compliance: Update guest sms_opt_in to False
+    - temporary: Queue for retry
+    """
+    from app.utils.sms_error_classifier import (
+        classify_error,
+        is_account_level,
+        is_permanent_recipient,
+        is_compliance,
+        should_retry,
+    )
+
+    category = classify_error(error_code)
+    error_message = TWILIO_ERROR_MESSAGES.get(str(error_code), f"Unknown error (code: {error_code})")
+
+    # Look up the original log record to get guest_id and wedding_id
+    log_record = await log_collection.find_one({"message_sid": message_sid})
+    guest_id = log_record.get("guest_id") if log_record else None
+    wedding_id = log_record.get("wedding_id") if log_record else None
+
+    try:
+        if is_account_level(error_code):
+            # Critical: account suspended, permission denied, etc.
+            # Log to errors collection for ROOT_ADMIN dashboard visibility
+            await mongo.db["errors"].insert_one({
+                "error_id": f"twilio_account_{error_code}_{message_sid}",
+                "error_type": "TwilioAccountError",
+                "message": f"Twilio account-level error: {error_message}",
+                "severity": "critical",
+                "timestamp": datetime.now(timezone.utc),
+                "acknowledged": False,
+                "context": {
+                    "error_code": error_code,
+                    "message_sid": message_sid,
+                    "to_number": to_number,
+                    "source": "twilio_status_callback",
+                }
+            })
+            logger.critical(f"ACCOUNT-LEVEL Twilio error {error_code}: {error_message}")
+
+            # Email ROOT_ADMIN about account-level issue
+            await _notify_root_admin_twilio_error(error_code, error_message, message_sid)
+
+        elif is_permanent_recipient(error_code):
+            # Phone number is permanently unreachable — flag it
+            if guest_id:
+                guest_collection = mongo.get_guest_collection()
+                await guest_collection.update_one(
+                    {"_id": guest_id} if not isinstance(guest_id, str) else {"token": {"$exists": True}, "_id": guest_id},
+                    {"$set": {"phone_verified": False, "phone_error": error_message}}
+                )
+                logger.info(f"Flagged guest {guest_id} phone as unverified: {error_message}")
+
+        elif is_compliance(error_code):
+            # Recipient has opted out or is blocked
+            if guest_id:
+                guest_collection = mongo.get_guest_collection()
+                # Update opt-in status (21610 = unsubscribed)
+                if error_code == 21610:
+                    await guest_collection.update_one(
+                        {"_id": guest_id} if not isinstance(guest_id, str) else {"token": {"$exists": True}, "_id": guest_id},
+                        {
+                            "$set": {
+                                "sms_opt_in": False,
+                                "sms_opt_out_date": datetime.now(timezone.utc),
+                                "sms_opt_out_reason": "twilio_unsubscribed",
+                            }
+                        }
+                    )
+                    logger.info(f"Set sms_opt_in=False for guest {guest_id} due to Twilio 21610")
+
+        elif should_retry(error_code):
+            # Queue for retry (temporary error)
+            await _queue_for_retry(message_sid, log_record, error_code)
+
+        # Email fallback: if SMS failed and guest has an email, try email
+        # Skip fallback for compliance errors (guest opted out) and temporary errors (will be retried)
+        if category not in ("compliance", "temporary"):
+            await _attempt_email_fallback(
+                guest_id=guest_id,
+                message_sid=message_sid,
+                log_record=log_record,
+                log_collection=log_collection,
+            )
+
+        # Check hourly delivery rate and alert ROOT_ADMIN if degraded
+        await _check_delivery_rate_alert()
+
+        # Notify planner about the failure (for all categories)
+        if wedding_id:
+            await _notify_planner_delivery_failure(
+                wedding_id=wedding_id,
+                guest_id=guest_id,
+                to_number=to_number,
+                error_code=error_code,
+                error_message=error_message,
+                category=category,
+                message_sid=message_sid,
+            )
+
+    except Exception as e:
+        # Don't let failure handling errors break the webhook response
+        logger.error(f"Error in delivery failure handler: {str(e)}")
+
+
+async def _notify_root_admin_twilio_error(error_code: int, error_message: str, message_sid: str):
+    """Email ROOT_ADMIN about an account-level Twilio error."""
+    try:
+        from app.services.email_service_resend import ResendEmailService
+        email_service = ResendEmailService()
+
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        subject = f"CRITICAL: Twilio Account Error ({error_code})"
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #dc2626;">Twilio Account-Level Error</h2>
+            <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #fecaca;">
+                <p><strong>Error Code:</strong> {error_code}</p>
+                <p><strong>Message:</strong> {error_message}</p>
+                <p><strong>Message SID:</strong> {message_sid}</p>
+                <p><strong>Time:</strong> {datetime.now(timezone.utc).strftime('%B %d, %Y at %I:%M %p UTC')}</p>
+            </div>
+            <p style="color: #dc2626; font-weight: bold;">
+                This error affects ALL SMS sends. Please check the Twilio dashboard immediately.
+            </p>
+        </div>
+        """
+
+        await email_service.send_email(
+            to_email=root_admin_email,
+            subject=subject,
+            html_content=html_content,
+            email_type="critical_alert"
+        )
+        logger.info(f"ROOT_ADMIN alerted about Twilio error {error_code}")
+    except Exception as e:
+        logger.error(f"Failed to send ROOT_ADMIN Twilio error alert: {str(e)}")
+
+
+async def _attempt_email_fallback(
+    guest_id: Optional[str],
+    message_sid: str,
+    log_record: Optional[dict],
+    log_collection,
+):
+    """
+    Attempt to send the failed SMS message via email as a fallback.
+    Only sends if the guest has an email address and hasn't opted out of email.
+    """
+    if not guest_id or not log_record:
+        return
+
+    try:
+        from bson import ObjectId
+
+        guest_collection = mongo.get_guest_collection()
+
+        try:
+            guest_oid = ObjectId(guest_id)
+        except Exception:
+            guest_oid = guest_id
+
+        guest = await guest_collection.find_one({"_id": guest_oid})
+        if not guest:
+            return
+
+        email = guest.get("email")
+        if not email:
+            return
+
+        # Don't send if guest explicitly opted out of email
+        if guest.get("email_opt_in") is False:
+            return
+
+        # Check if a fallback was already sent for this message
+        existing_fallback = await log_collection.find_one({
+            "message_sid": message_sid,
+            "fallback_channel": "email",
+        })
+        if existing_fallback:
+            return
+
+        # Send the original message content via email
+        from app.services.email_service_resend import ResendEmailService
+        email_service = ResendEmailService()
+
+        guest_name = guest.get("name", "Guest")
+        original_message = log_record.get("message", "")
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <p>Dear {guest_name},</p>
+                <p>{original_message}</p>
+            </div>
+            <p style="color: #666; font-size: 12px;">
+                This message was originally sent via SMS but could not be delivered.
+            </p>
+        </div>
+        """
+
+        result = await email_service.send_email(
+            to_email=email,
+            subject="Wedding Update",
+            html_content=html_content,
+            wedding_id=log_record.get("wedding_id"),
+            email_type="sms_fallback",
+        )
+
+        # Update the original SMS log record with fallback info
+        fallback_status = "sent" if result.get("success") else "failed"
+        await log_collection.update_one(
+            {"message_sid": message_sid},
+            {"$set": {
+                "fallback_channel": "email",
+                "fallback_status": fallback_status,
+                "fallback_email": email,
+                "fallback_at": datetime.now(timezone.utc),
+            }}
+        )
+
+        if result.get("success"):
+            logger.info(f"Email fallback sent to {email} for failed SMS {message_sid}")
+        else:
+            logger.warning(f"Email fallback also failed for {email}: {result.get('error')}")
+
+    except Exception as e:
+        logger.error(f"Error attempting email fallback for {message_sid}: {str(e)}")
+
+
+async def _check_delivery_rate_alert():
+    """
+    Check the last 1-hour SMS delivery rate.
+    If it drops below 80%, alert ROOT_ADMIN (rate-limited to once per hour).
+    """
+    from datetime import timedelta
+
+    try:
+        now = datetime.now(timezone.utc)
+        one_hour_ago = now - timedelta(hours=1)
+
+        # Check if we already sent an alert in the last hour
+        recent_alert = await mongo.db["errors"].find_one({
+            "error_type": "SMSDeliveryRateDrop",
+            "timestamp": {"$gte": one_hour_ago}
+        })
+        if recent_alert:
+            return  # Already alerted recently
+
+        # Calculate delivery rate for the last hour
+        pipeline = [
+            {"$match": {"provider": "twilio", "sent_at": {"$gte": one_hour_ago}}},
+            {"$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "delivered": {"$sum": {"$cond": [{"$eq": ["$delivery_status", "delivered"]}, 1, 0]}},
+                "failed": {"$sum": {"$cond": [{"$in": ["$delivery_status", ["failed", "undelivered"]]}, 1, 0]}},
+            }}
+        ]
+
+        cursor = mongo.db["reminders_sent"].aggregate(pipeline)
+        stats = await cursor.to_list(length=1)
+
+        if not stats:
+            return  # No messages in the last hour
+
+        total = stats[0].get("total", 0)
+        delivered = stats[0].get("delivered", 0)
+        failed = stats[0].get("failed", 0)
+
+        # Only check if there are enough completed messages to be meaningful
+        completed = delivered + failed
+        if completed < 5:
+            return
+
+        delivery_rate = (delivered / completed * 100) if completed > 0 else 100.0
+
+        threshold = float(os.getenv("SMS_DELIVERY_RATE_ALERT_THRESHOLD", "80"))
+        if delivery_rate >= threshold:
+            return  # Delivery rate is fine
+
+        # Alert ROOT_ADMIN
+        error_record = {
+            "error_id": f"delivery_rate_drop_{now.timestamp()}",
+            "error_type": "SMSDeliveryRateDrop",
+            "message": f"SMS delivery rate dropped to {delivery_rate:.1f}% in the last hour ({delivered}/{completed} delivered, {failed} failed)",
+            "severity": "critical",
+            "timestamp": now,
+            "acknowledged": False,
+            "context": {
+                "total_sent": total,
+                "delivered": delivered,
+                "failed": failed,
+                "delivery_rate": round(delivery_rate, 1),
+                "threshold": threshold,
+                "source": "twilio_status_callback_monitor",
+            }
+        }
+        await mongo.db["errors"].insert_one(error_record)
+
+        # Email ROOT_ADMIN
+        from app.services.email_service_resend import ResendEmailService
+        email_service = ResendEmailService()
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+
+        await email_service.send_email(
+            to_email=root_admin_email,
+            subject=f"WARNING: SMS Delivery Rate Drop ({delivery_rate:.1f}%)",
+            html_content=f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #f59e0b;">SMS Delivery Rate Alert</h2>
+                <div style="background-color: #fffbeb; padding: 20px; border-radius: 8px; border: 1px solid #fde68a;">
+                    <p><strong>Delivery Rate:</strong> {delivery_rate:.1f}% (threshold: {threshold}%)</p>
+                    <p><strong>Last Hour Stats:</strong></p>
+                    <ul>
+                        <li>Total sent: {total}</li>
+                        <li>Delivered: {delivered}</li>
+                        <li>Failed: {failed}</li>
+                    </ul>
+                    <p><strong>Time:</strong> {now.strftime('%B %d, %Y at %I:%M %p UTC')}</p>
+                </div>
+                <p>Please check the platform metrics dashboard for details.</p>
+            </div>
+            """,
+            email_type="delivery_rate_alert"
+        )
+        logger.warning(f"ROOT_ADMIN alerted: SMS delivery rate dropped to {delivery_rate:.1f}%")
+
+    except Exception as e:
+        logger.error(f"Error checking delivery rate: {str(e)}")
+
+
+async def _queue_for_retry(message_sid: str, log_record: Optional[dict], error_code: int):
+    """Queue a failed message for retry with exponential backoff."""
+    from datetime import timedelta
+
+    if not log_record:
+        logger.warning(f"Cannot queue retry for {message_sid}: no log record found")
+        return
+
+    retry_collection = mongo.db["sms_retry_queue"]
+
+    # Check how many retries have already been attempted
+    existing = await retry_collection.find_one({"message_sid": message_sid})
+    retry_count = existing.get("retry_count", 0) if existing else 0
+
+    max_retries = 3
+    if retry_count >= max_retries:
+        logger.info(f"Max retries ({max_retries}) reached for {message_sid}")
+        return
+
+    # Exponential backoff: 1min, 5min, 15min
+    delays = [60, 300, 900]
+    delay_seconds = delays[min(retry_count, len(delays) - 1)]
+    retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+
+    await retry_collection.update_one(
+        {"message_sid": message_sid},
+        {
+            "$set": {
+                "message_sid": message_sid,
+                "phone": log_record.get("phone"),
+                "message": log_record.get("message"),
+                "guest_id": log_record.get("guest_id"),
+                "wedding_id": log_record.get("wedding_id"),
+                "target_type": log_record.get("target_type"),
+                "event_type": log_record.get("event_type"),
+                "retry_at": retry_at,
+                "retry_count": retry_count + 1,
+                "last_error_code": error_code,
+                "status": "pending",
+                "updated_at": datetime.now(timezone.utc),
+            },
+            "$setOnInsert": {
+                "created_at": datetime.now(timezone.utc),
+            }
+        },
+        upsert=True
+    )
+    logger.info(f"Queued retry #{retry_count + 1} for {message_sid} at {retry_at}")
+
+
+async def _notify_planner_delivery_failure(
+    wedding_id: str,
+    guest_id: Optional[str],
+    to_number: Optional[str],
+    error_code: int,
+    error_message: str,
+    category: str,
+    message_sid: str,
+):
+    """Create a planner notification for an SMS delivery failure."""
+    try:
+        from app.models.planner_notification import create_notification_document
+        from bson import ObjectId
+
+        wedding_collection = mongo.db["weddings"]
+
+        # Look up the wedding to find the assigned planner
+        try:
+            wedding_oid = ObjectId(wedding_id)
+        except Exception:
+            wedding_oid = wedding_id
+
+        wedding = await wedding_collection.find_one({"_id": wedding_oid})
+        if not wedding:
+            return
+
+        assigned_planner_email = wedding.get("assigned_planner_email")
+        if not assigned_planner_email:
+            return
+
+        # Look up guest name
+        guest_name = "Unknown Guest"
+        if guest_id:
+            guest_collection = mongo.get_guest_collection()
+            try:
+                guest_oid = ObjectId(guest_id)
+            except Exception:
+                guest_oid = guest_id
+            guest = await guest_collection.find_one({"_id": guest_oid})
+            if guest:
+                guest_name = guest.get("name", "Unknown Guest")
+
+        # Create in-app notification using the standard document builder
+        notification = create_notification_document(
+            planner_id=assigned_planner_email,
+            notification_type="delivery_failure",
+            title=f"SMS delivery failed for {guest_name}",
+            message=f"SMS to {to_number or 'unknown'} failed: {error_message}",
+            wedding_id=wedding_id,
+            metadata={
+                "guest_id": guest_id,
+                "guest_name": guest_name,
+                "phone": to_number,
+                "error_code": error_code,
+                "error_category": category,
+                "message_sid": message_sid,
+            },
+            priority="high" if category == "account_level" else "medium",
+            action_url="/admin/reminders?tab=history",
+        )
+
+        await mongo.db["planner_notifications"].insert_one(notification)
+        logger.info(f"Planner notification created for delivery failure: {guest_name} ({to_number})")
+
+    except Exception as e:
+        logger.error(f"Failed to create planner delivery failure notification: {str(e)}")
 
 
 # ==================== INCOMING MESSAGE WEBHOOK ====================

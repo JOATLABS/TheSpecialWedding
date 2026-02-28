@@ -55,6 +55,8 @@ class TwilioReminderService:
 
         logs = []
         now = datetime.now(timezone.utc)
+        skipped_no_phone = 0
+        skipped_opted_out = 0
 
         # Guests
         if target_group in {"guests", "all"}:
@@ -62,45 +64,56 @@ class TwilioReminderService:
                 rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
                 if rsvp and event_type in rsvp.get("attending", []):
                     phone = guest.get("phone")
-                    # Check if guest has opted in for SMS reminders
                     sms_opt_in = guest.get("sms_opt_in", False)
-                    if phone and sms_opt_in:
-                        status = self._send_sms(phone, message)
-                        logs.append(self._log(
-                            phone,
-                            guest["_id"],
-                            message,
-                            "guest",
-                            event_type,
-                            status,
-                            now,
-                        ))
+                    if not phone:
+                        skipped_no_phone += 1
+                        continue
+                    if not sms_opt_in:
+                        skipped_opted_out += 1
+                        continue
+                    status = self._send_sms(phone, message)
+                    logs.append(self._log(
+                        phone,
+                        guest["_id"],
+                        message,
+                        "guest",
+                        event_type,
+                        status,
+                        now,
+                    ))
 
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
             async for po in self.plus_one_collection.find({}):
                 if event_type in po.get("attending", []):
                     phone = po.get("phone")
-                    # Check if plus-one has opted in for SMS (or not explicitly opted out)
                     sms_opt_in = po.get("sms_opt_in", None)
                     if sms_opt_in is False:  # Explicitly opted out
+                        skipped_opted_out += 1
                         continue
-                    if phone:
-                        status = self._send_sms(phone, message)
-                        logs.append(self._log(
-                            phone,
-                            po["guest_id"],
-                            message,
-                            "plus-one",
-                            event_type,
-                            status,
-                            now,
-                        ))
+                    if not phone:
+                        skipped_no_phone += 1
+                        continue
+                    status = self._send_sms(phone, message)
+                    logs.append(self._log(
+                        phone,
+                        po["guest_id"],
+                        message,
+                        "plus-one",
+                        event_type,
+                        status,
+                        now,
+                    ))
 
         if logs:
             await self.log_collection.insert_many(logs)
 
-        return {"sent": len(logs), "provider": "twilio"}
+        return {
+            "sent": len(logs),
+            "skipped_no_phone": skipped_no_phone,
+            "skipped_opted_out": skipped_opted_out,
+            "provider": "twilio"
+        }
 
     def _send_sms(self, to: str, body: str) -> dict:
         """
@@ -229,20 +242,37 @@ class TwilioRSVPReminderHelper:
         # Get guests for this specific wedding only
         sent_count = 0
         failed_count = 0
+        skipped_no_phone = 0
+        skipped_no_token = 0
+        skipped_opted_out = 0
+        unreachable_guests = []  # Guests with neither phone nor email
         logs = []
 
         async for guest in self.guest_collection.find({"wedding_id": wedding_id}):
             token = guest.get("token")
             phone = guest.get("phone")
+            email = guest.get("email")
             guest_id = guest.get("_id")
             now = datetime.now(timezone.utc)
 
-            # Skip if no token or phone
-            if not token or not phone:
+            # Skip if no token or phone, but track the reason
+            if not token:
+                skipped_no_token += 1
+                continue
+            if not phone:
+                skipped_no_phone += 1
+                logger.info(f"Skipping {guest.get('name')} - no phone number")
+                # Track guests with no contact info at all
+                if not email:
+                    unreachable_guests.append({
+                        "name": guest.get("name", "Unknown"),
+                        "guest_id": str(guest_id),
+                    })
                 continue
 
             sms_opt_in = guest.get("sms_opt_in", None)
             if sms_opt_in is False:  # Explicitly opted out
+                skipped_opted_out += 1
                 logger.info(f"Skipping {guest.get('name')} - opted out of SMS")
                 continue
 
@@ -324,5 +354,9 @@ class TwilioRSVPReminderHelper:
         return {
             "sent": sent_count,
             "failed": failed_count,
+            "skipped_no_phone": skipped_no_phone,
+            "skipped_no_token": skipped_no_token,
+            "skipped_opted_out": skipped_opted_out,
+            "unreachable_guests": unreachable_guests if unreachable_guests else None,
             "provider": "twilio"
         }
