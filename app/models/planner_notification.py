@@ -29,6 +29,8 @@ class PlannerNotificationTypes:
     REMINDER: Final[Literal["reminder"]] = "reminder"
     SYSTEM: Final[Literal["system"]] = "system"
     SUPPORT_TICKET_RESPONSE: Final[Literal["support_ticket_response"]] = "support_ticket_response"
+    DELIVERY_FAILURE: Final[Literal["delivery_failure"]] = "delivery_failure"
+    BULK_SEND_SUMMARY: Final[Literal["bulk_send_summary"]] = "bulk_send_summary"
 
 
 NotificationType = Literal[
@@ -41,7 +43,9 @@ NotificationType = Literal[
     "vendor_response",
     "reminder",
     "system",
-    "support_ticket_response"
+    "support_ticket_response",
+    "delivery_failure",
+    "bulk_send_summary"
 ]
 
 

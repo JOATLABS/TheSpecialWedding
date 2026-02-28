@@ -62,16 +62,29 @@ def send_reminder_twilio(
     return twilio_reminder_service.send_reminders(event_type, message, target_group)
 
 
-@router.post("/reminders/twilio/send-invites", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
-def send_invites_twilio(payload: SlugModel):
+@router.post("/reminders/twilio/send-invites", tags=["Admin"])
+async def send_invites_twilio(
+    payload: SlugModel,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
     """Send RSVP invite links using Twilio"""
     if not twilio_configured or not twilio_helper:
         raise HTTPException(status_code=503, detail="Twilio service not configured")
 
-    return twilio_helper.send_personalized_rsvp_links(
+    result = await twilio_helper.send_personalized_rsvp_links(
         slug=payload.slug,
         custom_message=payload.custom_message
     )
+
+    # Create bulk send summary notification for the planner
+    await _create_bulk_send_summary(
+        planner_email=current_user.email,
+        wedding_slug=payload.slug,
+        channel="sms",
+        result=result,
+    )
+
+    return result
 
 
 @router.post("/reminders/send-to-guests", tags=["Admin"])
@@ -104,6 +117,7 @@ async def send_individual_reminders(
     now = datetime.now(timezone.utc)
 
     from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
+    status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
 
     for token in payload.guest_tokens:
         # Find guest by token
@@ -151,27 +165,34 @@ async def send_individual_reminders(
         if not phone.startswith('+'):
             phone = f"+1{phone}"
 
-        # Send SMS
+        # Send SMS with delivery tracking
         status = "failed"
+        message_sid = None
+        initial_status = None
         try:
+            # Build common kwargs for delivery tracking
+            send_kwargs = {"body": payload.message, "to": phone}
+            if status_callback_url:
+                send_kwargs["status_callback"] = status_callback_url
+
             # Try messaging service first, fallback to direct number
             try:
                 message = twilio_client.messages.create(
                     messaging_service_sid=MESSAGING_SERVICE_SID,
-                    body=payload.message,
-                    to=phone
+                    **send_kwargs
                 )
             except Exception as msg_service_error:
                 logger.warning(f"Messaging service failed, trying direct number: {msg_service_error}")
                 message = twilio_client.messages.create(
                     from_=from_number,
-                    body=payload.message,
-                    to=phone
+                    **send_kwargs
                 )
 
             logger.info(f"SMS sent to {phone}, SID: {message.sid}")
             sent_count += 1
             status = "success"
+            message_sid = message.sid
+            initial_status = message.status  # "queued" or "accepted"
 
             # Mark guest as having received an invite if not already set
             if not invite_sent:
@@ -186,8 +207,8 @@ async def send_individual_reminders(
             status = f"failed: {str(e)}"
             failure_reasons.append(f"SMS to {guest_name} failed: {str(e)}")
 
-        # Log the attempt
-        logs.append({
+        # Log the attempt with delivery tracking fields
+        log_record = {
             "phone": phone,
             "guest_id": str(guest["_id"]),
             "wedding_id": str(guest.get("wedding_id")) if guest.get("wedding_id") else None,
@@ -196,8 +217,20 @@ async def send_individual_reminders(
             "event_type": "individual_reminder",
             "status": status,
             "sent_at": now,
-            "provider": "twilio"
-        })
+            "provider": "twilio",
+            "message_sid": message_sid,
+            "delivery_status": initial_status,
+            "delivery_status_updated_at": now if message_sid else None,
+        }
+        if message_sid and initial_status:
+            log_record["delivery_events"] = [{
+                "status": initial_status,
+                "timestamp": now,
+                "error_code": None
+            }]
+        else:
+            log_record["delivery_events"] = []
+        logs.append(log_record)
 
     # Save logs
     if logs:
@@ -232,6 +265,73 @@ async def send_individual_reminders(
         "provider": "twilio",
         "failure_reasons": failure_reasons if failure_reasons else None
     }
+
+
+async def _create_bulk_send_summary(
+    planner_email: str,
+    wedding_slug: str,
+    channel: str,
+    result: dict,
+):
+    """Create a planner notification summarizing a bulk send operation."""
+    try:
+        from app.models.planner_notification import create_notification_document
+
+        sent = result.get("sent", 0)
+        failed = result.get("failed", 0)
+        skipped_no_phone = result.get("skipped_no_phone", 0)
+        skipped_opted_out = result.get("skipped_opted_out", 0)
+        total_skipped = skipped_no_phone + result.get("skipped_no_token", 0) + skipped_opted_out
+
+        # Build human-readable summary
+        parts = [f"{sent} sent"]
+        if failed > 0:
+            parts.append(f"{failed} failed")
+        if total_skipped > 0:
+            parts.append(f"{total_skipped} skipped")
+
+        title = f"SMS Invites: {', '.join(parts)}"
+
+        details = []
+        if skipped_no_phone > 0:
+            details.append(f"{skipped_no_phone} guests have no phone number")
+        if skipped_opted_out > 0:
+            details.append(f"{skipped_opted_out} guests opted out of SMS")
+
+        message = f"Bulk {channel.upper()} send completed for wedding '{wedding_slug}'. "
+        message += f"{sent} messages sent successfully."
+        if details:
+            message += " " + ". ".join(details) + "."
+
+        # Look up wedding_id from slug
+        wedding = await mongo.db["weddings"].find_one({"slug": wedding_slug}, {"_id": 1})
+        wedding_id = str(wedding["_id"]) if wedding else None
+
+        priority = "high" if failed > 0 else "low"
+
+        notification = create_notification_document(
+            planner_id=planner_email,
+            notification_type="bulk_send_summary",
+            title=title,
+            message=message,
+            wedding_id=wedding_id,
+            metadata={
+                "sent": sent,
+                "failed": failed,
+                "skipped_no_phone": skipped_no_phone,
+                "skipped_opted_out": skipped_opted_out,
+                "channel": channel,
+                "wedding_slug": wedding_slug,
+            },
+            priority=priority,
+            action_url="/admin/reminders?tab=history",
+        )
+
+        await mongo.db["planner_notifications"].insert_one(notification)
+        logger.info(f"Bulk send summary notification created for {planner_email}: {title}")
+
+    except Exception as e:
+        logger.warning(f"Failed to create bulk send summary notification: {str(e)}")
 
 
 @router.get("/reminders/twilio/logs", tags=["Admin"], dependencies=[Depends(require_root_admin)])
