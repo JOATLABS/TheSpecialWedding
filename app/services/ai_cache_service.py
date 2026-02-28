@@ -161,6 +161,60 @@ class AICacheService:
             logger.error(f"Cache invalidation error: {str(e)}")
             return 0
 
+    async def get_latest_cached_response(
+        self,
+        feature: str,
+        tenant_id: str
+    ) -> Optional[Dict]:
+        """
+        Get the most recent cached response for a feature+tenant regardless of context hash.
+
+        This is used as a fallback when a fresh AI call fails — we return the most recent
+        cached response rather than showing an error. This provides a much better UX since
+        slightly stale insights are better than no insights.
+
+        Args:
+            feature: AI feature name (e.g., "budget_insights")
+            tenant_id: Wedding or Planner ID
+
+        Returns:
+            Most recent cached response dict or None if nothing cached
+        """
+        try:
+            # Find the most recent non-expired entry for this feature+tenant
+            cached = await self.cache.find_one(
+                {
+                    "feature": feature,
+                    "tenant_id": tenant_id,
+                    "expires_at": {"$gt": datetime.now(timezone.utc)}
+                },
+                sort=[("created_at", -1)]  # Most recent first
+            )
+
+            if cached:
+                logger.debug(f"Fallback cache hit for {feature}/{tenant_id}")
+                return cached
+
+            # If no non-expired entry, try the most recent entry regardless of expiration
+            # (better to show stale insights than nothing)
+            cached = await self.cache.find_one(
+                {
+                    "feature": feature,
+                    "tenant_id": tenant_id
+                },
+                sort=[("created_at", -1)]
+            )
+
+            if cached:
+                logger.info(f"Returning expired fallback cache for {feature}/{tenant_id}")
+                return cached
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Fallback cache get error: {str(e)}")
+            return None
+
     async def cleanup_expired(self) -> int:
         """
         Remove expired cache entries.

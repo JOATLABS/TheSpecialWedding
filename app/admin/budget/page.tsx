@@ -120,14 +120,19 @@ export default function BudgetDashboard() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        const detail = errorData.detail;
+        const message = typeof detail === 'object' ? detail?.message : detail;
+
         if (response.status === 402) {
-          throw new Error(errorData.detail?.message || 'Insufficient AI credits. Please upgrade your plan.');
+          throw new Error(message || 'Insufficient AI credits. Please upgrade your plan.');
         } else if (response.status === 429) {
-          throw new Error(errorData.detail?.message || 'AI service is busy. Please try again in a moment.');
+          throw new Error(message || 'AI service is busy. Please try again in a moment.');
         } else if (response.status === 503) {
-          throw new Error(errorData.detail?.message || 'AI service is temporarily unavailable.');
+          throw new Error(message || 'AI service is temporarily unavailable.');
+        } else if (response.status === 504) {
+          throw new Error(message || 'AI request timed out. Try again.');
         }
-        throw new Error(errorData.detail?.message || errorData.detail || 'Failed to generate AI insights');
+        throw new Error(message || 'Failed to generate AI insights. Try again.');
       }
 
       const data: AIInsightsResponse = await response.json();
@@ -139,14 +144,18 @@ export default function BudgetDashboard() {
       }
 
       if (data.cached) {
-        toast.info('Showing cached insights. Click refresh for new analysis.');
+        // Don't show toast for cached results — it's expected behavior
       } else {
         toast.success(`AI insights generated (${data.credits_used} credits used)`);
       }
     } catch (err: any) {
       const message = err.message || 'Failed to get AI insights';
       setAiInsightsError(message);
+      // Don't clear existing insights on error — keep previous insights visible
+      // Only show error toast, the error banner in the UI is enough context
       toast.error(message);
+      // Still show the panel so the user sees the error + any previous insights
+      setShowAiInsights(true);
     } finally {
       setAiInsightsLoading(false);
     }
@@ -572,15 +581,25 @@ export default function BudgetDashboard() {
             </div>
           )}
 
-          {/* Error State */}
+          {/* Error State — shown as a warning banner, doesn't hide existing insights */}
           {aiInsightsError && (
-            <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg">
-              <p className="text-red-800 dark:text-red-200">{aiInsightsError}</p>
+            <div className="p-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                <p className="text-sm text-amber-800 dark:text-amber-200">{aiInsightsError}</p>
+              </div>
+              <Button
+                onClick={() => fetchAiInsights(true)}
+                disabled={aiInsightsLoading}
+                className="text-xs px-2 py-1 ml-3"
+              >
+                Retry
+              </Button>
             </div>
           )}
 
-          {/* Insights List */}
-          {!aiInsightsError && aiInsights.length > 0 && (
+          {/* Insights List — show even when there's an error banner (previous insights still useful) */}
+          {aiInsights.length > 0 && (
             <div className="space-y-4">
               {aiInsights.map((insight, index) => (
                 <div

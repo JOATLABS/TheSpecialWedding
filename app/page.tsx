@@ -19,8 +19,13 @@ import Link from "next/link";
 import HeroAurora from "./components/ui/HeroAurora";
 import HeroCanvas from "./components/ui/HeroCanvas";
 import PetalCanvas from "./components/ui/PetalCanvas";
+import InfiniteScrollWrapper from "./components/ui/InfiniteScrollWrapper";
 import { SignupModal } from "./components/saas/SignupModal";
 import { ThemeConfig } from "./types/wedding";
+
+/* ═══════════════════════════════════════════════════════════
+   Types
+   ═══════════════════════════════════════════════════════════ */
 
 type Feature = {
   title: string;
@@ -67,6 +72,10 @@ type FAQ = {
   question: string;
   answer: string;
 };
+
+/* ═══════════════════════════════════════════════════════════
+   Static data
+   ═══════════════════════════════════════════════════════════ */
 
 const features: Feature[] = [
   {
@@ -213,7 +222,7 @@ const fallbackPricing: PricingTier[] = [
       "Wedding website",
       "Timeline builder",
     ],
-    cta: "Start planning",
+    cta: "Start your free trial",
   },
   {
     name: "Signature",
@@ -226,7 +235,7 @@ const fallbackPricing: PricingTier[] = [
       "Automated reminders",
       "Vendor collaboration",
     ],
-    cta: "Upgrade to Signature",
+    cta: "Start your free trial",
     emphasized: true,
   },
   {
@@ -274,7 +283,7 @@ const faqs: FAQ[] = [
       "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
   },
   {
-    question: "What’s next for messaging?",
+    question: "What's next for messaging?",
     answer:
       "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon.",
   },
@@ -302,67 +311,66 @@ interface ApiPlan {
   sort_order: number;
 }
 
-export default function HomePage() {
-  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
-  const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
-  const [plansLoading, setPlansLoading] = useState(true);
+/* ═══════════════════════════════════════════════════════════
+   Transition microcopy between sections
+   ═══════════════════════════════════════════════════════════ */
 
-  // Fetch subscription plans from API
-  useEffect(() => {
-    const fetchPlans = async () => {
-      try {
-        const response = await fetch(`${getApiBaseUrl()}/public/subscription-plans`);
-        if (response.ok) {
-          const data = await response.json();
-          setApiPlans(data.sort((a: ApiPlan, b: ApiPlan) => a.sort_order - b.sort_order));
-        }
-      } catch (error) {
-        console.error('Failed to fetch subscription plans:', error);
-      } finally {
-        setPlansLoading(false);
-      }
-    };
-    fetchPlans();
-  }, []);
-
-  const handlePricingCTAClick = (planId: string) => {
-    // Handle Agency plan - open mailto instead of signup modal
-    if (planId === 'agency') {
-      window.location.href = 'mailto:sales@thespecialwedding.com?subject=Agency Plan Inquiry';
-      return;
-    }
-    setSelectedPlanId(planId);
-    setIsSignupModalOpen(true);
-  };
-
-  // Map API plans to PricingTier format and add Agency tier
-  const pricing: PricingTier[] = React.useMemo(() => {
-    if (plansLoading || apiPlans.length === 0) {
-      return fallbackPricing;
-    }
-
-    const apiTiers: PricingTier[] = apiPlans.map((plan) => ({
-      name: plan.name,
-      price: `$${plan.price_monthly}`,
-      cadence: "per wedding / month",
-      features: plan.features_list || [],
-      cta: plan.name === "Boutique" ? "Start planning" : `Upgrade to ${plan.name}`,
-      badge: plan.is_featured ? "Popular" : undefined,
-      emphasized: plan.is_featured,
-    }));
-
-    // Add Agency tier at the end
-    return [...apiTiers, agencyTier];
-  }, [apiPlans, plansLoading]);
-
+function SectionBridge({ text }: { text: string }) {
   return (
-    <main className="bg-slate-950 text-white">
-      {/* HERO */}
+    <div className="mx-auto max-w-7xl px-6 py-8 text-center sm:px-10 lg:px-16">
+      <p className="text-[11px] uppercase tracking-[0.5em] text-slate-400/50">
+        {text}
+      </p>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Scroll hint chevron (animated)
+   ═══════════════════════════════════════════════════════════ */
+
+function ScrollHint() {
+  return (
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-slate-400/60">
+      <span className="text-[10px] uppercase tracking-[0.4em]">Scroll to explore</span>
+      <svg
+        className="h-5 w-5 animate-bounce"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Landing page content
+   Rendered once as primary (with canvases + IDs)
+   and once as a lightweight clone (no canvases, no IDs)
+   ═══════════════════════════════════════════════════════════ */
+
+function LandingContent({
+  isClone,
+  pricing,
+  onPricingClick,
+}: {
+  isClone: boolean;
+  pricing: PricingTier[];
+  onPricingClick: (planId: string) => void;
+}) {
+  return (
+    <>
+      {/* ── HERO ────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-b from-[#0b1120] via-slate-950 to-slate-950">
-        <HeroCanvas />
+        {/* Canvas backgrounds — primary copy only */}
+        {!isClone && <HeroCanvas />}
+        {!isClone && <PetalCanvas count={64} />}
+        {/* Aurora is CSS-only, safe to render in both copies for visual parity */}
         <HeroAurora />
-        <PetalCanvas count={64} />
+
         <div
           className="absolute inset-0 opacity-60"
           style={{
@@ -371,33 +379,52 @@ export default function HomePage() {
           }}
         />
         <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'160\' height=\'160\' viewBox=\'0 0 40 40\'%3E%3Cg fill=%27none%27 stroke=%27rgba(255,255,255,0.06)%27 stroke-width=%270.5%27%3E%3Cpath d=%27M0 0h40v40H0z%27/%3E%3Cpath d=%27M0 20h40M20 0v40%27/%3E%3C/g%3E%3C/svg%3E')] opacity-40" />
+
         <div className="relative mx-auto max-w-7xl px-6 pb-32 pt-40 sm:px-10 lg:px-16">
           <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
+            {/* ── Hero copy ── */}
             <div className="relative">
               <div className="absolute -left-16 top-10 hidden h-60 w-60 rounded-full bg-wedding-rose/25 blur-3xl lg:block" />
+
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-sm uppercase tracking-[0.3em] backdrop-blur">
                 The Special Wedding
               </div>
+
               <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl">
-                A stage-set platform where every wedding feels like a cinematic premiere.
+                Every wedding deserves a stage. Yours is ready.
               </h1>
+
               <p className="mt-6 text-lg text-slate-200 sm:max-w-xl">
-                Sculpt invitations, RSVP journeys, wedding websites, seating, timelines, and on-site orchestration—woven together with romantic motion and intelligent automation.
+                Guest management, RSVP journeys, wedding websites, seating, timelines, and day-of orchestration — woven into one elegant workspace.
               </p>
+
               <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
-                <a
-                  href="#pricing"
-                  className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40 transition hover:bg-wedding-blush"
-                >
-                  Explore pricing
-                </a>
-                <Link
-                  href="/admin/login"
-                  className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/60"
-                >
-                  Launch console
-                </Link>
+                {!isClone ? (
+                  <a
+                    href="#pricing"
+                    className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40 transition hover:bg-wedding-blush"
+                  >
+                    Start your free trial
+                  </a>
+                ) : (
+                  <span className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40">
+                    Start your free trial
+                  </span>
+                )}
+                {!isClone ? (
+                  <Link
+                    href="/admin/login"
+                    className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/60"
+                  >
+                    Launch console
+                  </Link>
+                ) : (
+                  <span className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur">
+                    Launch console
+                  </span>
+                )}
               </div>
+
               <div className="mt-14 flex flex-wrap items-center gap-x-8 gap-y-4 text-sm text-slate-300/90">
                 <span className="text-xs uppercase tracking-[0.3em] text-slate-300/60">Trusted partners</span>
                 {partners.map((partner) => (
@@ -405,6 +432,8 @@ export default function HomePage() {
                 ))}
               </div>
             </div>
+
+            {/* ── Hero dashboard preview ── */}
             <div className="relative">
               <div className="absolute inset-0 -translate-x-10 translate-y-12 rounded-[3rem] bg-wedding-rose/25 blur-3xl" />
               <div className="relative grid gap-6 rounded-[2.8rem] border border-white/15 bg-white/10 p-8 backdrop-blur-3xl shadow-[0_40px_140px_rgba(11,17,32,0.7)]">
@@ -469,10 +498,16 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+
+        {/* Scroll hint — primary only */}
+        {!isClone && <ScrollHint />}
       </section>
 
-      {/* FEATURE MOSAIC */}
-      <section className="relative mx-auto max-w-7xl px-6 py-20 sm:px-10 lg:px-16">
+      {/* ── bridge: Hero → Features ── */}
+      <SectionBridge text="Here's what's inside" />
+
+      {/* ── FEATURE MOSAIC ──────────────────────────────── */}
+      <section id={isClone ? undefined : "platform"} className="relative mx-auto max-w-7xl px-6 py-20 sm:px-10 lg:px-16">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-wedding-rose/40 to-transparent" />
         <div className="grid gap-12 lg:grid-cols-[0.45fr_1fr]">
           <div>
@@ -518,7 +553,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* WORKFLOW */}
+      {/* ── bridge: Features → Workflow ── */}
+      <SectionBridge text="See it in motion" />
+
+      {/* ── WORKFLOW ─────────────────────────────────────── */}
       <section className="relative bg-slate-900/60">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         <div className="mx-auto max-w-6xl px-6 py-20 sm:px-10 lg:px-12">
@@ -550,7 +588,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* METRICS & TESTIMONIALS */}
+      {/* ── bridge: Workflow → Metrics ── */}
+      <SectionBridge text="Measured results" />
+
+      {/* ── METRICS & TESTIMONIALS ──────────────────────── */}
       <section className="relative mx-auto max-w-7xl px-6 py-20 sm:px-10 lg:px-16">
         <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[2.5rem] border border-white/10 bg-white/5 p-10 backdrop-blur-xl">
@@ -571,7 +612,7 @@ export default function HomePage() {
           <div className="space-y-6">
             {testimonials.map((testimonial) => (
               <blockquote key={testimonial.name} className="rounded-[2rem] border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
-                <p className="text-lg text-white">“{testimonial.quote}”</p>
+                <p className="text-lg text-white">&ldquo;{testimonial.quote}&rdquo;</p>
                 <p className="mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-wedding-rose">{testimonial.name}</p>
                 <p className="mt-1 text-[11px] uppercase tracking-[0.4em] text-slate-300">{testimonial.role}</p>
               </blockquote>
@@ -580,12 +621,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* PRICING */}
-      <section id="pricing" className="relative bg-gradient-to-b from-slate-900 via-[#101826] to-slate-950">
+      {/* ── bridge: Metrics → Pricing ── */}
+      <SectionBridge text="Find your fit" />
+
+      {/* ── PRICING ──────────────────────────────────────── */}
+      <section id={isClone ? undefined : "pricing"} className="relative bg-gradient-to-b from-slate-900 via-[#101826] to-slate-950">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-wedding-rose/40 to-transparent" />
         <div className="relative mx-auto max-w-6xl px-6 py-20 sm:px-10 lg:px-12">
           <div className="text-center">
-            <h2 className="text-3xl font-semibold text-white sm:text-4xl">Pricing for every celebration cadence.</h2>
+            <h2 className="text-3xl font-semibold text-white sm:text-4xl">Plans that scale with every celebration.</h2>
             <p className="mt-4 text-base text-slate-200">
               Choose the plan that matches your roster. Scale up or down as your season unfolds.
             </p>
@@ -618,7 +662,7 @@ export default function HomePage() {
                 </ul>
                 <button
                   type="button"
-                  onClick={() => handlePricingCTAClick(tier.name.toLowerCase())}
+                  onClick={() => onPricingClick(tier.name.toLowerCase())}
                   className={`mt-9 flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold uppercase tracking-[0.3em] transition ${
                     tier.emphasized
                       ? "bg-wedding-rose text-slate-900 shadow-lg hover:bg-wedding-blush"
@@ -633,7 +677,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* FAQ */}
+      {/* ── bridge: Pricing → FAQ ── */}
+      <SectionBridge text="Still exploring?" />
+
+      {/* ── FAQ ──────────────────────────────────────────── */}
       <section className="relative mx-auto max-w-5xl px-6 py-20 sm:px-10">
         <div className="text-center">
           <h2 className="text-3xl font-semibold text-white sm:text-4xl">Frequently asked questions</h2>
@@ -651,43 +698,129 @@ export default function HomePage() {
         </dl>
       </section>
 
-      {/* CTA */}
-      <section id="cta" className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-wedding-navy to-slate-950">
+      {/* ── bridge: FAQ → CTA ── */}
+      <SectionBridge text="Ready when you are" />
+
+      {/* ── CTA ──────────────────────────────────────────── */}
+      <section id={isClone ? undefined : "cta"} className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-wedding-navy to-slate-950">
         <div className="absolute inset-0 opacity-60" style={{ background: "radial-gradient(circle at 50% 0%, rgba(212,165,165,0.35), transparent 65%)" }} />
         <div className="relative mx-auto max-w-4xl px-6 py-24 text-center sm:px-10">
-          <h2 className="text-4xl font-semibold text-white sm:text-5xl">Create memories that feel effortless from the first hello.</h2>
+          <h2 className="text-4xl font-semibold text-white sm:text-5xl">
+            Give every celebration the spotlight it deserves.
+          </h2>
           <p className="mt-6 text-base text-slate-200">
-            Give every planner, partner, and couple a stage worthy of their story with The Special Wedding.
+            Start with a free trial, or let us walk you through it.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              href="/admin/login"
-              className="flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
-            >
-              Launch console
-            </Link>
-            <a
-              href="mailto:hello@weddingwebapp.ai"
-              className="flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/40"
-            >
-              Request a guided tour
-            </a>
+            {!isClone ? (
+              <Link
+                href="/admin/login"
+                className="flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
+              >
+                Start your free trial
+              </Link>
+            ) : (
+              <span className="flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900">
+                Start your free trial
+              </span>
+            )}
+            {!isClone ? (
+              <a
+                href="mailto:hello@thespecialwedding.io"
+                className="flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/40"
+              >
+                See it in action
+              </a>
+            ) : (
+              <span className="flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-base font-semibold text-white backdrop-blur">
+                See it in action
+              </span>
+            )}
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-white/10 bg-slate-950/90">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-8 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} The Special Wedding. Multi-tenant wedding planner platform.</p>
-          <nav className="flex flex-wrap items-center gap-6 text-xs uppercase tracking-[0.3em]">
-            <a href="#platform" className="hover:text-white">Platform</a>
-            <a href="#pricing" className="hover:text-white">Pricing</a>
-            <Link href="/admin/login" className="hover:text-white">Admin login</Link>
-          </nav>
+      {/* ── MINIMAL FOOTER (bridges CTA → cloned Hero) ── */}
+      <footer className="bg-slate-950">
+        <div className="mx-auto max-w-6xl px-6 py-6 text-center">
+          <p className="text-xs text-slate-500">
+            © {new Date().getFullYear()} The Special Wedding. Built for planners who obsess over detail.
+          </p>
         </div>
       </footer>
+    </>
+  );
+}
 
-      {/* Signup Modal */}
+/* ═══════════════════════════════════════════════════════════
+   Page component
+   ═══════════════════════════════════════════════════════════ */
+
+export default function HomePage() {
+  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
+  const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+
+  // Fetch subscription plans from API
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const response = await fetch(`${getApiBaseUrl()}/public/subscription-plans`);
+        if (response.ok) {
+          const data = await response.json();
+          setApiPlans(data.sort((a: ApiPlan, b: ApiPlan) => a.sort_order - b.sort_order));
+        }
+      } catch (error) {
+        console.error('Failed to fetch subscription plans:', error);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+    fetchPlans();
+  }, []);
+
+  const handlePricingCTAClick = (planId: string) => {
+    if (planId === 'agency') {
+      window.location.href = 'mailto:sales@thespecialwedding.com?subject=Agency Plan Inquiry';
+      return;
+    }
+    setSelectedPlanId(planId);
+    setIsSignupModalOpen(true);
+  };
+
+  // Map API plans to PricingTier format and add Agency tier
+  const pricing: PricingTier[] = React.useMemo(() => {
+    if (plansLoading || apiPlans.length === 0) {
+      return fallbackPricing;
+    }
+
+    const apiTiers: PricingTier[] = apiPlans.map((plan) => ({
+      name: plan.name,
+      price: `$${plan.price_monthly}`,
+      cadence: "per wedding / month",
+      features: plan.features_list || [],
+      cta: "Start your free trial",
+      badge: plan.is_featured ? "Popular" : undefined,
+      emphasized: plan.is_featured,
+    }));
+
+    return [...apiTiers, agencyTier];
+  }, [apiPlans, plansLoading]);
+
+  return (
+    <main className="bg-slate-950 text-white">
+      <InfiniteScrollWrapper>
+        {(isClone) => (
+          <LandingContent
+            isClone={isClone}
+            pricing={pricing}
+            onPricingClick={isClone ? () => {} : handlePricingCTAClick}
+          />
+        )}
+      </InfiniteScrollWrapper>
+
+      {/* Signup Modal — rendered once, outside the scroll wrapper */}
       <SignupModal
         isOpen={isSignupModalOpen}
         onClose={() => setIsSignupModalOpen(false)}

@@ -852,7 +852,8 @@ class AIService:
         feature: str,
         prompt: str,
         context: Dict[str, Any],
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        cache_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Generate AI response with caching and credit tracking.
@@ -862,8 +863,12 @@ class AIService:
             tenant_id: The wedding or planner ID for cache scoping
             feature: The AI feature being used (e.g., "budget_insights")
             prompt: The prompt to send to the AI
-            context: Context data for cache key generation
+            context: Full context data sent to the AI model
             force_refresh: Bypass cache if True
+            cache_context: Optional stable subset of context used for cache key generation.
+                          If not provided, the full context is used.
+                          Use this when context contains volatile data (e.g., computed timestamps,
+                          dynamic task lists) that would cause unnecessary cache misses.
 
         Returns:
             Dict with response, cached status, credits_used, and model_used
@@ -876,12 +881,15 @@ class AIService:
         feature_config = AI_FEATURES[feature]
         start_time = datetime.now(timezone.utc)
 
+        # Use cache_context for key generation if provided, otherwise use full context
+        key_context = cache_context if cache_context is not None else context
+
         # Check cache first if feature is cacheable
         if feature_config["cacheable"] and not force_refresh:
             cached = await ai_cache_service.get_cached_response(
                 feature=feature,
                 tenant_id=tenant_id,
-                context=context
+                context=key_context
             )
             if cached:
                 # Log cache hit (no credits charged)
@@ -896,6 +904,30 @@ class AIService:
                 )
                 return {
                     "response": cached["response"],
+                    "cached": True,
+                    "credits_used": 0,
+                    "model_used": "cached"
+                }
+
+            # If exact cache miss, try the stable fallback lookup before making API call
+            # This prevents unnecessary Gemini calls when only volatile context changed
+            fallback = await ai_cache_service.get_latest_cached_response(
+                feature=feature,
+                tenant_id=tenant_id
+            )
+            if fallback:
+                logger.info(f"Using stable fallback cache for {feature}/{tenant_id} (context hash changed)")
+                await self._log_usage(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    feature=feature,
+                    credits_used=0,
+                    latency_ms=0,
+                    status="cached_fallback",
+                    model="cached"
+                )
+                return {
+                    "response": fallback["response"],
                     "cached": True,
                     "credits_used": 0,
                     "model_used": "cached"
@@ -926,12 +958,12 @@ class AIService:
                 amount=feature_config["credits"]
             )
 
-            # Cache response if cacheable
+            # Cache response if cacheable (use key_context for stable cache keys)
             if feature_config["cacheable"] and feature_config["ttl_hours"] > 0:
                 await ai_cache_service.cache_response(
                     feature=feature,
                     tenant_id=tenant_id,
-                    context=context,
+                    context=key_context,
                     response=response,
                     ttl_hours=feature_config["ttl_hours"]
                 )
@@ -969,6 +1001,31 @@ class AIService:
             return result
 
         except InsufficientCreditsError:
+            # Before raising, try to return cached data as fallback
+            # This handles the case where credits ran out but we have cached insights
+            if feature_config["cacheable"]:
+                fallback = await ai_cache_service.get_latest_cached_response(
+                    feature=feature,
+                    tenant_id=tenant_id
+                )
+                if fallback:
+                    logger.info(f"Returning cached fallback for {feature} due to insufficient credits")
+                    await self._log_usage(
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        feature=feature,
+                        credits_used=0,
+                        latency_ms=0,
+                        status="cached_fallback",
+                        model="cached"
+                    )
+                    return {
+                        "response": fallback["response"],
+                        "cached": True,
+                        "credits_used": 0,
+                        "model_used": "cached_fallback",
+                        "warning": "Showing cached insights (credits exhausted). Upgrade your plan for fresh analysis."
+                    }
             raise
         except Exception as e:
             latency_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
@@ -986,6 +1043,24 @@ class AIService:
             )
 
             logger.error(f"AI generation error for {feature}: {str(e)}")
+
+            # Fallback: Try to return cached data instead of erroring out
+            # This provides a much better UX - stale insights > no insights
+            if feature_config["cacheable"]:
+                fallback = await ai_cache_service.get_latest_cached_response(
+                    feature=feature,
+                    tenant_id=tenant_id
+                )
+                if fallback:
+                    logger.info(f"Returning cached fallback for {feature} after API error: {str(e)}")
+                    return {
+                        "response": fallback["response"],
+                        "cached": True,
+                        "credits_used": 0,
+                        "model_used": "cached_fallback",
+                        "warning": "Showing cached insights (AI service temporarily unavailable). Try refreshing later."
+                    }
+
             raise AIGenerationError(f"AI generation failed: {str(e)}")
 
     async def _call_gemini(
