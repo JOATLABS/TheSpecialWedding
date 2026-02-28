@@ -175,7 +175,7 @@ export default function OnboardingModal({ isOpen, onClose, onComplete }: Onboard
         .slice(0, completed ? ONBOARDING_STEPS.length : currentStep + 1)
         .map(step => step.id);
 
-      await apiRequest('/admin/profile/onboarding', 'PUT', {
+      await apiRequest('/profile/onboarding', 'PUT', {
         completed: true, // Always mark as completed (whether finished or skipped)
         steps_completed: stepsCompleted
       });
