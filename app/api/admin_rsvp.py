@@ -31,7 +31,7 @@ async def export_rsvps(wedding_id: Optional[str] = Query(None), current_user: Ex
     # Check wedding access if wedding_id is provided
     if wedding_id and not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
-    csv_data = admin_service.export_rsvps_to_csv()
+    csv_data = await admin_service.export_rsvps_to_csv()
     return Response(content=csv_data, media_type="text/csv", headers={
         "Content-Disposition": "attachment; filename=rsvps.csv"
     })
