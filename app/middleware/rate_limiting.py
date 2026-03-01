@@ -51,7 +51,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _is_auth_endpoint(self, path: str) -> bool:
         """Check if the endpoint is authentication-related"""
-        auth_paths = ["/admin/token", "/admin/login", "/public/register", "/setup/complete"]
+        auth_paths = [
+            "/admin/token",
+            "/admin/login",
+            "/public/register",
+            "/setup/complete",
+            "/otp/",
+            "/weddings/verify-guest-access",
+            "/reset-password",
+            "/forgot-password",
+            "/verify-email"
+        ]
         return any(auth_path in path for auth_path in auth_paths)
 
     async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
