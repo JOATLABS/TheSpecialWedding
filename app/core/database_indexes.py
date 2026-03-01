@@ -2,9 +2,12 @@
 MongoDB Index Definitions for Support Tickets
 Ensures optimal query performance for multi-tenant support system
 """
-from pymongo import ASCENDING, DESCENDING, TEXT
-from app.core.database import mongo
+
 import logging
+
+from pymongo import ASCENDING, DESCENDING, TEXT
+
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 
@@ -26,65 +29,72 @@ async def create_support_ticket_indexes():
     try:
         # 1. Planner isolation + status filtering (most common query)
         await collection.create_index(
-            [("assigned_to", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_assigned_status_created"
+            [
+                ("assigned_to", ASCENDING),
+                ("status", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_assigned_status_created",
         )
         logger.info("Created index: idx_assigned_status_created")
 
         # 2. Unread tickets for planners
         await collection.create_index(
-            [("assigned_to", ASCENDING), ("is_read", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_assigned_unread"
+            [
+                ("assigned_to", ASCENDING),
+                ("is_read", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_assigned_unread",
         )
         logger.info("Created index: idx_assigned_unread")
 
         # 3. Phone number lookup (for finding guest history)
         await collection.create_index(
-            [("phone", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_phone_created"
+            [("phone", ASCENDING), ("created_at", DESCENDING)], name="idx_phone_created"
         )
         logger.info("Created index: idx_phone_created")
 
         # 4. Wedding-scoped queries
         await collection.create_index(
-            [("wedding_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_wedding_status_created"
+            [
+                ("wedding_id", ASCENDING),
+                ("status", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_wedding_status_created",
         )
         logger.info("Created index: idx_wedding_status_created")
 
         # 5. Guest-related tickets
         await collection.create_index(
             [("guest_id", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_guest_created"
+            name="idx_guest_created",
         )
         logger.info("Created index: idx_guest_created")
 
         # 6. Source + provider filtering (SMS vs web tickets)
         await collection.create_index(
-            [("source", ASCENDING), ("provider", ASCENDING)],
-            name="idx_source_provider"
+            [("source", ASCENDING), ("provider", ASCENDING)], name="idx_source_provider"
         )
         logger.info("Created index: idx_source_provider")
 
         # 7. SLA metrics queries (response time analysis)
         await collection.create_index(
             [("status", ASCENDING), ("first_response_time_minutes", ASCENDING)],
-            name="idx_status_response_time"
+            name="idx_status_response_time",
         )
         logger.info("Created index: idx_status_response_time")
 
         # 8. Date-based queries for analytics
         await collection.create_index(
-            [("created_at", DESCENDING)],
-            name="idx_created_desc"
+            [("created_at", DESCENDING)], name="idx_created_desc"
         )
         logger.info("Created index: idx_created_desc")
 
         # 9. Full-text search on message content (optional, for search feature)
         await collection.create_index(
-            [("message", TEXT)],
-            name="idx_message_text",
-            default_language="english"
+            [("message", TEXT)], name="idx_message_text", default_language="english"
         )
         logger.info("Created index: idx_message_text (full-text search)")
 
@@ -113,22 +123,18 @@ async def create_wedding_indexes():
             [("slug", ASCENDING)],
             name="idx_slug_unique",
             unique=True,
-            sparse=True  # Allow null slugs (for legacy data)
+            sparse=True,  # Allow null slugs (for legacy data)
         )
         logger.info("Created index: idx_slug_unique (unique)")
 
         # 2. Planner lookup
         await collection.create_index(
-            [("assigned_planner_email", ASCENDING)],
-            name="idx_assigned_planner"
+            [("assigned_planner_email", ASCENDING)], name="idx_assigned_planner"
         )
         logger.info("Created index: idx_assigned_planner")
 
         # 3. Date-based sorting
-        await collection.create_index(
-            [("date", ASCENDING)],
-            name="idx_wedding_date"
-        )
+        await collection.create_index([("date", ASCENDING)], name="idx_wedding_date")
         logger.info("Created index: idx_wedding_date")
 
         logger.info("All wedding indexes created successfully")
@@ -151,8 +157,7 @@ async def create_table_indexes():
     try:
         # 1. Wedding ID - Most frequent query (list tables for seating page)
         await collection.create_index(
-            [("wedding_id", ASCENDING)],
-            name="idx_table_wedding_id"
+            [("wedding_id", ASCENDING)], name="idx_table_wedding_id"
         )
         logger.info("Created index: idx_table_wedding_id")
 
@@ -177,44 +182,32 @@ async def create_guest_indexes():
     try:
         # 1. Wedding ID - Most frequent query (list guests)
         await collection.create_index(
-            [("wedding_id", ASCENDING)],
-            name="idx_wedding_id"
+            [("wedding_id", ASCENDING)], name="idx_wedding_id"
         )
         logger.info("Created index: idx_wedding_id")
 
         # 2. Token - Unique lookup for guest auth
         await collection.create_index(
-            [("token", ASCENDING)],
-            name="idx_token",
-            unique=True
+            [("token", ASCENDING)], name="idx_token", unique=True
         )
         logger.info("Created index: idx_token")
 
         # 3. Phone - Lookup for verification
-        await collection.create_index(
-            [("phone", ASCENDING)],
-            name="idx_guest_phone"
-        )
+        await collection.create_index([("phone", ASCENDING)], name="idx_guest_phone")
         logger.info("Created index: idx_guest_phone")
 
         # 4. Email - Lookup
-        await collection.create_index(
-            [("email", ASCENDING)],
-            name="idx_guest_email"
-        )
+        await collection.create_index([("email", ASCENDING)], name="idx_guest_email")
         logger.info("Created index: idx_guest_email")
 
         # 5. Table ID - For seating queries (find guests at a specific table)
-        await collection.create_index(
-            [("table_id", ASCENDING)],
-            name="idx_table_id"
-        )
+        await collection.create_index([("table_id", ASCENDING)], name="idx_table_id")
         logger.info("Created index: idx_table_id")
 
         # 6. Wedding + Table compound index (for seating page queries)
         await collection.create_index(
             [("wedding_id", ASCENDING), ("table_id", ASCENDING)],
-            name="idx_wedding_table"
+            name="idx_wedding_table",
         )
         logger.info("Created index: idx_wedding_table")
 
@@ -235,10 +228,7 @@ async def create_plus_one_indexes():
     collection = mongo.db["plus_ones"]
     try:
         # 1. Guest ID - Foreign key lookup
-        await collection.create_index(
-            [("guest_id", ASCENDING)],
-            name="idx_guest_id"
-        )
+        await collection.create_index([("guest_id", ASCENDING)], name="idx_guest_id")
         logger.info("Created index: idx_guest_id")
 
         return True
@@ -257,10 +247,7 @@ async def create_rsvp_indexes():
     collection = mongo.db["rsvps"]
     try:
         # 1. Guest ID - Foreign key lookup
-        await collection.create_index(
-            [("guest_id", ASCENDING)],
-            name="idx_guest_id"
-        )
+        await collection.create_index([("guest_id", ASCENDING)], name="idx_guest_id")
         logger.info("Created index: idx_guest_id")
 
         return True
@@ -280,38 +267,31 @@ async def create_subscription_indexes():
     try:
         # Subscription Plans
         await plans_collection.create_index(
-            [("sort_order", ASCENDING)],
-            name="idx_plan_sort_order"
+            [("sort_order", ASCENDING)], name="idx_plan_sort_order"
         )
         logger.info("Created index: idx_plan_sort_order")
 
         # User Subscriptions
         # 1. Look up by user + status (most common)
         await subs_collection.create_index(
-            [("user_id", ASCENDING), ("status", ASCENDING)],
-            name="idx_user_status"
+            [("user_id", ASCENDING), ("status", ASCENDING)], name="idx_user_status"
         )
         # 2. Look up by email + status (for feature gates)
         await subs_collection.create_index(
-            [("user_email", ASCENDING), ("status", ASCENDING)],
-            name="idx_email_status"
+            [("user_email", ASCENDING), ("status", ASCENDING)], name="idx_email_status"
         )
         # 3. Look up by plan + status (for plan deletion checks)
         await subs_collection.create_index(
-            [("plan_id", ASCENDING), ("status", ASCENDING)],
-            name="idx_plan_status"
+            [("plan_id", ASCENDING), ("status", ASCENDING)], name="idx_plan_status"
         )
         # 4. Status filtering (for analytics)
-        await subs_collection.create_index(
-            [("status", ASCENDING)],
-            name="idx_status"
-        )
+        await subs_collection.create_index([("status", ASCENDING)], name="idx_status")
         logger.info("Created user_subscription indexes")
 
         # Usage Tracking
         await usage_collection.create_index(
             [("user_id", ASCENDING), ("current_month", ASCENDING)],
-            name="idx_user_month"
+            name="idx_user_month",
         )
         logger.info("Created usage_tracking indexes")
 
@@ -360,9 +340,7 @@ async def create_user_indexes():
     try:
         # 1. Email - Unique lookup
         await collection.create_index(
-            [("email", ASCENDING)],
-            name="idx_user_email",
-            unique=True
+            [("email", ASCENDING)], name="idx_user_email", unique=True
         )
         logger.info("Created index: idx_user_email")
 
@@ -401,7 +379,7 @@ async def create_reminders_sent_indexes():
         # 1. Wedding ID - Filter logs by wedding
         await collection.create_index(
             [("wedding_id", ASCENDING), ("sent_at", DESCENDING)],
-            name="idx_wedding_sent"
+            name="idx_wedding_sent",
         )
         logger.info("Created index: idx_wedding_sent")
 
@@ -410,28 +388,26 @@ async def create_reminders_sent_indexes():
             [("message_sid", ASCENDING)],
             name="idx_message_sid",
             unique=True,
-            sparse=True  # Allow null for legacy records without message_sid
+            sparse=True,  # Allow null for legacy records without message_sid
         )
         logger.info("Created index: idx_message_sid (unique, sparse)")
 
         # 3. Delivery status - Filter by status
         await collection.create_index(
             [("delivery_status", ASCENDING), ("sent_at", DESCENDING)],
-            name="idx_delivery_status_sent"
+            name="idx_delivery_status_sent",
         )
         logger.info("Created index: idx_delivery_status_sent")
 
         # 4. Provider - Filter by SMS provider
         await collection.create_index(
-            [("provider", ASCENDING), ("sent_at", DESCENDING)],
-            name="idx_provider_sent"
+            [("provider", ASCENDING), ("sent_at", DESCENDING)], name="idx_provider_sent"
         )
         logger.info("Created index: idx_provider_sent")
 
         # 5. Guest ID - Lookup logs for a specific guest
         await collection.create_index(
-            [("guest_id", ASCENDING), ("sent_at", DESCENDING)],
-            name="idx_guest_sent"
+            [("guest_id", ASCENDING), ("sent_at", DESCENDING)], name="idx_guest_sent"
         )
         logger.info("Created index: idx_guest_sent")
 
@@ -442,6 +418,45 @@ async def create_reminders_sent_indexes():
         return False
 
 
+async def create_payment_indexes():
+    """
+    Create indexes for payment-related collections (payment_requests, stripe_customers)
+
+    Key queries:
+    1. Get payment request by payment_intent_id (unique)
+    2. Get payment requests by user_id sorted by created_at
+    3. Get stripe customer by user_id (unique)
+    """
+    payment_requests = mongo.db["payment_requests"]
+    stripe_customers = mongo.db["stripe_customers"]
+
+    try:
+        # Payment Requests - Unique lookup by intent ID
+        await payment_requests.create_index(
+            [("payment_intent_id", ASCENDING)],
+            name="idx_payment_intent_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_payment_intent_id")
+
+        # Payment Requests - List by user (recent first)
+        await payment_requests.create_index(
+            [("user_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_user_payment_history",
+        )
+        logger.info("Created index: idx_user_payment_history")
+
+        # Stripe Customers - Unique lookup by user ID
+        await stripe_customers.create_index(
+            [("user_id", ASCENDING)], name="idx_stripe_customer_user", unique=True
+        )
+        logger.info("Created index: idx_stripe_customer_user")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error creating payment indexes: {str(e)}")
+        
+        
 async def create_admin_activity_log_indexes():
     """
     Create indexes for admin_activity_log collection (ROOT_ADMIN actions)
@@ -847,8 +862,8 @@ async def create_all_indexes():
         await create_subscription_indexes()
         await create_user_indexes()
         await create_reminders_sent_indexes()  # SMS delivery tracking
-        # Activity/Audit logging indexes with TTL for auto-pruning
-        await create_admin_activity_log_indexes()
+        await create_payment_indexes()
+        await create_admin_activity_log_indexes() # Activity/Audit logging indexes with TTL for auto-pruning
         await create_activity_logs_indexes()
         await create_audit_logs_indexes()
         await create_security_audit_logs_indexes()
@@ -866,29 +881,32 @@ QUERY_PATTERNS = {
         "description": "Get new tickets for a specific planner",
         "query": {"assigned_to": "planner@example.com", "status": "new"},
         "sort": [("created_at", DESCENDING)],
-        "uses_index": "idx_assigned_status_created"
+        "uses_index": "idx_assigned_status_created",
     },
     "planner_unread": {
         "description": "Get unread tickets for planner",
         "query": {"assigned_to": "planner@example.com", "is_read": False},
         "sort": [("created_at", DESCENDING)],
-        "uses_index": "idx_assigned_unread"
+        "uses_index": "idx_assigned_unread",
     },
     "guest_history": {
         "description": "Get all tickets from a specific phone number",
         "query": {"phone": "+14054005000"},
         "sort": [("created_at", DESCENDING)],
-        "uses_index": "idx_phone_created"
+        "uses_index": "idx_phone_created",
     },
     "wedding_tickets": {
         "description": "Get all tickets for a wedding",
         "query": {"wedding_id": "abc123", "status": "new"},
         "sort": [("created_at", DESCENDING)],
-        "uses_index": "idx_wedding_status_created"
+        "uses_index": "idx_wedding_status_created",
     },
     "sla_analysis": {
         "description": "Analyze average response times for resolved tickets",
-        "query": {"status": "resolved", "first_response_time_minutes": {"$exists": True}},
-        "uses_index": "idx_status_response_time"
-    }
+        "query": {
+            "status": "resolved",
+            "first_response_time_minutes": {"$exists": True},
+        },
+        "uses_index": "idx_status_response_time",
+    },
 }
