@@ -1,4 +1,4 @@
-## 2026-02-01 - CSV Injection in Admin Exports
-**Vulnerability:** The admin RSVP export functionality allowed guests to inject spreadsheet formulas via fields like `name` or `dietary`. These fields were written directly to CSV without sanitization, leading to potential code execution if an admin opened the CSV in Excel.
-**Learning:** Even internal admin tools can be vectors for attack if they consume user-generated content. CSV exports are a common overlook for sanitization.
-**Prevention:** Always sanitize user input before writing to CSV. Prepend a single quote `'` to fields starting with `=`, `+`, `-`, or `@`.
+## 2025-02-17 - [CSV Injection Vulnerability in Exports]
+**Vulnerability:** User-controlled input (names, dietary restrictions) was directly written to CSV files using Python's `csv` module, allowing Formula Injection (CSV Injection) attacks if the input starts with `=`, `@`, `+`, or `-`.
+**Learning:** Using raw `csv.writer` bypasses application-level security controls. The project already had a secure utility `CSVExportUtils` but it wasn't consistently used.
+**Prevention:** All CSV generation MUST use `app.utils.csv_export.CSVExportUtils.generate_csv_content` which implements sanitization (prepending `'` to formulas) and consistent formatting (BOM for Excel). Avoid direct `csv` module usage in service layers.
