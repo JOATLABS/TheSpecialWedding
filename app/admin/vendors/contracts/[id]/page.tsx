@@ -417,7 +417,23 @@ export default function ContractDetailPage() {
                       <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
                         This vendor has submitted {formData.vendor_submissions.length} form(s) with data that can be used in this contract.
                       </p>
-                      <button className="text-sm text-blue-600 dark:text-blue-400 font-medium mt-2 hover:underline">
+                      <button
+                        onClick={() => {
+                          if (formData && token && contractId) {
+                            import('@/services/vendorManagementApi').then(({ applyFormDataToContract }) => {
+                              applyFormDataToContract(token, contractId, formData.vendor_submissions[0]?.submission_data || {})
+                                .then((updated) => {
+                                  setContract(updated);
+                                  setEditedContract(updated);
+                                  setEditedSections(updated.sections || []);
+                                  toast.success('Form data applied to contract');
+                                })
+                                .catch(() => toast.error('Failed to apply form data'));
+                            });
+                          }
+                        }}
+                        className="text-sm text-blue-600 dark:text-blue-400 font-medium mt-2 hover:underline"
+                      >
                         View & Apply Form Data
                       </button>
                     </div>

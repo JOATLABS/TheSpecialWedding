@@ -397,7 +397,8 @@ async def get_contract(
         payments = await contract_service.get_contract_payments(contract_id)
         contract["scheduled_payments"] = payments
 
-        return {"contract": contract}
+        # Return contract directly (frontend expects VendorContract, not {contract: ...})
+        return contract
 
     except HTTPException:
         raise

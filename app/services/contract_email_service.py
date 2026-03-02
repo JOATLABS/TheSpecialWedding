@@ -39,6 +39,79 @@ class ContractEmailService:
                 raise
         return self._resend
 
+    async def send_contract_email(
+        self,
+        contract_id: str,
+        token: str,
+        vendor_email: str,
+        vendor_name: str,
+        contract_title: str,
+        planner_message: Optional[str] = None,
+    ) -> bool:
+        """
+        Send contract to vendor for review and signing.
+
+        Args:
+            contract_id: Contract ID
+            token: Secure access token for the contract
+            vendor_email: Vendor's email address
+            vendor_name: Vendor's name
+            contract_title: Contract title
+            planner_message: Optional personal message from planner
+
+        Returns:
+            True if email sent successfully
+        """
+        try:
+            resend = self._get_resend()
+
+            from_domain = getattr(settings, "from_email_domain", "thespecialwedding.io")
+            from_email = f"contracts@{from_domain}"
+
+            contract_url = f"{getattr(settings, 'frontend_url', 'https://thespecialwedding.io')}/contracts/{token}"
+
+            message_section = ""
+            if planner_message:
+                message_section = f"""
+                <div style="background-color: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                    <p style="margin: 0; color: #495057; font-style: italic;">"{planner_message}"</p>
+                </div>
+                """
+
+            html_content = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 32px; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: white; margin: 0; font-size: 24px;">Contract Ready for Review</h1>
+                </div>
+                <div style="padding: 32px; background: white; border: 1px solid #e9ecef; border-top: none; border-radius: 0 0 12px 12px;">
+                    <p>Hi {vendor_name},</p>
+                    <p>You have a new contract ready for your review:</p>
+                    <p style="font-size: 18px; font-weight: 600; color: #333;">{contract_title}</p>
+                    {message_section}
+                    <div style="text-align: center; margin: 32px 0;">
+                        <a href="{contract_url}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
+                            View & Sign Contract
+                        </a>
+                    </div>
+                    <p style="color: #6c757d; font-size: 14px;">If you have any questions, please reach out to your wedding planner directly.</p>
+                </div>
+            </div>
+            """
+
+            resend.Emails.send({
+                "from": from_email,
+                "to": [vendor_email],
+                "subject": f"Contract Ready: {contract_title}",
+                "html": html_content,
+            })
+
+            logger.info(f"Contract email sent to {vendor_email} for contract {contract_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to send contract email to {vendor_email}: {str(e)}")
+            raise
+
     async def send_signed_confirmation(
         self,
         contract: Dict,
