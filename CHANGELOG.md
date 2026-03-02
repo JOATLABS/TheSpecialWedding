@@ -1341,6 +1341,36 @@ Remaining 24 MEDIUM/LOW severity issues addressed:
 **Additional files modified:**
 `app/services/seating_export_service.py`, `app/admin/components/seating/PrintableSeatingChart.tsx`, `app/services/contract_pdf_service.py`
 
+### Code Review Fixes (2026-03-02)
+
+Engineering alignment review across frontend, backend, database models, and endpoint parameters. Found and fixed 5 issues:
+
+**Critical:**
+- **C-1: Public vendor contract URLs returning 404** (`app/vendor-contract/[id]/page.tsx`, `app/services/vendorManagementApi.ts`):
+  - Frontend was calling `/admin/public/contracts/{id}` — but the `vendor_management_router` is registered at prefix `/vendor-contract` (not `/admin`)
+  - Fixed both the page component and `getPublicContract()`/`signPublicContract()` API helpers to use `/vendor-contract/public/contracts/{id}`
+  - The separate new contract system (`app/contracts/[token]/page.tsx`) was already correctly aligned
+
+**Medium:**
+- **M-2: Budget alerts fully implemented** (`app/api/budget.py`, `app/services/budget_service.py`):
+  - `GET /admin/budget/alerts/{wedding_id}` was returning a hardcoded empty array despite `_check_budget_alerts()` already creating real alerts in MongoDB
+  - Added `get_budget_alerts()`, `mark_alert_as_read()`, `resolve_alert()` methods to `BudgetService`
+  - Wired endpoint to service; added `PUT /admin/budget/alerts/{alert_id}/read` and `PUT /admin/budget/alerts/{alert_id}/resolve` endpoints matching `budgetApi.ts` frontend calls
+- **M-1: Documented route dependency** (`app/admin/money/page.tsx`):
+  - Money page calls contract/payment endpoints at root paths (`/contracts`, `/payments`) because `contracts_router` is registered without a prefix
+  - Added documentation comment explaining the dependency
+
+**Observations fixed:**
+- **O-1: ContractStatus type synced** (`app/services/vendorManagementApi.ts`):
+  - Added missing `'active'` status to `ContractStatus` type union and `getContractStatusColor()` map (`bg-teal-100 text-teal-800`)
+- **O-2: Consistent `id`/`_id` across both contract systems** (`app/services/vendor_service.py`, `app/services/vendorManagementApi.ts`):
+  - `vendor_service.py` only returned `_id` while `contract_service.py` returned both `id` and `_id` — inconsistent API shape
+  - Added `_serialize_doc()` helper to `VendorService`; applied to all contract CRUD methods (create, list, get, get_by_token, create PDF)
+  - Added `id?: string` to `VendorContract` and `PublicContract` TypeScript interfaces
+
+**Files modified:**
+`app/api/budget.py`, `app/services/budget_service.py`, `app/services/vendor_service.py`, `app/services/vendorManagementApi.ts`, `app/vendor-contract/[id]/page.tsx`, `app/admin/money/page.tsx`
+
 ---
 
 ## [1.6.1] - 2026-01-23

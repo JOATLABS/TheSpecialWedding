@@ -930,6 +930,48 @@ class BudgetService:
                 if not existing:
                     await self.budget_alerts.insert_one(alert.model_dump())
 
+    # ===== BUDGET ALERT MANAGEMENT =====
+
+    async def get_budget_alerts(self, wedding_id: str, include_resolved: bool = False) -> List[Dict]:
+        """Get budget alerts for a wedding"""
+        query = {"wedding_id": wedding_id}
+        if not include_resolved:
+            query["is_resolved"] = False
+
+        cursor = self.budget_alerts.find(query).sort("created_at", -1)
+        alerts = await cursor.to_list(length=None)
+
+        for alert in alerts:
+            if "_id" in alert:
+                alert["id"] = str(alert["_id"])
+                alert["_id"] = str(alert["_id"])
+            if "created_at" in alert and hasattr(alert["created_at"], "isoformat"):
+                alert["created_at"] = alert["created_at"].isoformat()
+            if "resolved_at" in alert and alert["resolved_at"] and hasattr(alert["resolved_at"], "isoformat"):
+                alert["resolved_at"] = alert["resolved_at"].isoformat()
+
+        return alerts
+
+    async def mark_alert_as_read(self, alert_id: str) -> Dict:
+        """Mark a budget alert as read"""
+        result = await self.budget_alerts.update_one(
+            {"_id": PyObjectId(alert_id)},
+            {"$set": {"is_read": True}}
+        )
+        if result.matched_count == 0:
+            raise ValueError("Alert not found")
+        return {"message": "Alert marked as read"}
+
+    async def resolve_alert(self, alert_id: str) -> Dict:
+        """Resolve a budget alert"""
+        result = await self.budget_alerts.update_one(
+            {"_id": PyObjectId(alert_id)},
+            {"$set": {"is_resolved": True, "resolved_at": datetime.now(timezone.utc)}}
+        )
+        if result.matched_count == 0:
+            raise ValueError("Alert not found")
+        return {"message": "Alert resolved"}
+
     async def _update_category_from_accepted_quote(self, quote: Dict):
         """Update category spending when a quote is accepted"""
         category_id = quote.get("category_id")

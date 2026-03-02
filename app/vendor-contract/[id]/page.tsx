@@ -67,7 +67,7 @@ export default function PublicContractPage() {
     setLoading(true);
     try {
       const API_BASE = getApiBaseUrl();
-      const response = await fetch(`${API_BASE}/admin/public/contracts/${contractId}?token=${token}`);
+      const response = await fetch(`${API_BASE}/vendor-contract/public/contracts/${contractId}?token=${token}`);
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -113,7 +113,7 @@ export default function PublicContractPage() {
     try {
       const API_BASE = getApiBaseUrl();
       const response = await fetch(
-        `${API_BASE}/admin/public/contracts/${contractId}/sign?token=${token}&signer_name=${encodeURIComponent(signerName)}&signer_email=${encodeURIComponent(signerEmail)}`,
+        `${API_BASE}/vendor-contract/public/contracts/${contractId}/sign?token=${token}&signer_name=${encodeURIComponent(signerName)}&signer_email=${encodeURIComponent(signerEmail)}`,
         { method: 'POST' }
       );
 
