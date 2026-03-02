@@ -11,6 +11,7 @@ These are webhook endpoints called by Twilio, NOT admin operations.
 from fastapi import APIRouter, Request, HTTPException, Header
 from typing import Optional
 from datetime import datetime, timezone
+from bson import ObjectId
 from app.core.database import mongo
 import logging
 import os
@@ -18,6 +19,14 @@ import os
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhook/twilio")
+
+
+def _to_object_id(id_value: str):
+    """Safely convert a string to a BSON ObjectId, falling back to the original value."""
+    try:
+        return ObjectId(id_value)
+    except Exception:
+        return id_value
 
 
 # Twilio error code to human-readable message mapping
@@ -270,29 +279,51 @@ async def _handle_delivery_failure(
             # Phone number is permanently unreachable — flag it
             if guest_id:
                 guest_collection = mongo.get_guest_collection()
+                guest_oid = _to_object_id(guest_id)
+
+                # Determine phone_status based on specific error code
+                if error_code == 30006:
+                    phone_status = "landline"
+                elif error_code in (30003, 30005):
+                    phone_status = "unreachable"
+                else:
+                    phone_status = "invalid"
+
                 await guest_collection.update_one(
-                    {"_id": guest_id} if not isinstance(guest_id, str) else {"token": {"$exists": True}, "_id": guest_id},
-                    {"$set": {"phone_verified": False, "phone_error": error_message}}
+                    {"_id": guest_oid},
+                    {"$set": {
+                        "phone_status": phone_status,
+                        "phone_status_updated_at": datetime.now(timezone.utc),
+                        "phone_error": error_message,
+                    }}
                 )
-                logger.info(f"Flagged guest {guest_id} phone as unverified: {error_message}")
+                logger.info(f"Flagged guest {guest_id} phone_status={phone_status}: {error_message}")
 
         elif is_compliance(error_code):
             # Recipient has opted out or is blocked
             if guest_id:
                 guest_collection = mongo.get_guest_collection()
-                # Update opt-in status (21610 = unsubscribed)
+                guest_oid = _to_object_id(guest_id)
+
+                update_fields = {
+                    "sms_opt_in": False,
+                    "sms_opt_out_date": datetime.now(timezone.utc),
+                    "phone_status": "unsubscribed",
+                    "phone_status_updated_at": datetime.now(timezone.utc),
+                }
+
                 if error_code == 21610:
-                    await guest_collection.update_one(
-                        {"_id": guest_id} if not isinstance(guest_id, str) else {"token": {"$exists": True}, "_id": guest_id},
-                        {
-                            "$set": {
-                                "sms_opt_in": False,
-                                "sms_opt_out_date": datetime.now(timezone.utc),
-                                "sms_opt_out_reason": "twilio_unsubscribed",
-                            }
-                        }
-                    )
-                    logger.info(f"Set sms_opt_in=False for guest {guest_id} due to Twilio 21610")
+                    update_fields["sms_opt_out_reason"] = "twilio_unsubscribed"
+                elif error_code == 30004:
+                    update_fields["sms_opt_out_reason"] = "carrier_blocked"
+                elif error_code == 30007:
+                    update_fields["sms_opt_out_reason"] = "carrier_violation"
+
+                await guest_collection.update_one(
+                    {"_id": guest_oid},
+                    {"$set": update_fields}
+                )
+                logger.info(f"Set sms_opt_in=False, phone_status=unsubscribed for guest {guest_id} due to Twilio {error_code}")
 
         elif should_retry(error_code):
             # Queue for retry (temporary error)
@@ -377,14 +408,8 @@ async def _attempt_email_fallback(
         return
 
     try:
-        from bson import ObjectId
-
         guest_collection = mongo.get_guest_collection()
-
-        try:
-            guest_oid = ObjectId(guest_id)
-        except Exception:
-            guest_oid = guest_id
+        guest_oid = _to_object_id(guest_id)
 
         guest = await guest_collection.find_one({"_id": guest_oid})
         if not guest:
@@ -618,16 +643,11 @@ async def _notify_planner_delivery_failure(
     """Create a planner notification for an SMS delivery failure."""
     try:
         from app.models.planner_notification import create_notification_document
-        from bson import ObjectId
 
         wedding_collection = mongo.db["weddings"]
 
         # Look up the wedding to find the assigned planner
-        try:
-            wedding_oid = ObjectId(wedding_id)
-        except Exception:
-            wedding_oid = wedding_id
-
+        wedding_oid = _to_object_id(wedding_id)
         wedding = await wedding_collection.find_one({"_id": wedding_oid})
         if not wedding:
             return
@@ -640,10 +660,7 @@ async def _notify_planner_delivery_failure(
         guest_name = "Unknown Guest"
         if guest_id:
             guest_collection = mongo.get_guest_collection()
-            try:
-                guest_oid = ObjectId(guest_id)
-            except Exception:
-                guest_oid = guest_id
+            guest_oid = _to_object_id(guest_id)
             guest = await guest_collection.find_one({"_id": guest_oid})
             if guest:
                 guest_name = guest.get("name", "Unknown Guest")

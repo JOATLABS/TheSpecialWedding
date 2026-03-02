@@ -153,11 +153,30 @@ class GuestService:
                 ]
             })
             
+            # Clean up orphan seating constraint references (T2/T6)
+            # Remove this guest's ID from other guests' must_sit_with and must_sit_apart arrays
+            wedding_id = guest.get("wedding_id")
+            if wedding_id:
+                await self.collection.update_many(
+                    {
+                        "wedding_id": wedding_id,
+                        "$or": [
+                            {"must_sit_with": guest_id_str},
+                            {"must_sit_apart": guest_id_str}
+                        ]
+                    },
+                    {
+                        "$pull": {
+                            "must_sit_with": guest_id_str,
+                            "must_sit_apart": guest_id_str
+                        }
+                    }
+                )
+
             # Delete the guest
             guest_result = await self.collection.delete_one({"_id": guest_obj_id})
 
             # Invalidate AI cache for seating optimization
-            wedding_id = guest.get("wedding_id")
             if wedding_id:
                 await self._invalidate_guest_cache(wedding_id)
 

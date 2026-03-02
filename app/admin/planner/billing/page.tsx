@@ -177,7 +177,8 @@ export default function PlannerBillingPage() {
 
       // Fallback to legacy endpoints if Stripe endpoint failed
       if (!subscriptionLoaded) {
-        const userId = userProfile.email || userProfile.id || '';
+        // Use user_id (MongoDB _id), not email — backend authorization checks _id match
+        const userId = userProfile.id || userProfile._id || '';
         if (userId) {
           const subResponse = await fetch(
             `${baseUrl}/users/${encodeURIComponent(userId)}/subscription`,

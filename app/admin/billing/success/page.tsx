@@ -25,7 +25,7 @@ export default function BillingSuccessPage() {
     // Verify the checkout session
     const verifySession = async () => {
       try {
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
         if (!token) {
           throw new Error('Not authenticated');
         }

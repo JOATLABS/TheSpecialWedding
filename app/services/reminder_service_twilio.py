@@ -58,11 +58,16 @@ class TwilioReminderService:
         skipped_no_phone = 0
         skipped_opted_out = 0
 
+        # Pre-fetch all RSVPs attending this event type to avoid N+1 queries
+        rsvp_lookup = {}
+        async for rsvp in self.rsvp_collection.find({"attending": event_type}):
+            rsvp_lookup[rsvp["guest_id"]] = rsvp
+
         # Guests
         if target_group in {"guests", "all"}:
             async for guest in self.guest_collection.find({}):
-                rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
-                if rsvp and event_type in rsvp.get("attending", []):
+                rsvp = rsvp_lookup.get(guest["_id"])
+                if rsvp:
                     phone = guest.get("phone")
                     sms_opt_in = guest.get("sms_opt_in", False)
                     if not phone:

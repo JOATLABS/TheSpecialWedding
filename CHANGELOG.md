@@ -7,6 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SMS Error Classifier Utility** (`app/utils/sms_error_classifier.py`):
+  - New module that categorizes Twilio error codes into actionable groups: `temporary`, `permanent_recipient`, `account_level`, `compliance`, `unknown`
+  - Helper functions: `classify_error()`, `should_retry()`, `is_account_level()`, `is_permanent_recipient()`, `is_compliance()`
+  - Used by `_handle_delivery_failure()` in `twilio_webhooks.py` to route each failure to the correct handler
+
+- **Phone Status Tracking on Guest Model** (`app/models/guest.py`):
+  - Added `phone_status` field (values: `unknown`, `valid`, `invalid`, `landline`, `unreachable`, `unsubscribed`) and `phone_status_updated_at` to `GuestModel` and `UpdateGuestRequest`
+  - Webhook failure handler now sets granular phone status based on Twilio error code (30006 → landline, 30003/30005 → unreachable, 21211/21612/21614 → invalid, 21610/30004/30007 → unsubscribed)
+
+- **Planner Delivery Notification Helpers** (`app/services/planner_notification_service.py`):
+  - `notify_delivery_failure()` — creates an in-app notification when an individual SMS or email delivery fails
+  - `notify_bulk_delivery_summary()` — creates a summary notification after a bulk send with sent/failed/skipped counts
+
+- **Skip Counters for Email Bulk Sends** (`app/services/email_service_resend.py`):
+  - `send_rsvp_invitations()` now returns `skipped_no_email`, `skipped_no_token`, `skipped_opted_out`, and `unreachable_guests` alongside `sent`/`failed`
+  - `send_reminders()` now returns `skipped_no_email` and `skipped_opted_out`
+  - Planners can see exactly why guests were skipped instead of silent omission
+
+- **Unreachable Guest Warnings in Reminders Page** (`app/admin/reminders/page.tsx`):
+  - Wedding Details section now shows amber/red warnings for guests with no contact info, invalid/unreachable phones, or SMS opt-outs
+  - Added `phone_status` and `sms_opt_in` to the `Guest` TypeScript interface
+
+- **Skip Detail Display After Bulk Sends** (`app/admin/reminders/page.tsx`):
+  - `handleSendInviteLinks`: Success message now shows skip breakdown (e.g., "Skipped: 3 no phone, 2 opted out")
+  - `handleSendIndividualMessage`: Displays per-guest `failure_reasons` from the API response
+  - All send handlers now call `fetchGuests()` after completion to refresh phone_status changes
+
+- **Infinite Scroll Wheel Effect — SaaS Landing Page & Wedding Slug Page**:
+  - Added continuous infinite scroll "wheel" effect where sections cycle in a smooth loop
+  - **New file**: `app/components/ui/InfiniteScrollWrapper.tsx` — Reusable infinite scroll engine component
+  - **SaaS landing page** (`app/page.tsx`): Rewritten to use `InfiniteScrollWrapper` for marketing sections
+  - **Wedding slug page** (`app/components/landing-page/LandingLayout.tsx`): Rewritten to use `InfiniteScrollWrapper` for guest-facing sections
+  - **Modified**: `app/components/landing-page/SectionWrapper.tsx` — Made `id` prop optional to support cloned sections
+
+- **Banner-Quality Seating Chart Print** (`app/admin/components/seating/PrintableSeatingChart.tsx`):
+  - **New file**: Full-screen print preview modal that renders positioned tables exactly as on the canvas
+  - Opens a new browser window with complete HTML/CSS for clean printing
+  - `@page` size set to 24×18 inches landscape for banner printing at print shops
+  - `-webkit-print-color-adjust: exact` and `print-color-adjust: exact` for color fidelity
+  - Wedding-themed design: gold (#E9C46A) decorative corner accents, navy (#1D3557) table headers, Playfair Display headings
+  - Unseated guests shown in amber section at the bottom
+  - Table cards display guest names with gold dot bullets and group labels
+
+- **Seating Canvas Zoom Controls** (`app/admin/seating/page.tsx`):
+  - Added zoom in/out/reset buttons for the seating canvas
+  - Canvas uses CSS `transform: scale()` with delta adjustments for table positioning during drag
+  - Stats bar showing tables, seated, unseated, and capacity counts
+
+### Fixed
+
+- **Unawaited Async Calls in Email Reminders API** (`app/api/email_reminders.py`):
+  - Three endpoints were calling `email_service.send_rsvp_invitations()` and `email_service.send_reminders()` without `await`, returning coroutine objects instead of actual `{"sent": N, "failed": N}` results
+  - All three calls now properly awaited
+
+- **Sync Endpoint Calling Async Service — SMS Reminders** (`app/api/reminder_twilio.py`):
+  - `send_reminder_twilio` was defined as `def` (sync) but calling an async service method
+  - Changed to `async def` with `await`
+
+- **Blocking `time.sleep()` in Email Service** (`app/services/email_service_resend.py`):
+  - `time.sleep(0.6)` rate-limit delay was blocking the entire event loop for 0.6s per email
+  - Replaced with `await asyncio.sleep(0.6)` in both `send_rsvp_invitations()` and `send_reminders()`
+
+- **ObjectId Conversion Bug in Twilio Webhook Failure Handler** (`app/api/twilio_webhooks.py`):
+  - `_handle_delivery_failure()` permanent_recipient and compliance handlers used `{"_id": guest_id}` where `guest_id` is a string — MongoDB `_id` fields require `ObjectId`, so these queries silently matched zero documents and never updated guest records
+  - The broken fallback pattern `{"token": {"$exists": True}, "_id": guest_id}` was replaced with proper `_to_object_id(guest_id)` conversion
+  - Extracted shared `_to_object_id()` helper to eliminate 5 duplicate inline `from bson import ObjectId` + try/except blocks across `_handle_delivery_failure`, `_attempt_email_fallback`, and `_notify_planner_delivery_failure`
+
+- **Webhook Using Wrong Field for Phone Status** (`app/api/twilio_webhooks.py`):
+  - Permanent recipient handler was setting `phone_verified: False` — a field that doesn't exist on the guest model
+  - Now sets `phone_status` with granular values (`invalid`, `landline`, `unreachable`) plus `phone_status_updated_at`
+  - Compliance handler now also sets `phone_status: "unsubscribed"` and records `sms_opt_out_reason` for all compliance codes (not just 21610)
+
+- **Delivery Health Banner Mixing SMS and Email Metrics** (`app/admin/reminders/page.tsx`):
+  - The "Last 24h Delivery" banner was computing rate from all `messageHistory` records including email logs, which inflated the "delivered" count via the `status === 'success'` fallback (email logs don't have Twilio's `delivery_status`)
+  - Now pre-filters to SMS records only (`provider === 'twilio' || provider === 'telnyx'`) before computing delivery rate
+  - Renamed banner to "Last 24h SMS Delivery" for clarity
+
+- **N+1 Query in SMS Reminder Service** (`app/services/reminder_service_twilio.py`):
+  - `send_reminders()` was doing a `find_one()` RSVP lookup per guest (N+1 queries)
+  - Replaced with a single bulk query `rsvp_collection.find({"attending": event_type})` pre-loaded into a dictionary lookup
+  - For a 200-guest wedding this reduces MongoDB round-trips from ~200 to 1
+
+- **Seating Drag and Drop Not Working** (`app/admin/seating/page.tsx`, `app/admin/components/seating/*`):
+  - **Problem**: Guests could not be dragged from the sidebar onto the seating canvas — dragged element was clipped by `overflow-hidden` on the sidebar container
+  - **Root cause**: Missing `DragOverlay` component from `@dnd-kit/core`. Without it, the dragged DOM element stays within its parent container and gets clipped at the boundary
+  - **Solution**: Added `DragOverlay` that renders a floating copy of the dragged item above all containers. Original item reduces opacity during drag (0.3 for guests, 0.5 for tables). Added `DragStartEvent`, `KeyboardSensor` for accessibility
+  - **Impact**: Guests can now be smoothly dragged from sidebar to canvas and between tables
+
+- **Seating Page Not Aligned with Dashboard Theme** (`app/admin/seating/page.tsx`, `app/admin/components/seating/*`):
+  - **Problem**: Seating page used raw `bg-white dark:bg-slate-800` cards that didn't match the glass morphism pattern used across the planner dashboard
+  - **Solution**:
+    - All cards now use the dashboard glass pattern: `bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border-white/50 dark:border-slate-700/50`
+    - Removed heavy `LiquidBackground` (Three.js 3D sphere animation) — replaced with subtle CSS dot-grid pattern
+    - `SeatingCanvas.tsx`: Dot grid, zoom support, empty state placeholder
+    - `TableNode.tsx`: Glass theme, capacity utilization bar (green/amber/red), drag handle and delete icons on hover
+    - `GuestItem.tsx`: Compact mode, drag opacity, glass styling
+    - `Sidebar.tsx`: Glass theme, Lucide icons, group count badges, clear search button, `print:hidden`
+    - `GlassButton.tsx`: Added `dark:` classes to `secondary` and `ghost` button variants
+
+- **Dark Mode Text Invisible on Wedding Slug Page** (`app/hooks/useTheme.ts`, `app/styles/globals.css`, `app/components/landing-page/EventLocationSection.tsx`, `app/components/landing-page/OurStorySection.tsx`, `app/[slug]/page.tsx`):
+  - **Problem**: On the couple's wedding slug page (e.g., `/emmanuel-peace`), many headings and text elements were invisible in dark mode. Section headings like "Wedding Details", "Our Story", "Wedding Party", venue names, dress code text, and side labels ("Bride's Side", "Groom's Side") all disappeared against dark backgrounds
+  - **Root cause**: Two issues working together:
+    1. The `.theme-primary`, `.theme-secondary`, and `.theme-accent` CSS classes used `color: var(--theme-primary)` with no dark mode variant — the theme primary color `#1e3a5f` (dark navy) was applied identically in both modes
+    2. Multiple components used inline `style={{ color: theme?.primary_color }}` which overrides any Tailwind `dark:` class due to CSS specificity, making the globals.css fix insufficient on its own
+  - **Solution**:
+    - `useTheme.ts`: Added `lightenHex()` utility that lightens hex colors by a configurable percentage. Hook now computes and sets `--theme-primary-light`, `--theme-secondary-light`, `--theme-accent-light` CSS custom properties on the document root
+    - `globals.css`: Added `:root` fallback values for the `-light` variables. Added `.dark` overrides for `.theme-primary`, `.theme-secondary`, `.theme-accent` (text) and `.theme-border-primary`, `.theme-border-secondary`, `.theme-border-accent` (border) that switch to the lightened variants
+    - `EventLocationSection.tsx`: Removed 3 inline `style={{ color: theme?.primary_color }}` overrides (event dropdown, venue name, dress code). Replaced with `.theme-primary` and `.theme-border-primary` CSS classes
+    - `OurStorySection.tsx`: Removed 5 inline style overrides — "Our Story" heading, "Wedding Party" heading, "Bride's Side" and "Groom's Side" subheadings, and member initial placeholders. Replaced with `.theme-primary`, `.theme-secondary`, `.theme-accent` classes
+    - `app/[slug]/page.tsx`: Added `dark:` variants to all loading, error, verification, and "not found" states — backgrounds (`dark:from-slate-900 dark:to-slate-800`), text colors, cards, spinners, shadows. Applied to both the main component and `<Suspense>` fallback
+  - **Impact**: All text on the wedding slug page is now readable in both light and dark mode, with theme colors automatically lightened for dark backgrounds
+
 ### Changed
 
 - **OTP Verification API Optimization** (`app/services/otp_service.py`, `app/api/otp.py`, `app/components/RSVPModal.tsx`, `app/otp/verify/page.tsx`):

@@ -333,6 +333,19 @@ class BudgetService:
             logger.error(f"Failed to compare vendor quotes: {str(e)}")
             raise
 
+    async def get_vendor_quote(self, quote_id: str) -> Optional[Dict]:
+        """Fetch a single vendor quote by its identifier."""
+        try:
+            quote = await self.vendor_quotes.find_one({"_id": PyObjectId(quote_id)})
+            if not quote:
+                return None
+            quote["id"] = str(quote["_id"])
+            quote["_id"] = str(quote["_id"])
+            return quote
+        except Exception as e:
+            logger.error(f"Failed to fetch vendor quote: {str(e)}")
+            raise
+
     async def update_quote_status(self, quote_id: str, status: str, notes: Optional[str] = None) -> Dict:
         """Update vendor quote status (accept/reject)"""
         try:
@@ -364,6 +377,37 @@ class BudgetService:
 
         except Exception as e:
             logger.error(f"Failed to update quote status: {str(e)}")
+            raise
+
+    async def rate_vendor_quote(self, quote_id: str, rating: int, notes: Optional[str] = None) -> Dict:
+        """Rate a vendor quote (1-5 stars)"""
+        try:
+            update_data: Dict[str, Any] = {
+                "rating": rating,
+                "updated_at": datetime.now(timezone.utc)
+            }
+            if notes is not None:
+                update_data["rating_notes"] = notes
+
+            result = await self.vendor_quotes.update_one(
+                {"_id": PyObjectId(quote_id)},
+                {"$set": update_data}
+            )
+
+            if result.modified_count == 0:
+                raise ValueError("Quote not found or no changes made")
+
+            updated_quote = await self.vendor_quotes.find_one({"_id": PyObjectId(quote_id)})
+            if not updated_quote:
+                raise ValueError("Quote not found after update")
+
+            updated_quote["id"] = str(updated_quote["_id"])
+            updated_quote["_id"] = str(updated_quote["_id"])
+            logger.info(f"Rated quote {quote_id} with {rating} stars")
+            return updated_quote
+
+        except Exception as e:
+            logger.error(f"Failed to rate vendor quote: {str(e)}")
             raise
 
     # ===== BUDGET TEMPLATES =====

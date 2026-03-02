@@ -50,7 +50,7 @@ def get_twilio_status():
 
 
 @router.post("/reminders/twilio/send", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
-def send_reminder_twilio(
+async def send_reminder_twilio(
     event_type: str = Query(..., description="Event type: traditional, white_wedding, or reception"),
     message: str = Query(..., description="Message to send"),
     target_group: str = Query(..., description="Target group: guests, plus-ones, or all")
@@ -59,7 +59,7 @@ def send_reminder_twilio(
     if not twilio_configured or not twilio_reminder_service:
         raise HTTPException(status_code=503, detail="Twilio service not configured")
 
-    return twilio_reminder_service.send_reminders(event_type, message, target_group)
+    return await twilio_reminder_service.send_reminders(event_type, message, target_group)
 
 
 @router.post("/reminders/twilio/send-invites", tags=["Admin"])

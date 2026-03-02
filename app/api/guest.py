@@ -8,6 +8,8 @@ from app.models.guest import UpdateGuestRequest, GuestModel, CreateGuestRequest
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
 from app.utils.token_generator import generate_token
 from app.core.database import mongo
+from bson import ObjectId
+from bson.errors import InvalidId
 import logging
 
 logger = logging.getLogger(__name__)
@@ -218,13 +220,24 @@ async def update_seating_constraints(
 
         for constraint in request.constraints:
             try:
+                # Convert string IDs to ObjectId for MongoDB _id queries
+                try:
+                    oid_1 = ObjectId(constraint.guest_id_1)
+                    oid_2 = ObjectId(constraint.guest_id_2)
+                except InvalidId:
+                    results["errors"].append({
+                        "guest_ids": [constraint.guest_id_1, constraint.guest_id_2],
+                        "error": "Invalid guest ID format"
+                    })
+                    continue
+
                 # Verify both guests exist and belong to this wedding
                 guest1 = await guests_collection.find_one({
-                    "_id": constraint.guest_id_1,
+                    "_id": oid_1,
                     "wedding_id": wedding_id
                 })
                 guest2 = await guests_collection.find_one({
-                    "_id": constraint.guest_id_2,
+                    "_id": oid_2,
                     "wedding_id": wedding_id
                 })
 
@@ -247,25 +260,29 @@ async def update_seating_constraints(
                 else:
                     field = "must_sit_apart"
 
+                # Store constraint references as strings for consistent ID handling
+                id_str_1 = str(oid_1)
+                id_str_2 = str(oid_2)
+
                 if constraint.action == "add":
                     # Add guest2 to guest1's constraint list and vice versa
                     await guests_collection.update_one(
-                        {"_id": constraint.guest_id_1},
-                        {"$addToSet": {field: constraint.guest_id_2}}
+                        {"_id": oid_1},
+                        {"$addToSet": {field: id_str_2}}
                     )
                     await guests_collection.update_one(
-                        {"_id": constraint.guest_id_2},
-                        {"$addToSet": {field: constraint.guest_id_1}}
+                        {"_id": oid_2},
+                        {"$addToSet": {field: id_str_1}}
                     )
                 else:  # remove
                     # Remove from both guests' lists
                     await guests_collection.update_one(
-                        {"_id": constraint.guest_id_1},
-                        {"$pull": {field: constraint.guest_id_2}}
+                        {"_id": oid_1},
+                        {"$pull": {field: id_str_2}}
                     )
                     await guests_collection.update_one(
-                        {"_id": constraint.guest_id_2},
-                        {"$pull": {field: constraint.guest_id_1}}
+                        {"_id": oid_2},
+                        {"$pull": {field: id_str_1}}
                     )
 
                 results["updated"].append({
@@ -363,8 +380,15 @@ async def get_seating_constraints(
 
         missing_ids = all_related_ids - set(guest_names.keys())
         if missing_ids:
+            # Convert string IDs to ObjectId for _id queries
+            missing_oids = []
+            for mid in missing_ids:
+                try:
+                    missing_oids.append(ObjectId(mid))
+                except InvalidId:
+                    pass
             missing_cursor = guests_collection.find({
-                "_id": {"$in": list(missing_ids)},
+                "_id": {"$in": missing_oids},
                 "wedding_id": wedding_id
             })
             missing_guests = await missing_cursor.to_list(length=None)

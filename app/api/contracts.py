@@ -94,6 +94,277 @@ async def list_contracts(
         raise HTTPException(status_code=500, detail="Failed to retrieve contracts")
 
 
+@router.post("/contracts", tags=["Contracts"])
+async def create_contract(
+    request: Request,
+    wedding_id: str = Query(..., description="Wedding ID"),
+    vendor_profile_id: str = Query(..., description="Vendor profile ID"),
+    total_amount: float = Query(..., gt=0, description="Total contract amount"),
+    template_id: Optional[str] = Query(None, description="Template ID"),
+    deposit_percentage: float = Query(50.0, ge=0, le=100, description="Deposit percentage"),
+    service_date: Optional[str] = Query(None, description="Service date (ISO format)"),
+    service_location: Optional[str] = Query(None, description="Service location"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Create a new vendor contract (C3).
+
+    Custom sections can be sent as a JSON array in the request body.
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+
+        # Parse optional custom sections from body
+        custom_sections = None
+        try:
+            body = await request.json()
+            if isinstance(body, list):
+                custom_sections = body
+        except Exception:
+            pass  # No body or not JSON — that's fine
+
+        contract = await contract_service.create_contract(
+            planner_id=planner_id,
+            wedding_id=wedding_id,
+            vendor_profile_id=vendor_profile_id,
+            total_amount=total_amount,
+            template_id=template_id,
+            deposit_percentage=deposit_percentage,
+            service_date=service_date,
+            service_location=service_location,
+            custom_sections=custom_sections,
+        )
+
+        return contract
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to create contract: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create contract")
+
+
+@router.put("/contracts/{contract_id}", tags=["Contracts"])
+async def update_contract(
+    contract_id: str,
+    request: Request,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Update a contract. Only allowed for draft/pending_review contracts.
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+        body = await request.json()
+
+        contract = await contract_service.update_contract(
+            contract_id=contract_id,
+            planner_id=planner_id,
+            update_data=body,
+        )
+
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+
+        return contract
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update contract: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update contract")
+
+
+@router.put("/contracts/{contract_id}/sections", tags=["Contracts"])
+async def update_contract_sections(
+    contract_id: str,
+    request: Request,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Update contract sections (C4).
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+        body = await request.json()
+
+        contract = await contract_service.update_contract_sections(
+            contract_id=contract_id,
+            planner_id=planner_id,
+            sections=body.get("sections", []),
+            terms_and_conditions=body.get("terms_and_conditions"),
+            cancellation_policy=body.get("cancellation_policy"),
+            custom_clauses=body.get("custom_clauses"),
+        )
+
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+
+        return contract
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update contract sections: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update contract sections")
+
+
+@router.post("/contracts/{contract_id}/send", tags=["Contracts"])
+async def send_contract(
+    contract_id: str,
+    message: Optional[str] = Query(None, description="Personal message to include"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Send a contract to the vendor for review/signing.
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+
+        result = await contract_service.send_contract(
+            contract_id=contract_id,
+            planner_id=planner_id,
+            message=message,
+        )
+
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to send contract: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send contract")
+
+
+@router.post("/contracts/{contract_id}/milestones", tags=["Contracts"])
+async def create_milestones(
+    contract_id: str,
+    request: Request,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Create payment milestones for a contract.
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+        body = await request.json()
+
+        if not isinstance(body, list):
+            raise HTTPException(status_code=400, detail="Expected a list of milestones")
+
+        milestones = await contract_service.create_payment_milestones(
+            contract_id=contract_id,
+            planner_id=planner_id,
+            milestones=body,
+        )
+
+        return milestones
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create milestones: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create milestones")
+
+
+@router.get("/contracts/{contract_id}/form-data", tags=["Contracts"])
+async def get_contract_form_data(
+    contract_id: str,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get vendor form data submissions for a contract.
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+
+        form_data = await contract_service.get_contract_form_data(
+            contract_id=contract_id,
+            planner_id=planner_id,
+        )
+
+        return form_data
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get contract form data: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get form data")
+
+
+@router.get("/milestones", tags=["Contracts"])
+async def list_milestones(
+    contract_id: Optional[str] = Query(None),
+    wedding_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    List payment milestones filtered by contract, wedding, or status.
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+
+        milestones = await contract_service.get_milestones(
+            planner_id=planner_id,
+            contract_id=contract_id,
+            wedding_id=wedding_id,
+            status=status,
+        )
+
+        return milestones
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list milestones: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list milestones")
+
+
+@router.post("/milestones/{milestone_id}/pay", tags=["Contracts"])
+async def record_milestone_payment(
+    milestone_id: str,
+    amount: float = Query(..., gt=0),
+    payment_method: str = Query("manual"),
+    payment_date: Optional[str] = Query(None),
+    notes: Optional[str] = Query(None),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Record a payment against a milestone (C2).
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+
+        milestone = await contract_service.record_milestone_payment(
+            milestone_id=milestone_id,
+            planner_id=planner_id,
+            amount=amount,
+            payment_method=payment_method,
+            payment_date=payment_date,
+            notes=notes,
+        )
+
+        if not milestone:
+            raise HTTPException(status_code=404, detail="Milestone not found")
+
+        return milestone
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to record payment: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to record payment")
+
+
 @router.get("/contracts/stats", tags=["Contracts"])
 async def get_contract_stats(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)

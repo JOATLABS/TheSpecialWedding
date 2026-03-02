@@ -10,6 +10,10 @@
   --theme-primary: #1e3a5f;
   --theme-secondary: #d4af37;
   --theme-accent: #c8847e; /* rose accent */
+  /* Lightened variants computed by useTheme hook at runtime; fallbacks here */
+  --theme-primary-light: #a8bdd4;
+  --theme-secondary-light: #e8d5a0;
+  --theme-accent-light: #e0b8b3;
   --theme-font-heading: 'Playfair Display', serif;
   --theme-font-body: 'Cormorant Garamond', serif;
 }
@@ -18,9 +22,15 @@
   html { font-family: var(--theme-font-body); }
   h1, h2, h3, h4, h5, h6 { font-family: var(--theme-font-heading); }
 
+  /* Light mode: use original theme colors */
   .theme-primary { color: var(--theme-primary); }
   .theme-secondary { color: var(--theme-secondary); }
   .theme-accent { color: var(--theme-accent); }
+
+  /* Dark mode: switch to lightened variants for readability */
+  .dark .theme-primary { color: var(--theme-primary-light); }
+  .dark .theme-secondary { color: var(--theme-secondary-light); }
+  .dark .theme-accent { color: var(--theme-accent-light); }
 
   .theme-bg-primary { background-color: var(--theme-primary); }
   .theme-bg-secondary { background-color: var(--theme-secondary); }
@@ -29,6 +39,11 @@
   .theme-border-primary { border-color: var(--theme-primary); }
   .theme-border-secondary { border-color: var(--theme-secondary); }
   .theme-border-accent { border-color: var(--theme-accent); }
+
+  /* Dark mode border variants */
+  .dark .theme-border-primary { border-color: var(--theme-primary-light); }
+  .dark .theme-border-secondary { border-color: var(--theme-secondary-light); }
+  .dark .theme-border-accent { border-color: var(--theme-accent-light); }
 }
 
 @layer components {

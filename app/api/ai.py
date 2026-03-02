@@ -807,6 +807,17 @@ async def optimize_seating(
     - 51-150 guests: 5 credits
     - 150+ guests: 10 credits
     """
+    # Check if AI service is properly initialized
+    if not ai_service._client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_not_configured",
+                "message": "AI service is not configured. Please contact the administrator.",
+                "hint": "GEMINI_API_KEY environment variable may be missing."
+            }
+        )
+
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
 

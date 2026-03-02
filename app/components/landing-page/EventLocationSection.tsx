@@ -106,11 +106,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
           <select
             value={selectedEventType}
             onChange={(e) => setSelectedEventType(e.target.value)}
-            className="w-full px-4 py-2 bg-transparent border-2 rounded-lg font-medium text-lg focus:outline-none focus:ring-2 focus:ring-wedding-rose transition-all dark:text-gray-100"
-            style={{
-              borderColor: theme?.primary_color || '#1e3a5f',
-              color: theme?.primary_color || '#1e3a5f'
-            }}
+            className="w-full px-4 py-2 bg-transparent border-2 rounded-lg font-medium text-lg focus:outline-none focus:ring-2 focus:ring-wedding-rose transition-all theme-primary theme-border-primary"
           >
             {eventsWithLocation.map((event) => (
               <option key={event.type} value={event.type} className="dark:bg-gray-800 dark:text-gray-100">
@@ -128,8 +124,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
             <div className="flex flex-col gap-4">
               {/* Venue name - full width */}
               <h3
-                className="text-xl sm:text-2xl font-bold break-words dark:text-gray-100"
-                style={{ color: theme?.primary_color || '#1e3a5f' }}
+                className="text-xl sm:text-2xl font-bold break-words theme-primary"
               >
                 {selectedEvent.details?.venue_name || formatEventType(selectedEvent.type)}
               </h3>
@@ -174,7 +169,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
                 {selectedEvent.details?.attire && (
                   <div className="md:text-right md:max-w-[45%] flex-shrink-0">
                     <p className="text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Dress Code</p>
-                    <p className="text-base sm:text-lg font-medium dark:text-gray-100" style={{ color: theme?.primary_color || '#1e3a5f' }}>
+                    <p className="text-base sm:text-lg font-medium theme-primary">
                       {selectedEvent.details.attire}
                     </p>
                   </div>

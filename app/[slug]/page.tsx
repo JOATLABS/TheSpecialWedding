@@ -160,10 +160,10 @@ function WeddingLandingContent() {
 
  if (loading) {
  return (
- <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
+ <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 dark:from-slate-900 dark:to-slate-800">
  <div className="text-center">
- <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
- <p className="text-gray-600">Loading wedding...</p>
+ <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 dark:border-rose-400 mx-auto mb-4"></div>
+ <p className="text-gray-600 dark:text-gray-300">Loading wedding...</p>
  </div>
  </div>
  );
@@ -171,11 +171,11 @@ function WeddingLandingContent() {
 
  if (error) {
  return (
- <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
- <div className="text-center bg-white p-8 rounded-lg shadow-sm max-w-md">
- <div className="text-4xl mb-4 text-red-500"></div>
- <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Wedding</h2>
- <p className="text-gray-600 mb-4">{error}</p>
+ <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 dark:from-slate-900 dark:to-slate-800">
+ <div className="text-center bg-white dark:bg-slate-800 p-8 rounded-lg shadow-sm dark:shadow-slate-900/50 max-w-md">
+ <div className="text-4xl mb-4 text-red-500 dark:text-red-400"></div>
+ <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Unable to Load Wedding</h2>
+ <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
  </div>
  </div>
  );
@@ -184,7 +184,7 @@ function WeddingLandingContent() {
  // Show verification modal if access not granted
  if (!accessGranted) {
  return (
- <div className="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50">
+ <div className="min-h-screen bg-gradient-to-br from-rose-50 to-pink-50 dark:from-slate-900 dark:to-slate-800">
  <GuestVerificationModal
  slug={slug}
  onVerified={handleGuestVerified}
@@ -195,9 +195,9 @@ function WeddingLandingContent() {
 
  if (!wedding) {
  return (
- <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
+ <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 dark:from-slate-900 dark:to-slate-800">
  <div className="text-center">
- <p className="text-gray-600">Wedding not found</p>
+ <p className="text-gray-600 dark:text-gray-300">Wedding not found</p>
  </div>
  </div>
  );
@@ -209,10 +209,10 @@ function WeddingLandingContent() {
 export default function WeddingLandingPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 dark:from-slate-900 dark:to-slate-800">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading wedding...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 dark:border-rose-400 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading wedding...</p>
         </div>
       </div>
     }>
