@@ -5,21 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Released]
+## [2.0.0] - 2026-03-01 — 1st Release: The Special Wedding SaaS Platform
+
+The first production release of The Special Wedding as a full multi-tenant SaaS platform. This release transforms the original single-wedding website (v1.x at `thespecialwedding.com`) into a scalable platform for wedding planners at `thespecialwedding.io`. Built over 8+ months across 463 commits, consolidating all work from v1.3.0 through v1.7.0-rc.1.
+
+**Key feature pillars:**
+
+- **Multi-Tenant SaaS Architecture** — Org management, role-based access (Root Admin / Planner / Vendor), planner invitations with custom trial durations
+- **Stripe Billing** — Subscription plans, checkout sessions, webhook idempotency, credit management
+- **OTP Guest Verification** — Twilio SMS/email OTP for secure guest RSVP access, rate limiting, error-specific messages
+- **AI-Powered Insights** — Google Gemini integration for budget insights, dashboard insights, seating optimization, contract drafting, with three-tier cache fallback
+- **Vendor & Contract Management** — Contract creation, token-based vendor access, milestone payments, PDF generation, email delivery
+- **Seating Chart System** — Drag-and-drop canvas, PDF/banner export (WeasyPrint), printable seating charts, capacity validation
+- **Web Push Notifications** — VAPID-based browser push replacing self-hosted Ntfy, with per-device subscriptions
+- **SMS Delivery Tracking** — Twilio webhook status callbacks, delivery health monitoring, phone status tracking, error classification
+- **RSVP Enhancements** — Modal-based flow, already-RSVPed detection, Request RSVP Link for lost invitations, calendar ICS with timezone support, plus-one event inheritance
+- **Activity & Audit Logging** — Comprehensive activity feed, TTL-based auto-cleanup, export/compliance endpoints
+- **Cloudflare R2 Media Storage** — Gallery uploads with S3v4 signatures, presigned URLs, privacy-aware access
+- **Coolify Deployment** — Single-server Docker deployment via `Dockerfile.coolify`, Cloudflare Workers for cron jobs
+- **UI Overhaul** — Glassmorphism redesign, comprehensive dark mode, accessibility improvements, infinite scroll landing pages
 
 ### Added
 
 - **AI Cache Stable Fallback Lookup** (`app/services/ai_cache_service.py`):
+
   - New `get_latest_cached_response(feature, tenant_id)` method finds the most recent cached AI response for a feature+tenant pair regardless of context hash
   - First tries non-expired entries, then falls back to expired entries as a last resort
   - Enables the "stale insights > no insights" resilience pattern across all AI features
-
 - **Stable Cache Key Context for AI Endpoints** (`app/api/ai.py`):
+
   - Both `get_budget_insights` and `get_dashboard_insights` endpoints now pass a stable `cache_context` dict containing only primitive, non-volatile values (budget totals, guest counts, wedding date) to the AI service
   - Excludes volatile data (upcoming_tasks, vendor_payments, days_until_wedding) from cache key generation while still sending full context to the Gemini model for analysis
   - Prevents unnecessary cache misses on page reload when only dynamic/computed fields change
-
 - **Three-Tier AI Fallback Chain** (`app/services/ai_service.py`):
+
   - Added `cache_context` parameter to `generate()` for stable cache key generation separate from the full AI context
   - Pre-API fallback: when exact cache key misses, checks for any recent cached response before making a Gemini API call
   - Post-failure fallback: on `InsufficientCreditsError` or generic exceptions, returns cached data with a warning instead of hard-erroring
@@ -28,55 +47,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **AI Insights Fail to Reload After First Load** (`app/services/ai_service.py`, `app/api/ai.py`):
+
   - Root cause: volatile context data (upcoming_tasks, vendor_payments, computed days_until_wedding) changed on every page reload, generating a new SHA256 cache key hash each time, causing cache misses → Gemini API calls → credit burn → eventual credit exhaustion → hard error with no recovery
   - Fix: separated cache key generation (`cache_context` with stable primitives) from the full AI context sent to Gemini
-
 - **AI Insights UI Destroyed on Error — Planner Dashboard** (`app/admin/planner/page.tsx`):
+
   - Error state no longer clears existing insights; previous insights remain visible below an amber warning banner
   - Added specific error messages for HTTP 402 (credits), 429 (rate limit), 503 (unavailable), 504 (timeout)
   - "Try again" retry button now passes `forceRefresh=true` so retry actually attempts a fresh Gemini call instead of hitting the cache again
-
 - **AI Insights UI Destroyed on Error — Budget Page** (`app/admin/budget/page.tsx`):
+
   - Same pattern as planner dashboard: error no longer clears existing insights
   - Error display changed from red destructive alert to amber warning banner with retry button
   - Panel stays visible on error (`setShowAiInsights(true)` in catch block) so user sees error alongside any previous insights
   - Removed unnecessary toast notification for cached results
-
 - **SMS Error Classifier Utility** (`app/utils/sms_error_classifier.py`):
+
   - New module that categorizes Twilio error codes into actionable groups: `temporary`, `permanent_recipient`, `account_level`, `compliance`, `unknown`
   - Helper functions: `classify_error()`, `should_retry()`, `is_account_level()`, `is_permanent_recipient()`, `is_compliance()`
   - Used by `_handle_delivery_failure()` in `twilio_webhooks.py` to route each failure to the correct handler
-
 - **Phone Status Tracking on Guest Model** (`app/models/guest.py`):
+
   - Added `phone_status` field (values: `unknown`, `valid`, `invalid`, `landline`, `unreachable`, `unsubscribed`) and `phone_status_updated_at` to `GuestModel` and `UpdateGuestRequest`
   - Webhook failure handler now sets granular phone status based on Twilio error code (30006 → landline, 30003/30005 → unreachable, 21211/21612/21614 → invalid, 21610/30004/30007 → unsubscribed)
-
 - **Planner Delivery Notification Helpers** (`app/services/planner_notification_service.py`):
+
   - `notify_delivery_failure()` — creates an in-app notification when an individual SMS or email delivery fails
   - `notify_bulk_delivery_summary()` — creates a summary notification after a bulk send with sent/failed/skipped counts
-
 - **Skip Counters for Email Bulk Sends** (`app/services/email_service_resend.py`):
+
   - `send_rsvp_invitations()` now returns `skipped_no_email`, `skipped_no_token`, `skipped_opted_out`, and `unreachable_guests` alongside `sent`/`failed`
   - `send_reminders()` now returns `skipped_no_email` and `skipped_opted_out`
   - Planners can see exactly why guests were skipped instead of silent omission
-
 - **Unreachable Guest Warnings in Reminders Page** (`app/admin/reminders/page.tsx`):
+
   - Wedding Details section now shows amber/red warnings for guests with no contact info, invalid/unreachable phones, or SMS opt-outs
   - Added `phone_status` and `sms_opt_in` to the `Guest` TypeScript interface
-
 - **Skip Detail Display After Bulk Sends** (`app/admin/reminders/page.tsx`):
+
   - `handleSendInviteLinks`: Success message now shows skip breakdown (e.g., "Skipped: 3 no phone, 2 opted out")
   - `handleSendIndividualMessage`: Displays per-guest `failure_reasons` from the API response
   - All send handlers now call `fetchGuests()` after completion to refresh phone_status changes
-
 - **Infinite Scroll Wheel Effect — SaaS Landing Page & Wedding Slug Page**:
+
   - Added continuous infinite scroll "wheel" effect where sections cycle in a smooth loop
   - **New file**: `app/components/ui/InfiniteScrollWrapper.tsx` — Reusable infinite scroll engine component
   - **SaaS landing page** (`app/page.tsx`): Rewritten to use `InfiniteScrollWrapper` for marketing sections
   - **Wedding slug page** (`app/components/landing-page/LandingLayout.tsx`): Rewritten to use `InfiniteScrollWrapper` for guest-facing sections
   - **Modified**: `app/components/landing-page/SectionWrapper.tsx` — Made `id` prop optional to support cloned sections
-
 - **Banner-Quality Seating Chart Print** (`app/admin/components/seating/PrintableSeatingChart.tsx`):
+
   - **New file**: Full-screen print preview modal that renders positioned tables exactly as on the canvas
   - Opens a new browser window with complete HTML/CSS for clean printing
   - `@page` size set to 24×18 inches landscape for banner printing at print shops
@@ -84,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Wedding-themed design: gold (#E9C46A) decorative corner accents, navy (#1D3557) table headers, Playfair Display headings
   - Unseated guests shown in amber section at the bottom
   - Table cards display guest names with gold dot bullets and group labels
-
 - **Seating Canvas Zoom Controls** (`app/admin/seating/page.tsx`):
+
   - Added zoom in/out/reset buttons for the seating canvas
   - Canvas uses CSS `transform: scale()` with delta adjustments for table positioning during drag
   - Stats bar showing tables, seated, unseated, and capacity counts
@@ -93,44 +113,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Unawaited Async Calls in Email Reminders API** (`app/api/email_reminders.py`):
+
   - Three endpoints were calling `email_service.send_rsvp_invitations()` and `email_service.send_reminders()` without `await`, returning coroutine objects instead of actual `{"sent": N, "failed": N}` results
   - All three calls now properly awaited
-
 - **Sync Endpoint Calling Async Service — SMS Reminders** (`app/api/reminder_twilio.py`):
+
   - `send_reminder_twilio` was defined as `def` (sync) but calling an async service method
   - Changed to `async def` with `await`
-
 - **Blocking `time.sleep()` in Email Service** (`app/services/email_service_resend.py`):
+
   - `time.sleep(0.6)` rate-limit delay was blocking the entire event loop for 0.6s per email
   - Replaced with `await asyncio.sleep(0.6)` in both `send_rsvp_invitations()` and `send_reminders()`
-
 - **ObjectId Conversion Bug in Twilio Webhook Failure Handler** (`app/api/twilio_webhooks.py`):
+
   - `_handle_delivery_failure()` permanent_recipient and compliance handlers used `{"_id": guest_id}` where `guest_id` is a string — MongoDB `_id` fields require `ObjectId`, so these queries silently matched zero documents and never updated guest records
   - The broken fallback pattern `{"token": {"$exists": True}, "_id": guest_id}` was replaced with proper `_to_object_id(guest_id)` conversion
   - Extracted shared `_to_object_id()` helper to eliminate 5 duplicate inline `from bson import ObjectId` + try/except blocks across `_handle_delivery_failure`, `_attempt_email_fallback`, and `_notify_planner_delivery_failure`
-
 - **Webhook Using Wrong Field for Phone Status** (`app/api/twilio_webhooks.py`):
+
   - Permanent recipient handler was setting `phone_verified: False` — a field that doesn't exist on the guest model
   - Now sets `phone_status` with granular values (`invalid`, `landline`, `unreachable`) plus `phone_status_updated_at`
   - Compliance handler now also sets `phone_status: "unsubscribed"` and records `sms_opt_out_reason` for all compliance codes (not just 21610)
-
 - **Delivery Health Banner Mixing SMS and Email Metrics** (`app/admin/reminders/page.tsx`):
+
   - The "Last 24h Delivery" banner was computing rate from all `messageHistory` records including email logs, which inflated the "delivered" count via the `status === 'success'` fallback (email logs don't have Twilio's `delivery_status`)
   - Now pre-filters to SMS records only (`provider === 'twilio' || provider === 'telnyx'`) before computing delivery rate
   - Renamed banner to "Last 24h SMS Delivery" for clarity
-
 - **N+1 Query in SMS Reminder Service** (`app/services/reminder_service_twilio.py`):
+
   - `send_reminders()` was doing a `find_one()` RSVP lookup per guest (N+1 queries)
   - Replaced with a single bulk query `rsvp_collection.find({"attending": event_type})` pre-loaded into a dictionary lookup
   - For a 200-guest wedding this reduces MongoDB round-trips from ~200 to 1
-
 - **Seating Drag and Drop Not Working** (`app/admin/seating/page.tsx`, `app/admin/components/seating/*`):
+
   - **Problem**: Guests could not be dragged from the sidebar onto the seating canvas — dragged element was clipped by `overflow-hidden` on the sidebar container
   - **Root cause**: Missing `DragOverlay` component from `@dnd-kit/core`. Without it, the dragged DOM element stays within its parent container and gets clipped at the boundary
   - **Solution**: Added `DragOverlay` that renders a floating copy of the dragged item above all containers. Original item reduces opacity during drag (0.3 for guests, 0.5 for tables). Added `DragStartEvent`, `KeyboardSensor` for accessibility
   - **Impact**: Guests can now be smoothly dragged from sidebar to canvas and between tables
-
 - **Seating Page Not Aligned with Dashboard Theme** (`app/admin/seating/page.tsx`, `app/admin/components/seating/*`):
+
   - **Problem**: Seating page used raw `bg-white dark:bg-slate-800` cards that didn't match the glass morphism pattern used across the planner dashboard
   - **Solution**:
     - All cards now use the dashboard glass pattern: `bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border-white/50 dark:border-slate-700/50`
@@ -140,8 +161,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `GuestItem.tsx`: Compact mode, drag opacity, glass styling
     - `Sidebar.tsx`: Glass theme, Lucide icons, group count badges, clear search button, `print:hidden`
     - `GlassButton.tsx`: Added `dark:` classes to `secondary` and `ghost` button variants
-
 - **Dark Mode Text Invisible on Wedding Slug Page** (`app/hooks/useTheme.ts`, `app/styles/globals.css`, `app/components/landing-page/EventLocationSection.tsx`, `app/components/landing-page/OurStorySection.tsx`, `app/[slug]/page.tsx`):
+
   - **Problem**: On the couple's wedding slug page (e.g., `/emmanuel-peace`), many headings and text elements were invisible in dark mode. Section headings like "Wedding Details", "Our Story", "Wedding Party", venue names, dress code text, and side labels ("Bride's Side", "Groom's Side") all disappeared against dark backgrounds
   - **Root cause**: Two issues working together:
     1. The `.theme-primary`, `.theme-secondary`, and `.theme-accent` CSS classes used `color: var(--theme-primary)` with no dark mode variant — the theme primary color `#1e3a5f` (dark navy) was applied identically in both modes
@@ -157,6 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **OTP Verification API Optimization** (`app/services/otp_service.py`, `app/api/otp.py`, `app/components/RSVPModal.tsx`, `app/otp/verify/page.tsx`):
+
   - **Problem**: After OTP verification, frontend made a redundant API call to `/weddings/guest-access/{slug}/{token}` to fetch guest data that was already available
   - **Root cause**: `/otp/verify` endpoint only returned `{"message": "OTP verified"}` with no guest data, forcing frontend to re-fetch
   - **Solution**: Refactored `verify_otp_by_guest_id()` to return full guest data and auth method
@@ -169,8 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - RSVPModal and OTP verify page now use guest data directly from verify response
     - Eliminated redundant API call after OTP verification
   - **Impact**: Faster RSVP flow, reduced server load, accurate auth method tracking (phone_otp vs email_otp)
-
 - **Platform Branding Update** (`app/layout.tsx`, `app/admin/components/Sidebar.tsx`, `public/favicon.svg`):
+
   - **Browser Favicon**: Added SVG favicon with interlinked rings icon in pink/rose gradient colors
   - **Root Layout Metadata**: Added Next.js metadata export with favicon (`/favicon.svg`) and apple touch icon (`/logo_all.png`)
   - **Admin Sidebar Logo**: Replaced Heart icon with "The Special Wedding" logo image
@@ -185,18 +207,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Onboarding Modal Not Staying Closed** (`app/admin/planner/page.tsx`):
+
   - **Problem**: The onboarding modal kept reappearing after planners dismissed it, making it impossible to close
   - **Root cause**: Race condition between the API call to mark onboarding complete and the profile refetch. If the profile returned before MongoDB reflected the update, the useEffect would reopen the modal with stale `onboarding_completed: false` data
   - **Solution**: Added `hasUserDismissedOnboarding` local state flag that tracks when the user has dismissed the modal in the current session, preventing the useEffect from reopening it even if profile data is momentarily stale
   - **Impact**: Planners can now dismiss the onboarding tour and it stays closed
-
 - **Critical: Knowledge Base Model MRO Conflict** (`app/models/knowledge_base.py`):
+
   - **Problem**: App failed to import due to `TypeError: Cannot create a consistent method resolution order (MRO) for bases MongoModel, UserRelatedModel`
   - **Root cause**: `KnowledgeBaseArticleModel` inherited from both `MongoModel` and `UserRelatedModel`, but `UserRelatedModel` already inherits from `MongoModel` (diamond inheritance)
   - **Solution**: Changed inheritance to only `UserRelatedModel` since it already includes `MongoModel`
   - **Impact**: Knowledge base feature now loads correctly
-
 - **Critical: Migration 006 Index Conflict Causing 502 Bad Gateway** (`app/utils/migrations.py`):
+
   - **Problem**: Production backend failed to start due to MongoDB `IndexOptionsConflict` error in migration 006
   - **Root cause**: Migration 006 created indexes without explicit names, while `database_indexes.py` created the same indexes with names (e.g., `idx_admin_activity_created`). MongoDB rejects duplicate indexes with different names.
   - **Solution**: Refactored migration 006 to only create TTL indexes (its unique purpose). Non-TTL indexes are now solely managed by `create_all_indexes()` in `database_indexes.py`.
@@ -209,6 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Seating Chart PDF Export Feature** (`app/services/seating_export_service.py`, `app/api/tables.py`, `app/admin/seating/page.tsx`):
+
   - **Purpose**: Allow planners to export seating charts as printable PDFs for large venue display posters
   - **New service** (`app/services/seating_export_service.py`):
     - `SeatingExportService` class with `generate_seating_chart_pdf()` method
@@ -231,8 +255,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added `weasyprint>=62.0` to `requirements.txt`
     - Added system libraries to `Dockerfile.coolify`: libcairo2, libpango, libgdk-pixbuf2.0, libffi
   - **Impact**: Planners can print professional seating charts for venue escort tables
-
 - **Comprehensive Activity Logging System for Planner Dashboard** (`app/services/activity_log_service.py`, `app/services/rsvp_service.py`, `app/api/guest.py`, `app/api/reminder_twilio.py`):
+
   - **Problem**: Planner activity dashboard (`/admin/planner/activity-log`) only showed support ticket logs - no RSVP, guest, or SMS activity
   - **New service** (`app/services/activity_log_service.py`):
     - Standardized `ActivityLogService` for logging to `activity_logs` collection
@@ -249,8 +273,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Groups SMS sends by wedding for cleaner activity feed
     - Logs recipient count, reminder type, and channel
   - **Impact**: Planner dashboard now shows comprehensive activity feed with RSVP submissions, guest management, and SMS sends
-
 - **Activity/Audit Log Cleanup & Export Endpoints** (`app/api/admin_activity.py`, `app/api/admin_platform_metrics.py`):
+
   - **Problem**: No mechanism to prune old logs or export for audit compliance
   - **Admin activity log endpoints** (`app/api/admin_activity.py`):
     - `DELETE /admin/activity-log/cleanup` - Remove activities older than N days (default 90, range 7-365)
@@ -263,31 +287,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `POST /admin/platform/errors/acknowledge-and-delete-bulk` - Bulk acknowledge errors with export
   - **Export format**: JSON returns array of records; CSV returns downloadable format with headers
   - **Impact**: ROOT_ADMIN can now manage log retention and export for compliance auditing
-
 - **TTL Indexes for Automatic Log Cleanup** (`app/core/database_indexes.py`, `app/utils/migrations.py`):
+
   - **Problem**: Activity and audit log collections grow indefinitely without cleanup
   - **New indexes** (`app/core/database_indexes.py`):
+
     - `create_admin_activity_log_indexes()` - Query indexes + 90-day TTL on `created_at`
     - `create_activity_logs_indexes()` - Query indexes + 90-day TTL on `timestamp`
     - `create_audit_logs_indexes()` - Query indexes + 30-day TTL on `timestamp`
     - `create_security_audit_logs_indexes()` - Query indexes + 180-day TTL on `timestamp`
     - `create_errors_indexes()` - Query indexes + 30-day TTL on `acknowledged_at`
   - **Migration 006** (`app/utils/migrations.py`):
+
     - Creates all TTL indexes on first deploy
     - Handles `IndexKeySpecsConflict` for existing indexes
   - **Retention policy**:
 
-    | Collection | TTL | Reason |
-    | ---------- | --- | ------ |
-    | `admin_activity_log` | 90 days | Admin action history |
-    | `activity_logs` | 90 days | Planner activity |
-    | `audit_logs` | 30 days | High-volume HTTP logging |
-    | `security_audit_logs` | 180 days | Security compliance |
-    | `errors` | 30 days | After acknowledgment |
-
+    | Collection              | TTL      | Reason                   |
+    | ----------------------- | -------- | ------------------------ |
+    | `admin_activity_log`  | 90 days  | Admin action history     |
+    | `activity_logs`       | 90 days  | Planner activity         |
+    | `audit_logs`          | 30 days  | High-volume HTTP logging |
+    | `security_audit_logs` | 180 days | Security compliance      |
+    | `errors`              | 30 days  | After acknowledgment     |
   - **Impact**: Database automatically prunes old logs, preventing storage bloat
-
 - **Support Ticket Response Notifications for Planners** (`app/services/support_service.py`, `app/services/planner_notification_service.py`, `app/models/planner_notification.py`, `app/admin/notifications/page.tsx`):
+
   - **Problem**: When ROOT_ADMIN responded to a planner's support ticket, the planner received no notification
   - **New notification type**: Added `support_ticket_response` to `PlannerNotificationTypes` and `NotificationType` Literal
   - **New helper method**: `notify_support_ticket_response()` in `PlannerNotificationService` creates in-app notification with ticket details
@@ -297,8 +322,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Frontend**: Added `support_ticket_response` to TypeScript interface with teal color indicator and legend entry
   - **Flow**: ROOT_ADMIN adds comment → In-app notification + Email + Web Push (automatic via existing service) → Planner sees response in bell icon and receives email
   - **Guards**: Only non-internal comments trigger notifications; planner's own follow-up comments don't trigger self-notification
-
 - **Request RSVP Link Feature** (`app/components/RequestRSVPLinkModal.tsx`, `app/components/landing-page/ThemedHeroSection.tsx`, `app/components/landing-page/LandingLayout.tsx`, `app/api/guest_verification.py`, `app/services/guest_verification_service.py`):
+
   - **Purpose**: Allow guests who lost their invitation link to request it via phone or email
   - **User flow**: Guest visits `/{slug}` landing page → clicks "Celebrate with us" button → enters phone/email → receives RSVP link via SMS or email
   - **New modal component** (`app/components/RequestRSVPLinkModal.tsx`):
@@ -333,13 +358,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Defensive Field Access in Admin Activity Service** (`app/services/admin_activity_service.py`):
+
   - **Problem**: Direct dictionary access (`doc["field"]`) on MongoDB documents caused `KeyError` when documents had missing fields, resulting in 500 errors on activity log endpoints
   - **Fix**: Changed all field access in `get_activity_log()` and `get_recent_activities()` to use `.get()` with sensible defaults
   - **Example**: `doc["action_type"]` → `doc.get("action_type", "unknown")`
   - **Fields protected**: `admin_id`, `action_type`, `title`, `message`, `entity_type`, `entity_id`, `metadata`, `is_read`, `created_at`
   - **Impact**: Activity log endpoints now gracefully handle malformed or legacy documents
-
 - **Enhanced Activity Type Color Mapping in Planner Dashboard** (`app/admin/planner/activity-log/page.tsx`):
+
   - **Problem**: Frontend only had colors for 4 activity types; new activity types showed default purple
   - **Added color mapping** for all activity types:
     - RSVP events: `rsvp_received` (green-500), `rsvp_updated` (green-400)
@@ -348,29 +374,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Support: `support_ticket_created` (red-500), `support_ticket_comment` (red-400)
     - Wedding: `wedding_created` (indigo-500), `wedding_updated` (indigo-400)
   - **Impact**: Activity feed now shows visually distinct colors for each activity type
-
 - **Platform Metrics Response Time Unit Standardization** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+
   - **Eliminated redundant unit conversions**: Backend stored ms → API converted to seconds → Frontend converted back to ms
   - **New flow**: Backend stores ms → API returns ms directly → Frontend displays ms
   - **Field name changes** for clarity (explicit `_ms` suffix):
 
-    | Old Name                    | New Name                       |
-    | --------------------------- | ------------------------------ |
-    | `avg_response_time`         | `avg_response_time_ms`         |
-    | `min_response_time`         | `min_response_time_ms`         |
-    | `max_response_time`         | `max_response_time_ms`         |
-    | `p50`, `p95`, `p99`         | `p50_ms`, `p95_ms`, `p99_ms`   |
-    | `overall_avg_response_time` | `overall_avg_response_time_ms` |
-
+    | Old Name                      | New Name                           |
+    | ----------------------------- | ---------------------------------- |
+    | `avg_response_time`         | `avg_response_time_ms`           |
+    | `min_response_time`         | `min_response_time_ms`           |
+    | `max_response_time`         | `max_response_time_ms`           |
+    | `p50`, `p95`, `p99`     | `p50_ms`, `p95_ms`, `p99_ms` |
+    | `overall_avg_response_time` | `overall_avg_response_time_ms`   |
   - **Backend changes** (`app/api/admin_platform_metrics.py`):
+
     - Removed `/1000` divisions when returning response times
     - Updated field names in `_calculate_performance_metrics()` and `_calculate_endpoint_performance()`
   - **Frontend changes** (`app/admin/platform/page.tsx`):
+
     - Updated TypeScript interfaces (`PerformanceSummary`, `EndpointPerformance`) with new field names
     - Removed `* 1000` multiplications when displaying values
   - **Why**: Reduces cognitive overhead, prevents floating-point precision issues, and follows the principle of keeping data in its natural unit until display
-
 - **AI Chat Service Availability & Health Monitoring** (`app/api/ai.py`):
+
   - **503 Service Unavailable**: When Google Gemini API is unavailable (network errors, API key issues, quota exceeded), the endpoint now returns proper 503 status instead of 500
   - **Why**: Frontend can detect 503 and show "AI temporarily unavailable" message instead of generic error; follows same pattern as Stripe, Telnyx, and email services in the codebase
   - **New endpoint**: `GET /admin/ai/health` - Health check for AI service monitoring
@@ -382,8 +409,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `requests.exceptions.RequestException` for network connectivity issues
     - Both return 503 with `detail: "AI service temporarily unavailable"`
   - **Platform metrics integration**: AI health status now available alongside other service health checks (Stripe, Twilio, Web Push, Email)
-
 - **Web Push Notifications (Replaces Ntfy)** (`app/services/web_push_service.py`, `app/api/web_push.py`, `app/admin/components/AccountSettingsModal.tsx`, `public/sw.js`):
+
   - **Complete replacement**: Removed self-hosted Ntfy server dependency in favor of standard Web Push API with VAPID authentication
   - **Why**: Ntfy required users to download a separate app, copy/paste subscription URLs, and perform manual setup - poor UX. Web Push is the industry standard (used by Gmail, YouTube, etc.) where users just click "Allow" and notifications work automatically
   - **New service** (`app/services/web_push_service.py`):
@@ -416,8 +443,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Dependencies**: Added `pywebpush>=1.14.0` to `requirements.txt`
   - **Files removed**: `app/services/ntfy_service.py` (deleted)
   - **Generate VAPID keys**: `python -c "from pywebpush import generate_vapid_keys; k=generate_vapid_keys(); print(f'VAPID_PRIVATE_KEY={k[\"private_key\"]}\\nVAPID_PUBLIC_KEY={k[\"public_key\"]}')"`
-
 - **RSVP Form Glassmorphism Redesign** (`app/components/RSVPForm.tsx`, `app/otp/verify/page.tsx`):
+
   - **Glass design system**: Complete redesign to match SaaS landing page aesthetic
   - **Dark theme**: `bg-slate-950` background with radial gradient overlays and subtle grid pattern
   - **Glass cards**: `backdrop-blur-xl`, `bg-white/5`, `border-white/10`, `rounded-3xl` styling
@@ -429,8 +456,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Submit button**: `rounded-full` with `shadow-wedding-rose/40` glow effect
   - **Success state**: Glass card with wedding-rose accent checkmark and gradient bar
   - **OTP verify page**: Full glass design with matching background effects and animations
-
 - **Plus-One Events Auto-Inherit** (`app/components/RSVPForm.tsx`):
+
   - Plus-ones now automatically inherit the main guest's selected events on RSVP submission
   - Previously: Plus-ones were submitted with empty `attending: []` array
   - Now: `filledPlusOnes.map(p => ({ ...p, attending: data.attending || [] }))`
@@ -439,48 +466,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Wedding ID Lookup Consistency** (`app/api/tables.py`, `app/api/guest_export.py`):
+
   - **Problem**: PDF export endpoints only queried weddings by string `_id`, failing for ObjectId-based weddings
   - **Solution**: Added dual-format lookup pattern: `ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id`
   - **Files updated**: Seating chart PDF export endpoint, Guest list PDF export endpoint
   - **Impact**: PDF exports now work regardless of whether wedding IDs are stored as strings or ObjectIds
-
 - **Type Annotation Fixes in Twilio Reminder API** (`app/api/reminder_twilio.py`):
+
   - **Problem**: Pylance/mypy reported type errors for optional service instances and untyped dictionary
   - **Fix 1**: Added `Optional[TwilioReminderService]` and `Optional[TwilioRSVPReminderHelper]` type annotations for conditionally-initialized service variables
   - **Fix 2**: Added `dict[str, int]` type annotation to `wedding_sent_counts` dictionary
   - **Fix 3**: Removed unused `wedding_ids_logged` variable (dead code from previous implementation)
   - **Impact**: Clean type checking with no Pylance/mypy/Flake8 warnings
-
 - **500 Errors on Activity Log Endpoints** (`app/services/admin_activity_service.py`, `app/api/admin_activity.py`):
+
   - **Root cause**: Direct dictionary access (`doc["field"]`) on MongoDB documents with missing fields raised `KeyError`, causing 500 responses on `/admin/activity-log` endpoints
   - **Fix** (`app/services/admin_activity_service.py`): Changed to defensive `.get()` access with defaults in `get_activity_log()` and `get_recent_activities()`
   - **Fix** (`app/api/admin_activity.py`): Added try-catch error handling to return graceful errors instead of 500
   - **Affected endpoints**: `GET /admin/activity-log`, `GET /admin/activity-log/recent`
   - **Impact**: Activity log endpoints now handle malformed documents gracefully and return empty results instead of crashing
-
 - **RSVP Link SMS Status Check Bug** (`app/services/guest_verification_service.py`):
+
   - **Root cause**: Twilio `_send_sms()` returns `"status": "failed: {error}"` on failure, but code checked `!= "failed"` which always evaluated to `True`
   - **Fix**: Changed status check from `result.get("status") != "failed"` to `result.get("status") == "success"`
   - **Impact**: SMS send failures are now correctly detected and logged
-
 - **RSVP Link SMS Phone Format Bug** (`app/services/guest_verification_service.py`):
+
   - **Root cause**: Service passed raw user input (e.g., `(319) 529-6088`) to Twilio, which added `+1` prefix creating invalid `+1(319) 529-6088`
   - **Fix**: Changed to pass `digits_only` (extracted digits) to Twilio, which then correctly formats as `+13195296088`
   - **Impact**: SMS delivery now works regardless of how user formats their phone number input
-
 - **Gallery S3 Operations Failing on Cloudflare R2** (`app/services/gallery_upload_service.py`, `app/services/vendor_service.py`):
+
   - **Root cause**: Cloudflare R2 requires S3 Signature Version 4 (`s3v4`) for all operations, but boto3 defaults to v2
   - **Symptom**: `AccessDenied` errors on upload, list, and delete operations despite correct credentials
   - **Fix**: Added `config=Config(signature_version='s3v4')` to boto3 client initialization in both services
   - **Fix**: Added error code logging for better diagnostics on S3 operation failures
   - **Impact**: Gallery uploads, listing, and deletion now work correctly with Cloudflare R2
-
 - **Gallery Image Delete Returning 405 Method Not Allowed** (`app/admin/gallery/upload/page.tsx`):
+
   - **Root cause**: Frontend called `DELETE /gallery` but the admin endpoint is registered at `DELETE /admin/gallery`
   - **Fix**: Changed delete endpoint from `/gallery` to `/admin/gallery` (line 313)
   - **Impact**: Planners can now delete gallery images from the upload management page
-
 - **Private Wedding Gallery Page Returning 403 for Verified Guests** (`app/[slug]/gallery/page.tsx`):
+
   - **Root cause**: Gallery page was server-side rendered (SSR) and only called `GET /gallery` without guest verification
   - **Symptom**: Guest verifies on landing page → clicks "View Full Gallery" → 403 error because verification state wasn't persisted
   - **Fix**: Converted gallery page to client-side rendering (`'use client'`)
@@ -493,8 +521,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `GalleryGrid` expects `images: {key, url}[]` ✅
     - Backend returns `[{key, url}]` from `gallery/{slug}/` prefix ✅
   - **Impact**: Guests on private weddings can now access the full gallery page after verification
-
 - **Root Admin In-App Notifications Not Displaying** (`app/services/notification_service.py`, `app/services/support_service.py`, `app/utils/secure_error_handler.py`):
+
   - **Root cause**: Schema mismatch between notification creation and retrieval
     - Notifications created with `target_audience: "root_admin"` but fetched using `user_id` field
     - Root admin has no `user_id` in notifications collection - they use audience-based targeting
@@ -512,8 +540,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Support ticket submissions from planners
     - Contact form submissions from public users
     - Configuration error alerts from the system
-
 - **Notification System Schema Alignment** (Multiple files):
+
   - **API Validation** (`app/api/notification_management.py`):
     - Added `root_admin` to valid `target_audience` values in both `NotificationCreateModel` and `NotificationUpdateModel` validators
     - Previously API would reject notifications with `target_audience: "root_admin"` even though backend services created them
@@ -528,8 +556,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Updated fallback email domain from `.com` to `.io` to match SAAS platform domain
     - Changed from `thedeveloper@thespecialwedding.com` to `admin@thespecialwedding.io`
   - **Impact**: Full schema alignment between database models, API validation, and frontend TypeScript interfaces
-
 - **Notification Recipient Dropdown Misaligned with Schema** (`app/admin/notifications/page.tsx`):
+
   - **Root cause**: Dropdown showed `"Trial Users"` and `"Premium Users"` options that don't exist in subscription schema
   - **Subscription status enum**: `PENDING_PAYMENT`, `TRIAL`, `ACTIVE`, `CANCELLED`, `EXPIRED`, `SUSPENDED` - no "premium"
   - **Fix**: Simplified dropdown to match backend `target_audience` values exactly:
@@ -539,8 +567,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix**: Removed stale mapping logic - `recipientFilter` now passes directly to `target_audience`
   - **Fix**: Updated default state from `'all_users'` to `'all'`
   - **Impact**: Frontend dropdown now matches backend API validation and subscription schema
-
 - **Root Admin Receiving Own Platform Notifications** (`app/services/notification_service.py`):
+
   - **Root cause**: Notification retrieval logic included `target_audience: "all"` for root admin
   - **Problem**: When root admin sends notification to "all users", they would also see it in their bell
   - **Fix**: Separated audience logic by role:
@@ -548,16 +576,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - **Planners/Vendors** see: `target_audience: "all"` + their role + direct targeting
   - **Fix**: Applied to both `get_user_notifications()` and `get_user_notification_count()` methods
   - **Impact**: Root admin notification bell only shows system alerts (support tickets, config errors, contact forms), not their own platform announcements
-
 - **QR Code Preview Not Displaying in Guest Management** (`app/admin/guests/page.tsx`):
+
   - **Root cause**: The QR code modal used `<img src>` pointing directly to the authenticated API endpoint, but browsers don't send Authorization headers with image requests
   - **Fix**: Added state variables `qrImageUrl` and `qrImageLoading` to track fetched QR image
   - **Fix**: Added `useEffect` that fetches QR code with proper `Authorization: Bearer ${token}` header when modal opens
   - **Fix**: Converts response blob to object URL for display in the modal
   - **Fix**: Shows loading spinner while fetching, error state if fetch fails
   - **Fix**: Properly cleans up blob URL when modal closes to prevent memory leaks
-
 - **Calendar Invite Download Not Working** (`app/components/RSVPForm.tsx`):
+
   - **Root cause 1**: Backend `EventDetailsModel.time` uses 12-hour format (`"3:00 PM"`) but frontend expected 24-hour (`"15:00"`)
   - **Root cause 2**: Backend model has no `endTime` field but frontend was trying to use it
   - **Root cause 3**: Invalid Date created when `eventDate` was undefined (`new Date("undefinedT15:00:00Z")`)
@@ -567,8 +595,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix**: Default 3-hour event duration since backend doesn't have `endTime`
   - **Fix**: Proper ICS format with `\r\n` line endings and required headers (PRODID, CALSCALE, METHOD)
   - **Fix**: Added error handling and URL cleanup with `URL.revokeObjectURL()`
-
 - **Calendar ICS Generates Only One Event with Wrong Time** (`app/components/RSVPForm.tsx`):
+
   - **Root cause 1**: `generateICS()` only picked one event (white_wedding or first) instead of all configured events
   - **Root cause 2**: `parseTimeToISO()` regex required colon - formats like "6PM" failed, defaulting to 12:00
   - **Symptom**: Planner configured Traditional (05/29 6PM), White Wedding (05/30 5PM), Reception - calendar showed only one event at 12:00PM
@@ -576,8 +604,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix**: Refactored `generateICS()` to loop through ALL `wedding.events` and create multiple VEVENT blocks
   - **Fix**: Each calendar event now has unique UID (`timestamp-index@wedding-rsvp`), event-specific title (e.g., "Traditional Ceremony - Peace & Emmanuel"), and correct time/location/attire
   - **Result**: Downloaded ICS now contains all wedding events with correct dates and times
-
 - **Calendar ICS Missing Timezone Information** (`app/components/RSVPForm.tsx`, `app/models/wedding.py`, `app/types/wedding.ts`):
+
   - **Root cause**: ICS dates like `20260529T180000` had no timezone indicator - calendar apps interpreted in user's local timezone
   - **Impact**: Guests in different timezones would see wrong event times (e.g., 6 PM Chicago showing as 6 PM Lagos)
   - **Fix**: Added `timezone` field to `WeddingModel` (defaults to `America/Chicago`) and `EventDetailsModel` for per-event override
@@ -589,18 +617,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Wedding Timezone Configuration** (`app/models/wedding.py`, `app/types/wedding.ts`):
+
   - **New field**: `timezone` on `WeddingModel` - IANA timezone string (e.g., `America/Chicago`, `Africa/Lagos`)
   - **Default value**: `America/Chicago` (US Central Time) for backward compatibility
   - **Per-event override**: `EventDetailsModel.timezone` allows different timezones for events at different venues
   - **Frontend types**: Updated `Wedding` and `EventDetails` TypeScript interfaces
   - **Use case**: Planners can configure the correct timezone for their wedding venue, ensuring calendar downloads show accurate local times
-
 - **Planner Timezone Preference** (`app/models/user_extended.py`, `app/admin/users/page.tsx`, `app/admin/saas/page.tsx`):
+
   - **New field**: `timezone` on `UserModel` - IANA timezone for display preferences (default: `America/Chicago`)
   - **Frontend types**: Added `timezone` to `Planner` and `WeddingPlanner` TypeScript interfaces
   - **Use case**: Planners see timestamps in their preferred timezone across the dashboard
-
 - **Admin Dashboard Timestamp Consistency** (`app/utils/dateFormat.ts`, 20+ admin pages):
+
   - **Problem**: ~27 instances of browser-local `.toLocaleString()` caused different users to see different times for the same record
   - **Root cause**: Mix of UTC formatting (centralized utility) and browser-local formatting (direct `.toLocaleString()`)
   - **Enhanced utility** (`app/utils/dateFormat.ts`):
@@ -621,8 +650,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Notifications: `app/admin/notifications/page.tsx`
     - Packages: `app/admin/packages/[id]/send/page.tsx`
   - **Result**: All admin timestamps now show consistent timezone-aware formatting with abbreviation suffix (e.g., "Jan 30, 2026, 3:00 PM CST")
-
 - **Already RSVPed Detection** (`app/components/AlreadyRSVPedScreen.tsx`, `app/otp/verify/page.tsx`, `app/services/guest_verification_service.py`):
+
   - **Problem solved**: Guests re-visiting RSVP link after submission would go through OTP verification again (Twilio SMS cost ~$0.0079 each)
   - **Backend enhancement**: `get_rsvp_access_by_token()` now checks for existing RSVP in `rsvps` collection
     - Returns `rsvp: { has_rsvp, submitted_at, attending, dietary, plus_ones }` in response
@@ -632,8 +661,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - "Edit My RSVP" button to switch to edit mode
   - **Edit mode flow**: `editMode` state allows guests to modify their existing RSVP
   - **Cost savings**: Prevents unnecessary OTP SMS costs for return visitors
-
 - **Twilio SMS Delivery Tracking** (`app/api/twilio_webhooks.py`, `app/services/reminder_service_twilio.py`, `app/core/database_indexes.py`):
+
   - **StatusCallback webhooks**: Track SMS delivery status (delivered/failed/undelivered) via Twilio webhooks
     - `POST /webhook/twilio/status` - Receives delivery status updates from Twilio
     - Updates `reminders_sent` collection with `delivery_status`, `delivery_events`, and `error_code`
@@ -642,8 +671,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Database indexes**: Added sparse unique index on `message_sid` field in `reminders_sent` collection
   - **Incoming SMS webhook**: `POST /webhook/twilio/incoming` handles STOP/HELP/START and support messages
     - Routes messages to assigned wedding planner or logs to errors collection for root admin
-
 - **Twilio Platform Monitoring** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+
   - **Backend health check**: `_check_twilio_health()` function checks:
     - Environment variables: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID`, `TWILIO_STATUS_CALLBACK_URL`
     - 24h delivery stats from `reminders_sent` collection: total sent, delivered, failed, pending, delivery rate
@@ -651,8 +680,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Frontend dashboard card**: New "SMS Service (Twilio)" card in External Services section
     - Shows configuration status, status callback status, delivery stats, and delivery rate percentage
     - Color-coded status indicators and warnings for missing configuration
-
 - **Settings URL Helper** (`app/core/config.py`):
+
   - Added `get_required_url(url_name)` method to Settings class
   - Returns configured URL or raises ValueError if not set
   - Supports `FRONTEND_URL`, `NEXT_PUBLIC_API_BASE_URL`, `MEDIA_DOMAIN`
@@ -660,28 +689,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **OTP Rate Limiting Now Uses Settings** (`app/services/otp_service.py`):
+
   - Fixed hardcoded `timedelta(minutes=4)` rate limit logic to use `settings.rate_limit_auth_period`
   - Rate limiting now uses `created_at` timestamp instead of confusing `expires_at` calculation
   - Both `send_otp()` (line 93) and `send_otp_by_contact()` (line 253) now use configurable rate limit
   - Default: 60 seconds from `RATE_LIMIT_AUTH_PERIOD` env variable
   - Clearer logging: shows seconds since last OTP was sent
-
 - **Admin RSVP Service Async Bug** (`app/services/admin_rsvp_service.py`):
+
   - Fixed `get_all_rsvps()` using synchronous `list()` with async Motor driver
   - Changed `list(self.guest_collection.find(query))` to `await self.guest_collection.find(query).to_list(length=None)`
   - This bug caused the planner dashboard to fail silently when fetching RSVPs
-
 - **OTP Service Dict Handling** (`app/services/otp_service.py`):
+
   - Fixed `send_otp()` and `send_otp_by_contact()` to handle dict return from `_send_sms()`
   - Extracts status with `result.get("status") if isinstance(result, dict) else result`
   - Prevents 500 errors when sending OTP via Twilio
-
 - **Removed Slack Integration** (`app/api/twilio_webhooks.py`, `app/api/reminder.py`):
+
   - Replaced Slack webhook notifications with errors collection logging
   - Unassigned support tickets now appear in platform monitoring Errors tab
   - Root admin gets email notification for unassigned tickets
-
 - **Seating Orchestration Enhancements** (`app/api/tables.py`, `app/admin/weddings/[id]/seating/page.tsx`, `app/admin/components/seating/*`, `app/core/database_indexes.py`):
+
   - **Server-side capacity validation**: API now rejects guest assignments that would exceed table capacity
     - Returns clear error message: "Cannot assign guests: table capacity is X, would have Y guests after assignment"
     - Prevents over-seating at the API level, not just frontend warnings
@@ -701,8 +731,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Frontend error handling**: `useTables` hook now parses API error details
     - Shows actual capacity error messages instead of generic "Failed to assign guests"
   - Validated against Tailwind CSS, dnd-kit, and framer-motion documentation via context7 MCP
-
 - **Guest Export Features** (`app/api/guest_export.py`, `app/services/guest_export_service.py`, `app/admin/guests/page.tsx`):
+
   - **Individual QR Preview**: View/download QR code for single guest (for physical RSVP cards)
     - `GET /admin/guests/{guest_id}/qr` - Returns QR PNG inline with caching
     - `GET /admin/guests/{guest_id}/qr/download` - Returns QR PNG as attachment for download
@@ -729,16 +759,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `get_single_guest_qr(guest_id, wedding_id)` - Get single guest QR with filename
   - **Security**: All endpoints require `require_wedding_planner_only` + `check_wedding_access()`
   - Validated against qrcode, weasyprint, and FastAPI documentation via context7 MCP
-
 - **Bulk Error Acknowledgement Endpoint** (`app/api/admin_platform_metrics.py`):
+
   - New `POST /admin/platform/errors/acknowledge-bulk` endpoint for acknowledging multiple errors in a single API call
   - Accepts `BulkAcknowledgeRequest` with list of `error_ids`
   - Uses MongoDB `update_many` with `$or` operator to match both `error_id` and `_id` fields
   - Returns `acknowledged_count` and `requested_count` for accurate feedback
   - Replaces 200+ individual API calls with a single operation
   - Validated against PyMongo official documentation via context7 MCP
-
 - **Cursor-Based Pagination for Error Dashboard** (`app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+
   - Replaced `skip()`-based pagination with cursor-based pagination using `_id` range queries
   - **Backend changes:**
     - New `cursor` parameter (error_id from last item of previous page)
@@ -753,12 +783,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `skip()`: O(n) - degrades linearly with offset (page 1000 scans 1000*limit documents)
     - Cursor: O(1) - constant time regardless of how deep into dataset
   - Validated against MongoDB and React official documentation via context7 MCP
-
 - **Error Table Endpoint Column Tooltip** (`app/admin/platform/page.tsx`):
+
   - Added `title` attribute and `cursor-help` class to truncated endpoint column
   - Full endpoint path now visible on hover for better UX
-
 - **Plus-One Email and Opt-In Fields** (`app/models/plus_one.py`, `app/models/rsvp.py`, `app/services/rsvp_service.py`, `app/services/email_service_resend.py`, `app/components/RSVPForm.tsx`, `app/admin/guests/page.tsx`):
+
   - Added `email` field to plus-ones so planners can contact them directly
   - Added `sms_opt_in` and `email_opt_in` fields with consent tracking timestamps
   - New fields in `PlusOneModel`: `email`, `sms_opt_in`, `sms_opt_in_date`, `sms_opt_out_date`, `email_opt_in`, `email_opt_in_date`, `email_opt_out_date`
@@ -766,14 +796,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Email reminder service (`send_reminders`) now supports `target_group: "plus-ones"` and `"all"` to send reminders to opted-in plus-ones
   - Admin guests page displays plus-one contact info (phone, email) and opt-in status badges (SMS, Email)
   - SMS reminder service already had partial plus-one support; now properly tracks opt-in status
-
 - **Account Setup Name Collection** (`app/api/user_management.py`, `app/setup-account/page.tsx`):
+
   - Added `first_name` and `last_name` fields to `AccountSetupModel` with validation
   - Frontend form now collects planner's name during account setup
   - Backend passes name fields to `complete_account_setup()` service method
   - Planners no longer show as "Unnamed Planner" after completing account setup
-
 - **Password Reset Flow** (`app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `app/api/user_management.py`, `app/services/user_management_service.py`):
+
   - Complete forgot password / reset password functionality for users who cannot log in
   - New API endpoints:
     - `POST /forgot-password` - Request password reset email (public, no auth)
@@ -784,8 +814,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New database fields in `users` collection: `password_reset_token`, `password_reset_expires`, `password_reset_requested_at`
   - Security: Tokens expire after 1 hour, single-use, same response regardless of email existence, confirmation email after reset
   - Reference: [OWASP Password Reset Guidelines](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)
-
 - **Admin Activity Logging** (`app/services/admin_activity_service.py`, `app/api/admin_activity.py`, `app/admin/page.tsx`):
+
   - New service to track all important admin actions for audit and visibility
   - Activity types: `invitation_sent`, `invitation_resent`, `invitation_cancelled`, `planner_suspended`, `planner_activated`
   - New API endpoints:
@@ -793,8 +823,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `GET /admin/activity-log/recent` - Recent activities for dashboard (ROOT_ADMIN)
   - Added "Recent Admin Activity" section to Platform Health Overview dashboard
   - New collection `admin_activity_log` with fields: `admin_id`, `action_type`, `title`, `message`, `metadata`, `created_at`
-
 - **Invitation Management Enhancements** (`app/api/user_management.py`, `app/services/user_management_service.py`, `app/admin/users/page.tsx`):
+
   - New API endpoints for invitation visibility and control:
     - `GET /admin/invitations` - List invitations with status filtering (ROOT_ADMIN)
     - `GET /admin/invitations/stats` - Invitation counts by status (ROOT_ADMIN)
@@ -803,15 +833,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added "Pending Invitations" stats card to Planner Management page
   - Added collapsible pending invitations section with email status indicators (sent/failed)
   - Enhanced `user_invitations` collection: `email_status`, `email_sent_at`, `resend_count`, `last_resent_at`, `cancelled_at`, `cancelled_by`
-
 - **Push Notifications Toggle** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/user_management.py`, `app/models/user.py`, `app/services/planner_notification_service.py`):
+
   - Added toggle switch in Account Settings modal for planners to enable/disable push notifications
   - New `push_notifications_enabled` field in `ProfileInfoModel` (defaults to `True` - opt-out model)
   - New `_check_push_enabled()` method in planner notification service checks user preference
   - Ntfy push notifications are skipped if planner has disabled them
   - Gives planners control over mobile/desktop push alerts while keeping in-app notifications active
-
 - **Ntfy Push Notification Diagnostics & Error Logging** (`app/services/ntfy_service.py`, `app/api/admin_platform_metrics.py`, `app/admin/platform/page.tsx`):
+
   - **Health check endpoint integration**: Ntfy service status now visible in Platform Monitoring dashboard
   - New `health_check()` method in `NtfyNotificationService`:
     - Tests DNS resolution for ntfy server hostname
@@ -836,23 +866,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Coolify Deployment — Missing Environment Variables** (`Dockerfile.coolify`, `.github/workflows/deploy.yml`):
+
   - **Dockerfile.coolify**: Added `BACKUP_SECRET`, `FRONTEND_URL`, `CRON_SECRET` as ARG/ENV declarations for Coolify injection
   - **deploy.yml**: Added `BACKUP_SECRET` and `FRONTEND_URL` to VPS deployment .env file
   - **deploy.yml**: Restricted workflow to only trigger on `feature-twilio-otp-improvements-final-submitted` branch (excluded `main`)
   - **deploy.yml**: Added comment clarifying `DEPLOYMENT_TARGET='coolify'` skips VPS SSH deployment
   - **Impact**: Backup cron authentication and guest export QR code URL generation now work correctly in Coolify deployments
   - Verified against GitHub Actions and Docker official documentation via context7 MCP
-
 - **Cloudflare Workers — Documentation Comment Mismatch** (`cloudflare-workers/metrics-snapshot-cron.js`):
+
   - Documentation comment referenced `API_URL` but code correctly used `NEXT_PUBLIC_API_BASE_URL`
   - Fix: Updated comment to match actual environment variable name
-
 - **Security: Delete table wedding scope** (`app/api/tables.py`):
+
   - Fixed guest unassignment query to include `wedding_id` filter when deleting tables
   - Prevents theoretical cross-wedding data leak
   - Query now: `{"table_id": table_id, "wedding_id": table["wedding_id"]}`
-
 - **CRITICAL: Complete RSVP Invite Flow Broken — 7 Bugs** (`app/api/wedding.py`, `app/[slug]/invite/[token]/page.tsx`, `app/components/OTPFlow.tsx`, `app/otp/verify/page.tsx`, `app/admin/guests/page.tsx`, `app/admin/reminders/page.tsx`):
+
   - **Root cause**: `/weddings/slug/{slug}` endpoint was rewritten for security but stripped the response from `get_wedding_privacy_info()`, removing `id` and `events` that the invite page depends on
   - **Impact**: Guests clicking RSVP links saw 404 pages; SMS templates were missing the domain URL
   - **Bug 1 — Invite page 404** (`app/api/wedding.py:228`): Endpoint returned `{couple_names, slug, privacy_mode}` instead of full `privacy_info` response. Frontend sent `wedding_id=undefined` to guest endpoint → 404
@@ -873,26 +904,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Fix: `process.env.FRONTEND_URL || ''` → `window.location.origin`
   - **OTPFlow slug param**: Added `slug` prop to OTPFlow component, passed through redirect URL to OTP verify page
   - Verified field names against database schemas: `WeddingModel._id` (string), `GuestModel.wedding_id` (string), `get_wedding_privacy_info()` returns `id: str(wedding._id)`
-
 - **Guest Export QR Code — Wrong MongoDB Query Field** (`app/services/guest_export_service.py:420`):
+
   - `get_single_guest_qr()` queried weddings collection with `{"wedding_id": wedding_id}` but wedding documents use `_id` as primary key, not `wedding_id`
   - Query never matched any wedding → always returned `None` → QR code generation silently failed
   - Fix: `{"wedding_id": wedding_id}` → `{"_id": wedding_id}`
-
 - **Guest Export API — Same Wrong Query Field Bug** (`app/api/guest_export.py:110,163`):
+
   - PDF export endpoint (`GET /guests/export/pdf`) queried `{"wedding_id": wedding_id}` → always returned `None` → PDF header showed "Wedding" instead of couple names
   - ZIP export endpoint (`POST /guests/export/qr-zip`) queried `{"wedding_id": request.wedding_id}` → always returned `None` → endpoint returned 404 "Wedding not found" for every request
   - Both fixes: `{"wedding_id": ...}` → `{"_id": ...}`
   - Note: Same bug pattern as `guest_export_service.py:420` fix above, but in the API layer
-
 - **Guest Export URL Fallback Logic** (`app/services/guest_export_service.py:84-87`):
+
   - `build_rsvp_url()` had broken fallback logic for `FRONTEND_URL` environment variable
   - Code called `os.getenv("FRONTEND_URL", "")` then checked if empty and called it again with different default - the second call would still return empty string
   - Fix: Simplified to `os.getenv("FRONTEND_URL") or "https://thespecialwedding.io"`
   - **URL format**: Generates full RSVP URL as `{FRONTEND_URL}/{slug}/invite/{token}` (e.g., `https://thespecialwedding.io/emmanuel-peace/invite/abc123xyz`)
   - **Note**: Ensure `FRONTEND_URL` environment variable is set in Coolify to match your production domain
-
 - **Cloudflare Workers — Multiple Configuration Issues** (`.github/workflows/deploy-workers.yml`, `cloudflare-workers/*.js`, `cloudflare-workers/*.wrangler.toml`):
+
   - **Issue 1 — Workflow branch condition**: Workflow only triggered on `main` or `development/saas-features`, not current branch `feature-twilio-otp-improvements-final-submitted`
     - Fix: Added current branch to trigger list and simplified condition using `startsWith()`
   - **Issue 2 — Metrics snapshot missing secrets**: `metrics-snapshot.wrangler.toml` deployment had no `wrangler secret put` commands
@@ -916,8 +947,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `cloudflare-workers/metrics-snapshot-cron.js`
     - `cloudflare-workers/trial.wrangler.toml`
     - `cloudflare-workers/metrics-snapshot.wrangler.toml`
-
 - **Planner Notifications — Wrong Wedding Query Field** (`app/services/rsvp_service.py:150`, `app/services/stripe_service.py:1519`, `app/services/form_service.py:997`):
+
   - Same bug pattern as guest export: queried weddings collection with `{"wedding_id": wedding_id}` instead of `{"_id": wedding_id}`
   - **Impact**: Planner notifications silently failed — planners never received push/in-app notifications for:
     - RSVP updates (guest confirmed/declined attendance)
@@ -926,8 +957,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All three queries returned `None` → code exited early without sending notification
   - Fix: `{"wedding_id": wedding_id}` → `{"_id": wedding_id}` in all three services
   - Validated against `WeddingModel` schema: `id: str = Field(..., alias="_id")`
-
 - **SMS/Email Opt-In Default Values** (`app/services/guest_service.py`, `app/services/import_service.py`):
+
   - Fixed new guests being created as "opted out" before receiving any message
   - **Root cause**: `sms_opt_in: False` and `email_opt_in: False` hardcoded on guest creation
   - **Impact**: Reminder service blocked messages for guests who hadn't opted out
@@ -935,8 +966,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `guest_service.py` line 242: `"sms_opt_in": False` → `"sms_opt_in": True`
   - `guest_service.py` line 243: `"email_opt_in": False` → `"email_opt_in": True`
   - `import_service.py`: Added explicit `"sms_opt_in": True, "email_opt_in": True` for imported guests
-
 - **CSRF Middleware Blocking Guest RSVP Flow** (`app/main.py`, `app/core/settings.py`):
+
   - **Root cause**: CSRF middleware required `X-CSRF-Token` header + `csrf_token` cookie for all POST requests, but guest-facing pages don't have CSRF tokens
   - **Impact**: Guests clicking "Verify My Identity" on RSVP page saw "CSRF token missing in request header or cookie" error
   - **Analysis**: CSRF protection is redundant for this application because:
@@ -956,8 +987,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `/setup/` - Account setup (uses invitation token)
     - `/signup` - User registration
     - `/contact` - Contact forms (public)
-
 - **OTP Request Returns Generic Error Message** (`app/services/otp_service.py`, `app/api/otp.py`):
+
   - **Root cause**: `send_otp()` returned `True/False` with no error details; API returned generic "Failed to send OTP" for all failure cases
   - **Impact**: Guests saw unhelpful error message when OTP failed (e.g., missing phone number displayed as "Failed to send OTP")
   - **Fix**: Modified `send_otp()` to return dict with specific error messages:
@@ -967,8 +998,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `{"success": False, "error": "No phone number on file. Please contact the wedding planner."}` — missing phone
     - `{"success": False, "error": "Failed to send SMS. Please try again later."}` — Twilio error
   - **Also fixed**: `/otp/verify` endpoint was calling wrong method (`verify_otp` instead of `verify_otp_by_guest_id`) and missing `async/await`
-
 - **OTP Rate Limiting Math Error + Double-Submit Race Condition** (`app/services/otp_service.py`, `app/otp/verify/page.tsx`):
+
   - **Bug 1 — Rate limit blocks ALL resends for 5 minutes** (lines 73, 205):
     - **Root cause**: Condition `expires_at > datetime.utcnow() - timedelta(minutes=4)` should be `+ timedelta(minutes=4)`
     - **Why**: OTP expires in 5 minutes. To rate-limit for 1 minute: `expires_at > now + 4min` (sent < 1 min ago)
@@ -989,8 +1020,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - **Root cause**: After OTP verify succeeds, `/weddings/guest-access/{slug}/{token}` fetch may fail; error thrown before `setIsVerified(true)`
     - **Impact**: OTP is consumed (deleted) but guest is stuck on verify screen with no way to proceed
     - **Fix**: Added `otpVerified` state to track OTP success separately; added retry UI when wedding data fetch fails after successful OTP verification
-
 - **Forms API 404 Error** (`app/services/formsApi.ts`):
+
   - Fixed "Not Found" error when accessing Forms page in planner dashboard
   - **Root cause**: Frontend called `/admin/forms` but backend registers routes at `/forms` (no `/admin` prefix)
   - **Fix**: Removed `/admin` prefix from all form API paths in frontend service
@@ -1001,16 +1032,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `/admin/forms/from-template/{id}` → `/forms/from-template/{id}`
     - `/admin/forms/{id}/duplicate` → `/forms/{id}/duplicate`
     - `/admin/forms/{id}/views` → `/forms/{id}/views`
-
 - **False Positive Error Acknowledgement** (`app/admin/platform/page.tsx`):
+
   - Fixed "Acknowledged 200 errors" toast showing success when all acknowledgements actually failed
   - Root cause: `Promise.allSettled()` marks promises as "fulfilled" even when HTTP response is 4xx/5xx
   - The code only checked `r.status === 'fulfilled'` without verifying `response.ok`
   - **Before:** 200 errors "acknowledged" but unacknowledged count remained 200
   - **After:** Uses bulk endpoint for single API call, properly reports actual success/failure count
   - Validated against MDN Fetch API documentation via context7 MCP
-
 - **Duplicate `/admin/admin/` API Route Prefix** (`app/api/admin_activity.py`):
+
   - Fixed 404 errors on activity log endpoints due to double `/admin` prefix
   - Root cause: Router defined `prefix="/admin"` AND was mounted with `prefix="/admin"` in `main.py`
   - Changed `router = APIRouter(prefix="/admin", tags=["ROOT_ADMIN"])` to `router = APIRouter(tags=["ROOT_ADMIN"])`
@@ -1018,8 +1049,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `/admin/admin/activity-log` → `/admin/activity-log`
     - `/admin/admin/activity-log/recent` → `/admin/activity-log/recent`
   - Validated against FastAPI APIRouter documentation via context7 MCP
-
 - **Notification Polling Performance & Resource Waste** (`app/admin/components/TopHeader.tsx`):
+
   - Fixed aggressive polling that continued even after authentication failures (401 errors)
   - **Issues fixed:**
     - Polling continued indefinitely despite 401 unauthorized responses
@@ -1032,8 +1063,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added exponential backoff: 60s → 120s → 240s → 300s (max) on consecutive errors
     - Added 2-second debounce on focus events to prevent rapid duplicate calls
     - Properly cleans up intervals on unmount and visibility changes
-
 - **Double `/admin/admin/` Prefix in API Paths** (`app/admin/users/page.tsx`, `app/admin/page.tsx`):
+
   - Fixed 404 errors caused by duplicate `/admin` prefix in invitation and activity log API calls
   - Affected endpoints (all returning 404):
     - `/admin/admin/invitations` → fixed to `/admin/invitations`
@@ -1042,8 +1073,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `/admin/admin/invitations/{id}/cancel` → fixed to `/admin/invitations/{id}/cancel`
     - `/admin/admin/activity-log/recent` → fixed to `/admin/activity-log/recent`
   - Root cause: Frontend code incorrectly included `/admin` twice in URL paths
-
 - **Profile Page API Path Mismatches** (`app/admin/profile/page.tsx`):
+
   - Fixed 404 errors on profile update operations (password, email, info, image)
   - Root cause: `user_management.py` profile endpoints are mounted WITHOUT `/admin` prefix, but frontend used `/admin/profile/...`
   - Fixed API paths:
@@ -1053,8 +1084,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `/admin/profile/image` → `/profile/image` (POST upload, DELETE remove)
   - Note: `GET /admin/profile` remains correct (served by `admin_auth.py` with `/admin` prefix)
   - This affects both root admin and planner profile pages
-
 - **Account Settings Modal Issues** (`app/admin/components/AccountSettingsModal.tsx`, `app/api/admin_auth.py`):
+
   - Fixed "Not Found" error when clicking "Save Changes"
     - Root cause: Frontend was calling `/admin/profile/info` but endpoint is at `/profile/info` (no `/admin` prefix)
     - Fixed all API paths (password, email, info, image) to use correct endpoints
@@ -1069,8 +1100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added smooth animations (fade-in, zoom-in)
     - Better dark mode support
   - Added `push_notifications_enabled` field to `GET /admin/profile` response (defaults to `true`)
-
 - **CRITICAL: User Management Operations Failing (Delete/Suspend/Activate)** (`app/services/user_management_service.py`):
+
   - Fixed "Failed to delete user" error when attempting to delete a planner from Planner Management page
   - Root cause: User ID passed as string but MongoDB stores `_id` as ObjectId - query never matched
   - Added `from bson import ObjectId` conversion to all user-by-ID queries:
@@ -1082,8 +1113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `assign_wedding_to_planner()`: Now converts user_id string to ObjectId
   - Pattern now matches all other services in codebase (subscription_service, stripe_service, autopilot_service, etc.)
   - Also added `is_suspended` field to user document for frontend status display
-
 - **Code Quality & Type Safety Fixes** (Multiple files):
+
   - **subscription_service.py**: Added missing `subscription_service = SubscriptionService()` singleton instance at end of file
     - Fixes `"subscription_service" is unknown import symbol` error when importing from other modules
   - **subscription_service.py**: Removed unused Pydantic model imports (`SubscriptionPlanModel`, `UserSubscriptionModel`, `UsageTrackingModel`, `SubscriptionStatus`, `BillingInterval`)
@@ -1093,89 +1124,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **user_management_service.py**: Fixed type error for `trial_end_date` timestamp conversion
     - Changed `datetime.fromtimestamp(subscription.trial_end)` to `datetime.fromtimestamp(subscription.trial_end) if subscription.trial_end else None`
     - Handles case where `subscription.trial_end` is `None` (no trial period)
-
 - **Root Admin Notification Badge Never Clears** (`app/services/notification_service.py`):
+
   - Fixed notification badge showing count that never clears for root admin
   - Root cause: Root admin was receiving their own notifications (via `target_audience: "all"`)
   - Added `{"created_by": {"$ne": user_email}}` filter to exclude notifications created by the current user
   - Modified `get_user_notifications()` at line 293 and `get_user_notification_count()` at line 481
   - Logical behavior: Creators should not receive their own announcements
   - Planners unaffected (they don't create notifications)
-
 - **Platform Errors Tab Data Mismatch** (`app/api/admin_platform_metrics.py`):
+
   - Fixed Errors tab showing 0 errors while Dashboard showed 236 errors
   - Root cause: `audit_logs` collection (where HTTP 4xx/5xx errors are stored) was only queried when `acknowledged=None`
   - When "Unacknowledged" filter was selected (`acknowledged=False`), `audit_logs` were skipped entirely
   - Changed line 720 from `acknowledged is None` to `acknowledged is not True`
   - Now includes `audit_logs` for both "All" and "Unacknowledged" views, excludes only for "Acknowledged" view
   - `audit_logs` entries don't have an `acknowledged` field, so they're inherently unacknowledged
-
 - **PlannerNotificationTypes Type Errors** (`app/models/planner_notification.py`):
+
   - Fixed 8 type errors in `planner_notification_service.py` where notification type constants were incompatible with `NotificationType` Literal
   - Root cause: Type checker saw `PlannerNotificationTypes.FORM_SUBMISSION` as `str`, not `Literal["form_submission"]`
   - Solution: Added `Final[Literal["..."]]` type annotations to all class constants
   - Changed from `FORM_SUBMISSION: Literal["form_submission"]` to `FORM_SUBMISSION: Final[Literal["form_submission"]]`
   - `Final` tells type checker the value is immutable and should preserve its literal type
   - Affected constants: `FORM_SUBMISSION`, `RSVP_UPDATE`, `GUEST_MESSAGE`, `PAYMENT_RECEIVED`, `PAYMENT_FAILED`, `CONTRACT_SIGNED`, `VENDOR_RESPONSE`, `REMINDER`, `SYSTEM`
-
 - **Undefined Function in Metrics Snapshot** (`app/api/admin_platform_metrics.py:578`):
+
   - Fixed `NameError: name 'get_platform_metrics' is not defined` in `save_metrics_snapshot` endpoint
   - Changed `await get_platform_metrics(current_user)` to `await get_platform_health(current_user)`
   - The function was renamed but this call site was not updated
-
 - **Frontend Password Validation Mismatch** (`app/setup-account/page.tsx`, `app/reset-password/page.tsx`):
+
   - Fixed password validation in account setup and reset pages to match backend requirements
   - Added visual password requirements checklist with real-time validation
   - Password now requires: 8+ characters, uppercase, lowercase, number, special character
   - Prevents user frustration from submitting valid-looking passwords that fail backend validation
   - Reference: Backend validators in `app/api/user_management.py:AccountSetupModel`, `ResetPasswordModel`
-
 - **Success Message Not Displayed on Login** (`app/admin/login/page.tsx`):
+
   - Fixed login page to display success messages from URL query params
   - Messages now appear after account setup completion (`?message=Account setup completed!`)
   - Messages now appear after password reset (`?message=Password reset successful!`)
   - Auto-dismiss after 10 seconds with manual close button
   - Styled with emerald green success indicator matching app design
-
 - **SAAS Admin Dashboard Hardcoded Statistics** (`app/admin/saas/page.tsx`):
+
   - Fixed "Total Weddings" showing hardcoded value `12` instead of actual database count
   - Fixed "Monthly Revenue" showing hardcoded value `$247` instead of real revenue data
   - Fixed "Plan Distribution" showing hardcoded user counts (`0 users`/`1 user`) instead of actual subscribers per plan
   - Added API calls to existing `/saas/analytics/overview` and `/saas/analytics/revenue` endpoints
   - Added `AnalyticsOverview`, `PlanBreakdown`, and `RevenueAnalytics` TypeScript interfaces
   - Dashboard now displays real-time statistics from the database
-
 - **Planner Management Actions Dropdown Clipped** (`app/admin/users/page.tsx`):
+
   - Fixed Actions column 3-dot menu dropdown being cut off by parent container
   - Removed `overflow-hidden` from planners table card wrapper (line 919)
   - Changed table container from `overflow-x-auto` to `overflow-visible` (line 942)
   - Dropdown menu now renders fully visible outside the table boundaries
-
 - **Profile Picture Upload Not Saving** (`app/api/user_management.py`):
+
   - Fixed profile image URL construction missing `https://` protocol prefix
   - URLs were being constructed as `media.domain.com/path` instead of `https://media.domain.com/path`
   - Added validation to ensure `MEDIA_DOMAIN` environment variable is set
   - Fixed both upload and delete endpoints to handle URL protocol consistently
-
 - **Root Admin Settings Page UX** (`app/admin/components/TopHeader.tsx`, `app/admin/components/AccountSettingsModal.tsx`):
+
   - Converted ROOT_ADMIN settings from separate page to popup modal
   - Added dropdown menu to TopHeader username area with "Account Settings" and "Logout" options
   - Created `AccountSettingsModal` component with Profile Info, Change Password, and Change Email tabs
   - Profile picture upload/delete now works directly in the modal
   - Improves UX by matching planner settings popup pattern
-
 - **Root Admin Subscription Management 404 Errors** (`app/admin/saas/page.tsx`):
+
   - Removed incorrect `/admin` prefix from subscription API calls
   - Changed `/admin/users/${id}/subscription` to `/users/${id}/subscription` at lines 705, 731, 767, 778
   - Fixes: Activate planner, deactivate planner, and assign plan operations now work correctly
   - Reference: subscription_router is registered without `/admin` prefix in `main.py`
-
 - **Subscription Plans Not Showing in Admin** (`app/services/subscription_service.py:58`):
+
   - Fixed sort field mismatch: changed `display_order` to `sort_order`
   - Plans query now uses correct field name matching the model definition
   - Reference: `app/models/subscription.py:52` defines `sort_order: int`
-
 - **Subscription Seed Script Errors** (`scripts/seed_subscription_plans.py`):
+
   - Added explicit null check for stripe module before accessing `stripe.api_key` (fixes Pylance error)
   - Updated exception handling to use `from stripe import StripeError` for Stripe v13+ compatibility
   - Replaced all emoji characters with text-based prefixes for professional logging:
@@ -1193,6 +1224,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Multi-Tenant Data Isolation** (Multiple files):
+
   - **Guest Search Endpoint** (`app/api/guest.py`):
     - `/invite/search` now requires authentication via `require_wedding_planner_only`
     - Added mandatory `wedding_id` parameter to prevent cross-wedding guest enumeration
@@ -1212,8 +1244,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added rate limiting to `send_otp_by_contact()` method (1 OTP per minute per guest)
     - Prevents OTP spam attacks while keeping endpoint public for guest verification
     - Uses existing OTP expiry (5 min) minus 4 min buffer to calculate rate limit window
-
 - **CRITICAL: Settings Validation** (`app/core/settings.py`):
+
   - Removed insecure default `secret_key="changeme"` - now required from environment
   - Added `field_validator` requiring SECRET_KEY to be 32+ characters and not a common default
   - Removed insecure default `cors_origins=[]` - now required from environment
@@ -1223,44 +1255,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CRITICAL: Build Failure - Unterminated Regexp Literal** (`app/admin/users/page.tsx`):
+
   - Added missing opening `<div>` tag after `</PageHeader>` component
   - File had 65 opening `<div` tags but only 58 closing `</div>` tags
   - Caused TypeScript/SWC parser to fail with misleading "Unterminated regexp literal" error
   - Root cause: JSX structure imbalance from orphan closing tag at line 1019
-
 - **CRITICAL: Pricing Page TypeError - slice is not a function** (`app/components/saas/SignupModal.tsx:250`):
+
   - Fixed `(selectedPlan?.features || selectedPlan?.features_list || []).slice(0, 4)` pattern
   - Backend sends `features` as `Record<string, boolean>` (object), not array
   - When `features` is truthy (even `{}`), the `||` fallback to `features_list` never triggered
   - Objects don't have `.slice()` method, causing runtime TypeError on pricing page
   - Changed to: `(Array.isArray(selectedPlan?.features_list) ? selectedPlan.features_list : []).slice(0, 4)`
-
 - **CRITICAL: N+1 Query Pattern** (`app/admin/guests/page.tsx`, `app/api/plus_one.py`, `app/services/plus_one_service.py`):
+
   - Added batch endpoint `GET /plus_one/plus-ones/wedding/{wedding_id}` to fetch all plus-ones for a wedding in single query
   - Replaced N individual API calls with single batch fetch, improving performance for large guest lists
   - Reference: [MongoDB Query Optimization](https://www.mongodb.com/docs/manual/core/query-optimization/)
-
 - **HIGH: Race Condition in Plus-One Creation** (`app/services/plus_one_service.py:27-61`):
+
   - Implemented insert-then-verify pattern to prevent concurrent requests exceeding plus-one limits
   - If count exceeds limit after insert, rollback is performed automatically
   - Reference: [MongoDB Atomic Operations](https://medium.com/tales-from-nimilandia/handling-race-conditions-and-concurrent-resource-updates-in-node-and-mongodb-by-performing-atomic-9f1a902bd5fa)
-
 - **HIGH: String/ObjectId Type Inconsistency** (`app/services/plus_one_service.py:124-162`):
+
   - Standardized `guest_id` storage as string in plus_ones collection
   - Fixed delete_plus_one to use ObjectId for guest collection lookups
   - Prevents lookup failures due to type mismatches
-
 - **HIGH: Duplicate Router Registration** (`app/main.py:266-299`):
+
   - Removed 7 duplicate routers from admin_routers that were already registered publicly with route-level authentication
   - Affected routers: user_management, subscription, saas_config, forms, vendor_forms, vendor_management, contracts
   - Prevents redundant route registration and potential conflicts
-
 - **HIGH: Plan Selection Race Condition** (`app/components/saas/SaasLandingPage.tsx:407-413`):
+
   - Added `useRef` to track if initial plan selection has been made
   - Removed `selectedPlan` from useEffect dependency array to prevent overwriting user's manual selection
   - Reference: [React useRef for Preventing Infinite Loops](https://blog.logrocket.com/solve-react-useeffect-hook-infinite-loop-patterns/)
-
 - **Pricing Page TypeError** (`app/components/saas/SaasLandingPage.tsx`, `IntegratedHeroSection.tsx`, `SaasExperienceCarousel.tsx`):
+
   - Added `Array.isArray()` defensive checks before calling `.slice()` and spread operators
   - Prevents `Uncaught TypeError: .slice is not a function` during SSR hydration
 
@@ -1271,60 +1304,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - In FastAPI/Starlette, middleware added LAST executes FIRST on incoming requests
   - Reference: [FastAPI Middleware Ordering](https://medium.com/@saurabhbatham17/navigating-middleware-ordering-in-fastapi-a-cors-dilemma-8be88ab2ee7b)
 
-## [1.7.0-rc.1] - 2026-03-02 — Pre-Launch QA Fixes
+### Pre-Launch QA Fixes (formerly 1.7.0-rc.1 - 2026-03-01)
 
-Comprehensive QA review identified 66 frontend-backend alignment issues (21 CRITICAL, 24 HIGH, 16 MEDIUM, 5 LOW). All CRITICAL and HIGH severity issues fixed below. MEDIUM/LOW items deferred (non-blocking for launch). See `.claude/plans/starry-floating-kite.md` for full tracking.
+Comprehensive QA review identified 66 frontend-backend alignment issues (21 CRITICAL, 24 HIGH, 16 MEDIUM, 5 LOW). All CRITICAL and HIGH severity issues fixed below. MEDIUM/LOW items also completed.
 
 ### Fixed
 
 - **Budget: 9 CRITICAL endpoint path mismatches** (`app/services/budgetApi.ts`):
+
   - B1/B2: Vendor quotes GET/POST path (`vendor-quotes` → `quotes`)
   - B3: Quote status PUT path (`vendor-quotes` → `quotes`)
   - B4: Delete category path (`categories` → `category`, singular)
   - B5: Get quotes response unwrapping (backend returns `{quotes: [...]}`)
   - B7: Compare quotes path — query param → path param (`/quotes/compare/{category}`)
   - B8: Budget alerts GET path structure
-
 - **AI: CRON_SECRET security vulnerability** (`app/api/autopilot.py`):
-  - A2: Added fail-closed guard — if `CRON_SECRET` is not set, all cron requests are rejected instead of silently bypassed
 
+  - A2: Added fail-closed guard — if `CRON_SECRET` is not set, all cron requests are rejected instead of silently bypassed
 - **AI: Seating and forecast mismatches** (`app/api/ai.py`, `app/admin/money/page.tsx`):
+
   - A1: Fixed seating optimization parameter mismatch — added all required guest fields
   - A3: Added AI client initialization check to seating endpoint
   - A4: Fixed forecast response shape — frontend reads flat response instead of nested `data.forecast`
-
 - **Seating: ID format and data integrity** (`app/api/tables.py`, `app/api/guest.py`, `app/services/guest_service.py`):
+
   - T1: Invalid guest IDs now return validation error instead of being silently skipped
   - T8: Added atomic update with version check for concurrent table assignments
   - T4: Added server-side capacity validation with specific error when table is full
   - T7: Fixed constraint endpoint string vs ObjectId conversion
   - T2/T6: Guest deletion now cleans up orphan `must_sit_with`/`must_sit_apart` references
-
 - **Stripe: Auth and billing page failures** (`app/admin/billing/success/page.tsx`, `app/admin/planner/billing/page.tsx`, `app/dependencies/feature_gates.py`):
+
   - S2: Fixed auth token name (`authToken` → `admin_token`)
   - S3: Subscription fetch uses actual `user_id` from auth context instead of email
   - S8: Feature gate checks both `user_id` and `user_email` for subscription lookup
-
 - **Stripe: Webhook idempotency** (`app/services/stripe_service.py`):
-  - S7: Added idempotency tracking via Stripe event ID to prevent duplicate processing
 
+  - S7: Added idempotency tracking via Stripe event ID to prevent duplicate processing
 - **Contracts: 9 missing backend endpoints** (`app/api/contracts.py`):
+
   - C3: `POST /contracts` — full contract creation with vendor lookup, auto-generated number, secure token
   - C2: `POST /milestones/{milestone_id}/pay` — record vendor payment (pending → partial → paid)
   - C4: `PUT /contracts/{contract_id}/sections` — update sections with status validation
   - Added: `PUT /contracts/{contract_id}`, `POST /contracts/{contract_id}/send`, `POST /contracts/{contract_id}/milestones`, `GET /contracts/{contract_id}/form-data`, `POST /contracts/{contract_id}/apply-form-data`, `GET /milestones`
-
 - **Contracts: Service-layer fixes** (`app/services/contract_service.py`):
+
   - C5: Auto-generates contract numbers in `CON-YYYYMMDD-XXXX` format
   - C11: Added 30-day token expiration; cancelled/completed contracts expire immediately
   - C13: Status transition validation — only draft/pending_review can be updated or sent
-
 - **Contracts: Frontend alignment** (`app/admin/vendors/contracts/[id]/page.tsx`, `app/services/contract_email_service.py`):
+
   - C9: Wired up "View & Apply Form Data" button onClick handler
   - Fixed `GET /contracts/{contract_id}` response format (was `{contract: ...}`, frontend expects direct object)
   - Added `send_contract_email()` — HTML email with "View & Sign Contract" CTA
-
 - **Contracts: Route ordering bug** (`app/api/contracts.py`):
+
   - Moved `/contracts/followup-drafts` routes before `/contracts/{contract_id}` to prevent FastAPI route shadowing
 
 ### Security
@@ -1347,22 +1381,26 @@ Comprehensive QA review identified 66 frontend-backend alignment issues (21 CRIT
 Remaining 24 MEDIUM/LOW severity issues addressed:
 
 **AI (A6-A10):**
+
 - A6: Added `Field` validation with `max_length` constraints to all AI request models (`ChatMessageRequest`, `DraftCommunicationRequest`, `ContractSectionRequest`, `GenerateMessageRequest`, `GenerateFormQuestionsRequest`)
 - A7: Enhanced `/ai/health` endpoint — added API response time measurement and 24-hour error rate metrics from `ai_usage_log`
 - A8: Added pre-flight AI credit check in `generate-contract-section` endpoint before expensive generation
 - A9/A10: Already handled — `AIRateLimitError` and `AIServiceUnavailableError` provide rate limiting and fallback at the service layer
 
 **Seating (T3, T5, T9):**
+
 - T3: Verified `list_guests_by_wedding` already converts `_id` → `id` consistently (no change needed)
 - T5: Added clarifying comments in `seating_export_service.py` confirming ObjectId → string normalization for guest-to-table lookup
 - T9: Made `PrintableSeatingChart` branding dynamic — added `SeatingChartTheme` interface with configurable `accentColor`, `headerColor`, `headingFont`, `bodyFont` (defaults to gold/navy/Playfair Display)
 
 **Stripe (S1, S4, S5, S6):**
+
 - S1: Verified no fix needed — backend `PublicCreateCheckoutSessionRequest` ignores `user_id` and derives it from email lookup
 - S4/S5: Verified no fix needed — card fields are already optional in `UserSubscription` interface with null guards in JSX
 - S6: Added AI credits fetch from `/ai/credits` endpoint in billing page to populate `ai_credits_used` and `ai_credits_remaining`
 
 **Contracts (C7, C8, C12, C14, C15, C16, C17):**
+
 - C7: Added Stripe `PaymentMethod.retrieve` validation in sign endpoint — verifies payment method belongs to customer
 - C8: Verified already handled — `_serialize_contract` converts `wedding_date` via `.isoformat()`
 - C12: Improved email recipient resolution in `send_signed_confirmation` — falls back to `vendor_email` → `couple.email` → `signer_email`
@@ -1379,12 +1417,14 @@ Remaining 24 MEDIUM/LOW severity issues addressed:
 Engineering alignment review across frontend, backend, database models, and endpoint parameters. Found and fixed 5 issues:
 
 **Critical:**
+
 - **C-1: Public vendor contract URLs returning 404** (`app/vendor-contract/[id]/page.tsx`, `app/services/vendorManagementApi.ts`):
   - Frontend was calling `/admin/public/contracts/{id}` — but the `vendor_management_router` is registered at prefix `/vendor-contract` (not `/admin`)
   - Fixed both the page component and `getPublicContract()`/`signPublicContract()` API helpers to use `/vendor-contract/public/contracts/{id}`
   - The separate new contract system (`app/contracts/[token]/page.tsx`) was already correctly aligned
 
 **Medium:**
+
 - **M-2: Budget alerts fully implemented** (`app/api/budget.py`, `app/services/budget_service.py`):
   - `GET /admin/budget/alerts/{wedding_id}` was returning a hardcoded empty array despite `_check_budget_alerts()` already creating real alerts in MongoDB
   - Added `get_budget_alerts()`, `mark_alert_as_read()`, `resolve_alert()` methods to `BudgetService`
@@ -1394,6 +1434,7 @@ Engineering alignment review across frontend, backend, database models, and endp
   - Added documentation comment explaining the dependency
 
 **Observations fixed:**
+
 - **O-1: ContractStatus type synced** (`app/services/vendorManagementApi.ts`):
   - Added missing `'active'` status to `ContractStatus` type union and `getContractStatusColor()` map (`bg-teal-100 text-teal-800`)
 - **O-2: Consistent `id`/`_id` across both contract systems** (`app/services/vendor_service.py`, `app/services/vendorManagementApi.ts`):
@@ -1411,28 +1452,29 @@ Engineering alignment review across frontend, backend, database models, and endp
 ### Fixed
 
 - **Cloudflare Workers - Deprecated MailChannels Replacement** (`cloudflare-workers/*.js`):
+
   - Replaced deprecated MailChannels API with [Resend API](https://resend.com/docs/api-reference/emails/send-email) in all workers
   - Updated email sending to use `POST https://api.resend.com/emails` with `Authorization: Bearer` header
   - Email configuration now uses environment variables: `ALERT_EMAIL` (from), `ROOT_ADMIN_EMAIL` (to)
   - Affected workers: `autopilot-cron.js`, `backup-cron.js`, `uptime-cron.js`
-
 - **Cloudflare Workers - Request Timeout** (`cloudflare-workers/*.js`):
+
   - Added `fetchWithTimeout()` helper to all workers to prevent hanging requests
   - Uses `AbortController` with configurable timeout (10s default, 15s health checks, 30s API calls, 60s backups)
   - Reference: [Cloudflare Workers Context API](https://developers.cloudflare.com/workers/runtime-apis/context/)
-
 - **Cloudflare Workers - Premature Termination** (`cloudflare-workers/backup-cron.js`):
+
   - Wrapped email sending calls with `ctx.waitUntil()` to prevent premature worker termination
   - Ensures async email operations complete even after response is returned
   - Reference: [Cloudflare Scheduled Handler](https://developers.cloudflare.com/workers/runtime-apis/handlers/scheduled/)
-
 - **Cloudflare Workers - Alert Spam Prevention** (`cloudflare-workers/uptime-cron.js`):
+
   - Implemented KV-based alert debouncing (max 1 alert per hour during outages)
   - Added recovery notifications when service comes back online
   - Added `/status` endpoint to check current downtime state and last alert time
   - Uses [Cloudflare KV](https://developers.cloudflare.com/kv/get-started/) for state persistence
-
 - **Cloudflare Workers - Hardcoded Values Removed**:
+
   - Removed all hardcoded API URLs and email addresses from worker files and wrangler.toml configs
   - All configuration now pulled from GitHub secrets during deployment
   - Changed environment variable from `API_URL` to `NEXT_PUBLIC_API_BASE_URL` for consistency with project conventions
@@ -1458,66 +1500,68 @@ Engineering alignment review across frontend, backend, database models, and endp
 ### Added
 
 - **Plan Switching Endpoint** (`app/api/subscription_management.py`):
+
   - New endpoint `PATCH /users/{user_id}/subscription/billing-interval`
   - Allows users to switch between monthly and yearly billing with automatic proration
   - Users can only change their own subscription; ROOT_ADMIN can change any user's
   - Comment: "Proration is applied automatically: Switching to yearly credits unused monthly time"
-
 - **AI Seating Validation** (`app/api/ai.py`):
+
   - New `validate_seating_suggestions()` function validates AI-generated table assignments
   - New `_extract_guest_id()` helper handles mixed string/object guest formats from different AI tiers
   - Validates guest IDs exist in original data, checks table capacity limits
   - Returns validation results with unassigned guests and over-capacity warnings
   - Comment: "Extract guest ID from various formats AI might return"
-
 - **Enhanced Contract Follow-up Context** (`app/services/contract_followup_service.py`):
+
   - Added wedding context fields: venue_name, venue_location, cultural_style, guest_count, wedding_title
   - AI prompts now reference cultural considerations and wedding details
   - Batch fetch optimization to avoid N+1 queries (reduced from 100+ to ~3 queries)
   - Comment: "Batch fetch all weddings and planners to avoid N+1 queries"
-
 - **AI System Prompts** (`app/services/ai_service.py`):
+
   - Added missing system prompts for `seating_medium` and `seating_large` AI tiers
   - Medium tier (150-300 guests): Focuses on family dynamics and relationship patterns
   - Large tier (300+ guests): Handles multiple sections, VIP tables, dietary clustering
-
 - **Guest Table Assignment Field** (`app/models/guest.py`):
+
   - Added `table_id: Optional[str]` field to GuestModel and UpdateGuestRequest
   - Comment: "ID of assigned seating table"
 
 ### Fixed
 
 - **MRR Calculation** (`app/services/subscription_service.py`):
+
   - Fixed Monthly Recurring Revenue to include BOTH monthly AND yearly subscriptions
   - Yearly subscriptions now calculated as `price_yearly / 12` (monthly equivalent)
   - Added MRR breakdown: from_monthly_billing, from_yearly_billing, subscriber counts
   - Added Annual Recurring Revenue (ARR) calculation
   - Comment: "MRR calculation - includes both monthly AND yearly. For yearly subscriptions, we calculate the monthly equivalent (price_yearly / 12)"
-
 - **Stale Metering Retry Keys** (`app/api/metering.py`):
+
   - Fixed idempotency key generation to ALWAYS use current billing period
   - Previous bug used stale `billed_period` from wedding record which could be months old
   - Comment: "Idempotency key for retry: ALWAYS use current period since we're billing for NOW. Note: billed_period stores the LAST successful billing, not the target period"
-
 - **Trial Days Default** (Multiple files):
+
   - Removed unintended 14-day trial default (user has no free trials)
   - `app/models/subscription.py`: AssignSubscriptionRequest.trial_days default 14→0
   - `app/api/subscription_management.py`: Removed `or 14` fallback in trial_days
   - `app/services/subscription_service.py`: assign_subscription trial_days default 14→0
   - `app/core/settings.py`: free_trial_days default 14→0
   - Comment: "Trial days (0 = no trial)"
-
 - **useGuests Hook Race Condition** (`app/admin/hooks/useGuests.ts`):
+
   - Added AbortController to cancel in-flight requests when wedding changes
   - Added currentWeddingIdRef to prevent stale state updates
   - Clears guests on wedding switch to prevent stale data flash
   - Comment: "Track current request to prevent race conditions"
-
 - **SignupModal Body Scroll** (`app/components/saas/SignupModal.tsx`):
+
   - Added body scroll lock when modal is open
   - Prevents background page scrolling while signup modal is displayed
-
 - **CSS @import Order** (`app/styles/globals.css`):
+
   - Moved font @import to top of file (before @tailwind directives)
   - Fixes CSS rule ordering error: "@import rules must precede all rules"
 
@@ -1533,14 +1577,15 @@ Engineering alignment review across frontend, backend, database models, and endp
 ### Added
 
 - **Payment Processing Safety**: Critical fixes for payment reliability
+
   - **Idempotency Keys**: All Stripe PaymentIntent.create calls now include idempotency keys to prevent double-charging
     - `autopilot_service.py`: Uses `autopilot_{payment_id}_attempt_{attempt_count}` format
     - `contract_service.py`: Uses `deposit_{contract_id}_{payment_id}` format
   - **Atomic Status Checks**: Payment retry and processing operations now use atomic MongoDB updates with status guards
     - Prevents race conditions when multiple cron instances or retry requests process the same payment
     - Both `retry_failed_payments()` and `_process_single_payment()` check status before proceeding
-
 - **Subscription System Hardening**: Production-ready improvements for billing reliability
+
   - **Plan Grandfathering** (`app/services/subscription_service.py`):
     - Snapshot plan limits at subscription creation time
     - Users keep their original limits even if plan pricing/limits are modified later
@@ -1558,33 +1603,34 @@ Engineering alignment review across frontend, backend, database models, and endp
 ### Fixed
 
 - **Coolify Docker Build ARG Injection Bug** (`Dockerfile.coolify`):
+
   - Fixed CORS/API unreachable issue after Coolify deployment
   - Root cause: Coolify bug #7118 injects ARG statements at line 2, but Dockerfile starts with comments
   - ARG was being placed before `FROM` instruction, making it unavailable in build stage
   - Solution: Explicitly declare `ARG NEXT_PUBLIC_API_BASE_URL` after `FROM` instruction
   - Removed hardcoded default value - relies on Coolify's "Build Variable" setting
   - Reference: [Coolify Issue #7118](https://github.com/coollabsio/coolify/issues/7118)
-
 - **Public API Security** (`app/api/subscription_management.py`):
+
   - Sanitized `/public/subscription-plans` response to exclude sensitive fields
   - Removed: `stripe_product_id`, `stripe_price_id_*`, `created_by`, `created_at`
   - Only returns public-safe fields needed for pricing display
-
 - **S3 Variable Naming Mismatch**: Aligned code with `.env` file naming
+
   - Fixed `settings.py` aliases: `S3_ACCESS_KEY` → `S3_ACCESS_KEY_ID`, `S3_SECRET_KEY` → `S3_SECRET_ACCESS_KEY`
   - Added S3 variables to config_validator.py recommended list
   - Updated `DEPLOYMENT_SETUP.md` to use correct `S3_` prefix instead of `CLOUDFLARE_`
-
 - **Stripe Webhook Secret**: Added `STRIPE_WEBHOOK_SECRET` to recommended environment variables in config validator
 
 ### Changed
 
 - **SaaS Landing Page Hero**: Cleaned up broken demo functionality
+
   - Removed secondary CTA button ("Watch Demo") that opened non-existent demo_url
   - Changed header button from "Watch product tour" to "Explore features" linking to #features section
   - Made `hero_cta_secondary` optional in IntegratedHeroSection interface
-
 - **Environment Variable Configuration**: Single source of truth policy
+
   - Removed all hardcoded URL fallbacks from `app/core/config.py` and `app/core/settings.py`
   - Missing critical env vars now trigger root admin notification at startup
   - Config validator (`app/services/config_validator.py`) notifies via Ntfy push + in-app notification
@@ -1592,6 +1638,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 ### Added
 
 - **Ntfy Push Notifications**: Instant mobile/desktop push notifications for wedding planners via self-hosted Ntfy server
+
   - **New Service** (`app/services/ntfy_service.py`):
     - Self-hosted Ntfy integration (deployed on Coolify)
     - Unique topic per planner (hashed for privacy)
@@ -1613,8 +1660,8 @@ Engineering alignment review across frontend, backend, database models, and endp
     1. Call `GET /admin/planner/push-subscription` to get unique topic URL
     2. Subscribe in Ntfy app (iOS/Android) or web browser
     3. Receive instant push notifications for all wedding activities
-
 - **Planner Activity Notifications System**: Real-time activity notifications for wedding planners
+
   - **New MongoDB Collection**: `planner_notifications` for storing activity events
   - **Model** (`app/models/planner_notification.py`):
     - Notification types: `form_submission`, `rsvp_update`, `guest_message`, `payment_received`, `payment_failed`, `contract_signed`, `vendor_response`, `reminder`, `system`
@@ -1639,13 +1686,13 @@ Engineering alignment review across frontend, backend, database models, and endp
   - **Mark as Read**: Click notification to mark as read, "Mark all as read" button
   - **Real-time Bell Updates**: Bell refreshes on window focus and custom `notifications-updated` event
   - **New Notification Types**: Added colors for payment_received (emerald), payment_failed (red), contract_signed (indigo), vendor_response (amber)
-
 - **Multi-Tenant Frontend Isolation**: Proper role-based access control
+
   - **Platform Page Consolidation**: Merged `/admin/platform/metrics` and `/admin/platform/errors` into single `/admin/platform` with tabs (Health, Errors, Performance, Backups)
   - **Root Admin Guards**: Added frontend access guards to `/admin/metrics`, `/admin/users`, `/admin/platform`
   - **Best Practices**: Toast notifications, loading states, `Promise.allSettled` for batch operations
-
 - **Wedding Finance Autopilot (WFA)**: Automated payment collection system for wedding planners
+
   - **Package → Contract → Autopilot Flow**: Define packages once, couples sign, money flows automatically
   - **Data Models** (`app/models/autopilot.py`):
     - `Package`: Reusable service package templates with payment schedules
@@ -1673,8 +1720,8 @@ Engineering alignment review across frontend, backend, database models, and endp
     - `uptime-cron.js`: Backend health monitoring every 5 minutes
     - `autopilot-cron.js`: Payment processing (due payments, retries, reminders)
   - **Cache Invalidation**: Budget and guest changes invalidate AI cache automatically
-
 - **Enhanced Vendor Management System**: Comprehensive CRM for managing vendors, contracts, and payments
+
   - **Linear Tracking**: Epic [JOA-133](https://linear.app/joatlabs/issue/JOA-133) with 10 sub-tasks
   - **Backend Complete**: JOA-134 to JOA-140 (7 tickets)
   - **Frontend In Progress**: JOA-141 (Contract Canvas), JOA-142 (Payment Milestones), JOA-143 (VendorPaymentModal)
@@ -1724,6 +1771,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 ### Fixed
 
 - **Vendor Service Security & Code Quality Fixes** (`app/services/vendor_service.py`):
+
   - **Authorization Hardening**: Added `created_by` parameter to `get_contract()` for ownership verification
     - All internal callers now pass `created_by` to enforce authorization: `send_contract()`, `update_contract()`, `update_contract_sections()`, `get_form_data_for_contract()`, `apply_form_data_to_contract()`, `create_payment_milestones()`
   - **Performance**: Added `get_dashboard_counts()` method using MongoDB aggregation
@@ -1742,26 +1790,31 @@ Engineering alignment review across frontend, backend, database models, and endp
     - Expires 7 days after `due_date` or 30 days from creation if no due date
   - **Documentation**: Added docstring notes about atomic transaction limitations in `sign_contract()` and `record_payment()`
   - **Cleanup**: Removed unused model imports (`VendorProfile`, `VendorCategory`, etc.)
-
 - **Budget Tracker API**: Fixed ObjectId serialization error causing "Failed to fetch budget summary"
+
   - Added proper serialization for MongoDB ObjectId fields in categories and alerts
   - Removed `ge=0` constraint on `remaining_budget` field to allow negative values when overspent
 - **Wedding Party Sync**: Removed redundant "Wedding Party (Other)" group option
+
   - Wedding party now correctly comprises only: Maid of Honor, Bridesmaids, Best Man, Groomsmen
   - Updated guest group presets and wedding party sync mappings
 - **Gallery Navigation**: Fixed 404 error on `/admin/gallery` - sidebar now correctly links to `/admin/gallery/upload`
 - **Wedding Slug Collision**: Added unique slug enforcement to prevent URL conflicts when multiple planners use same couple names
+
   - Backend auto-appends suffix (e.g., `john-jane-2`) if slug already exists
   - Added unique database index on wedding slugs
 - **Gallery Management Dark Mode**: Fixed dark mode styling on Gallery Management page
+
   - Updated titles, labels, tabs, cards, and badges for proper dark theme support
 - **Wedding Party Sync API**: Fixed guest fetch using wrong API endpoint
+
   - Changed from `/admin/guests/{id}` to `/admin/guests?wedding_id={id}`
   - Added debug logging to help troubleshoot sync issues
 
 ## [1.4.0] - 2024-12-14
 
 ### Added
+
 - **Planner Calendar & Task Management System**: Complete calendar feature for wedding planners to schedule and manage tasks
   - **Google Calendar Integration**:
     - OAuth 2.0 authentication flow with secure token storage
@@ -1825,12 +1878,14 @@ Engineering alignment review across frontend, backend, database models, and endp
 - Debug logging throughout guest verification chain for troubleshooting
 
 ### Removed
+
 - **Wedding Planners Tab from SaaS Page**: Removed duplicate "Wedding Planners" tab from `/admin/saas` page
   - Planner management is now exclusively accessed via the sidebar "Planners" navigation (`/admin/users`)
   - Eliminates duplicate functionality and reduces UI confusion
   - SaaS page now focuses on: Overview, Subscription Plans, SAAS Content, and Theme & Design
 
 ### Fixed
+
 - **CRITICAL**: Fixed login redirect race condition in `AdminRouteGuard`
   - Added `isLoading` state to `AdminContext.tsx` to track authentication initialization
   - Updated `AdminRouteGuard.tsx` to wait for auth check completion before redirecting
@@ -1881,6 +1936,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 - Missing database fields in WeddingModel (`assigned_planner_id`, `updated_by`, `guest_count`, `total_budget`, `venue`)
 
 ### Changed
+
 - Enhanced `handleSaveSaasConfig` function with better error handling
 - Updated modal save handler to pass configuration directly
 - Improved error message parsing from API responses
@@ -1891,6 +1947,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 - Enhanced Twilio SMS service with automatic fallback from Messaging Service to direct phone number
 
 ### Security
+
 - Added proper authentication checks for admin operations
 - Implemented secure token validation for configuration saves
 - **Enhanced Guest Verification Security**:
@@ -1903,6 +1960,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 ## [1.3.0] - 2024-08-21
 
 ### Added
+
 - Comprehensive SAAS platform features and landing page
 - User management service with invitation handling
 - Account setup workflow for wedding planners
@@ -1911,23 +1969,27 @@ Engineering alignment review across frontend, backend, database models, and endp
 - Mobile-friendly responsive design updates
 
 ### Fixed
+
 - Email service rate limiting issues with Resend API (added 600ms delay between sends)
 - Admin RSVP service JSON serialization errors with MongoDB ISODate objects
 - RSVP form functionality and guest display in admin panel
 - Guest ID handling for both string and ObjectId formats
 
 ### Changed
+
 - Removed emojis from SAAS landing page for cleaner professional appearance
 - Improved RSVP query handling to avoid MongoDB mixed type issues
 - Enhanced error handling for missing guest IDs in RSVP operations
 
 ### Security
+
 - Added proper authentication checks for admin operations
 - Implemented secure token validation for configuration saves
 
 ## Previous Versions
 
 ### [1.2.x] - Various dates
+
 - Core wedding planning functionality
 - Guest management and RSVP system
 - Admin panel development
@@ -1940,6 +2002,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 ## Release Notes
 
 ### How to Read This Changelog
+
 - **Added** for new features
 - **Changed** for changes in existing functionality
 - **Deprecated** for soon-to-be removed features
@@ -1948,7 +2011,9 @@ Engineering alignment review across frontend, backend, database models, and endp
 - **Security** for vulnerability fixes
 
 ### Versioning
+
 This project follows [Semantic Versioning](https://semver.org/):
+
 - MAJOR version for incompatible API changes
 - MINOR version for backwards-compatible functionality additions
 - PATCH version for backwards-compatible bug fixes
