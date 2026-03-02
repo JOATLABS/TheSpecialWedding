@@ -223,6 +223,31 @@ if settings.enable_compression:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
+# ==================== VALIDATION ERROR LOGGING ====================
+# Log detailed Pydantic validation errors so 422s can be debugged from server logs
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(RequestValidationError)
+async def log_validation_errors(request: Request, exc: RequestValidationError):
+    body = None
+    try:
+        body = await request.body()
+        body = body.decode("utf-8")[:2000]  # cap at 2 KB for logging
+    except Exception:
+        body = "<could not read body>"
+
+    logger.warning(
+        f"422 Validation Error on {request.method} {request.url.path} | "
+        f"body={body} | errors={exc.errors()}"
+    )
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
+
 # ==================== ROUTE REGISTRATION ====================
 
 # Health and monitoring endpoints

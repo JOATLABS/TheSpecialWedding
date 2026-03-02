@@ -268,17 +268,35 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const apiUrl = baseUrl.replace('/admin', '');
 
+      // Ensure attending is always an array (react-hook-form may return false/string for checkboxes)
+      const attendingRaw = data.attending;
+      const attendingList: string[] = Array.isArray(attendingRaw)
+        ? attendingRaw
+        : (typeof attendingRaw === 'string' && attendingRaw ? [attendingRaw] : []);
+
       const filledPlusOnes = plusOnes
         .filter(p => p.name.trim())
-        .map(p => ({ ...p, attending: data.attending || [] }));
+        .map(p => ({
+          name: p.name.trim(),
+          phone: p.phone?.trim() || undefined,
+          email: p.email?.trim() || undefined,
+          attending: attendingList,
+          dietary: p.dietary?.trim() || undefined,
+          sms_opt_in: !!p.sms_opt_in,
+          email_opt_in: !!p.email_opt_in,
+        }));
 
       const submissionData = {
-        ...data,
-        attending: data.attending || [],
+        attending: attendingList,
+        phone: (data.phone || '').trim() || undefined,
+        dietary: (data.dietary || '').trim() || undefined,
         sms_opt_in: !!data.sms_opt_in,
         email_opt_in: !!data.email_opt_in,
         plus_ones: filledPlusOnes,
       };
+
+      // Debug: log payload to help diagnose 422 errors (remove after verified)
+      console.log('[RSVP] submissionData:', JSON.stringify(submissionData, null, 2));
 
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
         method: 'POST',

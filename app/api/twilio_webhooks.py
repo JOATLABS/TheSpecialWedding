@@ -174,6 +174,45 @@ async def handle_twilio_status_callback(
         return {"status": "error", "message": str(e)}
 
 
+def _get_public_webhook_url(request: Request) -> str:
+    """
+    Reconstruct the public-facing URL for Twilio signature validation.
+
+    Behind a reverse proxy (Coolify/Caddy/Nginx), request.url returns the
+    internal container URL (e.g. http://localhost:8000/...) but Twilio signs
+    against the public URL (e.g. https://thespecialwedding.io/...).
+
+    Priority:
+    1. TWILIO_WEBHOOK_BASE_URL env var (most reliable)
+    2. X-Forwarded-Proto + X-Forwarded-Host headers from reverse proxy
+    3. FRONTEND_URL env var as a fallback
+    4. request.url as last resort
+    """
+    # Option 1: Explicit webhook base URL
+    webhook_base = os.getenv("TWILIO_WEBHOOK_BASE_URL")
+    if webhook_base:
+        return webhook_base.rstrip("/") + str(request.url.path)
+
+    # Option 2: Use forwarded headers from the reverse proxy
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}{request.url.path}"
+
+    # Option 3: Derive from FRONTEND_URL or NEXT_PUBLIC_API_BASE_URL
+    for env_var in ("NEXT_PUBLIC_API_BASE_URL", "FRONTEND_URL"):
+        base = os.getenv(env_var)
+        if base:
+            # Strip any trailing path like /admin
+            from urllib.parse import urlparse
+            parsed = urlparse(base)
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+            return origin + str(request.url.path)
+
+    # Option 4: Fall back to request.url (works when not behind a proxy)
+    return str(request.url)
+
+
 def _validate_twilio_signature(
     request: Request,
     signature: Optional[str],
@@ -205,11 +244,25 @@ def _validate_twilio_signature(
 
         validator = RequestValidator(auth_token)
 
-        # Construct the full URL (Twilio validates against the exact URL)
-        url = str(request.url)
+        # Use the public-facing URL (not the internal container URL)
+        url = _get_public_webhook_url(request)
+
+        logger.debug(f"Twilio signature validation URL: {url}")
 
         # Validate the request
-        return validator.validate(url, params, signature)
+        is_valid = validator.validate(url, params, signature)
+
+        if not is_valid:
+            # Log for debugging — show both URLs so we can diagnose mismatches
+            internal_url = str(request.url)
+            logger.warning(
+                f"Twilio signature mismatch | public_url={url} | "
+                f"internal_url={internal_url} | "
+                f"x-forwarded-proto={request.headers.get('x-forwarded-proto')} | "
+                f"x-forwarded-host={request.headers.get('x-forwarded-host')}"
+            )
+
+        return is_valid
 
     except ImportError:
         logger.warning("twilio package not available for signature validation")
