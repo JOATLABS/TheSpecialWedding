@@ -421,7 +421,7 @@ export default function ContractDetailPage() {
                         onClick={() => {
                           if (formData && token && contractId) {
                             import('@/services/vendorManagementApi').then(({ applyFormDataToContract }) => {
-                              applyFormDataToContract(token, contractId, formData.vendor_submissions[0]?.submission_data || {})
+                              applyFormDataToContract(token, contractId, (formData.vendor_submissions[0]?.data || {}) as Record<string, { value: unknown } | string>)
                                 .then((updated) => {
                                   setContract(updated);
                                   setEditedContract(updated);
