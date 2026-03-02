@@ -1309,6 +1309,38 @@ Comprehensive QA review identified 66 frontend-backend alignment issues (21 CRIT
 **Frontend (5 files):**
 `app/services/budgetApi.ts`, `app/admin/money/page.tsx`, `app/admin/billing/success/page.tsx`, `app/admin/planner/billing/page.tsx`, `app/admin/vendors/contracts/[id]/page.tsx`
 
+### MEDIUM/LOW Issues (Completed 2026-03-02)
+
+Remaining 24 MEDIUM/LOW severity issues addressed:
+
+**AI (A6-A10):**
+- A6: Added `Field` validation with `max_length` constraints to all AI request models (`ChatMessageRequest`, `DraftCommunicationRequest`, `ContractSectionRequest`, `GenerateMessageRequest`, `GenerateFormQuestionsRequest`)
+- A7: Enhanced `/ai/health` endpoint — added API response time measurement and 24-hour error rate metrics from `ai_usage_log`
+- A8: Added pre-flight AI credit check in `generate-contract-section` endpoint before expensive generation
+- A9/A10: Already handled — `AIRateLimitError` and `AIServiceUnavailableError` provide rate limiting and fallback at the service layer
+
+**Seating (T3, T5, T9):**
+- T3: Verified `list_guests_by_wedding` already converts `_id` → `id` consistently (no change needed)
+- T5: Added clarifying comments in `seating_export_service.py` confirming ObjectId → string normalization for guest-to-table lookup
+- T9: Made `PrintableSeatingChart` branding dynamic — added `SeatingChartTheme` interface with configurable `accentColor`, `headerColor`, `headingFont`, `bodyFont` (defaults to gold/navy/Playfair Display)
+
+**Stripe (S1, S4, S5, S6):**
+- S1: Verified no fix needed — backend `PublicCreateCheckoutSessionRequest` ignores `user_id` and derives it from email lookup
+- S4/S5: Verified no fix needed — card fields are already optional in `UserSubscription` interface with null guards in JSX
+- S6: Added AI credits fetch from `/ai/credits` endpoint in billing page to populate `ai_credits_used` and `ai_credits_remaining`
+
+**Contracts (C7, C8, C12, C14, C15, C16, C17):**
+- C7: Added Stripe `PaymentMethod.retrieve` validation in sign endpoint — verifies payment method belongs to customer
+- C8: Verified already handled — `_serialize_contract` converts `wedding_date` via `.isoformat()`
+- C12: Improved email recipient resolution in `send_signed_confirmation` — falls back to `vendor_email` → `couple.email` → `signer_email`
+- C14: Added HTML fallback in `contract_pdf_service.generate_pdf` — when WeasyPrint is unavailable, stores signed HTML document in R2 instead
+- C15: Already addressed by A8 credit pre-check
+- C16: Added `document_url` and `deposit_processed` to sign contract response
+- C17: Added documented status constants (`CONTRACT_STATUS_DRAFT`, `EDITABLE_STATUSES`, `TERMINAL_STATUSES`, etc.) to `contract_service.py`
+
+**Additional files modified:**
+`app/services/seating_export_service.py`, `app/admin/components/seating/PrintableSeatingChart.tsx`, `app/services/contract_pdf_service.py`
+
 ---
 
 ## [1.6.1] - 2026-01-23

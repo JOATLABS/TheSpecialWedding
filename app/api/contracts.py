@@ -925,6 +925,26 @@ async def sign_contract(
                 detail="You must accept the terms and conditions"
             )
 
+        # C7: Validate Stripe payment method if provided
+        if sign_data.stripe_payment_method_id and sign_data.stripe_customer_id:
+            try:
+                import stripe
+                from app.core.settings import settings as app_settings
+                stripe.api_key = app_settings.stripe_secret_key
+
+                # Verify payment method belongs to the customer
+                pm = stripe.PaymentMethod.retrieve(sign_data.stripe_payment_method_id)
+                if pm.customer and pm.customer != sign_data.stripe_customer_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Payment method does not belong to this customer"
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                # Log but don't block signing if Stripe validation fails
+                logger.warning(f"Could not validate payment method (non-blocking): {str(e)}")
+
         # Get IP and user agent
         ip_address = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("user-agent", "unknown")
@@ -949,7 +969,9 @@ async def sign_contract(
                 "id": contract.get("id"),
                 "status": contract.get("status"),
                 "signed_at": contract.get("signed_at"),
-                "scheduled_payments": contract.get("scheduled_payments", [])
+                "scheduled_payments": contract.get("scheduled_payments", []),
+                "document_url": contract.get("document_url"),  # C16: Include signed PDF URL
+                "deposit_processed": contract.get("deposit_processed", False)
             }
         }
 

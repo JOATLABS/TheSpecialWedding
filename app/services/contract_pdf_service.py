@@ -421,7 +421,48 @@ class ContractPDFService:
             return document_url
 
         except ImportError:
-            logger.error("WeasyPrint not installed. Run: pip install weasyprint")
+            # C14: Fallback — store the HTML as a signed document instead of PDF
+            logger.warning("WeasyPrint not installed. Falling back to HTML document storage.")
+            try:
+                from bson import ObjectId
+
+                contract = await self.contracts.find_one({"_id": ObjectId(contract_id)})
+                if contract:
+                    contract_data = {
+                        "id": str(contract["_id"]),
+                        "couple": contract.get("couple", {}),
+                        "wedding_date": contract.get("wedding_date"),
+                        "venue": contract.get("venue"),
+                        "package_snapshot": contract.get("package_snapshot", {}),
+                        "signature": contract.get("signature", {}),
+                        "signed_at": contract.get("signed_at"),
+                        "status": contract.get("status")
+                    }
+                    html_content = self._generate_html(contract_data)
+                    html_bytes = html_content.encode("utf-8")
+
+                    filename = f"contracts/{contract_id}/{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_signed.html"
+                    s3 = self._get_s3_client()
+                    s3.put_object(
+                        Bucket=settings.s3_bucket_name,
+                        Key=filename,
+                        Body=html_bytes,
+                        ContentType='text/html'
+                    )
+
+                    if settings.media_domain:
+                        document_url = f"https://{settings.media_domain}/{filename}"
+                    else:
+                        document_url = f"{settings.s3_endpoint_url}/{settings.s3_bucket_name}/{filename}"
+
+                    await self.contracts.update_one(
+                        {"_id": ObjectId(contract_id)},
+                        {"$set": {"document_url": document_url, "updated_at": datetime.now(timezone.utc)}}
+                    )
+                    logger.info(f"Stored HTML fallback for contract {contract_id}: {document_url}")
+                    return document_url
+            except Exception as fallback_err:
+                logger.error(f"HTML fallback also failed for contract {contract_id}: {str(fallback_err)}")
             return None
         except Exception as e:
             logger.error(f"Failed to generate PDF for contract {contract_id}: {str(e)}")
