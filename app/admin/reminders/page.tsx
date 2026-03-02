@@ -31,6 +31,8 @@ interface Guest {
  email?: string;
  role: string;
  plus_one_allowed: boolean;
+ phone_status?: 'unknown' | 'valid' | 'invalid' | 'landline' | 'unreachable' | 'unsubscribed';
+ sms_opt_in?: boolean;
 }
 
 interface MessageLog {
@@ -205,6 +207,7 @@ export default function AdminRemindersPage() {
  const baseUrl = getApiBaseUrl();
  let totalSent = 0;
  let totalFailed = 0;
+ const skipDetails: string[] = [];
 
  // Send SMS invites
  if (channel === 'sms' || channel === 'both') {
@@ -223,6 +226,12 @@ export default function AdminRemindersPage() {
  if (response.ok) {
  const result = await response.json();
  totalSent += result.sent || 0;
+ totalFailed += result.failed || 0;
+ // Collect skip details from SMS response
+ if (result.skipped_no_phone > 0) skipDetails.push(`${result.skipped_no_phone} no phone`);
+ if (result.skipped_no_token > 0) skipDetails.push(`${result.skipped_no_token} no token`);
+ if (result.skipped_opted_out > 0) skipDetails.push(`${result.skipped_opted_out} opted out`);
+ if (result.unreachable_guests?.length > 0) skipDetails.push(`${result.unreachable_guests.length} completely unreachable`);
  }
  }
 
@@ -265,12 +274,20 @@ export default function AdminRemindersPage() {
  const result = await response.json();
  totalSent += result.sent || 0;
  totalFailed += result.failed || 0;
+ // Collect skip details from email response
+ if (result.skipped_no_email > 0) skipDetails.push(`${result.skipped_no_email} no email`);
+ if (result.skipped_no_token > 0) skipDetails.push(`${result.skipped_no_token} no token`);
+ if (result.skipped_opted_out > 0) skipDetails.push(`${result.skipped_opted_out} email opted out`);
  }
  }
 
  const channelText = channel === 'both' ? 'SMS and email' : channel;
- setSuccess(`Successfully sent ${totalSent} invites via ${channelText}!${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`);
+ let successMsg = `Sent ${totalSent} invites via ${channelText}.`;
+ if (totalFailed > 0) successMsg += ` ${totalFailed} failed.`;
+ if (skipDetails.length > 0) successMsg += ` Skipped: ${skipDetails.join(', ')}.`;
+ setSuccess(successMsg);
  fetchMessageHistory();
+ fetchGuests(); // Refresh to pick up any phone_status changes
  } catch (err) {
  setError(err instanceof Error ? err.message : 'Failed to send invites');
  } finally {
@@ -358,6 +375,7 @@ export default function AdminRemindersPage() {
  setEmailSubject('');
  setEmailHtml('');
  fetchMessageHistory();
+ fetchGuests(); // Refresh to pick up any phone_status changes
  }
  } catch (err) {
  setError(err instanceof Error ? err.message : 'Failed to send reminders');
@@ -397,13 +415,23 @@ export default function AdminRemindersPage() {
 
  const result = await response.json();
  if (result.sent > 0) {
- setSuccess(`Successfully sent messages to ${result.sent} guests!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`);
+ let msg = `Sent messages to ${result.sent} of ${result.total} guests.`;
+ if (result.failed > 0) msg += ` ${result.failed} failed.`;
+ if (result.failure_reasons?.length > 0) {
+ msg += ` Details: ${result.failure_reasons.slice(0, 5).join('; ')}`;
+ if (result.failure_reasons.length > 5) msg += `... and ${result.failure_reasons.length - 5} more`;
+ }
+ setSuccess(msg);
  } else {
- setError('No messages sent. Guests may have opted out or have no phone numbers.');
+ const reasons = result.failure_reasons?.length > 0
+ ? result.failure_reasons.slice(0, 5).join('; ')
+ : 'Guests may have opted out or have no phone numbers.';
+ setError(`No messages sent. ${reasons}`);
  }
  setCustomMessage('');
  setSelectedGuests([]);
  fetchMessageHistory();
+ fetchGuests(); // Refresh to pick up any phone_status changes
  } catch (err) {
  setError(err instanceof Error ? err.message : 'Failed to send messages');
  } finally {
@@ -483,6 +511,13 @@ export default function AdminRemindersPage() {
  const guestsWithPhoneOrEmail = guests.filter(g =>
  (g.phone && g.phone.trim() !== '') || (g.email && g.email.trim() !== '')
  );
+ const unreachableGuests = guests.filter(g =>
+ (!g.phone || g.phone.trim() === '') && (!g.email || g.email.trim() === '')
+ );
+ const guestsWithInvalidPhone = guests.filter(g =>
+ g.phone_status === 'invalid' || g.phone_status === 'landline' || g.phone_status === 'unreachable'
+ );
+ const guestsOptedOut = guests.filter(g => g.sms_opt_in === false);
  console.log('All guests:', guests);
  console.log('Guests with phone:', guestsWithPhone);
  console.log('Selected wedding:', selectedWedding);
@@ -636,6 +671,21 @@ export default function AdminRemindersPage() {
  <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 dark:text-gray-400">
  Total reachable guests: {guestsWithPhoneOrEmail.length}
  </p>
+ {unreachableGuests.length > 0 && (
+ <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+ {unreachableGuests.length} guest{unreachableGuests.length !== 1 ? 's have' : ' has'} no phone or email — unreachable
+ </p>
+ )}
+ {guestsWithInvalidPhone.length > 0 && (
+ <p className="text-sm font-medium text-red-600 dark:text-red-400">
+ {guestsWithInvalidPhone.length} guest{guestsWithInvalidPhone.length !== 1 ? 's have' : ' has'} invalid/unreachable phone numbers
+ </p>
+ )}
+ {guestsOptedOut.length > 0 && (
+ <p className="text-sm text-gray-500 dark:text-gray-400">
+ {guestsOptedOut.length} guest{guestsOptedOut.length !== 1 ? 's have' : ' has'} opted out of SMS
+ </p>
+ )}
  </div>
  </div>
 
@@ -945,9 +995,11 @@ export default function AdminRemindersPage() {
  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8">
  <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Message History</h2>
 
- {/* Delivery Health Summary Banner */}
+ {/* SMS Delivery Health Summary Banner */}
  {messageHistory.length > 0 && (() => {
-  const last24h = messageHistory.filter(log => {
+  // Filter to SMS records only — email delivery metrics are separate
+  const smsLogs = messageHistory.filter(log => log.provider === 'twilio' || log.provider === 'telnyx');
+  const last24h = smsLogs.filter(log => {
    const sentAt = new Date(log.sent_at);
    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
    return sentAt >= oneDayAgo;
@@ -972,7 +1024,7 @@ export default function AdminRemindersPage() {
     <div className="flex flex-wrap items-center gap-4">
      <div className="flex items-center gap-2">
       <div className={`w-3 h-3 rounded-full ${isHealthy ? 'bg-green-500' : isDegraded ? 'bg-yellow-500' : 'bg-red-500'}`} />
-      <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">Last 24h Delivery</span>
+      <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">Last 24h SMS Delivery</span>
      </div>
      <div className="flex flex-wrap gap-3 text-sm">
       <span className="text-gray-600 dark:text-gray-300">Rate: <strong className={isHealthy ? 'text-green-700 dark:text-green-400' : isDegraded ? 'text-yellow-700 dark:text-yellow-400' : 'text-red-700 dark:text-red-400'}>{rate}%</strong></span>

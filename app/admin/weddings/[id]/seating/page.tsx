@@ -142,12 +142,20 @@ export default function SeatingPage() {
             Authorization: `Bearer ${token}`
           },
           body: JSON.stringify({
-            guests: guests.map(g => ({
+            guests: guests.map((g: any) => ({
               id: g.id,
               name: g.name,
               group_id: g.group_id,
               role: g.role,
-              current_table_id: g.table_id
+              current_table_id: g.table_id,
+              plus_one_allowed: g.plus_one_allowed,
+              number_of_plus_ones_allowed: g.number_of_plus_ones_allowed,
+              accessibility_needs: g.accessibility_needs,
+              age_group: g.age_group,
+              language_preference: g.language_preference,
+              seating_preference: g.seating_preference,
+              must_sit_with: g.must_sit_with || [],
+              must_sit_apart: g.must_sit_apart || [],
             })),
             tables: tables.map(t => ({
               id: t.id,

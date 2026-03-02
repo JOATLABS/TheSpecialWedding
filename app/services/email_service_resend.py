@@ -139,6 +139,10 @@ class ResendEmailService:
             logger.warning("FRONTEND_URL environment variable is not set - email links may not work")
         sent = 0
         failed = 0
+        skipped_no_email = 0
+        skipped_no_token = 0
+        skipped_opted_out = 0
+        unreachable_guests = []
 
         # Get all guests with email addresses
         guests = self.guest_collection.find({"wedding_id": wedding["_id"]})
@@ -146,10 +150,24 @@ class ResendEmailService:
         async for guest in guests:
             email = guest.get("email")
             if not email:
+                skipped_no_email += 1
+                # Track guests with no contact info at all
+                if not guest.get("phone"):
+                    unreachable_guests.append({
+                        "name": guest.get("name", "Unknown"),
+                        "guest_id": str(guest.get("_id")),
+                    })
                 continue
 
             token = guest.get("token")
             if not token:
+                skipped_no_token += 1
+                continue
+
+            # Check email opt-in (block if explicitly opted out)
+            email_opt_in = guest.get("email_opt_in", None)
+            if email_opt_in is False:
+                skipped_opted_out += 1
                 continue
 
             # Generate RSVP URL
@@ -200,7 +218,14 @@ class ResendEmailService:
             # Add delay to respect Resend rate limit (2 requests per second)
             await asyncio.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
 
-        return {"sent": sent, "failed": failed}
+        return {
+            "sent": sent,
+            "failed": failed,
+            "skipped_no_email": skipped_no_email,
+            "skipped_no_token": skipped_no_token,
+            "skipped_opted_out": skipped_opted_out,
+            "unreachable_guests": unreachable_guests if unreachable_guests else None,
+        }
 
     async def send_reminders(
         self,
@@ -232,6 +257,8 @@ class ResendEmailService:
 
         sent = 0
         failed = 0
+        skipped_no_email = 0
+        skipped_opted_out = 0
 
         # Get guests based on target group
         if target_group in ["guests", "all"]:
@@ -245,6 +272,12 @@ class ResendEmailService:
 
                 email = guest.get("email")
                 if not email:
+                    skipped_no_email += 1
+                    continue
+
+                # Check email opt-in
+                if guest.get("email_opt_in") is False:
+                    skipped_opted_out += 1
                     continue
 
                 # Use custom HTML or generate default
@@ -285,7 +318,7 @@ class ResendEmailService:
                     failed += 1
 
                 # Add delay to respect Resend rate limit (2 requests per second)
-                time.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
+                await asyncio.sleep(0.6)  # Sleep for 600ms to stay well under rate limit
 
         # Send reminders to plus-ones
         if target_group in ["plus-ones", "all"]:
@@ -349,9 +382,14 @@ class ResendEmailService:
                 else:
                     failed += 1
 
-                time.sleep(0.6)
+                await asyncio.sleep(0.6)
 
-        return {"sent": sent, "failed": failed}
+        return {
+            "sent": sent,
+            "failed": failed,
+            "skipped_no_email": skipped_no_email,
+            "skipped_opted_out": skipped_opted_out,
+        }
 
     async def get_email_logs(self, wedding_id: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """Get email logs, optionally filtered by wedding"""

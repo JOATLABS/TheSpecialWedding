@@ -879,7 +879,22 @@ class StripeService:
             )
 
             event_type = event["type"]
+            event_id = event.get("id", "")
             data = event["data"]["object"]
+
+            # Idempotency check: skip already-processed events (S7)
+            if event_id:
+                existing = await mongo.db["stripe_webhook_events"].find_one({"event_id": event_id})
+                if existing:
+                    logger.info(f"Skipping duplicate webhook event: {event_id} ({event_type})")
+                    return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+
+                # Record event as being processed
+                await mongo.db["stripe_webhook_events"].insert_one({
+                    "event_id": event_id,
+                    "event_type": event_type,
+                    "processed_at": datetime.now(timezone.utc)
+                })
 
             logger.info(f"Processing webhook event: {event_type}")
 

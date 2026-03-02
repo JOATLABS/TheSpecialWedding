@@ -1026,6 +1026,556 @@ class ContractService:
             logger.error(f"Failed to get contract stats: {str(e)}")
             raise
 
+    # ========================================================================
+    # CONTRACT CREATION, UPDATE, SEND (C3, C4 — missing endpoints)
+    # ========================================================================
+
+    async def _generate_contract_number(self) -> str:
+        """
+        Auto-generate a unique contract number (C5).
+        Format: CON-YYYYMMDD-XXXX where XXXX is a sequential counter.
+        """
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        prefix = f"CON-{today}-"
+
+        # Find the latest contract number with today's prefix
+        latest = await self.contracts.find_one(
+            {"contract_number": {"$regex": f"^{prefix}"}},
+            sort=[("contract_number", -1)]
+        )
+
+        if latest and latest.get("contract_number"):
+            try:
+                last_num = int(latest["contract_number"].split("-")[-1])
+                next_num = last_num + 1
+            except (ValueError, IndexError):
+                next_num = 1
+        else:
+            next_num = 1
+
+        return f"{prefix}{next_num:04d}"
+
+    async def create_contract(
+        self,
+        planner_id: str,
+        wedding_id: str,
+        vendor_profile_id: str,
+        total_amount: float,
+        template_id: Optional[str] = None,
+        deposit_percentage: float = 50.0,
+        service_date: Optional[str] = None,
+        service_location: Optional[str] = None,
+        custom_sections: Optional[List[Dict]] = None,
+    ) -> Dict:
+        """
+        Create a new vendor contract (C3).
+
+        Args:
+            planner_id: ID of the planner creating the contract
+            wedding_id: Wedding this contract belongs to
+            vendor_profile_id: Vendor profile ID
+            total_amount: Total contract amount
+            template_id: Optional template ID to base contract on
+            deposit_percentage: Deposit percentage (default 50%)
+            service_date: Optional service date
+            service_location: Optional service location
+            custom_sections: Optional custom contract sections
+
+        Returns:
+            Created contract dict
+        """
+        import secrets
+
+        try:
+            # Look up vendor profile
+            vendor_profiles = mongo.db["vendor_profiles"]
+            vendor = await vendor_profiles.find_one({"_id": ObjectId(vendor_profile_id)})
+            if not vendor:
+                raise ValueError("Vendor profile not found")
+
+            # Look up wedding for context
+            weddings = mongo.db["weddings"]
+            wedding = await weddings.find_one({"_id": ObjectId(wedding_id)})
+
+            # Auto-generate contract number (C5)
+            contract_number = await self._generate_contract_number()
+
+            # Generate secure access token
+            access_token = secrets.token_urlsafe(32)
+
+            # Calculate deposit
+            deposit_amount = round(total_amount * (deposit_percentage / 100), 2)
+
+            # Build sections
+            sections = custom_sections or []
+
+            # Load template sections if template_id provided
+            if template_id:
+                templates = mongo.db["contract_templates"]
+                template = await templates.find_one({"_id": ObjectId(template_id)})
+                if template and not custom_sections:
+                    sections = template.get("sections", [])
+
+            contract_title = f"Contract - {vendor.get('business_name', 'Vendor')}"
+            if wedding:
+                couple = wedding.get("couple_names") or wedding.get("partner1_name", "")
+                if couple:
+                    contract_title = f"{couple} - {vendor.get('business_name', 'Vendor')} Contract"
+
+            now = datetime.now(timezone.utc)
+
+            doc = {
+                "planner_id": planner_id,
+                "wedding_id": wedding_id,
+                "vendor_profile_id": vendor_profile_id,
+                "vendor_name": vendor.get("business_name", ""),
+                "vendor_email": vendor.get("email", ""),
+                "vendor_phone": vendor.get("phone", ""),
+                "service_category": vendor.get("service_category", "other"),
+                "contract_title": contract_title,
+                "contract_number": contract_number,
+                "total_amount": total_amount,
+                "deposit_amount": deposit_amount,
+                "deposit_percentage": deposit_percentage,
+                "service_date": service_date,
+                "service_location": service_location or "",
+                "template_id": template_id,
+                "sections": sections,
+                "terms_and_conditions": "",
+                "cancellation_policy": "",
+                "custom_clauses": "",
+                "token": access_token,
+                "status": "draft",
+                "created_at": now,
+                "updated_at": now,
+                "sent_at": None,
+                "viewed_at": None,
+                "signed_at": None,
+                "completed_at": None,
+                "cancelled_at": None,
+            }
+
+            result = await self.contracts.insert_one(doc)
+            doc["_id"] = result.inserted_id
+            return self._serialize_contract(doc)
+
+        except Exception as e:
+            logger.error(f"Failed to create contract: {str(e)}")
+            raise
+
+    async def update_contract(
+        self,
+        contract_id: str,
+        planner_id: str,
+        update_data: Dict
+    ) -> Optional[Dict]:
+        """
+        Update a contract (only allowed in draft/pending_review status).
+
+        Args:
+            contract_id: Contract ID
+            planner_id: Planner ID for ownership verification
+            update_data: Fields to update
+
+        Returns:
+            Updated contract dict
+        """
+        try:
+            contract = await self.contracts.find_one({
+                "_id": ObjectId(contract_id),
+                "planner_id": planner_id
+            })
+
+            if not contract:
+                raise ValueError("Contract not found")
+
+            # Status transition validation (C13)
+            if contract.get("status") not in ("draft", "pending_review"):
+                raise ValueError(
+                    f"Cannot edit contract in '{contract.get('status')}' status. "
+                    "Only draft and pending_review contracts can be edited."
+                )
+
+            # Remove fields that shouldn't be updated directly
+            safe_fields = {
+                "contract_title", "total_amount", "deposit_amount", "deposit_percentage",
+                "service_date", "service_location", "sections",
+                "terms_and_conditions", "cancellation_policy", "custom_clauses",
+            }
+
+            filtered = {k: v for k, v in update_data.items() if k in safe_fields}
+            filtered["updated_at"] = datetime.now(timezone.utc)
+
+            # Recalculate deposit if total_amount or deposit_percentage changed
+            if "total_amount" in filtered or "deposit_percentage" in filtered:
+                total = filtered.get("total_amount", contract.get("total_amount", 0))
+                pct = filtered.get("deposit_percentage", contract.get("deposit_percentage", 50))
+                filtered["deposit_amount"] = round(total * (pct / 100), 2)
+
+            await self.contracts.update_one(
+                {"_id": ObjectId(contract_id)},
+                {"$set": filtered}
+            )
+
+            updated = await self.contracts.find_one({"_id": ObjectId(contract_id)})
+            return self._serialize_contract(updated)
+
+        except Exception as e:
+            logger.error(f"Failed to update contract: {str(e)}")
+            raise
+
+    async def update_contract_sections(
+        self,
+        contract_id: str,
+        planner_id: str,
+        sections: List[Dict],
+        terms_and_conditions: Optional[str] = None,
+        cancellation_policy: Optional[str] = None,
+        custom_clauses: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """
+        Update contract sections (C4).
+
+        Args:
+            contract_id: Contract ID
+            planner_id: Planner ID for ownership verification
+            sections: List of section dicts with id, title, content, order
+            terms_and_conditions: Optional terms text
+            cancellation_policy: Optional cancellation policy text
+            custom_clauses: Optional custom clauses text
+
+        Returns:
+            Updated contract dict
+        """
+        try:
+            contract = await self.contracts.find_one({
+                "_id": ObjectId(contract_id),
+                "planner_id": planner_id
+            })
+
+            if not contract:
+                raise ValueError("Contract not found")
+
+            if contract.get("status") not in ("draft", "pending_review"):
+                raise ValueError("Cannot update sections on a non-draft contract")
+
+            update: Dict[str, Any] = {
+                "sections": sections,
+                "updated_at": datetime.now(timezone.utc),
+            }
+            if terms_and_conditions is not None:
+                update["terms_and_conditions"] = terms_and_conditions
+            if cancellation_policy is not None:
+                update["cancellation_policy"] = cancellation_policy
+            if custom_clauses is not None:
+                update["custom_clauses"] = custom_clauses
+
+            await self.contracts.update_one(
+                {"_id": ObjectId(contract_id)},
+                {"$set": update}
+            )
+
+            updated = await self.contracts.find_one({"_id": ObjectId(contract_id)})
+            return self._serialize_contract(updated)
+
+        except Exception as e:
+            logger.error(f"Failed to update contract sections: {str(e)}")
+            raise
+
+    async def send_contract(
+        self,
+        contract_id: str,
+        planner_id: str,
+        message: Optional[str] = None,
+    ) -> Dict:
+        """
+        Send a contract to the vendor for review/signing.
+
+        Updates status to 'sent' and records sent_at timestamp.
+        Triggers email notification via contract_email_service.
+
+        Args:
+            contract_id: Contract ID
+            planner_id: Planner ID for ownership verification
+            message: Optional personal message to include
+
+        Returns:
+            Dict with message and sent_to fields
+        """
+        try:
+            contract = await self.contracts.find_one({
+                "_id": ObjectId(contract_id),
+                "planner_id": planner_id
+            })
+
+            if not contract:
+                raise ValueError("Contract not found")
+
+            # Status validation (C13)
+            allowed_send_statuses = ("draft", "pending_review")
+            if contract.get("status") not in allowed_send_statuses:
+                raise ValueError(
+                    f"Cannot send contract in '{contract.get('status')}' status. "
+                    f"Only {', '.join(allowed_send_statuses)} contracts can be sent."
+                )
+
+            vendor_email = contract.get("vendor_email", "")
+            if not vendor_email:
+                raise ValueError("Contract has no vendor email address")
+
+            now = datetime.now(timezone.utc)
+            await self.contracts.update_one(
+                {"_id": ObjectId(contract_id)},
+                {"$set": {
+                    "status": "sent",
+                    "sent_at": now,
+                    "updated_at": now,
+                }}
+            )
+
+            # Send email notification
+            try:
+                from app.services.contract_email_service import contract_email_service
+                await contract_email_service.send_contract_email(
+                    contract_id=contract_id,
+                    token=contract.get("token", ""),
+                    vendor_email=vendor_email,
+                    vendor_name=contract.get("vendor_name", ""),
+                    contract_title=contract.get("contract_title", ""),
+                    planner_message=message,
+                )
+            except Exception as email_err:
+                logger.warning(f"Failed to send contract email (contract still marked sent): {email_err}")
+
+            return {
+                "message": "Contract sent successfully",
+                "sent_to": vendor_email,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to send contract: {str(e)}")
+            raise
+
+    async def create_payment_milestones(
+        self,
+        contract_id: str,
+        planner_id: str,
+        milestones: List[Dict],
+    ) -> List[Dict]:
+        """
+        Create payment milestones for a contract.
+
+        Args:
+            contract_id: Contract ID
+            planner_id: Planner ID for ownership verification
+            milestones: List of milestone dicts with description, amount, due_date
+
+        Returns:
+            List of created milestone dicts
+        """
+        try:
+            contract = await self.contracts.find_one({
+                "_id": ObjectId(contract_id),
+                "planner_id": planner_id
+            })
+
+            if not contract:
+                raise ValueError("Contract not found")
+
+            created = []
+            now = datetime.now(timezone.utc)
+
+            for m in milestones:
+                doc = {
+                    "contract_id": contract_id,
+                    "wedding_id": contract.get("wedding_id", ""),
+                    "vendor_name": contract.get("vendor_name", ""),
+                    "vendor_email": contract.get("vendor_email", ""),
+                    "description": m.get("description", ""),
+                    "amount": float(m.get("amount", 0)),
+                    "paid_amount": 0.0,
+                    "due_date": m.get("due_date", ""),
+                    "percentage_of_total": m.get("percentage_of_total", 0),
+                    "status": "pending",
+                    "payment_history": [],
+                    "created_at": now,
+                    "updated_at": now,
+                }
+
+                result = await self.scheduled_payments.insert_one(doc)
+                doc["_id"] = result.inserted_id
+                created.append(self._serialize_payment(doc))
+
+            return created
+
+        except Exception as e:
+            logger.error(f"Failed to create payment milestones: {str(e)}")
+            raise
+
+    async def get_milestones(
+        self,
+        planner_id: str,
+        contract_id: Optional[str] = None,
+        wedding_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict]:
+        """
+        Get payment milestones filtered by contract, wedding, or status.
+
+        Args:
+            planner_id: Planner ID for ownership verification
+            contract_id: Optional contract ID filter
+            wedding_id: Optional wedding ID filter
+            status: Optional status filter
+
+        Returns:
+            List of milestone dicts
+        """
+        try:
+            query: Dict[str, Any] = {}
+
+            if contract_id:
+                # Verify planner owns this contract
+                contract = await self.contracts.find_one({
+                    "_id": ObjectId(contract_id),
+                    "planner_id": planner_id
+                })
+                if not contract:
+                    raise ValueError("Contract not found")
+                query["contract_id"] = contract_id
+
+            if wedding_id:
+                query["wedding_id"] = wedding_id
+
+            if status:
+                query["status"] = status
+
+            milestones = await self.scheduled_payments.find(query).sort("due_date", 1).to_list(length=None)
+            return [self._serialize_payment(m) for m in milestones if m]
+
+        except Exception as e:
+            logger.error(f"Failed to get milestones: {str(e)}")
+            raise
+
+    async def record_milestone_payment(
+        self,
+        milestone_id: str,
+        planner_id: str,
+        amount: float,
+        payment_method: str = "manual",
+        payment_date: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """
+        Record a payment against a milestone (C2).
+
+        Args:
+            milestone_id: Milestone ID
+            planner_id: Planner ID for ownership verification
+            amount: Payment amount
+            payment_method: How payment was made
+            payment_date: When payment was made
+            notes: Optional notes
+
+        Returns:
+            Updated milestone dict
+        """
+        try:
+            milestone = await self.scheduled_payments.find_one({"_id": ObjectId(milestone_id)})
+            if not milestone:
+                raise ValueError("Milestone not found")
+
+            # Verify ownership via contract
+            if milestone.get("contract_id"):
+                contract = await self.contracts.find_one({
+                    "_id": ObjectId(milestone["contract_id"]),
+                    "planner_id": planner_id
+                })
+                if not contract:
+                    raise ValueError("Milestone's contract not found or not owned by planner")
+
+            now = datetime.now(timezone.utc)
+            new_paid = milestone.get("paid_amount", 0) + amount
+
+            # Determine new status
+            if new_paid >= milestone.get("amount", 0):
+                new_status = "paid"
+            elif new_paid > 0:
+                new_status = "partial"
+            else:
+                new_status = milestone.get("status", "pending")
+
+            payment_record = {
+                "amount": amount,
+                "payment_method": payment_method,
+                "payment_date": payment_date or now.isoformat(),
+                "notes": notes or "",
+                "recorded_at": now,
+            }
+
+            await self.scheduled_payments.update_one(
+                {"_id": ObjectId(milestone_id)},
+                {
+                    "$set": {
+                        "paid_amount": new_paid,
+                        "status": new_status,
+                        "updated_at": now,
+                    },
+                    "$push": {"payment_history": payment_record},
+                }
+            )
+
+            updated = await self.scheduled_payments.find_one({"_id": ObjectId(milestone_id)})
+            return self._serialize_payment(updated)
+
+        except Exception as e:
+            logger.error(f"Failed to record milestone payment: {str(e)}")
+            raise
+
+    async def get_contract_form_data(
+        self,
+        contract_id: str,
+        planner_id: str,
+    ) -> Dict:
+        """
+        Get form data submissions for a contract's vendor.
+
+        Returns vendor form submissions that can be applied to the contract.
+        """
+        try:
+            contract = await self.contracts.find_one({
+                "_id": ObjectId(contract_id),
+                "planner_id": planner_id
+            })
+            if not contract:
+                raise ValueError("Contract not found")
+
+            vendor_profile_id = contract.get("vendor_profile_id")
+            if not vendor_profile_id:
+                return {"vendor_submissions": [], "available_fields": {}, "suggested_contract_fields": {}}
+
+            # Look up vendor form submissions
+            submissions_collection = mongo.db["vendor_form_submissions"]
+            submissions = await submissions_collection.find({
+                "vendor_profile_id": vendor_profile_id
+            }).to_list(length=None)
+
+            # Serialize
+            serialized_submissions = []
+            for sub in submissions:
+                sub["_id"] = str(sub["_id"])
+                serialized_submissions.append(sub)
+
+            return {
+                "vendor_submissions": serialized_submissions,
+                "available_fields": {},
+                "suggested_contract_fields": {},
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get contract form data: {str(e)}")
+            raise
+
     def _serialize_contract(self, contract: Optional[Dict]) -> Optional[Dict]:
         """Serialize contract for API response."""
         if not contract:

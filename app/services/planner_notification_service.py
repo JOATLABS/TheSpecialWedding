@@ -514,6 +514,73 @@ class PlannerNotificationService:
             action_url="/admin/planner/calendar"
         )
 
+    async def notify_delivery_failure(
+        self,
+        planner_id: str,
+        wedding_id: str,
+        channel: str,
+        to_address: str,
+        error_message: Optional[str] = None,
+        guest_name: Optional[str] = None,
+        metadata: Optional[dict] = None
+    ):
+        """Trigger notification when an SMS or email delivery fails"""
+        recipient = guest_name or to_address
+        channel_label = "SMS" if channel == "sms" else "Email"
+        reason = f": {error_message}" if error_message else ""
+
+        return await self.create_notification(
+            planner_id=planner_id,
+            notification_type=PlannerNotificationTypes.DELIVERY_FAILURE,
+            title=f"{channel_label} Delivery Failed",
+            message=f"{channel_label} to {recipient} failed{reason}",
+            wedding_id=wedding_id,
+            metadata={
+                "channel": channel,
+                "to_address": to_address,
+                "guest_name": guest_name,
+                "error_message": error_message,
+                **(metadata or {})
+            },
+            priority="high",
+            action_url=f"/admin/reminders?tab=history"
+        )
+
+    async def notify_bulk_delivery_summary(
+        self,
+        planner_id: str,
+        wedding_id: str,
+        channel: str,
+        sent: int,
+        failed: int,
+        skipped: int = 0,
+        metadata: Optional[dict] = None
+    ):
+        """Trigger notification summarizing a bulk send operation"""
+        channel_label = "SMS" if channel == "sms" else "Email"
+        parts = [f"{sent} sent"]
+        if failed > 0:
+            parts.append(f"{failed} failed")
+        if skipped > 0:
+            parts.append(f"{skipped} skipped")
+
+        return await self.create_notification(
+            planner_id=planner_id,
+            notification_type=PlannerNotificationTypes.BULK_SEND_SUMMARY,
+            title=f"{channel_label} Send: {', '.join(parts)}",
+            message=f"Bulk {channel_label} send completed. {', '.join(parts)}.",
+            wedding_id=wedding_id,
+            metadata={
+                "channel": channel,
+                "sent": sent,
+                "failed": failed,
+                "skipped": skipped,
+                **(metadata or {})
+            },
+            priority="high" if failed > 0 else "low",
+            action_url="/admin/reminders?tab=history"
+        )
+
     async def notify_support_ticket_response(
         self,
         planner_id: str,

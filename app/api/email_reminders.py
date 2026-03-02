@@ -56,13 +56,13 @@ async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAu
     if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    result = email_service.send_rsvp_invitations(
+    result = await email_service.send_rsvp_invitations(
         wedding_slug=payload.wedding_slug,
         custom_html=payload.custom_html,
         custom_subject=payload.custom_subject,
         attachments=[]
     )
-    
+
     return result
 
 @router.post("/email/send-invites-with-attachment", tags=["Admin"])
@@ -96,13 +96,13 @@ async def send_email_invites_with_attachment(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to process attachment: {str(e)}")
     
-    result = email_service.send_rsvp_invitations(
+    result = await email_service.send_rsvp_invitations(
         wedding_slug=wedding_slug,
         custom_html=custom_html,
         custom_subject=custom_subject,
         attachments=attachments
     )
-    
+
     return result
 
 @router.post("/email/send-reminders", tags=["Admin"])
@@ -119,14 +119,14 @@ async def send_email_reminders(payload: EmailReminderModel, current_user: Extend
     if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    result = email_service.send_reminders(
+    result = await email_service.send_reminders(
         wedding_slug=payload.wedding_slug,
         event_type=payload.event_type,
         custom_html=payload.custom_html,
         custom_subject=payload.custom_subject,
         target_group=payload.target_group
     )
-    
+
     return result
 
 @router.get("/email/logs", tags=["Admin"])

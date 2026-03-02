@@ -19,6 +19,8 @@ class GuestModel(BaseModel):
     sms_opt_in: Optional[bool] = Field(default=None, description="Guest opted in to receive SMS reminders (None=not yet decided)")
     sms_opt_in_date: Optional[datetime] = Field(None, description="When guest opted in to SMS")
     sms_opt_out_date: Optional[datetime] = Field(None, description="When guest opted out of SMS")
+    phone_status: Optional[str] = Field(None, description="Phone delivery status: unknown, valid, invalid, landline, unreachable, unsubscribed")
+    phone_status_updated_at: Optional[datetime] = Field(None, description="When phone_status was last updated")
     email_opt_in: Optional[bool] = Field(default=None, description="Guest opted in to receive email reminders (None=not yet decided)")
     email_opt_in_date: Optional[datetime] = Field(None, description="When guest opted in to email")
     email_opt_out_date: Optional[datetime] = Field(None, description="When guest opted out of email")
@@ -75,6 +77,7 @@ class UpdateGuestRequest(BaseModel):
     number_of_plus_ones_allowed: Optional[int] = Field(None, ge=0, le=10)
     sms_opt_in: Optional[bool] = None
     email_opt_in: Optional[bool] = None
+    phone_status: Optional[str] = Field(None, description="Phone delivery status")
     # Seating optimization fields
     must_sit_with: Optional[list[str]] = Field(None, description="Guest IDs that this guest must sit with")
     must_sit_apart: Optional[list[str]] = Field(None, description="Guest IDs that this guest should NOT sit near")

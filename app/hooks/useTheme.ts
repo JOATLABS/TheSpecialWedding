@@ -1,6 +1,19 @@
 import { useEffect } from 'react';
 import { Wedding } from '@/types/wedding';
 
+/**
+ * Lighten a hex color for readability on dark backgrounds.
+ * percent: 0 = no change, 1 = white
+ */
+function lightenHex(hex: string, percent: number): string {
+  const h = hex.replace('#', '');
+  const num = parseInt(h, 16);
+  const r = Math.min(255, Math.floor((num >> 16) + (255 - (num >> 16)) * percent));
+  const g = Math.min(255, Math.floor(((num >> 8) & 0xff) + (255 - ((num >> 8) & 0xff)) * percent));
+  const b = Math.min(255, Math.floor((num & 0xff) + (255 - (num & 0xff)) * percent));
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
 export const useTheme = (wedding: Wedding | null) => {
   useEffect(() => {
     if (!wedding?.theme_config) return;
@@ -8,11 +21,16 @@ export const useTheme = (wedding: Wedding | null) => {
     const theme = wedding.theme_config;
     const root = document.documentElement;
 
-    // Apply CSS custom properties
+    // Apply CSS custom properties (light mode originals)
     root.style.setProperty('--theme-primary', theme.primary_color);
     root.style.setProperty('--theme-secondary', theme.secondary_color);
     root.style.setProperty('--theme-accent', theme.accent_color);
-    
+
+    // Compute lightened variants for dark mode readability
+    root.style.setProperty('--theme-primary-light', lightenHex(theme.primary_color, 0.55));
+    root.style.setProperty('--theme-secondary-light', lightenHex(theme.secondary_color, 0.35));
+    root.style.setProperty('--theme-accent-light', lightenHex(theme.accent_color, 0.35));
+
     // Apply font style
     switch (theme.font_style) {
       case 'elegant':
@@ -38,6 +56,9 @@ export const useTheme = (wedding: Wedding | null) => {
       root.style.removeProperty('--theme-primary');
       root.style.removeProperty('--theme-secondary');
       root.style.removeProperty('--theme-accent');
+      root.style.removeProperty('--theme-primary-light');
+      root.style.removeProperty('--theme-secondary-light');
+      root.style.removeProperty('--theme-accent-light');
       root.style.removeProperty('--theme-font-heading');
       root.style.removeProperty('--theme-font-body');
     };

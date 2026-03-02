@@ -67,7 +67,7 @@ class BudgetApiService {
 
   async deleteBudgetCategory(token: string, categoryId: string): Promise<void> {
     const response = await fetch(
-      `${BASE_URL}/admin/budget/categories/${categoryId}`,
+      `${BASE_URL}/admin/budget/category/${categoryId}`,
       {
         method: 'DELETE',
         headers: this.getHeaders(token)
@@ -90,17 +90,19 @@ class BudgetApiService {
   // Vendor Quotes
   async getVendorQuotes(token: string, weddingId: string, category?: string): Promise<VendorQuote[]> {
     const url = category
-      ? `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes?category=${category}`
-      : `${BASE_URL}/admin/weddings/${weddingId}/vendor-quotes`;
+      ? `${BASE_URL}/admin/weddings/${weddingId}/quotes?service_category=${encodeURIComponent(category)}`
+      : `${BASE_URL}/admin/weddings/${weddingId}/quotes`;
 
     const response = await fetch(url, { headers: this.getHeaders(token) });
     if (!response.ok) throw new Error('Failed to fetch vendor quotes');
-    return response.json();
+    const payload = await response.json();
+    // Backend returns {quotes: [...], count: N} — unwrap the array
+    return Array.isArray(payload.quotes) ? payload.quotes : (Array.isArray(payload) ? payload : []);
   }
 
   async createVendorQuote(token: string, data: CreateVendorQuoteRequest): Promise<VendorQuote> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${data.wedding_id}/vendor-quotes`,
+      `${BASE_URL}/admin/weddings/${data.wedding_id}/quotes`,
       {
         method: 'POST',
         headers: this.getHeaders(token),
@@ -108,12 +110,14 @@ class BudgetApiService {
       }
     );
     if (!response.ok) throw new Error('Failed to create vendor quote');
-    return response.json();
+    const payload = await response.json();
+    // Backend returns {message, quote} — unwrap
+    return payload.quote || payload;
   }
 
   async updateVendorQuoteStatus(token: string, quoteId: string, status: string): Promise<VendorQuote> {
     const response = await fetch(
-      `${BASE_URL}/admin/vendor-quotes/${quoteId}/status`,
+      `${BASE_URL}/admin/quotes/${quoteId}/status`,
       {
         method: 'PUT',
         headers: this.getHeaders(token),
@@ -121,12 +125,14 @@ class BudgetApiService {
       }
     );
     if (!response.ok) throw new Error('Failed to update vendor quote status');
-    return response.json();
+    const payload = await response.json();
+    // Backend returns {message, quote} — unwrap
+    return payload.quote || payload;
   }
 
   async rateVendorQuote(token: string, quoteId: string, rating: number, notes?: string): Promise<VendorQuote> {
     const response = await fetch(
-      `${BASE_URL}/admin/vendor-quotes/${quoteId}/rating`,
+      `${BASE_URL}/admin/quotes/${quoteId}/rating`,
       {
         method: 'PUT',
         headers: this.getHeaders(token),
@@ -194,7 +200,7 @@ class BudgetApiService {
   }
 
   // Cost Estimation
-  async getCostEstimate(token: string, weddingType: string, guestCount: number, location: string): Promise<any> {
+  async getCostEstimate(token: string, weddingType: string, guestCount: number, region: string): Promise<any> {
     const response = await fetch(
       `${BASE_URL}/admin/budget/estimate`,
       {
@@ -203,7 +209,7 @@ class BudgetApiService {
         body: JSON.stringify({
           wedding_type: weddingType,
           guest_count: guestCount,
-          location: location
+          region: region
         })
       }
     );
@@ -214,11 +220,12 @@ class BudgetApiService {
   // Budget Alerts
   async getBudgetAlerts(token: string, weddingId: string): Promise<BudgetAlert[]> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/alerts`,
+      `${BASE_URL}/admin/budget/alerts/${weddingId}`,
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to fetch budget alerts');
-    return response.json();
+    const payload = await response.json();
+    return Array.isArray(payload.alerts) ? payload.alerts : (Array.isArray(payload) ? payload : []);
   }
 
   async markAlertAsRead(token: string, alertId: string): Promise<void> {
@@ -256,7 +263,7 @@ class BudgetApiService {
   // Vendor Quote Comparison
   async compareVendorQuotes(token: string, weddingId: string, category: string): Promise<any> {
     const response = await fetch(
-      `${BASE_URL}/admin/weddings/${weddingId}/budget/compare-quotes?category=${category}`,
+      `${BASE_URL}/admin/weddings/${weddingId}/quotes/compare/${encodeURIComponent(category)}`,
       { headers: this.getHeaders(token) }
     );
     if (!response.ok) throw new Error('Failed to compare vendor quotes');

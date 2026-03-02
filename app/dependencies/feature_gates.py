@@ -21,10 +21,20 @@ async def get_user_plan_features(user_email: str) -> dict:
         dict: Feature flags from the user's plan, or empty dict if no plan
     """
     try:
-        # Get user's subscription
+        # Get user's subscription — check both user_email and user_id fields
+        # since subscriptions may be stored with either identifier
         subscription = await mongo.db["user_subscriptions"].find_one(
-            {"user_email": user_email, "status": {"$in": ["active", "trial"]}}
+            {"user_email": user_email, "status": {"$in": ["active", "trial", "trialing"]}}
         )
+
+        if not subscription:
+            # Fallback: look up by user_id from users collection
+            user = await mongo.get_users_collection().find_one({"email": user_email})
+            if user:
+                user_id_str = str(user["_id"])
+                subscription = await mongo.db["user_subscriptions"].find_one(
+                    {"user_id": user_id_str, "status": {"$in": ["active", "trial", "trialing"]}}
+                )
 
         if not subscription:
             # Check if user is ROOT_ADMIN (they get all features)

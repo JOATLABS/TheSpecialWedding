@@ -146,16 +146,23 @@ async def assign_guests(
     if not await check_wedding_access(current_user, table["wedding_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    # Validate guest IDs
+    # Validate guest IDs — report invalid ones instead of silently skipping
     guest_object_ids = []
+    invalid_ids = []
     for gid in request.guest_ids:
         try:
             guest_object_ids.append(ObjectId(gid))
         except InvalidId:
-            continue
+            invalid_ids.append(gid)
+
+    if invalid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid guest IDs: {', '.join(invalid_ids)}"
+        )
 
     if not guest_object_ids:
-        return {"message": "No valid guest IDs provided", "assigned": 0}
+        return {"message": "No guest IDs provided", "assigned": 0}
 
     # Check capacity: count current guests at table + new guests (excluding those already at table)
     current_guests_count = await mongo.db["guests"].count_documents({
@@ -182,12 +189,37 @@ async def assign_guests(
 
     # Bulk update guests
     if guest_object_ids:
-        await mongo.db["guests"].update_many(
+        result = await mongo.db["guests"].update_many(
             {"_id": {"$in": guest_object_ids}, "wedding_id": table["wedding_id"]},
             {"$set": {"table_id": request.table_id}}
         )
 
-    return {"message": f"Assigned {len(guest_object_ids)} guests to table", "assigned": len(guest_object_ids)}
+        # Post-update capacity check for concurrent assignment safety (T8)
+        post_count = await mongo.db["guests"].count_documents({
+            "table_id": request.table_id,
+            "wedding_id": table["wedding_id"]
+        })
+        if post_count > table.get("capacity", 10):
+            # Rollback: unassign the guests we just assigned
+            logger.warning(
+                f"Concurrent assignment exceeded capacity on table {request.table_id}: "
+                f"{post_count}/{table.get('capacity', 10)}. Rolling back."
+            )
+            await mongo.db["guests"].update_many(
+                {"_id": {"$in": guest_object_ids}, "wedding_id": table["wedding_id"]},
+                {"$set": {"table_id": None}}
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=f"Table capacity exceeded due to concurrent assignment. "
+                       f"Please retry. Capacity: {table.get('capacity', 10)}"
+            )
+
+        actually_modified = result.modified_count
+    else:
+        actually_modified = 0
+
+    return {"message": f"Assigned {actually_modified} guests to table", "assigned": actually_modified}
 
 
 @router.post("/tables/unassign", tags=["Seating"])

@@ -25,11 +25,14 @@ CRON_SECRET = os.getenv("CRON_SECRET", "")
 
 
 def verify_cron_auth(authorization: Optional[str] = Header(None)):
-    """Verify cron job authorization."""
+    """Verify cron job authorization. Fail-closed: rejects all requests if CRON_SECRET is not set."""
     if not CRON_SECRET:
-        # If no secret configured, allow (for development)
-        logger.warning("CRON_SECRET not configured - cron endpoints are unprotected")
-        return True
+        # SECURITY: Fail closed — never allow unprotected cron access in production
+        logger.error("CRON_SECRET not configured - rejecting cron request for security")
+        raise HTTPException(
+            status_code=503,
+            detail="Cron endpoints unavailable: CRON_SECRET not configured"
+        )
 
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization")

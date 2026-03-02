@@ -165,13 +165,21 @@ async def update_budget_category(
 ):
     """Update an existing budget category"""
     try:
-        # Note: Wedding access is checked within the service by looking up the category
+        # Verify wedding access via category lookup
+        category = await budget_service.get_budget_category(category_id)
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+        if not await check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         updated_category = await budget_service.update_budget_category(
             category_id,
             update_data.dict(exclude_unset=True)
         )
         return {"message": "Budget category updated successfully", "category": updated_category}
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -185,12 +193,20 @@ async def delete_budget_category(
 ):
     """Delete a budget category"""
     try:
-        # Note: Wedding access is checked within the service
+        # Verify wedding access via category lookup
+        category = await budget_service.get_budget_category(category_id)
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+        if not await check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         success = await budget_service.delete_budget_category(category_id)
         if success:
             return {"message": "Budget category deleted successfully"}
         else:
             raise HTTPException(status_code=400, detail="Failed to delete budget category")
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -272,14 +288,50 @@ async def update_quote_status(
         if status not in ["pending", "accepted", "rejected", "expired"]:
             raise HTTPException(status_code=400, detail="Invalid status")
 
+        # Verify wedding access via quote lookup
+        quote = await budget_service.get_vendor_quote(quote_id)
+        if not quote:
+            raise HTTPException(status_code=404, detail="Vendor quote not found")
+        if not await check_wedding_access(current_user, quote["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         updated_quote = await budget_service.update_quote_status(quote_id, status, notes)
         return {"message": f"Quote status updated to {status}", "quote": updated_quote}
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to update quote status: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update quote status")
+
+@router.put("/quotes/{quote_id}/rating", tags=["Budget", "Vendors"])
+async def rate_vendor_quote(
+    quote_id: str,
+    rating: int = Body(..., embed=True, ge=1, le=5),
+    notes: Optional[str] = Body(None, embed=True),
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """Rate a vendor quote (1-5 stars)"""
+    try:
+        # Verify wedding access via quote lookup
+        quote = await budget_service.get_vendor_quote(quote_id)
+        if not quote:
+            raise HTTPException(status_code=404, detail="Vendor quote not found")
+        if not await check_wedding_access(current_user, quote["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+        updated_quote = await budget_service.rate_vendor_quote(quote_id, rating, notes)
+        return {"message": "Quote rated successfully", "quote": updated_quote}
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to rate vendor quote: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to rate vendor quote")
 
 # ===== BUDGET TEMPLATE ENDPOINTS =====
 
