@@ -113,10 +113,7 @@ class AdminRSVPService:
                     plus_one.get("name") if plus_one else "",
                     ", ".join(plus_one.get("attending", [])) if plus_one else "",
                     plus_one.get("dietary") if plus_one else ""
-                ]
-
-                sanitized_row = [self.sanitize_csv_field(val) for val in row_data]
-                writer.writerow(sanitized_row)
+                ])
 
             return CSVExportUtils.generate_csv_content(headers, rows)
         except Exception as e:
