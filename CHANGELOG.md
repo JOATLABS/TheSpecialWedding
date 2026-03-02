@@ -5,9 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Released]
 
 ### Added
+
+- **AI Cache Stable Fallback Lookup** (`app/services/ai_cache_service.py`):
+  - New `get_latest_cached_response(feature, tenant_id)` method finds the most recent cached AI response for a feature+tenant pair regardless of context hash
+  - First tries non-expired entries, then falls back to expired entries as a last resort
+  - Enables the "stale insights > no insights" resilience pattern across all AI features
+
+- **Stable Cache Key Context for AI Endpoints** (`app/api/ai.py`):
+  - Both `get_budget_insights` and `get_dashboard_insights` endpoints now pass a stable `cache_context` dict containing only primitive, non-volatile values (budget totals, guest counts, wedding date) to the AI service
+  - Excludes volatile data (upcoming_tasks, vendor_payments, days_until_wedding) from cache key generation while still sending full context to the Gemini model for analysis
+  - Prevents unnecessary cache misses on page reload when only dynamic/computed fields change
+
+- **Three-Tier AI Fallback Chain** (`app/services/ai_service.py`):
+  - Added `cache_context` parameter to `generate()` for stable cache key generation separate from the full AI context
+  - Pre-API fallback: when exact cache key misses, checks for any recent cached response before making a Gemini API call
+  - Post-failure fallback: on `InsufficientCreditsError` or generic exceptions, returns cached data with a warning instead of hard-erroring
+  - Each fallback tier is logged with status (`cached`, `cached_fallback`, `error`) for operational visibility
+
+### Fixed
+
+- **AI Insights Fail to Reload After First Load** (`app/services/ai_service.py`, `app/api/ai.py`):
+  - Root cause: volatile context data (upcoming_tasks, vendor_payments, computed days_until_wedding) changed on every page reload, generating a new SHA256 cache key hash each time, causing cache misses → Gemini API calls → credit burn → eventual credit exhaustion → hard error with no recovery
+  - Fix: separated cache key generation (`cache_context` with stable primitives) from the full AI context sent to Gemini
+
+- **AI Insights UI Destroyed on Error — Planner Dashboard** (`app/admin/planner/page.tsx`):
+  - Error state no longer clears existing insights; previous insights remain visible below an amber warning banner
+  - Added specific error messages for HTTP 402 (credits), 429 (rate limit), 503 (unavailable), 504 (timeout)
+  - "Try again" retry button now passes `forceRefresh=true` so retry actually attempts a fresh Gemini call instead of hitting the cache again
+
+- **AI Insights UI Destroyed on Error — Budget Page** (`app/admin/budget/page.tsx`):
+  - Same pattern as planner dashboard: error no longer clears existing insights
+  - Error display changed from red destructive alert to amber warning banner with retry button
+  - Panel stays visible on error (`setShowAiInsights(true)` in catch block) so user sees error alongside any previous insights
+  - Removed unnecessary toast notification for cached results
 
 - **SMS Error Classifier Utility** (`app/utils/sms_error_classifier.py`):
   - New module that categorizes Twilio error codes into actionable groups: `temporary`, `permanent_recipient`, `account_level`, `compliance`, `unknown`

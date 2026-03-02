@@ -480,7 +480,7 @@ export default function WeddingPlannerDashboard() {
                 <p className="text-sm text-amber-800 dark:text-amber-200">{insightsError}</p>
               </div>
               <button
-                onClick={() => fetchAIInsights(selectedInsightWedding)}
+                onClick={() => fetchAIInsights(selectedInsightWedding, true)}
                 className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 whitespace-nowrap ml-3"
               >
                 Try again
