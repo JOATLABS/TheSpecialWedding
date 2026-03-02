@@ -1,16 +1,34 @@
-MIT License
+PROPRIETARY SOFTWARE LICENSE
 
-Copyright (c) 2025 Emmanuel AKinwale
+Copyright (c) 2025-2026 Emmanuel Akinwale. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The Special Wedding - Commercial Wedding Planning SaaS Platform
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This software and associated documentation files (the "Software") are the
+proprietary property of Emmanuel Akinwale. The Software is a commercial
+product operated as a subscription-based SaaS platform.
+
+RESTRICTIONS:
+
+1. You may NOT copy, modify, merge, publish, distribute, sublicense, or sell
+   copies of the Software without prior written permission from the copyright
+   holder.
+
+2. You may NOT use the Software to create or operate a competing product or
+   service.
+
+3. You may NOT reverse engineer, decompile, or disassemble the Software.
+
+4. You may NOT remove or alter any proprietary notices, labels, or marks on
+   the Software.
+
+PERMITTED USE:
+
+- Authorized employees and contractors of the copyright holder may access and
+  modify the Software for development and maintenance purposes.
+- End users (wedding planners, vendors, guests) may use the Software through
+  the hosted platform at thespecialwedding.io under the applicable terms of
+  service.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,3 +37,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+For licensing inquiries, contact: admin@thespecialwedding.io
