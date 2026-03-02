@@ -15,6 +15,32 @@ from app.models.autopilot import Contract, ContractSignature, ScheduledPayment
 logger = logging.getLogger(__name__)
 
 
+# C17: Documented contract status constants — single source of truth
+CONTRACT_STATUS_DRAFT = "draft"
+CONTRACT_STATUS_PENDING_REVIEW = "pending_review"
+CONTRACT_STATUS_SENT = "sent"
+CONTRACT_STATUS_VIEWED = "viewed"
+CONTRACT_STATUS_SIGNED = "signed"
+CONTRACT_STATUS_ACTIVE = "active"
+CONTRACT_STATUS_COMPLETED = "completed"
+CONTRACT_STATUS_CANCELLED = "cancelled"
+
+# Statuses that allow editing
+EDITABLE_STATUSES = {CONTRACT_STATUS_DRAFT, CONTRACT_STATUS_PENDING_REVIEW}
+
+# Statuses that allow sending
+SENDABLE_STATUSES = {CONTRACT_STATUS_DRAFT, CONTRACT_STATUS_PENDING_REVIEW}
+
+# Statuses that mean the contract is no longer actionable
+TERMINAL_STATUSES = {CONTRACT_STATUS_COMPLETED, CONTRACT_STATUS_CANCELLED}
+
+# Payment milestone statuses
+MILESTONE_STATUS_PENDING = "pending"
+MILESTONE_STATUS_PARTIAL = "partial"
+MILESTONE_STATUS_PAID = "paid"
+MILESTONE_STATUS_OVERDUE = "overdue"
+
+
 class ContractService:
     """
     Service for managing contract lifecycle.

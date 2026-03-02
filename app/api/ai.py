@@ -10,7 +10,7 @@ Provides endpoints for AI-powered features:
 """
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import logging
 
 from app.services.ai_service import (
@@ -322,11 +322,11 @@ class SeatingOptimizeRequest(BaseModel):
 
 
 class DraftCommunicationRequest(BaseModel):
-    communication_type: str  # follow_up, reminder, thank_you, progress_update
-    couple_name: str
+    communication_type: str = Field(..., max_length=50)  # follow_up, reminder, thank_you, progress_update
+    couple_name: str = Field(..., min_length=1, max_length=200)
     wedding_date: Optional[str] = None
-    context: Optional[str] = None
-    custom_instructions: Optional[str] = None
+    context: Optional[str] = Field(None, max_length=2000)
+    custom_instructions: Optional[str] = Field(None, max_length=2000)
 
 
 class ProgressReportRequest(BaseModel):
@@ -1228,10 +1228,10 @@ async def suggest_pricing(
 # =========================================================================
 
 class ContractSectionRequest(BaseModel):
-    section_type: str  # payment_terms, cancellation_policy, scope_of_work, liability, force_majeure, custom
-    vendor_type: Optional[str] = None  # photographer, caterer, florist, dj, venue, etc.
+    section_type: str = Field(..., max_length=50)  # payment_terms, cancellation_policy, scope_of_work, liability, force_majeure, custom
+    vendor_type: Optional[str] = Field(None, max_length=100)  # photographer, caterer, florist, dj, venue, etc.
     wedding_id: Optional[str] = None
-    custom_prompt: Optional[str] = None
+    custom_prompt: Optional[str] = Field(None, max_length=3000)
 
 
 @router.post("/generate-contract-section")
@@ -1254,6 +1254,19 @@ async def generate_contract_section(
     """
     try:
         user_id = str((current_user.user_data or {}).get("_id", ""))
+
+        # A8: Pre-check AI credits before expensive contract generation
+        try:
+            credit_check = await ai_service.check_credits(user_id, "contract_section")
+            if not credit_check.get("has_credits", True):
+                raise InsufficientCreditsError(
+                    required=credit_check.get("required", 1),
+                    available=credit_check.get("available", 0)
+                )
+        except InsufficientCreditsError:
+            raise
+        except Exception:
+            pass  # Allow through if credit check itself fails — generate() will re-check
 
         valid_sections = ["payment_terms", "cancellation_policy", "scope_of_work", "liability", "force_majeure", "custom"]
         if request.section_type not in valid_sections:
@@ -1986,7 +1999,7 @@ class PageContextModel(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=5000)
     wedding_id: Optional[str] = None
     conversation_history: Optional[List[Dict[str, str]]] = None  # [{role: "user"/"assistant", content: "..."}]
     page_context: Optional[PageContextModel] = None  # Current page context for enhanced responses
@@ -2132,14 +2145,14 @@ async def chat_with_ai(
 # =========================================================================
 
 class GenerateMessageRequest(BaseModel):
-    message_type: str  # rsvp_reminder, save_the_date, thank_you, vendor_reminder, event_reminder, custom
+    message_type: str = Field(..., max_length=50)  # rsvp_reminder, save_the_date, thank_you, vendor_reminder, event_reminder, custom
     wedding_id: str
-    tone: str = "friendly"  # formal, friendly, casual
-    recipient_context: Optional[str] = None  # family, friend, vendor, etc.
-    custom_instructions: Optional[str] = None
-    couple_names: Optional[str] = None
+    tone: str = Field("friendly", max_length=20)  # formal, friendly, casual
+    recipient_context: Optional[str] = Field(None, max_length=200)  # family, friend, vendor, etc.
+    custom_instructions: Optional[str] = Field(None, max_length=2000)
+    couple_names: Optional[str] = Field(None, max_length=200)
     wedding_date: Optional[str] = None
-    event_name: Optional[str] = None
+    event_name: Optional[str] = Field(None, max_length=200)
 
 
 @router.post("/generate-message")
@@ -2214,10 +2227,10 @@ async def generate_message(
 # =========================================================================
 
 class GenerateFormQuestionsRequest(BaseModel):
-    form_type: str  # rsvp, dietary, song_requests, accommodation, transportation, custom
+    form_type: str = Field(..., max_length=50)  # rsvp, dietary, song_requests, accommodation, transportation, custom
     wedding_id: str
-    cultural_style: Optional[str] = None  # nigerian, indian, jewish, western, etc.
-    custom_context: Optional[str] = None
+    cultural_style: Optional[str] = Field(None, max_length=100)  # nigerian, indian, jewish, western, etc.
+    custom_context: Optional[str] = Field(None, max_length=2000)
     existing_questions: Optional[List[str]] = None  # To avoid duplicates
 
 
@@ -2301,15 +2314,18 @@ async def ai_health_check(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
-    Check AI service health and configuration status.
+    Check AI service health and configuration status (A7).
 
     Returns diagnostic information about the AI service:
     - Whether AI is enabled (API key configured)
     - Whether the Gemini client initialized successfully
-    - API connection status (if client is initialized)
+    - API connection status with response time (if client is initialized)
+    - Recent error rate from usage logs
 
     Cost: 0 credits (diagnostic only)
     """
+    import time
+
     status = {
         "ai_enabled": settings.ai_enabled,
         "api_key_configured": bool(settings.ai_api_key),
@@ -2321,11 +2337,14 @@ async def ai_health_check(
     # Try a lightweight API test if client is initialized
     if ai_service._client:
         try:
+            start_time = time.monotonic()
             # List models to verify API key works (synchronous call)
             models_response = ai_service._client.models.list()
             models = list(models_response)
+            elapsed_ms = round((time.monotonic() - start_time) * 1000)
             status["api_connection"] = "ok"
             status["available_models"] = len(models)
+            status["response_time_ms"] = elapsed_ms
         except Exception as e:
             status["api_connection"] = "error"
             status["api_error"] = str(e)
@@ -2333,5 +2352,24 @@ async def ai_health_check(
     else:
         status["api_connection"] = "not_initialized"
         status["api_error"] = "Gemini client not initialized. Check GEMINI_API_KEY environment variable."
+
+    # Recent error metrics (A7 — health monitoring)
+    try:
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        total_recent = await mongo.db["ai_usage_log"].count_documents(
+            {"created_at": {"$gte": cutoff}}
+        )
+        errors_recent = await mongo.db["ai_usage_log"].count_documents(
+            {"created_at": {"$gte": cutoff}, "error": {"$exists": True, "$ne": None}}
+        )
+        status["last_24h"] = {
+            "total_requests": total_recent,
+            "errors": errors_recent,
+            "error_rate": round(errors_recent / total_recent * 100, 1) if total_recent > 0 else 0
+        }
+    except Exception:
+        # ai_usage_log may not exist yet — non-critical
+        status["last_24h"] = {"total_requests": 0, "errors": 0, "error_rate": 0}
 
     return status

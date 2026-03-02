@@ -203,7 +203,7 @@ export default function PlannerBillingPage() {
         }
       }
 
-      // Load usage statistics
+      // Load usage statistics (S6: from weddings + AI credits endpoint)
       try {
         const weddingsResponse = await fetch(
           `${baseUrl}/admin/weddings`,
@@ -236,6 +236,31 @@ export default function PlannerBillingPage() {
         }
       } catch (error) {
         console.warn('Could not load weddings count:', error);
+      }
+
+      // S6: Load AI credit usage from dedicated endpoint
+      try {
+        const creditsResponse = await fetch(
+          `${baseUrl}/ai/credits`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+          }
+        );
+
+        if (creditsResponse.ok) {
+          const creditsData = await creditsResponse.json();
+          setUsageStats(prev => ({
+            ...prev,
+            ai_credits_used: (creditsData.credits_limit || 0) - (creditsData.credits_remaining || 0),
+            ai_credits_remaining: creditsData.credits_remaining || 0
+          }));
+        }
+      } catch (error) {
+        console.warn('Could not load AI credits:', error);
       }
 
       // Load billing history from Stripe

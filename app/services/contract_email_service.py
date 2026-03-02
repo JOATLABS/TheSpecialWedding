@@ -134,14 +134,23 @@ class ContractEmailService:
             package = contract.get("package_snapshot", {})
             signature = contract.get("signature", {})
 
-            couple_email = couple.get("email")
+            # C12: Resolve recipient — vendor contracts use vendor_email, couple contracts use couple email
+            couple_email = (
+                contract.get("vendor_email")
+                or couple.get("email")
+                or contract.get("signer_email")
+            )
             if not couple_email:
-                logger.error("No couple email found for contract")
+                logger.error("No recipient email found for contract confirmation")
                 return False
 
             couple_name = couple.get("name", "")
             partner_name = couple.get("partner_name")
-            greeting_name = f"{couple_name} & {partner_name}" if partner_name else couple_name
+            # For vendor contracts, use vendor_name if couple name is missing
+            if not couple_name and contract.get("vendor_name"):
+                greeting_name = contract.get("vendor_name", "")
+            else:
+                greeting_name = f"{couple_name} & {partner_name}" if partner_name else couple_name
 
             # Format currency
             total = package.get("total_amount", 0)

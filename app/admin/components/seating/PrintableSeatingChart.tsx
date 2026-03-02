@@ -4,12 +4,20 @@ import React, { useRef, useCallback } from 'react';
 import { Table, Guest } from '@/types/table';
 import { X, Printer, Download } from 'lucide-react';
 
+interface SeatingChartTheme {
+  accentColor?: string;   // Default: ${accentColor} (gold)
+  headerColor?: string;   // Default: ${headerColor} (navy)
+  headingFont?: string;   // Default: Playfair Display
+  bodyFont?: string;      // Default: Inter
+}
+
 interface PrintableSeatingChartProps {
   tables: Table[];
   guests: Guest[];
   coupleName: string;
   weddingDate: string;
   onClose: () => void;
+  theme?: SeatingChartTheme;
 }
 
 export function PrintableSeatingChart({
@@ -18,7 +26,13 @@ export function PrintableSeatingChart({
   coupleName,
   weddingDate,
   onClose,
+  theme,
 }: PrintableSeatingChartProps) {
+  // T9: Dynamic branding — use wedding theme or fall back to elegant defaults
+  const accentColor = theme?.accentColor || '${accentColor}';
+  const headerColor = theme?.headerColor || '${headerColor}';
+  const headingFont = theme?.headingFont || 'Playfair Display';
+  const bodyFont = theme?.bodyFont || 'Inter';
   const printRef = useRef<HTMLDivElement>(null);
 
   // Calculate canvas bounds from table positions
@@ -54,7 +68,7 @@ export function PrintableSeatingChart({
       <head>
         <title>Seating Chart — ${coupleName}</title>
         <style>
-          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+          @import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(headingFont)}:wght@400;600;700&family=${encodeURIComponent(bodyFont)}:wght@300;400;500;600&display=swap');
 
           * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -64,7 +78,7 @@ export function PrintableSeatingChart({
           }
 
           body {
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: '${bodyFont}', system-ui, sans-serif;
             background: #FAFBFC;
             color: #1E293B;
             -webkit-print-color-adjust: exact;
@@ -76,7 +90,7 @@ export function PrintableSeatingChart({
             width: ${canvasW}px;
             min-height: ${canvasH}px;
             background: linear-gradient(135deg, #FFF5F5 0%, #F8FAFC 40%, #F0FDFA 100%);
-            border: 2px solid #E9C46A;
+            border: 2px solid ${accentColor};
             border-radius: 16px;
             overflow: hidden;
             page-break-inside: avoid;
@@ -88,7 +102,7 @@ export function PrintableSeatingChart({
             position: absolute;
             width: 60px;
             height: 60px;
-            border: 3px solid #E9C46A;
+            border: 3px solid ${accentColor};
             opacity: 0.5;
           }
           .print-canvas::before {
@@ -110,10 +124,10 @@ export function PrintableSeatingChart({
           }
 
           .print-header h1 {
-            font-family: 'Playfair Display', serif;
+            font-family: '${headingFont}', serif;
             font-size: 42px;
             font-weight: 700;
-            color: #1D3557;
+            color: ${headerColor};
             letter-spacing: 0.02em;
             margin-bottom: 8px;
           }
@@ -128,7 +142,7 @@ export function PrintableSeatingChart({
           .print-header .divider {
             width: 80px;
             height: 2px;
-            background: linear-gradient(to right, transparent, #E9C46A, transparent);
+            background: linear-gradient(to right, transparent, ${accentColor}, transparent);
             margin: 16px auto 8px;
           }
 
@@ -160,7 +174,7 @@ export function PrintableSeatingChart({
 
           .table-header {
             padding: 12px 16px;
-            background: linear-gradient(135deg, #1D3557, #264673);
+            background: linear-gradient(135deg, ${headerColor}, #264673);
             color: white;
             display: flex;
             justify-content: space-between;
@@ -168,7 +182,7 @@ export function PrintableSeatingChart({
           }
 
           .table-name {
-            font-family: 'Playfair Display', serif;
+            font-family: '${headingFont}', serif;
             font-size: 16px;
             font-weight: 600;
           }
@@ -202,7 +216,7 @@ export function PrintableSeatingChart({
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #E9C46A;
+            background: ${accentColor};
             flex-shrink: 0;
           }
 
@@ -234,7 +248,7 @@ export function PrintableSeatingChart({
           }
 
           .unseated-title {
-            font-family: 'Playfair Display', serif;
+            font-family: '${headingFont}', serif;
             font-size: 14px;
             font-weight: 600;
             color: #92400E;
@@ -318,19 +332,19 @@ export function PrintableSeatingChart({
         <div className="mx-auto" style={{ maxWidth: canvasW + 40 }}>
           {/* The printable content */}
           <div ref={printRef}>
-            <div className="print-canvas" style={{ width: canvasW, minHeight: canvasH, position: 'relative', background: 'linear-gradient(135deg, #FFF5F5 0%, #F8FAFC 40%, #F0FDFA 100%)', border: '2px solid #E9C46A', borderRadius: 16, overflow: 'hidden' }}>
+            <div className="print-canvas" style={{ width: canvasW, minHeight: canvasH, position: 'relative', background: 'linear-gradient(135deg, #FFF5F5 0%, #F8FAFC 40%, #F0FDFA 100%)', border: '2px solid ${accentColor}', borderRadius: 16, overflow: 'hidden' }}>
               {/* Decorative corner accents */}
-              <div style={{ position: 'absolute', top: 12, left: 12, width: 60, height: 60, borderTop: '3px solid #E9C46A', borderLeft: '3px solid #E9C46A', borderRadius: '8px 0 0 0', opacity: 0.5 }} />
-              <div style={{ position: 'absolute', top: 12, right: 12, width: 60, height: 60, borderTop: '3px solid #E9C46A', borderRight: '3px solid #E9C46A', borderRadius: '0 8px 0 0', opacity: 0.5 }} />
-              <div style={{ position: 'absolute', bottom: 12, left: 12, width: 60, height: 60, borderBottom: '3px solid #E9C46A', borderLeft: '3px solid #E9C46A', borderRadius: '0 0 0 8px', opacity: 0.5 }} />
-              <div style={{ position: 'absolute', bottom: 12, right: 12, width: 60, height: 60, borderBottom: '3px solid #E9C46A', borderRight: '3px solid #E9C46A', borderRadius: '0 0 8px 0', opacity: 0.5 }} />
+              <div style={{ position: 'absolute', top: 12, left: 12, width: 60, height: 60, borderTop: '3px solid ${accentColor}', borderLeft: '3px solid ${accentColor}', borderRadius: '8px 0 0 0', opacity: 0.5 }} />
+              <div style={{ position: 'absolute', top: 12, right: 12, width: 60, height: 60, borderTop: '3px solid ${accentColor}', borderRight: '3px solid ${accentColor}', borderRadius: '0 8px 0 0', opacity: 0.5 }} />
+              <div style={{ position: 'absolute', bottom: 12, left: 12, width: 60, height: 60, borderBottom: '3px solid ${accentColor}', borderLeft: '3px solid ${accentColor}', borderRadius: '0 0 0 8px', opacity: 0.5 }} />
+              <div style={{ position: 'absolute', bottom: 12, right: 12, width: 60, height: 60, borderBottom: '3px solid ${accentColor}', borderRight: '3px solid ${accentColor}', borderRadius: '0 0 8px 0', opacity: 0.5 }} />
 
               {/* Header */}
               <div style={{ textAlign: 'center', padding: '40px 20px 30px', borderBottom: '1px solid rgba(233,196,106,0.3)', background: 'linear-gradient(to bottom, rgba(255,255,255,0.8), transparent)' }}>
-                <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 42, fontWeight: 700, color: '#1D3557', letterSpacing: '0.02em', marginBottom: 8 }}>
+                <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 42, fontWeight: 700, color: '${headerColor}', letterSpacing: '0.02em', marginBottom: 8 }}>
                   {coupleName}
                 </h1>
-                <div style={{ width: 80, height: 2, background: 'linear-gradient(to right, transparent, #E9C46A, transparent)', margin: '12px auto' }} />
+                <div style={{ width: 80, height: 2, background: 'linear-gradient(to right, transparent, ${accentColor}, transparent)', margin: '12px auto' }} />
                 <p style={{ fontSize: 16, color: '#64748B', fontWeight: 300, letterSpacing: '0.05em' }}>
                   Seating Arrangement
                 </p>
@@ -364,7 +378,7 @@ export function PrintableSeatingChart({
                       <div
                         style={{
                           padding: '12px 16px',
-                          background: 'linear-gradient(135deg, #1D3557, #264673)',
+                          background: 'linear-gradient(135deg, ${headerColor}, #264673)',
                           color: 'white',
                           display: 'flex',
                           justifyContent: 'space-between',
@@ -394,7 +408,7 @@ export function PrintableSeatingChart({
                                 fontSize: 13,
                               }}
                             >
-                              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#E9C46A', flexShrink: 0 }} />
+                              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '${accentColor}', flexShrink: 0 }} />
                               <span style={{ fontWeight: 500, color: '#334155' }}>{guest.name}</span>
                               {guest.group_id && (
                                 <span style={{ fontSize: 11, color: '#94A3B8', marginLeft: 'auto' }}>

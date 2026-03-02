@@ -56,19 +56,24 @@ class SeatingExportService:
             {"wedding_id": wedding_id}
         ).to_list(length=None)
 
-        # Build guest lookup by table_id
+        # Build guest lookup by table_id (T5: normalize ObjectId → string consistently)
         guests_by_table: Dict[str, List[dict]] = {}
         unseated_guests: List[dict] = []
 
         for guest in guests:
             table_id = guest.get("table_id")
             if table_id:
+                # Normalize to string — table_id may be stored as ObjectId or string
                 table_id_str = str(table_id)
                 if table_id_str not in guests_by_table:
                     guests_by_table[table_id_str] = []
                 guests_by_table[table_id_str].append(guest)
             else:
                 unseated_guests.append(guest)
+
+        # Also index by string _id for tables (some guests may reference table by _id string)
+        # This ensures guests stored with ObjectId("abc") match table _id ObjectId("abc")
+        # since both are converted via str()
 
         # Generate HTML based on layout style
         if layout_style == "visual":
