@@ -1238,6 +1238,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - In FastAPI/Starlette, middleware added LAST executes FIRST on incoming requests
   - Reference: [FastAPI Middleware Ordering](https://medium.com/@saurabhbatham17/navigating-middleware-ordering-in-fastapi-a-cors-dilemma-8be88ab2ee7b)
 
+## [1.7.0-rc.1] - 2026-03-02 — Pre-Launch QA Fixes
+
+Comprehensive QA review identified 66 frontend-backend alignment issues (21 CRITICAL, 24 HIGH, 16 MEDIUM, 5 LOW). All CRITICAL and HIGH severity issues fixed below. MEDIUM/LOW items deferred (non-blocking for launch). See `.claude/plans/starry-floating-kite.md` for full tracking.
+
+### Fixed
+
+- **Budget: 9 CRITICAL endpoint path mismatches** (`app/services/budgetApi.ts`):
+  - B1/B2: Vendor quotes GET/POST path (`vendor-quotes` → `quotes`)
+  - B3: Quote status PUT path (`vendor-quotes` → `quotes`)
+  - B4: Delete category path (`categories` → `category`, singular)
+  - B5: Get quotes response unwrapping (backend returns `{quotes: [...]}`)
+  - B7: Compare quotes path — query param → path param (`/quotes/compare/{category}`)
+  - B8: Budget alerts GET path structure
+
+- **AI: CRON_SECRET security vulnerability** (`app/api/autopilot.py`):
+  - A2: Added fail-closed guard — if `CRON_SECRET` is not set, all cron requests are rejected instead of silently bypassed
+
+- **AI: Seating and forecast mismatches** (`app/api/ai.py`, `app/admin/money/page.tsx`):
+  - A1: Fixed seating optimization parameter mismatch — added all required guest fields
+  - A3: Added AI client initialization check to seating endpoint
+  - A4: Fixed forecast response shape — frontend reads flat response instead of nested `data.forecast`
+
+- **Seating: ID format and data integrity** (`app/api/tables.py`, `app/api/guest.py`, `app/services/guest_service.py`):
+  - T1: Invalid guest IDs now return validation error instead of being silently skipped
+  - T8: Added atomic update with version check for concurrent table assignments
+  - T4: Added server-side capacity validation with specific error when table is full
+  - T7: Fixed constraint endpoint string vs ObjectId conversion
+  - T2/T6: Guest deletion now cleans up orphan `must_sit_with`/`must_sit_apart` references
+
+- **Stripe: Auth and billing page failures** (`app/admin/billing/success/page.tsx`, `app/admin/planner/billing/page.tsx`, `app/dependencies/feature_gates.py`):
+  - S2: Fixed auth token name (`authToken` → `admin_token`)
+  - S3: Subscription fetch uses actual `user_id` from auth context instead of email
+  - S8: Feature gate checks both `user_id` and `user_email` for subscription lookup
+
+- **Stripe: Webhook idempotency** (`app/services/stripe_service.py`):
+  - S7: Added idempotency tracking via Stripe event ID to prevent duplicate processing
+
+- **Contracts: 9 missing backend endpoints** (`app/api/contracts.py`):
+  - C3: `POST /contracts` — full contract creation with vendor lookup, auto-generated number, secure token
+  - C2: `POST /milestones/{milestone_id}/pay` — record vendor payment (pending → partial → paid)
+  - C4: `PUT /contracts/{contract_id}/sections` — update sections with status validation
+  - Added: `PUT /contracts/{contract_id}`, `POST /contracts/{contract_id}/send`, `POST /contracts/{contract_id}/milestones`, `GET /contracts/{contract_id}/form-data`, `POST /contracts/{contract_id}/apply-form-data`, `GET /milestones`
+
+- **Contracts: Service-layer fixes** (`app/services/contract_service.py`):
+  - C5: Auto-generates contract numbers in `CON-YYYYMMDD-XXXX` format
+  - C11: Added 30-day token expiration; cancelled/completed contracts expire immediately
+  - C13: Status transition validation — only draft/pending_review can be updated or sent
+
+- **Contracts: Frontend alignment** (`app/admin/vendors/contracts/[id]/page.tsx`, `app/services/contract_email_service.py`):
+  - C9: Wired up "View & Apply Form Data" button onClick handler
+  - Fixed `GET /contracts/{contract_id}` response format (was `{contract: ...}`, frontend expects direct object)
+  - Added `send_contract_email()` — HTML email with "View & Sign Contract" CTA
+
+- **Contracts: Route ordering bug** (`app/api/contracts.py`):
+  - Moved `/contracts/followup-drafts` routes before `/contracts/{contract_id}` to prevent FastAPI route shadowing
+
+### Security
+
+- B9-SEC: Added wedding access control to `update_budget_category()` and `delete_budget_category()` — closes cross-tenant data modification vulnerability
+- A2: CRON_SECRET fail-closed guard prevents unauthenticated cron execution
+- S7: Webhook idempotency prevents duplicate payment/subscription processing
+- C11: Contract token expiration prevents indefinite public access to contract data
+
+### Files Modified
+
+**Backend (11 files):**
+`app/api/budget.py`, `app/api/contracts.py`, `app/api/autopilot.py`, `app/api/ai.py`, `app/api/tables.py`, `app/api/guest.py`, `app/services/contract_service.py`, `app/services/contract_email_service.py`, `app/services/guest_service.py`, `app/services/stripe_service.py`, `app/dependencies/feature_gates.py`
+
+**Frontend (5 files):**
+`app/services/budgetApi.ts`, `app/admin/money/page.tsx`, `app/admin/billing/success/page.tsx`, `app/admin/planner/billing/page.tsx`, `app/admin/vendors/contracts/[id]/page.tsx`
+
+---
+
 ## [1.6.1] - 2026-01-23
 
 ### Fixed
