@@ -60,16 +60,41 @@ class ContractService:
         Get a contract by public token.
         Used for public contract viewing/signing.
 
+        Includes token expiration check (C11):
+        - Tokens expire 30 days after the contract is sent.
+        - Cancelled/completed contracts have expired tokens.
+
         Args:
             token: The contract access token
 
         Returns:
             Contract dict or None
+
+        Raises:
+            ValueError: If token is expired
         """
         try:
             contract = await self.contracts.find_one({"token": token})
-            return self._serialize_contract(contract) if contract else None
+            if not contract:
+                return None
 
+            # Token expiration check (C11)
+            status = contract.get("status", "")
+            if status in ("cancelled", "completed"):
+                raise ValueError("This contract link has expired. The contract has been " + status + ".")
+
+            sent_at = contract.get("sent_at")
+            if sent_at and isinstance(sent_at, datetime):
+                expiry = sent_at + timedelta(days=30)
+                if datetime.now(timezone.utc) > expiry:
+                    raise ValueError(
+                        "This contract link has expired. Please contact the planner for a new link."
+                    )
+
+            return self._serialize_contract(contract)
+
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Failed to get contract by token: {str(e)}")
             raise
