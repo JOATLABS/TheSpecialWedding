@@ -1,0 +1,70 @@
+---
+title: Team Management — Invite & Permission Workflow
+---
+flowchart TD
+    subgraph PLANNER["🎯 Planner (Account Owner)"]
+        A[Opens Team Management Page] --> B{Seats Available?}
+        B -->|No| C[Show Upgrade Prompt]
+        B -->|Yes| D[Clicks 'Invite Team Member']
+        D --> E[Fills Invite Form]
+        E --> E1[Set Email]
+        E --> E2[Choose Role: Admin / Editor / Viewer]
+        E --> E3[Customize Permissions]
+        E --> E4[Set Wedding Access: All or Specific]
+        E1 & E2 & E3 & E4 --> F[Submit Invite]
+    end
+
+    subgraph BACKEND["⚙️ Backend Processing"]
+        F --> G[TeamManagementService.invite_team_member]
+        G --> G1[Check seat limit against plan]
+        G1 -->|Limit reached| G2[Return 403: Seat limit reached]
+        G1 -->|OK| G3[Check email not already on team]
+        G3 -->|Duplicate| G4[Return 409: Already invited]
+        G3 -->|OK| G5[Create team_members doc<br/>status=pending]
+        G5 --> G6[Generate invite token<br/>expires in 7 days]
+        G6 --> G7[Send invite email via Resend]
+        G7 --> G8[Log activity]
+        G8 --> G9[Return success]
+    end
+
+    subgraph INVITEE["📩 Invitee Flow"]
+        G7 -->|Email delivered| H[Invitee receives email]
+        H --> I[Clicks invite link]
+        I --> J[Accept Invitation Page]
+        J --> K[GET /admin/team/invite-info/token]
+        K --> K1{Token valid?}
+        K1 -->|Expired| K2[Show 'Invite Expired' message]
+        K1 -->|Valid| K3[Show company name, role, permissions]
+        K3 --> L[Fills name + password]
+        L --> M[POST /admin/team/accept-invite]
+    end
+
+    subgraph ACCEPT["✅ Accept Processing"]
+        M --> N[Validate token + password]
+        N --> O[Create user in users collection<br/>role=team_member<br/>parent_planner_id=owner_id]
+        O --> P[Update team_members doc<br/>status=active<br/>user_id=new_user_id]
+        P --> Q[Notify planner owner]
+        Q --> R[Return success + redirect to login]
+    end
+
+    subgraph AUTH["🔐 Team Member Login & Access"]
+        R --> S[Team member logs in]
+        S --> T[JWT issued with role=team_member]
+        T --> U[get_current_user_extended loads team data]
+        U --> V[Loads team_members doc for permissions]
+        V --> W{Accessing endpoint?}
+        W --> X[require_team_or_planner passes]
+        X --> Y{Has permission for this action?}
+        Y -->|No| Z[403: Permission denied]
+        Y -->|Yes| AA{Wedding in scope?}
+        AA -->|wedding_access=all| AB[✅ Access granted]
+        AA -->|wedding_access=assigned| AC{Wedding in assigned list?}
+        AC -->|No| AD[403: Wedding access denied]
+        AC -->|Yes| AB
+    end
+
+    style PLANNER fill:#1e293b,stroke:#D4A5A5,stroke-width:2px,color:#e2e8f0
+    style BACKEND fill:#1e293b,stroke:#A8DADC,stroke-width:2px,color:#e2e8f0
+    style INVITEE fill:#1e293b,stroke:#E9C46A,stroke-width:2px,color:#e2e8f0
+    style ACCEPT fill:#1e293b,stroke:#4ade80,stroke-width:2px,color:#e2e8f0
+    style AUTH fill:#1e293b,stroke:#a78bfa,stroke-width:2px,color:#e2e8f0
