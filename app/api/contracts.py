@@ -298,6 +298,52 @@ async def get_contract_form_data(
         raise HTTPException(status_code=500, detail="Failed to get form data")
 
 
+@router.post("/contracts/{contract_id}/apply-form-data", tags=["Contracts"])
+async def apply_form_data_to_contract(
+    contract_id: str,
+    request: Request,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Apply vendor form data to a contract's placeholders.
+    """
+    try:
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+        body = await request.json()
+
+        # Get contract and update sections with form data
+        contract = await contract_service.get_contract(contract_id, planner_id)
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+
+        if contract.get("status") not in ("draft", "pending_review"):
+            raise HTTPException(status_code=400, detail="Cannot modify a non-draft contract")
+
+        # Replace placeholders in sections with form data values
+        sections = contract.get("sections", [])
+        updated_sections = []
+        for section in sections:
+            content = section.get("content", "")
+            for key, value in body.items():
+                placeholder = "{{" + key + "}}"
+                content = content.replace(placeholder, str(value) if value else "")
+            updated_sections.append({**section, "content": content})
+
+        updated = await contract_service.update_contract_sections(
+            contract_id=contract_id,
+            planner_id=planner_id,
+            sections=updated_sections,
+        )
+
+        return updated
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to apply form data: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to apply form data")
+
+
 @router.get("/milestones", tags=["Contracts"])
 async def list_milestones(
     contract_id: Optional[str] = Query(None),
@@ -379,6 +425,115 @@ async def get_contract_stats(
         logger.error(f"Failed to get contract stats: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
 
+
+# ============================================================================
+# FOLLOW-UP DRAFT ENDPOINTS (Authenticated)
+# NOTE: These static paths MUST come before /contracts/{contract_id} to prevent
+# FastAPI from matching "followup-drafts" as a contract_id parameter.
+# ============================================================================
+
+@router.get("/contracts/followup-drafts", tags=["Contracts"])
+async def get_followup_drafts(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get all pending follow-up drafts for the planner.
+
+    These are AI-generated email drafts for unsigned contracts.
+    """
+    try:
+        from app.services.contract_followup_service import contract_followup_service
+
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+        drafts = await contract_followup_service.get_pending_drafts(planner_id)
+
+        return {
+            "drafts": drafts,
+            "count": len(drafts)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get follow-up drafts: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve drafts")
+
+
+class UpdateDraftRequest(BaseModel):
+    """Request to update a follow-up draft."""
+    subject: Optional[str] = Field(None, max_length=200)
+    body: Optional[str] = Field(None, max_length=5000)
+    status: Optional[str] = Field(None, pattern="^(pending|dismissed)$")
+
+
+@router.put("/contracts/followup-drafts/{draft_id}", tags=["Contracts"])
+async def update_followup_draft(
+    draft_id: str,
+    update_data: UpdateDraftRequest,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Update a follow-up draft (edit content or dismiss).
+    """
+    try:
+        from app.services.contract_followup_service import contract_followup_service
+
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+
+        updates = update_data.model_dump(exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No updates provided")
+
+        draft = await contract_followup_service.update_draft(
+            draft_id=draft_id,
+            planner_id=planner_id,
+            updates=updates
+        )
+
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
+
+        return {"draft": draft}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update draft: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update draft")
+
+
+@router.post("/contracts/followup-drafts/{draft_id}/send", tags=["Contracts"])
+async def send_followup_draft(
+    draft_id: str,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Send a follow-up draft as an actual email to the couple.
+    """
+    try:
+        from app.services.contract_followup_service import contract_followup_service
+
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+
+        success = await contract_followup_service.send_draft(
+            draft_id=draft_id,
+            planner_id=planner_id
+        )
+
+        if not success:
+            raise HTTPException(status_code=400, detail="Failed to send email")
+
+        return {"message": "Follow-up email sent successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to send follow-up: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send email")
+
+
+# ============================================================================
+# PARAMETERIZED CONTRACT ENDPOINTS
+# NOTE: All /contracts/{contract_id} routes MUST come after static paths above.
+# ============================================================================
 
 @router.get("/contracts/{contract_id}", tags=["Contracts"])
 async def get_contract(
@@ -680,8 +835,10 @@ async def get_public_contract(
         ip_address = request.client.host if request.client else "unknown"
         await contract_service.mark_viewed(token, ip_address)
 
-        # Refresh contract to get updated status
-        contract = await contract_service.get_contract_by_token(token)
+        # Refresh contract to get updated status (skip expiry check for refresh)
+        updated = await contract_service.contracts.find_one({"token": token})
+        if updated:
+            contract = contract_service._serialize_contract(updated)
 
         if contract is None:
             raise HTTPException(status_code=404, detail="Contract not found")
@@ -694,6 +851,16 @@ async def get_public_contract(
             "wedding_date": contract.get("wedding_date"),
             "venue": contract.get("venue"),
             "package_snapshot": contract.get("package_snapshot"),
+            "contract_title": contract.get("contract_title"),
+            "contract_number": contract.get("contract_number"),
+            "vendor_name": contract.get("vendor_name"),
+            "total_amount": contract.get("total_amount"),
+            "deposit_amount": contract.get("deposit_amount"),
+            "sections": contract.get("sections", []),
+            "terms_and_conditions": contract.get("terms_and_conditions"),
+            "cancellation_policy": contract.get("cancellation_policy"),
+            "service_date": contract.get("service_date"),
+            "service_location": contract.get("service_location"),
             "sent_at": contract.get("sent_at"),
             "viewed_at": contract.get("viewed_at"),
             "signed_at": contract.get("signed_at"),
@@ -703,6 +870,9 @@ async def get_public_contract(
 
         return {"contract": public_contract}
 
+    except ValueError as e:
+        # Token expired (C11)
+        raise HTTPException(status_code=410, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -957,108 +1127,6 @@ async def get_payment_method_details(payment_method_id: str):
     except Exception as e:
         logger.error(f"Failed to get payment method: {str(e)}")
         raise HTTPException(status_code=404, detail="Payment method not found")
-
-
-# ============================================================================
-# FOLLOW-UP DRAFT ENDPOINTS (Authenticated)
-# ============================================================================
-
-@router.get("/contracts/followup-drafts", tags=["Contracts"])
-async def get_followup_drafts(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
-):
-    """
-    Get all pending follow-up drafts for the planner.
-
-    These are AI-generated email drafts for unsigned contracts.
-    """
-    try:
-        from app.services.contract_followup_service import contract_followup_service
-
-        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
-        drafts = await contract_followup_service.get_pending_drafts(planner_id)
-
-        return {
-            "drafts": drafts,
-            "count": len(drafts)
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to get follow-up drafts: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve drafts")
-
-
-class UpdateDraftRequest(BaseModel):
-    """Request to update a follow-up draft."""
-    subject: Optional[str] = Field(None, max_length=200)
-    body: Optional[str] = Field(None, max_length=5000)
-    status: Optional[str] = Field(None, pattern="^(pending|dismissed)$")
-
-
-@router.put("/contracts/followup-drafts/{draft_id}", tags=["Contracts"])
-async def update_followup_draft(
-    draft_id: str,
-    update_data: UpdateDraftRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
-):
-    """
-    Update a follow-up draft (edit content or dismiss).
-    """
-    try:
-        from app.services.contract_followup_service import contract_followup_service
-
-        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
-
-        updates = update_data.model_dump(exclude_none=True)
-        if not updates:
-            raise HTTPException(status_code=400, detail="No updates provided")
-
-        draft = await contract_followup_service.update_draft(
-            draft_id=draft_id,
-            planner_id=planner_id,
-            updates=updates
-        )
-
-        if not draft:
-            raise HTTPException(status_code=404, detail="Draft not found")
-
-        return {"draft": draft}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update draft: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update draft")
-
-
-@router.post("/contracts/followup-drafts/{draft_id}/send", tags=["Contracts"])
-async def send_followup_draft(
-    draft_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
-):
-    """
-    Send a follow-up draft as an actual email to the couple.
-    """
-    try:
-        from app.services.contract_followup_service import contract_followup_service
-
-        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
-
-        success = await contract_followup_service.send_draft(
-            draft_id=draft_id,
-            planner_id=planner_id
-        )
-
-        if not success:
-            raise HTTPException(status_code=400, detail="Failed to send email")
-
-        return {"message": "Follow-up email sent successfully"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to send follow-up: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to send email")
 
 
 # ============================================================================
