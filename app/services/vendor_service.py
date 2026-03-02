@@ -106,6 +106,14 @@ class VendorService:
         random_suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"CON-{timestamp}-{random_suffix}"
 
+    @staticmethod
+    def _serialize_doc(doc: Dict) -> Dict:
+        """Normalize a MongoDB document for API response: ensure both 'id' and '_id' are string."""
+        if "_id" in doc:
+            doc["id"] = str(doc["_id"])
+            doc["_id"] = str(doc["_id"])
+        return doc
+
     async def _get_planner_contract_settings(self, planner_email: str) -> Dict[str, Any]:
         """
         Get contract settings for a planner, with graceful fallback to system defaults.
@@ -775,7 +783,8 @@ class VendorService:
             }
 
             result = await self.vendor_contracts.insert_one(contract)
-            contract["_id"] = str(result.inserted_id)
+            contract["_id"] = result.inserted_id
+            self._serialize_doc(contract)
 
             # Update quote if converting from quote
             if quote_id:
@@ -817,7 +826,7 @@ class VendorService:
             contracts = await cursor.to_list(length=limit)
 
             for c in contracts:
-                c["_id"] = str(c["_id"])
+                self._serialize_doc(c)
 
             return contracts
 
@@ -847,7 +856,7 @@ class VendorService:
                     detail="Contract not found" if not created_by else "Contract not found or access denied"
                 )
 
-            contract["_id"] = str(contract["_id"])
+            self._serialize_doc(contract)
             return contract
 
         except HTTPException:
@@ -880,7 +889,7 @@ class VendorService:
                 contract["viewed_at"] = datetime.now(timezone.utc)
                 contract["status"] = ContractStatus.VIEWED.value
 
-            contract["_id"] = str(contract["_id"])
+            self._serialize_doc(contract)
 
             # Remove sensitive fields for vendor view
             contract.pop("access_token", None)
@@ -1741,7 +1750,8 @@ class VendorService:
             }
 
             result = await self.vendor_contracts.insert_one(contract_doc)
-            contract_doc["_id"] = str(result.inserted_id)
+            contract_doc["_id"] = result.inserted_id
+            self._serialize_doc(contract_doc)
 
             logger.info(f"Created PDF contract {contract_doc['_id']} for vendor {vendor_profile_id}")
             return contract_doc

@@ -100,6 +100,7 @@ export interface PaymentScheduleItem {
 
 export interface VendorContract {
   _id: string;
+  id?: string;  // Backend returns both; prefer `id` in new code
   wedding_id: string;
   vendor_profile_id?: string;
   vendor_name: string;
@@ -132,6 +133,7 @@ export type ContractStatus =
   | 'sent'
   | 'viewed'
   | 'signed'
+  | 'active'
   | 'completed'
   | 'cancelled'
   | 'expired';
@@ -644,6 +646,7 @@ export function getContractStatusColor(status: ContractStatus): string {
     sent: 'bg-blue-100 text-blue-800',
     viewed: 'bg-indigo-100 text-indigo-800',
     signed: 'bg-green-100 text-green-800',
+    active: 'bg-teal-100 text-teal-800',
     completed: 'bg-emerald-100 text-emerald-800',
     cancelled: 'bg-red-100 text-red-800',
     expired: 'bg-orange-100 text-orange-800',
@@ -940,6 +943,7 @@ export function getPaymentLinkStatusColor(status: PaymentLinkStatus): string {
 
 export interface PublicContract {
   _id: string;
+  id?: string;
   contract_title: string;
   contract_number?: string;
   vendor_name: string;
@@ -969,7 +973,7 @@ export async function getPublicContract(
   accessToken: string
 ): Promise<PublicContract> {
   const response = await fetch(
-    `${API_BASE}/admin/public/contracts/${contractId}?token=${accessToken}`
+    `${API_BASE}/vendor-contract/public/contracts/${contractId}?token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -991,7 +995,7 @@ export async function signPublicContract(
   signerEmail: string
 ): Promise<{ message: string; signed_at: string }> {
   const response = await fetch(
-    `${API_BASE}/admin/public/contracts/${contractId}/sign?token=${accessToken}&signer_name=${encodeURIComponent(signerName)}&signer_email=${encodeURIComponent(signerEmail)}`,
+    `${API_BASE}/vendor-contract/public/contracts/${contractId}/sign?token=${accessToken}&signer_name=${encodeURIComponent(signerName)}&signer_email=${encodeURIComponent(signerEmail)}`,
     { method: 'POST' }
   );
 

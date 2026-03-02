@@ -1,5 +1,13 @@
 'use client';
 
+/**
+ * Money Management Page
+ *
+ * NOTE: This page calls contract/payment endpoints at root paths (e.g. /contracts, /payments)
+ * because the contracts_router is registered WITHOUT a prefix in main.py (line 260).
+ * If the contracts router is ever given a prefix, update the fetch URLs below accordingly.
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';

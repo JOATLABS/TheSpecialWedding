@@ -548,12 +548,41 @@ async def get_budget_alerts(
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-        # This would be implemented in the budget service
-        # For now, return placeholder
-        return {"alerts": [], "message": "Budget alerts feature coming soon"}
+        alerts = await budget_service.get_budget_alerts(wedding_id, include_resolved)
+        return {"alerts": alerts}
 
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to get budget alerts: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve budget alerts")
+
+
+@router.put("/budget/alerts/{alert_id}/read", tags=["Budget"])
+async def mark_alert_as_read(
+    alert_id: str,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """Mark a budget alert as read"""
+    try:
+        return await budget_service.mark_alert_as_read(alert_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to mark alert as read: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to mark alert as read")
+
+
+@router.put("/budget/alerts/{alert_id}/resolve", tags=["Budget"])
+async def resolve_alert(
+    alert_id: str,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """Resolve a budget alert"""
+    try:
+        return await budget_service.resolve_alert(alert_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to resolve alert: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to resolve alert")
