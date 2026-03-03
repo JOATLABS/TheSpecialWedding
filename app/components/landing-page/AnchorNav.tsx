@@ -11,6 +11,7 @@ const NavDarkModeToggle: React.FC = () => {
   const [isDark, setIsDark] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [goingDark, setGoingDark] = useState(false); // locked direction for animation
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [ripplePos, setRipplePos] = useState({ x: 0, y: 0 });
 
@@ -46,12 +47,14 @@ const NavDarkModeToggle: React.FC = () => {
       });
     }
 
+    // Lock the direction before animation starts — won't change when isDark flips
+    setGoingDark(!isDark);
     setIsAnimating(true);
     // Switch at midpoint of animation
     setTimeout(() => setIsDark(prev => !prev), 500);
     // End animation
     setTimeout(() => setIsAnimating(false), 1000);
-  }, [isAnimating]);
+  }, [isAnimating, isDark]);
 
   if (!mounted) return <div className="w-8 h-8" />;
 
@@ -65,14 +68,17 @@ const NavDarkModeToggle: React.FC = () => {
 
   return (
     <>
-      {/* Veil Sweep animation */}
+      {/* Veil Sweep animation — shows the INCOMING theme (isDark flips at 500ms midpoint,
+           so before midpoint isDark=old value; after midpoint isDark=new value.
+           We want the veil to always show the destination theme, so invert the check:
+           if isDark is currently false (light), we're transitioning TO dark → show dark veil) */}
       {isAnimating && (
         <div className="fixed inset-0 pointer-events-none z-[9998] overflow-hidden">
           <div
             style={{
               position: 'absolute',
               inset: 0,
-              background: isDark
+              background: goingDark
                 ? `linear-gradient(135deg, ${themePrimary}15 0%, rgba(17, 24, 39, 0.97) 15%, rgba(17, 24, 39, 0.97) 85%, ${themePrimary}15 100%)`
                 : `linear-gradient(135deg, ${themeSecondary}40 0%, rgba(255, 255, 255, 0.97) 15%, rgba(255, 255, 255, 0.97) 85%, ${themeSecondary}40 100%)`,
               animation: 'navVeilSweep 1s cubic-bezier(0.4, 0, 0.2, 1) forwards',
@@ -109,8 +115,7 @@ const NavDarkModeToggle: React.FC = () => {
                 borderRadius: '50%',
                 border: `${i === 2 ? 1 : 2}px solid ${i === 1 ? themeSecondary : themePrimary}${i === 2 ? '80' : ''}`,
                 boxShadow: `0 0 ${i === 2 ? 10 : 15}px ${i === 1 ? themeSecondary : themePrimary}${i === 2 ? '40' : '60'}`,
-                animation: `navRingRipple 1s cubic-bezier(0.4, 0, 0.6, 1) ${delay}s forwards`,
-                opacity: 0,
+                animation: `navRingRipple 1s cubic-bezier(0.4, 0, 0.6, 1) ${delay}s both`,
               }}
             />
           ))}

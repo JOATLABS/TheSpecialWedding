@@ -170,8 +170,8 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
         <button
           onClick={onViewWeddingPage}
           className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:text-white transition-all"
-          onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = accentRgba(0.5); }}
-          onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.5); }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
         >
           View Wedding Page
         </button>
