@@ -157,11 +157,11 @@ async def search_articles(
 async def get_my_articles(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """
     Get articles created by the current user
-    - Includes all statuses (draft, published, archived)
+    - ROOT_ADMIN only — for managing your own articles
     """
     return await knowledge_base_service.get_my_articles(
         author_email=current_user.email,
@@ -192,11 +192,11 @@ async def get_related_articles(
 @router.post("/kb/articles", tags=["Knowledge Base"])
 async def create_article(
     article_data: ArticleCreateRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """
     Create a new KB article
-    - All authenticated planners can create articles
+    - ROOT_ADMIN only — knowledge base is platform documentation
     - Author is automatically set from current user
     """
     # Get author name from user profile
@@ -242,12 +242,11 @@ async def create_article(
 async def update_article(
     article_id: str,
     article_data: ArticleUpdateRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """
     Update a KB article
-    - Authors can edit their own articles
-    - ROOT_ADMIN can edit any article
+    - ROOT_ADMIN only — knowledge base is platform documentation
     """
     from app.models.knowledge_base import KnowledgeBaseArticleUpdateModel
     update_model = KnowledgeBaseArticleUpdateModel(
@@ -271,12 +270,11 @@ async def update_article(
 @router.delete("/kb/articles/{article_id}", tags=["Knowledge Base"])
 async def delete_article(
     article_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """
     Delete a KB article
-    - Authors can delete their own articles
-    - ROOT_ADMIN can delete any article
+    - ROOT_ADMIN only — knowledge base is platform documentation
     """
     return await knowledge_base_service.delete_article(
         article_id=article_id,

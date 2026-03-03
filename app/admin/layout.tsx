@@ -36,10 +36,10 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   // Determine Page Title based on Path (Simplistic mapping)
   const getPageTitle = () => {
     if (pathname.includes('/admin/planner')) return 'Dashboard';
-    if (pathname.includes('/admin/weddings')) return 'Weddings';
-    if (pathname.includes('/admin/guests')) return 'Guest Management';
-    if (pathname.includes('/admin/budget')) return 'Budget Tracker';
-    if (pathname.includes('/admin/profile')) return 'Settings';
+    // if (pathname.includes('/admin/weddings')) return 'Weddings';
+    // if (pathname.includes('/admin/guests')) return 'Guest Management';
+    // if (pathname.includes('/admin/budget')) return 'Budget Tracker';
+    // if (pathname.includes('/admin/profile')) return 'Settings';
     return undefined; // Let Header decide default
   };
 

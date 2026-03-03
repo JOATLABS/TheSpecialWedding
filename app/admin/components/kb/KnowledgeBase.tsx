@@ -288,25 +288,27 @@ export default function KnowledgeBase({ isRootAdmin }: KnowledgeBaseProps) {
             {viewMode === 'my-articles' ? 'Your contributed articles' : 'Documentation and guides for planners'}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleMyArticlesClick}
-            className={`px-4 py-2 border rounded-lg transition-colors text-sm font-medium ${
-              viewMode === 'my-articles'
-                ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300'
-                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-            }`}
-          >
-            My Articles
-          </button>
-          <button
-            onClick={() => setViewMode('create')}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Write Article
-          </button>
-        </div>
+        {isRootAdmin && (
+          <div className="flex gap-2">
+            <button
+              onClick={handleMyArticlesClick}
+              className={`px-4 py-2 border rounded-lg transition-colors text-sm font-medium ${
+                viewMode === 'my-articles'
+                  ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              My Articles
+            </button>
+            <button
+              onClick={() => setViewMode('create')}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Write Article
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Search Bar */}
@@ -374,16 +376,20 @@ export default function KnowledgeBase({ isRootAdmin }: KnowledgeBaseProps) {
                 {searchQuery
                   ? 'Try adjusting your search terms'
                   : viewMode === 'my-articles'
-                  ? 'Start contributing by writing your first article!'
-                  : 'Be the first to write an article in this category!'}
+                  ? 'You haven\'t written any articles yet.'
+                  : isRootAdmin
+                  ? 'Be the first to write an article in this category!'
+                  : 'No articles available in this category yet. Check back soon!'}
               </p>
-              <button
-                onClick={() => setViewMode('create')}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Write Article
-              </button>
+              {isRootAdmin && (
+                <button
+                  onClick={() => setViewMode('create')}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Write Article
+                </button>
+              )}
             </Card>
           )}
         </div>

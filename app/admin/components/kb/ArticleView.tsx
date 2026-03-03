@@ -51,7 +51,7 @@ export default function ArticleView({ article, isRootAdmin, onEdit, onBack }: Ar
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const canEdit = isRootAdmin || article.author_email === userProfile?.email;
+  const canEdit = isRootAdmin;
   const categoryName = categoryDisplayNames[article.category] || article.category;
 
   const handleFeedback = async (helpful: boolean) => {

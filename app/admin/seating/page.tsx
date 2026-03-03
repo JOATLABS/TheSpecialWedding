@@ -45,14 +45,47 @@ interface Wedding {
   slug: string;
 }
 
+interface AISuggestionGuest {
+  // Backend may return `id`, `guest_id`, or `_id`
+  id?: string;
+  guest_id?: string;
+  _id?: string;
+  name?: string;
+  guest_name?: string;
+  reason?: string;
+}
+
+interface AISuggestionTable {
+  // Backend may return `id`, `table_id`, or `_id`
+  id?: string;
+  table_id?: string;
+  _id?: string;
+  table_name?: string;
+  name?: string;
+  guests: AISuggestionGuest[];
+}
+
 interface AISuggestion {
-  tables: Array<{
-    table_id: string;
-    table_name: string;
-    guests: Array<{ guest_id: string; guest_name: string; reason: string }>;
-  }>;
+  tables: AISuggestionTable[];
   credits_used: number;
   cached: boolean;
+}
+
+// Helpers to extract IDs from various response shapes
+function extractTableId(t: AISuggestionTable): string {
+  return t.table_id || t.id || t._id || '';
+}
+
+function extractGuestId(g: AISuggestionGuest): string {
+  return g.guest_id || g.id || g._id || '';
+}
+
+function extractGuestName(g: AISuggestionGuest): string {
+  return g.guest_name || g.name || 'Unknown';
+}
+
+function extractTableName(t: AISuggestionTable): string {
+  return t.table_name || t.name || 'Table';
 }
 
 type ActiveDragData =
@@ -375,15 +408,36 @@ export default function SeatingPage() {
   const applyAISuggestions = async () => {
     if (!aiSuggestions) return;
 
+    // Build a map of tableId → [guestIds] using defensive ID extraction
+    const assignments: Array<{ tableId: string; guestIds: string[] }> = [];
+
+    for (const tableSuggestion of aiSuggestions.tables) {
+      const tableId = extractTableId(tableSuggestion);
+      const guestIds = tableSuggestion.guests
+        .map((g) => extractGuestId(g))
+        .filter(Boolean);
+
+      if (tableId && guestIds.length > 0) {
+        assignments.push({ tableId, guestIds });
+      }
+    }
+
+    if (assignments.length === 0) {
+      setAiError('No valid assignments found in AI suggestions. The response may have an unexpected format.');
+      setShowAiModal(false);
+      setAiSuggestions(null);
+      return;
+    }
+
+    // Optimistic UI update
     setGuests((prev) => {
       const updatedGuests = [...prev];
-      for (const tableSuggestion of aiSuggestions.tables) {
-        const guestIds = tableSuggestion.guests.map((g) => g.guest_id);
+      for (const { tableId, guestIds } of assignments) {
         for (let i = 0; i < updatedGuests.length; i++) {
           if (guestIds.includes(updatedGuests[i].id)) {
             updatedGuests[i] = {
               ...updatedGuests[i],
-              table_id: tableSuggestion.table_id,
+              table_id: tableId,
             };
           }
         }
@@ -391,17 +445,16 @@ export default function SeatingPage() {
       return updatedGuests;
     });
 
-    const assignmentPromises = aiSuggestions.tables
-      .filter((tableSuggestion) => tableSuggestion.guests.length > 0)
-      .map((tableSuggestion) => {
-        const guestIds = tableSuggestion.guests.map((g) => g.guest_id);
-        return assignGuests(tableSuggestion.table_id, guestIds);
-      });
+    // Persist to backend
+    const assignmentPromises = assignments.map(({ tableId, guestIds }) =>
+      assignGuests(tableId, guestIds)
+    );
 
     try {
       await Promise.all(assignmentPromises);
     } catch (error) {
       console.error('Error applying AI suggestions:', error);
+      setAiError('Some seat assignments failed to save. Try refreshing the page.');
     }
 
     setShowAiModal(false);
@@ -710,22 +763,22 @@ export default function SeatingPage() {
               </p>
 
               <div className="space-y-4">
-                {aiSuggestions.tables.map((tableSuggestion) => (
+                {aiSuggestions.tables.map((tableSuggestion, idx) => (
                   <div
-                    key={tableSuggestion.table_id}
+                    key={extractTableId(tableSuggestion) || idx}
                     className="border border-white/30 dark:border-slate-700/30 rounded-xl p-4 bg-white/50 dark:bg-slate-800/50"
                   >
                     <h3 className="font-semibold text-slate-900 dark:text-white mb-2">
-                      {tableSuggestion.table_name}
+                      {extractTableName(tableSuggestion)}
                     </h3>
                     <ul className="space-y-1">
-                      {tableSuggestion.guests.map((guest) => (
+                      {tableSuggestion.guests.map((guest, gIdx) => (
                         <li
-                          key={guest.guest_id}
+                          key={extractGuestId(guest) || gIdx}
                           className="text-sm text-slate-600 dark:text-slate-400 flex items-start gap-2"
                         >
                           <span className="font-medium text-slate-800 dark:text-gray-200">
-                            {guest.guest_name}
+                            {extractGuestName(guest)}
                           </span>
                           {guest.reason && (
                             <span className="text-slate-500 dark:text-slate-500">
