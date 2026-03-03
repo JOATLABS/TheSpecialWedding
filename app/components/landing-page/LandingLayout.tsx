@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Image from 'next/image';
 
@@ -269,6 +269,10 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
   const [showRSVPModal, setShowRSVPModal] = useState(!!rsvpToken);
+  const [loopHeight, setLoopHeight] = useState(0);
+
+  // Stable callback for InfiniteScrollWrapper height reporting
+  const handlePrimaryHeight = useCallback((h: number) => setLoopHeight(h), []);
 
   // Sync modal open state when rsvpToken arrives after initial render
   useEffect(() => {
@@ -289,6 +293,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
         imageUrl={featuredImage}
         fallbackImages={images.map(img => img.url)}
         theme={wedding.theme_config}
+        loopHeight={loopHeight}
       />
 
       {/* ── Fixed nav (stays on top of everything) ── */}
@@ -296,7 +301,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
 
       {/* ── Infinite scroll content ── */}
       <main className="relative w-full">
-        <InfiniteScrollWrapper>
+        <InfiniteScrollWrapper onPrimaryHeight={handlePrimaryHeight}>
           {(isClone) => (
             <WeddingContent
               isClone={isClone}

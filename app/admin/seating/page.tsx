@@ -10,6 +10,8 @@ import {
   useSensors,
   PointerSensor,
   KeyboardSensor,
+  closestCenter,
+  MeasuringStrategy,
 } from '@dnd-kit/core';
 import { useAdmin } from '@/contexts/AdminContext';
 import PageHeader from '../components/PageHeader';
@@ -637,6 +639,10 @@ export default function SeatingPage() {
       {selectedWedding ? (
         <DndContext
           sensors={sensors}
+          collisionDetection={closestCenter}
+          measuring={{
+            droppable: { strategy: MeasuringStrategy.Always },
+          }}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}

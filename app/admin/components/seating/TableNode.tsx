@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { Table, Guest } from '@/types/table';
 import { GuestItem } from './GuestItem';
@@ -23,11 +23,21 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
     data: { type: 'table', table },
   });
 
-  // Droppable for accepting guests
+  // Droppable for accepting guests — covers the entire card
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: `table-drop-${table.id}`,
     data: { type: 'table-drop', tableId: table.id },
   });
+
+  // Compose both refs onto the same outer container so the whole
+  // card is both the draggable anchor AND the droppable target.
+  const composedRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setDraggableRef(node);
+      setDroppableRef(node);
+    },
+    [setDraggableRef, setDroppableRef],
+  );
 
   const style: React.CSSProperties = {
     transform: transform
@@ -67,7 +77,7 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
     : '';
 
   return (
-    <div ref={setDraggableRef} style={style} className="group">
+    <div ref={composedRef} style={style} className="group">
       <div
         className={`
           w-72 ${borderRadius}
@@ -142,9 +152,8 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
           />
         </div>
 
-        {/* Guest List Drop Zone */}
+        {/* Guest List Area */}
         <div
-          ref={setDroppableRef}
           className="p-2.5 min-h-[100px] max-h-[220px] overflow-y-auto"
           style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.3) transparent' }}
         >

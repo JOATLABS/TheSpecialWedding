@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
 import { ThemeConfig } from '@/types/wedding';
 
@@ -8,39 +8,39 @@ interface Modern3DBackgroundProps {
   imageUrl?: string;
   fallbackImages?: string[];
   theme?: ThemeConfig;
+  /** Height of one full "page" in the infinite scroll.
+   *  When provided, scrollY is normalised with modulo so the
+   *  parallax position matches at every loop point — eliminating
+   *  the visible jump when InfiniteScrollWrapper resets. */
+  loopHeight?: number;
 }
 
 export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
   imageUrl,
   fallbackImages = [],
   theme,
+  loopHeight = 0,
 }) => {
-  const [scrollY, setScrollY] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrollY(window.scrollY);
-    };
+  // Use a ref for scroll position and rAF for smooth updates —
+  // avoids a full React re-render on every scroll event.
+  const scrollRef = useRef(0);
+  const parallaxLayerRef = useRef<HTMLDivElement>(null);
+  const rafId = useRef(0);
 
+  useEffect(() => {
     const handleResize = () => {
       setViewportHeight(window.innerHeight);
     };
-
-    handleResize(); // set initial value
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleResize();
     window.addEventListener('resize', handleResize, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleResize);
-    };
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
+    if (typeof window === 'undefined') return;
 
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const syncPreference = () => setPrefersReducedMotion(motionQuery.matches);
@@ -48,6 +48,46 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
     motionQuery.addEventListener('change', syncPreference);
     return () => motionQuery.removeEventListener('change', syncPreference);
   }, []);
+
+  // ── Parallax constants ──
+  const IMAGE_HEIGHT_PCT = 1.80;
+  const SCALE = 1.08;
+  const PARALLAX_RATE = 0.15;
+
+  // Drive parallax via rAF so it stays buttery-smooth and
+  // perfectly in sync with the browser's own composite step.
+  useEffect(() => {
+    if (prefersReducedMotion) return;
+
+    const maxUp = viewportHeight > 0
+      ? (IMAGE_HEIGHT_PCT * SCALE - 1) * viewportHeight * 0.5
+      : 9999;
+
+    const tick = () => {
+      let y = window.scrollY;
+
+      // Normalise scroll position to one loop cycle so the
+      // parallax offset is identical at position x and x + loopHeight.
+      if (loopHeight > 0) {
+        y = y % loopHeight;
+      }
+
+      scrollRef.current = y;
+
+      const rawOffset = y * -PARALLAX_RATE;
+      const clamped = Math.max(rawOffset, -maxUp);
+
+      if (parallaxLayerRef.current) {
+        parallaxLayerRef.current.style.transform =
+          `translate3d(0, ${clamped}px, 0) scale(${SCALE})`;
+      }
+
+      rafId.current = requestAnimationFrame(tick);
+    };
+
+    rafId.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId.current);
+  }, [loopHeight, viewportHeight, prefersReducedMotion]);
 
   // Use featured image or first fallback image
   const backgroundImage = imageUrl || fallbackImages[0];
@@ -72,19 +112,6 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
     );
   }
 
-  // Deep parallax effect - background moves slower and opposite to scroll.
-  // The image is 180% tall, scaled 1.08 → effective ~194% of viewport.
-  // Extra space below center ≈ 0.94 * vh. Clamp so bottom edge never
-  // rises above the viewport, preventing the white-gap glitch.
-  const IMAGE_HEIGHT_PCT = 1.80;
-  const SCALE = 1.08;
-  const PARALLAX_RATE = 0.15;
-  const maxUp = viewportHeight > 0
-    ? (IMAGE_HEIGHT_PCT * SCALE - 1) * viewportHeight * 0.5
-    : 9999;
-  const rawOffset = prefersReducedMotion ? 0 : scrollY * -PARALLAX_RATE;
-  const parallaxOffset = Math.max(rawOffset, -maxUp);
-
   const primaryColor = theme?.primary_color || '#1e3a5f';
 
   return (
@@ -94,11 +121,12 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
         className="fixed inset-0 -z-10 overflow-hidden dark:bg-gray-950"
         style={{ backgroundColor: `${primaryColor}10` }}
       >
-        {/* Parallax image layer */}
+        {/* Parallax image layer — driven by rAF, not React state */}
         <div
+          ref={parallaxLayerRef}
           className="absolute inset-0"
           style={{
-            transform: `translate3d(0, ${parallaxOffset}px, 0) scale(${SCALE})`,
+            transform: `translate3d(0, 0px, 0) scale(${SCALE})`,
             willChange: 'transform',
             height: `${IMAGE_HEIGHT_PCT * 100}%`,
           }}
