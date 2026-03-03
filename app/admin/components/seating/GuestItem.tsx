@@ -1,7 +1,6 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { Guest } from '@/types/table';
-import { motion } from 'framer-motion';
 
 interface GuestItemProps {
   guest: Guest;
@@ -14,26 +13,26 @@ export function GuestItem({ guest, compact = false }: GuestItemProps) {
     data: { type: 'guest', guest },
   });
 
-  const style: React.CSSProperties | undefined = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        zIndex: 999,
-      }
-    : undefined;
+  const style: React.CSSProperties = {
+    ...(transform
+      ? {
+          transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+          zIndex: 999,
+        }
+      : {}),
+    opacity: isDragging ? 0.3 : 1,
+    transition: isDragging ? 'none' : 'opacity 200ms ease, box-shadow 200ms ease',
+  };
 
   return (
-    <motion.div
+    <div
       ref={setNodeRef}
       style={style}
       {...listeners}
       {...attributes}
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: isDragging ? 0.3 : 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
       className={`
         relative mb-1.5 rounded-xl text-sm cursor-grab active:cursor-grabbing
         border backdrop-blur-md shadow-sm
-        transition-colors duration-200
         ${compact ? 'px-2.5 py-2' : 'px-3 py-3'}
         ${isDragging
           ? 'border-blue-300/50 dark:border-blue-700/50 bg-blue-50/40 dark:bg-blue-900/20'
@@ -57,6 +56,6 @@ export function GuestItem({ guest, compact = false }: GuestItemProps) {
           {guest.group_id}
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }

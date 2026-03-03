@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { notFound } from "next/navigation";
 import { WeddingProvider } from '@/components/WeddingProvider';
 import { Wedding } from '@/types/wedding';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 async function fetchWeddingPrivacyInfo(slug: string) {
   const baseUrl = getApiBaseUrl();
@@ -47,8 +48,10 @@ export default async function WeddingLayout({ children, params }: { children: Re
   };
 
   return (
-    <WeddingProvider wedding={minimalWedding}>
-      {children}
-    </WeddingProvider>
+    <ErrorBoundary>
+      <WeddingProvider wedding={minimalWedding}>
+        {children}
+      </WeddingProvider>
+    </ErrorBoundary>
   );
 }

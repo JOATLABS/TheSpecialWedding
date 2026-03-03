@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Guest } from '@/types/table';
 import { GuestItem } from './GuestItem';
-import { motion } from 'framer-motion';
 import { Search, Users } from 'lucide-react';
 
 interface SidebarProps {
@@ -63,12 +62,7 @@ export function Sidebar({ guests }: SidebarProps) {
         style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.3) transparent' }}
       >
         {Object.entries(groups).map(([groupName, groupGuests]) => (
-          <motion.div
-            key={groupName}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-          >
+          <div key={groupName}>
             <h3 className="flex items-center gap-2 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">
               <span>{groupName}</span>
               <span className="flex-1 h-px bg-slate-200/50 dark:bg-slate-700/50" />
@@ -81,7 +75,7 @@ export function Sidebar({ guests }: SidebarProps) {
                 <GuestItem key={guest.id} guest={guest} />
               ))}
             </div>
-          </motion.div>
+          </div>
         ))}
 
         {filteredGuests.length === 0 && (

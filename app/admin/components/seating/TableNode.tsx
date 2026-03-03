@@ -2,7 +2,6 @@ import React from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { Table, Guest } from '@/types/table';
 import { GuestItem } from './GuestItem';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, GripVertical } from 'lucide-react';
 
 interface TableNodeProps {
@@ -39,6 +38,7 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
     top: 0,
     zIndex: isDragging ? 50 : 10,
     opacity: isDragging ? 0.5 : 1,
+    transition: isDragging ? 'none' : 'opacity 200ms ease',
   };
 
   const isOverCapacity = guests.length > table.capacity;
@@ -68,17 +68,14 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
 
   return (
     <div ref={setDraggableRef} style={style} className="group">
-      <motion.div
-        layoutId={`table-${table.id}`}
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
+      <div
         className={`
           w-72 ${borderRadius}
           bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl
           border border-white/50 dark:border-slate-700/50
           shadow-sm hover:shadow-lg
           overflow-hidden
-          transition-all duration-300
+          transition-shadow duration-300
           ${ringClass} ${bgTint}
         `}
       >
@@ -151,11 +148,9 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
           className="p-2.5 min-h-[100px] max-h-[220px] overflow-y-auto"
           style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.3) transparent' }}
         >
-          <AnimatePresence>
-            {guests.map((guest) => (
-              <GuestItem key={guest.id} guest={guest} compact />
-            ))}
-          </AnimatePresence>
+          {guests.map((guest) => (
+            <GuestItem key={guest.id} guest={guest} compact />
+          ))}
 
           {guests.length === 0 && !wouldExceedCapacity && (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 py-6 gap-1.5">
@@ -178,7 +173,7 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
             </div>
           )}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

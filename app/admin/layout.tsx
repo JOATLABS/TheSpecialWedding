@@ -3,6 +3,7 @@
 import { AdminProvider } from '@/contexts/AdminContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
@@ -86,7 +87,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
         />
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
-           {children}
+           <ErrorBoundary>
+             {children}
+           </ErrorBoundary>
         </main>
       </motion.div>
 
