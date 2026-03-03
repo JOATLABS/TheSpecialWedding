@@ -36,8 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - On the reminders page, fixed "Send Event Reminder" button disabled condition to allow email-only sends without requiring a custom message (`channel !== 'email'` guard)
   - Added error handling for email reminder API failures on the reminders page — errors were previously silently swallowed
 
-- **Plus-one information not displaying in admin panel** (`app/services/admin_rsvp_service.py`, `app/api/plus_one.py`):
+- **Plus-one information not displaying in admin panel** (`app/services/admin_rsvp_service.py`, `app/api/plus_one.py`, `app/main.py`, `app/admin/guests/page.tsx`):
 
+  - **Root cause (Coolify deployment):** `plus_one_router` was the only router registered outside the `/admin` prefix (at `/plus_one`). In the single-container Coolify deployment, the reverse proxy routes `/admin/*` to FastAPI but `/plus_one/*` was intercepted by Next.js, returning HTML instead of JSON — the frontend silently caught the error and showed `0/N` plus-ones
+  - Registered `plus_one_router` under `/admin/plus-one` prefix in `main.py` (kept original `/plus_one` registration for public/backward-compat)
+  - Updated frontend fetch URL from `/plus_one/wedding/` to `/admin/plus-one/wedding/` in `guests/page.tsx`
   - `admin_rsvp_service.py` used a dict comprehension `{guest_id: plus_one for ...}` which overwrote earlier entries when a guest submitted multiple plus-ones — changed to `setdefault(gid, []).append(p)` to preserve all plus-ones per guest
   - Added `plus_ones` array field to the RSVP response alongside backward-compatible singular `plus_one` field
   - Fixed broken `GET /plus_one/wedding/{id}` route in `plus_one.py` — was calling non-existent `get_plus_ones_by_wedding()` method, corrected to `get_plus_ones_by_wedding_id()`
@@ -56,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Channel picker auto-selects the best option based on guest contact info (e.g., defaults to Email if guest has no phone, SMS if no email, Both if both exist)
   - Send button label dynamically reflects selected channel ("Send via SMS", "Send via Email", "Send via SMS & Email")
   - Channel buttons are conditionally shown — SMS button hidden if no phone, Email button hidden if no email
+
+- **Auto-refresh guest data on tab focus** (`app/admin/guests/page.tsx`):
+
+  - Added `visibilitychange` event listener so guest/plus-one data automatically refreshes when the planner switches back to the admin tab — prevents stale data after submitting an RSVP in another tab
 
 ---
 

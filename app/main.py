@@ -351,9 +351,10 @@ admin_routers = [
 for router, tag in admin_routers:
     app.include_router(router, prefix="/admin", tags=[tag])
 
-# Admin wedding and guest endpoints (special handling to avoid conflicts)
+# Admin wedding, guest, and plus-one endpoints (special handling to avoid conflicts)
 app.include_router(wedding_router, prefix="/admin", tags=["Wedding"])
 app.include_router(guest_router, prefix="/admin", tags=["Guest"])
+app.include_router(plus_one_router, prefix="/admin/plus-one", tags=["Plus-Ones"])
 
 
 # ==================== CUSTOM ENDPOINTS ====================
