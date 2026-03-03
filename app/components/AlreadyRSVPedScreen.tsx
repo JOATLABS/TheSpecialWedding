@@ -2,6 +2,9 @@
 
 'use client';
 
+import { useContext } from 'react';
+import { WeddingContext } from '@/contexts/WeddingContext';
+
 interface PlusOneInfo {
   name: string;
   attending?: string[];
@@ -28,7 +31,30 @@ const eventLabels: Record<string, string> = {
   rehearsal: 'Rehearsal Dinner',
 };
 
+/* ─── color helper ─── */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace('#', '');
+  const num = parseInt(h, 16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
 export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWeddingPage }: AlreadyRSVPedScreenProps) {
+  // Safely read theme from context (null-safe — won't throw if context missing)
+  const wedding = useContext(WeddingContext);
+  const tc = wedding?.theme_config;
+  const accent = tc?.accent_color || '#D4A5A5';      // fallback = wedding-rose
+  const secondary = tc?.secondary_color || '#E9C46A'; // fallback = wedding-gold
+  const aRgb = hexToRgb(accent);
+  const sRgb = hexToRgb(secondary);
+  const accentRgba = (opacity: number) => `rgba(${aRgb.r}, ${aRgb.g}, ${aRgb.b}, ${opacity})`;
+
+  /** Reusable accent button style */
+  const accentBtnStyle: React.CSSProperties = {
+    backgroundColor: accent,
+    color: '#0f172a',
+    boxShadow: `0 10px 15px -3px ${accentRgba(0.4)}`,
+  };
+
   const formatDate = (dateStr: string) => {
     try {
       return new Date(dateStr).toLocaleDateString('en-US', {
@@ -48,13 +74,21 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
     <div className="space-y-6">
       {/* Main Card */}
       <div className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
-        {/* Gradient accent bar */}
-        <div className="h-1 bg-gradient-to-r from-wedding-rose via-wedding-gold to-wedding-rose" />
+        {/* Gradient accent bar — uses couple's theme colors */}
+        <div
+          className="h-1"
+          style={{
+            background: `linear-gradient(to right, ${accent}, ${secondary}, ${accent})`,
+          }}
+        />
 
         <div className="p-8 sm:p-10 text-center">
           {/* Success icon */}
-          <div className="w-20 h-20 bg-wedding-rose/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-10 h-10 text-wedding-rose" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div
+            className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
+            style={{ backgroundColor: accentRgba(0.2) }}
+          >
+            <svg className="w-10 h-10" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
@@ -75,7 +109,10 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
 
       {/* RSVP Details Card */}
       <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
-        <h3 className="text-xs font-semibold text-wedding-rose uppercase tracking-[0.3em] mb-4">
+        <h3
+          className="text-xs font-semibold uppercase tracking-[0.3em] mb-4"
+          style={{ color: accent }}
+        >
           Your RSVP Details
         </h3>
 
@@ -122,7 +159,8 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
       {/* Edit Button */}
       <button
         onClick={onEditClick}
-        className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush transition-all"
+        className="w-full py-4 font-semibold rounded-full shadow-lg hover:opacity-90 transition-all"
+        style={accentBtnStyle}
       >
         Edit My RSVP
       </button>
@@ -131,7 +169,9 @@ export default function AlreadyRSVPedScreen({ guest, rsvp, onEditClick, onViewWe
       {onViewWeddingPage && (
         <button
           onClick={onViewWeddingPage}
-          className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:border-wedding-rose/50 hover:text-white transition-all"
+          className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:text-white transition-all"
+          onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = accentRgba(0.5); }}
+          onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
         >
           View Wedding Page
         </button>

@@ -17,6 +17,21 @@ interface RSVPModalProps {
   onClose: () => void;
 }
 
+/* ─── color helpers ─── */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace('#', '');
+  const num = parseInt(h, 16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+function lightenColor(hex: string, amount: number): string {
+  const { r, g, b } = hexToRgb(hex);
+  const lr = Math.min(255, Math.floor(r + (255 - r) * amount));
+  const lg = Math.min(255, Math.floor(g + (255 - g) * amount));
+  const lb = Math.min(255, Math.floor(b + (255 - b) * amount));
+  return `rgb(${lr}, ${lg}, ${lb})`;
+}
+
 export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalProps) {
   const [step, setStep] = useState<ModalStep>('loading');
   const [loading, setLoading] = useState(false);
@@ -33,9 +48,25 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const [otpContactType, setOtpContactType] = useState<'phone' | 'email' | ''>('');
   const isSubmittingRef = useRef(false);
 
+  /* ─── theme colors (with safe fallbacks to original hardcoded values) ─── */
+  const tc = weddingData?.theme_config;
+  const accentColor = tc?.accent_color || '#D4A5A5';      // fallback = wedding-rose
+  const secondaryColor = tc?.secondary_color || '#E9C46A'; // fallback = wedding-gold
+  const aRgb = hexToRgb(accentColor);
+  const sRgb = hexToRgb(secondaryColor);
+  const blushColor = lightenColor(accentColor, 0.6);
+
+  /** CSS custom properties cascaded to all child components */
+  const themeVars = {
+    '--rsvp-accent': accentColor,
+    '--rsvp-accent-rgb': `${aRgb.r}, ${aRgb.g}, ${aRgb.b}`,
+    '--rsvp-secondary': secondaryColor,
+    '--rsvp-secondary-rgb': `${sRgb.r}, ${sRgb.g}, ${sRgb.b}`,
+    '--rsvp-blush': blushColor,
+  } as React.CSSProperties;
+
   // Reset all state when modal closes
   const handleClose = () => {
-    // Reset state for next open
     setEditMode(false);
     setFormCompleted(false);
     setError('');
@@ -74,7 +105,6 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         const errorData = await res.json().catch(() => ({}));
         const errorMessage = errorData.detail || '';
 
-        // Detect token expiry or invalid token errors
         const isExpired = res.status === 401 || res.status === 404 ||
           errorMessage.toLowerCase().includes('expired') ||
           errorMessage.toLowerCase().includes('invalid') ||
@@ -94,7 +124,6 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         throw new Error('Invitation data not found. Please check the link and try again.');
       }
 
-      // Map _id to id for WeddingContext compatibility
       const weddingForContext = {
         ...wedding,
         id: wedding.id || wedding._id || slug,
@@ -130,9 +159,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         throw new Error(data.detail || 'Failed to send verification code');
       }
 
-      // Capture contact type from response (phone or email)
       setOtpContactType(data.contact_type || 'phone');
-
       setResendCooldown(65);
       setStep('otp_verify');
     } catch (err) {
@@ -161,18 +188,15 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         throw new Error(verifyData.detail || 'Invalid verification code');
       }
 
-      // Use guest data from OTP verify response directly (eliminates redundant fetch)
       if (verifyData.guest) {
         setGuestData(verifyData.guest);
         setGuestId(verifyData.guest.id || verifyData.guest._id);
       }
 
-      // Still fetch RSVP status (Option B: keep RSVP check separate)
       let latestRsvp = rsvpData;
       const accessRes = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
       if (accessRes.ok) {
         const data = await accessRes.json();
-        // Only use wedding and RSVP data from this call (guest already set above)
         if (data.wedding) {
           const weddingForContext = {
             ...data.wedding,
@@ -181,12 +205,10 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
           };
           setWeddingData(weddingForContext);
         }
-        // Always update rsvpData (even if null) to avoid stale state
         latestRsvp = data.rsvp || null;
         setRsvpData(latestRsvp);
       }
 
-      // Determine next step using freshly fetched data (not stale state)
       if (latestRsvp?.has_rsvp && !editMode) {
         setStep('already_rsvped');
       } else {
@@ -217,7 +239,6 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         throw new Error(data.detail || 'Failed to resend code');
       }
 
-      // Capture contact type from response (might change if phone fails and email is used)
       if (data.contact_type) {
         setOtpContactType(data.contact_type);
       }
@@ -239,12 +260,19 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setStep('rsvp_form');
   };
 
-  // Modal can be dismissed after RSVP submitted, when viewing already-RSVPed state,
-  // or when there's an error (so users don't get stuck)
   const canDismiss = formCompleted ||
     (step === 'already_rsvped' && !editMode) ||
     (error && !loading) ||
     isTokenExpired;
+
+  /* ────────────── render helpers ────────────── */
+
+  /** Reusable accent-colored button style */
+  const accentBtnStyle: React.CSSProperties = {
+    backgroundColor: accentColor,
+    color: '#0f172a',
+    boxShadow: `0 10px 15px -3px rgba(${aRgb.r}, ${aRgb.g}, ${aRgb.b}, 0.4)`,
+  };
 
   const renderStep = () => {
     switch (step) {
@@ -253,22 +281,29 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
           <div className="text-center py-12">
             {loading ? (
               <>
-                <div className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-solid border-wedding-rose border-r-transparent mb-4" />
+                <div
+                  className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-solid border-r-transparent mb-4"
+                  style={{ borderColor: accentColor, borderRightColor: 'transparent' }}
+                />
                 <p className="text-slate-300">Loading your invitation...</p>
               </>
             ) : error ? (
               <>
-                <div className="w-16 h-16 bg-wedding-rose/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <svg className="w-8 h-8 text-wedding-rose" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div
+                  className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6"
+                  style={{ backgroundColor: `rgba(${aRgb.r}, ${aRgb.g}, ${aRgb.b}, 0.2)` }}
+                >
+                  <svg className="w-8 h-8" style={{ color: accentColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
                   </svg>
                 </div>
-                <p className="text-wedding-rose mb-4">{error}</p>
+                <p className="mb-4" style={{ color: accentColor }}>{error}</p>
                 <div className="flex flex-col gap-3">
                   {!isTokenExpired && (
                     <button
                       onClick={fetchInitialData}
-                      className="px-6 py-3 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg hover:bg-wedding-blush transition-all"
+                      className="px-6 py-3 font-semibold rounded-full shadow-lg hover:opacity-90 transition-all"
+                      style={accentBtnStyle}
                     >
                       Try Again
                     </button>
@@ -288,8 +323,11 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
       case 'otp_request':
         return (
           <div className="text-center py-6">
-            <div className="w-20 h-20 bg-wedding-rose/20 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-wedding-rose" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
+              style={{ backgroundColor: `rgba(${aRgb.r}, ${aRgb.g}, ${aRgb.b}, 0.2)` }}
+            >
+              <svg className="w-10 h-10" style={{ color: accentColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </div>
@@ -300,22 +338,31 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
               Welcome, {guestData?.name}
             </h2>
             <p className="text-slate-300 mb-2">
-              You&apos;re invited to <span className="text-wedding-rose font-semibold">{weddingData?.couple_names}&apos;s</span> wedding!
+              You&apos;re invited to <span className="font-semibold" style={{ color: accentColor }}>{weddingData?.couple_names}&apos;s</span> wedding!
             </p>
             <p className="text-sm text-slate-400 mb-8">
               To protect your privacy, we&apos;ll send a verification code to your {guestData?.phone ? 'phone' : 'email'} before you can RSVP.
             </p>
 
             {error && (
-              <div className="rounded-2xl border border-wedding-rose/40 bg-wedding-rose/10 p-4 mb-6">
-                <p className="text-sm text-wedding-rose">{error}</p>
+              <div
+                className="rounded-2xl p-4 mb-6"
+                style={{
+                  borderWidth: 1,
+                  borderStyle: 'solid',
+                  borderColor: `rgba(${aRgb.r}, ${aRgb.g}, ${aRgb.b}, 0.4)`,
+                  backgroundColor: `rgba(${aRgb.r}, ${aRgb.g}, ${aRgb.b}, 0.1)`,
+                }}
+              >
+                <p className="text-sm" style={{ color: accentColor }}>{error}</p>
               </div>
             )}
 
             <button
               onClick={handleRequestOTP}
               disabled={loading}
-              className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 transition-all"
+              className="w-full py-4 font-semibold rounded-full shadow-lg hover:opacity-90 disabled:opacity-50 transition-all"
+              style={accentBtnStyle}
             >
               {loading ? 'Sending...' : 'Send Verification Code'}
             </button>
@@ -345,23 +392,26 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 maxLength={6}
-                className="w-full px-4 py-4 border border-white/10 bg-white/5 rounded-xl text-center tracking-[0.5em] text-white text-xl placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur"
+                className="w-full px-4 py-4 border border-white/10 bg-white/5 rounded-xl text-center tracking-[0.5em] text-white text-xl placeholder-slate-500 focus:ring-1 focus:outline-none backdrop-blur"
+                style={{ '--tw-ring-color': accentColor } as React.CSSProperties}
                 placeholder="------"
                 autoFocus
               />
               <button
                 onClick={handleVerifyOTP}
                 disabled={loading || otp.length !== 6}
-                className="w-full bg-wedding-rose text-slate-900 py-4 px-6 rounded-full font-semibold shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 transition-all"
+                className="w-full py-4 px-6 rounded-full font-semibold shadow-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                style={accentBtnStyle}
               >
                 {loading ? 'Verifying...' : 'Verify & Continue'}
               </button>
-              {error && <p className="text-wedding-rose text-center text-sm">{error}</p>}
+              {error && <p className="text-center text-sm" style={{ color: accentColor }}>{error}</p>}
               <div className="text-center mt-2 space-y-2">
                 <button
                   onClick={handleResendOTP}
                   disabled={loading || resendCooldown > 0}
-                  className="text-sm text-wedding-rose hover:text-wedding-blush disabled:opacity-50 transition-colors"
+                  className="text-sm hover:opacity-80 disabled:opacity-50 transition-colors"
+                  style={{ color: accentColor }}
                 >
                   {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}
                 </button>
@@ -436,14 +486,17 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-slate-950 shadow-2xl overflow-hidden">
-                {/* Dark themed background effects */}
+              <Dialog.Panel
+                className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-slate-950 shadow-2xl overflow-hidden"
+                style={themeVars}
+              >
+                {/* Dark themed background effects — uses couple's accent + secondary colors */}
                 <div className="relative">
                   <div
                     className="absolute inset-0 opacity-60"
                     style={{
                       background:
-                        'radial-gradient(900px 600px at 15% -10%, rgba(212,165,165,0.35), transparent 70%), radial-gradient(1200px 700px at 90% 110%, rgba(232,196,106,0.25), transparent 65%)',
+                        `radial-gradient(900px 600px at 15% -10%, rgba(${aRgb.r},${aRgb.g},${aRgb.b},0.35), transparent 70%), radial-gradient(1200px 700px at 90% 110%, rgba(${sRgb.r},${sRgb.g},${sRgb.b},0.25), transparent 65%)`,
                     }}
                   />
                   <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27160%27 height=%27160%27 viewBox=%270 0 40 40%27%3E%3Cg fill=%27none%27 stroke=%27rgba(255,255,255,0.04)%27 stroke-width=%270.5%27%3E%3Cpath d=%27M0 0h40v40H0z%27/%3E%3Cpath d=%27M0 20h40M20 0v40%27/%3E%3C/g%3E%3C/svg%3E')] opacity-40" />

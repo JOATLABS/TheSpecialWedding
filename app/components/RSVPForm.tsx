@@ -42,7 +42,22 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   rehearsal: 'Rehearsal Dinner',
 };
 
-// Glass card component matching SaaS landing page design
+/* ─── color helpers ─── */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace('#', '');
+  const num = parseInt(h, 16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+/**
+ * All theme colors come from CSS custom properties set by RSVPModal on the
+ * parent container. They cascade here automatically. We read them via
+ * var(--rsvp-accent) etc. in inline styles with safe fallbacks.
+ *
+ * For computed rgba() we also read the wedding object directly.
+ */
+
+// Glass card component — uses couple's theme accent for section title
 function FormCard({ title, children, className = '' }: {
   title: string;
   children: React.ReactNode;
@@ -51,7 +66,10 @@ function FormCard({ title, children, className = '' }: {
   return (
     <div className={`rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden ${className}`}>
       <div className="px-6 py-4 border-b border-white/10">
-        <h2 className="text-xs font-semibold text-wedding-rose uppercase tracking-[0.3em]">
+        <h2
+          className="text-xs font-semibold uppercase tracking-[0.3em]"
+          style={{ color: 'var(--rsvp-accent, #D4A5A5)' }}
+        >
           {title}
         </h2>
       </div>
@@ -75,6 +93,29 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
   });
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /* ─── theme colors (safe fallbacks to original wedding-rose) ─── */
+  const tc = wedding?.theme_config;
+  const accent = tc?.accent_color || '#D4A5A5';
+  const aRgb = hexToRgb(accent);
+  const accentRgba = (opacity: number) => `rgba(${aRgb.r}, ${aRgb.g}, ${aRgb.b}, ${opacity})`;
+
+  /** Reusable accent button style */
+  const accentBtnStyle: React.CSSProperties = {
+    backgroundColor: accent,
+    color: '#0f172a',
+    boxShadow: `0 10px 15px -3px ${accentRgba(0.4)}`,
+  };
+
+  /** Input focus ring via Tailwind's internal CSS variable */
+  const focusRingStyle: React.CSSProperties = {
+    '--tw-ring-color': accent,
+  } as React.CSSProperties;
+
+  /** Checkbox / radio accent */
+  const checkboxStyle: React.CSSProperties = {
+    accentColor: accent,
+  };
 
   // Initialize plus-ones from existing RSVP data if editing
   const initialPlusOnes: PlusOneData[] = existingRsvp?.plus_ones
@@ -120,13 +161,11 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
   const parseTimeToISO = (timeStr: string): string => {
     if (!timeStr) return '12:00';
 
-    // Handle 24-hour format without AM/PM (e.g., "18:00")
     if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
       const [hours, minutes] = timeStr.split(':');
       return `${hours.padStart(2, '0')}:${minutes}`;
     }
 
-    // Handle formats with colon: "6:00 PM", "6:00PM"
     const colonMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
     if (colonMatch) {
       let hours = parseInt(colonMatch[1], 10);
@@ -137,7 +176,6 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
       return `${hours.toString().padStart(2, '0')}:${minutes}`;
     }
 
-    // Handle hour-only formats: "6PM", "6 PM", "6pm"
     const hourOnlyMatch = timeStr.match(/^(\d{1,2})\s*(am|pm)$/i);
     if (hourOnlyMatch) {
       let hours = parseInt(hourOnlyMatch[1], 10);
@@ -158,7 +196,6 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
 
       if (!events.some(e => e.date || wedding.date)) return;
 
-      // Get wedding timezone (default to America/Chicago for US Central Time)
       const weddingTimezone = (wedding as any).timezone || 'America/Chicago';
 
       const formatICSDate = (year: number, month: number, day: number, hour: number, min: number): string => {
@@ -176,19 +213,15 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
         const [year, month, day] = eventDate.split('-').map(Number);
         const [startHour, startMin] = startTime.split(':').map(Number);
 
-        // Calculate end time (3 hours after start), handling midnight rollover
         let endHour = startHour + 3;
         let endDay = day;
         let endMonth = month;
         let endYear = year;
         if (endHour >= 24) {
           endHour -= 24;
-          // Roll forward one day (simplified: assumes no month-end edge case
-          // will cause issues for a 3-hour offset in calendar display)
           endDay += 1;
         }
 
-        // Get event-specific timezone or fall back to wedding timezone
         const eventTimezone = event.details?.timezone || weddingTimezone;
 
         const eventLabel = EVENT_TYPE_LABELS[event.type] || event.type.replace('_', ' ');
@@ -241,7 +274,6 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
   const onSubmit = async (data: any) => {
     setError(null);
 
-    // Validate plus-one fields before submitting
     const phonePattern = /^\+?\d{10,15}$/;
     for (let i = 0; i < plusOnes.length; i++) {
       const p = plusOnes[i];
@@ -268,7 +300,6 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const apiUrl = baseUrl.replace('/admin', '');
 
-      // Ensure attending is always an array (react-hook-form may return false/string for checkboxes)
       const attendingRaw = data.attending;
       const attendingList: string[] = Array.isArray(attendingRaw)
         ? attendingRaw
@@ -295,7 +326,6 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
         plus_ones: filledPlusOnes,
       };
 
-      // Debug: log payload to help diagnose 422 errors (remove after verified)
       console.log('[RSVP] submissionData:', JSON.stringify(submissionData, null, 2));
 
       const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
@@ -312,7 +342,6 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
             if (typeof errorData.detail === 'string') {
               errorMessage = errorData.detail;
             } else if (Array.isArray(errorData.detail)) {
-              // Pydantic validation errors come as array of objects with loc, msg, type
               const fieldLabels: Record<string, string> = {
                 phone: 'Phone number',
                 attending: 'Events',
@@ -348,8 +377,11 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
   if (submitted) {
     return (
       <div className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-xl p-10 text-center">
-        <div className="w-16 h-16 bg-wedding-rose/20 rounded-full flex items-center justify-center mx-auto mb-6">
-          <svg className="w-8 h-8 text-wedding-rose" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div
+          className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6"
+          style={{ backgroundColor: accentRgba(0.2) }}
+        >
+          <svg className="w-8 h-8" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
@@ -364,7 +396,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
             <button
               type="button"
               onClick={onViewWeddingPage}
-              className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush transition-all"
+              className="w-full py-4 font-semibold rounded-full shadow-lg hover:opacity-90 transition-all"
+              style={accentBtnStyle}
             >
               View {wedding.couple_names ? `${wedding.couple_names}'s` : 'Wedding'} Page
             </button>
@@ -373,7 +406,10 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
           <button
             type="button"
             onClick={generateICS}
-            className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:border-wedding-rose/50 hover:text-white transition-all"
+            className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:text-white transition-all"
+            style={{ borderColor: undefined }}
+            onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = accentRgba(0.5); }}
+            onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
           >
             Download Calendar Invite Again
           </button>
@@ -391,10 +427,10 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
         </div>
         <h1 className="text-3xl font-semibold text-white mb-2">Welcome, {guest.name}</h1>
         <p className="text-slate-200 mb-4">
-          Please RSVP for <span className="font-semibold text-wedding-rose">{wedding.couple_names}&apos;s</span> wedding
+          Please RSVP for <span className="font-semibold" style={{ color: accent }}>{wedding.couple_names}&apos;s</span> wedding
         </p>
         <p className="text-sm text-slate-400">
-          Fields marked with <span className="text-wedding-rose font-bold">*</span> are required.
+          Fields marked with <span className="font-bold" style={{ color: accent }}>*</span> are required.
           Please select the events you will attend and provide your contact details.
         </p>
       </div>
@@ -407,12 +443,18 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
           </p>
           <div className="space-y-3">
             {eventOptions.map((event: any) => (
-              <label key={event.value} className="flex items-start p-4 rounded-2xl border border-white/10 bg-white/5 hover:border-wedding-rose/40 hover:bg-wedding-rose/10 cursor-pointer transition-all">
+              <label
+                key={event.value}
+                className="flex items-start p-4 rounded-2xl border border-white/10 bg-white/5 cursor-pointer transition-all hover:bg-white/10"
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.4); }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; }}
+              >
                 <input
                   type="checkbox"
                   value={event.value}
                   {...register('attending')}
-                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
+                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 focus:ring-offset-0 focus:ring-1"
+                  style={{ ...checkboxStyle, ...focusRingStyle }}
                 />
                 <div className="ml-3">
                   <span className="text-slate-200 block">{event.label}</span>
@@ -434,7 +476,7 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
           <div className="space-y-5">
             <div>
               <label htmlFor="phone-input" className="block text-sm text-slate-200 mb-2">
-                Phone Number <span className="text-wedding-rose font-bold">*</span>
+                Phone Number <span className="font-bold" style={{ color: accent }}>*</span>
               </label>
               <input
                 id="phone-input"
@@ -443,10 +485,15 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                 placeholder="+15551234567"
                 aria-invalid={errors.phone ? "true" : "false"}
                 aria-describedby={errors.phone ? "phone-error" : "phone-hint"}
-                className={`w-full px-4 py-3 rounded-xl border ${errors.phone ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur`}
+                className="w-full px-4 py-3 rounded-xl border text-white placeholder-slate-500 focus:ring-1 focus:outline-none transition-all backdrop-blur"
+                style={{
+                  ...focusRingStyle,
+                  borderColor: errors.phone ? accentRgba(0.5) : 'rgba(255,255,255,0.1)',
+                  backgroundColor: errors.phone ? accentRgba(0.05) : 'rgba(255,255,255,0.05)',
+                }}
               />
               <p id="phone-hint" className="text-xs text-slate-500 mt-1">Enter digits only (10-15 digits). Example: +15551234567</p>
-              {errors.phone && <p id="phone-error" className="text-wedding-rose text-xs mt-1">{(errors.phone as any).message || 'Please enter a valid phone number'}</p>}
+              {errors.phone && <p id="phone-error" className="text-xs mt-1" style={{ color: accent }}>{(errors.phone as any).message || 'Please enter a valid phone number'}</p>}
             </div>
             <div>
               <label className="block text-sm text-slate-200 mb-2">Dietary Restrictions</label>
@@ -454,7 +501,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                 type="text"
                 {...register('dietary')}
                 placeholder="e.g., Vegetarian, Gluten-free"
-                className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 transition-all backdrop-blur"
+                className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:outline-none transition-all backdrop-blur"
+                style={focusRingStyle}
               />
               <p className="text-xs text-slate-500 mt-1">Optional. Leave blank if you have no dietary restrictions.</p>
             </div>
@@ -472,7 +520,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                 <input
                   type="checkbox"
                   {...register('sms_opt_in')}
-                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
+                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 focus:ring-offset-0 focus:ring-1"
+                  style={{ ...checkboxStyle, ...focusRingStyle }}
                 />
                 <div>
                   <span className="block text-sm font-medium text-white">SMS Reminders</span>
@@ -481,7 +530,12 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
               </label>
               <p className="text-xs text-slate-500 mt-3 pl-7">
                 By opting in, you consent to receive automated texts. Reply STOP to opt out. Msg rates may apply.{' '}
-                <a href="#" onClick={(e) => { e.preventDefault(); window.open(`${window.location.origin}/${wedding.slug}#footer`, '_blank'); }} className="text-wedding-rose hover:underline">
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); window.open(`${window.location.origin}/${wedding.slug}#footer`, '_blank'); }}
+                  className="hover:underline"
+                  style={{ color: accent }}
+                >
                   Terms
                 </a>
               </p>
@@ -492,7 +546,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                 <input
                   type="checkbox"
                   {...register('email_opt_in')}
-                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
+                  className="mt-0.5 w-4 h-4 rounded border-white/30 bg-white/10 focus:ring-offset-0 focus:ring-1"
+                  style={{ ...checkboxStyle, ...focusRingStyle }}
                 />
                 <div>
                   <span className="block text-sm font-medium text-white">Email Updates</span>
@@ -520,7 +575,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                     <button
                       type="button"
                       onClick={() => removePlusOne(index)}
-                      className="text-xs text-wedding-rose hover:text-wedding-rose/80 font-medium transition-colors"
+                      className="text-xs font-medium hover:opacity-80 transition-colors"
+                      style={{ color: accent }}
                       aria-label={`Remove guest ${index + 1}`}
                     >
                       Remove
@@ -532,7 +588,12 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                       <label htmlFor={`plus-one-name-${index}`} className="sr-only">Guest {index + 1} Name</label>
                       <input
                         id={`plus-one-name-${index}`}
-                        className={`w-full px-4 py-3 rounded-xl border ${!plusOne.name.trim() && error?.includes('Guest') ? 'border-wedding-rose/50 bg-wedding-rose/5' : 'border-white/10 bg-white/5'} text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 backdrop-blur`}
+                        className="w-full px-4 py-3 rounded-xl border text-white placeholder-slate-500 focus:ring-1 focus:outline-none backdrop-blur"
+                        style={{
+                          ...focusRingStyle,
+                          borderColor: !plusOne.name.trim() && error?.includes('Guest') ? accentRgba(0.5) : 'rgba(255,255,255,0.1)',
+                          backgroundColor: !plusOne.name.trim() && error?.includes('Guest') ? accentRgba(0.05) : 'rgba(255,255,255,0.05)',
+                        }}
                         type="text"
                         placeholder="Full name (required)"
                         maxLength={100}
@@ -546,7 +607,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                         <label htmlFor={`plus-one-phone-${index}`} className="sr-only">Guest {index + 1} Phone (optional)</label>
                         <input
                           id={`plus-one-phone-${index}`}
-                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:outline-none text-sm backdrop-blur"
+                          style={focusRingStyle}
                           type="tel"
                           placeholder="Phone (optional)"
                           value={plusOne.phone}
@@ -557,7 +619,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                         <label htmlFor={`plus-one-email-${index}`} className="sr-only">Guest {index + 1} Email (optional)</label>
                         <input
                           id={`plus-one-email-${index}`}
-                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:outline-none text-sm backdrop-blur"
+                          style={focusRingStyle}
                           type="email"
                           placeholder="Email (optional)"
                           value={plusOne.email || ''}
@@ -569,7 +632,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                       <label htmlFor={`plus-one-dietary-${index}`} className="sr-only">Guest {index + 1} Dietary restrictions (optional)</label>
                       <input
                         id={`plus-one-dietary-${index}`}
-                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:ring-wedding-rose focus:border-wedding-rose/50 text-sm backdrop-blur"
+                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:ring-1 focus:outline-none text-sm backdrop-blur"
+                        style={focusRingStyle}
                         type="text"
                         placeholder="Dietary restrictions (optional)"
                         value={plusOne.dietary}
@@ -583,7 +647,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                           type="checkbox"
                           checked={plusOne.sms_opt_in || false}
                           onChange={(e) => { const n = [...plusOnes]; n[index].sms_opt_in = e.target.checked; setPlusOnes(n); }}
-                          className="w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
+                          className="w-4 h-4 rounded border-white/30 bg-white/10 focus:ring-offset-0 focus:ring-1"
+                          style={{ ...checkboxStyle, ...focusRingStyle }}
                         />
                         <span className="text-xs text-slate-300">SMS reminders</span>
                       </label>
@@ -592,7 +657,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                           type="checkbox"
                           checked={plusOne.email_opt_in || false}
                           onChange={(e) => { const n = [...plusOnes]; n[index].email_opt_in = e.target.checked; setPlusOnes(n); }}
-                          className="w-4 h-4 rounded border-white/30 bg-white/10 text-wedding-rose focus:ring-wedding-rose focus:ring-offset-0"
+                          className="w-4 h-4 rounded border-white/30 bg-white/10 focus:ring-offset-0 focus:ring-1"
+                          style={{ ...checkboxStyle, ...focusRingStyle }}
                         />
                         <span className="text-xs text-slate-300">Email updates</span>
                       </label>
@@ -605,7 +671,9 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                 <button
                   type="button"
                   onClick={addPlusOne}
-                  className="w-full py-3 border border-dashed border-white/20 rounded-xl text-sm text-slate-300 hover:border-wedding-rose/50 hover:text-white transition-all"
+                  className="w-full py-3 border border-dashed border-white/20 rounded-xl text-sm text-slate-300 hover:text-white transition-all"
+                  onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = accentRgba(0.5); }}
+                  onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
                 >
                   + Add Guest
                 </button>
@@ -615,14 +683,22 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
         )}
 
         {error && (
-          <div className="rounded-2xl border border-wedding-rose/40 bg-wedding-rose/10 p-4 backdrop-blur">
+          <div
+            className="rounded-2xl p-4 backdrop-blur"
+            style={{
+              borderWidth: 1,
+              borderStyle: 'solid',
+              borderColor: accentRgba(0.4),
+              backgroundColor: accentRgba(0.1),
+            }}
+          >
             <div className="flex gap-3">
-              <svg className="w-5 h-5 text-wedding-rose flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
               <div>
-                <p className="text-sm font-medium text-wedding-rose mb-1">RSVP could not be submitted</p>
-                <p className="text-sm text-wedding-rose/80">{error}</p>
+                <p className="text-sm font-medium mb-1" style={{ color: accent }}>RSVP could not be submitted</p>
+                <p className="text-sm" style={{ color: accentRgba(0.8) }}>{error}</p>
               </div>
             </div>
           </div>
@@ -631,7 +707,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-4 bg-wedding-rose text-slate-900 font-semibold rounded-full shadow-lg shadow-wedding-rose/40 hover:bg-wedding-blush disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+          className="w-full py-4 font-semibold rounded-full shadow-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+          style={accentBtnStyle}
         >
           {isSubmitting ? (
             <>

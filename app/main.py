@@ -121,6 +121,17 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("Environment configuration validated successfully")
 
+        # Seed Knowledge Base with official platform docs (skips if already seeded)
+        try:
+            from app.scripts.seed_knowledge_base import seed_knowledge_base
+            kb_result = await seed_knowledge_base()
+            if kb_result["inserted"] > 0:
+                logger.info(f"Knowledge Base seeded: {kb_result['inserted']} articles added")
+            else:
+                logger.info("Knowledge Base already seeded, no new articles")
+        except Exception as e:
+            logger.warning(f"Knowledge Base seeding skipped: {e}")
+
         logger.info("Application startup complete")
 
         yield  # Application runs here
