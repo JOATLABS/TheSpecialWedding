@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface AnchorNavProps {
   sections: string[];
@@ -66,61 +67,64 @@ const NavDarkModeToggle: React.FC = () => {
     ? getComputedStyle(document.documentElement).getPropertyValue('--theme-secondary').trim() || '#F8BBD9'
     : '#F8BBD9';
 
-  return (
+  // Animation overlays are portalled to document.body so they escape the
+  // nav's backdrop-filter, which otherwise creates a containing block that
+  // clips `position: fixed` children to the nav instead of the viewport.
+  const animationOverlay = isAnimating ? (
     <>
-      {/* Veil Sweep animation — shows the INCOMING theme (isDark flips at 500ms midpoint,
-           so before midpoint isDark=old value; after midpoint isDark=new value.
-           We want the veil to always show the destination theme, so invert the check:
-           if isDark is currently false (light), we're transitioning TO dark → show dark veil) */}
-      {isAnimating && (
-        <div className="fixed inset-0 pointer-events-none z-[9998] overflow-hidden">
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: goingDark
-                ? `linear-gradient(135deg, ${themePrimary}15 0%, rgba(17, 24, 39, 0.97) 15%, rgba(17, 24, 39, 0.97) 85%, ${themePrimary}15 100%)`
-                : `linear-gradient(135deg, ${themeSecondary}40 0%, rgba(255, 255, 255, 0.97) 15%, rgba(255, 255, 255, 0.97) 85%, ${themeSecondary}40 100%)`,
-              animation: 'navVeilSweep 1s cubic-bezier(0.4, 0, 0.2, 1) forwards',
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              width: '2px',
-              background: `linear-gradient(180deg, transparent 0%, ${themePrimary} 20%, ${themeSecondary} 50%, ${themePrimary} 80%, transparent 100%)`,
-              boxShadow: `0 0 20px ${themePrimary}, 0 0 40px ${themeSecondary}`,
-              animation: 'navShimmerLine 1s cubic-bezier(0.4, 0, 0.2, 1) forwards',
-            }}
-          />
-        </div>
-      )}
+      {/* Veil Sweep animation — shows the INCOMING theme */}
+      <div className="fixed inset-0 pointer-events-none z-[9998] overflow-hidden">
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: goingDark
+              ? `linear-gradient(135deg, ${themePrimary}15 0%, rgba(17, 24, 39, 0.97) 15%, rgba(17, 24, 39, 0.97) 85%, ${themePrimary}15 100%)`
+              : `linear-gradient(135deg, ${themeSecondary}40 0%, rgba(255, 255, 255, 0.97) 15%, rgba(255, 255, 255, 0.97) 85%, ${themeSecondary}40 100%)`,
+            animation: 'navVeilSweep 1s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: '2px',
+            background: `linear-gradient(180deg, transparent 0%, ${themePrimary} 20%, ${themeSecondary} 50%, ${themePrimary} 80%, transparent 100%)`,
+            boxShadow: `0 0 20px ${themePrimary}, 0 0 40px ${themeSecondary}`,
+            animation: 'navShimmerLine 1s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+          }}
+        />
+      </div>
 
       {/* Ring Ripple animation */}
-      {isAnimating && (
-        <div className="fixed inset-0 pointer-events-none z-[9997] overflow-hidden">
-          {[0, 0.15, 0.3].map((delay, i) => (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                left: ripplePos.x,
-                top: ripplePos.y,
-                width: 40,
-                height: 40,
-                marginLeft: -20,
-                marginTop: -20,
-                borderRadius: '50%',
-                border: `${i === 2 ? 1 : 2}px solid ${i === 1 ? themeSecondary : themePrimary}${i === 2 ? '80' : ''}`,
-                boxShadow: `0 0 ${i === 2 ? 10 : 15}px ${i === 1 ? themeSecondary : themePrimary}${i === 2 ? '40' : '60'}`,
-                animation: `navRingRipple 1s cubic-bezier(0.4, 0, 0.6, 1) ${delay}s both`,
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <div className="fixed inset-0 pointer-events-none z-[9997] overflow-hidden">
+        {[0, 0.15, 0.3].map((delay, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: ripplePos.x,
+              top: ripplePos.y,
+              width: 40,
+              height: 40,
+              marginLeft: -20,
+              marginTop: -20,
+              borderRadius: '50%',
+              border: `${i === 2 ? 1 : 2}px solid ${i === 1 ? themeSecondary : themePrimary}${i === 2 ? '80' : ''}`,
+              boxShadow: `0 0 ${i === 2 ? 10 : 15}px ${i === 1 ? themeSecondary : themePrimary}${i === 2 ? '40' : '60'}`,
+              animation: `navRingRipple 1s cubic-bezier(0.4, 0, 0.6, 1) ${delay}s both`,
+            }}
+          />
+        ))}
+      </div>
+    </>
+  ) : null;
+
+  return (
+    <>
+      {/* Portal animations to document.body to escape nav's backdrop-filter */}
+      {animationOverlay && createPortal(animationOverlay, document.body)}
 
       <button
         ref={buttonRef}
