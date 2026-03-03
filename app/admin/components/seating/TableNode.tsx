@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { Table, Guest } from '@/types/table';
 import { GuestItem } from './GuestItem';
@@ -11,7 +11,7 @@ interface TableNodeProps {
 }
 
 export function TableNode({ table, guests, onDelete }: TableNodeProps) {
-  // Draggable for moving the table itself
+  // Draggable for moving the table itself (outer positioned wrapper)
   const {
     attributes,
     listeners,
@@ -23,21 +23,11 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
     data: { type: 'table', table },
   });
 
-  // Droppable for accepting guests — covers the entire card
+  // Droppable for accepting guests — covers the entire visible card
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: `table-drop-${table.id}`,
     data: { type: 'table-drop', tableId: table.id },
   });
-
-  // Compose both refs onto the same outer container so the whole
-  // card is both the draggable anchor AND the droppable target.
-  const composedRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      setDraggableRef(node);
-      setDroppableRef(node);
-    },
-    [setDraggableRef, setDroppableRef],
-  );
 
   const style: React.CSSProperties = {
     transform: transform
@@ -77,14 +67,17 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
     : '';
 
   return (
-    <div ref={composedRef} style={style} className="group">
+    // Outer wrapper: draggable ref for table positioning
+    <div ref={setDraggableRef} style={style} className="group">
+      {/* Inner card: droppable ref for guest drops — NOT overflow-hidden
+          so dragged guests inside aren't clipped */}
       <div
+        ref={setDroppableRef}
         className={`
-          w-72 ${borderRadius}
+          relative w-72 ${borderRadius}
           bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl
           border border-white/50 dark:border-slate-700/50
           shadow-sm hover:shadow-lg
-          overflow-hidden
           transition-shadow duration-300
           ${ringClass} ${bgTint}
         `}
@@ -154,7 +147,7 @@ export function TableNode({ table, guests, onDelete }: TableNodeProps) {
 
         {/* Guest List Area */}
         <div
-          className="p-2.5 min-h-[100px] max-h-[220px] overflow-y-auto"
+          className={`p-2.5 min-h-[100px] max-h-[220px] overflow-y-auto ${borderRadius === 'rounded-[28px]' ? 'rounded-b-[28px]' : 'rounded-b-2xl'}`}
           style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.3) transparent' }}
         >
           {guests.map((guest) => (
