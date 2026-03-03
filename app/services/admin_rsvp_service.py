@@ -49,24 +49,25 @@ class AdminRSVPService:
             })
             plus_ones_list = await plus_ones_cursor.to_list(length=None)
 
-            # Map PlusOnes by guest_id
-            plus_ones_map = {p["guest_id"]: p for p in plus_ones_list}
+            # Map PlusOnes by guest_id — use list to support multiple plus-ones per guest
+            plus_ones_map: dict = {}
+            for p in plus_ones_list:
+                gid = p["guest_id"]
+                if "_id" in p:
+                    p["_id"] = str(p["_id"])
+                plus_ones_map.setdefault(gid, []).append(p)
 
             for guest in guests:
                 guest_id = guest["_id"]
                 guest_id_str = str(guest_id)
-                
+
                 # Look up RSVP from map
                 rsvp = rsvps_map.get(guest_id_str)
-                
+
                 # Only include guests who have actually RSVP'd
                 if rsvp:
-                    plus_one = plus_ones_map.get(guest_id_str)
-                    
-                    # Convert plus_one _id to string if it exists
-                    if plus_one and "_id" in plus_one:
-                        plus_one["_id"] = str(plus_one["_id"])
-                    
+                    guest_plus_ones = plus_ones_map.get(guest_id_str, [])
+
                     result.append({
                         "guest_id": guest_id_str,
                         "name": guest.get("name"),
@@ -75,7 +76,8 @@ class AdminRSVPService:
                         "attending": rsvp.get("attending", []),
                         "dietary": rsvp.get("dietary"),
                         "submitted_at": rsvp.get("submitted_at").isoformat() if rsvp.get("submitted_at") else None,
-                        "plus_one": plus_one
+                        "plus_one": guest_plus_ones[0] if len(guest_plus_ones) == 1 else None,
+                        "plus_ones": guest_plus_ones
                     })
 
             return result
@@ -103,17 +105,31 @@ class AdminRSVPService:
             rows = []
 
             for entry in guests:
-                plus_one = entry.get("plus_one")
-                rows.append([
-                    entry["name"],
-                    entry.get("phone", ""),
-                    ", ".join(entry.get("attending", [])),
-                    entry.get("dietary", ""),
-                    entry.get("token", ""),
-                    plus_one.get("name") if plus_one else "",
-                    ", ".join(plus_one.get("attending", [])) if plus_one else "",
-                    plus_one.get("dietary") if plus_one else ""
-                ])
+                guest_plus_ones = entry.get("plus_ones", [])
+                if guest_plus_ones:
+                    # One row per plus-one so the CSV captures all of them
+                    for po in guest_plus_ones:
+                        rows.append([
+                            entry["name"],
+                            entry.get("phone", ""),
+                            ", ".join(entry.get("attending", [])),
+                            entry.get("dietary", ""),
+                            entry.get("token", ""),
+                            po.get("name", ""),
+                            ", ".join(po.get("attending", [])),
+                            po.get("dietary", "")
+                        ])
+                else:
+                    rows.append([
+                        entry["name"],
+                        entry.get("phone", ""),
+                        ", ".join(entry.get("attending", [])),
+                        entry.get("dietary", ""),
+                        entry.get("token", ""),
+                        "",
+                        "",
+                        ""
+                    ])
 
             return CSVExportUtils.generate_csv_content(headers, rows)
         except Exception as e:

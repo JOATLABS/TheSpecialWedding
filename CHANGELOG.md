@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-03-03 — Email Reminders for Phoneless Guests, Plus-One Display Fix & Channel Picker
+
+### Fixed
+
+- **Email reminders not working for guests without phone numbers** (`app/admin/guests/page.tsx`, `app/api/email_reminders.py`, `app/admin/reminders/page.tsx`):
+
+  - The reminder modal on the guests page was SMS-only — the send button was disabled when a guest had no phone number, and the handler only called the SMS endpoint (`/admin/reminders/send-to-guests`)
+  - Added new `POST /admin/email/send-reminder-individual` endpoint in `email_reminders.py` with `IndividualEmailReminderModel` Pydantic model for sending a single reminder email via Resend
+  - Rewrote `handleSendReminder` in `guests/page.tsx` to compute `sendSms`/`sendEmail` booleans based on selected channel and guest contact availability, then call the appropriate endpoint(s)
+  - Fixed send button disabled logic from `!reminderModal.guest.phone` to `(!reminderModal.guest.phone && !reminderModal.guest.email)` so email-only guests can receive reminders
+  - On the reminders page, fixed "Send Event Reminder" button disabled condition to allow email-only sends without requiring a custom message (`channel !== 'email'` guard)
+  - Added error handling for email reminder API failures on the reminders page — errors were previously silently swallowed
+
+- **Plus-one information not displaying in admin panel** (`app/services/admin_rsvp_service.py`, `app/api/plus_one.py`):
+
+  - `admin_rsvp_service.py` used a dict comprehension `{guest_id: plus_one for ...}` which overwrote earlier entries when a guest submitted multiple plus-ones — changed to `setdefault(gid, []).append(p)` to preserve all plus-ones per guest
+  - Added `plus_ones` array field to the RSVP response alongside backward-compatible singular `plus_one` field
+  - Fixed broken `GET /plus_one/wedding/{id}` route in `plus_one.py` — was calling non-existent `get_plus_ones_by_wedding()` method, corrected to `get_plus_ones_by_wedding_id()`
+  - Serialized `_id` fields to string in the plus-ones map to prevent ObjectId serialization errors
+
+- **CSV export losing multiple plus-ones** (`app/services/admin_rsvp_service.py`):
+
+  - `export_rsvps_to_csv` only exported the last plus-one per guest due to the same dict overwrite bug
+  - Rewrote export to iterate `entry.get("plus_ones", [])` and create one CSV row per plus-one, with empty plus-one columns for guests without any
+
+### Added
+
+- **Channel picker for individual guest reminders** (`app/admin/guests/page.tsx`):
+
+  - Planners can now choose to send reminders via **SMS**, **Email**, or **Both** using toggle buttons in the reminder modal
+  - Channel picker auto-selects the best option based on guest contact info (e.g., defaults to Email if guest has no phone, SMS if no email, Both if both exist)
+  - Send button label dynamically reflects selected channel ("Send via SMS", "Send via Email", "Send via SMS & Email")
+  - Channel buttons are conditionally shown — SMS button hidden if no phone, Email button hidden if no email
+
+---
+
+## [2.1.1] - 2026-03-03 — Seating DnD Fix, Dark Mode Animation Portal & Infinite Scroll
+
+### Fixed
+
+- **Dark mode toggle animation only visible on nav header** (`app/components/landing-page/AnchorNav.tsx`):
+
+  - The veil sweep, shimmer line, and ring ripple overlays used `position: fixed; inset: 0` but were rendered as children of the `<nav>` element which has `backdrop-blur-sm` (`backdrop-filter: blur(4px)`)
+  - Per CSS spec, `backdrop-filter` creates a containing block for fixed-position descendants, so the "full-screen" overlays were actually clipped to the nav bar's bounds
+  - Wrapped animation overlays in `createPortal(... , document.body)` to render them at the root DOM level, escaping the nav's containing block
+  - Veil sweep and ring ripple now correctly cover the entire viewport during dark mode transition
+
+- **Seating drag-and-drop not working** (`app/admin/components/seating/TableNode.tsx`, `app/admin/seating/page.tsx`):
+
+  - Reverted incorrect `closestCenter` collision detection — it always returned the nearest droppable even when dropping in empty canvas space, causing unintended guest assignments. Replaced with `pointerWithin` which only triggers when the pointer is actually inside a droppable zone
+  - Separated draggable and droppable refs in `TableNode`: draggable ref on outer positioned wrapper (for table movement), droppable ref on inner card div (for receiving guest drops) — previously both were composed onto the same element causing self-collision
+  - Removed `overflow-hidden` from the TableNode inner card which was clipping dragged guest elements when they moved outside the card boundary
+  - Removed unused `MeasuringStrategy` import
+
+- **Infinite scroll parallax jump at loop point** (`app/components/ui/InfiniteScrollWrapper.tsx`, `app/components/landing-page/Modern3DBackground.tsx`, `app/components/landing-page/LandingLayout.tsx`):
+
+  - `Modern3DBackground` used raw `window.scrollY` for parallax offset, causing a visual jump of `height × 0.15` pixels when `InfiniteScrollWrapper` reset scroll position
+  - Added `onPrimaryHeight` callback prop to `InfiniteScrollWrapper` using `ResizeObserver` to report primary content height
+  - Added `loopHeight` prop to `Modern3DBackground` which normalizes `scrollY` with modulo (`scrollY % loopHeight`) for seamless looping
+  - Switched parallax from React state updates (re-render per scroll) to a `requestAnimationFrame` loop writing directly to a DOM ref for smoother performance
+  - Lifted `loopHeight` state in `LandingLayout` to connect the two sibling components
+
+---
+
 ## [2.1.0] - 2026-03-03 — Stripe Audit, Error Boundaries, KB Permissions & Animation Fixes
 
 ### Added

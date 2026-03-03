@@ -278,6 +278,11 @@ export default function AdminRemindersPage() {
  if (result.skipped_no_email > 0) skipDetails.push(`${result.skipped_no_email} no email`);
  if (result.skipped_no_token > 0) skipDetails.push(`${result.skipped_no_token} no token`);
  if (result.skipped_opted_out > 0) skipDetails.push(`${result.skipped_opted_out} email opted out`);
+ } else {
+ const errorData = await response.json().catch(() => ({}));
+ const detail = errorData.detail || 'Email invite send failed';
+ console.error('Email invite error:', detail);
+ skipDetails.push(`Email error: ${detail}`);
  }
  }
 
@@ -363,10 +368,15 @@ export default function AdminRemindersPage() {
  const result = await response.json();
  totalSent += result.sent || 0;
  totalFailed += result.failed || 0;
+ } else {
+ const errorData = await response.json().catch(() => ({}));
+ const detail = errorData.detail || 'Email reminder send failed';
+ console.error('Email reminder error:', detail);
+ setError(`Email error: ${detail}`);
  }
  }
 
- if (totalSent === 0) {
+ if (totalSent === 0 && !error) {
  setError('No reminders sent. Make sure guests have RSVP\'d for the selected event type.');
  } else {
  const channelText = channel === 'both' ? 'SMS and email' : channel;
@@ -919,7 +929,7 @@ export default function AdminRemindersPage() {
 
  <button
  onClick={handleSendEventReminder}
- disabled={loading || !customMessage.trim()}
+ disabled={loading || (!customMessage.trim() && channel !== 'email')}
  className="w-full bg-gradient-to-r from-wedding-rose to-wedding-gold text-white py-3 px-6 rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
  >
  {loading ? 'Sending...' : 'Send Event Reminder'}
