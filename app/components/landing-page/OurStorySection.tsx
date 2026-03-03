@@ -91,10 +91,16 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                   />
                 </div>
               )}
-              
-              <p className="text-lg text-gray-700 dark:text-gray-200 text-center max-w-3xl leading-relaxed transition-colors duration-300">
+
+              {/* Decorative open-quote */}
+              <span className="text-4xl leading-none theme-accent opacity-40 mb-1 select-none">&ldquo;</span>
+
+              <p className="text-base sm:text-lg text-gray-700 dark:text-gray-200 text-left max-w-2xl leading-relaxed italic transition-colors duration-300">
                 {wedding.our_story.text}
               </p>
+
+              {/* Decorative close-quote */}
+              <span className="text-4xl leading-none theme-accent opacity-40 mt-1 self-end max-w-2xl select-none">&rdquo;</span>
             </div>
           </GlassCard>
         )}
