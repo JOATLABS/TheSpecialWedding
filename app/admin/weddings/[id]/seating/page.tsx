@@ -6,6 +6,7 @@ import { useTables } from '@/admin/hooks/useTables';
 import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
 import { Sidebar } from '@/admin/components/seating/Sidebar';
+import { LiquidBackground } from '@/admin/components/seating/LiquidBackground';
 import { GlassButton } from '@/admin/components/ui/glass/GlassButton';
 import { Plus, Download, Printer, Sparkles, X, Check } from 'lucide-react';
 import { Table } from '@/types/table';
@@ -228,12 +229,17 @@ export default function SeatingPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden print:h-auto print:overflow-visible">
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden print:h-auto print:overflow-visible relative">
+      {/* Animated liquid background */}
       <div className="print:hidden">
+        <LiquidBackground />
+      </div>
+
+      <div className="print:hidden relative z-10">
         <Sidebar guests={guests} />
       </div>
 
-      <div className="flex-1 flex flex-col relative print:w-full">
+      <div className="flex-1 flex flex-col relative print:w-full z-10">
         <div className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-gray-200 dark:border-slate-700 flex items-center justify-between px-6 z-20 print:hidden">
           <h1 className="text-xl sm:text-2xl font-semibold leading-tight text-slate-900 dark:text-white">Seating Plan</h1>
 

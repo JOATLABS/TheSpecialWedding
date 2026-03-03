@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
 
 // Wedding party group mappings for sync
 // Wedding party = bridesmaids, groomsmen, maid of honor, best man
@@ -350,6 +351,13 @@ export default function WeddingDetailsPage() {
  >
  Seating Plan
  </Link>
+ <PaymentCollectionButton
+ weddingId={weddingId}
+ weddingTitle={wedding?.couple_names || 'Wedding'}
+ variant="outline"
+ size="default"
+ className="bg-white/20 text-white border-white/30 hover:bg-white/30 text-sm sm:text-base"
+ />
  <button
  onClick={saveWedding}
  disabled={saving}
