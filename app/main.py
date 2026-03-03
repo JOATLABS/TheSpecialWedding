@@ -121,6 +121,17 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("Environment configuration validated successfully")
 
+        # Alert root admin if email service failed to initialize
+        from app.api.email_reminders import email_available
+        if not email_available:
+            from app.services.config_validator import _create_root_admin_notification
+            await _create_root_admin_notification(
+                title="Email Service Unavailable",
+                message="The email service (Resend) failed to initialize. RSVP invitations, reminders, and notification emails will not work. Check RESEND_API_KEY and server logs for details.",
+                priority="critical"
+            )
+            logger.warning("Email service is not available — root admin notified")
+
         # Seed Knowledge Base with official platform docs (skips if already seeded)
         try:
             from app.scripts.seed_knowledge_base import seed_knowledge_base

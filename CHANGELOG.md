@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.3] - 2026-03-03 — Email Service Type Safety & Root Admin Alerting
+
+### Fixed
+
+- **Type checker error on `email_service` calls** (`app/api/email_reminders.py`):
+
+  - `email_service` is typed `Optional[ResendEmailService]` but four guard clauses only checked `if not email_available:` without narrowing the `None` type — added `or email_service is None` to guards at the `send_email_invites`, `send_email_invites_with_attachment`, `preview_invitation_email`, and `preview_reminder_email` endpoints to match the pattern already used in `send_email_reminders`, `send_individual_email`, and `get_email_logs`
+
+- **Email service init error silently swallowed** (`app/api/email_reminders.py`):
+
+  - The `except` block had a bare f-string `(f"Email service not available: {str(e)}")` that evaluated to nothing — replaced with `logger.error(...)` using the standard `logging.getLogger(__name__)` pattern used across other API modules
+
+### Added
+
+- **Root admin notification when email service fails to initialize** (`app/main.py`):
+
+  - After environment validation in `lifespan()`, checks `email_available` flag and fires a `"critical"` priority in-app notification via `_create_root_admin_notification` from `config_validator.py` — covers runtime failures (bad API key, constructor exceptions) beyond the missing-env-var case already handled by the config validator
+
 ## [2.1.2] - 2026-03-03 — Email Reminders for Phoneless Guests, Plus-One Display Fix & Channel Picker
 
 ### Fixed
