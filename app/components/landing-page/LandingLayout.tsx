@@ -14,7 +14,6 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import InfiniteScrollWrapper from '@/components/ui/InfiniteScrollWrapper';
 import { LandingLayoutProps } from '@/types/landing';
 import { useTheme } from '@/hooks/useTheme';
-import { WeddingDarkModeToggle, WeddingDarkModeStyles } from '@/components/landing-page/WeddingDarkModeToggle';
 import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
 import RequestRSVPLinkModal from '@/components/RequestRSVPLinkModal';
@@ -308,12 +307,6 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
           )}
         </InfiniteScrollWrapper>
       </main>
-
-      {/* ── Dark mode toggle ── */}
-      <div className="fixed top-4 right-4 z-50">
-        <WeddingDarkModeToggle themeColor={wedding.theme_config?.primary_color ? undefined : 'rose'} />
-      </div>
-      <WeddingDarkModeStyles />
 
       {/* ── Legal footer links (accessible via nav, rendered once) ── */}
       <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
