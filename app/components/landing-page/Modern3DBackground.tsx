@@ -16,6 +16,7 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
   theme,
 }) => {
   const [scrollY, setScrollY] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -23,8 +24,17 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
       setScrollY(window.scrollY);
     };
 
+    const handleResize = () => {
+      setViewportHeight(window.innerHeight);
+    };
+
+    handleResize(); // set initial value
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   useEffect(() => {
@@ -62,20 +72,35 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
     );
   }
 
-  // Deep parallax effect - background moves slower and opposite to scroll
-  const parallaxOffset = prefersReducedMotion ? 0 : scrollY * -0.22;
+  // Deep parallax effect - background moves slower and opposite to scroll.
+  // The image is 180% tall, scaled 1.08 → effective ~194% of viewport.
+  // Extra space below center ≈ 0.94 * vh. Clamp so bottom edge never
+  // rises above the viewport, preventing the white-gap glitch.
+  const IMAGE_HEIGHT_PCT = 1.80;
+  const SCALE = 1.08;
+  const PARALLAX_RATE = 0.15;
+  const maxUp = viewportHeight > 0
+    ? (IMAGE_HEIGHT_PCT * SCALE - 1) * viewportHeight * 0.5
+    : 9999;
+  const rawOffset = prefersReducedMotion ? 0 : scrollY * -PARALLAX_RATE;
+  const parallaxOffset = Math.max(rawOffset, -maxUp);
+
+  const primaryColor = theme?.primary_color || '#1e3a5f';
 
   return (
     <>
       {/* Fixed background container */}
-      <div className="fixed inset-0 -z-10 overflow-hidden">
+      <div
+        className="fixed inset-0 -z-10 overflow-hidden dark:bg-gray-950"
+        style={{ backgroundColor: `${primaryColor}10` }}
+      >
         {/* Parallax image layer */}
         <div
           className="absolute inset-0"
           style={{
-            transform: `translate3d(0, ${parallaxOffset}px, 0) scale(1.08)`,
+            transform: `translate3d(0, ${parallaxOffset}px, 0) scale(${SCALE})`,
             willChange: 'transform',
-            height: '155%',
+            height: `${IMAGE_HEIGHT_PCT * 100}%`,
           }}
         >
           <Image
