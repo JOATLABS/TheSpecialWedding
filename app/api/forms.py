@@ -42,7 +42,7 @@ async def create_form(
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         # Log unauthorized access attempt
         client_ip = getattr(request.client, 'host', None) if request.client else None
-        security_audit.log_security_event(
+        await security_audit.log_security_event(
             event_type=SecurityEventType.UNAUTHORIZED_ACCESS,
             severity=SecuritySeverity.HIGH,
             user_email=current_user.email,
@@ -94,7 +94,7 @@ async def create_form(
             f"user={current_user.email}"
         )
         # Security audit log
-        security_audit.log_security_event(
+        await security_audit.log_security_event(
             event_type=SecurityEventType.FORM_CREATION,
             severity=SecuritySeverity.MEDIUM,
             user_email=current_user.email,
@@ -469,7 +469,7 @@ async def export_form_responses_csv(
         if not (current_user.is_wedding_planner or current_user.is_root_admin):
             # Log unauthorized access attempt
             client_ip = getattr(request.client, 'host', None) if request.client else None
-            security_audit.log_security_event(
+            await security_audit.log_security_event(
                 event_type=SecurityEventType.UNAUTHORIZED_ACCESS,
                 severity=SecuritySeverity.HIGH,
                 user_email=current_user.email,
@@ -536,7 +536,7 @@ async def export_form_responses_csv(
             include_metadata=include_metadata
         )
         # Log successful export for audit
-        security_audit.log_security_event(
+        await security_audit.log_security_event(
             event_type=SecurityEventType.DATA_EXPORT,
             severity=SecuritySeverity.MEDIUM,
             user_email=current_user.email,

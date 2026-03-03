@@ -83,15 +83,15 @@ class RSVPReminderHelper:
                 })
         return {"sent": sent}
 
-    def simulate_rsvp_for_guest(self, token: str, attending=None, dietary=None, phone=None, plus_one=None):
+    async def simulate_rsvp_for_guest(self, token: str, attending=None, dietary=None, phone=None, plus_one=None):
         if attending is None:
             attending = ["traditional"]
-        guest = self.guest_collection.find_one({"token": token})
+        guest = await self.guest_collection.find_one({"token": token})
         if not guest:
             raise HTTPException(status_code=404, detail="Guest not found")
 
         guest_id = guest["_id"]
-        self.rsvp_collection.update_one(
+        await self.rsvp_collection.update_one(
             {"guest_id": guest_id},
             {"$set": {
                 "guest_id": guest_id,
@@ -102,12 +102,13 @@ class RSVPReminderHelper:
             upsert=True
         )
         if phone:
-            self.guest_collection.update_one({"_id": guest_id}, {"$set": {"phone": phone}})
+            await self.guest_collection.update_one({"_id": guest_id}, {"$set": {"phone": phone}})
 
         if plus_one:
             if not guest.get("plus_one_allowed"):
                 raise HTTPException(status_code=403, detail="Plus-one not allowed")
-            if self.plus_one_collection.find_one({"guest_id": ObjectId(guest_id)}):
+            existing_plus_one = await self.plus_one_collection.find_one({"guest_id": ObjectId(guest_id)})
+            if existing_plus_one:
                 raise HTTPException(status_code=400, detail="Plus-one already submitted")
 
             plus_one_obj = PlusOneModel(
@@ -117,7 +118,7 @@ class RSVPReminderHelper:
                 attending=plus_one.get("attending", []),
                 dietary=plus_one.get("dietary")
             )
-            self.plus_one_collection.insert_one(plus_one_obj.dict(by_alias=True))
-            self.guest_collection.update_one({"_id": guest_id}, {"$set": {"plus_one_submitted": True}})
+            await self.plus_one_collection.insert_one(plus_one_obj.dict(by_alias=True))
+            await self.guest_collection.update_one({"_id": guest_id}, {"$set": {"plus_one_submitted": True}})
 
         return {"message": "RSVP simulated successfully"}

@@ -26,9 +26,10 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding, o
   const secondaryColor = theme?.secondary_color || '#d4af37';
   const accentColor = theme?.accent_color || '#c8847e';
 
-  // Lighter versions for dark mode
-  const lightPrimary = lightenColor(primaryColor, 0.4);
-  const lightSecondary = lightenColor(secondaryColor, 0.3);
+  // Lighter versions for dark mode – higher values for better readability
+  const lightPrimary = lightenColor(primaryColor, 0.6);
+  const lightSecondary = lightenColor(secondaryColor, 0.55);
+  const lightAccent = lightenColor(accentColor, 0.45);
 
   // Format all event dates
   const formattedDates = (() => {
@@ -85,12 +86,17 @@ export const ThemedHeroSection: React.FC<ThemedHeroSectionProps> = ({ wedding, o
         }
         :global(.dark) .hero-title {
           color: ${lightPrimary};
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
         :global(.dark) .hero-date {
           color: ${lightSecondary};
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
         :global(.dark) .hero-divider {
           background-color: ${lightSecondary};
+        }
+        :global(.dark) .hero-celebrate-btn {
+          background-color: ${lightAccent};
         }
       `}</style>
 

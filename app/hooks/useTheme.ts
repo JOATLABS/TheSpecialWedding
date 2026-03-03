@@ -27,9 +27,9 @@ export const useTheme = (wedding: Wedding | null) => {
     root.style.setProperty('--theme-accent', theme.accent_color);
 
     // Compute lightened variants for dark mode readability
-    root.style.setProperty('--theme-primary-light', lightenHex(theme.primary_color, 0.55));
-    root.style.setProperty('--theme-secondary-light', lightenHex(theme.secondary_color, 0.35));
-    root.style.setProperty('--theme-accent-light', lightenHex(theme.accent_color, 0.35));
+    root.style.setProperty('--theme-primary-light', lightenHex(theme.primary_color, 0.6));
+    root.style.setProperty('--theme-secondary-light', lightenHex(theme.secondary_color, 0.5));
+    root.style.setProperty('--theme-accent-light', lightenHex(theme.accent_color, 0.45));
 
     // Apply font style
     switch (theme.font_style) {

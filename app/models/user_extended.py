@@ -110,10 +110,10 @@ class UserModel(BaseModel):
 
 
 class AdminUserModel(BaseModel):
-    """Legacy admin user model - keeping for backward compatibility"""
+    """Legacy admin user model"""
     email: str = Field(..., description="Admin email")
     password_hash: str = Field(..., description="Hashed password")
-    role: str = Field(default="admin", description="Always 'admin' for backward compatibility")
+    role: str = Field(..., description="User role: ROOT_ADMIN, wedding_planner, or vendor")
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -121,7 +121,7 @@ class AdminUserModel(BaseModel):
             "example": {
                 "email": "thedeveloper@thespecialwedding.com",
                 "password_hash": "hashed_password_here",
-                "role": "admin"
+                "role": "wedding_planner"
             }
         }
 # Note: New user-related features should use UserModel going forward

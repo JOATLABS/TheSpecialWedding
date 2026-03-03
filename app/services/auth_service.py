@@ -63,7 +63,7 @@ class AuthService:
             logger.error(f"Failed to update last_login for {email}: {str(e)}")
             # Don't fail the login if last_login update fails
 
-        token_data = {"sub": user["email"], "role": user.get("role", "admin")}
+        token_data = {"sub": user["email"], "role": user.get("role")}
         access_token_expires = timedelta(minutes=60)
         token = create_access_token(data=token_data, expires_delta=access_token_expires)
         return {"access_token": token, "token_type": "bearer"}

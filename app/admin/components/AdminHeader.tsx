@@ -24,7 +24,7 @@ export default function AdminHeader() {
     if (!userProfile) return [];
 
     const baseLinks = [
-      { href: '/admin', label: 'Dashboard', roles: ['ROOT_ADMIN', 'admin', 'wedding_planner', 'vendor'] }
+      { href: '/admin', label: 'Dashboard', roles: ['ROOT_ADMIN', 'wedding_planner', 'vendor'] }
     ];
 
     if (userProfile.is_root_admin) {
