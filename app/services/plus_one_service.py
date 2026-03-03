@@ -3,6 +3,9 @@ from bson import ObjectId
 from app.core.database import mongo
 from app.models.plus_one import PlusOneModel
 from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PlusOneService:
@@ -93,7 +96,7 @@ class PlusOneService:
             if not guests:
                 return []
 
-            # Convert ObjectIds to strings
+            # Convert ObjectIds to strings (plus_ones store guest_id as string)
             guest_ids = [str(g["_id"]) for g in guests]
 
             # 2. Find plus-ones for these guests
@@ -107,6 +110,7 @@ class PlusOneService:
 
             return results
         except Exception as e:
+            logger.error(f"Error fetching plus-ones for wedding {wedding_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to retrieve plus-ones for wedding: {str(e)}")
 
     async def update_plus_one(self, plus_one_id: str, data: dict):

@@ -3,6 +3,9 @@ from app.models.plus_one import PlusOneModel
 from app.services.plus_one_service import PlusOneService
 from app.services.guest_service import GuestService
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -46,7 +49,7 @@ async def get_plus_ones(guest_id: str, current_user: ExtendedAuthUser = Depends(
 
 
 @router.get("/wedding/{wedding_id}", tags=["Plus-Ones"])
-async def get_plus_ones_by_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def get_plus_ones_for_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Verify wedding access
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
