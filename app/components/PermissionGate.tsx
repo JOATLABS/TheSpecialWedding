@@ -46,7 +46,6 @@ export const PermissionGate: React.FC<PermissionGateProps> = ({
     const hasAllowedRole = roles.some(role => {
       switch (role) {
         case 'ROOT_ADMIN':
-        case 'admin':
           return userProfile.is_root_admin;
         case 'wedding_planner':
           return userProfile.is_wedding_planner;
@@ -79,7 +78,7 @@ export const VendorOnly: React.FC<Omit<PermissionGateProps, 'requireVendor'>> = 
 );
 
 export const PlannerOrAdmin: React.FC<Omit<PermissionGateProps, 'roles'>> = (props) => (
-  <PermissionGate {...props} roles={['ROOT_ADMIN', 'admin', 'wedding_planner']} />
+  <PermissionGate {...props} roles={['ROOT_ADMIN', 'wedding_planner']} />
 );
 
 export default PermissionGate;

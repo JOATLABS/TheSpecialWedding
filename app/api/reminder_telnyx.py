@@ -47,7 +47,7 @@ async def send_reminder_telnyx(payload: TelnyxReminderModel, current_user: Exten
         raise HTTPException(status_code=503, detail="Telnyx service not configured")
     
     # Get wedding and verify access
-    wedding = wedding_service.get_wedding_by_slug(payload.wedding_slug)
+    wedding = await wedding_service.get_wedding_by_slug(payload.wedding_slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -63,15 +63,15 @@ async def send_invites_telnyx(payload: SlugModel, current_user: ExtendedAuthUser
         raise HTTPException(status_code=503, detail="Telnyx service not configured")
     
     # Get wedding and verify access
-    wedding = wedding_service.get_wedding_by_slug(payload.slug)
+    wedding = await wedding_service.get_wedding_by_slug(payload.slug)
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
     if not await check_wedding_access(current_user, wedding["_id"]):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    return telnyx_helper.send_personalized_rsvp_links(
-        slug=payload.slug, 
+    return await telnyx_helper.send_personalized_rsvp_links(
+        slug=payload.slug,
         custom_message=payload.custom_message
     )
 
@@ -83,7 +83,7 @@ async def get_telnyx_logs(current_user: ExtendedAuthUser = Depends(require_weddi
     
     # If wedding_slug is provided, verify access to that wedding
     if wedding_slug:
-        wedding = wedding_service.get_wedding_by_slug(wedding_slug)
+        wedding = await wedding_service.get_wedding_by_slug(wedding_slug)
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 

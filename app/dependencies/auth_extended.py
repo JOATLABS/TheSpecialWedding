@@ -34,7 +34,7 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
     try:
         payload = verify_token(token)
         email = payload.get("sub")
-        role = payload.get("role", "admin")  # Default to admin for backward compatibility
+        role = payload.get("role")
         if email is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

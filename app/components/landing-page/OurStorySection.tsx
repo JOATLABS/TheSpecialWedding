@@ -113,28 +113,28 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                   <h3 className="text-xl font-semibold text-center mb-4 theme-secondary">
                     Bride's Side
                   </h3>
-                  <div className="flex flex-wrap justify-center gap-6">
+                  <div className="flex flex-wrap justify-center gap-4">
                     {bridesSide.map((member) => (
-                      <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                      <div key={member.id} className="text-center w-24">
+                        <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                           {member.image_url ? (
                             <Image
                               src={`${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${member.image_url}`}
                               alt={member.name}
                               fill
                               className="object-cover"
-                              sizes="128px"
+                              sizes="80px"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20 dark:bg-opacity-30">
-                              <span className="text-3xl font-bold theme-accent">
+                              <span className="text-xl font-bold theme-accent">
                                 {member.name.charAt(0)}
                               </span>
                             </div>
                           )}
                         </div>
-                        <h4 className="font-semibold text-gray-800 dark:text-gray-100">{member.name}</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
+                        <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100">{member.name}</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
                       </div>
                     ))}
                   </div>
@@ -147,28 +147,28 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                   <h3 className="text-xl font-semibold text-center mb-4 theme-secondary">
                     Groom's Side
                   </h3>
-                  <div className="flex flex-wrap justify-center gap-6">
+                  <div className="flex flex-wrap justify-center gap-4">
                     {groomsSide.map((member) => (
-                      <div key={member.id} className="text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-3 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                      <div key={member.id} className="text-center w-24">
+                        <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                             {member.image_url ? (
                             <Image
                               src={`${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${member.image_url}`}
                               alt={member.name}
                               fill
                               className="object-cover"
-                              sizes="128px"
+                              sizes="80px"
                             />
                             ) : (
                             <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
-                              <span className="text-3xl font-bold theme-primary">
+                              <span className="text-xl font-bold theme-primary">
                               {member.name.charAt(0)}
                               </span>
                             </div>
                             )}
                         </div>
-                        <h4 className="font-semibold text-gray-800 dark:text-gray-100">{member.name}</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
+                        <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100">{member.name}</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
                       </div>
                     ))}
                   </div>

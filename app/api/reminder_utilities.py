@@ -26,8 +26,8 @@ async def send_invite_links(payload: SlugModel):
     return await reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
 
 @router.post("/reminders/simulate-rsvp", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
-def simulate_rsvp(payload: RSVPRequestModel):
-    return reminder_helper.simulate_rsvp_for_guest(
+async def simulate_rsvp(payload: RSVPRequestModel):
+    return await reminder_helper.simulate_rsvp_for_guest(
         token=payload.token,
         attending=payload.attending,
         dietary=payload.dietary,

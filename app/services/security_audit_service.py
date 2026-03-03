@@ -3,7 +3,7 @@ Security audit service for logging and monitoring security events
 """
 import logging
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from enum import Enum
 from dataclasses import dataclass, asdict
@@ -111,7 +111,7 @@ class SecurityAuditService:
         except Exception as e:
             logger.warning(f"Failed to setup security file logging: {str(e)}")
 
-    def log_security_event(
+    async def log_security_event(
         self,
         event_type: SecurityEventType,
         severity: SecuritySeverity,
@@ -165,7 +165,7 @@ class SecurityAuditService:
 
             # Log to database
             if self.enable_db_logging:
-                self._log_to_database(event)
+                await self._log_to_database(event)
 
             # Log to file
             if self.enable_file_logging:
@@ -178,7 +178,7 @@ class SecurityAuditService:
         except Exception as e:
             logger.error(f"Failed to log security event: {str(e)}")
 
-    def _log_to_database(self, event: SecurityEvent):
+    async def _log_to_database(self, event: SecurityEvent):
         """Log security event to database"""
         try:
             event_doc = asdict(event)
@@ -186,7 +186,7 @@ class SecurityAuditService:
             event_doc['event_type'] = event.event_type.value
             event_doc['severity'] = event.severity.value
 
-            self.audit_collection.insert_one(event_doc)
+            await self.audit_collection.insert_one(event_doc)
 
         except Exception as e:
             logger.error(f"Failed to log security event to database: {str(e)}")
@@ -222,7 +222,7 @@ class SecurityAuditService:
         except Exception as e:
             logger.error(f"Failed to log security event to file: {str(e)}")
 
-    def get_security_events(
+    async def get_security_events(
         self,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
@@ -234,16 +234,6 @@ class SecurityAuditService:
     ) -> List[Dict[str, Any]]:
         """
         Retrieve security events based on filters
-        Args:
-            start_date: Start date for filtering
-            end_date: End date for filtering
-            event_types: List of event types to filter
-            severity: Severity level to filter
-            user_email: User email to filter
-            ip_address: IP address to filter
-            limit: Maximum number of results
-        Returns:
-            List of security events
         """
         try:
             query = {}
@@ -272,12 +262,9 @@ class SecurityAuditService:
                 query['ip_address'] = ip_address
 
             # Execute query
-            events = list(
-                self.audit_collection
-                .find(query)
-                .sort('timestamp', -1)
-                .limit(limit)
-            )
+            cursor = self.audit_collection.find(query).sort('timestamp', -1).limit(limit)
+            events = await cursor.to_list(length=limit)
+
             # Convert ObjectId to string
             for event in events:
                 if '_id' in event:
@@ -289,20 +276,13 @@ class SecurityAuditService:
             logger.error(f"Failed to retrieve security events: {str(e)}")
             return []
 
-    def get_security_summary(
+    async def get_security_summary(
         self,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
         Get security events summary
-
-        Args:
-            start_date: Start date for summary
-            end_date: End date for summary
-
-        Returns:
-            Security summary statistics
         """
         try:
             query = {}
@@ -327,7 +307,8 @@ class SecurityAuditService:
                 }
             ]
 
-            results = list(self.audit_collection.aggregate(pipeline))
+            cursor = self.audit_collection.aggregate(pipeline)
+            results = await cursor.to_list(length=None)
 
             # Process results
             summary = {
@@ -356,7 +337,7 @@ class SecurityAuditService:
             # Get failed events count
             failed_query = dict(query)
             failed_query['success'] = False
-            summary['failed_events'] = self.audit_collection.count_documents(failed_query)
+            summary['failed_events'] = await self.audit_collection.count_documents(failed_query)
 
             return summary
 
@@ -364,20 +345,13 @@ class SecurityAuditService:
             logger.error(f"Failed to generate security summary: {str(e)}")
             return {}
 
-    def detect_suspicious_activity(
+    async def detect_suspicious_activity(
         self,
         ip_address: str,
         time_window_minutes: int = 60
     ) -> Dict[str, Any]:
         """
         Detect suspicious activity from an IP address
-
-        Args:
-            ip_address: IP address to analyze
-            time_window_minutes: Time window for analysis
-
-        Returns:
-            Suspicious activity analysis
         """
         try:
             cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=time_window_minutes)
@@ -386,7 +360,8 @@ class SecurityAuditService:
                 'timestamp': {'$gte': cutoff_time}
             }
 
-            events = list(self.audit_collection.find(query))
+            cursor = self.audit_collection.find(query)
+            events = await cursor.to_list(length=None)
 
             analysis = {
                 'ip_address': ip_address,
