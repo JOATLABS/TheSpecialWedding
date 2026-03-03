@@ -165,6 +165,7 @@ export default function AdminGuestsPage() {
   const [reminderModal, setReminderModal] = useState<{ guest: Guest; weddingSlug: string } | null>(null);
   const [reminderMessage, setReminderMessage] = useState('');
   const [sendingReminder, setSendingReminder] = useState(false);
+  const [reminderChannel, setReminderChannel] = useState<'sms' | 'email' | 'both'>('both');
 
   // QR preview modal state
   const [qrModalGuest, setQrModalGuest] = useState<Guest | null>(null);
@@ -659,46 +660,109 @@ export default function AdminGuestsPage() {
     const defaultMessage = `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${window.location.origin}/${weddingSlug}/invite/${guest.token}`;
 
     setReminderMessage(defaultMessage);
+    // Auto-select best channel based on guest contact info
+    if (guest.phone && guest.email) setReminderChannel('both');
+    else if (guest.phone) setReminderChannel('sms');
+    else setReminderChannel('email');
     setReminderModal({ guest, weddingSlug });
   };
 
   const handleSendReminder = async () => {
     if (!reminderModal || !reminderMessage.trim()) return;
 
+    const guest = reminderModal.guest;
+    const hasPhone = !!guest.phone;
+    const hasEmail = !!guest.email;
+    const sendSms = hasPhone && (reminderChannel === 'sms' || reminderChannel === 'both');
+    const sendEmail = hasEmail && (reminderChannel === 'email' || reminderChannel === 'both');
+
+    if (!sendSms && !sendEmail) {
+      setError('Cannot send — guest is missing the selected contact method.');
+      return;
+    }
+
     setSendingReminder(true);
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
-      const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          guest_tokens: [reminderModal.guest.token],
-          message: reminderMessage,
-        }),
-      });
+      let smsSent = 0;
+      let emailSent = 0;
+      let smsError = '';
+      let emailError = '';
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.sent > 0) {
-          showSuccess('Reminder sent successfully!');
-          setReminderModal(null);
-          setReminderMessage('');
-        } else {
-          // Display specific failure reasons from backend
-          let errorMsg = 'Failed to send reminder.';
-          if (result.failure_reasons && result.failure_reasons.length > 0) {
-            errorMsg = result.failure_reasons.join('. ');
-          } else if (!reminderModal?.guest.phone) {
-            errorMsg = 'Guest has no phone number.';
+      // Send SMS if selected and guest has phone
+      if (sendSms) {
+        try {
+          const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              guest_tokens: [guest.token],
+              message: reminderMessage,
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            smsSent = result.sent || 0;
+            if (smsSent === 0 && result.failure_reasons?.length > 0) {
+              smsError = result.failure_reasons.join('. ');
+            }
+          } else {
+            const errorData = await response.json().catch(() => ({}));
+            smsError = errorData.detail || 'SMS send failed';
           }
-          setError(errorMsg);
+        } catch {
+          smsError = 'SMS send failed';
         }
+      }
+
+      // Send email if selected and guest has email
+      if (sendEmail) {
+        try {
+          const wedding = weddings.find(w => (w.id || w._id) === selectedWedding);
+          const weddingSlug = wedding?.slug || reminderModal.weddingSlug;
+
+          const response = await fetch(`${baseUrl}/admin/email/send-reminder-individual`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              wedding_slug: weddingSlug,
+              guest_email: guest.email,
+              guest_name: guest.name,
+              guest_token: guest.token,
+              custom_message: reminderMessage,
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            emailSent = result.sent || (result.success ? 1 : 0);
+          } else {
+            const errorData = await response.json().catch(() => ({}));
+            emailError = errorData.detail || 'Email send failed';
+          }
+        } catch {
+          emailError = 'Email send failed';
+        }
+      }
+
+      const totalSent = smsSent + emailSent;
+      if (totalSent > 0) {
+        const channels: string[] = [];
+        if (smsSent > 0) channels.push('SMS');
+        if (emailSent > 0) channels.push('email');
+        showSuccess(`Reminder sent via ${channels.join(' and ')}!`);
+        setReminderModal(null);
+        setReminderMessage('');
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to send reminder');
+        const errors = [smsError, emailError].filter(Boolean);
+        setError(errors.length > 0 ? errors.join('. ') : 'Failed to send reminder.');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send reminder');
@@ -2218,7 +2282,7 @@ export default function AdminGuestsPage() {
                 {/* Message Input */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Message (SMS)
+                    Message
                   </label>
                   <textarea
                     value={reminderMessage}
@@ -2264,11 +2328,59 @@ export default function AdminGuestsPage() {
                   </div>
                 </div>
 
-                {!reminderModal.guest.phone && (
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                      This guest has no phone number. SMS cannot be sent.
+                {/* Channel Picker */}
+                {!reminderModal.guest.phone && !reminderModal.guest.email ? (
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                    <p className="text-sm text-red-700 dark:text-red-300">
+                      This guest has no phone number or email. Cannot send reminder.
                     </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Send via
+                    </label>
+                    <div className="flex gap-2">
+                      {reminderModal.guest.phone && (
+                        <button
+                          type="button"
+                          onClick={() => setReminderChannel('sms')}
+                          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                            reminderChannel === 'sms'
+                              ? 'bg-wedding-sage text-white border-wedding-sage'
+                              : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-slate-600'
+                          }`}
+                        >
+                          SMS
+                        </button>
+                      )}
+                      {reminderModal.guest.email && (
+                        <button
+                          type="button"
+                          onClick={() => setReminderChannel('email')}
+                          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                            reminderChannel === 'email'
+                              ? 'bg-wedding-sage text-white border-wedding-sage'
+                              : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-slate-600'
+                          }`}
+                        >
+                          Email
+                        </button>
+                      )}
+                      {reminderModal.guest.phone && reminderModal.guest.email && (
+                        <button
+                          type="button"
+                          onClick={() => setReminderChannel('both')}
+                          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                            reminderChannel === 'both'
+                              ? 'bg-wedding-sage text-white border-wedding-sage'
+                              : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-slate-600'
+                          }`}
+                        >
+                          Both
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -2276,10 +2388,10 @@ export default function AdminGuestsPage() {
               <div className="flex gap-3 mt-6">
                 <button
                   onClick={handleSendReminder}
-                  disabled={sendingReminder || !reminderMessage.trim() || !reminderModal.guest.phone}
+                  disabled={sendingReminder || !reminderMessage.trim() || (!reminderModal.guest.phone && !reminderModal.guest.email)}
                   className="flex-1 bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {sendingReminder ? 'Sending...' : 'Send Reminder'}
+                  {sendingReminder ? 'Sending...' : `Send via ${reminderChannel === 'both' ? 'SMS & Email' : reminderChannel === 'sms' ? 'SMS' : 'Email'}`}
                 </button>
                 <button
                   onClick={() => { setReminderModal(null); setReminderMessage(''); }}

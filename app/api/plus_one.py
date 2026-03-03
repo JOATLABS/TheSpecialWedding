@@ -29,7 +29,7 @@ async def get_plus_ones_by_wedding(wedding_id: str, current_user: ExtendedAuthUs
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    return await plus_one_service.get_plus_ones_by_wedding(wedding_id)
+    return await plus_one_service.get_plus_ones_by_wedding_id(wedding_id)
 
 
 @router.get("/plus-ones/{guest_id}", tags=["Plus-Ones"])
