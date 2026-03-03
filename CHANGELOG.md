@@ -5,6 +5,152 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-03-03 — Stripe Audit, Error Boundaries, KB Permissions & Animation Fixes
+
+### Added
+
+- **ErrorBoundary wired into layouts** (`app/[slug]/layout.tsx`, `app/admin/layout.tsx`):
+
+  - Connected the existing `ErrorBoundary.tsx` class component as a wrapper in both guest-facing and admin layouts
+  - Created `app/[slug]/error.tsx` — Next.js route-level error boundary for guest pages with rose-themed UI and "Try Again" button
+  - Created `app/admin/error.tsx` — Next.js route-level error boundary for admin pages with blue-themed UI and "Try Again" button
+  - Guest and admin pages now have zero-downtime error recovery instead of full page crashes
+
+- **PaymentCollectionButton wired into wedding management** (`app/admin/weddings/[id]/page.tsx`):
+
+  - Connected the existing `PaymentCollectionButton.tsx` into the wedding detail page header actions (between "Seating Plan" and "Save Changes")
+  - Planners can now collect payments from couples via Stripe directly from the wedding management page
+  - Full payment flow verified end-to-end: button → modal → `POST /stripe/create-payment-intent` → shareable `/pay/{id}` link → Stripe Elements checkout → `/pay/success`
+
+- **LiquidBackground wired into seating planner** (`app/admin/weddings/[id]/seating/page.tsx`):
+
+  - Connected the existing Three.js `LiquidBackground.tsx` as a background layer behind the sidebar and canvas
+  - Wrapped in `print:hidden` to exclude from print output
+  - Content layers given `relative z-10` to sit above the background
+
+- **Dark mode toggle animation** (`app/components/landing-page/AnchorNav.tsx`):
+
+  - Ported veil sweep, shimmer line, and ring ripple animations from the orphaned `WeddingDarkModeToggle.tsx` into the existing compact `NavDarkModeToggle`
+  - Full-screen veil sweep overlay with theme-aware gradient (reads `--theme-primary` / `--theme-secondary` CSS variables)
+  - Shimmer line follows the veil sweep edge with glow effect
+  - 3 staggered ring ripples expand outward from the button position
+  - Button disabled during 1-second animation cycle; theme flips at 500ms midpoint
+  - Added `AnimationStyles` component injecting global `@keyframes` via `<style jsx global>`
+
+- **Knowledge Base seed script** (`app/scripts/seed_knowledge_base.py`):
+
+  - 7 planner-facing articles seeded into `kb_articles` MongoDB collection on first deploy: Getting Started, Collect Payments, RSVP via SMS, Guest Management, Seating Planner, Theme Configuration, Troubleshooting
+  - All articles marked `is_official: True`, `status: "published"`, authored by `root@thespecialwedding.io`
+  - Idempotent — checks by slug before inserting to avoid duplicates on redeploy
+  - Wired into `app/main.py` lifespan startup (after config validation, wrapped in try/except so failures don't prevent app start)
+
+### Changed
+
+- **Knowledge Base permissions locked to root admin** (`app/api/knowledge_base.py`, `app/admin/components/kb/KnowledgeBase.tsx`, `app/admin/components/kb/ArticleView.tsx`):
+
+  - `POST /kb/articles` (create), `PUT /kb/articles/{id}` (update), `DELETE /kb/articles/{id}` (delete), `GET /kb/my-articles` — all changed from `require_admin_or_planner` to `require_root_admin`
+  - Read endpoints and feedback endpoint remain `require_admin_or_planner` so planners can still browse and give feedback
+  - Frontend: "Write Article" and "My Articles" buttons wrapped in `{isRootAdmin && ...}` conditional
+  - Planner empty state updated to "No articles available in this category yet. Check back soon!"
+  - `ArticleView.tsx` `canEdit` simplified from `isRootAdmin || author === currentUser` to just `isRootAdmin`
+
+- **Stripe Checkout Session uses dynamic payment methods** (`app/services/stripe_service.py`):
+
+  - Removed hardcoded `payment_method_types=["card"]` from `stripe.checkout.Session.create()`
+  - Stripe now dynamically selects the optimal payment methods per customer from methods enabled in the Stripe Dashboard
+  - Automatically enables Apple Pay, Google Pay, and other methods without code changes
+
+- **Stripe exception imports modernized** (`app/services/stripe_service.py`):
+
+  - Changed all `stripe.error.StripeError`, `stripe.error.InvalidRequestError`, `stripe.error.SignatureVerificationError` to direct imports: `from stripe import StripeError, InvalidRequestError, SignatureVerificationError`
+
+### Fixed
+
+- **Stripe `/config` endpoint blocked public payment page** (`app/api/stripe_payment.py`):
+
+  - `GET /stripe/config` had `require_admin_or_planner` dependency, but the couple-facing payment page (`/pay/[id]`) calls it without authentication to initialize Stripe.js
+  - Removed auth requirement — the publishable key (`pk_live_` / `pk_test_`) is designed by Stripe to be exposed in client-side code
+  - Without this fix, every couple who clicked a payment link would get a 401 error and see a blank page
+
+- **Dark mode animation veil color flipped mid-animation** (`app/components/landing-page/AnchorNav.tsx`):
+
+  - Veil gradient was reading `!isDark` to determine color, but `isDark` flips at 500ms via `setTimeout`, causing React re-render that swapped the veil color halfway through the sweep
+  - Added `goingDark` state that locks the transition direction at click time and doesn't change during animation
+  - Veil gradient now reads `goingDark` instead of `!isDark`
+
+- **Dark mode animation ring ripples popping in** (`app/components/landing-page/AnchorNav.tsx`):
+
+  - Ring ripple elements had `opacity: 0` inline but keyframe `0%` set `opacity: 1`
+  - During staggered animation delay (0s, 0.15s, 0.3s), the inline style took precedence, making rings invisible until delay ended then abruptly visible
+  - Changed `animation-fill-mode` from `forwards` to `both` so keyframe `0%` values (including `opacity: 1`) apply during the delay period
+
+### Dead Code Identified (pending removal)
+
+- `app/components/GuestVerificationModalOld.tsx` — superseded by current verification flow
+- `app/admin/components/AdminHeader.tsx` — unused legacy header
+- `app/utils/tinyInvariantFallback.ts` — unused utility
+- `app/admin/components/RootAdminGuard.tsx` — unused guard component
+- `app/components/rsvp/SmsOptInForm.tsx` — SMS opt-in built directly into RSVPForm
+- `app/components/landing-page/ParallaxSlideshow.tsx` — replaced by Modern3DBackground
+- `app/admin/components/PermissionGate.tsx` — only 3 roles exist, no need for generic permission gate
+- `app/dependencies/auth.py` — superseded by `auth_extended.py`
+- `app/dependencies/auth_basic.py` — superseded by `auth_extended.py`
+
+---
+
+## [2.0.1] - 2026-03-03 — Guest-Facing Theme & Admin Modal Polish
+
+### Changed
+
+- **RSVP Modal Dynamic Theme Colors** (`app/components/RSVPModal.tsx`):
+
+  - Replaced all hardcoded `wedding-rose` (#D4A5A5), `wedding-gold` (#E9C46A), and `wedding-blush` (#F8E8E8) Tailwind classes with dynamic colors pulled from the couple's `theme_config` (accent_color, secondary_color)
+  - Added `hexToRgb()` and `lightenColor()` helper functions for computing rgba variants and blush tones at runtime
+  - Sets CSS custom properties (`--rsvp-accent`, `--rsvp-accent-rgb`, `--rsvp-secondary`, `--rsvp-secondary-rgb`, `--rsvp-blush`) on `Dialog.Panel` so child components inherit theme colors via cascade
+  - Background gradient glow now uses the couple's accent and secondary colors instead of hardcoded values
+  - All buttons, error states, spinners, icons, and OTP input focus rings now reflect the couple's chosen palette
+  - Safe fallbacks to original hardcoded values when `theme_config` is missing or incomplete
+
+- **RSVP Form Dynamic Theme Colors** (`app/components/RSVPForm.tsx`):
+
+  - Reads `wedding.theme_config` via the existing `useWedding()` hook
+  - `FormCard` section titles use CSS variable `var(--rsvp-accent, #D4A5A5)` with built-in fallback
+  - Focus rings use Tailwind's internal `--tw-ring-color` CSS variable override for dynamic accent color
+  - Checkboxes and radios use the CSS `accent-color` property for native element theming
+  - Error state inputs show dynamic accent-colored borders and backgrounds via `accentRgba()` helper
+  - Event card hover borders, "Add Guest" button, and "Download Calendar Invite" button all use dynamic theme colors
+  - All ~25 hardcoded `wedding-rose`/`wedding-gold`/`wedding-blush` references replaced with inline styles
+
+- **Already RSVPed Screen Dynamic Theme Colors** (`app/components/AlreadyRSVPedScreen.tsx`):
+
+  - Added `useContext(WeddingContext)` for null-safe theme access (avoids throwing unlike `useWedding()`)
+  - Gradient accent bar, icon backgrounds, section titles, and buttons now use couple's theme colors
+  - All ~8 hardcoded color references replaced
+
+- **Seating Constraints Modal Redesign** (`app/admin/components/seating/SeatingConstraintsModal.tsx`):
+
+  - Replaced green gradient header with app-standard purple/indigo gradient (`from-purple-600 to-indigo-600`) matching other admin modals
+  - Added icon badge, subtitle, and styled close button in header
+  - Constraint type toggles redesigned as card-style buttons (indigo for "Sit Together", rose for "Keep Apart")
+  - Full-width dashed border "Add New Constraint" button with hover accent
+  - Group hover reveal for delete buttons (Trash2 icon) instead of always-visible delete
+  - Section headers with colored icon badges and count pills
+  - Info footer showing constraint summary
+  - `backdrop-blur-sm` overlay matching the app's modal design system
+  - More breathing room with increased padding throughout
+
+### Fixed
+
+- **Hover Handler Event Target Safety** (`app/components/RSVPForm.tsx`, `app/components/AlreadyRSVPedScreen.tsx`):
+
+  - Changed `e.target` to `e.currentTarget` in `onMouseEnter`/`onMouseLeave` handlers on "Download Calendar Invite Again", "+ Add Guest", and "View Wedding Page" buttons
+  - Prevents broken hover effects if button content is ever wrapped in child elements (spans, icons), since `e.target` would reference the child instead of the button
+  - Now consistent with event card hover handlers that already used `e.currentTarget`
+
+- **Removed Dead Inline Style** (`app/components/RSVPForm.tsx`):
+
+  - Removed `style={{ borderColor: undefined }}` from the "Download Calendar Invite Again" button — was a no-op that could confuse future maintainers
+
 ## [2.0.0] - 2026-03-01 — 1st Release: The Special Wedding SaaS Platform
 
 The first production release of The Special Wedding as a full multi-tenant SaaS platform. This release transforms the original single-wedding website (v1.x at `thespecialwedding.com`) into a scalable platform for wedding planners at `thespecialwedding.io`. Built over 8+ months across 463 commits, consolidating all work from v1.3.0 through v1.7.0-rc.1.
