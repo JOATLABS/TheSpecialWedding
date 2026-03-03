@@ -1,11 +1,14 @@
-from typing import Optional, Union
+from typing import Optional, Union, List
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
 import os
+import logging
 from datetime import datetime, timezone
 from app.core.database import mongo
 from bson import ObjectId
+
+logger = logging.getLogger(__name__)
 
 # Security scheme
 security = HTTPBearer(auto_error=True)
@@ -16,7 +19,7 @@ ALGORITHM = "HS256"
 
 
 class ExtendedAuthUser:
-    """Extended auth user supporting multiple roles"""
+    """Extended auth user supporting multiple roles including team members"""
     def __init__(self, email: str, role: str, user_data: Optional[dict] = None):
         self.email = email
         self.role = role
@@ -26,6 +29,15 @@ class ExtendedAuthUser:
         self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
+        self.is_team_member = (role == "team_member")
+
+        # Team member properties (populated by get_current_user_extended for team members)
+        self.parent_planner_id: Optional[str] = user_data.get("parent_planner_id") if user_data else None
+        self.team_member_id: Optional[str] = user_data.get("team_member_id") if user_data else None
+        self.team_permissions: Optional[dict] = None
+        self.team_wedding_access: Optional[str] = None  # "all" or "assigned"
+        self.team_assigned_wedding_ids: List[str] = []
+        self.team_owner_email: Optional[str] = None
 
 
 async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = Depends(security)) -> ExtendedAuthUser:
@@ -120,7 +132,36 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                             headers={"WWW-Authenticate": "Bearer"},
                         )
 
-        return ExtendedAuthUser(email=email, role=role, user_data=user_data)
+        auth_user = ExtendedAuthUser(email=email, role=role, user_data=user_data)
+
+        # ── Team member: hydrate permissions from team_members collection ──
+        if role == "team_member" and user_data.get("team_member_id"):
+            try:
+                team_doc = await mongo.db["team_members"].find_one({
+                    "_id": ObjectId(user_data["team_member_id"]),
+                    "status": "active",
+                })
+                if team_doc:
+                    auth_user.team_permissions = team_doc.get("custom_permissions", {})
+                    auth_user.team_wedding_access = team_doc.get("wedding_access", "all")
+                    auth_user.team_assigned_wedding_ids = team_doc.get("assigned_wedding_ids", [])
+                    auth_user.team_owner_email = team_doc.get("owner_email")
+                    auth_user.parent_planner_id = team_doc.get("owner_id")
+                else:
+                    # Team membership revoked or deactivated
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Team membership is no longer active",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error loading team member data for {email}: {e}")
+                # Non-fatal: allow login but without team permissions
+                pass
+
+        return auth_user
 
     except HTTPException:
         # Re-raise HTTP exceptions (including trial expiration 402) as-is
@@ -233,6 +274,30 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
                 return wedding.get("assigned_planner_email") == user.email
         except Exception:
             return False
+
+    # ── Team member wedding access ──
+    if user.is_team_member:
+        if user.team_wedding_access == "all":
+            # Team member with "all" access: check if the wedding belongs to their owner planner
+            import re
+            if not wedding_id or not isinstance(wedding_id, str) or len(wedding_id) > 100:
+                return False
+            try:
+                query_id: Union[str, ObjectId]
+                if re.match(r'^[0-9a-fA-F]{24}$', wedding_id):
+                    query_id = ObjectId(wedding_id)
+                else:
+                    query_id = wedding_id.strip()
+                wedding = await mongo.get_weddings_collection().find_one({"_id": query_id})
+                if wedding and user.team_owner_email:
+                    return wedding.get("assigned_planner_email") == user.team_owner_email
+            except Exception:
+                return False
+        elif user.team_wedding_access == "assigned":
+            # Team member with "assigned" access: must be in their list
+            return wedding_id in (user.team_assigned_wedding_ids or [])
+        return False
+
     if user.is_vendor:
         # Check if vendor has access to this wedding
         vendor = await mongo.get_vendors_collection().find_one({"email": user.email, "wedding_id": wedding_id})
@@ -250,3 +315,73 @@ async def require_wedding_access(wedding_id: str):
             )
         return current_user
     return wedding_access_checker
+
+
+# ─── Team-Aware Dependencies ─────────────────────────────────────────────
+
+async def require_team_or_planner(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+) -> ExtendedAuthUser:
+    """
+    Allow access for planner-owners, their team members, and ROOT_ADMIN.
+    This replaces require_wedding_planner on endpoints that team members
+    should also be able to access.
+    """
+    if current_user.is_root_admin:
+        return current_user
+    if current_user.is_wedding_planner:
+        return current_user
+    if current_user.is_team_member and current_user.team_permissions is not None:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Planner or team member access required",
+    )
+
+
+def require_team_permission(permission_name: str):
+    """
+    Factory: create a dependency that checks for a specific team permission.
+    Planner-owners and ROOT_ADMIN always pass; team members need the permission.
+
+    Usage:
+        @router.post("/guests")
+        async def create_guest(
+            current_user = Depends(require_team_permission("manage_guests"))
+        ):
+            ...
+    """
+    async def _check_permission(
+        current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    ) -> ExtendedAuthUser:
+        # Owners and root admin have all permissions
+        if current_user.is_root_admin or current_user.is_wedding_planner:
+            return current_user
+
+        # Team member — check specific permission
+        if current_user.team_permissions and current_user.team_permissions.get(permission_name, False):
+            return current_user
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You do not have the '{permission_name.replace('_', ' ')}' permission.",
+        )
+
+    return _check_permission
+
+
+def get_accessible_wedding_ids(user: ExtendedAuthUser) -> Optional[List[str]]:
+    """
+    Utility: determine which wedding IDs a user can access.
+
+    Returns:
+        None — means "all weddings" (planner owner or team member with access=all)
+        List[str] — specific wedding IDs (team member with access=assigned)
+    """
+    if user.is_root_admin or user.is_wedding_planner:
+        return None  # No filter needed — access all
+    if user.is_team_member:
+        if user.team_wedding_access == "all":
+            return None  # Access all of their owner's weddings
+        return user.team_assigned_wedding_ids or []
+    return []  # No access
