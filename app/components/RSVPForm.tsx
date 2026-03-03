@@ -407,9 +407,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
             type="button"
             onClick={generateICS}
             className="w-full py-3 border border-white/20 rounded-full text-sm text-slate-300 hover:text-white transition-all"
-            style={{ borderColor: undefined }}
-            onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = accentRgba(0.5); }}
-            onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.5); }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
           >
             Download Calendar Invite Again
           </button>
@@ -672,8 +671,8 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
                   type="button"
                   onClick={addPlusOne}
                   className="w-full py-3 border border-dashed border-white/20 rounded-xl text-sm text-slate-300 hover:text-white transition-all"
-                  onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = accentRgba(0.5); }}
-                  onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = accentRgba(0.5); }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.2)'; }}
                 >
                   + Add Guest
                 </button>
