@@ -827,14 +827,14 @@ async def get_subscription_details(
 # ==================== CONFIGURATION ENDPOINT ====================
 
 @router.get("/config")
-async def get_stripe_config(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
-):
+async def get_stripe_config():
     """
     Get Stripe public configuration (publishable key)
 
     This key is safe to expose in frontend code and is required
-    to initialize Stripe.js
+    to initialize Stripe.js. No auth required — the publishable key
+    is designed to be public (pk_live_ / pk_test_) and is needed by
+    the couple-facing payment page (/pay/[id]) which has no login.
     """
     from app.core.settings import settings
 

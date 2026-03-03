@@ -1,6 +1,7 @@
 """Stripe payment utilities used to manage subscription checkout and lifecycle."""
 
 import stripe
+from stripe import StripeError, InvalidRequestError, SignatureVerificationError
 from fastapi import HTTPException
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
@@ -76,7 +77,7 @@ class StripeService:
                 try:
                     stripe.Customer.retrieve(customer_record["stripe_customer_id"])
                     return customer_record["stripe_customer_id"]
-                except stripe.error.InvalidRequestError:
+                except InvalidRequestError:
                     # Customer doesn't exist in Stripe, create new one
                     logger.warning(f"Stripe customer {customer_record['stripe_customer_id']} not found, creating new")
 
@@ -105,7 +106,7 @@ class StripeService:
             logger.info(f"Created Stripe customer {customer.id} for user {user_id}")
             return customer.id
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error creating customer: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
         except Exception as e:
@@ -168,7 +169,7 @@ class StripeService:
                         description=plan.get("description", ""),
                         metadata={"plan_id": plan["_id"]}
                     )
-                except stripe.error.InvalidRequestError:
+                except InvalidRequestError:
                     # Product might have been deleted in Stripe
                     product = stripe.Product.create(
                         name=plan["name"],
@@ -206,22 +207,23 @@ class StripeService:
                         matches = (
                             price.unit_amount == amount_cents and
                             price.currency == "usd" and
+                            price.recurring and
                             price.recurring.interval == interval
                         )
 
                         # Check metered config
-                        if matches and is_metered:
+                        if matches and is_metered and price.recurring:
                             matches = (price.recurring.usage_type == "metered")
                             if meter_id:
                                 matches = matches and (getattr(price.recurring, "meter", None) == meter_id)
-                        elif matches and not is_metered:
+                        elif matches and not is_metered and price.recurring:
                             matches = (price.recurring.usage_type != "metered")
 
                         if matches:
                             return current_price_id
 
                         # Price exists but doesn't match - will create new, deactivate old below
-                    except stripe.error.InvalidRequestError:
+                    except InvalidRequestError:
                         current_price_id = None  # Price not found, just create new
 
                 price_kwargs = {
@@ -243,7 +245,7 @@ class StripeService:
                     try:
                         stripe.Price.modify(current_price_id, active=False)
                         logger.info(f"Deactivated old price {current_price_id} after creating new price {new_price.id}")
-                    except stripe.error.StripeError as e:
+                    except StripeError as e:
                         logger.warning(f"Could not deactivate old price {current_price_id}: {e}")
 
                 return new_price.id
@@ -263,7 +265,7 @@ class StripeService:
 
             return result
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error syncing plan: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Sync Error: {str(e)}")
 
@@ -291,11 +293,11 @@ class StripeService:
             logger.info(f"Archived Stripe product: {stripe_product_id}")
             return True
 
-        except stripe.error.InvalidRequestError as e:
+        except InvalidRequestError as e:
             # Product might not exist in Stripe
             logger.warning(f"Could not archive Stripe product {stripe_product_id}: {str(e)}")
             return False
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error archiving product: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Archive Error: {str(e)}")
 
@@ -340,7 +342,7 @@ class StripeService:
 
             event = stripe.billing.MeterEvent.create(**meter_params)
             return {"status": "success", "event_id": event.identifier}
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             error_msg = str(e)
             # Duplicate identifier = already recorded (this is success, not error)
             if "identifier" in error_msg.lower() and ("already" in error_msg.lower() or "duplicate" in error_msg.lower()):
@@ -349,14 +351,13 @@ class StripeService:
             logger.error(f"Stripe error reporting usage: {error_msg}")
             return {"status": "error", "message": error_msg}
 
-
     async def create_checkout_session(
         self,
         user_id: str,
         plan_id: str,
         billing_interval: str = "monthly",
-        success_url: str = None,
-        cancel_url: str = None,
+        success_url: Optional[str] = None,
+        cancel_url: Optional[str] = None,
         trial_days: int = 0
     ) -> Dict[str, Any]:
         """
@@ -451,19 +452,23 @@ class StripeService:
                 }
 
             # Build line item; quantity must be omitted for metered prices
-            line_item: Dict[str, Any] = {"price": stripe_price_id}
-            if not is_metered:
-                line_item["quantity"] = 1
+            if is_metered:
+                line_items: list = [{"price": stripe_price_id}]
+            else:
+                line_items: list = [{"price": stripe_price_id, "quantity": 1}]
 
             # Create checkout session
+            # Note: payment_method_types is intentionally omitted so Stripe uses
+            # dynamic payment methods managed from the Stripe Dashboard. This
+            # automatically enables cards, Apple Pay, Google Pay, and other
+            # methods Stripe determines are optimal for each customer.
             checkout_session = stripe.checkout.Session.create(
                 customer=customer_id,
-                payment_method_types=["card"],
-                line_items=[line_item],
+                line_items=line_items,  # type: ignore
                 mode="subscription",
                 success_url=success_url,
                 cancel_url=cancel_url,
-                subscription_data=subscription_data,
+                subscription_data=subscription_data,  # type: ignore
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
                 payment_method_collection="always",
@@ -497,7 +502,7 @@ class StripeService:
                 "expires_at": checkout_session.expires_at
             }
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error creating checkout session: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
         except Exception as e:
@@ -772,7 +777,7 @@ class StripeService:
                 "proration_applied": True
             }
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error changing billing interval: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
         except HTTPException:
@@ -786,8 +791,8 @@ class StripeService:
     async def create_portal_session(
         self,
         user_id: str,
-        return_url: str = None,
-        flow_type: str = None
+        return_url: Optional[str] = None,
+        flow_type: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Create a Stripe Customer Portal session for subscription management
@@ -845,7 +850,7 @@ class StripeService:
                 "url": portal_session.url
             }
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error creating portal session: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
         except Exception as e:
@@ -935,7 +940,7 @@ class StripeService:
                 logger.info(f"Unhandled event type: {event_type}")
                 return {"status": "ignored", "event_type": event_type}
 
-        except stripe.error.SignatureVerificationError as e:
+        except SignatureVerificationError as e:
             logger.error(f"Invalid webhook signature: {str(e)}")
             raise HTTPException(status_code=400, detail="Invalid signature")
         except HTTPException:
@@ -959,7 +964,7 @@ class StripeService:
         if subscription_id:
             try:
                 subscription = stripe.Subscription.retrieve(subscription_id)
-            except stripe.error.StripeError as e:
+            except StripeError as e:
                 logger.error(f"Unable to retrieve subscription {subscription_id}: {str(e)}")
 
         # Build plan snapshot for grandfathering before syncing
@@ -1228,7 +1233,7 @@ class StripeService:
                         {"stripe_customer_id": customer_id}
                     )
                     logger.info(f"Cleaned up orphaned Stripe customer {customer_id}")
-            except stripe.error.StripeError as e:
+            except StripeError as e:
                 logger.warning(f"Could not clean up Stripe customer {customer_id}: {str(e)}")
 
         return {"status": "processed", "session_id": session_id}
@@ -1242,7 +1247,7 @@ class StripeService:
         subscription = None
         try:
             subscription = stripe.Subscription.retrieve(subscription_id)
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Unable to refresh subscription {subscription_id} during invoice.paid: {str(e)}")
 
         if subscription:
@@ -1288,7 +1293,7 @@ class StripeService:
         subscription = None
         try:
             subscription = stripe.Subscription.retrieve(subscription_id)
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Unable to refresh subscription {subscription_id} during invoice.payment_failed: {str(e)}")
 
         if subscription:
@@ -1479,7 +1484,7 @@ class StripeService:
         self,
         subscription_id: str,
         notification_type: str,
-        invoice: Dict[str, Any] = None
+        invoice: Optional[Dict[str, Any]] = None
     ) -> None:
         """
         Send payment notification to the subscription owner.
@@ -1558,7 +1563,7 @@ class StripeService:
                     invoice_pdf=invoice.get("invoice_pdf") if invoice else None
                 )
             else:  # payment_failed
-                subject = f"Payment Failed - Action Required"
+                subject = "Payment Failed - Action Required"
                 html_content = self._render_payment_failed_email(
                     user_name=user_name,
                     plan_name=plan_name,
@@ -1893,7 +1898,7 @@ class StripeService:
             logger.info(f"Created Stripe connected account {account.id} for user {user_id}")
             return account.id
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error creating connected account: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
 
@@ -1911,7 +1916,7 @@ class StripeService:
                 type="account_onboarding",
             )
             return account_link.url
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error creating account link: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
 
@@ -1927,7 +1932,7 @@ class StripeService:
                 "payouts_enabled": account.payouts_enabled,
                 "details_submitted": account.details_submitted,
             }
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error retrieving account: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
 
@@ -1937,10 +1942,10 @@ class StripeService:
         self,
         amount: float,
         currency: str = "usd",
-        wedding_id: str = None,
-        description: str = None,
-        metadata: Dict[str, Any] = None,
-        destination_account_id: str = None
+        wedding_id: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        destination_account_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a payment intent for collecting payment from couples.
@@ -1982,7 +1987,7 @@ class StripeService:
                 "status": payment_intent.status
             }
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error creating payment intent: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
         except Exception as e:
@@ -1995,7 +2000,7 @@ class StripeService:
         vendor_connect_id: str,
         amount: float,
         currency: str = "usd",
-        description: str = None
+        description: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a payment intent for a Planner to pay a Vendor.
@@ -2006,13 +2011,16 @@ class StripeService:
         try:
             # Ensure sender has a customer ID
             user = await self.users_collection.find_one({"_id": ObjectId(sender_user_id)})
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
             customer_id = await self.get_or_create_customer(sender_user_id, user["email"], user.get("full_name"))
 
             payment_intent = stripe.PaymentIntent.create(
                 amount=int(amount * 100),
                 currency=currency.lower(),
                 customer=customer_id,
-                description=description or f"Payment to vendor",
+                description=description or "Payment to vendor",
                 transfer_data={
                     "destination": vendor_connect_id
                 },
@@ -2031,7 +2039,7 @@ class StripeService:
                 "status": payment_intent.status
             }
 
-        except stripe.error.StripeError as e:
+        except StripeError as e:
             logger.error(f"Stripe error creating vendor payment: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
 
