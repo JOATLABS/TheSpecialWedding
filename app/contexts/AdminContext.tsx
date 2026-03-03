@@ -142,14 +142,26 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
                 // Use window.location.href for immediate navigation to avoid race condition with AdminRouteGuard
                 // Redirect based on user role
-                if (profile.is_wedding_planner) {
+                if (profile.is_root_admin) {
+                    window.location.href = '/admin';
+                } else if (profile.is_wedding_planner) {
                     window.location.href = '/admin/planner';
                 } else {
-                    window.location.href = '/admin';
+                    // Unknown/undefined role — do not grant access
+                    console.error('Login rejected: unrecognized user role', profile.role);
+                    clearAdminAuthStorage();
+                    setToken(null);
+                    setUserProfile(null);
+                    toast.error('Your account role is not recognized. Please contact support.');
+                    return;
                 }
             } else {
-                toast.success('Login successful');
-                window.location.href = '/admin';
+                // Profile fetch failed — do not grant access without a confirmed role
+                console.error('Profile fetch failed after login');
+                clearAdminAuthStorage();
+                setToken(null);
+                toast.error('Unable to verify your account. Please try again.');
+                return;
             }
         } catch (err: any) {
             toast.error(err.message);
