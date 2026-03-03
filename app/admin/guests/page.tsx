@@ -232,8 +232,9 @@ export default function AdminGuestsPage() {
       }
 
       // Fetch plus ones for wedding (batch - avoids N+1 queries)
+      // Uses /admin/ prefix to match all other admin API calls
       try {
-        const response = await fetch(`${baseUrl}/plus_one/wedding/${selectedWedding}`, {
+        const response = await fetch(`${baseUrl}/admin/plus-one/wedding/${selectedWedding}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 
@@ -241,9 +242,11 @@ export default function AdminGuestsPage() {
           const allPlusOnes = await response.json();
           setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
         } else {
+          console.error('[PlusOnes] Fetch failed:', response.status);
           setPlusOnes([]);
         }
-      } catch {
+      } catch (err) {
+        console.error('[PlusOnes] Fetch error:', err);
         setPlusOnes([]);
       }
 
@@ -265,6 +268,17 @@ export default function AdminGuestsPage() {
       setSelectedGuests(new Set());
       setSelectAll(false);
     }
+  }, [fetchGuestData, selectedWedding]);
+
+  // Auto-refresh data when planner switches back to this tab
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && selectedWedding) {
+        fetchGuestData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchGuestData, selectedWedding]);
 
   // Fetch QR code with authentication when modal opens
