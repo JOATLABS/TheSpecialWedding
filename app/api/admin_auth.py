@@ -30,6 +30,7 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
         "is_root_admin": current_user.is_root_admin,
         "is_wedding_planner": current_user.is_wedding_planner,
         "is_vendor": current_user.is_vendor,
+        "is_team_member": current_user.is_team_member,
         # Expose profile fields at top level for easier frontend access
         "first_name": user_data.get("first_name"),
         "last_name": user_data.get("last_name"),
@@ -42,6 +43,12 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
         "onboarding_steps_completed": user_data.get("onboarding_steps_completed", []),
         "user_data": serialize_mongo_doc(current_user.user_data)
     }
+    # Add team member context if applicable
+    if current_user.is_team_member:
+        profile_data["team_permissions"] = current_user.team_permissions or {}
+        profile_data["team_wedding_access"] = current_user.team_wedding_access
+        profile_data["team_assigned_wedding_ids"] = current_user.team_assigned_wedding_ids
+        profile_data["parent_planner_id"] = current_user.parent_planner_id
     # Add cache-busting headers to prevent browser caching of user profile data
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate, private",
