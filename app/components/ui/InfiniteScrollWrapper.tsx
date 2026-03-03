@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useCallback } from "react";
 interface InfiniteScrollWrapperProps {
   /** Render prop — receives `true` for the clone copy (skip heavy animations) */
   children: (isClone: boolean) => React.ReactNode;
+  /** Called whenever the primary content height is measured (for parallax sync) */
+  onPrimaryHeight?: (height: number) => void;
 }
 
 /**
@@ -17,9 +19,13 @@ interface InfiniteScrollWrapperProps {
  * The clone is `aria-hidden` + `pointer-events:none` so it can't
  * be interacted with and is invisible to screen readers.
  */
-export default function InfiniteScrollWrapper({ children }: InfiniteScrollWrapperProps) {
+export default function InfiniteScrollWrapper({
+  children,
+  onPrimaryHeight,
+}: InfiniteScrollWrapperProps) {
   const primaryRef = useRef<HTMLDivElement>(null);
   const resetting = useRef(false);
+  const lastHeight = useRef(0);
 
   /* ── hide native scrollbar ─────────────────────────────── */
   useEffect(() => {
@@ -39,6 +45,25 @@ export default function InfiniteScrollWrapper({ children }: InfiniteScrollWrappe
     };
   }, []);
 
+  /* ── report primary height to parent (for parallax sync) ── */
+  useEffect(() => {
+    if (!primaryRef.current || !onPrimaryHeight) return;
+
+    const report = () => {
+      const h = primaryRef.current?.offsetHeight ?? 0;
+      if (h > 0 && h !== lastHeight.current) {
+        lastHeight.current = h;
+        onPrimaryHeight(h);
+      }
+    };
+
+    // Measure after first paint and on resize / dynamic layout shifts
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(primaryRef.current);
+    return () => ro.disconnect();
+  }, [onPrimaryHeight]);
+
   /* ── scroll-position reset ─────────────────────────────── */
   const onScroll = useCallback(() => {
     if (resetting.current || !primaryRef.current) return;
@@ -48,16 +73,19 @@ export default function InfiniteScrollWrapper({ children }: InfiniteScrollWrappe
 
     if (window.scrollY >= h) {
       resetting.current = true;
+
       // Modulo keeps position consistent even if the user scrolled
       // extremely fast through the clone.
-      window.scrollTo({ top: window.scrollY % h, behavior: "instant" as ScrollBehavior });
+      const target = window.scrollY % h;
 
-      // Double-rAF: let the browser paint the new position before
-      // we start listening for scroll events again.
+      // Use the synchronous, non-animated scrollTo so there is
+      // zero delay between the current frame and the repositioned frame.
+      window.scrollTo({ top: target, behavior: "instant" as ScrollBehavior });
+
+      // Single rAF is sufficient — the browser will have
+      // committed the new scroll offset by the next frame.
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          resetting.current = false;
-        });
+        resetting.current = false;
       });
     }
   }, []);
