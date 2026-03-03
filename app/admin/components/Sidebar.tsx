@@ -139,7 +139,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
       >
         {/* Logo Section */}
         <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
-          <Link href="/admin/planner" className="flex items-center flex-1 min-w-0 mr-2">
+          <Link href={userProfile?.is_root_admin ? '/admin' : '/admin/planner'} className="flex items-center flex-1 min-w-0 mr-2">
             {isOpen ? (
               <NextImage
                 src="/logo.svg"

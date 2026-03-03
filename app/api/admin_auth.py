@@ -21,7 +21,7 @@ async def login_for_access_token(credentials: AdminLoginModel):
 
 
 @router.get("/profile", tags=["Auth"])
-def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
+async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
     """Get current user profile information with cache-busting headers"""
     user_data = current_user.user_data or {}
     profile_data = {
@@ -38,7 +38,7 @@ def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_curren
         "push_notifications_enabled": user_data.get("push_notifications_enabled", True),  # Default to True
         "timezone": user_data.get("timezone", "America/Chicago"),  # IANA timezone for display
         "onboarding_completed": user_data.get("onboarding_completed", False),
-        "onboarding_completed_at": user_data.get("onboarding_completed_at"),
+        "onboarding_completed_at": serialize_mongo_doc(user_data.get("onboarding_completed_at")),
         "onboarding_steps_completed": user_data.get("onboarding_steps_completed", []),
         "user_data": serialize_mongo_doc(current_user.user_data)
     }

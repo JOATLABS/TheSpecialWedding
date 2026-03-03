@@ -4,6 +4,8 @@ Optimized FastAPI application with enhanced security, performance monitoring, an
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 
@@ -225,16 +227,13 @@ if settings.enable_compression:
 
 # ==================== VALIDATION ERROR LOGGING ====================
 # Log detailed Pydantic validation errors so 422s can be debugged from server logs
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-
 
 @app.exception_handler(RequestValidationError)
 async def log_validation_errors(request: Request, exc: RequestValidationError):
-    body = None
+    body: str = ""
     try:
-        body = await request.body()
-        body = body.decode("utf-8")[:2000]  # cap at 2 KB for logging
+        raw_body = await request.body()
+        body = raw_body.decode("utf-8")[:2000]  # cap at 2 KB for logging
     except Exception:
         body = "<could not read body>"
 

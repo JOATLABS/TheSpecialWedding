@@ -269,6 +269,19 @@ export default function AdminMetricsDashboard() {
       }));
   }, [metrics]);
 
+  // Guard: Show loading state until we confirm user is root admin
+  // This prevents wedding planners from seeing admin dashboard content during redirects
+  if (!userProfile || userProfile.is_wedding_planner) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto"></div>
+          <p className="mt-4 text-slate-600 dark:text-slate-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
