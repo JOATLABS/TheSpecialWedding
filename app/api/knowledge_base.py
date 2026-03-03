@@ -2,7 +2,7 @@
 Knowledge Base API Endpoints
 Community-driven documentation system for wedding planners
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
