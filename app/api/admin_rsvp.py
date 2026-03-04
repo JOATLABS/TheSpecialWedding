@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Response, Depends, Query, HTTPException
 from app.services.admin_rsvp_service import AdminRSVPService
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.services.guest_service import GuestService
 from typing import Optional, List
 from pydantic import BaseModel
@@ -44,6 +44,7 @@ async def admin_update_rsvp(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Admin endpoint to create or update an RSVP for a guest (manual confirmation)."""
+    enforce_team_permission(current_user, "manage_guests")
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if not await check_wedding_access(current_user, guest.get("wedding_id")):
@@ -69,6 +70,7 @@ async def admin_delete_rsvp(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Admin endpoint to delete an RSVP for a guest."""
+    enforce_team_permission(current_user, "manage_guests")
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if not await check_wedding_access(current_user, guest.get("wedding_id")):

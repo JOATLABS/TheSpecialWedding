@@ -19,6 +19,7 @@ from fastapi import HTTPException, status
 from app.core.database import mongo
 from app.utils.auth_utils import get_password_hash
 from app.services.email_service_resend import ResendEmailService
+from app.services.activity_log_service import activity_log_service
 from app.models.team_member import (
     TeamMemberRole,
     TeamMemberStatus,
@@ -273,6 +274,15 @@ class TeamManagementService:
             # Don't fail the invite — the planner can resend later
 
         logger.info(f"Team member invited: {email} by {owner_email} as {role}")
+
+        # Log activity
+        try:
+            await activity_log_service.log_team_member_invited(
+                planner_email=owner_email, member_email=email, role=role, invited_by=owner_email
+            )
+        except Exception as log_err:
+            logger.warning(f"Failed to log team invite activity: {log_err}")
+
         return self._format_team_member(doc)
 
     async def _send_invite_email(
@@ -514,6 +524,18 @@ class TeamManagementService:
             f"as {doc['role']}"
         )
 
+        # Log activity
+        try:
+            owner = await self.users_collection.find_one({"_id": ObjectId(doc["owner_id"])})
+            owner_email = owner.get("email", "") if owner else ""
+            await activity_log_service.log_team_member_accepted(
+                planner_email=owner_email,
+                member_email=doc["email"],
+                member_name=f"{first_name} {last_name}",
+            )
+        except Exception as log_err:
+            logger.warning(f"Failed to log team accept activity: {log_err}")
+
         return {"success": True, "message": "Invitation accepted. You can now log in."}
 
     # ─── List / Get ───────────────────────────────────────────────────────
@@ -621,6 +643,17 @@ class TeamManagementService:
             )
 
         logger.info(f"Team member {team_member_id} deactivated by owner {owner_id}")
+
+        try:
+            owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
+            await activity_log_service.log_team_member_deactivated(
+                planner_email=owner.get("email", "") if owner else "",
+                member_email=doc["email"],
+                deactivated_by=owner.get("email", "") if owner else "",
+            )
+        except Exception as log_err:
+            logger.warning(f"Failed to log team deactivation activity: {log_err}")
+
         doc["status"] = TeamMemberStatus.DEACTIVATED.value
         doc["deactivated_at"] = now
         return self._format_team_member(doc)
@@ -662,6 +695,16 @@ class TeamManagementService:
             )
 
         logger.info(f"Team member {team_member_id} reactivated by owner {owner_id}")
+
+        try:
+            await activity_log_service.log_team_member_reactivated(
+                planner_email=owner_email,
+                member_email=doc["email"],
+                reactivated_by=owner_email,
+            )
+        except Exception as log_err:
+            logger.warning(f"Failed to log team reactivation activity: {log_err}")
+
         doc["status"] = TeamMemberStatus.ACTIVE.value
         doc["deactivated_at"] = None
         return self._format_team_member(doc)
@@ -691,6 +734,17 @@ class TeamManagementService:
         await self.team_collection.delete_one({"_id": doc["_id"]})
 
         logger.info(f"Team member {team_member_id} ({doc['email']}) removed by owner {owner_id}")
+
+        try:
+            owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
+            await activity_log_service.log_team_member_removed(
+                planner_email=owner.get("email", "") if owner else "",
+                member_email=doc["email"],
+                removed_by=owner.get("email", "") if owner else "",
+            )
+        except Exception as log_err:
+            logger.warning(f"Failed to log team removal activity: {log_err}")
+
         return {"success": True, "message": f"Team member {doc['email']} has been removed."}
 
     # ─── Permission Resolution (used by auth middleware) ──────────────────

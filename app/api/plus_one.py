@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Path, Body, Depends
 from app.models.plus_one import PlusOneModel
 from app.services.plus_one_service import PlusOneService
 from app.services.guest_service import GuestService
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,7 @@ guest_service = GuestService()
 
 @router.post("/plus-ones", tags=["Plus-Ones"])
 async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    enforce_team_permission(current_user, "manage_guests")
     # Get guest to verify wedding access
     guest = await guest_service.get_guest(plus_one.guest_id)
     if not guest:
@@ -59,6 +60,7 @@ async def get_plus_ones_for_wedding(wedding_id: str, current_user: ExtendedAuthU
 
 @router.put("/plus-ones/{plus_one_id}", tags=["Plus-Ones"])
 async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    enforce_team_permission(current_user, "manage_guests")
     # Get plus-one to find guest and verify wedding access
     plus_one = await plus_one_service.get_plus_one(plus_one_id)
     if not plus_one:
@@ -76,6 +78,7 @@ async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), 
 
 @router.delete("/plus-ones/{plus_one_id}", tags=["Plus-Ones"])
 async def delete_plus_one(plus_one_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    enforce_team_permission(current_user, "manage_guests")
     # Get plus-one to find guest and verify wedding access
     plus_one = await plus_one_service.get_plus_one(plus_one_id)
     if not plus_one:

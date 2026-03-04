@@ -206,13 +206,15 @@ async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_us
 
 
 async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require root admin or wedding planner access"""
-    if not (current_user.is_root_admin or current_user.is_wedding_planner):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin or wedding planner access required"
-        )
-    return current_user
+    """Require root admin, wedding planner, or team member access"""
+    if current_user.is_root_admin or current_user.is_wedding_planner:
+        return current_user
+    if current_user.is_team_member and current_user.team_permissions is not None:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin or wedding planner access required"
+    )
 
 
 async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
@@ -226,13 +228,15 @@ async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current
 
 
 async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require wedding planner access only (excludes root admin)"""
-    if not current_user.is_wedding_planner:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Wedding planner access required"
-        )
-    return current_user
+    """Require wedding planner or team member access (excludes root admin)"""
+    if current_user.is_wedding_planner:
+        return current_user
+    if current_user.is_team_member and current_user.team_permissions is not None:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Wedding planner access required"
+    )
 
 
 async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
@@ -385,3 +389,28 @@ def get_accessible_wedding_ids(user: ExtendedAuthUser) -> Optional[List[str]]:
             return None  # Access all of their owner's weddings
         return user.team_assigned_wedding_ids or []
     return []  # No access
+
+
+def enforce_team_permission(user: ExtendedAuthUser, permission: str) -> None:
+    """
+    Inline permission check for team members.
+    Planners and ROOT_ADMIN always pass. Team members need the specific permission.
+    Raises HTTPException if denied.
+
+    Usage in endpoint:
+        enforce_team_permission(current_user, "manage_guests")
+    """
+    if user.is_root_admin or user.is_wedding_planner:
+        return
+    if user.is_team_member:
+        if user.team_permissions and user.team_permissions.get(permission, False):
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You do not have the '{permission.replace('_', ' ')}' permission.",
+        )
+    # Non-team, non-planner, non-admin — shouldn't reach here but deny anyway
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied",
+    )
