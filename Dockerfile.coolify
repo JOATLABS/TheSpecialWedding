@@ -29,6 +29,10 @@ ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 # Build Next.js application
 RUN npm run build
 
+# Prune dev dependencies and delete build cache to save ~1.5GB in Stage 2
+RUN npm prune --omit=dev && \
+    rm -rf .next/cache .next/trace .next/trace-build .next/diagnostics
+
 # -----------------------------------------------------------------------------
 # Stage 2: Production Runtime
 # -----------------------------------------------------------------------------
@@ -45,14 +49,14 @@ RUN apt-get update && \
         libffi-dev \
         libcairo2 \
         libcairo2-dev \
-        libpango-1.0-0 \
         libpangocairo-1.0-0 \
         libgdk-pixbuf2.0-0 \
         libffi8 \
         shared-mime-info && \
-    apt-get -y upgrade && \
-    apt-get -y autoremove && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get purge -y curl && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install supervisord to manage both processes
 RUN pip install --no-cache-dir supervisor
