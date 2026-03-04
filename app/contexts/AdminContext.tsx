@@ -14,6 +14,7 @@ interface UserProfile {
     is_root_admin: boolean;
     is_wedding_planner: boolean;
     is_vendor: boolean;
+    is_team_member: boolean;
     user_data?: any;
     profile_image_url?: string;
     first_name?: string;
@@ -23,6 +24,11 @@ interface UserProfile {
     onboarding_completed?: boolean;
     onboarding_completed_at?: string;
     onboarding_steps_completed?: string[];
+    // Team member fields (when role is team_member)
+    team_permissions?: Record<string, boolean>;
+    team_wedding_access?: string;
+    team_assigned_wedding_ids?: string[];
+    parent_planner_id?: string;
 }
 
 type AdminContextType = {
@@ -145,6 +151,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 if (profile.is_root_admin) {
                     window.location.href = '/admin';
                 } else if (profile.is_wedding_planner) {
+                    window.location.href = '/admin/planner';
+                } else if (profile.is_team_member) {
                     window.location.href = '/admin/planner';
                 } else {
                     // Unknown/undefined role — do not grant access

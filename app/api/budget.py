@@ -7,6 +7,7 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     require_wedding_planner,
+    enforce_team_permission,
 )
 from app.models.budget import BudgetCategory, VendorQuote, BudgetTemplate, PaymentRecord
 import logging
@@ -138,6 +139,7 @@ async def create_budget_category(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Create a new budget category for a wedding"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Check if user has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
