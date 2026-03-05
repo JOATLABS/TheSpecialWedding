@@ -7,7 +7,7 @@ and wedding-scoped access control.
 """
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from enum import Enum
 
 
@@ -153,6 +153,15 @@ class InviteTeamMemberRequest(BaseModel):
             raise ValueError("Invalid email format")
         return v
 
+    @field_validator("custom_permissions")
+    @classmethod
+    def validate_permission_keys(cls, v):
+        if v is not None:
+            invalid = set(v.keys()) - set(ALL_PERMISSION_KEYS)
+            if invalid:
+                raise ValueError(f"Invalid permission keys: {invalid}")
+        return v
+
     @model_validator(mode="after")
     def validate_wedding_access(self):
         if self.wedding_access == WeddingAccessType.ASSIGNED:
@@ -181,6 +190,15 @@ class UpdateTeamMemberRequest(BaseModel):
         None,
         description="Wedding IDs to grant access to"
     )
+
+    @field_validator("custom_permissions")
+    @classmethod
+    def validate_permission_keys(cls, v):
+        if v is not None:
+            invalid = set(v.keys()) - set(ALL_PERMISSION_KEYS)
+            if invalid:
+                raise ValueError(f"Invalid permission keys: {invalid}")
+        return v
 
     @model_validator(mode="after")
     def validate_wedding_access(self):
@@ -214,10 +232,10 @@ class TeamMemberResponse(BaseModel):
     email: str = Field(..., description="Team member email")
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    status: str = Field(..., description="pending, active, or deactivated")
-    role: str = Field(..., description="admin, editor, or viewer")
-    custom_permissions: Dict[str, bool] = Field(default_factory=dict)
-    wedding_access: str = Field(..., description="all or assigned")
+    status: TeamMemberStatus = Field(..., description="pending, active, or deactivated")
+    role: TeamMemberRole = Field(..., description="admin, editor, or viewer")
+    permissions: Dict[str, bool] = Field(default_factory=dict)
+    wedding_access: WeddingAccessType = Field(..., description="all or assigned")
     assigned_wedding_ids: List[str] = Field(default_factory=list)
     invited_at: Optional[datetime] = None
     accepted_at: Optional[datetime] = None
@@ -225,9 +243,14 @@ class TeamMemberResponse(BaseModel):
     last_active_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    user_id: Optional[str] = Field(None, description="Linked user account ID")
+    owner_email: str = Field(..., description="Planner's email address")
+    invite_token_expires_at: Optional[datetime] = Field(None, description="When the invite token expires")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+    )
 
 
 class TeamSeatsResponse(BaseModel):
