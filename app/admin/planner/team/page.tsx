@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
@@ -55,7 +55,7 @@ export default function TeamManagementPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending' | 'deactivated'>('all');
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   // Modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -97,7 +97,8 @@ export default function TeamManagementPage() {
   }, [fetchData]);
 
   const handleResendInvite = async (memberId: string) => {
-    setActionLoading(memberId);
+    if (actionLoading[memberId]) return;
+    setActionLoading(prev => ({ ...prev, [memberId]: true }));
     try {
       const response = await fetch(`${baseUrl}/admin/team/members/${memberId}/resend-invite`, {
         method: 'POST',
@@ -112,13 +113,21 @@ export default function TeamManagementPage() {
     } catch (err: any) {
       toast.error(err.message);
     } finally {
-      setActionLoading(null);
+      setActionLoading(prev => ({ ...prev, [memberId]: false }));
     }
   };
 
   const handleDeactivate = async (memberId: string) => {
-    if (!confirm('Are you sure you want to deactivate this team member? They will lose access immediately.')) return;
-    setActionLoading(memberId);
+    if (!window.confirm('Are you sure you want to deactivate this team member? They will lose access immediately.')) return;
+    if (actionLoading[memberId]) return;
+
+    const prevMembers = [...members];
+    // Optimistic update
+    setMembers(prev => prev.map(m =>
+      m.id === memberId ? { ...m, status: 'deactivated' } : m
+    ));
+
+    setActionLoading(prev => ({ ...prev, [memberId]: true }));
     try {
       const response = await fetch(`${baseUrl}/admin/team/members/${memberId}/deactivate`, {
         method: 'POST',
@@ -131,14 +140,24 @@ export default function TeamManagementPage() {
       toast.success('Team member deactivated.');
       fetchData();
     } catch (err: any) {
+      // Revert on failure
+      setMembers(prevMembers);
       toast.error(err.message);
     } finally {
-      setActionLoading(null);
+      setActionLoading(prev => ({ ...prev, [memberId]: false }));
     }
   };
 
   const handleReactivate = async (memberId: string) => {
-    setActionLoading(memberId);
+    if (actionLoading[memberId]) return;
+
+    const prevMembers = [...members];
+    // Optimistic update
+    setMembers(prev => prev.map(m =>
+      m.id === memberId ? { ...m, status: 'active' } : m
+    ));
+
+    setActionLoading(prev => ({ ...prev, [memberId]: true }));
     try {
       const response = await fetch(`${baseUrl}/admin/team/members/${memberId}/reactivate`, {
         method: 'POST',
@@ -151,15 +170,23 @@ export default function TeamManagementPage() {
       toast.success('Team member reactivated.');
       fetchData();
     } catch (err: any) {
+      // Revert on failure
+      setMembers(prevMembers);
       toast.error(err.message);
     } finally {
-      setActionLoading(null);
+      setActionLoading(prev => ({ ...prev, [memberId]: false }));
     }
   };
 
   const handleRemove = async (memberId: string) => {
-    if (!confirm('Are you sure you want to remove this team member? This action cannot be undone.')) return;
-    setActionLoading(memberId);
+    if (!window.confirm('Are you sure you want to remove this team member? This action cannot be undone.')) return;
+    if (actionLoading[memberId]) return;
+
+    const prevMembers = [...members];
+    // Optimistic update - filter out the member
+    setMembers(prev => prev.filter(m => m.id !== memberId));
+
+    setActionLoading(prev => ({ ...prev, [memberId]: true }));
     try {
       const response = await fetch(`${baseUrl}/admin/team/members/${memberId}`, {
         method: 'DELETE',
@@ -170,26 +197,29 @@ export default function TeamManagementPage() {
         throw new Error(err.detail || 'Failed to remove member.');
       }
       toast.success('Team member removed.');
-      fetchData();
     } catch (err: any) {
+      // Revert on failure
+      setMembers(prevMembers);
       toast.error(err.message);
     } finally {
-      setActionLoading(null);
+      setActionLoading(prev => ({ ...prev, [memberId]: false }));
     }
   };
 
   // Filter members
-  const filteredMembers = members.filter((m) => {
-    const matchesSearch =
-      !searchQuery ||
-      m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (m.first_name && m.first_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (m.last_name && m.last_name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredMembers = useMemo(() => {
+    return members.filter((m) => {
+      const matchesSearch =
+        !searchQuery ||
+        m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (m.first_name && m.first_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (m.last_name && m.last_name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesStatus = statusFilter === 'all' || m.status === statusFilter;
+      const matchesStatus = statusFilter === 'all' || m.status === statusFilter;
 
-    return matchesSearch && matchesStatus;
-  });
+      return matchesSearch && matchesStatus;
+    });
+  }, [members, searchQuery, statusFilter]);
 
   // Stats
   const activeCount = members.filter((m) => m.status === 'active').length;
@@ -269,6 +299,7 @@ export default function TeamManagementPage() {
           <button
             onClick={() => setShowInviteModal(true)}
             disabled={seatsInfo ? seatsInfo.available_seats <= 0 : false}
+            data-testid="invite-member-btn"
             className="flex items-center gap-2 bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 font-semibold px-5 py-2.5 rounded-xl text-sm hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <UserPlus size={16} />
@@ -279,19 +310,19 @@ export default function TeamManagementPage() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-total">
           <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Total Members</p>
           <p className="text-2xl font-bold text-wedding-rose">{members.length}</p>
         </div>
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-active">
           <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Active</p>
           <p className="text-2xl font-bold text-wedding-sage">{activeCount}</p>
         </div>
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-pending">
           <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Pending Invites</p>
           <p className="text-2xl font-bold text-wedding-gold">{pendingCount}</p>
         </div>
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-remaining">
           <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Seats Remaining</p>
           <p className="text-2xl font-bold text-slate-400">{seatsInfo ? seatsInfo.available_seats : '—'}</p>
         </div>
@@ -308,6 +339,7 @@ export default function TeamManagementPage() {
                 <button
                   key={tab}
                   onClick={() => setStatusFilter(tab)}
+                  data-testid={`tab-${tab}`}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${
                     statusFilter === tab
                       ? 'bg-wedding-rose/15 text-wedding-rose'
@@ -326,6 +358,7 @@ export default function TeamManagementPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search members..."
+              data-testid="member-search"
               className="bg-transparent border-none text-sm text-slate-200 placeholder:text-slate-600 outline-none w-48"
             />
           </div>
@@ -354,7 +387,7 @@ export default function TeamManagementPage() {
               </thead>
               <tbody>
                 {filteredMembers.map((member) => (
-                  <tr key={member.id} className="border-b border-slate-700/10 hover:bg-slate-700/10 transition-colors">
+                  <tr key={member.id} data-testid={`member-row-${member.id}`} className="border-b border-slate-700/10 hover:bg-slate-700/10 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div
@@ -385,7 +418,10 @@ export default function TeamManagementPage() {
                     </td>
                     <td className="px-5 py-4">
                       <span className="inline-flex items-center gap-1.5 text-sm">
-                        <span className={`w-2 h-2 rounded-full ${statusDotColors[member.status] || 'bg-slate-500'}`} />
+                        <span
+                          className={`w-2 h-2 rounded-full ${statusDotColors[member.status] || 'bg-slate-500'}`}
+                          aria-label={`Status: ${member.status}`}
+                        />
                         <span className="text-slate-300 capitalize">{member.status}</span>
                       </span>
                     </td>
@@ -403,7 +439,7 @@ export default function TeamManagementPage() {
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-1.5">
-                        {actionLoading === member.id ? (
+                        {actionLoading[member.id] ? (
                           <Loader2 size={16} className="animate-spin text-slate-400" />
                         ) : (
                           <>
@@ -411,15 +447,21 @@ export default function TeamManagementPage() {
                               <>
                                 <button
                                   onClick={() => handleResendInvite(member.id)}
+                                  disabled={actionLoading[member.id]}
                                   title="Resend Invite"
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-wedding-gold hover:bg-slate-700/30 transition-colors"
+                                  data-testid={`resend-${member.id}`}
+                                  aria-label={`Resend invite to ${member.email}`}
+                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-wedding-gold hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <Send size={14} />
                                 </button>
                                 <button
                                   onClick={() => handleRemove(member.id)}
+                                  disabled={actionLoading[member.id]}
                                   title="Remove"
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors"
+                                  data-testid={`remove-${member.id}`}
+                                  aria-label={`Remove ${member.email}`}
+                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <Trash2 size={14} />
                                 </button>
@@ -429,15 +471,21 @@ export default function TeamManagementPage() {
                               <>
                                 <button
                                   onClick={() => setEditMember(member)}
+                                  disabled={actionLoading[member.id]}
                                   title="Edit"
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 transition-colors"
+                                  data-testid={`edit-${member.id}`}
+                                  aria-label={`Edit ${member.email}`}
+                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <Pencil size={14} />
                                 </button>
                                 <button
                                   onClick={() => handleDeactivate(member.id)}
+                                  disabled={actionLoading[member.id]}
                                   title="Deactivate"
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors"
+                                  data-testid={`deactivate-${member.id}`}
+                                  aria-label={`Deactivate ${member.email}`}
+                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <Ban size={14} />
                                 </button>
@@ -447,15 +495,21 @@ export default function TeamManagementPage() {
                               <>
                                 <button
                                   onClick={() => handleReactivate(member.id)}
+                                  disabled={actionLoading[member.id]}
                                   title="Reactivate"
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-green-400 hover:bg-slate-700/30 transition-colors"
+                                  data-testid={`reactivate-${member.id}`}
+                                  aria-label={`Reactivate ${member.email}`}
+                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-green-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <RotateCcw size={14} />
                                 </button>
                                 <button
                                   onClick={() => handleRemove(member.id)}
+                                  disabled={actionLoading[member.id]}
                                   title="Remove"
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors"
+                                  data-testid={`remove-${member.id}`}
+                                  aria-label={`Remove ${member.email}`}
+                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <Trash2 size={14} />
                                 </button>

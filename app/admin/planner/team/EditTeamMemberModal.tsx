@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { X, Loader2 } from 'lucide-react';
+import { ROLES, ALL_PERMISSIONS, ROLE_DEFAULTS } from './teamConstants';
 
 interface TeamMember {
   id: string;
@@ -33,44 +34,10 @@ interface Props {
   onSuccess: () => void;
 }
 
-const ROLES = [
-  { value: 'admin', label: 'Admin', desc: 'Full access to everything', color: 'text-wedding-rose' },
-  { value: 'editor', label: 'Editor', desc: 'Create & edit content', color: 'text-wedding-sage' },
-  { value: 'viewer', label: 'Viewer', desc: 'Read-only access', color: 'text-slate-400' },
-];
-
-const ALL_PERMISSIONS = [
-  { key: 'manage_guests', label: 'Manage Guests' },
-  { key: 'manage_budget', label: 'Manage Budget' },
-  { key: 'manage_gallery', label: 'Manage Gallery' },
-  { key: 'manage_seating', label: 'Manage Seating' },
-  { key: 'manage_vendors', label: 'Manage Vendors' },
-  { key: 'send_rsvp', label: 'Send RSVP' },
-  { key: 'send_reminders', label: 'Send Reminders' },
-  { key: 'manage_forms', label: 'Manage Forms' },
-  { key: 'view_analytics', label: 'View Analytics' },
-  { key: 'manage_wedding_settings', label: 'Wedding Settings' },
-  { key: 'manage_contracts', label: 'Manage Contracts' },
-  { key: 'manage_packages', label: 'Manage Packages' },
-];
-
-const ROLE_DEFAULTS: Record<string, Record<string, boolean>> = {
-  admin: Object.fromEntries(ALL_PERMISSIONS.map((p) => [p.key, true])),
-  editor: {
-    manage_guests: true, manage_budget: true, manage_gallery: true, manage_seating: true,
-    manage_vendors: false, send_rsvp: false, send_reminders: false, manage_forms: true,
-    view_analytics: true, manage_wedding_settings: false, manage_contracts: false, manage_packages: false,
-  },
-  viewer: {
-    manage_guests: false, manage_budget: false, manage_gallery: false, manage_seating: false,
-    manage_vendors: false, send_rsvp: false, send_reminders: false, manage_forms: false,
-    view_analytics: true, manage_wedding_settings: false, manage_contracts: false, manage_packages: false,
-  },
-};
-
 export default function EditTeamMemberModal({ member, onClose, onSuccess }: Props) {
   const { token } = useAdmin();
   const baseUrl = getApiBaseUrl();
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const [role, setRole] = useState(member.role);
   const [permissions, setPermissions] = useState<Record<string, boolean>>({ ...member.permissions });
@@ -79,6 +46,18 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [showWeddingPicker, setShowWeddingPicker] = useState(false);
+
+  // Re-initialize form state whenever member prop changes
+  useEffect(() => {
+    if (member) {
+      setRole(member.role);
+      setPermissions({ ...member.permissions });
+      setWeddingAccess(member.wedding_access as 'all' | 'assigned');
+      setAssignedWeddingIds([...member.assigned_wedding_ids]);
+      setShowWeddingPicker(false);
+      setSubmitting(false);
+    }
+  }, [member]);
 
   useEffect(() => {
     const fetchWeddings = async () => {
@@ -97,6 +76,54 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
     };
     fetchWeddings();
   }, [baseUrl, token]);
+
+  // Form reset function (resets temporary changes but next open will re-initialize from member prop)
+  const resetForm = () => {
+    setRole(member.role);
+    setPermissions({ ...member.permissions });
+    setWeddingAccess(member.wedding_access as 'all' | 'assigned');
+    setAssignedWeddingIds([...member.assigned_wedding_ids]);
+    setShowWeddingPicker(false);
+    setSubmitting(false);
+  };
+
+  // Close handler that resets form state
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  // Focus trap and keyboard handling
+  useEffect(() => {
+    const modal = modalRef.current;
+    if (!modal) return;
+
+    const focusableElements = modal.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstElement = focusableElements[0] as HTMLElement;
+    const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+    firstElement?.focus();
+
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        if (e.shiftKey && document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      }
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+
+    modal.addEventListener('keydown', handleTab);
+    return () => modal.removeEventListener('keydown', handleTab);
+  }, []);
 
   const handleRoleChange = (newRole: string) => {
     setRole(newRole);
@@ -181,20 +208,26 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
     member.first_name && member.last_name ? `${member.first_name} ${member.last_name}` : member.email;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={handleClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative bg-slate-800 border border-slate-700/50 rounded-2xl w-full max-w-[560px] max-h-[85vh] overflow-y-auto shadow-2xl mx-4"
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        data-testid="edit-modal"
+        className="relative z-[10000] bg-slate-800 border border-slate-700/50 rounded-2xl w-full max-w-[560px] max-h-[85vh] overflow-y-auto shadow-2xl mx-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-0">
           <div>
-            <h2 className="text-xl font-bold text-slate-100">Edit Team Member</h2>
+            <h2 id="modal-title" className="text-xl font-bold text-slate-100">Edit Team Member</h2>
             <p className="text-sm text-slate-500 mt-0.5">{memberName}</p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
+            aria-label="Close modal"
             className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
           >
             <X size={16} />
@@ -206,7 +239,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
           {/* Role Selector */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1.5">Role</label>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-3 gap-2.5" data-testid="role-selector">
               {ROLES.map((r) => (
                 <button
                   key={r.value}
@@ -343,7 +376,8 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
         {/* Footer */}
         <div className="flex justify-end gap-3 p-6 pt-0">
           <button
-            onClick={onClose}
+            onClick={handleClose}
+            data-testid="modal-cancel"
             className="px-5 py-2.5 rounded-xl border border-slate-700/50 text-sm text-slate-400 font-medium hover:text-slate-200 transition-colors"
           >
             Cancel
@@ -351,6 +385,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
           <button
             onClick={handleSubmit}
             disabled={submitting}
+            data-testid="modal-submit"
             className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 text-sm font-semibold hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {submitting ? (

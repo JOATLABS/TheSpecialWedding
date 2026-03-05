@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, 
 from typing import List, Optional
 from datetime import datetime
 
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser, enforce_team_permission
 from app.dependencies.feature_gates import require_vendor_feature
 from app.services.vendor_service import vendor_service
 from app.models.vendor import (
@@ -64,6 +64,7 @@ async def create_vendor_in_directory(
     Add a new vendor to the directory.
     This creates a reusable vendor contact that can be assigned to any wedding.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_vendor_profile(
         data=data.model_dump(),
         created_by=current_user.email
@@ -103,6 +104,7 @@ async def update_vendor_profile(
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Update a vendor in the directory"""
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_vendor_profile(
         vendor_id=vendor_id,
         data=data.model_dump(exclude_none=True),
@@ -116,6 +118,7 @@ async def delete_vendor_from_directory(
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Remove a vendor from the directory (soft delete)"""
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.delete_vendor_profile(vendor_id, current_user.email)
 
 
@@ -132,6 +135,7 @@ async def assign_vendor_to_wedding(
     Assign a vendor from the directory to a wedding.
     Optionally link to a budget category.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.assign_vendor_to_wedding(
         vendor_profile_id=data.vendor_profile_id,
         wedding_id=data.wedding_id,
@@ -157,6 +161,7 @@ async def update_vendor_assignment_status(
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Update the status of a vendor assignment"""
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_assignment_status(
         assignment_id=assignment_id,
         status=status,
@@ -188,6 +193,7 @@ async def create_contract_template(
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Create a new contract template"""
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_contract_template(
         data=data,
         created_by=current_user.email
@@ -225,6 +231,7 @@ async def create_contract(
     Can be created from a template or from scratch.
     Placeholders in templates are auto-populated with vendor/wedding data.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_contract(
         wedding_id=wedding_id,
         vendor_profile_id=vendor_profile_id,
@@ -279,6 +286,7 @@ async def update_contract(
     Planners can modify sections, terms, amounts, etc.
     Only works on draft contracts (not yet sent).
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_contract(
         contract_id=contract_id,
         data=data,
@@ -297,6 +305,7 @@ async def update_contract_sections(
     Each section has: id, title, content, order.
     Planners can add, remove, or modify any section.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_contract_sections(
         contract_id=contract_id,
         sections=sections,
@@ -327,6 +336,7 @@ async def apply_form_data_to_contract(
     Apply data from a vendor's form submission to the contract.
     Optionally specify which form fields map to which contract placeholders.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.apply_form_data_to_contract(
         contract_id=contract_id,
         form_submission_id=form_submission_id,
@@ -346,6 +356,7 @@ async def send_contract_to_vendor(
     Send contract to vendor for review and signing.
     Vendor receives an email with a secure link.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.send_contract(
         contract_id=contract_id,
         created_by=current_user.email,
@@ -362,6 +373,7 @@ async def upload_contract_document(
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Upload a contract document (PDF, etc.)"""
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.upload_contract_document(
         contract_id=contract_id,
         file=file,
@@ -424,6 +436,7 @@ async def create_payment_milestones(
     Create payment milestones for a contract.
     Each milestone has a description, amount, and due date.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_payment_milestones(
         contract_id=contract_id,
         milestones=milestones,
@@ -460,6 +473,7 @@ async def record_milestone_payment(
     Record a payment against a milestone.
     Updates the milestone status and syncs with budget tracking.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.record_payment(
         milestone_id=milestone_id,
         amount=amount,
@@ -559,6 +573,7 @@ async def upload_contract_pdf(
     Upload an existing PDF contract instead of using templates.
     The planner can upload their own attorney-drafted contract.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     service_date_parsed = None
     if service_date:
         try:
@@ -597,6 +612,7 @@ async def create_payment_link(
     - Couple pays planner (planning fee)
     - Vendor pays planner (referral commission)
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_payment_link(
         payer_type=request.payer_type.value,
         payer_email=request.payer_email,
@@ -628,6 +644,7 @@ async def send_payment_link(
     """
     Send a payment link to the payer via email.
     """
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.send_payment_link(
         payment_link_id=payment_link_id,
         planner_email=current_user.email,
@@ -722,6 +739,7 @@ async def update_contract_settings(
     - auto_followup_days (1-14): Days to wait before auto-generating follow-up
     - default_currency: Default currency for contracts (e.g., "USD")
     """
+    enforce_team_permission(current_user, "manage_vendors")
     # Validate settings
     allowed_fields = {
         "token_expiry_days", "deposit_due_days", "payment_reminder_days",

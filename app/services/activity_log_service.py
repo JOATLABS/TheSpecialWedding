@@ -116,7 +116,7 @@ class ActivityLogService:
             result = await self.collection.insert_one(doc)
 
             if not result.inserted_id:
-                logger.warning(f"Failed to log activity: {activity_type}")
+                logger.warning("[ActivityLog] Failed to insert activity log: %s", activity_type)
                 return {"id": None, "success": False}
 
             logger.debug(f"Logged planner activity: {activity_type} for wedding {wedding_id}")
@@ -128,7 +128,7 @@ class ActivityLogService:
 
         except Exception as e:
             # Activity logging should not block main operations
-            logger.error(f"Error logging activity: {str(e)}")
+            logger.error("[ActivityLog] Error logging activity: %s", str(e))
             return {"id": None, "success": False, "error": str(e)}
 
     # ==================== RSVP CONVENIENCE METHODS ====================

@@ -209,6 +209,7 @@ async def update_seating_constraints(
     This endpoint updates the guest records directly, which are then used
     by the AI seating optimization to create better arrangements.
     """
+    enforce_team_permission(current_user, "manage_seating")
     # Check wedding access
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")

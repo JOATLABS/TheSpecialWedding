@@ -10,6 +10,7 @@ import secrets
 import string
 import logging
 import os
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
@@ -27,11 +28,45 @@ from app.models.team_member import (
     TeamPermissions,
     ROLE_PRESETS,
 )
+from app.dependencies.auth_extended import invalidate_team_cache
 
 logger = logging.getLogger(__name__)
 
 # How long an invite token stays valid
 INVITE_TOKEN_EXPIRY_DAYS = 7
+
+
+# ── P2-26: Timezone helper ──
+def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Ensure a datetime is timezone-aware (UTC). Handles naive datetimes from MongoDB."""
+    if dt is None:
+        return None
+    if isinstance(dt, datetime) and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+# ── Bounded background task runner ──
+_background_tasks: set = set()
+_MAX_BACKGROUND_TASKS = 100
+
+
+def _run_background(coro):
+    """
+    Fire-and-forget with backpressure. If too many tasks are pending,
+    the oldest completed ones are discarded. New tasks are dropped if at max.
+    """
+    # Clean up completed tasks
+    done = {t for t in _background_tasks if t.done()}
+    _background_tasks.difference_update(done)
+
+    if len(_background_tasks) >= _MAX_BACKGROUND_TASKS:
+        logger.warning("[TeamMgmt] Background task queue full (%d), dropping task", _MAX_BACKGROUND_TASKS)
+        return
+
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 class TeamManagementService:
@@ -54,6 +89,44 @@ class TeamManagementService:
         )
 
     @staticmethod
+    def _validate_password(password: str) -> None:
+        """
+        Validate password meets security policy requirements.
+        Password must have:
+        - Minimum 8 characters
+        - At least one uppercase letter
+        - At least one lowercase letter
+        - At least one digit
+        - At least one special character
+        Raises HTTPException with descriptive error if validation fails.
+        """
+        if len(password) < 8:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must be at least 8 characters long"
+            )
+        if not any(c.isupper() for c in password):
+            raise HTTPException(
+                status_code=400,
+                detail="Password must contain at least one uppercase letter"
+            )
+        if not any(c.islower() for c in password):
+            raise HTTPException(
+                status_code=400,
+                detail="Password must contain at least one lowercase letter"
+            )
+        if not any(c.isdigit() for c in password):
+            raise HTTPException(
+                status_code=400,
+                detail="Password must contain at least one number"
+            )
+        if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+            raise HTTPException(
+                status_code=400,
+                detail="Password must contain at least one special character"
+            )
+
+    @staticmethod
     def _resolve_permissions(
         role: str, custom_permissions: Optional[Dict[str, bool]] = None
     ) -> Dict[str, bool]:
@@ -66,7 +139,53 @@ class TeamManagementService:
             for key, value in custom_permissions.items():
                 if key in base:
                     base[key] = value
+                else:
+                    logger.warning("[TeamMgmt] Unknown permission key ignored: %s", key)
         return base
+
+    async def _validate_wedding_ownership(
+        self, owner_email: str, wedding_ids: Optional[List[str]]
+    ) -> None:
+        """
+        Validate that all provided wedding IDs belong to the planner.
+        Uses a single $in query instead of N separate queries (N+1 fix).
+        Raises HTTPException 400 if any wedding is not found or doesn't belong to the planner.
+        """
+        if not wedding_ids:
+            return
+
+        if len(wedding_ids) > 50:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot assign more than 50 weddings to a single team member",
+            )
+
+        try:
+            oids = [ObjectId(wid) for wid in wedding_ids]
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid wedding ID format",
+            )
+
+        # Single $in query to check all weddings at once
+        count = await self.weddings_collection.count_documents({
+            "_id": {"$in": oids},
+            "assigned_planner_email": owner_email
+        })
+
+        if count != len(oids):
+            # Find which ones are invalid
+            valid_docs = await self.weddings_collection.find(
+                {"_id": {"$in": oids}, "assigned_planner_email": owner_email},
+                {"_id": 1}
+            ).to_list(length=len(oids))
+            valid_ids = {str(d["_id"]) for d in valid_docs}
+            invalid = [wid for wid in wedding_ids if wid not in valid_ids]
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Wedding(s) not found or do not belong to you: {', '.join(invalid)}",
+            )
 
     async def _get_owner_plan(self, owner_email: str) -> Optional[dict]:
         """Get the owner planner's current subscription plan (with staff_seats)"""
@@ -102,7 +221,7 @@ class TeamManagementService:
             "last_name": doc.get("last_name"),
             "status": doc.get("status", "pending"),
             "role": doc.get("role", "viewer"),
-            "custom_permissions": doc.get("custom_permissions", {}),
+            "permissions": doc.get("custom_permissions", {}),
             "wedding_access": doc.get("wedding_access", "all"),
             "assigned_wedding_ids": doc.get("assigned_wedding_ids", []),
             "invited_at": doc.get("invited_at"),
@@ -111,6 +230,9 @@ class TeamManagementService:
             "last_active_at": doc.get("last_active_at"),
             "created_at": doc.get("created_at"),
             "updated_at": doc.get("updated_at"),
+            "user_id": str(doc["user_id"]) if doc.get("user_id") else None,
+            "owner_email": doc.get("owner_email", ""),
+            "invite_token_expires_at": doc.get("invite_token_expires_at"),
         }
 
     # ─── Seat Enforcement ─────────────────────────────────────────────────
@@ -173,9 +295,14 @@ class TeamManagementService:
         """
         email = email.strip().lower()
 
-        # 1. Seat limit check
+        # P2-19: Deduplicate wedding IDs (preserve order)
+        if assigned_wedding_ids:
+            assigned_wedding_ids = list(dict.fromkeys(assigned_wedding_ids))
+
+        # 1. Seat limit check (initial check to fail fast)
         seat_info = await self.check_seat_limit(owner_id, owner_email)
         if not seat_info["can_invite"]:
+            # P2-28: Dict detail format intentional — frontend checks `upgrade_required` field
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
@@ -196,19 +323,11 @@ class TeamManagementService:
             if existing_status == "deactivated":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail={
-                        "error": "member_deactivated",
-                        "message": "This person was previously deactivated. Reactivate them instead of sending a new invite.",
-                        "team_member_id": str(existing["_id"]),
-                    },
+                    detail="This person was previously deactivated. Reactivate them instead of sending a new invite.",
                 )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "error": "already_invited",
-                    "message": f"A team member with email {email} already exists.",
-                    "status": existing_status,
-                },
+                detail=f"A team member with email {email} already exists.",
             )
 
         # 3. Cannot invite yourself
@@ -218,15 +337,16 @@ class TeamManagementService:
                 detail="You cannot invite yourself as a team member.",
             )
 
+        # P2-20: Ensure assigned access has wedding IDs
+        if wedding_access == "assigned" and not assigned_wedding_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one wedding must be assigned when using 'assigned' wedding access.",
+            )
+
         # 4. Validate assigned weddings belong to the planner
         if wedding_access == "assigned" and assigned_wedding_ids:
-            for wid in assigned_wedding_ids:
-                wedding = await self.weddings_collection.find_one({"_id": ObjectId(wid)})
-                if not wedding or wedding.get("assigned_planner_email") != owner_email:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Wedding {wid} not found or does not belong to you.",
-                    )
+            await self._validate_wedding_ownership(owner_email, assigned_wedding_ids)
 
         # 5. Resolve permissions
         resolved_perms = self._resolve_permissions(role, custom_permissions)
@@ -260,7 +380,32 @@ class TeamManagementService:
         result = await self.team_collection.insert_one(doc)
         doc["_id"] = result.inserted_id
 
-        # 7. Send invitation email
+        # 7. Post-insert seat enforcement (optimistic approach for race condition)
+        # Count active + pending members AFTER insert. If we've exceeded the limit,
+        # delete the just-inserted doc and raise an error. This handles concurrent requests.
+        used_seats = await self.team_collection.count_documents({
+            "owner_id": owner_id,
+            "status": {"$in": ["pending", "active"]},
+        })
+        plan = await self._get_owner_plan(owner_email)
+        total_seats = plan.get("staff_seats", 0) if plan else 0
+
+        if used_seats > total_seats:
+            # Cleanup: delete the document we just inserted
+            await self.team_collection.delete_one({"_id": result.inserted_id})
+            # P2-28: Dict detail format intentional — frontend checks `upgrade_required` field
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "seat_limit_reached",
+                    "message": f"Your plan allows {total_seats} team members. All seats are currently filled.",
+                    "total_seats": total_seats,
+                    "used_seats": used_seats - 1,  # Subtract 1 since we deleted our insert
+                    "upgrade_required": True,
+                },
+            )
+
+        # 8. Send invitation email
         try:
             await self._send_invite_email(
                 to_email=email,
@@ -270,18 +415,17 @@ class TeamManagementService:
                 token=token,
             )
         except Exception as e:
-            logger.error(f"Failed to send team invite email to {email}: {e}")
+            logger.error("[TeamMgmt:invite] Failed to send team invite email: %s", str(e))
             # Don't fail the invite — the planner can resend later
 
         logger.info(f"Team member invited: {email} by {owner_email} as {role}")
 
-        # Log activity
-        try:
-            await activity_log_service.log_team_member_invited(
+        # Log activity asynchronously (non-blocking)
+        _run_background(
+            activity_log_service.log_team_member_invited(
                 planner_email=owner_email, member_email=email, role=role, invited_by=owner_email
             )
-        except Exception as log_err:
-            logger.warning(f"Failed to log team invite activity: {log_err}")
+        )
 
         return self._format_team_member(doc)
 
@@ -370,8 +514,9 @@ class TeamManagementService:
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
         if doc["status"] != TeamMemberStatus.PENDING.value:
+            # P2-24: Use 409 CONFLICT instead of 400 BAD_REQUEST
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_409_CONFLICT,
                 detail="Can only resend invites for pending members"
             )
 
@@ -414,16 +559,16 @@ class TeamManagementService:
         if not doc:
             raise HTTPException(status_code=404, detail="Invitation not found or already used")
 
-        is_expired = (
-            doc.get("invite_token_expires_at")
-            and datetime.now(timezone.utc) > doc["invite_token_expires_at"].replace(tzinfo=timezone.utc)
-            if isinstance(doc.get("invite_token_expires_at"), datetime)
-            and doc["invite_token_expires_at"].tzinfo is None
-            else (
-                doc.get("invite_token_expires_at")
-                and datetime.now(timezone.utc) > doc["invite_token_expires_at"]
+        # P2-26: Use timezone helper for cleaner, more maintainable logic
+        expires_at = _ensure_utc(doc.get("invite_token_expires_at"))
+        is_expired = expires_at is not None and datetime.now(timezone.utc) > expires_at
+
+        # Invalidate expired tokens to prevent future lookups
+        if is_expired:
+            await self.team_collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"invite_token": None, "updated_at": datetime.now(timezone.utc)}}
             )
-        )
 
         # Lookup planner company info
         owner = await self.users_collection.find_one({"email": doc.get("owner_email")})
@@ -449,104 +594,159 @@ class TeamManagementService:
         """
         Public endpoint: accept an invitation, create a user account,
         and activate the team member.
+        Uses atomic find_one_and_update to prevent double-accept race conditions.
         """
-        doc = await self.team_collection.find_one({"invite_token": token})
-        if not doc:
-            raise HTTPException(status_code=404, detail="Invitation not found or already used")
-
-        if doc["status"] != TeamMemberStatus.PENDING.value:
-            raise HTTPException(status_code=400, detail="This invitation has already been accepted")
-
-        # Check token expiry
-        expires_at = doc.get("invite_token_expires_at")
-        if expires_at:
-            if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) > expires_at:
-                raise HTTPException(
-                    status_code=400,
-                    detail="This invitation has expired. Please ask your team admin to resend it."
-                )
-
-        # Check if email already has an account
-        existing_user = await self.users_collection.find_one({"email": doc["email"]})
-        if existing_user:
-            raise HTTPException(
-                status_code=409,
-                detail="An account with this email already exists. Please contact the team admin."
-            )
-
+        # First, atomically claim the token by setting status to "accepting" (transitional)
+        # This ensures only ONE request can proceed past this point for a given token.
         now = datetime.now(timezone.utc)
 
-        # Create user in users collection
-        user_doc = {
-            "email": doc["email"],
-            "password_hash": get_password_hash(password),
-            "role": "team_member",
-            "parent_planner_id": doc["owner_id"],
-            "team_member_id": str(doc["_id"]),
-            "first_name": first_name.strip(),
-            "last_name": last_name.strip(),
-            "company_name": None,
-            "plan_id": None,
-            "subscription_status": "active",  # team members don't have their own subscription
-            "trial_end_date": None,
-            "max_weddings": 0,
-            "ai_credits_remaining": 0,
-            "is_active": True,
-            "email_verified": True,  # invited members are pre-verified
-            "created_at": now,
-            "updated_at": now,
-        }
-
-        user_result = await self.users_collection.insert_one(user_doc)
-        new_user_id = str(user_result.inserted_id)
-
-        # Update team_members doc
-        await self.team_collection.update_one(
-            {"_id": doc["_id"]},
+        doc = await self.team_collection.find_one_and_update(
+            {
+                "invite_token": token,
+                "status": TeamMemberStatus.PENDING.value,
+            },
             {
                 "$set": {
-                    "user_id": new_user_id,
-                    "first_name": first_name.strip(),
-                    "last_name": last_name.strip(),
-                    "status": TeamMemberStatus.ACTIVE.value,
-                    "accepted_at": now,
-                    "invite_token": None,  # Consume the token
-                    "invite_token_expires_at": None,
+                    "status": "accepting",  # Transitional state to lock the document
                     "updated_at": now,
                 }
             },
+            return_document=True,  # Return the updated document (with status="accepting")
         )
 
-        logger.info(
-            f"Team invite accepted: {doc['email']} joined owner {doc['owner_id']} "
-            f"as {doc['role']}"
-        )
+        if not doc:
+            # Either token doesn't exist, already used, or already being accepted
+            existing = await self.team_collection.find_one({"invite_token": token})
+            if existing and existing["status"] != TeamMemberStatus.PENDING.value:
+                raise HTTPException(status_code=400, detail="This invitation has already been accepted")
+            raise HTTPException(status_code=404, detail="Invitation not found or already used")
 
-        # Log activity
         try:
-            owner = await self.users_collection.find_one({"_id": ObjectId(doc["owner_id"])})
-            owner_email = owner.get("email", "") if owner else ""
-            await activity_log_service.log_team_member_accepted(
-                planner_email=owner_email,
-                member_email=doc["email"],
-                member_name=f"{first_name} {last_name}",
-            )
-        except Exception as log_err:
-            logger.warning(f"Failed to log team accept activity: {log_err}")
+            # Check token expiry
+            expires_at = doc.get("invite_token_expires_at")
+            if expires_at:
+                if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) > expires_at:
+                    # Rollback: set back to pending
+                    await self.team_collection.update_one(
+                        {"_id": doc["_id"]},
+                        {"$set": {"status": TeamMemberStatus.PENDING.value, "updated_at": now}}
+                    )
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This invitation has expired. Please ask your team admin to resend it."
+                    )
 
-        return {"success": True, "message": "Invitation accepted. You can now log in."}
+            # Check if email already has an account
+            existing_user = await self.users_collection.find_one({"email": doc["email"]})
+            if existing_user:
+                # Rollback: set back to pending
+                await self.team_collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"status": TeamMemberStatus.PENDING.value, "updated_at": now}}
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="An account with this email already exists. Please contact the team admin."
+                )
+
+            # Validate password meets security policy
+            self._validate_password(password)
+
+            # Create user in users collection
+            user_doc = {
+                "email": doc["email"],
+                "password_hash": get_password_hash(password),
+                "role": "team_member",
+                "parent_planner_id": doc["owner_id"],
+                "team_member_id": str(doc["_id"]),
+                "first_name": first_name.strip(),
+                "last_name": last_name.strip(),
+                "company_name": None,
+                "plan_id": None,
+                "subscription_status": "active",
+                "trial_end_date": None,
+                "max_weddings": 0,
+                "ai_credits_remaining": 0,
+                "is_active": True,
+                "email_verified": True,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            user_result = await self.users_collection.insert_one(user_doc)
+            new_user_id = str(user_result.inserted_id)
+
+            # Finalize: set to ACTIVE and consume token
+            await self.team_collection.update_one(
+                {"_id": doc["_id"]},
+                {
+                    "$set": {
+                        "user_id": new_user_id,
+                        "first_name": first_name.strip(),
+                        "last_name": last_name.strip(),
+                        "status": TeamMemberStatus.ACTIVE.value,
+                        "accepted_at": now,
+                        "invite_token": None,
+                        "invite_token_expires_at": None,
+                        "updated_at": now,
+                    }
+                },
+            )
+
+            logger.info(
+                f"Team invite accepted: {doc['email']} joined owner {doc['owner_id']} "
+                f"as {doc['role']}"
+            )
+
+            # Log activity asynchronously (non-blocking)
+            async def _log_acceptance():
+                try:
+                    owner = await self.users_collection.find_one({"_id": ObjectId(doc["owner_id"])})
+                    owner_email = owner.get("email", "") if owner else ""
+                    await activity_log_service.log_team_member_accepted(
+                        planner_email=owner_email,
+                        member_email=doc["email"],
+                        member_name=f"{first_name} {last_name}",
+                    )
+                except Exception as log_err:
+                    logger.warning("[TeamMgmt:accept] Activity log failed: %s", str(log_err))
+
+            _run_background(_log_acceptance())
+
+            return {"success": True, "message": "Invitation accepted. You can now log in."}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            # Unexpected error: rollback the transitional state
+            await self.team_collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"status": TeamMemberStatus.PENDING.value, "updated_at": now}}
+            )
+            logger.error("[TeamMgmt:accept] Unexpected error during invite acceptance: %s", str(e))
+            raise HTTPException(status_code=500, detail="An error occurred while accepting the invitation. Please try again.")
 
     # ─── List / Get ───────────────────────────────────────────────────────
 
-    async def list_team_members(self, owner_id: str) -> List[dict]:
-        """List all team members for a planner"""
-        cursor = self.team_collection.find({"owner_id": owner_id}).sort("created_at", -1)
+    async def list_team_members(self, owner_id: str, skip: int = 0, limit: int = 50) -> dict:
+        """List team members for a planner with pagination"""
+        # Get total count for pagination metadata
+        total = await self.team_collection.count_documents({"owner_id": owner_id})
+
+        # Fetch paginated results
+        cursor = self.team_collection.find({"owner_id": owner_id}).sort("created_at", -1).skip(skip).limit(limit)
         results = []
         async for doc in cursor:
             results.append(self._format_team_member(doc))
-        return results
+
+        return {
+            "members": results,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        }
 
     async def get_team_member(self, owner_id: str, team_member_id: str) -> dict:
         """Get a single team member by ID"""
@@ -563,6 +763,7 @@ class TeamManagementService:
     async def update_team_member(
         self,
         owner_id: str,
+        owner_email: str,
         team_member_id: str,
         updates: dict,
     ) -> dict:
@@ -577,6 +778,17 @@ class TeamManagementService:
         })
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
+
+        if doc["status"] == TeamMemberStatus.DEACTIVATED.value:
+            raise HTTPException(status_code=400, detail="Cannot update a deactivated team member. Reactivate first.")
+
+        # P2-23: Reject empty updates
+        meaningful_keys = {"role", "custom_permissions", "wedding_access", "assigned_wedding_ids"}
+        if not any(k in updates for k in meaningful_keys):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No updates provided. Specify role, permissions, wedding_access, or assigned_wedding_ids.",
+            )
 
         set_fields: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
 
@@ -602,18 +814,45 @@ class TeamManagementService:
             if new_access == "all":
                 set_fields["assigned_wedding_ids"] = []
             elif "assigned_wedding_ids" in updates:
-                set_fields["assigned_wedding_ids"] = updates["assigned_wedding_ids"]
+                # P2-19: Deduplicate wedding IDs BEFORE validation
+                assigned_ids = updates["assigned_wedding_ids"]
+                if assigned_ids:
+                    assigned_ids = list(dict.fromkeys(assigned_ids))
+                # Validate that assigned wedding IDs belong to the planner
+                await self._validate_wedding_ownership(owner_email, assigned_ids)
+                set_fields["assigned_wedding_ids"] = assigned_ids
 
         if "assigned_wedding_ids" in updates and "wedding_access" not in set_fields:
-            set_fields["assigned_wedding_ids"] = updates["assigned_wedding_ids"]
+            # P2-19: Deduplicate wedding IDs BEFORE validation
+            assigned_ids = updates["assigned_wedding_ids"]
+            if assigned_ids:
+                assigned_ids = list(dict.fromkeys(assigned_ids))
+            # Validate that assigned wedding IDs belong to the planner
+            await self._validate_wedding_ownership(owner_email, assigned_ids)
+            set_fields["assigned_wedding_ids"] = assigned_ids
 
         await self.team_collection.update_one(
             {"_id": doc["_id"]},
             {"$set": set_fields},
         )
 
+        # Invalidate cached permissions so changes take effect immediately
+        if doc.get("user_id"):
+            invalidate_team_cache(str(doc["_id"]))
+
         updated = await self.team_collection.find_one({"_id": doc["_id"]})
         logger.info(f"Team member {team_member_id} updated by owner {owner_id}")
+
+        # Log activity asynchronously (non-blocking)
+        _run_background(
+            activity_log_service.log_team_member_updated(
+                planner_email=owner_email,
+                member_email=doc["email"],
+                changes=set_fields,
+                updated_by=owner_email
+            )
+        )
+
         return self._format_team_member(updated)
 
     # ─── Deactivate / Reactivate / Remove ─────────────────────────────────
@@ -630,29 +869,57 @@ class TeamManagementService:
             raise HTTPException(status_code=400, detail="Member is already deactivated")
 
         now = datetime.now(timezone.utc)
+
+        # Step 1: Update team_members collection
         await self.team_collection.update_one(
             {"_id": doc["_id"]},
             {"$set": {"status": TeamMemberStatus.DEACTIVATED.value, "deactivated_at": now, "updated_at": now}},
         )
 
-        # Also deactivate the user account so JWT checks reject them
+        # Step 2: Deactivate user account (with rollback on failure)
         if doc.get("user_id"):
-            await self.users_collection.update_one(
-                {"_id": ObjectId(doc["user_id"])},
-                {"$set": {"is_active": False, "updated_at": now}},
-            )
+            try:
+                result = await self.users_collection.update_one(
+                    {"_id": ObjectId(doc["user_id"])},
+                    {"$set": {"is_active": False, "updated_at": now}},
+                )
+                if result.modified_count == 0:
+                    logger.warning("[TeamMgmt:deactivate] User doc not found for user_id=%s, continuing", doc["user_id"])
+            except Exception as e:
+                # Rollback step 1
+                logger.error("[TeamMgmt:deactivate] Failed to deactivate user account, rolling back: %s", str(e))
+                await self.team_collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {
+                        "status": TeamMemberStatus.ACTIVE.value,
+                        "deactivated_at": None,
+                        "updated_at": now
+                    }},
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fully deactivate team member. Please try again."
+                )
+
+        # Invalidate cached permissions so changes take effect immediately
+        if doc.get("user_id"):
+            invalidate_team_cache(str(doc["_id"]))
 
         logger.info(f"Team member {team_member_id} deactivated by owner {owner_id}")
 
-        try:
-            owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
-            await activity_log_service.log_team_member_deactivated(
-                planner_email=owner.get("email", "") if owner else "",
-                member_email=doc["email"],
-                deactivated_by=owner.get("email", "") if owner else "",
-            )
-        except Exception as log_err:
-            logger.warning(f"Failed to log team deactivation activity: {log_err}")
+        # Log activity asynchronously (non-blocking)
+        async def _log_deactivation():
+            try:
+                owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
+                await activity_log_service.log_team_member_deactivated(
+                    planner_email=owner.get("email", "") if owner else "",
+                    member_email=doc["email"],
+                    deactivated_by=owner.get("email", "") if owner else "",
+                )
+            except Exception as log_err:
+                logger.warning("[TeamMgmt:deactivate] Activity log failed: %s", str(log_err))
+
+        _run_background(_log_deactivation())
 
         doc["status"] = TeamMemberStatus.DEACTIVATED.value
         doc["deactivated_at"] = now
@@ -672,6 +939,7 @@ class TeamManagementService:
         # Check seat limit — reactivation uses a seat
         seat_info = await self.check_seat_limit(owner_id, owner_email)
         if not seat_info["can_invite"]:
+            # P2-28: Dict detail format intentional — frontend checks `upgrade_required` field
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
@@ -681,33 +949,71 @@ class TeamManagementService:
                 },
             )
 
+        # P2-21: Verify assigned weddings still exist
+        if doc.get("wedding_access") == "assigned" and doc.get("assigned_wedding_ids"):
+            try:
+                await self._validate_wedding_ownership(
+                    doc.get("owner_email", ""), doc["assigned_wedding_ids"]
+                )
+            except HTTPException:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot reactivate: some assigned weddings no longer exist. Please update this member's wedding assignments first.",
+                )
+
         now = datetime.now(timezone.utc)
+
+        # Step 1: Update team_members collection
         await self.team_collection.update_one(
             {"_id": doc["_id"]},
             {"$set": {"status": TeamMemberStatus.ACTIVE.value, "deactivated_at": None, "updated_at": now}},
         )
 
-        # Re-enable the user account
+        # Step 2: Re-enable user account (with rollback on failure)
         if doc.get("user_id"):
-            await self.users_collection.update_one(
-                {"_id": ObjectId(doc["user_id"])},
-                {"$set": {"is_active": True, "updated_at": now}},
-            )
+            try:
+                result = await self.users_collection.update_one(
+                    {"_id": ObjectId(doc["user_id"])},
+                    {"$set": {"is_active": True, "updated_at": now}},
+                )
+                if result.modified_count == 0:
+                    logger.warning("[TeamMgmt:reactivate] User doc not found for user_id=%s, continuing", doc["user_id"])
+            except Exception as e:
+                # Rollback step 1
+                logger.error("[TeamMgmt:reactivate] Failed to reactivate user account, rolling back: %s", str(e))
+                await self.team_collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {
+                        "status": TeamMemberStatus.DEACTIVATED.value,
+                        "deactivated_at": datetime.now(timezone.utc),
+                        "updated_at": now
+                    }},
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fully reactivate team member. Please try again."
+                )
+
+        # Invalidate cached permissions so changes take effect immediately
+        invalidate_team_cache(str(doc["_id"]))
 
         logger.info(f"Team member {team_member_id} reactivated by owner {owner_id}")
 
-        try:
-            await activity_log_service.log_team_member_reactivated(
+        # Log activity asynchronously (non-blocking)
+        _run_background(
+            activity_log_service.log_team_member_reactivated(
                 planner_email=owner_email,
                 member_email=doc["email"],
                 reactivated_by=owner_email,
             )
-        except Exception as log_err:
-            logger.warning(f"Failed to log team reactivation activity: {log_err}")
+        )
 
         doc["status"] = TeamMemberStatus.ACTIVE.value
         doc["deactivated_at"] = None
+
+
         return self._format_team_member(doc)
+
 
     async def remove_team_member(self, owner_id: str, team_member_id: str) -> dict:
         """
@@ -723,27 +1029,56 @@ class TeamManagementService:
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
 
-        # If they have a user account, deactivate it (don't hard delete to keep audit trail)
+        now = datetime.now(timezone.utc)
+        
+        # Step 1: Deactivate user account and clear team_member_id foreign key
         if doc.get("user_id"):
-            await self.users_collection.update_one(
-                {"_id": ObjectId(doc["user_id"])},
-                {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}},
+            try:
+                await self.users_collection.update_one(
+                    {"_id": ObjectId(doc["user_id"])},
+                    {"$set": {"is_active": False, "team_member_id": None, "updated_at": now}},
+                )
+            except Exception as e:
+                logger.error("[TeamMgmt:remove] Failed to deactivate user: %s", str(e))
+                # Continue with deletion anyway — user will fail auth on next request
+
+        # Step 2: Delete the team_members doc (with rollback on failure)
+        try:
+            await self.team_collection.delete_one({"_id": doc["_id"]})
+        except Exception as e:
+            # Rollback step 1: restore the user account and team_member_id
+            logger.error("[TeamMgmt:remove] Failed to delete team_members doc, rolling back: %s", str(e))
+            if doc.get("user_id"):
+                try:
+                    await self.users_collection.update_one(
+                        {"_id": ObjectId(doc["user_id"])},
+                        {"$set": {"is_active": True, "team_member_id": str(doc["_id"]), "updated_at": now}},
+                    )
+                except Exception as rollback_err:
+                    logger.error("[TeamMgmt:remove] Rollback failed: %s", str(rollback_err))
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to fully remove team member. Please try again."
             )
 
-        # Delete the team_members doc
-        await self.team_collection.delete_one({"_id": doc["_id"]})
+        # Invalidate cached permissions so changes take effect immediately
+        invalidate_team_cache(str(doc["_id"]))
 
         logger.info(f"Team member {team_member_id} ({doc['email']}) removed by owner {owner_id}")
 
-        try:
-            owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
-            await activity_log_service.log_team_member_removed(
-                planner_email=owner.get("email", "") if owner else "",
-                member_email=doc["email"],
-                removed_by=owner.get("email", "") if owner else "",
-            )
-        except Exception as log_err:
-            logger.warning(f"Failed to log team removal activity: {log_err}")
+        # Log activity asynchronously (non-blocking)
+        async def _log_removal():
+            try:
+                owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
+                await activity_log_service.log_team_member_removed(
+                    planner_email=owner.get("email", "") if owner else "",
+                    member_email=doc["email"],
+                    removed_by=owner.get("email", "") if owner else "",
+                )
+            except Exception as log_err:
+                logger.warning("[TeamMgmt:remove] Activity log failed: %s", str(log_err))
+
+        _run_background(_log_removal())
 
         return {"success": True, "message": f"Team member {doc['email']} has been removed."}
 
