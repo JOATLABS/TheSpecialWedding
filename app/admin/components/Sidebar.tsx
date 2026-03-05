@@ -27,6 +27,7 @@ import {
   Image,
   Package,
   LayoutGrid,
+  Mail,
   type LucideIcon
 } from 'lucide-react';
 
@@ -63,6 +64,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Weddings', href: '/admin/weddings', icon: Heart },
   { name: 'Packages', href: '/admin/packages', icon: Package },
   { name: 'Guests', href: '/admin/guests', icon: Users },
+  { name: 'Inbox', href: '/admin/inbox', icon: Mail },
   { name: 'Gallery', href: '/admin/gallery/upload', icon: Image },
   { name: 'Budget', href: '/admin/budget', icon: Wallet },
   { name: 'Money', href: '/admin/money', icon: CreditCard },
@@ -117,7 +119,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
 
     // Team members get filtered navigation based on their permissions
     if (userProfile.is_team_member && userProfile.team_permissions) {
-      const allowedNavNames = new Set(['Dashboard', 'Calendar', 'Notifications', 'Support']);
+      const allowedNavNames = new Set(['Dashboard', 'Calendar', 'Notifications', 'Inbox', 'Support']);
       const perms = userProfile.team_permissions;
 
       for (const [permKey, navNames] of Object.entries(permissionNavMap)) {
