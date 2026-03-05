@@ -4,11 +4,61 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
 import os
 import logging
+import time
+import asyncio
 from datetime import datetime, timezone
 from app.core.database import mongo
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
+
+# ── Team member data cache (bounded, thread-safe, with invalidation) ──
+_TEAM_CACHE_TTL = 60  # seconds
+_TEAM_CACHE_MAX_SIZE = 500
+_team_cache: dict = {}
+_team_cache_lock = asyncio.Lock()
+
+
+async def _get_cached_team_data(user_id: str) -> Optional[dict]:
+    """Get cached team data if not expired (thread-safe)"""
+    async with _team_cache_lock:
+        entry = _team_cache.get(user_id)
+        if entry and time.time() - entry["ts"] < _TEAM_CACHE_TTL:
+            return entry["data"]
+        # Remove expired entry if it exists
+        if entry:
+            del _team_cache[user_id]
+        return None
+
+
+async def _set_team_cache(user_id: str, data: dict) -> None:
+    """Set cached team data with timestamp (thread-safe, bounded)"""
+    async with _team_cache_lock:
+        _team_cache[user_id] = {"data": data, "ts": time.time()}
+        # Evict oldest entries if over capacity
+        if len(_team_cache) > _TEAM_CACHE_MAX_SIZE:
+            sorted_keys = sorted(_team_cache.keys(), key=lambda k: _team_cache[k]["ts"])
+            # Remove oldest 20% to avoid frequent evictions
+            evict_count = max(1, len(sorted_keys) // 5)
+            for k in sorted_keys[:evict_count]:
+                del _team_cache[k]
+
+
+def invalidate_team_cache(user_id: str) -> None:
+    """Invalidate cache for a specific team member (called on permission changes).
+    Synchronous because it's called from non-async contexts too."""
+    _team_cache.pop(user_id, None)
+
+
+def invalidate_team_cache_by_owner(owner_id: str) -> None:
+    """Invalidate all cached entries for a given owner (e.g., on bulk changes).
+    Synchronous for simplicity."""
+    keys_to_remove = [
+        k for k, v in _team_cache.items()
+        if v.get("data", {}).get("owner_id") == owner_id
+    ]
+    for k in keys_to_remove:
+        _team_cache.pop(k, None)
 
 # Security scheme
 security = HTTPBearer(auto_error=True)
@@ -88,11 +138,11 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
             if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
                 user_data["_id"] = str(user_data["_id"])
             role = user.get("role", "wedding_planner")
-            # Check if account is active
+            # Check if account is active (early check, before team data hydration)
             if not user_data.get("is_active", True):
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Account is deactivated",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Account has been deactivated",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             # Check email verification for new accounts
@@ -134,19 +184,48 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
 
         auth_user = ExtendedAuthUser(email=email, role=role, user_data=user_data)
 
-        # ── Team member: hydrate permissions from team_members collection ──
+        # ── Team member: hydrate permissions from team_members collection (with cache) ──
         if role == "team_member" and user_data.get("team_member_id"):
             try:
-                team_doc = await mongo.db["team_members"].find_one({
-                    "_id": ObjectId(user_data["team_member_id"]),
-                    "status": "active",
-                })
+                team_member_id = user_data["team_member_id"]
+                # Try to get from cache first
+                cached_data = await _get_cached_team_data(team_member_id)
+                if cached_data:
+                    team_doc = cached_data
+                else:
+                    # Cache miss: query database
+                    team_doc = await mongo.db["team_members"].find_one({
+                        "_id": ObjectId(team_member_id),
+                        "status": "active",
+                    })
+                    if team_doc:
+                        # Store in cache for future requests
+                        await _set_team_cache(team_member_id, team_doc)
+
                 if team_doc:
                     auth_user.team_permissions = team_doc.get("custom_permissions", {})
                     auth_user.team_wedding_access = team_doc.get("wedding_access", "all")
                     auth_user.team_assigned_wedding_ids = team_doc.get("assigned_wedding_ids", [])
                     auth_user.team_owner_email = team_doc.get("owner_email")
                     auth_user.parent_planner_id = team_doc.get("owner_id")
+
+                    # Update last_active_at with throttle (only if > 5 minutes old)
+                    last_active = team_doc.get("last_active_at")
+                    should_update = not last_active
+                    if last_active:
+                        if isinstance(last_active, datetime) and last_active.tzinfo is None:
+                            last_active = last_active.replace(tzinfo=timezone.utc)
+                        should_update = (datetime.now(timezone.utc) - last_active).total_seconds() > 300
+                    if should_update:
+                        try:
+                            asyncio.create_task(
+                                mongo.db["team_members"].update_one(
+                                    {"_id": ObjectId(team_member_id)},
+                                    {"$set": {"last_active_at": datetime.now(timezone.utc)}}
+                                )
+                            )
+                        except Exception:
+                            pass  # Non-critical
                 else:
                     # Team membership revoked or deactivated
                     raise HTTPException(
@@ -400,6 +479,11 @@ def enforce_team_permission(user: ExtendedAuthUser, permission: str) -> None:
     Usage in endpoint:
         enforce_team_permission(current_user, "manage_guests")
     """
+    # Validate permission key to catch typos at development time
+    from app.models.team_member import ALL_PERMISSION_KEYS
+    if permission not in ALL_PERMISSION_KEYS:
+        raise ValueError(f"Invalid permission key: '{permission}'. Valid keys: {ALL_PERMISSION_KEYS}")
+
     if user.is_root_admin or user.is_wedding_planner:
         return
     if user.is_team_member:

@@ -7,15 +7,19 @@ update, deactivate, reactivate, remove, and permission queries.
 Prefix: /admin/team (registered in main.py)
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from typing import Optional, List
 from bson import ObjectId
+from bson.errors import InvalidId
+import time
+from collections import defaultdict
 
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     get_current_user_extended,
     require_wedding_planner,
 )
+from app.dependencies.feature_gates import require_team_management
 from app.models.team_member import (
     InviteTeamMemberRequest,
     UpdateTeamMemberRequest,
@@ -31,6 +35,68 @@ router = APIRouter()
 team_service = TeamManagementService()
 
 
+# ─── H7: ObjectId Validation Helper ────────────────────────────────────────
+
+def validate_object_id(id_str: str, field_name: str = "ID") -> str:
+    """Validate that a string is a valid MongoDB ObjectId."""
+    try:
+        ObjectId(id_str)
+        return id_str
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} format: {id_str}")
+
+
+# ─── H8: Simple In-Memory Rate Limiter ────────────────────────────────────
+
+class SimpleRateLimiter:
+    """In-memory rate limiter with automatic stale entry cleanup."""
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60, max_keys: int = 10000):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.max_keys = max_keys
+        self._requests: dict = defaultdict(list)
+        self._last_cleanup = time.time()
+        self._cleanup_interval = 300  # Full cleanup every 5 minutes
+
+    def check(self, key: str) -> bool:
+        """Check if a request is within the rate limit."""
+        now = time.time()
+
+        # Periodic full cleanup of stale keys
+        if now - self._last_cleanup > self._cleanup_interval:
+            self._full_cleanup(now)
+
+        # Clean this key's old timestamps
+        self._requests[key] = [t for t in self._requests[key] if now - t < self.window_seconds]
+
+        if len(self._requests[key]) >= self.max_requests:
+            return False
+        self._requests[key].append(now)
+        return True
+
+    def _full_cleanup(self, now: float) -> None:
+        """Remove all stale entries and enforce max_keys limit."""
+        self._last_cleanup = now
+        cutoff = now - self.window_seconds
+        # Remove keys with no recent requests
+        stale_keys = [k for k, timestamps in self._requests.items()
+                      if not timestamps or timestamps[-1] < cutoff]
+        for k in stale_keys:
+            del self._requests[k]
+        # If still over limit, remove oldest entries
+        if len(self._requests) > self.max_keys:
+            sorted_keys = sorted(
+                self._requests.keys(),
+                key=lambda k: self._requests[k][-1] if self._requests[k] else 0
+            )
+            for k in sorted_keys[:len(self._requests) - self.max_keys]:
+                del self._requests[k]
+
+
+_invite_limiter = SimpleRateLimiter(max_requests=10, window_seconds=60)
+_accept_limiter = SimpleRateLimiter(max_requests=5, window_seconds=60)
+
+
 # ─── Helper: resolve owner_id from the current user ──────────────────────
 
 def _get_owner_id(user: ExtendedAuthUser) -> str:
@@ -43,7 +109,7 @@ def _get_owner_id(user: ExtendedAuthUser) -> str:
 @router.post("/team/invite", tags=["Team Management"])
 async def invite_team_member(
     body: InviteTeamMemberRequest,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """
     Invite a new team member. Sends an invitation email with a setup link.
@@ -64,19 +130,22 @@ async def invite_team_member(
 
 @router.get("/team/members", tags=["Team Management"])
 async def list_team_members(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
+    skip: int = Query(0, ge=0, le=10000),
+    limit: int = Query(50, ge=1, le=100),
 ):
-    """List all team members for the authenticated planner"""
+    """List team members for the authenticated planner (paginated)"""
     owner_id = _get_owner_id(current_user)
-    return await team_service.list_team_members(owner_id)
+    return await team_service.list_team_members(owner_id, skip=skip, limit=limit)
 
 
 @router.get("/team/members/{team_member_id}", tags=["Team Management"])
 async def get_team_member(
     team_member_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """Get details of a single team member"""
+    validate_object_id(team_member_id, "team_member_id")
     owner_id = _get_owner_id(current_user)
     return await team_service.get_team_member(owner_id, team_member_id)
 
@@ -85,9 +154,10 @@ async def get_team_member(
 async def update_team_member(
     team_member_id: str,
     body: UpdateTeamMemberRequest,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """Update a team member's role, permissions, or wedding access"""
+    validate_object_id(team_member_id, "team_member_id")
     owner_id = _get_owner_id(current_user)
     updates = body.model_dump(exclude_none=True)
     # Convert enums to strings
@@ -99,15 +169,16 @@ async def update_team_member(
             if hasattr(updates["wedding_access"], "value")
             else updates["wedding_access"]
         )
-    return await team_service.update_team_member(owner_id, team_member_id, updates)
+    return await team_service.update_team_member(owner_id, current_user.email, team_member_id, updates)
 
 
 @router.post("/team/members/{team_member_id}/resend-invite", tags=["Team Management"])
 async def resend_invite(
     team_member_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """Resend an invitation email (regenerates the token)"""
+    validate_object_id(team_member_id, "team_member_id")
     owner_id = _get_owner_id(current_user)
     return await team_service.resend_invite(owner_id, team_member_id)
 
@@ -115,9 +186,10 @@ async def resend_invite(
 @router.post("/team/members/{team_member_id}/deactivate", tags=["Team Management"])
 async def deactivate_team_member(
     team_member_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """Deactivate a team member (soft-delete; blocks login)"""
+    validate_object_id(team_member_id, "team_member_id")
     owner_id = _get_owner_id(current_user)
     return await team_service.deactivate_team_member(owner_id, team_member_id)
 
@@ -125,9 +197,10 @@ async def deactivate_team_member(
 @router.post("/team/members/{team_member_id}/reactivate", tags=["Team Management"])
 async def reactivate_team_member(
     team_member_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """Reactivate a previously deactivated team member"""
+    validate_object_id(team_member_id, "team_member_id")
     owner_id = _get_owner_id(current_user)
     return await team_service.reactivate_team_member(
         owner_id, current_user.email, team_member_id
@@ -137,16 +210,17 @@ async def reactivate_team_member(
 @router.delete("/team/members/{team_member_id}", tags=["Team Management"])
 async def remove_team_member(
     team_member_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """Permanently remove a team member (frees up a seat)"""
+    validate_object_id(team_member_id, "team_member_id")
     owner_id = _get_owner_id(current_user)
     return await team_service.remove_team_member(owner_id, team_member_id)
 
 
 @router.get("/team/seats", tags=["Team Management"])
 async def get_seat_usage(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_team_management),
 ):
     """Get current seat usage vs. plan limit"""
     owner_id = _get_owner_id(current_user)
@@ -156,19 +230,25 @@ async def get_seat_usage(
 # ─── Public Endpoints (no auth) ──────────────────────────────────────────
 
 @router.get("/team/invite-info/{token}", tags=["Team Management"])
-async def get_invite_info(token: str):
+async def get_invite_info(token: str, request: Request):
     """
     Public: get invite details for the accept page.
     Shows company name, role, and permissions without requiring login.
     """
+    client_ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    if not _invite_limiter.check(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
     return await team_service.get_invite_info(token)
 
 
 @router.post("/team/accept-invite", tags=["Team Management"])
-async def accept_invite(body: AcceptInviteRequest):
+async def accept_invite(body: AcceptInviteRequest, request: Request):
     """
     Public: accept an invitation — creates a user account and activates the member.
     """
+    client_ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    if not _accept_limiter.check(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
     return await team_service.accept_invite(
         token=body.token,
         first_name=body.first_name,

@@ -8,14 +8,12 @@ import { Loader2, Eye, EyeOff, Shield, CheckCircle2, AlertCircle } from 'lucide-
 import NextImage from 'next/image';
 
 interface InviteInfo {
-  owner_company_name: string;
-  owner_email: string;
-  invitee_email: string;
+  email: string;
   role: string;
   permissions: Record<string, boolean>;
-  wedding_access: string;
-  assigned_wedding_names?: string[];
-  expires_at: string;
+  company_name: string | null;
+  planner_name: string | null;
+  is_expired: boolean;
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -219,7 +217,7 @@ export default function AcceptInvitePage() {
           {/* Invite header */}
           <div className="text-center mb-6">
             <p className="text-slate-200 mb-2">
-              <span className="font-semibold">{inviteInfo?.owner_company_name || inviteInfo?.owner_email}</span>{' '}
+              <span className="font-semibold">{inviteInfo?.company_name || inviteInfo?.planner_name || 'A wedding planner'}</span>{' '}
               invited you as
             </p>
             <span
@@ -250,7 +248,7 @@ export default function AcceptInvitePage() {
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} data-testid="accept-form">
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">First Name</label>
@@ -259,6 +257,7 @@ export default function AcceptInvitePage() {
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="First name"
+                  data-testid="first-name"
                   className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors"
                   required
                 />
@@ -270,6 +269,7 @@ export default function AcceptInvitePage() {
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Last name"
+                  data-testid="last-name"
                   className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors"
                   required
                 />
@@ -284,6 +284,7 @@ export default function AcceptInvitePage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min 8 characters"
+                  data-testid="password-input"
                   className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors pr-10"
                   required
                   minLength={8}
@@ -306,6 +307,7 @@ export default function AcceptInvitePage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter password"
+                  data-testid="confirm-password"
                   className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors pr-10"
                   required
                   minLength={8}
@@ -323,6 +325,7 @@ export default function AcceptInvitePage() {
             <button
               type="submit"
               disabled={submitting}
+              data-testid="accept-submit"
               className="w-full bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 font-semibold py-3 rounded-xl text-sm hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {submitting ? (

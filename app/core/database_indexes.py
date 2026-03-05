@@ -859,6 +859,7 @@ async def create_team_member_indexes():
     2. Fast invite token lookup (accept flow)
     3. User ID lookup (auth middleware — resolve team permissions)
     4. Prevent duplicate invites per planner
+    5. Auth hydration: user_id + status for get_member_permissions
     """
     collection = mongo.db["team_members"]
     try:
@@ -894,7 +895,15 @@ async def create_team_member_indexes():
         )
         logger.info("Created index: idx_owner_status_created")
 
-        # 5. Parent planner lookup on users collection (for team queries)
+        # 5. Compound index for auth hydration query pattern (user_id + status)
+        await collection.create_index(
+            [("user_id", ASCENDING), ("status", ASCENDING)],
+            name="idx_user_id_status",
+            sparse=True
+        )
+        logger.info("Created index: idx_user_id_status")
+
+        # 6. Parent planner lookup on users collection (for team queries)
         users_collection = mongo.get_users_collection()
         await users_collection.create_index(
             [("parent_planner_id", ASCENDING)],

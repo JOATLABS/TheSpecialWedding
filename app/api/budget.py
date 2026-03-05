@@ -166,6 +166,7 @@ async def update_budget_category(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Update an existing budget category"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Verify wedding access via category lookup
         category = await budget_service.get_budget_category(category_id)
@@ -194,6 +195,7 @@ async def delete_budget_category(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Delete a budget category"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Verify wedding access via category lookup
         category = await budget_service.get_budget_category(category_id)
@@ -244,6 +246,7 @@ async def create_vendor_quote(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Create a new vendor quote"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -286,6 +289,7 @@ async def update_quote_status(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Update vendor quote status (accept/reject/pending)"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         if status not in ["pending", "accepted", "rejected", "expired"]:
             raise HTTPException(status_code=400, detail="Invalid status")
@@ -316,6 +320,7 @@ async def rate_vendor_quote(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Rate a vendor quote (1-5 stars)"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Verify wedding access via quote lookup
         quote = await budget_service.get_vendor_quote(quote_id)
@@ -405,6 +410,7 @@ async def record_payment(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Record a payment for a budget category"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         category = await budget_service.get_budget_category(category_id)
         if not category:
