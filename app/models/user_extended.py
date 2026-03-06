@@ -66,6 +66,10 @@ class UserModel(BaseModel):
         description="Planner's contract preferences (token_expiry_days, deposit_due_days, etc.)"
     )
 
+    # Team member fields (if role is team_member)
+    parent_planner_id: Optional[str] = Field(None, description="Owner planner's user ID (set when role=team_member)")
+    team_member_id: Optional[str] = Field(None, description="Reference to team_members collection doc ID")
+
     # Vendor specific fields (if role is vendor)
     assigned_wedding_ids: List[str] = Field(default_factory=list, description="Weddings this vendor has access to")
     service_type: Optional[str] = Field(None, description="Type of service for vendors")

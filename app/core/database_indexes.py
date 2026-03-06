@@ -852,6 +852,75 @@ async def create_invitation_indexes():
         return False
 
 
+async def create_team_member_indexes():
+    """
+    Create indexes for team_members collection
+
+    Key queries:
+    1. List team members by owner (planner's team page)
+    2. Fast invite token lookup (accept flow)
+    3. User ID lookup (auth middleware — resolve team permissions)
+    4. Prevent duplicate invites per planner
+    5. Auth hydration: user_id + status for get_member_permissions
+    """
+    collection = mongo.db["team_members"]
+    try:
+        # 1. Unique constraint: one invite per email per planner
+        await collection.create_index(
+            [("owner_id", ASCENDING), ("email", ASCENDING)],
+            name="idx_owner_email_unique",
+            unique=True,
+        )
+        logger.info("Created index: idx_owner_email_unique")
+
+        # 2. Invite token lookup (public accept endpoint)
+        await collection.create_index(
+            [("invite_token", ASCENDING)],
+            name="idx_invite_token",
+            unique=True,
+            sparse=True,  # Allow null after token is consumed
+        )
+        logger.info("Created index: idx_invite_token")
+
+        # 3. User ID lookup (auth middleware loads team data on every request)
+        await collection.create_index(
+            [("user_id", ASCENDING)],
+            name="idx_team_member_user_id",
+            sparse=True,  # Only populated once invite is accepted
+        )
+        logger.info("Created index: idx_team_member_user_id")
+
+        # 4. Owner listing sorted by status + created (team management page)
+        await collection.create_index(
+            [("owner_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_owner_status_created",
+        )
+        logger.info("Created index: idx_owner_status_created")
+
+        # 5. Compound index for auth hydration query pattern (user_id + status)
+        await collection.create_index(
+            [("user_id", ASCENDING), ("status", ASCENDING)],
+            name="idx_user_id_status",
+            sparse=True
+        )
+        logger.info("Created index: idx_user_id_status")
+
+        # 6. Parent planner lookup on users collection (for team queries)
+        users_collection = mongo.get_users_collection()
+        await users_collection.create_index(
+            [("parent_planner_id", ASCENDING)],
+            name="idx_parent_planner_id",
+            sparse=True,  # Only team_member users have this field
+        )
+        logger.info("Created index: idx_parent_planner_id (users collection)")
+
+        logger.info("All team_member indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating team_member indexes: {str(e)}")
+        return False
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -872,6 +941,7 @@ async def create_all_indexes():
         await create_errors_indexes()
         await create_kb_articles_indexes()  # Knowledge Base articles
         await create_invitation_indexes()  # User invitation cleanup
+        await create_team_member_indexes()  # Team management
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")
