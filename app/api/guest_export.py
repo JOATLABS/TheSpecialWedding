@@ -8,7 +8,7 @@ Endpoints for exporting guest data:
 """
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from fastapi.responses import StreamingResponse
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.services.guest_export_service import guest_export_service
 from app.core.database import mongo
 from bson import ObjectId

@@ -76,6 +76,8 @@ from app.api.guest_export import router as guest_export_router
 from app.api.web_push import router as web_push_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.vendor_contract_public import router as vendor_contract_public_router
+from app.api.team_management import router as team_management_router
+from app.api.inbound_emails import router as inbound_emails_router
 
 # Setup logging
 logging.basicConfig(
@@ -348,6 +350,8 @@ admin_routers = [
     (guest_export_router, "Guest Export"),
     (web_push_router, "Web Push"),
     (knowledge_base_router, "Knowledge Base"),
+    (team_management_router, "Team Management"),
+    (inbound_emails_router, "Inbound Emails"),
 ]
 
 for router, tag in admin_routers:
