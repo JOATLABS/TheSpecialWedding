@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from typing import List, Optional
 from datetime import datetime
 
@@ -112,6 +112,10 @@ class WeddingModel(BaseModel):
     meter_pending_reason: Optional[str] = Field(None, description="Reason meter event is pending")
     meter_reversed_period: Optional[str] = Field(None, description="YYYY-MM period of last meter reversal")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @field_serializer('last_billed_at', 'created_at', when_used='json')
+    def serialize_datetimes(self, value: datetime) -> Optional[str]:
+        return value.isoformat() if value else None
 
     class Config:
         populate_by_name = True

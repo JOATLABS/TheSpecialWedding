@@ -1644,6 +1644,25 @@ class ContractService:
                 if hasattr(serialized[date_field], "isoformat"):
                     serialized[date_field] = serialized[date_field].isoformat()
 
+        # Serialize nested datetime fields in sections
+        if "sections" in serialized and isinstance(serialized["sections"], list):
+            for section in serialized["sections"]:
+                if isinstance(section, dict):
+                    for date_field in ["created_at", "updated_at"]:
+                        if date_field in section and section[date_field]:
+                            if hasattr(section[date_field], "isoformat"):
+                                section[date_field] = section[date_field].isoformat()
+
+        # Serialize nested datetime fields in scheduled payments/milestones
+        if "scheduled_payments" in serialized and isinstance(serialized["scheduled_payments"], list):
+            for payment in serialized["scheduled_payments"]:
+                if isinstance(payment, dict):
+                    for date_field in ["due_date", "last_attempt_at", "next_retry_at",
+                                     "paid_at", "reminder_sent_at", "created_at", "updated_at"]:
+                        if date_field in payment and payment[date_field]:
+                            if hasattr(payment[date_field], "isoformat"):
+                                payment[date_field] = payment[date_field].isoformat()
+
         return serialized
 
     def _serialize_payment(self, payment: Dict) -> Optional[Dict]:

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
-from typing import List
+from typing import List, Dict, Any
 from datetime import datetime, timezone
 from bson import ObjectId
 import secrets
@@ -9,9 +9,25 @@ import string
 from app.services.email_service_resend import ResendEmailService
 import os
 import logging
+from pydantic import BaseModel, Field
 
 router = APIRouter()
 email_service = ResendEmailService()
+
+
+class VendorFormSubmission(BaseModel):
+    """Pydantic model for vendor form submission data"""
+    submission_data: Dict[str, Any] = Field(..., description="Form field responses keyed by field ID")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "submission_data": {
+                    "vendor_experience": "10 years",
+                    "pricing_info": "Starting at $2000"
+                }
+            }
+        }
 
 
 class VendorFormService:
@@ -236,7 +252,7 @@ async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends
 
 # Public endpoint for vendors to access forms
 @router.get("/vendor-form/{form_id}/public", tags=["Public Vendor Form"])
-async def get_vendor_form_public(form_id: str, token: str):
+async def get_vendor_form_public(form_id: str, token: str = Query(..., description="Access token for vendor form")):
     """Get vendor form for public access (no auth required)"""
     try:
         form = await vendor_service.vendor_forms_collection.find_one({
@@ -263,15 +279,24 @@ async def get_vendor_form_public(form_id: str, token: str):
                 "date": wedding["date"] if wedding else "Unknown"
             }
         }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logging.warning(f"Validation error getting public vendor form: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logging.error(f"Error getting public vendor form: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to load form")
 
 
 @router.post("/vendor-form/{form_id}/submit", tags=["Public Vendor Form"])
-async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
+async def submit_vendor_form(form_id: str, token: str = Query(..., description="Access token for vendor form"), submission: VendorFormSubmission = None):
     """Submit vendor form (no auth required)"""
     try:
+        # Validate submission data
+        if not submission:
+            raise ValueError("Submission data is required")
+        submission_data = submission.submission_data
         # Verify form and token
         form = await vendor_service.vendor_forms_collection.find_one({
             "_id": ObjectId(form_id),
@@ -285,7 +310,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
             raise HTTPException(status_code=400, detail="Form has already been submitted")
 
         # Save submission
-        submission = {
+        submission_record = {
             "form_id": form_id,
             "vendor_email": form["vendor_email"],
             "vendor_name": form["vendor_name"],
@@ -295,7 +320,7 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
             "status": "submitted"
         }
 
-        result = await vendor_service.vendor_submissions_collection.insert_one(submission)
+        result = await vendor_service.vendor_submissions_collection.insert_one(submission_record)
 
         # Update form status
         await vendor_service.vendor_forms_collection.update_one(
@@ -377,6 +402,9 @@ async def submit_vendor_form(form_id: str, submission_data: dict, token: str):
 
     except HTTPException:
         raise
+    except ValueError as e:
+        logging.warning(f"Validation error submitting vendor form: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logging.error(f"Error submitting vendor form: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to submit form")

@@ -38,8 +38,15 @@ class CheckInService:
         guest_id = str(guest["_id"])
         record = await self.checkin_collection.find_one({"guest_id": guest_id})
 
+        checked_in_at = None
+        if record and record.get("checked_in_at"):
+            checked_in_at = record["checked_in_at"]
+            # Serialize datetime to ISO format if it's a datetime object
+            if hasattr(checked_in_at, "isoformat"):
+                checked_in_at = checked_in_at.isoformat()
+
         return {
             "checked_in": bool(record),
-            "checked_in_at": record.get("checked_in_at") if record else None,
+            "checked_in_at": checked_in_at,
             "by": record.get("by") if record else None
         }

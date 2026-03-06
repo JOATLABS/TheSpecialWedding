@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, field_serializer
 from typing import Optional
 from datetime import datetime
 import re
@@ -47,6 +47,15 @@ class GuestModel(BaseModel):
         if value and not re.match(r"^\+?\d{10,15}$", value):
             raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
+
+    @field_serializer(
+        'sms_opt_in_date', 'sms_opt_out_date', 'phone_status_updated_at',
+        'email_opt_in_date', 'email_opt_out_date', 'invite_sent_date',
+        'created_at', 'updated_at',
+        when_used='json'
+    )
+    def serialize_datetimes(self, value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
 
     class Config:
         json_schema_extra = {
