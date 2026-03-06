@@ -12,6 +12,8 @@ interface PaymentHistoryPanelProps {
   isLoading: boolean;
   error?: string;
   onRefresh?: () => void;
+  onEditPayment?: (payment: PaymentRecord) => void;
+  onDeletePayment?: (payment: PaymentRecord) => void;
 }
 
 type PaymentMethodFilter = 'all' | PaymentRecord['payment_method'];
@@ -43,6 +45,8 @@ export function PaymentHistoryPanel({
   isLoading,
   error,
   onRefresh,
+  onEditPayment,
+  onDeletePayment,
 }: PaymentHistoryPanelProps) {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [methodFilter, setMethodFilter] = useState<PaymentMethodFilter>('all');
@@ -295,6 +299,29 @@ export function PaymentHistoryPanel({
                         >
                           View receipt
                         </a>
+                      )}
+
+                      {(onEditPayment || onDeletePayment) && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-white/30 dark:border-slate-600">
+                          {onEditPayment && (
+                            <button
+                              type="button"
+                              onClick={() => onEditPayment(payment)}
+                              className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {onDeletePayment && (
+                            <button
+                              type="button"
+                              onClick={() => onDeletePayment(payment)}
+                              className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </li>

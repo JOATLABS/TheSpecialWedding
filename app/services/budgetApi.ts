@@ -301,7 +301,45 @@ class BudgetApiService {
 
     const payload = await response.json();
     return Array.isArray(payload.payments) ? payload.payments as PaymentRecord[] : [];
-}
+  }
+
+  async updatePayment(
+    token: string,
+    paymentId: string,
+    data: RecordPaymentRequest
+  ): Promise<PaymentRecord> {
+    const response = await fetch(
+      `${BASE_URL}/admin/budget/payment/${paymentId}`,
+      {
+        method: 'PUT',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data)
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to update payment');
+    }
+
+    const payload = await response.json();
+    return payload.payment as PaymentRecord;
+  }
+
+  async deletePayment(token: string, paymentId: string): Promise<void> {
+    const response = await fetch(
+      `${BASE_URL}/admin/budget/payment/${paymentId}`,
+      {
+        method: 'DELETE',
+        headers: this.getHeaders(token)
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to delete payment');
+    }
+  }
 
   private normaliseTemplate(template: unknown): BudgetTemplate {
     if (!template || typeof template !== 'object') {

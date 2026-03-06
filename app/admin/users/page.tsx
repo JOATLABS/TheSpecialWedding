@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -234,7 +235,10 @@ export default function AdminUsersPage() {
         },
       });
 
-      if (!response.ok) return;
+      if (!response.ok) {
+        toast.error('Failed to load invitations');
+        return;
+      }
 
       const data = await response.json();
       setPendingInvitations(data.invitations || []);
@@ -255,7 +259,10 @@ export default function AdminUsersPage() {
         },
       });
 
-      if (!response.ok) return;
+      if (!response.ok) {
+        toast.error('Failed to load invitations');
+        return;
+      }
 
       const data = await response.json();
       setInvitationStats(data);

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -106,14 +107,15 @@ export default function VendorSubmissionPage() {
  body: JSON.stringify({ status: newStatus }),
  });
 
- if (response.ok) {
- setSubmission(prev => prev ? { ...prev, status: newStatus } : null);
- alert(`Submission ${newStatus} successfully`);
- } else {
- throw new Error('Failed to update status');
+ if (!response.ok) {
+ toast.error('Failed to update submission status');
+ return;
  }
+
+ setSubmission(prev => prev ? { ...prev, status: newStatus } : null);
+ toast.success(`Submission ${newStatus} successfully`);
  } catch (err) {
- alert('Failed to update status');
+ toast.error('Failed to update submission status');
  }
  };
 

@@ -433,7 +433,6 @@ export default function BudgetDashboard() {
       const message = err.message || 'Failed to record payment';
       setPaymentModalError(message);
       toast.error(message);
-      throw new Error(message);
     } finally {
       setIsRecordingPayment(false);
     }
