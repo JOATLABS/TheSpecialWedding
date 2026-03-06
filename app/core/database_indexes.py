@@ -685,12 +685,24 @@ async def create_errors_indexes():
     """
     collection = mongo.db["errors"]
     try:
-        # 1. Timestamp sorting
+        # Migration: Drop old conflicting indexes if they exist
+        for old_index_name in ["idx_errors_timestamp", "idx_errors_ttl"]:
+            try:
+                await collection.drop_index(old_index_name)
+                logger.info(f"Dropped old conflicting index: {old_index_name}")
+            except Exception:
+                pass  # Index doesn't exist, that's fine
+
+        # 1. TTL index on timestamp - also serves as the timestamp sorting index
+        # Auto-delete ALL errors after 30 days
+        # Note: TTL indexes must use ASCENDING direction
+        # For descending sort queries, MongoDB can traverse this index in reverse
         await collection.create_index(
-            [("timestamp", DESCENDING)],
-            name="idx_errors_timestamp"
+            [("timestamp", ASCENDING)],
+            name="idx_errors_timestamp_ttl",
+            expireAfterSeconds=30 * 24 * 60 * 60  # 30 days
         )
-        logger.info("Created index: idx_errors_timestamp")
+        logger.info("Created TTL index: idx_errors_timestamp_ttl (30 days)")
 
         # 2. Error ID lookup
         await collection.create_index(
@@ -714,16 +726,6 @@ async def create_errors_indexes():
             name="idx_errors_severity_timestamp"
         )
         logger.info("Created index: idx_errors_severity_timestamp")
-
-        # 5. TTL index - Auto-delete after 30 days
-        # Note: This will delete ALL errors (acknowledged or not) after 30 days
-        # If you only want to delete acknowledged errors, use the manual cleanup endpoint
-        await collection.create_index(
-            [("timestamp", ASCENDING)],
-            name="idx_errors_ttl",
-            expireAfterSeconds=30 * 24 * 60 * 60  # 30 days
-        )
-        logger.info("Created TTL index: idx_errors_ttl (30 days)")
 
         logger.info("All errors indexes created successfully")
         return True

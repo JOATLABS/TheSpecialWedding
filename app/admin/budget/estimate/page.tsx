@@ -48,6 +48,7 @@ export default function CostEstimationPage() {
   const { token } = useAdmin();
   const [loading, setLoading] = useState(false);
   const [estimation, setEstimation] = useState<CostEstimation | null>(null);
+  const [error, setError] = useState<string | null>(null);
   // Form state
   const [formData, setFormData] = useState({
     wedding_type: 'traditional',
@@ -74,6 +75,7 @@ export default function CostEstimationPage() {
     }
 
     setLoading(true);
+    setError(null);
     try {
       const estimationData = await budgetApi.getCostEstimate(
         token,
@@ -84,36 +86,11 @@ export default function CostEstimationPage() {
       setEstimation(estimationData);
       toast.success('Cost estimation generated successfully');
     } catch (err: any) {
-      toast.error(err.message || 'Failed to generate cost estimation');
+      const errorMessage = err.message || 'Failed to generate cost estimation';
+      toast.error(errorMessage);
       console.error('Estimation error:', err);
-      // Fallback estimation for demo purposes
-      setEstimation({
-        total_estimated_cost: formData.guest_count * 150 + Math.random() * 10000,
-        category_estimates: {
-          'Venue & Catering': { amount: formData.guest_count * 75, percentage: 45, notes: 'Based on guest count and location' },
-          'Photography & Videography': { amount: 3500, percentage: 12, notes: 'Professional wedding photography' },
-          'Music & Entertainment': { amount: 2000, percentage: 8, notes: 'DJ and sound system' },
-          'Flowers & Decorations': { amount: 2500, percentage: 10, notes: 'Bridal bouquet, centerpieces, ceremony decor' },
-          'Attire & Beauty': { amount: 1500, percentage: 6, notes: 'Wedding dress, suit, hair & makeup' },
-          'Transportation': { amount: 800, percentage: 3, notes: 'Wedding party transportation' },
-          'Stationery & Favors': { amount: 600, percentage: 2, notes: 'Invitations and guest favors' },
-          'Miscellaneous': { amount: 1200, percentage: 5, notes: 'Unexpected costs and extras' }
-        },
-        factors_considered: [
-          'Guest count',
-          'Wedding type',
-          'Location',
-          'Seasonal pricing',
-          'Day of week'
-        ],
-        confidence_level: 'moderate',
-        recommendations: [
-          'Consider weekday weddings for 15-20% savings',
-          'Book vendors 9-12 months in advance for better rates',
-          'Allocate 10% contingency for unexpected costs',
-          'Compare multiple vendor quotes for best pricing'
-        ]
-      });
+      setError(errorMessage);
+      setEstimation(null);
     } finally {
       setLoading(false);
     }
@@ -408,6 +385,25 @@ export default function CostEstimationPage() {
               <div className="text-center">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose mb-4"></div>
                 <p className="text-gray-600 dark:text-gray-400">Generating your cost estimate...</p>
+              </div>
+            </Card>
+          )}
+
+          {error && (
+            <Card className="p-6 border-red-200 bg-red-50 dark:bg-red-950">
+              <div className="text-center">
+                <div className="text-red-600 dark:text-red-400 mb-2">
+                  <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4v2m0-12a9 9 0 110 18 9 9 0 010-18z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
+                  Unable to Generate Estimate
+                </h3>
+                <p className="text-red-800 dark:text-red-300 mb-4">{error}</p>
+                <p className="text-sm text-red-700 dark:text-red-400">
+                  Please try again or contact support if the problem persists.
+                </p>
               </div>
             </Card>
           )}

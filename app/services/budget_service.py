@@ -144,7 +144,7 @@ class BudgetService:
                 "summary": summary.model_dump(),
                 "categories": serialized_categories,
                 "alerts": serialized_alerts,
-                "last_updated": datetime.now(timezone.utc)
+                "last_updated": datetime.now(timezone.utc).isoformat()
             }
 
         except Exception as e:
@@ -649,7 +649,10 @@ class BudgetService:
             await self._check_budget_alerts(category["wedding_id"])
 
             logger.info(f"Recorded payment of ${payment.amount} for category {category_id}")
-            return payment.model_dump()
+            payment_dict = payment.model_dump()
+            if "id" in payment_dict and payment_dict["id"] is not None:
+                payment_dict["id"] = str(payment_dict["id"])
+            return payment_dict
 
         except Exception as e:
             logger.error(f"Failed to record payment: {str(e)}")
@@ -673,10 +676,102 @@ class BudgetService:
             for payment in payments:
                 payment["category_name"] = category_names.get(payment["category_id"], "Unknown")
 
+            # Serialize ObjectId fields and datetime fields for JSON response
+            for payment in payments:
+                if "_id" in payment:
+                    payment["id"] = str(payment["_id"])
+                    payment["_id"] = str(payment["_id"])
+                # Serialize datetime fields
+                if "payment_date" in payment and hasattr(payment["payment_date"], "isoformat"):
+                    payment["payment_date"] = payment["payment_date"].isoformat()
+                if "created_at" in payment and hasattr(payment["created_at"], "isoformat"):
+                    payment["created_at"] = payment["created_at"].isoformat()
+
             return payments
 
         except Exception as e:
             logger.error(f"Failed to get payment history: {str(e)}")
+            raise
+
+    async def get_payment(self, payment_id: str) -> Optional[Dict]:
+        """Fetch a single payment by ID"""
+        try:
+            payment = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            if not payment:
+                return None
+            payment["id"] = str(payment["_id"])
+            payment["_id"] = str(payment["_id"])
+            return payment
+        except Exception as e:
+            logger.error(f"Failed to fetch payment: {str(e)}")
+            raise
+
+    async def update_payment(self, payment_id: str, update_data: Dict) -> Dict:
+        """Update a payment record and adjust category spending"""
+        try:
+            original = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            if not original:
+                raise ValueError("Payment not found")
+
+            category_id = original["category_id"]
+            amount_diff = 0
+            if "amount" in update_data:
+                amount_diff = update_data["amount"] - original.get("amount", 0)
+
+            update_data["updated_at"] = datetime.now(timezone.utc)
+
+            await self.payment_records.update_one(
+                {"_id": PyObjectId(payment_id)},
+                {"$set": update_data}
+            )
+
+            if amount_diff != 0:
+                await self.budget_categories.update_one(
+                    {"_id": PyObjectId(category_id)},
+                    {"$inc": {"actual_spent": amount_diff}}
+                )
+                category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+                if category:
+                    await self._check_budget_alerts(category["wedding_id"])
+
+            updated = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            updated["id"] = str(updated["_id"])
+            updated["_id"] = str(updated["_id"])
+            return updated
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to update payment: {str(e)}")
+            raise
+
+    async def delete_payment(self, payment_id: str) -> bool:
+        """Delete a payment and adjust category spending"""
+        try:
+            payment = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            if not payment:
+                raise ValueError("Payment not found")
+
+            category_id = payment["category_id"]
+            amount = payment.get("amount", 0)
+
+            result = await self.payment_records.delete_one({"_id": PyObjectId(payment_id)})
+            if result.deleted_count == 0:
+                raise ValueError("Failed to delete payment")
+
+            await self.budget_categories.update_one(
+                {"_id": PyObjectId(category_id)},
+                {"$inc": {"actual_spent": -amount}}
+            )
+
+            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            if category:
+                await self._check_budget_alerts(category["wedding_id"])
+
+            return True
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete payment: {str(e)}")
             raise
 
     # ===== FINANCIAL REPORTING =====

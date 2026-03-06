@@ -220,12 +220,23 @@ class VendorService:
             result = await self.vendor_profiles.insert_one(vendor)
             vendor["_id"] = str(result.inserted_id)
 
+            # Serialize datetime objects for JSON response
+            if isinstance(vendor.get("created_at"), datetime):
+                vendor["created_at"] = vendor["created_at"].isoformat()
+            if isinstance(vendor.get("updated_at"), datetime):
+                vendor["updated_at"] = vendor["updated_at"].isoformat()
+
             logger.info(f"Created vendor profile: {vendor['business_name']} by {created_by}")
             return vendor
 
+        except HTTPException:
+            raise
+        except ValueError as e:
+            logger.warning(f"Invalid input creating vendor profile: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Error creating vendor profile: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to create vendor: {str(e)}")
+            logger.error(f"Failed to create vendor profile: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to create vendor")
 
     async def get_vendor_profiles(
         self,
@@ -260,11 +271,21 @@ class VendorService:
 
             for v in vendors:
                 v["_id"] = str(v["_id"])
+                # Serialize datetime objects for JSON response
+                if isinstance(v.get("created_at"), datetime):
+                    v["created_at"] = v["created_at"].isoformat()
+                if isinstance(v.get("updated_at"), datetime):
+                    v["updated_at"] = v["updated_at"].isoformat()
 
             return vendors
 
+        except HTTPException:
+            raise
+        except ValueError as e:
+            logger.warning(f"Invalid filter parameters: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Error fetching vendor profiles: {str(e)}")
+            logger.error(f"Failed to fetch vendor profiles: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch vendors")
 
     async def get_vendor_profile(self, vendor_id: str, created_by: str) -> dict:
@@ -279,6 +300,11 @@ class VendorService:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
             vendor["_id"] = str(vendor["_id"])
+            # Serialize datetime objects for JSON response
+            if isinstance(vendor.get("created_at"), datetime):
+                vendor["created_at"] = vendor["created_at"].isoformat()
+            if isinstance(vendor.get("updated_at"), datetime):
+                vendor["updated_at"] = vendor["updated_at"].isoformat()
             return vendor
 
         except HTTPException:
@@ -304,12 +330,20 @@ class VendorService:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
             result["_id"] = str(result["_id"])
+            # Serialize datetime objects for JSON response
+            if isinstance(result.get("created_at"), datetime):
+                result["created_at"] = result["created_at"].isoformat()
+            if isinstance(result.get("updated_at"), datetime):
+                result["updated_at"] = result["updated_at"].isoformat()
             return result
 
         except HTTPException:
             raise
+        except ValueError as e:
+            logger.warning(f"Invalid update data: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Error updating vendor profile: {str(e)}")
+            logger.error(f"Failed to update vendor profile: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to update vendor")
 
     async def delete_vendor_profile(self, vendor_id: str, created_by: str) -> dict:
@@ -830,8 +864,13 @@ class VendorService:
 
             return contracts
 
+        except HTTPException:
+            raise
+        except ValueError as e:
+            logger.warning(f"Invalid filter parameters: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Error fetching contracts: {str(e)}")
+            logger.error(f"Failed to fetch contracts: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch contracts")
 
     async def get_contract(self, contract_id: str, created_by: Optional[str] = None) -> dict:
@@ -861,8 +900,11 @@ class VendorService:
 
         except HTTPException:
             raise
+        except ValueError as e:
+            logger.warning(f"Invalid contract ID format: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Error fetching contract: {str(e)}")
+            logger.error(f"Failed to fetch contract: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch contract")
 
     async def get_contract_by_token(self, contract_id: str, token: str) -> dict:
