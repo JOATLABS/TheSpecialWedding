@@ -13,7 +13,7 @@ plus_one_service = PlusOneService()
 guest_service = GuestService()
 
 
-@router.post("/plus-ones", tags=["Plus-Ones"])
+@router.post("", tags=["Plus-Ones"])
 async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get guest to verify wedding access
     guest = await guest_service.get_guest(plus_one.guest_id)
@@ -26,7 +26,7 @@ async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = 
     return await plus_one_service.add_plus_one(plus_one)
 
 
-@router.get("/plus-ones/wedding/{wedding_id}", tags=["Plus-Ones"])
+@router.get("/wedding/{wedding_id}", tags=["Plus-Ones"])
 async def get_plus_ones_by_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Batch fetch all plus-ones for a wedding (avoids N+1 queries)"""
     if not await check_wedding_access(current_user, wedding_id):
@@ -35,7 +35,7 @@ async def get_plus_ones_by_wedding(wedding_id: str, current_user: ExtendedAuthUs
     return await plus_one_service.get_plus_ones_by_wedding_id(wedding_id)
 
 
-@router.get("/plus-ones/{guest_id}", tags=["Plus-Ones"])
+@router.get("/{guest_id}", tags=["Plus-Ones"])
 async def get_plus_ones(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get guest to verify wedding access
     guest = await guest_service.get_guest(guest_id)
@@ -48,16 +48,7 @@ async def get_plus_ones(guest_id: str, current_user: ExtendedAuthUser = Depends(
     return await plus_one_service.get_plus_ones_by_guest(guest_id)
 
 
-@router.get("/wedding/{wedding_id}", tags=["Plus-Ones"])
-async def get_plus_ones_for_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
-    # Verify wedding access
-    if not await check_wedding_access(current_user, wedding_id):
-        raise HTTPException(status_code=403, detail="Access to this wedding denied")
-
-    return await plus_one_service.get_plus_ones_by_wedding_id(wedding_id)
-
-
-@router.put("/plus-ones/{plus_one_id}", tags=["Plus-Ones"])
+@router.put("/{plus_one_id}", tags=["Plus-Ones"])
 async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get plus-one to find guest and verify wedding access
     plus_one = await plus_one_service.get_plus_one(plus_one_id)
@@ -74,7 +65,7 @@ async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), 
     return await plus_one_service.update_plus_one(plus_one_id, data)
 
 
-@router.delete("/plus-ones/{plus_one_id}", tags=["Plus-Ones"])
+@router.delete("/{plus_one_id}", tags=["Plus-Ones"])
 async def delete_plus_one(plus_one_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     # Get plus-one to find guest and verify wedding access
     plus_one = await plus_one_service.get_plus_one(plus_one_id)

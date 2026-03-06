@@ -428,6 +428,45 @@ async def record_payment(
         logger.error(f"Failed to record payment: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to record payment")
 
+
+@router.put("/budget/payment/{payment_id}", tags=["Budget"])
+async def update_payment(
+    payment_id: str,
+    payment_data: RecordPaymentRequest,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """Update an existing payment record"""
+    try:
+        result = await budget_service.update_payment(
+            payment_id,
+            payment_data.dict(exclude_unset=True)
+        )
+        return {"message": "Payment updated successfully", "payment": result}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to update payment: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update payment")
+
+@router.delete("/budget/payment/{payment_id}", tags=["Budget"])
+async def delete_payment(
+    payment_id: str,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """Delete a payment record"""
+    try:
+        success = await budget_service.delete_payment(payment_id)
+        if success:
+            return {"message": "Payment deleted successfully"}
+        raise HTTPException(status_code=400, detail="Failed to delete payment")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete payment: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete payment")
+
 @router.get("/weddings/{wedding_id}/payments", tags=["Budget"])
 async def get_payment_history(
     wedding_id: str,

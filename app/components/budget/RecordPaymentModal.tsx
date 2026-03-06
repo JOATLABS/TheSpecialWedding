@@ -141,7 +141,7 @@ export function RecordPaymentModal({
     >
       <div className="relative max-w-2xl w-full">
         <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/40 rounded-3xl blur-3xl" aria-hidden="true" />
-        <div className="relative rounded-3xl border border-white/50 dark:border-slate-600 bg-white/80 dark:bg-slate-800/90 backdrop-blur-xl shadow-2xl p-8 space-y-6">
+        <div className="relative rounded-3xl border border-white/50 dark:border-slate-600 bg-white/80 dark:bg-slate-800/90 backdrop-blur-xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
           <div className="flex items-start justify-between gap-6">
             <div>
               <h2 id="record-payment-title" className="text-2xl font-semibold text-wedding-navy dark:text-white">

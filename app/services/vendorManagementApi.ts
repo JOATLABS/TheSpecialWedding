@@ -284,7 +284,11 @@ export async function getVendorCategories(token: string): Promise<string[]> {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    console.error('Failed to fetch vendor categories:', err);
+    throw new Error(err.detail || 'Failed to fetch vendor categories');
+  }
   const data = await response.json();
   return data.categories || [];
 }
@@ -324,7 +328,11 @@ export async function getWeddingVendors(token: string, weddingId: string): Promi
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    console.error('Failed to fetch wedding vendors:', err);
+    throw new Error(err.detail || 'Failed to fetch wedding vendors');
+  }
   return response.json();
 }
 
@@ -344,7 +352,11 @@ export async function getContractTemplates(
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    console.error('Failed to fetch contract templates:', err);
+    throw new Error(err.detail || 'Failed to fetch contract templates');
+  }
   return response.json();
 }
 
@@ -598,11 +610,9 @@ export async function getVendorDashboard(
   });
 
   if (!response.ok) {
-    return {
-      vendors: { total: 0, preferred: 0 },
-      contracts: { total: 0, pending: 0, signed: 0, recent: [] },
-      payments: { pending_count: 0, overdue_count: 0, total_paid: 0, total_due: 0, upcoming: [] },
-    };
+    const err = await response.json().catch(() => ({}));
+    console.error('Failed to fetch vendor dashboard:', err);
+    throw new Error(err.detail || 'Failed to fetch vendor dashboard');
   }
 
   return response.json();

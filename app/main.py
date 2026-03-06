@@ -75,6 +75,7 @@ from app.api.scheduler_jobs import router as scheduler_jobs_router
 from app.api.guest_export import router as guest_export_router
 from app.api.web_push import router as web_push_router
 from app.api.knowledge_base import router as knowledge_base_router
+from app.api.vendor_contract_public import router as vendor_contract_public_router
 
 # Setup logging
 logging.basicConfig(
@@ -295,7 +296,8 @@ app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
-app.include_router(vendor_management_router, prefix="/vendor-contract", tags=["Vendor Contracts"])  # Public contract access
+app.include_router(vendor_management_router, prefix="/admin", tags=["Vendor Contracts"])  # Vendor management endpoints (admin only)
+app.include_router(vendor_contract_public_router, prefix="/vendor-contract", tags=["Public Contract Access"])  # Public vendor contract endpoints (no auth required)
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
 app.include_router(email_webhooks_router, tags=["Webhooks"])  # Resend email webhooks
