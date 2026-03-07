@@ -434,7 +434,10 @@ export async function getContracts(
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch contracts');
+  }
   return response.json();
 }
 
@@ -560,7 +563,10 @@ export async function getPaymentMilestones(
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch payment milestones');
+  }
   return response.json();
 }
 
@@ -791,7 +797,10 @@ export async function getPaymentLinks(
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch payment links');
+  }
   return response.json();
 }
 

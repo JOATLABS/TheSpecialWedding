@@ -437,11 +437,24 @@ async def update_payment(
 ):
     """Update an existing payment record"""
     try:
+        # Verify wedding access via payment lookup
+        payment = await budget_service.get_payment(payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        category = await budget_service.get_budget_category(payment["category_id"])
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+        if not await check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         result = await budget_service.update_payment(
             payment_id,
             payment_data.dict(exclude_unset=True)
         )
         return {"message": "Payment updated successfully", "payment": result}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -455,6 +468,17 @@ async def delete_payment(
 ):
     """Delete a payment record"""
     try:
+        # Verify wedding access via payment lookup
+        payment = await budget_service.get_payment(payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        category = await budget_service.get_budget_category(payment["category_id"])
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+        if not await check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         success = await budget_service.delete_payment(payment_id)
         if success:
             return {"message": "Payment deleted successfully"}
