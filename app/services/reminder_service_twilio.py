@@ -199,19 +199,23 @@ class TwilioReminderService:
             "status": status,
             "sent_at": timestamp,
             "provider": "twilio",
-            # New delivery tracking fields
-            "message_sid": message_sid,
+            # Delivery tracking fields
             "delivery_status": initial_status,
             "delivery_status_updated_at": timestamp if message_sid else None,
         }
 
-        # Add initial delivery event if we have a message_sid
-        if message_sid and initial_status:
-            log_record["delivery_events"] = [{
-                "status": initial_status,
-                "timestamp": timestamp,
-                "error_code": None
-            }]
+        # Only include message_sid when present — omitting it lets the
+        # sparse unique index skip failed records instead of colliding on null.
+        if message_sid:
+            log_record["message_sid"] = message_sid
+            if initial_status:
+                log_record["delivery_events"] = [{
+                    "status": initial_status,
+                    "timestamp": timestamp,
+                    "error_code": None
+                }]
+            else:
+                log_record["delivery_events"] = []
         else:
             log_record["delivery_events"] = []
 
@@ -336,18 +340,22 @@ class TwilioRSVPReminderHelper:
                 "sent_at": now,
                 "provider": "twilio",
                 # Delivery tracking fields
-                "message_sid": message_sid,
                 "delivery_status": initial_status,
                 "delivery_status_updated_at": now if message_sid else None,
             }
 
-            # Add initial delivery event if we have a message_sid
-            if message_sid and initial_status:
-                log_record["delivery_events"] = [{
-                    "status": initial_status,
-                    "timestamp": now,
-                    "error_code": None
-                }]
+            # Only include message_sid when present — omitting it lets the
+            # sparse unique index skip failed records instead of colliding on null.
+            if message_sid:
+                log_record["message_sid"] = message_sid
+                if initial_status:
+                    log_record["delivery_events"] = [{
+                        "status": initial_status,
+                        "timestamp": now,
+                        "error_code": None
+                    }]
+                else:
+                    log_record["delivery_events"] = []
             else:
                 log_record["delivery_events"] = []
 
