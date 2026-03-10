@@ -120,57 +120,137 @@ class TwilioReminderService:
             "provider": "twilio"
         }
 
-    def _send_sms(self, to: str, body: str) -> dict:
+    def _send_sms(self, to: str, body: str, max_retries: int = 2) -> dict:
         """
         Send SMS and return both status and message_sid for delivery tracking.
+        Includes automatic retry for transient failures (network errors, 5xx).
 
         Returns:
-            dict with "status", "message_sid", and "initial_status" keys
+            dict with "status", "message_sid", "initial_status", and "error_code" keys.
+            error_code values: "rate_limited", "invalid_number", "not_configured",
+                               "daily_limit", "service_unavailable", "network_error", None
         """
-        try:
-            if not self.client:
-                raise RuntimeError("Twilio client is not initialized")
+        import time
 
-            # Ensure phone number is in E.164 format
-            if not to.startswith('+'):
-                to = f"+1{to}"  # Assume US number if no country code
-
-            # Get the StatusCallback URL for delivery tracking
-            status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
-
-            # Prefer Messaging Service SID; if not set, require a valid from number
-            if self.messaging_service_sid:
-                message = self.client.messages.create(
-                    messaging_service_sid=self.messaging_service_sid,
-                    body=body,
-                    to=to,
-                    status_callback=status_callback_url
-                )
-            else:
-                from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
-                if not from_number:
-                    raise RuntimeError("TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER is required for SMS sending")
-                message = self.client.messages.create(
-                    from_=from_number,
-                    body=body,
-                    to=to,
-                    status_callback=status_callback_url
-                )
-
-            logger.info(f"Twilio SMS sent to {to}, SID: {message.sid}")
+        if not self.client:
             return {
-                "status": "success",
-                "message_sid": message.sid,
-                "initial_status": message.status  # "queued" or "accepted"
-            }
-
-        except Exception as e:
-            logger.error(f"Twilio SMS failed to {to}: {str(e)}")
-            return {
-                "status": f"failed: {str(e)}",
+                "status": "failed: Twilio client is not initialized",
                 "message_sid": None,
-                "initial_status": None
+                "initial_status": None,
+                "error_code": "not_configured",
+                "retryable": False
             }
+
+        # Ensure phone number is in E.164 format
+        if not to.startswith('+'):
+            to = f"+1{to}"  # Assume US number if no country code
+
+        status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
+        last_error = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                # Prefer Messaging Service SID; if not set, require a valid from number
+                if self.messaging_service_sid:
+                    message = self.client.messages.create(
+                        messaging_service_sid=self.messaging_service_sid,
+                        body=body,
+                        to=to,
+                        status_callback=status_callback_url
+                    )
+                else:
+                    from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
+                    if not from_number:
+                        return {
+                            "status": "failed: No Twilio sending number configured",
+                            "message_sid": None,
+                            "initial_status": None,
+                            "error_code": "not_configured",
+                            "retryable": False
+                        }
+                    message = self.client.messages.create(
+                        from_=from_number,
+                        body=body,
+                        to=to,
+                        status_callback=status_callback_url
+                    )
+
+                logger.info(f"Twilio SMS sent to {to}, SID: {message.sid}")
+                return {
+                    "status": "success",
+                    "message_sid": message.sid,
+                    "initial_status": message.status,
+                    "error_code": None,
+                    "retryable": False
+                }
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                error_code_int = getattr(e, 'code', None) or getattr(e, 'status', None)
+
+                # Classify the error
+                error_code, retryable = self._classify_twilio_error(error_str, error_code_int)
+
+                if retryable and attempt < max_retries:
+                    wait_time = (attempt + 1) * 1.5  # 1.5s, 3s backoff
+                    logger.warning(f"Twilio SMS attempt {attempt + 1} failed (retryable), retrying in {wait_time}s: {str(e)}")
+                    time.sleep(wait_time)
+                    continue
+
+                logger.error(f"Twilio SMS failed to {to} after {attempt + 1} attempt(s): {str(e)}")
+                return {
+                    "status": f"failed: {str(e)}",
+                    "message_sid": None,
+                    "initial_status": None,
+                    "error_code": error_code,
+                    "retryable": retryable
+                }
+
+        # Should not reach here, but safety fallback
+        return {
+            "status": f"failed: {str(last_error)}",
+            "message_sid": None,
+            "initial_status": None,
+            "error_code": "unknown",
+            "retryable": False
+        }
+
+    @staticmethod
+    def _classify_twilio_error(error_str: str, error_code_int) -> tuple:
+        """
+        Classify a Twilio error into a category and determine if retryable.
+        Returns (error_code: str, retryable: bool)
+        """
+        # Rate limited (429 or Twilio code 20429)
+        if '429' in error_str or 'rate limit' in error_str or 'too many requests' in error_str:
+            return ("rate_limited", False)
+
+        # Daily message limit exceeded (Twilio code 14101)
+        if '14101' in error_str or 'daily' in error_str and 'limit' in error_str:
+            return ("daily_limit", False)
+
+        # Invalid phone number (Twilio codes 21211, 21214, 21217, 21612)
+        if any(code in error_str for code in ['21211', '21214', '21217', '21612']):
+            return ("invalid_number", False)
+        if 'not a valid phone' in error_str or 'unverified' in error_str:
+            return ("invalid_number", False)
+
+        # Number blocked or unreachable (Twilio codes 21408, 21610, 21611)
+        if any(code in error_str for code in ['21408', '21610', '21611']):
+            return ("number_blocked", False)
+
+        # Service unavailable (5xx, network issues)
+        if '500' in error_str or '502' in error_str or '503' in error_str or '504' in error_str:
+            return ("service_unavailable", True)
+        if 'timeout' in error_str or 'connection' in error_str or 'network' in error_str:
+            return ("network_error", True)
+
+        # Authentication error (won't fix on retry)
+        if '401' in error_str or 'authenticate' in error_str:
+            return ("auth_error", False)
+
+        return ("unknown", False)
 
     def _log(self, phone, guest_id, message, target_type, event_type, send_result, timestamp, wedding_id=None):
         """

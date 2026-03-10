@@ -10,7 +10,7 @@ import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { Toaster } from 'sonner';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { motion } from 'framer-motion';
+
 
 function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -74,9 +74,8 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
         isMobile={isMobile}
       />
 
-      <motion.div
-        layout
-        className="relative z-10 flex flex-col min-h-screen transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+      <div
+        className="relative z-10 flex flex-col min-h-screen transition-[margin] duration-300 ease-out"
         style={{
           marginLeft: !isMobile ? (sidebarOpen ? '18rem' : '5rem') : '0'
         }}
@@ -91,7 +90,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
              {children}
            </ErrorBoundary>
         </main>
-      </motion.div>
+      </div>
 
       {/* AI Chat Widget - Available on all admin pages */}
       <AIChatWidget />

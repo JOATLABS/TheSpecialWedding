@@ -8,6 +8,7 @@ import os
 import logging
 
 from app.utils.auth_utils import get_password_hash, verify_password
+from app.utils.serializers import serialize_mongo_doc
 from app.services.email_service_resend import ResendEmailService
 from app.core.events import event_bus, EventFactory
 
@@ -285,9 +286,10 @@ class UserManagementService:
 
             users = await self.users_collection.find(query, {"password_hash": 0, "password": 0}).to_list(length=None)  # Exclude password fields
 
-            # Convert ObjectId to string and calculate wedding_count for each user
+            # Serialize and calculate wedding_count for each user
             for user in users:
-                user["_id"] = str(user["_id"])
+                # Serialize to handle ObjectId and datetime objects
+                user = serialize_mongo_doc(user)
 
                 # Count weddings assigned to this user (by email or user ID)
                 user_email = user.get("email")
@@ -318,9 +320,8 @@ class UserManagementService:
             user = await self.users_collection.find_one({"_id": obj_id}, {"password_hash": 0})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            # Convert ObjectId to string for JSON serialization
-            user["_id"] = str(user["_id"])
-            return user
+            # Serialize to handle ObjectId and datetime objects
+            return serialize_mongo_doc(user)
         except HTTPException:
             raise
         except Exception as e:
@@ -1286,10 +1287,8 @@ class UserManagementService:
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
-            # Convert ObjectId to string
-            user["_id"] = str(user["_id"])
-
-            return user
+            # Serialize MongoDB document to handle ObjectId and datetime objects
+            return serialize_mongo_doc(user)
 
         except HTTPException:
             raise

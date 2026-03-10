@@ -126,6 +126,8 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 ]
             }
 
+        plus_ones_collection = mongo.get_plus_ones_collection()
+
         metrics: dict[str, Any] = {
             "summary": {
                 "total_weddings": len(weddings),
@@ -133,8 +135,13 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "upcoming_weddings": 0,
                 "past_weddings": 0,
                 "total_guests": 0,
+                "total_plus_ones_allowed": 0,
+                "total_plus_ones_submitted": 0,
                 "confirmed_rsvps": 0,
+                "confirmed_plus_ones_allowed": 0,
+                "confirmed_plus_ones_submitted": 0,
                 "pending_rsvps": 0,
+                "pending_plus_ones_allowed": 0,
                 "declined_rsvps": 0
             },
             "weddings": [],
@@ -166,9 +173,35 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             if wedding_status == "active":
                 metrics["summary"]["active_weddings"] += 1
 
-            # Get guest count - wedding_id in guests collection is stored as string
-            guest_count = await guests_collection.count_documents({"wedding_id": wedding_id_str})
+            # Get all guests for this wedding (need plus-one and invite_sent data)
+            guest_docs = await guests_collection.find(
+                {"wedding_id": wedding_id_str},
+                {"_id": 1, "number_of_plus_ones_allowed": 1, "invite_sent": 1}
+            ).to_list(length=None)
+            guest_count = len(guest_docs)
             metrics["summary"]["total_guests"] += guest_count
+
+            # Build guest lookup: guest_id -> {plus_ones_allowed, invite_sent}
+            guest_plus_ones_map: dict[str, int] = {}
+            guest_invite_sent: dict[str, bool] = {}
+            total_plus_ones_allowed = 0
+            for g in guest_docs:
+                gid = str(g["_id"])
+                allowed = g.get("number_of_plus_ones_allowed") or 0
+                guest_plus_ones_map[gid] = allowed
+                guest_invite_sent[gid] = bool(g.get("invite_sent"))
+                total_plus_ones_allowed += allowed
+            metrics["summary"]["total_plus_ones_allowed"] += total_plus_ones_allowed
+
+            # Count actual submitted plus-ones for this wedding's guests
+            guest_id_strs = list(guest_plus_ones_map.keys())
+            submitted_plus_ones = 0
+            confirmed_plus_ones_submitted = 0
+            if guest_id_strs:
+                submitted_plus_ones = await plus_ones_collection.count_documents(
+                    {"guest_id": {"$in": guest_id_strs}}
+                )
+            metrics["summary"]["total_plus_ones_submitted"] += submitted_plus_ones
 
             # Get RSVP statistics - handle both ObjectId and string formats for wedding_id
             rsvps = await rsvps_collection.find({
@@ -180,20 +213,47 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
 
             confirmed = 0
             declined = 0
+            confirmed_plus_allowed = 0
+            rsvp_guest_ids: set[str] = set()
 
             for rsvp in rsvps:
+                rsvp_guest_id = str(rsvp.get("guest_id", ""))
+                rsvp_guest_ids.add(rsvp_guest_id)
                 status = _calculate_rsvp_status(rsvp)
                 if status == "confirmed":
                     confirmed += 1
+                    confirmed_plus_allowed += guest_plus_ones_map.get(rsvp_guest_id, 0)
                 elif status == "declined":
                     declined += 1
 
-            # Pending = guests who haven't submitted an RSVP at all
-            pending = max(0, guest_count - len(rsvps))
+            # Count submitted plus-ones for confirmed guests
+            confirmed_guest_ids = [
+                str(rsvp.get("guest_id", "")) for rsvp in rsvps
+                if _calculate_rsvp_status(rsvp) == "confirmed"
+            ]
+            if confirmed_guest_ids:
+                confirmed_plus_ones_submitted = await plus_ones_collection.count_documents(
+                    {"guest_id": {"$in": confirmed_guest_ids}}
+                )
+
+            # Pending = guests who were INVITED but haven't submitted an RSVP
+            # This matches the guests page "Awaiting Response" calculation
+            pending = sum(
+                1 for gid in guest_plus_ones_map
+                if gid not in rsvp_guest_ids and guest_invite_sent.get(gid, False)
+            )
+            pending_plus_allowed = sum(
+                guest_plus_ones_map.get(gid, 0)
+                for gid in guest_plus_ones_map
+                if gid not in rsvp_guest_ids and guest_invite_sent.get(gid, False)
+            )
 
             metrics["summary"]["confirmed_rsvps"] += confirmed
+            metrics["summary"]["confirmed_plus_ones_allowed"] += confirmed_plus_allowed
+            metrics["summary"]["confirmed_plus_ones_submitted"] += confirmed_plus_ones_submitted
             metrics["summary"]["declined_rsvps"] += declined
             metrics["summary"]["pending_rsvps"] += pending
+            metrics["summary"]["pending_plus_ones_allowed"] += pending_plus_allowed
 
             # Calculate progress percentage
             progress_score = 0

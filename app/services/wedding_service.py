@@ -117,11 +117,7 @@ class WeddingService:
             weddings = await self.collection.find(
                 {"assigned_planner_email": planner_email}
             ).to_list(length=None)
-            # Convert ObjectId to string for JSON serialization
-            for wedding in weddings:
-                wedding["id"] = str(wedding["_id"])
-                wedding["_id"] = str(wedding["_id"])
-            return weddings
+            return serialize_mongo_doc(weddings)
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error listing weddings for planner: {str(e)}"
@@ -131,11 +127,9 @@ class WeddingService:
         """List all weddings with enhanced planner information for admin interface"""
         try:
             weddings = await self.collection.find().to_list(length=None)
-            # Convert ObjectId to string and add admin-specific fields
-            for wedding in weddings:
-                wedding["id"] = str(wedding["_id"])
-                wedding["_id"] = str(wedding["_id"])
-                # Ensure all expected fields exist
+            serialized_weddings = serialize_mongo_doc(weddings)
+            # Ensure all expected fields exist
+            for wedding in serialized_weddings:
                 if "assigned_planner_email" not in wedding:
                     wedding["assigned_planner_email"] = None
                 if "assigned_planner_id" not in wedding:
@@ -149,7 +143,7 @@ class WeddingService:
                 if "events" not in wedding:
                     wedding["events"] = []
 
-            return weddings
+            return serialized_weddings
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error listing weddings: {str(e)}"
