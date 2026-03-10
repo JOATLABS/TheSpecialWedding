@@ -241,7 +241,7 @@ export default function BudgetCategoryCard({
       {/* Additional info */}
       <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
         Last updated: {formatDate(category.updated_at)}
-        {category.percentage_of_total && (
+        {!!category.percentage_of_total && (
           <span className="ml-2">• {category.percentage_of_total.toFixed(1)}% of total budget</span>
         )}
       </div>

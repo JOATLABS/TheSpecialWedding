@@ -72,14 +72,20 @@ class OTPService:
 
     async def send_otp(self, guest_id: str) -> dict:
         """
-        Send an OTP to the guest's phone.
+        Send an OTP to the guest's phone (preferred) or email (fallback).
 
         Returns:
-            dict with "success" (bool) and "error" (str) if failed
+            dict with:
+                - "success" (bool)
+                - "contact_type" ("phone" | "email") on success
+                - "error" (str) on failure — user-friendly message
+                - "error_code" (str) on failure — machine-readable code for frontend
+                - "retry_after" (int) — seconds to wait before retrying (optional)
+                - "fallback_used" (bool) — True if email was used because SMS failed
         """
         if not ObjectId.is_valid(guest_id):
             logger.warning(f"Invalid ObjectId format: {guest_id}")
-            return {"success": False, "error": "Invalid guest ID format"}
+            return {"success": False, "error": "Invalid guest ID format", "error_code": "invalid_input"}
 
         # Ensure TTL index exists
         await self._ensure_indexes()
@@ -90,21 +96,33 @@ class OTPService:
             expires_at = last_otp.get("expires_at")
             created_at = last_otp.get("created_at")
             if expires_at:
+                # Ensure expires_at is timezone-aware for comparison
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
                 # If OTP has expired, delete it and allow new request
                 if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
+                    # Ensure created_at is timezone-aware for comparison
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
                     seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
+                        remaining = int(settings.rate_limit_auth_period - seconds_since_created)
                         logger.info(f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)")
-                        return {"success": False, "error": "Please wait before requesting another code"}
+                        return {
+                            "success": False,
+                            "error": f"Please wait {remaining} seconds before requesting another code",
+                            "error_code": "rate_limited",
+                            "retry_after": remaining
+                        }
 
         guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
         if not guest:
             logger.warning(f"Guest not found for guest_id: {guest_id}")
-            return {"success": False, "error": "Guest not found"}
+            return {"success": False, "error": "Guest not found", "error_code": "guest_not_found"}
 
         # Check available contact methods
         has_phone = guest.get("phone") and guest.get("phone").strip()
@@ -112,7 +130,11 @@ class OTPService:
 
         if not has_phone and not has_email:
             logger.warning(f"Guest has no phone or email: {guest_id}")
-            return {"success": False, "error": "No contact method on file. Please contact the wedding planner."}
+            return {
+                "success": False,
+                "error": "No contact method on file. Please contact the wedding planner.",
+                "error_code": "no_contact"
+            }
 
         # Determine primary contact method for OTP record
         primary_contact_type = "phone" if has_phone else "email"
@@ -121,21 +143,24 @@ class OTPService:
             otp = await self.generate_otp(guest_id, contact_type=primary_contact_type)
         except Exception as e:
             logger.error(f"Failed to save OTP for guest_id {guest_id}: {str(e)}")
-            return {"success": False, "error": "Failed to generate verification code. Please try again."}
+            return {"success": False, "error": "Failed to generate verification code. Please try again.", "error_code": "generation_failed"}
 
         # Try phone first (preferred method)
+        sms_error_code = None
         if has_phone:
             message = f"Your verification code is: {otp}"
             result = self.twilio_service._send_sms(guest["phone"], message)
-            # _send_sms now returns a dict with "status", "message_sid", "initial_status"
             status = result.get("status") if isinstance(result, dict) else result
+            sms_error_code = result.get("error_code") if isinstance(result, dict) else None
+
             if status == "success":
-                return {"success": True, "contact_type": "phone"}
+                return {"success": True, "contact_type": "phone", "fallback_used": False}
             else:
-                logger.error(f"Failed to send OTP SMS to guest_id {guest_id}: {status}")
+                logger.error(f"Failed to send OTP SMS to guest_id {guest_id}: {status} (error_code: {sms_error_code})")
+
                 # If SMS fails and we have email, try email fallback
                 if has_email:
-                    logger.info(f"SMS failed, attempting email fallback for guest_id: {guest_id}")
+                    logger.info(f"SMS failed ({sms_error_code}), attempting email fallback for guest_id: {guest_id}")
                     # Update OTP record with correct contact_type for fallback
                     otp_collection = mongo.db["otps"]
                     await otp_collection.update_one(
@@ -143,7 +168,14 @@ class OTPService:
                         {"$set": {"contact_type": "email"}}
                     )
                 else:
-                    return {"success": False, "error": "Failed to send SMS. Please try again later."}
+                    # No email fallback — return specific error based on SMS failure type
+                    user_error = self._get_user_friendly_sms_error(sms_error_code)
+                    return {
+                        "success": False,
+                        "error": user_error,
+                        "error_code": sms_error_code or "sms_failed",
+                        "retry_after": 30 if sms_error_code in ("rate_limited", "daily_limit", "service_unavailable") else None
+                    }
 
         # Send via email (either as primary or fallback)
         if has_email:
@@ -155,12 +187,41 @@ class OTPService:
                 email_type="otp"
             )
             if result.get("success"):
-                return {"success": True, "contact_type": "email"}
+                fallback_used = has_phone and sms_error_code is not None
+                return {
+                    "success": True,
+                    "contact_type": "email",
+                    "fallback_used": fallback_used,
+                    "sms_error_code": sms_error_code if fallback_used else None
+                }
             else:
                 logger.error(f"Failed to send OTP email to guest_id {guest_id}: {result.get('error')}")
-                return {"success": False, "error": "Failed to send verification code. Please try again later."}
+                return {
+                    "success": False,
+                    "error": "We couldn't send your verification code by text or email. Please try again in a few minutes, or contact the wedding planner for help.",
+                    "error_code": "all_channels_failed"
+                }
 
-        return {"success": False, "error": "Failed to send verification code. Please try again later."}
+        return {
+            "success": False,
+            "error": "We couldn't send your verification code. Please try again in a few minutes.",
+            "error_code": "send_failed"
+        }
+
+    @staticmethod
+    def _get_user_friendly_sms_error(error_code: str) -> str:
+        """Return a guest-friendly error message based on the Twilio error code."""
+        messages = {
+            "rate_limited": "Our text message service is temporarily busy. Please try again in about 30 seconds.",
+            "daily_limit": "We've reached our daily text message limit. Please try again tomorrow, or contact the wedding planner for help.",
+            "invalid_number": "We couldn't send a text to the phone number on file. Please contact the wedding planner to update your contact info.",
+            "number_blocked": "Text messages can't be delivered to this phone number. Please contact the wedding planner for help.",
+            "service_unavailable": "Our text message service is temporarily unavailable. Please try again in a few minutes.",
+            "network_error": "We're having trouble connecting to our text message service. Please try again in a moment.",
+            "not_configured": "Text messaging is not set up yet. Please contact the wedding planner for help.",
+            "auth_error": "There's a configuration issue with our text service. The wedding planner has been notified.",
+        }
+        return messages.get(error_code, "We couldn't send your verification code. Please try again in a few minutes.")
 
     async def verify_otp(self, wedding_id: str, contact: str, otp_code: str) -> dict:
         """
@@ -321,16 +382,28 @@ class OTPService:
             expires_at = last_otp.get("expires_at")
             created_at = last_otp.get("created_at")
             if expires_at:
+                # Ensure expires_at is timezone-aware for comparison
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
                 # If OTP has expired, delete it and allow new request
                 if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
+                    # Ensure created_at is timezone-aware for comparison
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
                     seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
+                        remaining = int(settings.rate_limit_auth_period - seconds_since_created)
                         logger.info(f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)")
-                        return {"success": False, "error": "Please wait before requesting another code"}
+                        return {
+                            "success": False,
+                            "error": f"Please wait {remaining} seconds before requesting another code",
+                            "error_code": "rate_limited",
+                            "retry_after": remaining
+                        }
 
         # Determine contact type for OTP record
         is_phone_contact = guest.get("phone") and guest.get("phone") in contact_variants
@@ -350,12 +423,18 @@ class OTPService:
                 phone = f"+1{phone}"
 
             result = self.twilio_service._send_sms(phone, message)
-            # _send_sms now returns a dict with "status", "message_sid", "initial_status"
             status = result.get("status") if isinstance(result, dict) else result
+            sms_error_code = result.get("error_code") if isinstance(result, dict) else None
             if status == "success":
-                return {"success": True, "contact_type": "phone"}
+                return {"success": True, "contact_type": "phone", "fallback_used": False}
             else:
-                return {"success": False, "error": f"Failed to send SMS: {status}"}
+                user_error = self._get_user_friendly_sms_error(sms_error_code)
+                return {
+                    "success": False,
+                    "error": user_error,
+                    "error_code": sms_error_code or "sms_failed",
+                    "retry_after": 30 if sms_error_code in ("rate_limited", "daily_limit", "service_unavailable") else None
+                }
 
         elif guest.get("email") == normalized_contact:
             # Send via email

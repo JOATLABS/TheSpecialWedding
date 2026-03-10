@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, List
 from datetime import datetime, timezone
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.support_service import SupportService
+from app.utils.serializers import serialize_mongo_doc
 import logging
 
 logger = logging.getLogger(__name__)
@@ -321,13 +322,13 @@ async def get_sms_tickets(
 
     total = await mongo.db["support_tickets"].count_documents(query)
 
-    return {
+    return serialize_mongo_doc({
         "tickets": tickets,
         "total": total,
         "page": page,
         "pages": (total + limit - 1) // limit,
         "limit": limit
-    }
+    })
 
 
 @router.get("/sms-tickets/{ticket_id}", tags=["SMS Support"])
@@ -358,7 +359,7 @@ async def get_sms_ticket(
     if "wedding_id" in ticket and ticket["wedding_id"]:
         ticket["wedding_id"] = str(ticket["wedding_id"])
 
-    return {"ticket": ticket}
+    return serialize_mongo_doc({"ticket": ticket})
 
 
 @router.post("/sms-tickets/{ticket_id}/respond", tags=["SMS Support"])

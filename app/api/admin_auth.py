@@ -23,7 +23,8 @@ async def login_for_access_token(credentials: AdminLoginModel):
 @router.get("/profile", tags=["Auth"])
 async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
     """Get current user profile information with cache-busting headers"""
-    user_data = current_user.user_data or {}
+    # Serialize user_data first to handle all datetime and ObjectId fields recursively
+    serialized_user_data = serialize_mongo_doc(current_user.user_data) or {}
     profile_data = {
         "email": current_user.email,
         "role": current_user.role,
@@ -31,16 +32,16 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
         "is_wedding_planner": current_user.is_wedding_planner,
         "is_vendor": current_user.is_vendor,
         # Expose profile fields at top level for easier frontend access
-        "first_name": user_data.get("first_name"),
-        "last_name": user_data.get("last_name"),
-        "company_name": user_data.get("company_name"),
-        "profile_image_url": user_data.get("profile_image_url"),
-        "push_notifications_enabled": user_data.get("push_notifications_enabled", True),  # Default to True
-        "timezone": user_data.get("timezone", "America/Chicago"),  # IANA timezone for display
-        "onboarding_completed": user_data.get("onboarding_completed", False),
-        "onboarding_completed_at": serialize_mongo_doc(user_data.get("onboarding_completed_at")),
-        "onboarding_steps_completed": user_data.get("onboarding_steps_completed", []),
-        "user_data": serialize_mongo_doc(current_user.user_data)
+        "first_name": serialized_user_data.get("first_name"),
+        "last_name": serialized_user_data.get("last_name"),
+        "company_name": serialized_user_data.get("company_name"),
+        "profile_image_url": serialized_user_data.get("profile_image_url"),
+        "push_notifications_enabled": serialized_user_data.get("push_notifications_enabled", True),  # Default to True
+        "timezone": serialized_user_data.get("timezone", "America/Chicago"),  # IANA timezone for display
+        "onboarding_completed": serialized_user_data.get("onboarding_completed", False),
+        "onboarding_completed_at": serialized_user_data.get("onboarding_completed_at"),
+        "onboarding_steps_completed": serialized_user_data.get("onboarding_steps_completed", []),
+        "user_data": serialized_user_data
     }
     # Add cache-busting headers to prevent browser caching of user profile data
     headers = {

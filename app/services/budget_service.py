@@ -12,6 +12,7 @@ from app.models.budget import (
     BudgetSubcategory
 )
 from app.utils.security_validator import SecurityValidator
+from app.utils.serializers import serialize_mongo_doc
 import logging
 
 logger = logging.getLogger(__name__)
@@ -213,7 +214,7 @@ class BudgetService:
             await self._invalidate_budget_cache(category["wedding_id"])
 
             logger.info(f"Updated budget category {category_id}")
-            return updated_category
+            return serialize_mongo_doc(updated_category)
 
         except Exception as e:
             logger.error(f"Failed to update budget category: {str(e)}")
@@ -281,7 +282,7 @@ class BudgetService:
 
             cursor = self.vendor_quotes.find(query).sort("created_at", -1)
             quotes = await cursor.to_list(length=None)
-            return quotes
+            return [serialize_mongo_doc(quote) for quote in quotes]
 
         except Exception as e:
             logger.error(f"Failed to get vendor quotes: {str(e)}")
@@ -339,9 +340,7 @@ class BudgetService:
             quote = await self.vendor_quotes.find_one({"_id": PyObjectId(quote_id)})
             if not quote:
                 return None
-            quote["id"] = str(quote["_id"])
-            quote["_id"] = str(quote["_id"])
-            return quote
+            return serialize_mongo_doc(quote)
         except Exception as e:
             logger.error(f"Failed to fetch vendor quote: {str(e)}")
             raise
@@ -373,7 +372,7 @@ class BudgetService:
                 await self._update_category_from_accepted_quote(updated_quote)
 
             logger.info(f"Updated quote {quote_id} status to {status}")
-            return updated_quote
+            return serialize_mongo_doc(updated_quote)
 
         except Exception as e:
             logger.error(f"Failed to update quote status: {str(e)}")
@@ -401,10 +400,8 @@ class BudgetService:
             if not updated_quote:
                 raise ValueError("Quote not found after update")
 
-            updated_quote["id"] = str(updated_quote["_id"])
-            updated_quote["_id"] = str(updated_quote["_id"])
             logger.info(f"Rated quote {quote_id} with {rating} stars")
-            return updated_quote
+            return serialize_mongo_doc(updated_quote)
 
         except Exception as e:
             logger.error(f"Failed to rate vendor quote: {str(e)}")
@@ -596,9 +593,7 @@ class BudgetService:
             if not category:
                 return None
 
-            category["id"] = str(category["_id"])
-            category["_id"] = str(category["_id"])
-            return category
+            return serialize_mongo_doc(category)
         except ValueError as e:
             logger.error(f"Invalid category id provided: {str(e)}")
             raise
@@ -676,18 +671,8 @@ class BudgetService:
             for payment in payments:
                 payment["category_name"] = category_names.get(payment["category_id"], "Unknown")
 
-            # Serialize ObjectId fields and datetime fields for JSON response
-            for payment in payments:
-                if "_id" in payment:
-                    payment["id"] = str(payment["_id"])
-                    payment["_id"] = str(payment["_id"])
-                # Serialize datetime fields
-                if "payment_date" in payment and hasattr(payment["payment_date"], "isoformat"):
-                    payment["payment_date"] = payment["payment_date"].isoformat()
-                if "created_at" in payment and hasattr(payment["created_at"], "isoformat"):
-                    payment["created_at"] = payment["created_at"].isoformat()
-
-            return payments
+            # Serialize all MongoDB documents and fields for JSON response
+            return [serialize_mongo_doc(payment) for payment in payments]
 
         except Exception as e:
             logger.error(f"Failed to get payment history: {str(e)}")
@@ -699,9 +684,7 @@ class BudgetService:
             payment = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
             if not payment:
                 return None
-            payment["id"] = str(payment["_id"])
-            payment["_id"] = str(payment["_id"])
-            return payment
+            return serialize_mongo_doc(payment)
         except Exception as e:
             logger.error(f"Failed to fetch payment: {str(e)}")
             raise
@@ -735,9 +718,7 @@ class BudgetService:
                     await self._check_budget_alerts(category["wedding_id"])
 
             updated = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
-            updated["id"] = str(updated["_id"])
-            updated["_id"] = str(updated["_id"])
-            return updated
+            return serialize_mongo_doc(updated)
         except ValueError:
             raise
         except Exception as e:
@@ -1036,16 +1017,7 @@ class BudgetService:
         cursor = self.budget_alerts.find(query).sort("created_at", -1)
         alerts = await cursor.to_list(length=None)
 
-        for alert in alerts:
-            if "_id" in alert:
-                alert["id"] = str(alert["_id"])
-                alert["_id"] = str(alert["_id"])
-            if "created_at" in alert and hasattr(alert["created_at"], "isoformat"):
-                alert["created_at"] = alert["created_at"].isoformat()
-            if "resolved_at" in alert and alert["resolved_at"] and hasattr(alert["resolved_at"], "isoformat"):
-                alert["resolved_at"] = alert["resolved_at"].isoformat()
-
-        return alerts
+        return [serialize_mongo_doc(alert) for alert in alerts]
 
     async def mark_alert_as_read(self, alert_id: str) -> Dict:
         """Mark a budget alert as read"""

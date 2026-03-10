@@ -25,6 +25,7 @@ function VerifyOTPContent() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState(''); // e.g. "Code sent to your email"
   const [isVerified, setIsVerified] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false); // Track OTP verification separately
   const [guestData, setGuestData] = useState(null);
@@ -32,6 +33,7 @@ function VerifyOTPContent() {
   const [rsvpData, setRsvpData] = useState<any>(null); // Existing RSVP data if already submitted
   const [editMode, setEditMode] = useState(false); // Allow editing existing RSVP
   const [resendCooldown, setResendCooldown] = useState(65);
+  const [contactType, setContactType] = useState<'phone' | 'email'>('phone');
   const isSubmittingRef = useRef(false);
   const searchParams = useSearchParams();
   const guest_id = searchParams.get('guest_id');
@@ -156,6 +158,7 @@ function VerifyOTPContent() {
   const handleResendOTP = async () => {
     setLoading(true);
     setError('');
+    setSuccessMessage('');
     setResendCooldown(65);
 
     try {
@@ -165,9 +168,32 @@ function VerifyOTPContent() {
         body: JSON.stringify({ guest_id }),
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to resend OTP');
+        // Handle structured error response from backend
+        const detail = data.detail;
+        if (typeof detail === 'object' && detail !== null) {
+          // Use retry_after from server if available
+          if (detail.retry_after) {
+            setResendCooldown(detail.retry_after);
+          }
+          throw new Error(detail.message || 'Failed to resend code');
+        }
+        throw new Error(typeof detail === 'string' ? detail : 'Failed to resend code');
+      }
+
+      // Track which channel the code was sent to
+      const sentVia = data.contact_type || 'phone';
+      setContactType(sentVia);
+
+      // Show appropriate success message
+      if (data.fallback_used) {
+        setSuccessMessage("We couldn't text you, so we sent your code by email instead. Please check your inbox.");
+      } else if (sentVia === 'email') {
+        setSuccessMessage('A new code has been sent to your email. Please check your inbox.');
+      } else {
+        setSuccessMessage('A new code has been sent to your phone.');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
@@ -269,7 +295,9 @@ function VerifyOTPContent() {
           </div>
           <h2 className="text-2xl font-semibold text-white text-center mb-4">Enter Verification Code</h2>
           <p className="text-center text-slate-300 mb-6">
-            A 6-digit code was sent to your phone.
+            {contactType === 'email'
+              ? 'A 6-digit code was sent to your email. Check your inbox (and spam folder).'
+              : 'A 6-digit code was sent to your phone.'}
           </p>
           <div className="flex flex-col gap-4">
             <input
@@ -287,14 +315,31 @@ function VerifyOTPContent() {
             >
               {loading ? 'Verifying...' : 'Verify'}
             </button>
-            {error && <p className="text-wedding-rose text-center mt-4">{error}</p>}
+            {/* Success message (e.g. after resend or email fallback) */}
+            {successMessage && (
+              <div className="flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 mt-2">
+                <svg className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <p className="text-emerald-300 text-sm">{successMessage}</p>
+              </div>
+            )}
+            {/* Error message */}
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl border border-wedding-rose/20 bg-wedding-rose/10 px-4 py-3 mt-2">
+                <svg className="w-5 h-5 text-wedding-rose mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 110 18 9 9 0 010-18z" />
+                </svg>
+                <p className="text-wedding-rose text-sm">{error}</p>
+              </div>
+            )}
             <div className="text-center mt-4">
               <button
                 onClick={handleResendOTP}
                 disabled={loading || resendCooldown > 0}
                 className="text-sm text-wedding-rose hover:text-wedding-blush disabled:opacity-50 transition-colors"
               >
-                {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : 'Resend OTP'}
+                {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Didn\u2019t receive a code? Resend"}
               </button>
             </div>
           </div>

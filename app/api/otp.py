@@ -31,13 +31,49 @@ async def request_otp(payload: OTPRequest):
     result = await otp_service.send_otp(payload.guest_id)
     if not result.get("success"):
         error = result.get("error", "Failed to send OTP")
-        # Use 400 for client errors (no phone/email, rate limit), 500 for server errors
-        status_code = 400 if "contact" in error.lower() or "phone" in error.lower() or "wait" in error.lower() else 500
-        raise HTTPException(status_code=status_code, detail=error)
-    return {
+        error_code = result.get("error_code", "unknown")
+
+        # Map error codes to appropriate HTTP status codes
+        status_map = {
+            "rate_limited": 429,
+            "invalid_input": 400,
+            "guest_not_found": 404,
+            "no_contact": 400,
+            "invalid_number": 400,
+            "number_blocked": 400,
+            "daily_limit": 429,
+            "not_configured": 503,
+            "service_unavailable": 503,
+            "network_error": 503,
+            "auth_error": 503,
+            "all_channels_failed": 503,
+            "generation_failed": 500,
+            "send_failed": 500,
+        }
+        status_code = status_map.get(error_code, 500)
+
+        # Include retry_after in response if available
+        detail = {
+            "message": error,
+            "error_code": error_code,
+        }
+        if result.get("retry_after"):
+            detail["retry_after"] = result["retry_after"]
+
+        raise HTTPException(status_code=status_code, detail=detail)
+
+    # Build success response
+    response = {
         "message": "OTP sent successfully",
-        "contact_type": result.get("contact_type", "phone")
+        "contact_type": result.get("contact_type", "phone"),
     }
+
+    # Tell the frontend if email fallback was used (so it can show the right message)
+    if result.get("fallback_used"):
+        response["fallback_used"] = True
+        response["message"] = "We couldn't text you, so we sent your code by email instead."
+
+    return response
 
 
 @router.post("/otp/send-by-contact", tags=["OTP"])

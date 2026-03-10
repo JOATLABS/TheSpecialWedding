@@ -4,7 +4,6 @@ import React from 'react';
 import Link from 'next/link';
 import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useAdmin } from '@/contexts/AdminContext';
 import {
   LayoutDashboard,
@@ -103,39 +102,27 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
 
   const filteredNavItems = getNavItems();
 
-  const sidebarVariants = {
-    open: { width: '18rem' },
-    closed: { width: '5rem' }
-  };
-
   return (
     <>
       {/* Mobile overlay */}
-      <AnimatePresence>
-        {isMobile && isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsOpen(false)}
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          />
-        )}
-      </AnimatePresence>
+      {isMobile && isOpen && (
+        <div
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-200"
+        />
+      )}
 
       {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={isOpen ? 'open' : 'closed'}
-        variants={sidebarVariants}
+      <aside
         className={`
           fixed top-0 left-0 z-50 h-screen
           bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl
           border-r border-slate-200/50 dark:border-slate-700/50
           flex flex-col
-          transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]
+          transition-[width,transform] duration-300 ease-out
           ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : ''}
         `}
+        style={{ width: isOpen ? '18rem' : '5rem' }}
       >
         {/* Logo Section */}
         <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
@@ -194,7 +181,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
                 onClick={() => isMobile && setIsOpen(false)}
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-xl
-                  transition-all duration-200
+                  transition-colors duration-200
                   ${active
                     ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -203,13 +190,9 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
               >
                 <Icon size={20} className={active ? 'text-primary-500' : ''} />
                 {isOpen && (
-                  <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="font-medium text-sm whitespace-nowrap"
-                  >
+                  <span className="font-medium text-sm whitespace-nowrap overflow-hidden">
                     {item.name}
-                  </motion.span>
+                  </span>
                 )}
               </Link>
             );
@@ -224,17 +207,13 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
           >
             <LogOut size={20} />
             {isOpen && (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="font-medium text-sm"
-              >
+              <span className="font-medium text-sm">
                 Logout
-              </motion.span>
+              </span>
             )}
           </button>
         </div>
-      </motion.aside>
+      </aside>
     </>
   );
 }
