@@ -8,6 +8,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
+import json
+from bson import ObjectId
+from datetime import datetime
 
 # Import settings and core components
 from app.core.settings import settings
@@ -84,6 +87,31 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Register ObjectId and datetime with FastAPI's jsonable_encoder so it knows
+# how to serialize them before they reach the JSON response renderer.
+from fastapi.encoders import ENCODERS_BY_TYPE
+ENCODERS_BY_TYPE[ObjectId] = str
+
+
+class MongoJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles MongoDB ObjectId and datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+class MongoJSONResponse(JSONResponse):
+    """Custom JSONResponse that serializes MongoDB ObjectId and datetime objects."""
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            cls=MongoJSONEncoder,
+            ensure_ascii=False,
+        ).encode("utf-8")
 
 
 @asynccontextmanager
@@ -169,6 +197,7 @@ app = FastAPI(
     version=settings.app_version,
     debug=settings.debug,
     lifespan=lifespan,
+    default_response_class=MongoJSONResponse,
     openapi_tags=[
         {"name": "Health", "description": "Health check operations"},
         {"name": "Auth", "description": "Authentication operations"},

@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.wedding import WeddingModel
+from app.utils.serializers import serialize_mongo_doc
 from typing import List, Dict, Any, Union
 from datetime import datetime, timezone
 
@@ -78,7 +79,7 @@ class WeddingService:
             wedding = await self.collection.find_one({"_id": wedding_id})
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-            return wedding
+            return serialize_mongo_doc(wedding)
         except HTTPException:
             raise
         except Exception as e:
@@ -92,7 +93,7 @@ class WeddingService:
             wedding = await self.collection.find_one({"slug": slug})
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
-            return wedding
+            return serialize_mongo_doc(wedding)
         except HTTPException:
             raise
         except Exception as e:
@@ -104,7 +105,7 @@ class WeddingService:
         """List all weddings"""
         try:
             weddings = await self.collection.find().to_list(length=None)
-            return weddings
+            return serialize_mongo_doc(weddings)
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error listing weddings: {str(e)}"
