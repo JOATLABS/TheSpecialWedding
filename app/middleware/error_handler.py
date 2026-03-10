@@ -31,6 +31,40 @@ logger = logging.getLogger(__name__)
 class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     """Middleware to handle all exceptions with secure responses, logging, and alerts."""
 
+    # Paths commonly probed by scanners for sensitive files
+    BLOCKED_PATH_PREFIXES = (
+        "/.git",
+        "/.env",
+        "/.aws",
+        "/.ssh",
+        "/.svn",
+        "/.hg",
+        "/.docker",
+        "/.vscode",
+        "/wp-admin",
+        "/wp-login",
+        "/wp-content",
+        "/wp-includes",
+        "/phpmyadmin",
+        "/administrator",
+        "/cgi-bin",
+        "/.htaccess",
+        "/.htpasswd",
+        "/.DS_Store",
+        "/server-status",
+        "/server-info",
+        "/config.php",
+        "/xmlrpc.php",
+        "/debug",
+    )
+
+    BLOCKED_PATH_SUFFIXES = (
+        ".php",
+        ".asp",
+        ".aspx",
+        ".jsp",
+    )
+
     def __init__(self, app, enable_email_alerts: bool = True):
         super().__init__(app)
         self.enable_email_alerts = enable_email_alerts
@@ -61,11 +95,28 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 logger.warning("RESEND_API_KEY not set, email alerts disabled.")
             self.enable_email_alerts = False
 
+    def _is_suspicious_path(self, path: str) -> bool:
+        """Check if the request path is a known scanner/probe target."""
+        path_lower = path.lower()
+        if any(path_lower.startswith(p) for p in self.BLOCKED_PATH_PREFIXES):
+            return True
+        if any(path_lower.endswith(s) for s in self.BLOCKED_PATH_SUFFIXES):
+            return True
+        return False
+
     async def dispatch(self, request: Request, call_next):
         client_ip = self._get_client_ip(request)
 
         if self._is_ip_blocked(client_ip):
             return self._create_blocked_response(client_ip)
+
+        # Block known scanner/probe paths — return 404 with no detail
+        if self._is_suspicious_path(request.url.path):
+            logger.warning(f"Blocked suspicious path probe: {request.url.path} from {client_ip}")
+            self._track_error(client_ip)
+            if self._should_block_ip(client_ip):
+                self.blocked_ips.add(client_ip)
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
 
         try:
             response = await call_next(request)
