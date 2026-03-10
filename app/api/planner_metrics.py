@@ -256,7 +256,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             metrics["summary"]["pending_plus_ones_allowed"] += pending_plus_allowed
 
             # Calculate progress percentage
-            progress_score = 0
+            progress_score = 0.0
             if guest_count > 0:
                 response_rate = len(rsvps) / guest_count
                 progress_score += min(40, response_rate * 40)  # Up to 40% for RSVPs
