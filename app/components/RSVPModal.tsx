@@ -156,12 +156,26 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to send verification code');
+        // Handle structured error response { message, error_code, retry_after }
+        const detail = data.detail;
+        if (typeof detail === 'object' && detail !== null) {
+          if (detail.retry_after) {
+            setResendCooldown(detail.retry_after);
+          }
+          throw new Error(detail.message || 'Failed to send verification code');
+        }
+        throw new Error(typeof detail === 'string' ? detail : 'Failed to send verification code');
       }
 
       setOtpContactType(data.contact_type || 'phone');
       setResendCooldown(65);
       setStep('otp_verify');
+
+      // If email fallback was used, show that info
+      if (data.fallback_used) {
+        setError(''); // Clear any previous errors
+        // The OTP verify step will show the appropriate channel message
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -236,7 +250,15 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to resend code');
+        // Handle structured error response { message, error_code, retry_after }
+        const detail = data.detail;
+        if (typeof detail === 'object' && detail !== null) {
+          if (detail.retry_after) {
+            setResendCooldown(detail.retry_after);
+          }
+          throw new Error(detail.message || 'Failed to resend code');
+        }
+        throw new Error(typeof detail === 'string' ? detail : 'Failed to resend code');
       }
 
       if (data.contact_type) {

@@ -315,7 +315,11 @@ export function PaymentHistoryPanel({
                           {onDeletePayment && (
                             <button
                               type="button"
-                              onClick={() => onDeletePayment(payment)}
+                              onClick={() => {
+                                if (window.confirm(`Delete this ${formatCurrency(payment.amount)} payment? This cannot be undone.`)) {
+                                  onDeletePayment(payment);
+                                }
+                              }}
                               className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors"
                             >
                               Delete

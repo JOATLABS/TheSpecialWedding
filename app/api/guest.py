@@ -190,6 +190,92 @@ async def create_guest(
 
 
 # =========================================================================
+# GUEST ACTIVITY LOG
+# =========================================================================
+
+@router.get("/guests/{guest_id}/activity", tags=["Admin"])
+async def get_guest_activity(
+    guest_id: str,
+    limit: int = Query(default=30, ge=1, le=100, description="Max number of activity entries"),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+):
+    """
+    Get activity log for a specific guest.
+
+    Searches activity_logs by:
+    - metadata.guest_id matching the guest_id
+    - metadata.guest_name matching the guest's name
+    - Message text containing the guest's name
+
+    Returns activities sorted by most recent first.
+    """
+    # Get guest to check wedding access and get guest name
+    guest = await guest_service.get_guest(guest_id)
+    if inspect.isawaitable(guest):
+        guest = await guest
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    if not await check_wedding_access(current_user, guest.get("wedding_id")):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    try:
+        activity_collection = mongo.get_collection("activity_logs")
+        guest_name = guest.get("name", "")
+        wedding_id = guest.get("wedding_id", "")
+
+        # Build query: match by guest_id in metadata OR guest_name in metadata/message
+        # Scoped to the same wedding
+        or_conditions = [
+            {"metadata.guest_id": guest_id},
+        ]
+        if guest_name:
+            or_conditions.append({"metadata.guest_name": guest_name})
+            or_conditions.append({"metadata.guest_email": guest.get("email")})
+
+        query = {
+            "$and": [
+                {"$or": [
+                    {"wedding_id": wedding_id},
+                    {"wedding_id": ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id},
+                ]},
+                {"$or": or_conditions}
+            ]
+        }
+
+        cursor = activity_collection.find(
+            query,
+            {"_id": 1, "type": 1, "message": 1, "timestamp": 1, "created_at": 1, "metadata": 1}
+        ).sort([("timestamp", -1), ("created_at", -1)]).limit(limit)
+
+        activities_raw = await cursor.to_list(length=None)
+
+        activities = []
+        for activity in activities_raw:
+            timestamp = activity.get("timestamp") or activity.get("created_at")
+            if hasattr(timestamp, "isoformat"):
+                timestamp = timestamp.isoformat()
+
+            activities.append({
+                "id": str(activity.get("_id")),
+                "type": activity.get("type", "info"),
+                "message": activity.get("message", ""),
+                "timestamp": timestamp or "",
+                "metadata": {
+                    k: v for k, v in (activity.get("metadata") or {}).items()
+                    if k not in ("guest_email",)  # Don't expose emails in response
+                },
+            })
+
+        return {"activities": activities, "total": len(activities)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching guest activity: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch guest activity")
+
+
+# =========================================================================
 # SEATING CONSTRAINTS MANAGEMENT
 # =========================================================================
 

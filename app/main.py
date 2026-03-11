@@ -8,6 +8,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
+import json
+from bson import ObjectId
+from datetime import datetime
 
 # Import settings and core components
 from app.core.settings import settings
@@ -76,6 +79,7 @@ from app.api.guest_export import router as guest_export_router
 from app.api.web_push import router as web_push_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.vendor_contract_public import router as vendor_contract_public_router
+from app.api.notification_stream import router as notification_stream_router
 from app.api.team_management import router as team_management_router
 from app.api.inbound_emails import router as inbound_emails_router
 
@@ -85,6 +89,31 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Register ObjectId and datetime with FastAPI's jsonable_encoder so it knows
+# how to serialize them before they reach the JSON response renderer.
+from fastapi.encoders import ENCODERS_BY_TYPE
+ENCODERS_BY_TYPE[ObjectId] = str
+
+
+class MongoJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles MongoDB ObjectId and datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+class MongoJSONResponse(JSONResponse):
+    """Custom JSONResponse that serializes MongoDB ObjectId and datetime objects."""
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            cls=MongoJSONEncoder,
+            ensure_ascii=False,
+        ).encode("utf-8")
 
 
 @asynccontextmanager
@@ -170,6 +199,7 @@ app = FastAPI(
     version=settings.app_version,
     debug=settings.debug,
     lifespan=lifespan,
+    default_response_class=MongoJSONResponse,
     openapi_tags=[
         {"name": "Health", "description": "Health check operations"},
         {"name": "Auth", "description": "Authentication operations"},
@@ -332,7 +362,7 @@ admin_routers = [
     # forms_router - already registered publicly with route-level auth
     (trial_management_router, "Admin"),
     # vendor_forms_router - already registered publicly with route-level auth
-    # vendor_management_router - already registered publicly with route-level auth
+    # vendor_management_router - registered at /admin prefix (line ~300)
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (admin_platform_metrics_router, "ROOT_ADMIN"),
@@ -350,6 +380,7 @@ admin_routers = [
     (guest_export_router, "Guest Export"),
     (web_push_router, "Web Push"),
     (knowledge_base_router, "Knowledge Base"),
+    (notification_stream_router, "Notifications SSE"),
     (team_management_router, "Team Management"),
     (inbound_emails_router, "Inbound Emails"),
 ]

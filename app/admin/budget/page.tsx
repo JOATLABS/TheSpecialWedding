@@ -198,10 +198,10 @@ export default function BudgetDashboard() {
         setPaymentHistory(paymentData);
         setPaymentHistoryError('');
       } catch (err: any) {
-        const message = err.message || 'Failed to load payment history';
-        setPaymentHistoryError(message);
+        // Payment history is non-critical; degrade gracefully instead of showing an error
+        console.warn('Payment history fetch failed:', err.message || err);
+        setPaymentHistoryError('');
         setPaymentHistory([]);
-        toast.error(message);
       } finally {
         setPaymentHistoryLoading(false);
       }
@@ -538,7 +538,20 @@ export default function BudgetDashboard() {
 
       {/* Budget Summary */}
       {budgetSummary && (
-        <BudgetSummaryCard summary={budgetSummary} />
+        <BudgetSummaryCard
+          summary={budgetSummary}
+          onSetTotalBudget={async (amount) => {
+            if (!token || !selectedWedding) return;
+            try {
+              await budgetApi.setTotalBudget(token, selectedWedding, amount);
+              toast.success('Total budget updated');
+              await fetchBudgetData();
+            } catch (err: any) {
+              toast.error(err.message || 'Failed to update total budget');
+              throw err;
+            }
+          }}
+        />
       )}
 
       {/* AI Budget Insights Panel */}

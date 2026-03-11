@@ -189,7 +189,10 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         log_message = json.dumps(audit_entry_copy)
 
         # Log based on event severity
-        if audit_entry["success"]:
+        # 401 (Unauthorized), 402 (Payment Required), 403 (Forbidden) are not errors -
+        # they're normal auth/authz rejections that don't need to be logged as warnings
+        status = audit_entry.get("response_status", 0)
+        if audit_entry["success"] or status in (401, 402, 403):
             audit_logger.info(log_message)
         else:
             audit_logger.warning(log_message)

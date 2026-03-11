@@ -3,6 +3,7 @@ from app.core.database import mongo
 from typing import Dict, Optional, Any
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
+from app.utils.serializers import serialize_mongo_doc
 import secrets
 import string
 import logging
@@ -174,12 +175,12 @@ class SupportService:
 
                 tickets.append(ticket)
 
-            return {
+            return serialize_mongo_doc({
                 "tickets": tickets,
                 "total": total,
                 "page": page,
                 "pages": pages
-            }
+            })
 
         except Exception as e:
             logger.error(f"Error getting tickets: {str(e)}")
@@ -231,7 +232,7 @@ class SupportService:
                     if not comment.get("is_internal", False)
                 ]
 
-            return ticket
+            return serialize_mongo_doc(ticket)
 
         except HTTPException:
             raise
@@ -538,7 +539,7 @@ class SupportService:
                 )
                 agents.append(agent)
 
-            return {"agents": agents}
+            return serialize_mongo_doc({"agents": agents})
 
         except Exception as e:
             logger.error(f"Error getting support agents: {str(e)}")

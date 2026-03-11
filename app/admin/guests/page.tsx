@@ -176,6 +176,10 @@ export default function AdminGuestsPage() {
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
 
+  // Guest activity log state
+  const [guestActivity, setGuestActivity] = useState<Record<string, any[]>>({});
+  const [activityLoading, setActivityLoading] = useState<string | null>(null);
+
   // ==================== DATA FETCHING ====================
 
   const fetchWeddings = useCallback(async () => {
@@ -327,6 +331,36 @@ export default function AdminGuestsPage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrModalGuest, selectedWedding, token]);
+
+  // Fetch guest activity when a guest is expanded
+  const fetchGuestActivity = useCallback(async (guestId: string) => {
+    if (!token || !guestId || guestActivity[guestId]) return;
+    setActivityLoading(guestId);
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const response = await fetch(`${baseUrl}/admin/guests/${guestId}/activity`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setGuestActivity(prev => ({ ...prev, [guestId]: data.activities || [] }));
+      }
+    } catch (err) {
+      console.error('Error fetching guest activity:', err);
+    } finally {
+      setActivityLoading(null);
+    }
+  }, [token, guestActivity]);
+
+  // Trigger activity fetch when guest is expanded
+  useEffect(() => {
+    if (expandedGuest) {
+      fetchGuestActivity(expandedGuest);
+    }
+  }, [expandedGuest, fetchGuestActivity]);
 
   // ==================== HELPER FUNCTIONS ====================
 
@@ -1106,6 +1140,64 @@ export default function AdminGuestsPage() {
   const uniqueGroups = Array.from(new Set(guests.map(g => g.group_id).filter((g): g is string => Boolean(g))));
   const uniqueRoles = Array.from(new Set(guests.map(g => g.role).filter((r): r is string => Boolean(r))));
 
+  // Activity icon and color mapping
+  const activityStyle: Record<string, { color: string; icon: string }> = {
+    rsvp_received: { color: 'bg-green-500', icon: '✓' },
+    rsvp_updated: { color: 'bg-blue-500', icon: '↺' },
+    guest_added: { color: 'bg-purple-500', icon: '+' },
+    guest_updated: { color: 'bg-yellow-500', icon: '✎' },
+    guest_deleted: { color: 'bg-red-500', icon: '×' },
+    guest_imported: { color: 'bg-indigo-500', icon: '↓' },
+    sms_sent: { color: 'bg-teal-500', icon: '✉' },
+    email_sent: { color: 'bg-sky-500', icon: '✉' },
+    reminder_sent: { color: 'bg-orange-500', icon: '🔔' },
+  };
+
+  const renderActivityTimeline = (guestId: string) => {
+    const activities = guestActivity[guestId];
+    const isLoading = activityLoading === guestId;
+
+    return (
+      <div>
+        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Activity</h4>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <div className="animate-spin h-4 w-4 border-2 border-gray-300 border-t-gray-600 rounded-full" />
+            Loading activity...
+          </div>
+        ) : !activities || activities.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 italic">No activity recorded yet</p>
+        ) : (
+          <div className="relative space-y-0">
+            {/* Timeline line */}
+            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200 dark:bg-gray-600" />
+            {activities.map((activity: any, idx: number) => {
+              const style = activityStyle[activity.type] || { color: 'bg-gray-400', icon: '•' };
+              const date = activity.timestamp ? new Date(activity.timestamp) : null;
+              return (
+                <div key={activity.id || idx} className="relative flex items-start gap-3 pb-3">
+                  <div className={`relative z-10 w-4 h-4 rounded-full ${style.color} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                    <span className="text-white text-[8px] font-bold leading-none">{style.icon}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 dark:text-gray-200 leading-tight">{activity.message}</p>
+                    {date && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                        {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {' '}
+                        {date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ==================== RENDER ====================
 
   return (
@@ -1152,32 +1244,91 @@ export default function AdminGuestsPage() {
         {selectedWedding && (() => {
           // Calculate stats once for use in both stat cards and tabs
           const guestsWithRsvp = new Set(rsvps.map(r => normalizeId(r.guest_id)));
-          const invitedNoRsvp = guests.filter(g => g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
+          const invitedNoRsvpGuests = guests.filter(g => g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id)));
+          const invitedNoRsvp = invitedNoRsvpGuests.length;
           const notInvited = guests.filter(g => !g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
+
+          // Plus-one calculations
+          const totalPlusOnesAllowed = guests.reduce((sum, g) => sum + (g.number_of_plus_ones_allowed || 0), 0);
+          const confirmedGuests = guests.filter(g => guestsWithRsvp.has(normalizeId(g.id || g._id)) && rsvps.find(r => normalizeId(r.guest_id) === normalizeId(g.id || g._id) && r.attending && r.attending.length > 0));
+          const confirmedPlusOnesAllowed = confirmedGuests.reduce((sum, g) => sum + (g.number_of_plus_ones_allowed || 0), 0);
+          const pendingPlusOnesAllowed = invitedNoRsvpGuests.reduce((sum, g) => sum + (g.number_of_plus_ones_allowed || 0), 0);
+
+          // Count actual plus-ones submitted by confirmed guests
+          const confirmedGuestIds = new Set(confirmedGuests.map(g => normalizeId(g.id || g._id)));
+          const confirmedPlusOnesSubmitted = plusOnes.filter(po => confirmedGuestIds.has(normalizeId(po.guest_id))).length;
 
           return (
           <>
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                  {/* Total Guests */}
                   <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</h3>
-                    <p className="text-3xl font-bold text-wedding-navy mt-2">{guests.length}</p>
+                    <div className="flex flex-col items-center text-center">
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Guests</h3>
+                      <div className="flex items-baseline gap-2 justify-center">
+                        <div>
+                          <p className="text-3xl font-bold text-wedding-navy">{guests.length}</p>
+                          <p className="text-xs text-gray-400">guests</p>
+                        </div>
+                        {totalPlusOnesAllowed > 0 && (
+                          <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
+                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400">+{totalPlusOnesAllowed}</p>
+                            <p className="text-xs text-gray-400">plus-ones</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                  {/* RSVPs Received */}
                   <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs Received</h3>
-                    <p className="text-3xl font-bold text-green-600 dark:text-green-300 mt-2">{rsvps.length}</p>
+                    <div className="flex flex-col items-center text-center">
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">RSVPs Confirmed</h3>
+                      <div className="flex items-baseline gap-2 justify-center">
+                        <div>
+                          <p className="text-3xl font-bold text-green-600 dark:text-green-300">{confirmedGuests.length}</p>
+                          <p className="text-xs text-gray-400">guests</p>
+                        </div>
+                        {confirmedPlusOnesSubmitted > 0 && (
+                          <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
+                            <p className="text-lg font-semibold text-green-600 dark:text-green-400">+{confirmedPlusOnesSubmitted}</p>
+                            <p className="text-xs text-gray-400">plus-ones</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                  {/* Awaiting Response */}
                   <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Awaiting Response</h3>
-                    <p className="text-3xl font-bold text-yellow-600 mt-2">{invitedNoRsvp}</p>
+                    <div className="flex flex-col items-center text-center">
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Awaiting Response</h3>
+                      <div className="flex items-baseline gap-2 justify-center">
+                        <div>
+                          <p className="text-3xl font-bold text-yellow-600">{invitedNoRsvp}</p>
+                          <p className="text-xs text-gray-400">guests</p>
+                        </div>
+                        {pendingPlusOnesAllowed > 0 && (
+                          <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
+                            <p className="text-lg font-semibold text-yellow-600 dark:text-yellow-400">+{pendingPlusOnesAllowed}</p>
+                            <p className="text-xs text-gray-400">plus-ones</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                  {/* Not Invited */}
                   <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Not Invited</h3>
-                    <p className="text-3xl font-bold text-gray-500 mt-2">{notInvited}</p>
+                    <div className="flex flex-col items-center text-center">
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Not Invited</h3>
+                      <p className="text-3xl font-bold text-gray-500 mt-1">{notInvited}</p>
+                    </div>
                   </div>
+                  {/* Plus Ones Submitted */}
                   <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Plus Ones</h3>
-                    <p className="text-3xl font-bold text-wedding-sage mt-2">{plusOnes.length}</p>
+                    <div className="flex flex-col items-center text-center">
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Plus Ones</h3>
+                      <p className="text-3xl font-bold text-wedding-sage mt-1">{plusOnes.length}</p>
+                    </div>
                   </div>
                 </div>
 
@@ -1624,86 +1775,93 @@ export default function AdminGuestsPage() {
                               {isExpanded && (
                                 <tr key={`${guestId}-details`} className="bg-gray-50 dark:bg-slate-700/50">
                                   <td colSpan={8} className="px-6 py-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                      <div>
-                                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Guest Details</h4>
-                                        <dl className="space-y-1 text-sm">
-                                          <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt> <dd className="inline ml-2 font-mono text-xs bg-gray-200 dark:bg-slate-600 px-2 py-1 rounded">{guest.token}</dd></div>
-                                          <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{getGroupLabel(guest.group_id)}</dd></div>
-                                          <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed})` : 'No'}</dd></div>
-                                        </dl>
-                                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 mt-4">Notification Preferences</h4>
-                                        <dl className="space-y-1 text-sm">
-                                          <div className="flex items-center gap-2">
-                                            <dt className="font-medium text-gray-700 dark:text-gray-300">SMS:</dt>
-                                            <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                              guest.sms_opt_in === true ? 'bg-green-100 text-green-700' :
-                                              guest.sms_opt_in === false ? 'bg-red-100 text-red-700' :
-                                              'bg-gray-100 text-gray-500'
-                                            }`}>
-                                              {guest.sms_opt_in === true ? 'Opted In' : guest.sms_opt_in === false ? 'Opted Out' : 'Not Set'}
-                                            </dd>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <dt className="font-medium text-gray-700 dark:text-gray-300">Email:</dt>
-                                            <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                              guest.email_opt_in === true ? 'bg-green-100 text-green-700' :
-                                              guest.email_opt_in === false ? 'bg-red-100 text-red-700' :
-                                              'bg-gray-100 text-gray-500'
-                                            }`}>
-                                              {guest.email_opt_in === true ? 'Opted In' : guest.email_opt_in === false ? 'Opted Out' : 'Not Set'}
-                                            </dd>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <dt className="font-medium text-gray-700 dark:text-gray-300">Invite Sent:</dt>
-                                            <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                              guest.invite_sent ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                                            }`}>
-                                              {guest.invite_sent ? 'Yes' : 'No'}
-                                            </dd>
-                                          </div>
-                                        </dl>
-                                      </div>
-                                      {rsvp && (
+                                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+                                      {/* Left: Guest info */}
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                         <div>
-                                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
+                                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Guest Details</h4>
                                           <dl className="space-y-1 text-sm">
-                                            <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.join(', ') || 'None'}</dd></div>
-                                            <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Dietary:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.dietary || 'None'}</dd></div>
-                                            {rsvp.confirmed_by_admin && <div className="text-xs text-blue-500">(Confirmed by admin)</div>}
+                                            <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt> <dd className="inline ml-2 font-mono text-xs bg-gray-200 dark:bg-slate-600 px-2 py-1 rounded">{guest.token}</dd></div>
+                                            <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{getGroupLabel(guest.group_id)}</dd></div>
+                                            <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed})` : 'No'}</dd></div>
+                                          </dl>
+                                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 mt-4">Notification Preferences</h4>
+                                          <dl className="space-y-1 text-sm">
+                                            <div className="flex items-center gap-2">
+                                              <dt className="font-medium text-gray-700 dark:text-gray-300">SMS:</dt>
+                                              <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                                guest.sms_opt_in === true ? 'bg-green-100 text-green-700' :
+                                                guest.sms_opt_in === false ? 'bg-red-100 text-red-700' :
+                                                'bg-gray-100 text-gray-500'
+                                              }`}>
+                                                {guest.sms_opt_in === true ? 'Opted In' : guest.sms_opt_in === false ? 'Opted Out' : 'Not Set'}
+                                              </dd>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <dt className="font-medium text-gray-700 dark:text-gray-300">Email:</dt>
+                                              <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                                guest.email_opt_in === true ? 'bg-green-100 text-green-700' :
+                                                guest.email_opt_in === false ? 'bg-red-100 text-red-700' :
+                                                'bg-gray-100 text-gray-500'
+                                              }`}>
+                                                {guest.email_opt_in === true ? 'Opted In' : guest.email_opt_in === false ? 'Opted Out' : 'Not Set'}
+                                              </dd>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <dt className="font-medium text-gray-700 dark:text-gray-300">Invite Sent:</dt>
+                                              <dd className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                                guest.invite_sent ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                                              }`}>
+                                                {guest.invite_sent ? 'Yes' : 'No'}
+                                              </dd>
+                                            </div>
                                           </dl>
                                         </div>
-                                      )}
-                                      {guestPlusOnes.length > 0 && (
-                                        <div>
-                                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Plus Ones ({guestPlusOnes.length})</h4>
-                                          <ul className="space-y-2">
-                                            {guestPlusOnes.map((po, idx) => (
-                                              <li key={po._id || idx} className="text-sm bg-white dark:bg-slate-600 p-2 rounded shadow-sm">
-                                                <div className="font-medium text-gray-900 dark:text-gray-100">{po.name}</div>
-                                                <div className="text-gray-500 dark:text-gray-400 text-xs">
-                                                  {po.phone && <span>Phone: {po.phone} | </span>}
-                                                  {po.email && <span>Email: {po.email} | </span>}
-                                                  Attending: {po.attending?.join(', ') || 'None'}
-                                                  {po.dietary && ` | Dietary: ${po.dietary}`}
-                                                </div>
-                                                <div className="flex gap-2 mt-1">
-                                                  {po.sms_opt_in && (
-                                                    <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                                                      SMS ✓
-                                                    </span>
-                                                  )}
-                                                  {po.email_opt_in && (
-                                                    <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                                      Email ✓
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        </div>
-                                      )}
+                                        {rsvp && (
+                                          <div>
+                                            <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
+                                            <dl className="space-y-1 text-sm">
+                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.join(', ') || 'None'}</dd></div>
+                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Dietary:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.dietary || 'None'}</dd></div>
+                                              {rsvp.confirmed_by_admin && <div className="text-xs text-blue-500">(Confirmed by admin)</div>}
+                                            </dl>
+                                          </div>
+                                        )}
+                                        {guestPlusOnes.length > 0 && (
+                                          <div>
+                                            <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Plus Ones ({guestPlusOnes.length})</h4>
+                                            <ul className="space-y-2">
+                                              {guestPlusOnes.map((po, idx) => (
+                                                <li key={po._id || idx} className="text-sm bg-white dark:bg-slate-600 p-2 rounded shadow-sm">
+                                                  <div className="font-medium text-gray-900 dark:text-gray-100">{po.name}</div>
+                                                  <div className="text-gray-500 dark:text-gray-400 text-xs">
+                                                    {po.phone && <span>Phone: {po.phone} | </span>}
+                                                    {po.email && <span>Email: {po.email} | </span>}
+                                                    Attending: {po.attending?.join(', ') || 'None'}
+                                                    {po.dietary && ` | Dietary: ${po.dietary}`}
+                                                  </div>
+                                                  <div className="flex gap-2 mt-1">
+                                                    {po.sms_opt_in && (
+                                                      <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                                        SMS ✓
+                                                      </span>
+                                                    )}
+                                                    {po.email_opt_in && (
+                                                      <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                                        Email ✓
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                      </div>
+                                      {/* Right: Activity Timeline */}
+                                      <div className="border-l border-gray-200 dark:border-gray-600 pl-4">
+                                        {renderActivityTimeline(guestId)}
+                                      </div>
                                     </div>
                                   </td>
                                 </tr>
@@ -1823,80 +1981,90 @@ export default function AdminGuestsPage() {
                           {/* Expanded Details */}
                           {isExpanded && (
                             <div className="px-6 pb-6">
-                              <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                              <div className="border-t pt-4 grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+                                {/* Left: Guest info */}
                                 <div>
-                                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Guest Information</h4>
-                                  <dl className="space-y-1 text-sm">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
-                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt>
-                                      <dd className="inline ml-2 font-mono text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">
-                                        {guest.token}
-                                      </dd>
+                                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Guest Information</h4>
+                                      <dl className="space-y-1 text-sm">
+                                        <div>
+                                          <dt className="inline font-medium text-gray-700 dark:text-gray-300">Token:</dt>
+                                          <dd className="inline ml-2 font-mono text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">
+                                            {guest.token}
+                                          </dd>
+                                        </div>
+                                        <div>
+                                          <dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt>
+                                          <dd className="inline ml-2">{getGroupLabel(guest.group_id)}</dd>
+                                        </div>
+                                        <div>
+                                          <dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt>
+                                          <dd className="inline ml-2">
+                                            {guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed || 0})` : 'No'}
+                                          </dd>
+                                        </div>
+                                      </dl>
                                     </div>
-                                    <div>
-                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Group:</dt>
-                                      <dd className="inline ml-2">{getGroupLabel(guest.group_id)}</dd>
+
+                                    {guestPlusOnes.length > 0 && (
+                                      <div>
+                                        <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Plus Ones</h4>
+                                        <ul className="space-y-2">
+                                          {guestPlusOnes.map((plusOne, idx) => (
+                                            <li key={plusOne._id || idx} className="text-sm bg-gray-50 dark:bg-slate-700 p-2 rounded">
+                                              <div className="font-medium">{plusOne.name}</div>
+                                              <div className="text-gray-600 dark:text-gray-400">
+                                                {plusOne.phone && <span>Phone: {plusOne.phone} | </span>}
+                                                {plusOne.email && <span>Email: {plusOne.email} | </span>}
+                                                Attending: {plusOne.attending?.join(', ') || 'None'}
+                                                {plusOne.dietary && ` | Dietary: ${plusOne.dietary}`}
+                                              </div>
+                                              <div className="flex gap-2 mt-1">
+                                                {plusOne.sms_opt_in && (
+                                                  <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                                    SMS ✓
+                                                  </span>
+                                                )}
+                                                {plusOne.email_opt_in && (
+                                                  <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                                    Email ✓
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {selectedWeddingData?.events && (
+                                    <div className="mt-4">
+                                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Wedding Events</h4>
+                                      <div className="flex gap-2 flex-wrap">
+                                        {selectedWeddingData.events.map((event, idx) => (
+                                          <span
+                                            key={idx}
+                                            className={`px-3 py-1 text-xs rounded-full ${
+                                              rsvp?.attending.includes(event.type)
+                                                ? 'bg-green-100 text-green-800'
+                                                : 'bg-gray-100 text-gray-600'
+                                            }`}
+                                          >
+                                            {event.type.replace('_', ' ')} - {event.date}
+                                          </span>
+                                        ))}
+                                      </div>
                                     </div>
-                                    <div>
-                                      <dt className="inline font-medium text-gray-700 dark:text-gray-300">Plus Ones Allowed:</dt>
-                                      <dd className="inline ml-2">
-                                        {guest.plus_one_allowed ? `Yes (${guest.number_of_plus_ones_allowed || 0})` : 'No'}
-                                      </dd>
-                                    </div>
-                                  </dl>
+                                  )}
                                 </div>
 
-                                {guestPlusOnes.length > 0 && (
-                                  <div>
-                                    <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Plus Ones</h4>
-                                    <ul className="space-y-2">
-                                      {guestPlusOnes.map((plusOne, idx) => (
-                                        <li key={plusOne._id || idx} className="text-sm bg-gray-50 dark:bg-slate-700 p-2 rounded">
-                                          <div className="font-medium">{plusOne.name}</div>
-                                          <div className="text-gray-600 dark:text-gray-400">
-                                            {plusOne.phone && <span>Phone: {plusOne.phone} | </span>}
-                                            {plusOne.email && <span>Email: {plusOne.email} | </span>}
-                                            Attending: {plusOne.attending?.join(', ') || 'None'}
-                                            {plusOne.dietary && ` | Dietary: ${plusOne.dietary}`}
-                                          </div>
-                                          <div className="flex gap-2 mt-1">
-                                            {plusOne.sms_opt_in && (
-                                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                                                SMS ✓
-                                              </span>
-                                            )}
-                                            {plusOne.email_opt_in && (
-                                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                                Email ✓
-                                              </span>
-                                            )}
-                                          </div>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
+                                {/* Right: Activity Timeline */}
+                                <div className="border-l border-gray-200 dark:border-gray-600 pl-4">
+                                  {renderActivityTimeline(guestId)}
+                                </div>
                               </div>
-
-                              {selectedWeddingData?.events && (
-                                <div className="mt-4">
-                                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Wedding Events</h4>
-                                  <div className="flex gap-2 flex-wrap">
-                                    {selectedWeddingData.events.map((event, idx) => (
-                                      <span
-                                        key={idx}
-                                        className={`px-3 py-1 text-xs rounded-full ${
-                                          rsvp?.attending.includes(event.type)
-                                            ? 'bg-green-100 text-green-800'
-                                            : 'bg-gray-100 text-gray-600'
-                                        }`}
-                                      >
-                                        {event.type.replace('_', ' ')} - {event.date}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           )}
                         </div>

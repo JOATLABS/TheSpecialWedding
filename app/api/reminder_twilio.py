@@ -218,16 +218,22 @@ async def send_individual_reminders(
             "status": status,
             "sent_at": now,
             "provider": "twilio",
-            "message_sid": message_sid,
+            # Delivery tracking fields
             "delivery_status": initial_status,
             "delivery_status_updated_at": now if message_sid else None,
         }
-        if message_sid and initial_status:
-            log_record["delivery_events"] = [{
-                "status": initial_status,
-                "timestamp": now,
-                "error_code": None
-            }]
+        # Only include message_sid when present — omitting it lets the
+        # sparse unique index skip failed records instead of colliding on null.
+        if message_sid:
+            log_record["message_sid"] = message_sid
+            if initial_status:
+                log_record["delivery_events"] = [{
+                    "status": initial_status,
+                    "timestamp": now,
+                    "error_code": None
+                }]
+            else:
+                log_record["delivery_events"] = []
         else:
             log_record["delivery_events"] = []
         logs.append(log_record)
