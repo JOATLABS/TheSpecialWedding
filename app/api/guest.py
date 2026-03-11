@@ -5,7 +5,7 @@ import inspect
 from app.services.guest_service import GuestService
 from app.services.activity_log_service import activity_log_service
 from app.models.guest import UpdateGuestRequest, GuestModel, CreateGuestRequest
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.utils.token_generator import generate_token
 from app.core.database import mongo
 from bson import ObjectId
@@ -95,6 +95,7 @@ async def update_guest(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Update guest information. Only updateable fields: name, phone, email, group_id, role, plus_one settings."""
+    enforce_team_permission(current_user, "manage_guests")
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if inspect.isawaitable(guest):
@@ -127,6 +128,7 @@ async def update_guest(
 
 @router.delete("/guests/{guest_id}", tags=["Admin"])
 async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    enforce_team_permission(current_user, "manage_guests")
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if inspect.isawaitable(guest):
@@ -161,6 +163,7 @@ async def create_guest(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Create a single guest for a wedding."""
+    enforce_team_permission(current_user, "manage_guests")
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -292,6 +295,7 @@ async def update_seating_constraints(
     This endpoint updates the guest records directly, which are then used
     by the AI seating optimization to create better arrangements.
     """
+    enforce_team_permission(current_user, "manage_seating")
     # Check wedding access
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")

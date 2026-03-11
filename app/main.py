@@ -80,6 +80,8 @@ from app.api.web_push import router as web_push_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.vendor_contract_public import router as vendor_contract_public_router
 from app.api.notification_stream import router as notification_stream_router
+from app.api.team_management import router as team_management_router
+from app.api.inbound_emails import router as inbound_emails_router
 
 # Setup logging
 logging.basicConfig(
@@ -379,6 +381,8 @@ admin_routers = [
     (web_push_router, "Web Push"),
     (knowledge_base_router, "Knowledge Base"),
     (notification_stream_router, "Notifications SSE"),
+    (team_management_router, "Team Management"),
+    (inbound_emails_router, "Inbound Emails"),
 ]
 
 for router, tag in admin_routers:

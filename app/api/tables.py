@@ -5,7 +5,8 @@ from app.models.table import TableModel, UpdateTableRequest, AssignGuestsRequest
 from app.dependencies.auth_extended import (
     require_admin_or_planner,
     ExtendedAuthUser,
-    check_wedding_access
+    check_wedding_access,
+    enforce_team_permission
 )
 from app.core.database import mongo
 from bson import ObjectId
@@ -43,6 +44,7 @@ async def create_table(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Create a new table"""
+    enforce_team_permission(current_user, "manage_seating")
     if not await check_wedding_access(current_user, table.wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
@@ -72,6 +74,7 @@ async def update_table(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Update table properties"""
+    enforce_team_permission(current_user, "manage_seating")
     try:
         oid = ObjectId(table_id)
     except InvalidId:
@@ -102,6 +105,7 @@ async def delete_table(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Delete a table and unassign its guests"""
+    enforce_team_permission(current_user, "manage_seating")
     try:
         oid = ObjectId(table_id)
     except InvalidId:
@@ -133,6 +137,7 @@ async def assign_guests(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Bulk assign guests to a table"""
+    enforce_team_permission(current_user, "manage_seating")
     try:
         table_oid = ObjectId(request.table_id)
     except InvalidId:
@@ -229,6 +234,7 @@ async def unassign_guests(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Bulk unassign guests"""
+    enforce_team_permission(current_user, "manage_seating")
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
