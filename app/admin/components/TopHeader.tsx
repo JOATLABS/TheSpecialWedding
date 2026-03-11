@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Menu, Sun, Moon, Bell, User, Settings, LogOut, ChevronDown } from 'lucide-react';
@@ -13,10 +13,10 @@ interface TopHeaderProps {
   title?: string;
 }
 
-// Polling configuration
-const BASE_POLL_INTERVAL = 60000; // 60 seconds
-const MAX_POLL_INTERVAL = 300000; // 5 minutes max backoff
-const FOCUS_DEBOUNCE_MS = 2000; // 2 second debounce for focus events
+// SSE reconnection configuration
+const INITIAL_RECONNECT_DELAY = 1000; // 1 second
+const MAX_RECONNECT_DELAY = 30000;    // 30 seconds cap
+const MAX_RECONNECT_ATTEMPTS = 20;    // Stop after 20 consecutive failures
 
 export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -26,12 +26,11 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Polling state refs (refs to avoid re-renders and stale closures)
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const currentIntervalMs = useRef(BASE_POLL_INTERVAL);
-  const consecutiveErrors = useRef(0);
-  const lastFocusFetch = useRef(0);
-  const isPollingEnabled = useRef(true);
+  // SSE connection refs
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttempts = useRef(0);
+  const isConnecting = useRef(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -44,170 +43,127 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Stop polling (e.g., on auth failure)
-  const stopPolling = useCallback(() => {
-    isPollingEnabled.current = false;
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  }, []);
-
-  // Reset backoff on success
-  const resetBackoff = useCallback(() => {
-    consecutiveErrors.current = 0;
-    currentIntervalMs.current = BASE_POLL_INTERVAL;
-  }, []);
-
-  // Increase backoff on error (exponential with cap)
-  const increaseBackoff = useCallback(() => {
-    consecutiveErrors.current += 1;
-    // Exponential backoff: 60s -> 120s -> 240s -> 300s (capped)
-    currentIntervalMs.current = Math.min(
-      BASE_POLL_INTERVAL * Math.pow(2, consecutiveErrors.current),
-      MAX_POLL_INTERVAL
-    );
-  }, []);
-
-  // Fetch combined notification count (platform announcements + activity notifications)
-  const fetchNotificationCount = useCallback(async (isManualFetch = false) => {
+  // SSE connection management
+  useEffect(() => {
     if (!token) return;
 
-    // Skip if polling disabled (auth failure) unless it's a manual fetch after re-auth
-    if (!isPollingEnabled.current && !isManualFetch) return;
+    const closeConnection = () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      isConnecting.current = false;
+    };
 
-    // Skip if tab is hidden (save resources)
-    if (document.hidden && !isManualFetch) return;
+    const connect = () => {
+      // Close any existing connection before opening a new one (prevents race on token change)
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (isConnecting.current) return;
+      isConnecting.current = true;
 
-    try {
-      // Fetch both counts in parallel
-      const [platformRes, activityRes] = await Promise.allSettled([
-        // Platform announcements (from root admin)
-        fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }),
-        // Activity notifications (RSVPs, forms, payments - for planners)
-        fetch(`${getApiBaseUrl()}/admin/planner/activity-notifications/count`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }),
-      ]);
+      // EventSource doesn't support custom headers, so we pass the token as a query param.
+      // The backend SSE endpoint accepts ?token= for this reason.
+      const url = `${getApiBaseUrl()}/admin/notifications/stream?token=${encodeURIComponent(token)}`;
+      const es = new EventSource(url);
+      eventSourceRef.current = es;
 
-      let totalUnread = 0;
-      let hasAuthError = false;
-
-      // Check platform response
-      if (platformRes.status === 'fulfilled') {
-        if (platformRes.value.status === 401) {
-          hasAuthError = true;
-        } else if (platformRes.value.ok) {
-          const platformData = await platformRes.value.json();
-          totalUnread += platformData.unread || 0;
+      es.addEventListener('notification-count', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setUnreadCount(data.unread || 0);
+          // Reset reconnect counter on successful data
+          reconnectAttempts.current = 0;
+        } catch {
+          // Ignore malformed events
         }
-      }
+      });
 
-      // Check activity response (may fail for root admin - that's expected)
-      if (activityRes.status === 'fulfilled') {
-        if (activityRes.value.status === 401) {
-          hasAuthError = true;
-        } else if (activityRes.value.ok) {
-          const activityData = await activityRes.value.json();
-          totalUnread += activityData.unread || 0;
+      es.addEventListener('notification-new', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // Dispatch custom event so other components (e.g. notification panel) can react
+          window.dispatchEvent(new CustomEvent('notification-received', { detail: data }));
+        } catch {
+          // Ignore malformed events
         }
-      }
+      });
 
-      // Handle authentication failure - stop polling, user needs to re-login
-      if (hasAuthError) {
-        console.warn('Notification polling: Authentication failed (401). Stopping polling.');
-        stopPolling();
-        // Optionally trigger logout for expired sessions
-        // logout();
-        return;
-      }
+      es.onopen = () => {
+        isConnecting.current = false;
+        reconnectAttempts.current = 0;
+      };
 
-      // Success - reset backoff and update count
-      resetBackoff();
-      setUnreadCount(totalUnread);
-    } catch (error) {
-      console.error('Failed to fetch notification count:', error);
-      increaseBackoff();
-    }
-  }, [token, stopPolling, resetBackoff, increaseBackoff]);
+      es.onerror = () => {
+        isConnecting.current = false;
+        es.close();
+        eventSourceRef.current = null;
 
-  // Start polling with current interval
-  const startPolling = useCallback(() => {
-    // Clear any existing interval
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-    }
+        // Reconnect with exponential backoff
+        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+          const delay = Math.min(
+            INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current),
+            MAX_RECONNECT_DELAY
+          );
+          reconnectAttempts.current += 1;
+          reconnectTimeoutRef.current = setTimeout(connect, delay);
+        }
+      };
+    };
 
-    // Only start if enabled
-    if (!isPollingEnabled.current) return;
+    // Connect on mount
+    connect();
 
-    pollIntervalRef.current = setInterval(() => {
-      fetchNotificationCount();
-    }, currentIntervalMs.current);
-  }, [fetchNotificationCount]);
-
-  // Fetch on mount, with smart polling that respects visibility and auth state
-  useEffect(() => {
-    // Reset polling state on mount/token change
-    isPollingEnabled.current = true;
-    resetBackoff();
-
-    // Initial fetch
-    fetchNotificationCount(true);
-
-    // Start interval polling
-    startPolling();
-
-    // Handle visibility change - pause polling when tab hidden, resume when visible
+    // Pause SSE when tab is hidden, resume when visible
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Tab hidden - stop polling to save resources
-        if (pollIntervalRef.current) {
-          clearInterval(pollIntervalRef.current);
-          pollIntervalRef.current = null;
-        }
+        closeConnection();
       } else {
-        // Tab visible again - fetch immediately and restart polling
-        fetchNotificationCount();
-        startPolling();
+        reconnectAttempts.current = 0;
+        connect();
       }
     };
 
-    // Debounced focus handler - avoid multiple rapid calls when focusing
-    const handleFocus = () => {
-      const now = Date.now();
-      if (now - lastFocusFetch.current > FOCUS_DEBOUNCE_MS) {
-        lastFocusFetch.current = now;
-        fetchNotificationCount();
+    // Listen for local "notifications-updated" events (e.g. user marks as read)
+    // to trigger an immediate re-fetch via a one-shot REST call
+    const handleNotificationsRead = async () => {
+      try {
+        const [platformRes, activityRes] = await Promise.allSettled([
+          fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          }),
+          fetch(`${getApiBaseUrl()}/admin/planner/activity-notifications/count`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          }),
+        ]);
+        let total = 0;
+        if (platformRes.status === 'fulfilled' && platformRes.value.ok) {
+          total += ((await platformRes.value.json()).unread || 0);
+        }
+        if (activityRes.status === 'fulfilled' && activityRes.value.ok) {
+          total += ((await activityRes.value.json()).unread || 0);
+        }
+        setUnreadCount(total);
+      } catch {
+        // SSE will catch up on next push
       }
-    };
-
-    // Listen for custom event when notifications are marked as read
-    const handleNotificationsRead = () => {
-      fetchNotificationCount();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
     window.addEventListener('notifications-updated', handleNotificationsRead);
 
     return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
+      closeConnection();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('notifications-updated', handleNotificationsRead);
     };
-  }, [fetchNotificationCount, startPolling, resetBackoff]);
+  }, [token]);
 
   const toggleTheme = () => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');

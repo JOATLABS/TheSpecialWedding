@@ -35,9 +35,14 @@ interface Wedding {
 
 interface RSVPStats {
  total_guests: number;
+ total_plus_ones_allowed: number;
+ total_plus_ones_submitted: number;
  confirmed: number;
+ confirmed_plus_ones_allowed: number;
+ confirmed_plus_ones_submitted: number;
  declined: number;
  pending: number;
+ pending_plus_ones_allowed: number;
 }
 
 interface AIInsight {
@@ -52,7 +57,7 @@ export default function WeddingPlannerDashboard() {
  const { token, userProfile, fetchUserProfile } = useAdmin();
  const router = useRouter();
  const [weddings, setWeddings] = useState<Wedding[]>([]);
- const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, confirmed: 0, declined: 0, pending: 0 });
+ const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, total_plus_ones_allowed: 0, total_plus_ones_submitted: 0, confirmed: 0, confirmed_plus_ones_allowed: 0, confirmed_plus_ones_submitted: 0, declined: 0, pending: 0, pending_plus_ones_allowed: 0 });
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');
  const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -83,9 +88,14 @@ export default function WeddingPlannerDashboard() {
  setWeddings(data.weddings);
  setStats({
  total_guests: data.summary.total_guests,
+ total_plus_ones_allowed: data.summary.total_plus_ones_allowed || 0,
+ total_plus_ones_submitted: data.summary.total_plus_ones_submitted || 0,
  confirmed: data.summary.confirmed_rsvps,
+ confirmed_plus_ones_allowed: data.summary.confirmed_plus_ones_allowed || 0,
+ confirmed_plus_ones_submitted: data.summary.confirmed_plus_ones_submitted || 0,
  declined: data.summary.declined_rsvps,
- pending: data.summary.pending_rsvps
+ pending: data.summary.pending_rsvps,
+ pending_plus_ones_allowed: data.summary.pending_plus_ones_allowed || 0,
  });
  setRecentActivity(data.recent_activity);
  } else {
@@ -226,69 +236,90 @@ export default function WeddingPlannerDashboard() {
 
  {/* Stats Cards */}
  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
- <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
- <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
- </svg>
- </div>
- </div>
- <div className="ml-4">
- <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Weddings</p>
- <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{weddings.length}</p>
- </div>
- </div>
- </div>
+   {/* Active Weddings */}
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+     <div className="flex flex-col items-center text-center">
+       <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center mb-3">
+         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+         </svg>
+       </div>
+       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Active Weddings</p>
+       <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{weddings.length}</p>
+     </div>
+   </div>
 
- <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
- <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
- </svg>
- </div>
- </div>
- <div className="ml-4">
- <p className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs Confirmed</p>
- <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{stats.confirmed}</p>
- </div>
- </div>
- </div>
+   {/* RSVPs Confirmed — with plus-ones */}
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+     <div className="flex flex-col items-center text-center">
+       <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mb-3">
+         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+         </svg>
+       </div>
+       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">RSVPs Confirmed</p>
+       <div className="flex items-baseline gap-3 justify-center">
+         <div>
+           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{stats.confirmed}</p>
+           <p className="text-xs text-gray-400 dark:text-gray-500">guests</p>
+         </div>
+         {stats.confirmed_plus_ones_submitted > 0 && (
+           <div className="border-l border-gray-200 dark:border-gray-600 pl-3">
+             <p className="text-xl font-semibold text-green-600 dark:text-green-400">+{stats.confirmed_plus_ones_submitted}</p>
+             <p className="text-xs text-gray-400 dark:text-gray-500">plus-ones</p>
+           </div>
+         )}
+       </div>
+     </div>
+   </div>
 
- <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center">
- <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
- </svg>
- </div>
- </div>
- <div className="ml-4">
- <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending RSVPs</p>
- <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{stats.pending}</p>
- </div>
- </div>
- </div>
+   {/* Pending RSVPs — with plus-ones */}
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+     <div className="flex flex-col items-center text-center">
+       <div className="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center mb-3">
+         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+         </svg>
+       </div>
+       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Pending RSVPs</p>
+       <div className="flex items-baseline gap-3 justify-center">
+         <div>
+           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{stats.pending}</p>
+           <p className="text-xs text-gray-400 dark:text-gray-500">guests</p>
+         </div>
+         {stats.pending_plus_ones_allowed > 0 && (
+           <div className="border-l border-gray-200 dark:border-gray-600 pl-3">
+             <p className="text-xl font-semibold text-yellow-600 dark:text-yellow-400">+{stats.pending_plus_ones_allowed}</p>
+             <p className="text-xs text-gray-400 dark:text-gray-500">plus-ones</p>
+           </div>
+         )}
+       </div>
+     </div>
+   </div>
 
- <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
- <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
- </svg>
- </div>
- </div>
- <div className="ml-4">
- <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Guests</p>
- <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{stats.total_guests}</p>
- </div>
- </div>
- </div>
+   {/* Total Guests — with plus-ones */}
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+     <div className="flex flex-col items-center text-center">
+       <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center mb-3">
+         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+         </svg>
+       </div>
+       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Guests</p>
+       <div className="flex items-baseline gap-3 justify-center">
+         <div>
+           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{stats.total_guests}</p>
+           <p className="text-xs text-gray-400 dark:text-gray-500">guests</p>
+         </div>
+         {stats.total_plus_ones_allowed > 0 && (
+           <div className="border-l border-gray-200 dark:border-gray-600 pl-3">
+             <p className="text-xl font-semibold text-purple-600 dark:text-purple-400">+{stats.total_plus_ones_allowed}</p>
+             <p className="text-xs text-gray-400 dark:text-gray-500">plus-ones</p>
+           </div>
+         )}
+       </div>
+     </div>
+   </div>
  </div>
 
  {/* Weddings List */}

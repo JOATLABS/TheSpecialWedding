@@ -12,18 +12,18 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const showcaseHighlights = [
   {
-    label: 'Live oversight',
-    description: 'Budgets, forms, and vendor replies surface in one glance so you can take action instantly.',
+    label: 'Every detail, one place',
+    description: 'RSVPs, guest lists, seating charts, and reminders — all managed from a single dashboard so nothing slips through.',
   },
   {
-    label: 'Client-ready updates',
-    description: 'Share status snapshots with couples without exporting data out of the secure planner workspace.',
+    label: 'Keep couples in the loop',
+    description: 'Send updates, share timelines, and track vendor progress without switching between apps or spreadsheets.',
   },
 ];
 
 const showcaseStats = [
-  { value: '82%', caption: 'Routine planning tasks automated inside the portal' },
-  { value: '24/7', caption: 'Responsive access across desktop, tablet, and mobile' },
+  { value: 'Real-time', caption: 'Guest RSVPs and responses update instantly' },
+  { value: 'Any device', caption: 'Manage weddings from your desk or on-site' },
 ];
 
 function WelcomeShowcase() {
@@ -35,10 +35,10 @@ function WelcomeShowcase() {
       />
       <div className="relative z-10 flex flex-col gap-6 text-wedding-navy">
         <header className="space-y-2">
-          <p className="text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-wedding-navy/65">Planner perspective</p>
-          <h2 className="text-[1.15rem] font-semibold leading-tight sm:text-[1.3rem]">Stay in control, share with confidence</h2>
+          <p className="text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-wedding-navy/65">Your planning hub</p>
+          <h2 className="text-[1.15rem] font-semibold leading-tight sm:text-[1.3rem]">Beautiful weddings start with effortless planning</h2>
           <p className="text-[0.78rem] text-wedding-navy/70 sm:text-sm">
-            Apple glass cues, precise spacing, and calm gradients keep the admin welcome polished without stealing focus from the login.
+            Everything you need to coordinate, communicate, and create unforgettable celebrations — all in one place.
           </p>
         </header>
 
@@ -153,9 +153,9 @@ export default function AdminLoginPage() {
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-[0.3em] text-wedding-navy/70 sm:text-sm">Planner portal</p>
-                    <h1 className="mt-2 text-[1.6rem] font-semibold text-wedding-navy sm:text-[1.8rem]">Welcome back, planner</h1>
+                    <h1 className="mt-2 text-[1.6rem] font-semibold text-wedding-navy sm:text-[1.8rem]">Welcome back</h1>
                     <p className="mt-2 text-[0.9rem] text-wedding-navy/70">
-                      Securely access budgets, forms, analytics, and notifications from one glass workspace.
+                      Sign in to manage your weddings, guests, and everything in between.
                     </p>
                   </div>
                   <div className="hidden shrink-0 rounded-full bg-white/50 p-4 text-wedding-rose backdrop-blur sm:block">
@@ -282,9 +282,9 @@ export default function AdminLoginPage() {
                 </div>
 
                 <div className="mt-6 rounded-2xl border border-white/30 bg-white/40 px-5 py-4 text-sm text-wedding-navy/70 shadow-inner">
-                  <h2 className="text-xs font-semibold uppercase tracking-[0.25em] text-wedding-navy/60 sm:text-sm">Mobile ready</h2>
+                  <h2 className="text-xs font-semibold uppercase tracking-[0.25em] text-wedding-navy/60 sm:text-sm">Plan from anywhere</h2>
                   <p className="mt-1.5 text-xs sm:text-sm">
-                    Adaptive layout, biometric-friendly SSO, and WCAG AA contrast keep the portal effortless on phones and tablets without introducing extra scrolling.
+                    Whether you're at a venue walkthrough or at your desk, your full dashboard is always a tap away on any device.
                   </p>
                 </div>
               </GlassCard>

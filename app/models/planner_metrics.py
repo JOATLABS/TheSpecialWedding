@@ -42,8 +42,13 @@ class MetricsSummaryModel(BaseModel):
     upcoming_weddings: int = 0
     past_weddings: int = 0
     total_guests: int = 0
+    total_plus_ones_allowed: int = Field(default=0, ge=0, description="Sum of number_of_plus_ones_allowed across all guests")
+    total_plus_ones_submitted: int = Field(default=0, ge=0, description="Actual plus-ones submitted")
     confirmed_rsvps: int = 0
+    confirmed_plus_ones_allowed: int = Field(default=0, ge=0, description="Plus-ones allowed for confirmed guests")
+    confirmed_plus_ones_submitted: int = Field(default=0, ge=0, description="Plus-ones submitted by confirmed guests")
     pending_rsvps: int = 0
+    pending_plus_ones_allowed: int = Field(default=0, ge=0, description="Plus-ones allowed for pending guests")
     declined_rsvps: int = 0
 
 

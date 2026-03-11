@@ -31,6 +31,60 @@ logger = logging.getLogger(__name__)
 class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     """Middleware to handle all exceptions with secure responses, logging, and alerts."""
 
+    # Paths commonly probed by scanners for sensitive files
+    BLOCKED_PATH_PREFIXES = (
+        "/.git",
+        "/.env",
+        "/.aws",
+        "/.ssh",
+        "/.svn",
+        "/.hg",
+        "/.docker",
+        "/.vscode",
+        "/wp-admin",
+        "/wp-login",
+        "/wp-content",
+        "/wp-includes",
+        "/wp",
+        "/wordpress",
+        "/phpmyadmin",
+        "/administrator",
+        "/cgi-bin",
+        "/.htaccess",
+        "/.htpasswd",
+        "/.DS_Store",
+        "/server-status",
+        "/server-info",
+        "/config.php",
+        "/xmlrpc.php",
+        "/debug",
+        "/debugbar",
+        "/_debugbar",
+        "/blog",
+        "/new",
+        "/old",
+        "/backup",
+        "/aws-",
+        "/test.php",
+        "/info.php",
+        "/phpinfo.php",
+        "/config.js",
+    )
+
+    BLOCKED_PATH_SUFFIXES = (
+        ".php",
+        ".asp",
+        ".aspx",
+        ".jsp",
+        ".env",
+        ".env.backup",
+        "aws.json",
+        "aws-credentials",
+        "aws.config.js",
+        ".s3cfg",
+        "config.js",
+    )
+
     def __init__(self, app, enable_email_alerts: bool = True):
         super().__init__(app)
         self.enable_email_alerts = enable_email_alerts
@@ -61,15 +115,38 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 logger.warning("RESEND_API_KEY not set, email alerts disabled.")
             self.enable_email_alerts = False
 
+    def _is_suspicious_path(self, path: str) -> bool:
+        """Check if the request path is a known scanner/probe target."""
+        path_lower = path.lower()
+        if any(path_lower.startswith(p) for p in self.BLOCKED_PATH_PREFIXES):
+            return True
+        if any(path_lower.endswith(s) for s in self.BLOCKED_PATH_SUFFIXES):
+            return True
+        return False
+
     async def dispatch(self, request: Request, call_next):
         client_ip = self._get_client_ip(request)
 
         if self._is_ip_blocked(client_ip):
             return self._create_blocked_response(client_ip)
 
+        # Block known scanner/probe paths — return 404 with no detail
+        if self._is_suspicious_path(request.url.path):
+            logger.warning(f"Blocked suspicious path probe: {request.url.path} from {client_ip}")
+            self._track_error(client_ip)
+            if self._should_block_ip(client_ip):
+                self.blocked_ips.add(client_ip)
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
+
         try:
             response = await call_next(request)
             self._reset_success(client_ip)
+
+            # Skip logging 404s with suspicious paths (scanner probes)
+            if response.status_code == 404 and self._is_suspicious_path(request.url.path):
+                logger.debug(f"Ignoring 404 for scanner probe path: {request.url.path}")
+                return response
+
             return response
         except Exception as exc:
             # Track and potentially block abusive IPs
@@ -86,10 +163,12 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             error_id = self._get_error_id(error_payload)
 
             # Persist and alert on unexpected errors only
+            # Note: HTTPException (including 401, 402, 403 auth responses) are not logged as errors
+            # because they are normal application responses, not unexpected failures
             if not isinstance(exc, (WeddingAppException, HTTPException)):
                 await self._log_unexpected_error(request, exc, error_payload, client_ip, error_id)
                 if self._is_critical_error(exc) and self.enable_email_alerts:
-                    await self._send_alert_email(error_payload)
+                    await self._send_alert_email(error_payload, exc, request, client_ip)
 
             return secure_response
 
@@ -260,18 +339,19 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             return "high"
         return "medium"
 
-    async def _send_alert_email(self, payload: Dict) -> None:
+    async def _send_alert_email(self, payload: Dict, exc: Exception = None, request: Request = None, client_ip: str = None) -> None:
         """Send alert email for critical errors using Resend."""
         if not self.resend or not self.resend_api_key:
             return
 
         try:
             error = payload.get("error", {})
-            error_html = self._build_error_email_html(error)
+            error_html = self._build_error_email_html(error, exc, request, client_ip)
+            exc_type = type(exc).__name__ if exc else "UNKNOWN"
             params = {
                 "from": os.getenv("RESEND_FROM_EMAIL", "alerts@thespecialwedding.com"),
                 "to": [self.root_admin_email],
-                "subject": f"Platform Error: {error.get('code', 'UNKNOWN')}",
+                "subject": f"[{self._get_error_severity(exc).upper() if exc else 'ERROR'}] {exc_type}: {str(request.url.path) if request else 'unknown path'}",
                 "html": error_html,
             }
             self.resend.Emails.send(params)  # type: ignore
@@ -279,20 +359,64 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.error(f"Failed to send alert email: {str(e)}")
 
-    def _build_error_email_html(self, error: Dict) -> str:
-        """Build a minimal HTML email for error alerts."""
+    def _build_error_email_html(self, error: Dict, exc: Exception = None, request: Request = None, client_ip: str = None) -> str:
+        """Build a detailed HTML email for error alerts."""
         dashboard_url = os.getenv("FRONTEND_URL")
         error_id = error.get("error_id", "unknown")
-        error_url = f"{dashboard_url}/admin/errors/{error_id}" if dashboard_url else "#"
+        error_url = f"{dashboard_url}/admin/platform/errors/{error_id}" if dashboard_url else "#"
+        severity = self._get_error_severity(exc) if exc else "unknown"
+        environment = os.getenv("ENVIRONMENT", "development")
+
+        # Extract real error details
+        exc_type = type(exc).__name__ if exc else "Unknown"
+        exc_message = str(exc)[:500] if exc else error.get("message", "No message")
+        request_method = request.method if request else "N/A"
+        request_path = str(request.url.path) if request else "N/A"
+        user_agent = request.headers.get("User-Agent", "N/A") if request else "N/A"
+
+        # Get first meaningful stack frame
+        stack_summary = ""
+        if exc:
+            tb_lines = traceback.format_exc().strip().split("\n")
+            # Get last 4 lines (the most relevant part)
+            relevant_lines = tb_lines[-4:] if len(tb_lines) >= 4 else tb_lines
+            stack_summary = "\n".join(relevant_lines)
+
+        severity_colors = {"critical": "#dc2626", "high": "#ea580c", "medium": "#ca8a04"}
+        severity_color = severity_colors.get(severity, "#6b7280")
+
         return f"""
         <html>
-            <body style="font-family: sans-serif;">
-                <h2>Platform Error Alert</h2>
-                <p><strong>Error ID:</strong> {error_id}</p>
-                <p><strong>Code:</strong> {error.get('code')}</p>
-                <p><strong>Message:</strong> {error.get('message')}</p>
-                <p><strong>Time:</strong> {error.get('timestamp')}</p>
-                <p><a href="{error_url}">View in dashboard</a></p>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a2e;">
+                <div style="border-left: 4px solid {severity_color}; padding: 12px 16px; margin-bottom: 20px; background: #f8f9fa;">
+                    <h2 style="margin: 0 0 4px 0; font-size: 18px;">Platform Error Alert</h2>
+                    <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; background: {severity_color}; color: white; font-size: 12px; font-weight: 600; text-transform: uppercase;">{severity}</span>
+                    <span style="margin-left: 8px; color: #6b7280; font-size: 13px;">{environment}</span>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <tr><td style="padding: 6px 0; color: #6b7280; width: 120px;">Error ID</td><td style="padding: 6px 0; font-family: monospace; font-size: 13px;">{error_id}</td></tr>
+                    <tr><td style="padding: 6px 0; color: #6b7280;">Exception</td><td style="padding: 6px 0; font-weight: 600;">{exc_type}</td></tr>
+                    <tr><td style="padding: 6px 0; color: #6b7280;">Endpoint</td><td style="padding: 6px 0;"><code>{request_method} {request_path}</code></td></tr>
+                    <tr><td style="padding: 6px 0; color: #6b7280;">Client IP</td><td style="padding: 6px 0;">{client_ip or 'N/A'}</td></tr>
+                    <tr><td style="padding: 6px 0; color: #6b7280;">Time</td><td style="padding: 6px 0;">{error.get('timestamp', 'N/A')}</td></tr>
+                </table>
+
+                <div style="margin-top: 16px;">
+                    <p style="margin: 0 0 6px 0; color: #6b7280; font-size: 13px; font-weight: 600;">Error Message</p>
+                    <div style="background: #f1f5f9; padding: 10px 14px; border-radius: 6px; font-size: 13px; word-break: break-word;">{exc_message}</div>
+                </div>
+
+                {f'''<div style="margin-top: 16px;">
+                    <p style="margin: 0 0 6px 0; color: #6b7280; font-size: 13px; font-weight: 600;">Stack Trace (summary)</p>
+                    <pre style="background: #1e293b; color: #e2e8f0; padding: 12px 14px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">{stack_summary}</pre>
+                </div>''' if stack_summary else ''}
+
+                <div style="margin-top: 20px;">
+                    <a href="{error_url}" style="display: inline-block; padding: 10px 20px; background: #1a1a2e; color: white; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500;">View full details in dashboard</a>
+                </div>
+
+                <p style="margin-top: 16px; font-size: 12px; color: #9ca3af;">User Agent: {user_agent[:100]}</p>
             </body>
         </html>
         """

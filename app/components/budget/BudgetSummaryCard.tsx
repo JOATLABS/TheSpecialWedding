@@ -1,16 +1,31 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import BudgetProgressBar from './BudgetProgressBar';
 import type { BudgetSummary } from '../../types/budget';
 import { formatDate } from '@/utils/dateFormat';
+import { Pencil, Check, X } from 'lucide-react';
 
 interface BudgetSummaryCardProps {
   summary: BudgetSummary;
   className?: string;
+  onSetTotalBudget?: (amount: number) => Promise<void>;
 }
 
-export default function BudgetSummaryCard({ summary, className = '' }: BudgetSummaryCardProps) {
+export default function BudgetSummaryCard({ summary, className = '', onSetTotalBudget }: BudgetSummaryCardProps) {
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditingBudget && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditingBudget]);
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -29,6 +44,36 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
     if (percentage > 5) return 'text-yellow-600';
     if (percentage < -5) return 'text-green-600';
     return 'text-wedding-navy';
+  };
+
+  const handleEditBudget = () => {
+    setBudgetInput(summary.total_budget.toString());
+    setIsEditingBudget(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingBudget(false);
+    setBudgetInput('');
+  };
+
+  const handleSaveBudget = async () => {
+    const amount = parseFloat(budgetInput);
+    if (isNaN(amount) || amount < 0 || !onSetTotalBudget) return;
+
+    setIsSaving(true);
+    try {
+      await onSetTotalBudget(amount);
+      setIsEditingBudget(false);
+    } catch {
+      // Error handled by parent
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleSaveBudget();
+    if (e.key === 'Escape') handleCancelEdit();
   };
 
   return (
@@ -56,11 +101,62 @@ export default function BudgetSummaryCard({ summary, className = '' }: BudgetSum
 
       {/* Key metrics grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
-          <div className="text-2xl font-bold text-wedding-navy dark:text-blue-400">
-            {formatCurrency(summary.total_budget)}
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Total Budget</div>
+        {/* Total Budget — editable */}
+        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600 relative group">
+          {isEditingBudget ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-lg font-bold text-wedding-navy dark:text-blue-400">$</span>
+                <input
+                  ref={inputRef}
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={budgetInput}
+                  onChange={(e) => setBudgetInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={isSaving}
+                  className="w-28 text-center text-lg font-bold text-wedding-navy dark:text-blue-400 bg-white dark:bg-slate-600 border border-wedding-rose rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleSaveBudget}
+                  disabled={isSaving}
+                  className="p-1 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors"
+                  title="Save"
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isSaving}
+                  className="p-1 rounded bg-gray-100 dark:bg-slate-600 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-500 transition-colors"
+                  title="Cancel"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="text-2xl font-bold text-wedding-navy dark:text-blue-400">
+                {formatCurrency(summary.total_budget)}
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-1">
+                Total Budget
+                {onSetTotalBudget && (
+                  <button
+                    onClick={handleEditBudget}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-600"
+                    title="Edit total budget"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-wedding-rose" />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
         <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
           <div className="text-2xl font-bold text-wedding-rose dark:text-rose-400">

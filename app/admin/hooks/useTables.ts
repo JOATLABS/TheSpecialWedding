@@ -101,7 +101,13 @@ export function useTables(weddingId: string) {
       if (!response.ok) {
         // Parse error response to get actual message (e.g., capacity exceeded)
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to assign guests');
+        const detail = errorData.detail;
+        const message = typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+          ? detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join('; ')
+          : 'Failed to assign guests';
+        throw new Error(message);
       }
       return true;
     } catch (err: any) {

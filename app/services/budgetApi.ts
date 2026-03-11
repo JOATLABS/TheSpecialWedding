@@ -76,6 +76,20 @@ class BudgetApiService {
     if (!response.ok) throw new Error('Failed to delete budget category');
   }
 
+  // Total Budget
+  async setTotalBudget(token: string, weddingId: string, totalBudget: number): Promise<{ total_budget: number }> {
+    const response = await fetch(
+      `${BASE_URL}/admin/weddings/${weddingId}/budget/total`,
+      {
+        method: 'PUT',
+        headers: this.getHeaders(token),
+        body: JSON.stringify({ total_budget: totalBudget })
+      }
+    );
+    if (!response.ok) throw new Error('Failed to update total budget');
+    return response.json();
+  }
+
   // Budget Summary
   async getBudgetSummary(token: string, weddingId: string): Promise<BudgetSummary> {
     const response = await fetch(

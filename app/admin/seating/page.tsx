@@ -242,10 +242,23 @@ export default function SeatingPage() {
   };
 
   const handleGuestAssign = async (guestId: string, tableId: string) => {
+    // Save previous table_id for rollback
+    const previousTableId = guests.find((g) => g.id === guestId)?.table_id ?? null;
+
+    // Optimistic UI update
     setGuests((prev) =>
       prev.map((g) => (g.id === guestId ? { ...g, table_id: tableId } : g))
     );
-    await assignGuests(tableId, [guestId]);
+
+    try {
+      await assignGuests(tableId, [guestId]);
+    } catch (err) {
+      // Rollback optimistic update on failure
+      console.error('Failed to assign guest:', err);
+      setGuests((prev) =>
+        prev.map((g) => (g.id === guestId ? { ...g, table_id: previousTableId } : g))
+      );
+    }
   };
 
   const handleTableDelete = async (id: string) => {

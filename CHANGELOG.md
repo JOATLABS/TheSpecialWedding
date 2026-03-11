@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4] - 2026-03-10 — Budget Page Fixes, KB Typography & Inline Budget Editor
+
+### Fixed
+
+- **Date displaying as "March 7, 20260" on budget category cards** (`app/components/budget/BudgetCategoryCard.tsx`):
+
+  - Root cause: `{category.percentage_of_total && (<span>...</span>)}` rendered the falsy number `0` as visible text when `percentage_of_total` was exactly `0` — React renders falsy numbers (`0`, `NaN`) as text nodes unlike `false`, `null`, or `undefined`
+  - The stray `0` appended directly after the year in the "Last updated: March 7, 2026" line, producing "20260"
+  - Fix: changed to `{!!category.percentage_of_total && (...)}` to coerce to boolean before the short-circuit
+
+- **"Failed to fetch payment history" red error banner on Budget page** (`app/admin/budget/page.tsx`, `app/api/budget.py`):
+
+  - The `GET /admin/weddings/{wedding_id}/payments` endpoint returned HTTP 500 — the exception bypassed FastAPI's `HTTPException` handler and was caught by the `ErrorHandlerMiddleware` (`BaseHTTPMiddleware`), which stripped the original error detail
+  - Backend: changed error handling to return `JSONResponse` directly instead of raising `HTTPException`, added `exc_info=True` to the logger call for full stack traces in production logs
+  - Frontend: payment history is non-critical — changed `catch` block to degrade gracefully with `console.warn` instead of setting error state that shows a red banner and toast
+
+- **Knowledge Base articles rendering as unstyled plain text** (`tailwind.config.js`):
+
+  - `ArticleView.tsx` uses Tailwind's `prose prose-slate dark:prose-invert` classes for markdown content, but the `@tailwindcss/typography` plugin was never installed
+  - Headings, bullet lists, numbered lists, blockquotes, and code blocks were all present in the DOM (ReactMarkdown with remark-gfm parsed correctly) but had no visual styling
+  - Installed `@tailwindcss/typography` and added `require('@tailwindcss/typography')` to the `plugins` array in `tailwind.config.js`
+
+### Added
+
+- **Inline total budget editor on Budget Overview card** (`app/components/budget/BudgetSummaryCard.tsx`, `app/api/budget.py`, `app/services/budgetApi.ts`, `app/admin/budget/page.tsx`):
+
+  - Planners can now hover over the "Total Budget" metric in the Budget Overview card and click the pencil icon to edit the amount inline — saves via `PUT /admin/weddings/{wedding_id}/budget/total`
+  - New backend endpoint `PUT /admin/weddings/{wedding_id}/budget/total` with `SetTotalBudgetRequest` model — writes directly to the wedding document's `total_budget` field
+  - New frontend API method `budgetApi.setTotalBudget(token, weddingId, amount)`
+  - Keyboard support: Enter to save, Escape to cancel
+  - This supplements the existing total budget field on the Weddings configuration page, providing a quick shortcut without leaving the Budget dashboard
+
+---
+
 ## [2.1.3] - 2026-03-03 — Email Service Type Safety & Root Admin Alerting
 
 ### Fixed

@@ -128,7 +128,7 @@ class PlannerNotificationService:
 
             # Send push notification (non-blocking)
             wedding_name = await self._get_wedding_name(wedding_id)
-            asyncio.create_task(
+            push_task = asyncio.create_task(
                 self._send_push_notification(
                     planner_id=planner_id,
                     notification_type=notification_type,
@@ -138,6 +138,24 @@ class PlannerNotificationService:
                     action_url=action_url
                 )
             )
+            push_task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+
+            # Broadcast via SSE (non-blocking)
+            from app.services.sse_manager import sse_manager
+            sse_task = asyncio.create_task(
+                sse_manager.broadcast_to_user(
+                    planner_id,
+                    "notification-new",
+                    {
+                        "title": title,
+                        "message": message,
+                        "type": notification_type,
+                        "wedding_id": wedding_id,
+                        "priority": priority,
+                    }
+                )
+            )
+            sse_task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
 
             return {
                 "id": str(result.inserted_id),
@@ -251,6 +269,17 @@ class PlannerNotificationService:
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
+            # Broadcast updated count via SSE
+            from app.services.sse_manager import sse_manager
+            try:
+                counts = await self.get_notification_count(planner_id)
+                task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(planner_id, "notification-count", counts)
+                )
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+            except Exception:
+                pass
+
             return {"message": "Notification marked as read"}
 
         except HTTPException:
@@ -270,6 +299,17 @@ class PlannerNotificationService:
                 query,
                 {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc)}}
             )
+
+            # Broadcast updated count via SSE
+            from app.services.sse_manager import sse_manager
+            try:
+                counts = await self.get_notification_count(planner_id)
+                task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(planner_id, "notification-count", counts)
+                )
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+            except Exception:
+                pass
 
             return {
                 "message": f"Marked {result.modified_count} notifications as read",

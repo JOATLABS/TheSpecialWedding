@@ -47,6 +47,9 @@ class CreateVendorQuoteRequest(BaseModel):
     valid_until: Optional[str] = Field(None)  # ISO datetime string
     notes: Optional[str] = Field(None, max_length=1000)
 
+class SetTotalBudgetRequest(BaseModel):
+    total_budget: float = Field(..., ge=0)
+
 class ApplyBudgetTemplateRequest(BaseModel):
     template_id: str = Field(..., min_length=1)
     total_budget: float = Field(..., gt=0)
@@ -445,11 +448,24 @@ async def update_payment(
 ):
     """Update an existing payment record"""
     try:
+        # Verify wedding access via payment lookup
+        payment = await budget_service.get_payment(payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        category = await budget_service.get_budget_category(payment["category_id"])
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+        if not await check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         result = await budget_service.update_payment(
             payment_id,
             payment_data.dict(exclude_unset=True)
         )
         return {"message": "Payment updated successfully", "payment": result}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -463,6 +479,17 @@ async def delete_payment(
 ):
     """Delete a payment record"""
     try:
+        # Verify wedding access via payment lookup
+        payment = await budget_service.get_payment(payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        category = await budget_service.get_budget_category(payment["category_id"])
+        if not category:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+        if not await check_wedding_access(current_user, category["wedding_id"]):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
         success = await budget_service.delete_payment(payment_id)
         if success:
             return {"message": "Payment deleted successfully"}
@@ -481,6 +508,7 @@ async def get_payment_history(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """Get payment history for a wedding"""
+    from fastapi.responses import JSONResponse
     try:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -490,9 +518,42 @@ async def get_payment_history(
 
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to get payment history: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve payment history")
+        logger.error(f"Failed to get payment history: {type(e).__name__}: {str(e)}", exc_info=True)
+        # Return JSONResponse directly to avoid middleware converting the error
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to retrieve payment history"}
+        )
+
+# ===== TOTAL BUDGET =====
+
+@router.put("/weddings/{wedding_id}/budget/total", tags=["Budget"])
+async def set_total_budget(
+    wedding_id: str,
+    request_data: SetTotalBudgetRequest,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+):
+    """Set or update the overall total budget for a wedding"""
+    try:
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+        await budget_service.weddings.update_one(
+            {"_id": wedding_id},
+            {"$set": {"total_budget": request_data.total_budget}}
+        )
+        logger.info(f"Updated total budget for wedding {wedding_id} to ${request_data.total_budget:,.2f}")
+        return {"message": "Total budget updated", "total_budget": request_data.total_budget}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to set total budget: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update total budget")
+
 
 # ===== REPORTING ENDPOINTS =====
 

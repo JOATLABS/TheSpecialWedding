@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,25 @@ class NotificationService:
                 },
             )
 
+            # Broadcast via SSE to successful recipients (non-blocking)
+            from app.services.sse_manager import sse_manager
+            notification_data = {
+                "title": notification.get("title"),
+                "message": notification.get("message"),
+                "type": notification.get("type"),
+                "wedding_id": notification.get("wedding_id"),
+                "priority": notification.get("priority"),
+            }
+            for recipient_email in sent:
+                task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(
+                        recipient_email,
+                        "notification-new",
+                        notification_data
+                    )
+                )
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+
             message = "Notification sent successfully" if not failed else "Notification sent with partial failures"
 
             return {
@@ -396,6 +416,17 @@ class NotificationService:
             if result.modified_count == 0:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
+            # Broadcast updated count via SSE
+            from app.services.sse_manager import sse_manager
+            try:
+                counts = await self.get_user_notification_count(user_id, "wedding_planner")
+                task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(user_id, "notification-count", counts)
+                )
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+            except Exception:
+                pass
+
             return {"message": "Notification marked as read"}
 
         except HTTPException:
@@ -422,6 +453,17 @@ class NotificationService:
                     }
                 }
             )
+
+            # Broadcast updated count via SSE
+            from app.services.sse_manager import sse_manager
+            try:
+                counts = await self.get_user_notification_count(user_id, "wedding_planner")
+                task = asyncio.create_task(
+                    sse_manager.broadcast_to_user(user_id, "notification-count", counts)
+                )
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+            except Exception:
+                pass
 
             return {
                 "message": f"Marked {result.modified_count} notifications as read",

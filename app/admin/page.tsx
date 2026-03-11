@@ -209,7 +209,7 @@ export default function AdminMetricsDashboard() {
   }, [token, userProfile, fetchRecentActivities]);
 
   const metrics = useMemo(
-    () => ((latestSnapshot?.metrics ?? {}) as Record<string, unknown>),
+    () => ((latestSnapshot?.metrics ?? latestSnapshot ?? {}) as Record<string, unknown>),
     [latestSnapshot],
   );
 
@@ -356,7 +356,7 @@ export default function AdminMetricsDashboard() {
             </p>
           </div>
           <a
-            href="/admin/users"
+            href="/admin/planner/activity-log"
             className="text-sm text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300"
           >
             View all →
