@@ -1,0 +1,296 @@
+# =============================================================================
+# K8s Bootstrap - One-time cluster setup (run manually after creating DOKS)
+# Installs nginx ingress, cert-manager, creates namespace, secrets, and
+# does the initial deployment. Run once, then deploy.yml handles everything.
+# =============================================================================
+name: Bootstrap Kubernetes Cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster-name:
+        description: "DOKS cluster name (from DigitalOcean dashboard)"
+        required: true
+        type: string
+      create-cluster:
+        description: "Create a new DOKS cluster (skip if you already have one)"
+        required: false
+        type: boolean
+        default: false
+      cluster-region:
+        description: "Region for new cluster (only if creating)"
+        required: false
+        type: choice
+        default: "nyc1"
+        options:
+          - nyc1
+          - nyc3
+          - sfo3
+          - ams3
+          - lon1
+          - fra1
+          - sgp1
+          - blr1
+          - tor1
+      node-size:
+        description: "Droplet size for worker nodes"
+        required: false
+        type: choice
+        default: "s-2vcpu-4gb"
+        options:
+          - s-2vcpu-4gb
+          - s-4vcpu-8gb
+          - s-2vcpu-2gb
+      node-count:
+        description: "Number of worker nodes"
+        required: false
+        type: choice
+        default: "3"
+        options:
+          - "2"
+          - "3"
+          - "4"
+
+env:
+  CLUSTER_NAME: ${{ github.event.inputs.cluster-name }}
+
+jobs:
+  # ── Step 1: Create or connect to DOKS cluster ─────────────────────────────
+  setup-cluster:
+    name: Setup DOKS Cluster
+    runs-on: ubuntu-latest
+    outputs:
+      cluster-id: ${{ steps.cluster-info.outputs.cluster-id }}
+      lb-ip: ${{ steps.get-lb.outputs.lb-ip }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Create DOKS cluster
+        if: ${{ github.event.inputs.create-cluster == 'true' }}
+        run: |
+          echo "Creating DOKS cluster: $CLUSTER_NAME"
+          doctl kubernetes cluster create "$CLUSTER_NAME" \
+            --region ${{ github.event.inputs.cluster-region }} \
+            --size ${{ github.event.inputs.node-size }} \
+            --count ${{ github.event.inputs.node-count }} \
+            --tag wedding-app \
+            --auto-upgrade \
+            --surge-upgrade \
+            --wait
+
+          echo "Cluster created successfully"
+
+      - name: Connect to cluster
+        run: |
+          doctl kubernetes cluster kubeconfig save "$CLUSTER_NAME"
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Get cluster info
+        id: cluster-info
+        run: |
+          CLUSTER_ID=$(doctl kubernetes cluster get "$CLUSTER_NAME" --format ID --no-header)
+          echo "cluster-id=$CLUSTER_ID" >> $GITHUB_OUTPUT
+          echo "Cluster ID: $CLUSTER_ID"
+
+      # ── Install nginx ingress controller ─────────────────────────────────
+      - name: Install nginx ingress controller
+        run: |
+          echo "Installing nginx ingress controller..."
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.0/deploy/static/provider/do/deploy.yaml
+
+          echo "Waiting for ingress controller to be ready..."
+          kubectl wait --namespace ingress-nginx \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/component=controller \
+            --timeout=300s
+
+          echo "Nginx ingress controller installed"
+
+      # ── Install cert-manager for auto TLS ────────────────────────────────
+      - name: Install cert-manager
+        run: |
+          echo "Installing cert-manager..."
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.3/cert-manager.yaml
+
+          echo "Waiting for cert-manager to be ready..."
+          kubectl wait --namespace cert-manager \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/instance=cert-manager \
+            --timeout=300s
+
+          echo "cert-manager installed"
+
+      # ── Create Let's Encrypt ClusterIssuer ───────────────────────────────
+      - name: Create Let's Encrypt issuer
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-prod
+          spec:
+            acme:
+              server: https://acme-v02.api.letsencrypt.org/directory
+              email: ${{ secrets.LETSENCRYPT_EMAIL || 'emmanuel.t.akinwale@gmail.com' }}
+              privateKeySecretRef:
+                name: letsencrypt-prod
+              solvers:
+                - http01:
+                    ingress:
+                      class: nginx
+          EOF
+
+          echo "Let's Encrypt ClusterIssuer created"
+
+      # ── Create namespace ─────────────────────────────────────────────────
+      - name: Create wedding-app namespace
+        run: |
+          kubectl apply -f k8s/base/namespace.yml
+          echo "Namespace created"
+
+      # ── Create secrets from GitHub Secrets ────────────────────────────────
+      - name: Create backend secrets
+        run: |
+          kubectl create secret generic backend-secrets \
+            --namespace=wedding-app \
+            --from-literal=MONGODB_URI='${{ secrets.MONGODB_URI }}' \
+            --from-literal=REDIS_URL='${{ secrets.REDIS_URL }}' \
+            --from-literal=SECRET_KEY='${{ secrets.SECRET_KEY }}' \
+            --from-literal=JWT_ALGORITHM='${{ secrets.JWT_ALGORITHM }}' \
+            --from-literal=JWT_EXPIRE_MINUTES='${{ secrets.JWT_EXPIRE_MINUTES }}' \
+            --from-literal=API_KEY='${{ secrets.API_KEY }}' \
+            --from-literal=STRIPE_SECRET_KEY='${{ secrets.STRIPE_SECRET_KEY }}' \
+            --from-literal=STRIPE_WEBHOOK_SECRET='${{ secrets.STRIPE_WEBHOOK_SECRET }}' \
+            --from-literal=STRIPE_PUBLISHABLE_KEY='${{ secrets.STRIPE_PUBLISHABLE_KEY }}' \
+            --from-literal=RESEND_API_KEY='${{ secrets.RESEND_API_KEY }}' \
+            --from-literal=RESEND_FROM_EMAIL='${{ secrets.RESEND_FROM_EMAIL }}' \
+            --from-literal=S3_ENDPOINT_URL='${{ secrets.S3_ENDPOINT_URL }}' \
+            --from-literal=S3_ACCESS_KEY_ID='${{ secrets.S3_ACCESS_KEY_ID }}' \
+            --from-literal=S3_SECRET_ACCESS_KEY='${{ secrets.S3_SECRET_ACCESS_KEY }}' \
+            --from-literal=S3_BUCKET_NAME='${{ secrets.S3_BUCKET_NAME }}' \
+            --from-literal=ROOT_ADMIN_EMAIL='${{ secrets.ROOT_ADMIN_EMAIL }}' \
+            --from-literal=ROOT_ADMIN_PASSWORD='${{ secrets.ROOT_ADMIN_PASSWORD }}' \
+            --from-literal=BACKUP_SECRET='${{ secrets.BACKUP_SECRET }}' \
+            --from-literal=CRON_SECRET='${{ secrets.CRON_SECRET }}' \
+            --from-literal=SENTRY_DSN='${{ secrets.SENTRY_DSN }}' \
+            --from-literal=GOOGLE_ANALYTICS_ID='${{ secrets.GOOGLE_ANALYTICS_ID }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "Backend secrets created/updated"
+
+      # ── Create GHCR pull secret (so K8s can pull private images) ─────────
+      - name: Create image pull secret
+        run: |
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --namespace=wedding-app \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Patch the default service account to use the pull secret
+          kubectl patch serviceaccount default \
+            --namespace=wedding-app \
+            -p '{"imagePullSecrets": [{"name": "ghcr-pull-secret"}]}'
+
+          echo "Image pull secret configured"
+
+      # ── Apply all K8s manifests ──────────────────────────────────────────
+      - name: Deploy application
+        run: |
+          kubectl apply -k k8s/overlays/production
+          echo "Application manifests applied"
+
+      - name: Wait for rollouts
+        run: |
+          echo "Waiting for backend..."
+          kubectl rollout status deployment/backend --namespace=wedding-app --timeout=180s
+
+          echo "Waiting for frontend..."
+          kubectl rollout status deployment/frontend --namespace=wedding-app --timeout=120s
+
+          echo "All deployments are ready"
+
+      # ── Get Load Balancer IP ─────────────────────────────────────────────
+      - name: Get Load Balancer IP
+        id: get-lb
+        run: |
+          echo "Waiting for load balancer to get an external IP..."
+          for i in $(seq 1 30); do
+            LB_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+
+            if [ -n "$LB_IP" ]; then
+              echo "lb-ip=$LB_IP" >> $GITHUB_OUTPUT
+              echo "Load Balancer IP: $LB_IP"
+              break
+            fi
+            echo "Attempt $i/30 - waiting for IP assignment..."
+            sleep 10
+          done
+
+      # ── Print final status ───────────────────────────────────────────────
+      - name: Cluster Status Summary
+        run: |
+          echo "============================================="
+          echo "  CLUSTER BOOTSTRAP COMPLETE"
+          echo "============================================="
+          echo ""
+          kubectl get all --namespace=wedding-app
+          echo ""
+          echo "---------------------------------------------"
+          echo "  INGRESS STATUS"
+          echo "---------------------------------------------"
+          kubectl get ingress --namespace=wedding-app
+          echo ""
+
+          LB_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "pending")
+
+          echo "============================================="
+          echo "  NEXT STEPS"
+          echo "============================================="
+          echo ""
+          echo "1. Update your DNS records:"
+          echo "   thespecialwedding.io      → A record → $LB_IP"
+          echo "   api.thespecialwedding.io  → A record → $LB_IP"
+          echo ""
+          echo "2. Add these GitHub Secrets (if not already set):"
+          echo "   DOKS_CLUSTER_NAME = $CLUSTER_NAME"
+          echo ""
+          echo "3. TLS certificates will auto-provision via cert-manager"
+          echo "   once DNS propagates (usually 5-15 minutes)"
+          echo ""
+          echo "4. Future deploys happen automatically via deploy.yml"
+          echo "   when you push to main"
+          echo "============================================="
+
+  # ── Save cluster name as GitHub variable ───────────────────────────────────
+  save-config:
+    name: Save Cluster Config
+    runs-on: ubuntu-latest
+    needs: setup-cluster
+    steps:
+      - name: Summary
+        run: |
+          echo "## Cluster Bootstrap Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster | \`${{ env.CLUSTER_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| LB IP | \`${{ needs.setup-cluster.outputs.lb-ip }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### DNS Records to Create" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "thespecialwedding.io      → A → ${{ needs.setup-cluster.outputs.lb-ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "api.thespecialwedding.io  → A → ${{ needs.setup-cluster.outputs.lb-ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### GitHub Secrets Required" >> $GITHUB_STEP_SUMMARY
+          echo "Make sure \`DOKS_CLUSTER_NAME\` is set to \`${{ env.CLUSTER_NAME }}\`" >> $GITHUB_STEP_SUMMARY

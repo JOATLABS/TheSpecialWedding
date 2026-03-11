@@ -1,0 +1,55 @@
+# =============================================================================
+# Ingress - Routes external traffic to frontend and API
+# Uses nginx ingress controller + cert-manager for TLS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wedding-app
+  namespace: wedding-app
+  annotations:
+    # cert-manager will auto-provision Let's Encrypt TLS certs
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Nginx ingress settings
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - thespecialwedding.io
+        - api.thespecialwedding.io
+      secretName: wedding-app-tls
+  rules:
+    # Frontend: thespecialwedding.io → frontend service
+    - host: thespecialwedding.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+    # API: api.thespecialwedding.io → backend service
+    - host: api.thespecialwedding.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
