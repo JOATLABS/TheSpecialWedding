@@ -176,22 +176,26 @@ class ActivityLogService:
         old_response: str,
         new_response: str,
         planner_email: Optional[str] = None,
-        guest_email: Optional[str] = None
+        guest_email: Optional[str] = None,
+        guest_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when an RSVP is updated"""
         message = f"{guest_name} changed RSVP from {old_response} to {new_response}"
 
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name,
+            "old_response": old_response,
+            "new_response": new_response
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.RSVP_UPDATED,
             message=message,
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=guest_email or "guest",
-            metadata={
-                "guest_name": guest_name,
-                "old_response": old_response,
-                "new_response": new_response
-            }
+            metadata=meta
         )
 
     # ==================== GUEST CONVENIENCE METHODS ====================
@@ -201,20 +205,24 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
+        guest_id: Optional[str] = None,
         guest_email: Optional[str] = None,
         added_by: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when a guest is added to the guest list"""
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name,
+            "guest_email": guest_email
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.GUEST_ADDED,
             message=f"Added guest: {guest_name}",
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=added_by or planner_email,
-            metadata={
-                "guest_name": guest_name,
-                "guest_email": guest_email
-            }
+            metadata=meta
         )
 
     async def log_guest_updated(
@@ -222,20 +230,24 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
+        guest_id: Optional[str] = None,
         changes: Optional[Dict[str, Any]] = None,
         updated_by: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when a guest's information is updated"""
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name,
+            "changes": changes or {}
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.GUEST_UPDATED,
             message=f"Updated guest: {guest_name}",
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=updated_by or planner_email,
-            metadata={
-                "guest_name": guest_name,
-                "changes": changes or {}
-            }
+            metadata=meta
         )
 
     async def log_guest_deleted(
@@ -243,18 +255,22 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
+        guest_id: Optional[str] = None,
         deleted_by: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when a guest is removed from the guest list"""
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.GUEST_DELETED,
             message=f"Removed guest: {guest_name}",
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=deleted_by or planner_email,
-            metadata={
-                "guest_name": guest_name
-            }
+            metadata=meta
         )
 
     async def log_guests_imported(
@@ -287,25 +303,29 @@ class ActivityLogService:
         message_type: str,
         planner_email: str,
         status: str = "sent",
+        guest_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Log when an SMS is sent"""
         status_text = "sent" if status == "sent" else f"failed ({status})"
         message = f"SMS {status_text} to {recipient_name}: {message_type}"
 
+        meta: Dict[str, Any] = {
+            "recipient_name": recipient_name,
+            "recipient_phone": recipient_phone[-4:] if recipient_phone else None,  # Last 4 digits only
+            "message_type": message_type,
+            "status": status,
+            **(metadata or {})
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.SMS_SENT,
             message=message,
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email="system",
-            metadata={
-                "recipient_name": recipient_name,
-                "recipient_phone": recipient_phone[-4:] if recipient_phone else None,  # Last 4 digits only
-                "message_type": message_type,
-                "status": status,
-                **(metadata or {})
-            }
+            metadata=meta
         )
 
     async def log_reminder_sent(
@@ -339,24 +359,28 @@ class ActivityLogService:
         email_type: str,
         planner_email: str,
         recipient_email: Optional[str] = None,
+        guest_id: Optional[str] = None,
         status: str = "sent"
     ) -> Dict[str, Any]:
         """Log when an email is sent"""
         status_text = "sent" if status == "sent" else f"failed ({status})"
         message = f"Email {status_text} to {recipient_name}: {email_type}"
 
+        meta: Dict[str, Any] = {
+            "recipient_name": recipient_name,
+            "recipient_email": recipient_email,
+            "email_type": email_type,
+            "status": status
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.EMAIL_SENT,
             message=message,
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email="system",
-            metadata={
-                "recipient_name": recipient_name,
-                "recipient_email": recipient_email,
-                "email_type": email_type,
-                "status": status
-            }
+            metadata=meta
         )
 
 

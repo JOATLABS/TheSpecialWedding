@@ -126,6 +126,18 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
   }, []);
 
   const handleRoleChange = (newRole: string) => {
+    if (newRole === role) return;
+    // Check if user has customized permissions away from current role defaults
+    const currentDefaults = ROLE_DEFAULTS[role] || {};
+    const hasCustomPerms = ALL_PERMISSIONS.some((p) => permissions[p.key] !== currentDefaults[p.key]);
+
+    if (hasCustomPerms) {
+      const confirmed = window.confirm(
+        'Changing roles will reset permissions to the new role\'s defaults. You can customize them again after. Continue?'
+      );
+      if (!confirmed) return;
+    }
+
     setRole(newRole);
     // Reset permissions to role defaults when changing roles
     setPermissions({ ...ROLE_DEFAULTS[newRole] });

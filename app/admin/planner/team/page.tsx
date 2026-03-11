@@ -296,15 +296,23 @@ export default function TeamManagementPage() {
               </span>
             </div>
           )}
-          <button
-            onClick={() => setShowInviteModal(true)}
-            disabled={seatsInfo ? seatsInfo.available_seats <= 0 : false}
-            data-testid="invite-member-btn"
-            className="flex items-center gap-2 bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 font-semibold px-5 py-2.5 rounded-xl text-sm hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <UserPlus size={16} />
-            Invite Team Member
-          </button>
+          <div className="relative group">
+            <button
+              onClick={() => setShowInviteModal(true)}
+              disabled={seatsInfo ? seatsInfo.available_seats <= 0 : false}
+              data-testid="invite-member-btn"
+              className="flex items-center gap-2 bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 font-semibold px-5 py-2.5 rounded-xl text-sm hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <UserPlus size={16} />
+              Invite Team Member
+            </button>
+            {seatsInfo && seatsInfo.available_seats <= 0 && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
+                No seats available. Upgrade your plan or remove a member.
+                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-900" />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
