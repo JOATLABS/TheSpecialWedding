@@ -8,6 +8,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import {
   LayoutDashboard,
   Users,
+  UserPlus,
   Wallet,
   LogOut,
   ChevronLeft,
@@ -25,6 +26,7 @@ import {
   Image,
   Package,
   LayoutGrid,
+  Mail,
   type LucideIcon
 } from 'lucide-react';
 
@@ -61,6 +63,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Weddings', href: '/admin/weddings', icon: Heart },
   { name: 'Packages', href: '/admin/packages', icon: Package },
   { name: 'Guests', href: '/admin/guests', icon: Users },
+  { name: 'Inbox', href: '/admin/inbox', icon: Mail },
   { name: 'Gallery', href: '/admin/gallery/upload', icon: Image },
   { name: 'Budget', href: '/admin/budget', icon: Wallet },
   { name: 'Money', href: '/admin/money', icon: CreditCard },
@@ -69,6 +72,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Reminders', href: '/admin/reminders', icon: Bell },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Seating', href: '/admin/seating', icon: LayoutGrid },
+  { name: 'Team', href: '/admin/planner/team', icon: UserPlus, plannerOnly: true },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
 ];
 
@@ -82,6 +86,22 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
     return false;
   };
 
+  // Map permissions to nav item names for team member filtering
+  const permissionNavMap: Record<string, string[]> = {
+    manage_guests: ['Guests'],
+    manage_budget: ['Budget'],
+    manage_gallery: ['Gallery'],
+    manage_seating: ['Seating'],
+    manage_vendors: ['Vendors'],
+    manage_forms: ['Forms'],
+    manage_contracts: ['Vendors'],
+    manage_packages: ['Packages'],
+    send_rsvp: ['Guests'],
+    send_reminders: ['Reminders'],
+    view_analytics: [],
+    manage_wedding_settings: ['Weddings'],
+  };
+
   // Determine which navigation items to show based on user role
   const getNavItems = (): NavItem[] => {
     if (!userProfile) return [];
@@ -91,9 +111,25 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
       return adminNavItems;
     }
 
-    // Wedding planner gets planner navigation
+    // Wedding planner gets full planner navigation
     if (userProfile.is_wedding_planner) {
       return plannerNavItems;
+    }
+
+    // Team members get filtered navigation based on their permissions
+    if (userProfile.is_team_member && userProfile.team_permissions) {
+      const allowedNavNames = new Set(['Dashboard', 'Calendar', 'Notifications', 'Inbox', 'Support']);
+      const perms = userProfile.team_permissions;
+
+      for (const [permKey, navNames] of Object.entries(permissionNavMap)) {
+        if (perms[permKey]) {
+          navNames.forEach((name) => allowedNavNames.add(name));
+        }
+      }
+
+      return plannerNavItems.filter(
+        (item) => !item.plannerOnly && allowedNavNames.has(item.name)
+      );
     }
 
     // Default to planner navigation for other roles

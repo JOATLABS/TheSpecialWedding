@@ -5,7 +5,7 @@ Resend uses Svix for webhook delivery with automatic retries and signature verif
 This module processes email events for audit trail and delivery monitoring.
 
 Event Types: email.sent, email.delivered, email.bounced, email.delivery_delayed,
-             email.complained, email.opened, email.clicked
+             email.complained, email.opened, email.clicked, email.received (inbound)
 """
 
 from fastapi import APIRouter, Request, HTTPException, Header
@@ -97,6 +97,21 @@ async def handle_resend_webhook(
         event_type = verified_payload.get("type")
         event_data = verified_payload.get("data", {})
         created_at_str = verified_payload.get("created_at")
+
+        # ===== INBOUND EMAIL HANDLING =====
+        # email.received events are handled by the inbound email service
+        # and do NOT go through the outbound event tracking pipeline below
+        if event_type == "email.received":
+            from app.services.inbound_email_service import inbound_email_service
+            result = await inbound_email_service.handle_email_received_webhook(
+                verified_payload, svix_id=svix_id
+            )
+            logger.info(f"✅ Processed email.received (result: {result.get('status')})")
+            return {
+                "status": result.get("status", "success"),
+                "event_type": "email.received",
+                "email_id": result.get("id")
+            }
 
         # Parse timestamp
         created_at = datetime.now(timezone.utc)

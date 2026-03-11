@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
 from app.services.email_service_resend import ResendEmailService
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner, enforce_team_permission
 from app.services.wedding_service import WeddingService
 from app.core.config import settings
 from pydantic import BaseModel
@@ -53,6 +53,7 @@ def get_email_status():
 @router.post("/email/send-invites", tags=["Admin"])
 async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send RSVP invitation emails (JSON endpoint)"""
+    enforce_team_permission(current_user, "send_rsvp")
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 
@@ -83,6 +84,7 @@ async def send_email_invites_with_attachment(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Send RSVP invitation emails with attachment (multipart/form-data endpoint)"""
+    enforce_team_permission(current_user, "send_rsvp")
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 
@@ -118,6 +120,7 @@ async def send_email_invites_with_attachment(
 @router.post("/email/send-reminders", tags=["Admin"])
 async def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Send event reminder emails"""
+    enforce_team_permission(current_user, "send_reminders")
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 

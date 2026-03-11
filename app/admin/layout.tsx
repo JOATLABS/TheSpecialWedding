@@ -17,8 +17,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
 
-  // Check if current page is the login page - should not show sidebar/header
+  // Check if current page is a public page - should not show sidebar/header
   const isLoginPage = pathname === '/admin/login';
+  const isPublicPage = isLoginPage || pathname.startsWith('/admin/team/accept');
 
   useEffect(() => {
     const handleResize = () => {
@@ -43,8 +44,8 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     return undefined; // Let Header decide default
   };
 
-  // For login page, render without sidebar/header
-  if (isLoginPage) {
+  // For public pages (login, accept invite), render without sidebar/header
+  if (isPublicPage) {
     return (
       <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans transition-colors duration-300">
         {/* Background Mesh Gradient (Fixed) */}

@@ -56,6 +56,14 @@ class ActivityTypes:
     WEDDING_CREATED = "wedding_created"
     WEDDING_UPDATED = "wedding_updated"
 
+    # Team management events
+    TEAM_MEMBER_INVITED = "team_member_invited"
+    TEAM_MEMBER_ACCEPTED = "team_member_accepted"
+    TEAM_MEMBER_UPDATED = "team_member_updated"
+    TEAM_MEMBER_DEACTIVATED = "team_member_deactivated"
+    TEAM_MEMBER_REACTIVATED = "team_member_reactivated"
+    TEAM_MEMBER_REMOVED = "team_member_removed"
+
 
 class ActivityLogService:
     """
@@ -108,7 +116,7 @@ class ActivityLogService:
             result = await self.collection.insert_one(doc)
 
             if not result.inserted_id:
-                logger.warning(f"Failed to log activity: {activity_type}")
+                logger.warning("[ActivityLog] Failed to insert activity log: %s", activity_type)
                 return {"id": None, "success": False}
 
             logger.debug(f"Logged planner activity: {activity_type} for wedding {wedding_id}")
@@ -120,7 +128,7 @@ class ActivityLogService:
 
         except Exception as e:
             # Activity logging should not block main operations
-            logger.error(f"Error logging activity: {str(e)}")
+            logger.error("[ActivityLog] Error logging activity: %s", str(e))
             return {"id": None, "success": False, "error": str(e)}
 
     # ==================== RSVP CONVENIENCE METHODS ====================
@@ -349,6 +357,75 @@ class ActivityLogService:
                 "email_type": email_type,
                 "status": status
             }
+        )
+
+
+    # ── Team management activity helpers ─────────────────────────────────
+
+    async def log_team_member_invited(
+        self, planner_email: str, member_email: str, role: str, invited_by: str
+    ):
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_INVITED,
+            message=f"Invited {member_email} as {role}",
+            planner_email=planner_email,
+            actor_email=invited_by,
+            metadata={"member_email": member_email, "role": role}
+        )
+
+    async def log_team_member_accepted(
+        self, planner_email: str, member_email: str, member_name: str
+    ):
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_ACCEPTED,
+            message=f"{member_name} accepted their team invitation",
+            planner_email=planner_email,
+            actor_email=member_email,
+            metadata={"member_email": member_email, "member_name": member_name}
+        )
+
+    async def log_team_member_updated(
+        self, planner_email: str, member_email: str, changes: dict, updated_by: str
+    ):
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_UPDATED,
+            message=f"Updated team member {member_email}",
+            planner_email=planner_email,
+            actor_email=updated_by,
+            metadata={"member_email": member_email, "changes": changes}
+        )
+
+    async def log_team_member_deactivated(
+        self, planner_email: str, member_email: str, deactivated_by: str
+    ):
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_DEACTIVATED,
+            message=f"Deactivated team member {member_email}",
+            planner_email=planner_email,
+            actor_email=deactivated_by,
+            metadata={"member_email": member_email}
+        )
+
+    async def log_team_member_reactivated(
+        self, planner_email: str, member_email: str, reactivated_by: str
+    ):
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_REACTIVATED,
+            message=f"Reactivated team member {member_email}",
+            planner_email=planner_email,
+            actor_email=reactivated_by,
+            metadata={"member_email": member_email}
+        )
+
+    async def log_team_member_removed(
+        self, planner_email: str, member_email: str, removed_by: str
+    ):
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_REMOVED,
+            message=f"Removed team member {member_email}",
+            planner_email=planner_email,
+            actor_email=removed_by,
+            metadata={"member_email": member_email}
         )
 
 
