@@ -13,6 +13,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _ensure_utc(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware (UTC).
+
+    MongoDB may return naive datetimes depending on driver version and
+    codec settings.  This helper normalises them so comparisons with
+    ``datetime.now(timezone.utc)`` never raise
+    ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 class OTPService:
     _indexes_initialized = False
 
@@ -93,21 +108,15 @@ class OTPService:
         # Check for existing OTP and handle rate limiting
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
         if last_otp:
-            expires_at = last_otp.get("expires_at")
-            created_at = last_otp.get("created_at")
+            expires_at = _ensure_utc(last_otp.get("expires_at"))
+            created_at = _ensure_utc(last_otp.get("created_at"))
             if expires_at:
-                # Ensure expires_at is timezone-aware for comparison
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
                 # If OTP has expired, delete it and allow new request
                 if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
-                    # Ensure created_at is timezone-aware for comparison
-                    if created_at.tzinfo is None:
-                        created_at = created_at.replace(tzinfo=timezone.utc)
                     seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
                         remaining = int(settings.rate_limit_auth_period - seconds_since_created)
@@ -379,21 +388,15 @@ class OTPService:
         # Check for existing OTP and handle rate limiting
         last_otp = await self.otp_collection.find_one({"guest_id": guest_id})
         if last_otp:
-            expires_at = last_otp.get("expires_at")
-            created_at = last_otp.get("created_at")
+            expires_at = _ensure_utc(last_otp.get("expires_at"))
+            created_at = _ensure_utc(last_otp.get("created_at"))
             if expires_at:
-                # Ensure expires_at is timezone-aware for comparison
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
                 # If OTP has expired, delete it and allow new request
                 if expires_at <= datetime.now(timezone.utc):
                     await self.otp_collection.delete_one({"_id": last_otp["_id"]})
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
-                    # Ensure created_at is timezone-aware for comparison
-                    if created_at.tzinfo is None:
-                        created_at = created_at.replace(tzinfo=timezone.utc)
                     seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
                         remaining = int(settings.rate_limit_auth_period - seconds_since_created)
