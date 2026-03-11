@@ -2334,13 +2334,14 @@ async def ai_health_check(
         "economy_model": MODEL_ECONOMY,
     }
 
-    # Try a lightweight API test if client is initialized
+    # Try a lightweight async API test if client is initialized
     if ai_service._client:
         try:
+            import asyncio
             start_time = time.monotonic()
-            # List models to verify API key works (synchronous call)
-            models_response = ai_service._client.models.list()
-            models = list(models_response)
+            # Use the async client to avoid blocking the event loop
+            models_response = await ai_service._client.aio.models.list()
+            models = [m async for m in models_response] if hasattr(models_response, '__aiter__') else list(models_response)
             elapsed_ms = round((time.monotonic() - start_time) * 1000)
             status["api_connection"] = "ok"
             status["available_models"] = len(models)

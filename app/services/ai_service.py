@@ -738,11 +738,14 @@ class AIService:
             logger.warning("AI service disabled - GOOGLE_API_KEY or GEMINI_API_KEY not configured")
 
     def _ensure_initialized(self):
-        """Verify AI service is properly configured."""
+        """Verify AI service is properly configured.
+
+        Raises AIServiceUnavailableError (maps to HTTP 503) rather than
+        AIGenerationError (500) so the frontend can show a clear
+        'service not configured' message instead of a generic 500.
+        """
         if not self._client:
-            raise AIGenerationError(
-                "AI service not initialized. Check GOOGLE_API_KEY configuration and google-genai package."
-            )
+            raise AIServiceUnavailableError()
 
     def get_feature_info(self, feature: str) -> Optional[Dict]:
         """Get feature configuration."""
