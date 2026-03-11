@@ -113,6 +113,7 @@ async def update_guest(
                 wedding_id=guest.get("wedding_id"),
                 guest_name=(result or {}).get("name", guest.get("name", "Unknown")),
                 planner_email=current_user.email,
+                guest_id=guest_id,
                 changes=update_dict,
                 updated_by=current_user.email
             )
@@ -144,6 +145,7 @@ async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(r
                 wedding_id=guest.get("wedding_id"),
                 guest_name=guest.get("name", "Unknown"),
                 planner_email=current_user.email,
+                guest_id=guest_id,
                 deleted_by=current_user.email
             )
         except Exception as log_err:
@@ -176,6 +178,7 @@ async def create_guest(
                 wedding_id=wedding_id,
                 guest_name=result.get("name", guest_data.name),
                 planner_email=current_user.email,
+                guest_id=result.get("id"),
                 guest_email=result.get("email"),
                 added_by=current_user.email
             )

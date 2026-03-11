@@ -92,6 +92,26 @@ export default function AcceptInvitePage() {
       return;
     }
 
+    if (!/[A-Z]/.test(password)) {
+      toast.error('Password must contain at least one uppercase letter.');
+      return;
+    }
+
+    if (!/[a-z]/.test(password)) {
+      toast.error('Password must contain at least one lowercase letter.');
+      return;
+    }
+
+    if (!/\d/.test(password)) {
+      toast.error('Password must contain at least one number.');
+      return;
+    }
+
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+      toast.error('Password must contain at least one special character.');
+      return;
+    }
+
     if (password !== confirmPassword) {
       toast.error('Passwords do not match.');
       return;
@@ -228,6 +248,11 @@ export default function AcceptInvitePage() {
               <Shield className="w-3.5 h-3.5" />
               {inviteInfo?.role ? inviteInfo.role.charAt(0).toUpperCase() + inviteInfo.role.slice(1) : 'Member'}
             </span>
+            {inviteInfo?.email && (
+              <p className="text-xs text-slate-500 mt-2">
+                Invitation sent to <span className="text-slate-300 font-medium">{inviteInfo.email}</span>
+              </p>
+            )}
           </div>
 
           {/* Permissions display */}
@@ -297,6 +322,23 @@ export default function AcceptInvitePage() {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {/* Password requirements */}
+              {password.length > 0 && (
+                <div className="mt-2 grid grid-cols-2 gap-1">
+                  {[
+                    { label: '8+ characters', met: password.length >= 8 },
+                    { label: 'Uppercase letter', met: /[A-Z]/.test(password) },
+                    { label: 'Lowercase letter', met: /[a-z]/.test(password) },
+                    { label: 'Number', met: /\d/.test(password) },
+                    { label: 'Special character', met: /[!@#$%^&*(),.?":{}|<>]/.test(password) },
+                  ].map(({ label, met }) => (
+                    <span key={label} className={`text-[11px] flex items-center gap-1 ${met ? 'text-green-400' : 'text-slate-500'}`}>
+                      <span className={`w-1 h-1 rounded-full inline-block ${met ? 'bg-green-400' : 'bg-slate-600'}`} />
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="mb-6">
