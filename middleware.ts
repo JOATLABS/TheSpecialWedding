@@ -1,12 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-
-// Reserved top-level paths that should never be treated as wedding slugs.
-// Checked in middleware (before layout.tsx) so the SSR container never makes
-// a pointless API call to /weddings/privacy-info/<reserved-path>.
-const RESERVED_PATHS = new Set([
-  '_next', 'api', 'admin', 'favicon', 'robots', 'sitemap',
-]);
+import { RESERVED_SLUG_PATHS } from '@/utils/slug-constants';
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -20,20 +14,20 @@ export function middleware(request: NextRequest) {
   }
 
   // ---------- Slug route guard ----------
-  // For top-level paths like /<slug>, reject anything that looks like a
-  // static asset (contains a dot → favicon.ico, apple-touch-icon.png, etc.)
-  // or is a reserved path name.  This runs before the [slug] layout so we
-  // avoid unnecessary backend API calls that inflate error counts.
+  // Prevent static-asset requests (apple-touch-icon.png, logo_all.png, etc.)
+  // from reaching the [slug] dynamic route, which would trigger a pointless
+  // backend API call and inflate error counts against the SSR container's IP.
+  //
+  // We rewrite to /not-found so the request never reaches [slug]/layout.tsx.
+  // Reserved paths (admin, api, etc.) are left alone — they have their own
+  // route handlers and Next.js won't match them to [slug].
   const segments = pathname.split('/').filter(Boolean);
-  if (segments.length >= 1) {
-    const firstSegment = segments[0];
-    // Contains a dot → file extension (favicon.ico, logo.png, sw.js, etc.)
-    if (firstSegment.includes('.')) {
-      return NextResponse.next(); // Let Next.js static file handling deal with it
-    }
-    // Exact reserved path — already handled by other routes, not a slug
-    if (RESERVED_PATHS.has(firstSegment.toLowerCase())) {
-      return NextResponse.next();
+  if (segments.length === 1) {
+    const segment = segments[0];
+    // Contains a dot → file with extension (favicon.ico, logo.png, sw.js, etc.)
+    // These are NOT wedding slugs (slugs are alphanumeric + hyphens only).
+    if (segment.includes('.')) {
+      return NextResponse.rewrite(new URL('/not-found', request.url));
     }
   }
 
@@ -41,12 +35,11 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on admin routes AND all top-level slug-like paths.
-  // Next.js automatically excludes _next/static, _next/image, and favicon.ico
-  // from middleware, but other static assets (apple-touch-icon.png, etc.) can
-  // still leak through to dynamic routes.
+  // Run on admin routes AND top-level paths that could be wedding slugs.
+  // Next.js automatically excludes _next/static, _next/image, and favicon.ico.
+  // We also exclude api routes to avoid unnecessary middleware overhead.
   matcher: [
     '/admin/:path*',
-    '/((?!_next/static|_next/image).*)',
+    '/((?!_next/static|_next/image|api/).*)',
   ],
 };
