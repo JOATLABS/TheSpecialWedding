@@ -8,13 +8,14 @@ Features merged from enhanced and secure handlers:
 - Basic IP-based error rate limiting to avoid abuse
 """
 
+import ipaddress
 import json
 import logging
 import os
 import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -85,6 +86,21 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         "config.js",
     )
 
+    # RFC 1918 / RFC 4193 private networks used by internal services
+    # (Next.js SSR container, K8s sidecars, etc.).
+    # Trusted-IP checks are ONLY applied to the *direct* TCP peer
+    # (request.client.host), never to forwarded headers — this prevents
+    # X-Forwarded-For spoofing from bypassing rate limiting.
+    PRIVATE_NETWORKS = (
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("::1/128"),         # IPv6 loopback
+        ipaddress.ip_network("fc00::/7"),         # IPv6 ULA
+        ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
+    )
+
     def __init__(self, app, enable_email_alerts: bool = True):
         super().__init__(app)
         self.enable_email_alerts = enable_email_alerts
@@ -96,6 +112,22 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         self.max_error_rate = 100  # per minute per IP
         self.error_tracking: Dict[str, Dict[str, Any]] = {}
         self.blocked_ips: set[str] = set()
+
+        # Allow additional trusted IPs/CIDRs via environment variable (comma-separated).
+        # Supports both individual IPs ("10.48.0.2") and CIDR ranges ("10.48.0.0/24").
+        self.extra_trusted_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        extra_trusted = os.getenv("TRUSTED_IPS", "")
+        for entry in extra_trusted.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            try:
+                # strict=False allows "10.48.0.2/24" to be treated as "10.48.0.0/24"
+                self.extra_trusted_networks.append(ipaddress.ip_network(entry, strict=False))
+            except ValueError:
+                logger.warning(f"Invalid IP/CIDR in TRUSTED_IPS env var, skipping: {entry}")
+        if self.extra_trusted_networks:
+            logger.info(f"Loaded {len(self.extra_trusted_networks)} trusted network(s) from TRUSTED_IPS env var")
 
         # Optional email alerts via Resend
         self.resend = None
@@ -125,13 +157,21 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         return False
 
     async def dispatch(self, request: Request, call_next):
+        # For rate-limiting decisions we use the *direct peer* IP so that
+        # trusted internal services (Next.js SSR, K8s probes) are never
+        # blocked.  The forwarded "real client" IP is only resolved when
+        # the peer is a trusted proxy — see _get_client_ip.
+        direct_ip = getattr(request.client, "host", "unknown")
+        is_trusted = self._is_trusted_ip(direct_ip)
+
+        # Resolve the client IP (may follow proxy headers for trusted peers)
         client_ip = self._get_client_ip(request)
 
-        if self._is_ip_blocked(client_ip):
+        if not is_trusted and self._is_ip_blocked(client_ip):
             return self._create_blocked_response(client_ip)
 
-        # Block known scanner/probe paths — return 404 with no detail
-        if self._is_suspicious_path(request.url.path):
+        # Block known scanner/probe paths — but let trusted services through
+        if self._is_suspicious_path(request.url.path) and not is_trusted:
             logger.warning(f"Blocked suspicious path probe: {request.url.path} from {client_ip}")
             self._track_error(client_ip)
             if self._should_block_ip(client_ip):
@@ -140,7 +180,8 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-            self._reset_success(client_ip)
+            if not is_trusted:
+                self._reset_success(client_ip)
 
             # Skip logging 404s with suspicious paths (scanner probes)
             if response.status_code == 404 and self._is_suspicious_path(request.url.path):
@@ -149,11 +190,12 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
             return response
         except Exception as exc:
-            # Track and potentially block abusive IPs
-            self._track_error(client_ip)
-            if self._should_block_ip(client_ip):
-                self.blocked_ips.add(client_ip)
-                logger.warning(f"Blocking IP {client_ip} due to excessive errors")
+            # Only track/block errors for non-trusted IPs
+            if not is_trusted:
+                self._track_error(client_ip)
+                if self._should_block_ip(client_ip):
+                    self.blocked_ips.add(client_ip)
+                    logger.warning(f"Blocking IP {client_ip} due to excessive errors")
 
             # Build secure response
             secure_response = self.secure_handler.handle_exception(request, exc)
@@ -194,32 +236,42 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 )
 
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP with basic validation."""
-        headers_to_check = [
-            "X-Forwarded-For",
-            "X-Real-IP",
-            "X-Client-IP",
-            "CF-Connecting-IP",
-            "True-Client-IP",
-        ]
-        for header in headers_to_check:
-            ip = request.headers.get(header)
-            if ip:
-                first_ip = ip.split(",")[0].strip()
-                if first_ip and len(first_ip) <= 45 and self._is_valid_ip_format(first_ip):
-                    return first_ip
-        return getattr(request.client, "host", "unknown")
+        """Extract the real client IP.
 
-    def _is_valid_ip_format(self, ip: str) -> bool:
-        import re
+        Proxy headers (X-Forwarded-For, CF-Connecting-IP, etc.) are ONLY
+        trusted when the direct TCP peer (request.client.host) is itself a
+        private/trusted IP — i.e. a reverse proxy, load balancer, or
+        Cloudflare edge server.  This prevents external attackers from
+        spoofing a private IP via X-Forwarded-For to bypass rate limiting.
+        """
+        direct_ip = getattr(request.client, "host", "unknown")
 
-        ipv4_pattern = r"^(\d{1,3}\.){3}\d{1,3}$"
-        if re.match(ipv4_pattern, ip):
-            parts = ip.split(".")
-            return all(part.isdigit() and 0 <= int(part) <= 255 for part in parts)
+        # Only trust forwarded headers if the direct peer is a trusted proxy
+        if self._is_private_ip(direct_ip):
+            headers_to_check = [
+                "CF-Connecting-IP",   # Cloudflare (most specific, check first)
+                "True-Client-IP",     # Cloudflare Enterprise
+                "X-Real-IP",          # nginx
+                "X-Forwarded-For",    # Generic (take first entry)
+                "X-Client-IP",        # Legacy
+            ]
+            for header in headers_to_check:
+                value = request.headers.get(header)
+                if value:
+                    candidate = value.split(",")[0].strip()
+                    if self._is_valid_ip(candidate):
+                        return candidate
 
-        ipv6_pattern = r"^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$"
-        return bool(re.match(ipv6_pattern, ip))
+        return direct_ip
+
+    @staticmethod
+    def _is_valid_ip(ip: str) -> bool:
+        """Validate an IP address string using the ipaddress module."""
+        try:
+            ipaddress.ip_address(ip)
+            return True
+        except ValueError:
+            return False
 
     def _track_error(self, client_ip: str) -> None:
         current_time = datetime.now(timezone.utc)
@@ -237,6 +289,8 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     def _should_block_ip(self, client_ip: str) -> bool:
         if client_ip == "unknown" or client_ip not in self.error_tracking:
             return False
+        if self._is_trusted_ip(client_ip):
+            return False
 
         data = self.error_tracking[client_ip]
         error_count = data["error_count"]
@@ -248,7 +302,35 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         total_requests = error_count + success_count
         return total_requests > 50 and (error_count / total_requests) > 0.9
 
+    def _is_private_ip(self, ip_str: str) -> bool:
+        """Check if an IP belongs to a private/loopback network (RFC 1918 / RFC 4193)."""
+        try:
+            addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        return any(addr in net for net in self.PRIVATE_NETWORKS)
+
+    def _is_trusted_ip(self, client_ip: str) -> bool:
+        """Check if the IP is an internal/trusted service (e.g. Next.js SSR container).
+
+        This is checked against the *direct TCP peer* IP, not forwarded headers,
+        so it cannot be spoofed by external attackers.
+        """
+        try:
+            addr = ipaddress.ip_address(client_ip)
+        except ValueError:
+            return False
+        # Check private RFC 1918 / loopback ranges
+        if any(addr in net for net in self.PRIVATE_NETWORKS):
+            return True
+        # Check additional trusted networks from env var
+        if any(addr in net for net in self.extra_trusted_networks):
+            return True
+        return False
+
     def _is_ip_blocked(self, client_ip: str) -> bool:
+        if self._is_trusted_ip(client_ip):
+            return False
         return client_ip in self.blocked_ips
 
     def _create_blocked_response(self, client_ip: str) -> JSONResponse:
@@ -339,7 +421,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             return "high"
         return "medium"
 
-    async def _send_alert_email(self, payload: Dict, exc: Exception = None, request: Request = None, client_ip: str = None) -> None:
+    async def _send_alert_email(self, payload: Dict, exc: Optional[Exception] = None, request: Optional[Request] = None, client_ip: Optional[str] = None) -> None:
         """Send alert email for critical errors using Resend."""
         if not self.resend or not self.resend_api_key:
             return
@@ -359,7 +441,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.error(f"Failed to send alert email: {str(e)}")
 
-    def _build_error_email_html(self, error: Dict, exc: Exception = None, request: Request = None, client_ip: str = None) -> str:
+    def _build_error_email_html(self, error: Dict, exc: Optional[Exception] = None, request: Optional[Request] = None, client_ip: Optional[str] = None) -> str:
         """Build a detailed HTML email for error alerts."""
         dashboard_url = os.getenv("FRONTEND_URL")
         error_id = error.get("error_id", "unknown")

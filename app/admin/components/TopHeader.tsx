@@ -31,6 +31,9 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttempts = useRef(0);
   const isConnecting = useRef(false);
+  // AbortController for in-flight auth probes — cancelled on unmount/cleanup
+  // to prevent stale async callbacks from calling connect() after teardown.
+  const probeAbortRef = useRef<AbortController | null>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -55,6 +58,11 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+      // Abort any in-flight auth probe so its callback never runs
+      if (probeAbortRef.current) {
+        probeAbortRef.current.abort();
+        probeAbortRef.current = null;
       }
       isConnecting.current = false;
     };
@@ -105,14 +113,51 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
         es.close();
         eventSourceRef.current = null;
 
-        // Reconnect with exponential backoff
+        // Before reconnecting, verify the token is still valid.
+        // EventSource doesn't expose HTTP status codes, so we can't
+        // distinguish a 401 from a network error. A quick auth check
+        // prevents us from hammering the endpoint with an expired token.
         if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
           const delay = Math.min(
             INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current),
             MAX_RECONNECT_DELAY
           );
           reconnectAttempts.current += 1;
-          reconnectTimeoutRef.current = setTimeout(connect, delay);
+
+          reconnectTimeoutRef.current = setTimeout(() => {
+            // Create an AbortController for this probe so cleanup can cancel it
+            const controller = new AbortController();
+            probeAbortRef.current = controller;
+
+            // 5-second timeout so a stalled probe doesn't block reconnection forever
+            const probeTimeout = setTimeout(() => controller.abort(), 5000);
+
+            fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              signal: controller.signal,
+            })
+              .then((probe) => {
+                if (probe.status === 401 || probe.status === 402) {
+                  // Token is expired/invalid — stop reconnecting
+                  reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS;
+                  return;
+                }
+                // Token is still valid and component is still alive — reconnect
+                if (!controller.signal.aborted) {
+                  connect();
+                }
+              })
+              .catch(() => {
+                // Network error or aborted — only retry if not aborted (unmounted)
+                if (!controller.signal.aborted) {
+                  connect();
+                }
+              })
+              .finally(() => {
+                clearTimeout(probeTimeout);
+                probeAbortRef.current = null;
+              });
+          }, delay);
         }
       };
     };
