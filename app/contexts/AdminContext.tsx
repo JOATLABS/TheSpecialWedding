@@ -75,6 +75,22 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         setIsLoading(false);
     }, []);
 
+    // ---- logout must be defined before fetchUserProfile & apiRequest ----
+    // Both call logout() on 401/403, so it needs to be in scope first.
+    const logout = useCallback(() => {
+        // Clear admin-specific storage (localStorage, sessionStorage, cookie)
+        clearAdminAuthStorage();
+
+        // Clear React state
+        setToken(null);
+        setUserProfile(null);
+
+        toast.success('Logged out successfully');
+
+        // Force complete page refresh to clear ALL cached data and state
+        window.location.href = '/admin/login';
+    }, []);
+
     const fetchUserProfile = useCallback(async () => {
         if (!token) return;
 
@@ -94,6 +110,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             if (response.ok) {
                 const profile = await response.json();
                 setUserProfile(profile);
+            } else if (response.status === 401 || response.status === 403) {
+                // Token rejected by server — session is dead
+                logout();
             }
         } catch (error) {
             // Log error without exposing sensitive information
@@ -102,7 +121,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 console.error('Failed to fetch user profile');
             }
         }
-    }, [token]);
+    }, [token, logout]);
 
     // Automatically fetch user profile when token is set
     useEffect(() => {
@@ -177,29 +196,6 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
     };
 
-
-    const logout = () => {
-        // Clear all possible storage locations
-        clearAdminAuthStorage();
-        localStorage.clear(); // Clear ALL localStorage, not just admin_token
-        sessionStorage.clear(); // Clear ALL sessionStorage
-        
-        // Clear React state
-        setToken(null);
-        setUserProfile(null);
-        // Clear any cached API responses by making a dummy request
-        try {
-            fetch('/api/clear-cache', { method: 'POST' }).catch(() => {});
-        } catch (error) {
-            // Ignore cache clear errors
-        }
-
-        toast.success('Logged out successfully');
-
-        // Force complete page refresh to clear ALL cached data and state
-        window.location.href = '/admin/login';
-    };
-
     const apiRequest = async <T = any>(path: string, method = 'GET', body?: unknown): Promise<T | undefined> => {
         if (!token) {
             throw new Error('Authentication required');
@@ -217,6 +213,12 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         });
 
         if (!response.ok) {
+            // Token rejected by server — force logout instead of showing a
+            // confusing error toast on every page that uses apiRequest.
+            if (response.status === 401 || response.status === 403) {
+                logout();
+                return undefined;
+            }
             const detail = await response.text();
             throw new Error(detail || 'Request failed');
         }
@@ -274,4 +276,3 @@ export const useAdmin = () => {
     }
     return context;
 };
-

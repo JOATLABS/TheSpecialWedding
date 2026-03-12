@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { RESERVED_SLUG_PATHS } from '@/utils/slug-constants';
+import { isNonWeddingSlug } from '@/utils/slug-constants';
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -14,19 +14,16 @@ export function middleware(request: NextRequest) {
   }
 
   // ---------- Slug route guard ----------
-  // Prevent static-asset requests (apple-touch-icon.png, logo_all.png, etc.)
-  // from reaching the [slug] dynamic route, which would trigger a pointless
-  // backend API call and inflate error counts against the SSR container's IP.
+  // Prevent static-asset requests and reserved paths from reaching the [slug]
+  // dynamic route, which would trigger a pointless backend API call and inflate
+  // error counts against the SSR container's IP.
   //
-  // We return a 404 directly so the request never reaches [slug]/layout.tsx.
-  // Reserved paths (admin, api, etc.) are left alone — they have their own
-  // route handlers and Next.js won't match them to [slug].
+  // Uses the shared isNonWeddingSlug() helper (slug-constants.ts) so the
+  // validation logic stays in one place between middleware and layout.tsx.
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 1) {
     const segment = segments[0];
-    // Contains a dot → file with extension (favicon.ico, logo.png, sw.js, etc.)
-    // These are NOT wedding slugs (slugs are alphanumeric + hyphens only).
-    if (segment.includes('.')) {
+    if (isNonWeddingSlug(segment)) {
       return new NextResponse('Not Found', { status: 404 });
     }
   }

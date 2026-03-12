@@ -49,18 +49,12 @@ export function clearAdminAuthStorage(): void {
   }
 
   try {
-    const cookies = document.cookie.split(';');
-    for (const cookie of cookies) {
-      const [rawName] = cookie.split('=');
-      const name = rawName?.trim();
-      if (!name) {
-        continue;
-      }
-
-      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;`;
-      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
-      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
-    }
+    // Only clear the admin_token cookie — not all cookies on the domain.
+    // Clearing every cookie would destroy analytics, consent, CSRF tokens, etc.
+    const cookieName = 'admin_token';
+    document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;`;
+    document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+    document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
   } catch (error) {
     console.warn('Unable to clear admin cookies', error);
   }
