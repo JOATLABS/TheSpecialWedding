@@ -5,7 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
-import { clearAdminAuthStorage, persistAdminAuthToken, isTokenExpired } from '@/utils/adminAuthStorage';
+import { clearAdminAuthStorage, persistAdminAuthToken, isTokenExpired, getTokenExpiresInMs } from '@/utils/adminAuthStorage';
 
 interface UserProfile {
     id?: string;
@@ -129,6 +129,55 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             fetchUserProfile();
         }
     }, [fetchUserProfile, token, userProfile]);
+
+    // ---- Automatic token refresh ----
+    // Schedule a refresh ~5 minutes before the JWT expires so the session
+    // stays alive while the user is active. When the token state updates,
+    // every component that depends on `token` (including TopHeader's SSE
+    // EventSource) will automatically reconnect with the fresh JWT.
+    useEffect(() => {
+        if (!token) return;
+
+        const REFRESH_BUFFER_MS = 5 * 60 * 1000; // refresh 5 min before expiry
+        const msUntilExpiry = getTokenExpiresInMs(token);
+
+        // If token is already expired or will expire in < 30s, don't schedule
+        if (msUntilExpiry < 30_000) return;
+
+        const refreshIn = Math.max(msUntilExpiry - REFRESH_BUFFER_MS, 30_000);
+
+        const timerId = setTimeout(async () => {
+            try {
+                const baseUrl = getApiBaseUrl();
+                const res = await fetch(`${baseUrl}/admin/token/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                if (res.ok) {
+                    const { access_token } = await res.json();
+                    // Persist the new token in storage (keep the same remember-me
+                    // preference — if it was in localStorage it stays there)
+                    const wasRemembered = !!localStorage.getItem('admin_token');
+                    persistAdminAuthToken(access_token, wasRemembered);
+                    // Update React state — this triggers the effect again,
+                    // scheduling the NEXT refresh, and also causes TopHeader
+                    // to reconnect SSE with the fresh token.
+                    setToken(access_token);
+                }
+                // If refresh fails (e.g. 401 because the token expired in the
+                // meantime), we do nothing — the next API call or profile fetch
+                // will handle the 401 and trigger logout if needed.
+            } catch {
+                // Network error — do nothing, will retry on next mount/token change
+            }
+        }, refreshIn);
+
+        return () => clearTimeout(timerId);
+    }, [token]);
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {

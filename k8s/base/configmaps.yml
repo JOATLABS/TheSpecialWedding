@@ -1,0 +1,24 @@
+# =============================================================================
+# ConfigMaps - Non-sensitive configuration
+# Secrets are managed separately via kubectl create secret
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: wedding-app
+data:
+  PYTHONPATH: "/app"
+  ENVIRONMENT: "production"
+  CORS_ORIGINS: "https://thespecialwedding.io"
+  FRONTEND_URL: "https://thespecialwedding.io"
+  RATE_LIMIT_REQUESTS: "100"
+  RATE_LIMIT_WINDOW: "60"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: wedding-app
+data:
+  NEXT_PUBLIC_API_BASE_URL: "https://api.thespecialwedding.io"

@@ -1,0 +1,77 @@
+# =============================================================================
+# Backend Deployment - FastAPI with rolling updates and auto-scaling
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: wedding-app
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: wedding-app
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Zero-downtime: new pod must be ready before old pod terminates
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        app.kubernetes.io/name: backend
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: backend
+          image: ghcr.io/etastic/wedding-app-backend:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - secretRef:
+                name: backend-secrets
+            - configMapRef:
+                name: backend-config
+          # Liveness: is the process alive? If not, K8s restarts it
+          livenessProbe:
+            httpGet:
+              path: /health/livez
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness: can it handle traffic? If not, K8s removes from Service
+          readinessProbe:
+            httpGet:
+              path: /health/readyz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Startup: give the app time to boot (runs setup scripts)
+          startupProbe:
+            httpGet:
+              path: /health/livez
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12  # 5 + (5*12) = 65s max startup time
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

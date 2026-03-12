@@ -216,6 +216,16 @@ async def send_individual_email_reminder(
         )
 
         if result.get("success"):
+            # Mark guest as having received an invite if not already set
+            guest_collection = mongo.get_guest_collection()
+            guest = await guest_collection.find_one({"token": payload.guest_token, "wedding_id": wedding["_id"]})
+            if guest and not guest.get("invite_sent"):
+                from datetime import datetime, timezone
+                await guest_collection.update_one(
+                    {"_id": guest["_id"]},
+                    {"$set": {"invite_sent": True, "invite_sent_date": datetime.now(timezone.utc)}}
+                )
+                logger.info(f"Set invite_sent=True for guest {payload.guest_name} (email reminder)")
             return {"sent": 1, "success": True}
         else:
             return {"sent": 0, "success": False, "error": result.get("error", "Unknown error")}

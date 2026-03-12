@@ -1,0 +1,34 @@
+# =============================================================================
+# Services - Internal networking for backend and frontend
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: wedding-app
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: wedding-app
+  labels:
+    app: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+  type: ClusterIP
