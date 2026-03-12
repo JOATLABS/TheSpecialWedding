@@ -179,6 +179,24 @@
 
 ---
 
+## Wiring & Integration (Post-Phase 3)
+**Date:** 2026-03-11
+**Files Modified:**
+- `app/main.py` — Registered advertising router import and `include_router()` call
+- `app/admin/components/Sidebar.tsx` — Added "Advertising" nav item with Megaphone icon to admin nav
+- `app/admin/vendors/page.tsx` — Imported and embedded `SponsoredVendorsRail` in overview tab
+- `app/api/advertising.py` — Fixed `is_admin` → `is_root_admin` (5 occurrences) to match auth dependency
+- `app/services/advertisingApi.ts` — Fixed API URL prefix from `/admin/ads/` → `/api/v1/ads/` to match backend router; fixed `toggleFeatureFlag` to use query param instead of JSON body
+
+**What Changed:**
+- Advertising router now registered in FastAPI app (no `/admin` prefix since router has own `/api/v1/ads`)
+- Admin sidebar shows "Advertising" link for root admins between Billing and Notifications
+- Vendor management overview tab now renders SponsoredVendorsRail (gracefully hidden if feature disabled)
+- All admin-only endpoint checks use `is_root_admin` matching `ExtendedAuthUser` class
+- Frontend API client URLs match backend FastAPI router prefix exactly
+
+---
+
 ## Integration Points with Existing Features
 
 **Vendor Management:**
