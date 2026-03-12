@@ -5,7 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
-import { clearAdminAuthStorage, persistAdminAuthToken } from '@/utils/adminAuthStorage';
+import { clearAdminAuthStorage, persistAdminAuthToken, isTokenExpired } from '@/utils/adminAuthStorage';
 
 interface UserProfile {
     id?: string;
@@ -60,7 +60,15 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         if (stored) {
-            setToken(stored);
+            // Check if the JWT has expired before trusting it.
+            // Cookies/localStorage can outlive the JWT's 60-minute exp claim,
+            // so a stale token in storage would otherwise cause the entire admin
+            // UI to mount and fire authenticated requests that all return 401.
+            if (isTokenExpired(stored)) {
+                clearAdminAuthStorage();
+            } else {
+                setToken(stored);
+            }
         }
 
         // Mark loading as complete - auth check is done

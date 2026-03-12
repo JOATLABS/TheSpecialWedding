@@ -6,6 +6,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Menu, Sun, Moon, Bell, User, Settings, LogOut, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
+import { isTokenExpired } from '@/utils/adminAuthStorage';
 import AccountSettingsModal from './AccountSettingsModal';
 
 interface TopHeaderProps {
@@ -36,6 +37,9 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const probeControllersRef = useRef<Set<AbortController>>(new Set());
   // Guard against async callbacks executing after unmount / effect cleanup.
   const isMountedRef = useRef(true);
+  // Track whether the token has been confirmed invalid (401/403) so that
+  // visibility-change and other reconnect triggers don't restart the cycle.
+  const authFailedRef = useRef(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -70,17 +74,67 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
       isConnecting.current = false;
     };
 
-    const connect = () => {
-      // Close any existing connection before opening a new one (prevents race on token change)
+    // Verify token is valid BEFORE opening an EventSource connection.
+    // Step 1: Client-side JWT `exp` check — zero network requests if expired.
+    // Step 2: If exp looks valid, probe the backend to catch server-side
+    //         revocations (deactivated account, email unverified, trial expired).
+    const verifyAuthThenConnect = () => {
+      if (!isMountedRef.current || isConnecting.current || authFailedRef.current) return;
+
+      // ---- Client-side expiry check (no network round-trip) ----
+      if (isTokenExpired(token)) {
+        authFailedRef.current = true;
+        // Token is dead — clear storage and redirect to login so the user
+        // doesn't sit on a broken admin page generating 401s.
+        logout();
+        return;
+      }
+
+      isConnecting.current = true;
+
+      const controller = new AbortController();
+      probeControllersRef.current.add(controller);
+      const probeTimeout = setTimeout(() => controller.abort(), 5000);
+
+      fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        signal: controller.signal,
+      })
+        .then((probe) => {
+          if (probe.status === 401 || probe.status === 403) {
+            // Token rejected by server — stop and log the user out
+            authFailedRef.current = true;
+            isConnecting.current = false;
+            if (isMountedRef.current) logout();
+            return;
+          }
+          // Token is valid — safe to open the EventSource now
+          if (isMountedRef.current && !controller.signal.aborted) {
+            openEventSource();
+          } else {
+            isConnecting.current = false;
+          }
+        })
+        .catch(() => {
+          // Network error (not auth) — retry with backoff if still mounted
+          isConnecting.current = false;
+          if (isMountedRef.current && !controller.signal.aborted && !authFailedRef.current) {
+            scheduleReconnect();
+          }
+        })
+        .finally(() => {
+          clearTimeout(probeTimeout);
+          probeControllersRef.current.delete(controller);
+        });
+    };
+
+    const openEventSource = () => {
+      // Close any existing connection before opening a new one
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
-      if (isConnecting.current) return;
-      isConnecting.current = true;
 
-      // EventSource doesn't support custom headers, so we pass the token as a query param.
-      // The backend SSE endpoint accepts ?token= for this reason.
       const url = `${getApiBaseUrl()}/admin/notifications/stream?token=${encodeURIComponent(token)}`;
       const es = new EventSource(url);
       eventSourceRef.current = es;
@@ -89,7 +143,6 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
         try {
           const data = JSON.parse(event.data);
           setUnreadCount(data.unread || 0);
-          // Reset reconnect counter on successful data
           reconnectAttempts.current = 0;
         } catch {
           // Ignore malformed events
@@ -99,7 +152,6 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
       es.addEventListener('notification-new', (event) => {
         try {
           const data = JSON.parse(event.data);
-          // Dispatch custom event so other components (e.g. notification panel) can react
           window.dispatchEvent(new CustomEvent('notification-received', { detail: data }));
         } catch {
           // Ignore malformed events
@@ -116,75 +168,52 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
         es.close();
         eventSourceRef.current = null;
 
-        // Before reconnecting, verify the token is still valid.
-        // EventSource doesn't expose HTTP status codes, so we can't
-        // distinguish a 401 from a network error. A quick auth check
-        // prevents us from hammering the endpoint with an expired token.
-        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS && isMountedRef.current) {
-          const delay = Math.min(
-            INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current),
-            MAX_RECONNECT_DELAY
-          );
-          reconnectAttempts.current += 1;
-
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (!isMountedRef.current) return;
-
-            // Create an AbortController for this probe; track it in the Set
-            // so cleanup can abort ALL in-flight probes (not just the latest).
-            const controller = new AbortController();
-            probeControllersRef.current.add(controller);
-
-            // 5-second timeout so a stalled probe doesn't block reconnection forever
-            const probeTimeout = setTimeout(() => controller.abort(), 5000);
-
-            fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              signal: controller.signal,
-            })
-              .then((probe) => {
-                if (probe.status === 401 || probe.status === 402) {
-                  // Token is expired/invalid — stop reconnecting
-                  reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS;
-                  return;
-                }
-                // Only reconnect if still mounted and not aborted
-                if (isMountedRef.current && !controller.signal.aborted) {
-                  connect();
-                }
-              })
-              .catch(() => {
-                // Network error or aborted — only retry if mounted and not aborted
-                if (isMountedRef.current && !controller.signal.aborted) {
-                  connect();
-                }
-              })
-              .finally(() => {
-                clearTimeout(probeTimeout);
-                probeControllersRef.current.delete(controller);
-              });
-          }, delay);
+        // On error, re-verify auth before reconnecting.
+        // This catches token expiration that happens mid-session.
+        if (!authFailedRef.current && isMountedRef.current) {
+          scheduleReconnect();
         }
       };
     };
 
-    // Connect on mount
-    connect();
+    const scheduleReconnect = () => {
+      if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS || authFailedRef.current) return;
+
+      const delay = Math.min(
+        INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current),
+        MAX_RECONNECT_DELAY
+      );
+      reconnectAttempts.current += 1;
+
+      reconnectTimeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current || authFailedRef.current) return;
+        verifyAuthThenConnect();
+      }, delay);
+    };
+
+    // Connect on mount — auth is verified before opening EventSource
+    authFailedRef.current = false;
+    verifyAuthThenConnect();
 
     // Pause SSE when tab is hidden, resume when visible
     const handleVisibilityChange = () => {
       if (!isMountedRef.current) return;
       if (document.hidden) {
         closeConnection();
-      } else {
+      } else if (!authFailedRef.current) {
+        // Only resume if auth hasn't been marked as failed.
+        // This prevents the visibility-change handler from restarting
+        // the 401 cycle after token expiration was detected.
         reconnectAttempts.current = 0;
-        connect();
+        verifyAuthThenConnect();
       }
     };
 
     // Listen for local "notifications-updated" events (e.g. user marks as read)
     // to trigger an immediate re-fetch via a one-shot REST call
     const handleNotificationsRead = async () => {
+      // Don't fire requests if auth has already failed or token is expired
+      if (authFailedRef.current || isTokenExpired(token)) return;
       try {
         const [platformRes, activityRes] = await Promise.allSettled([
           fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
