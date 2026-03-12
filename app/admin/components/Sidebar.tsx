@@ -27,6 +27,7 @@ import {
   Package,
   LayoutGrid,
   Mail,
+  Megaphone,
   type LucideIcon
 } from 'lucide-react';
 
@@ -52,6 +53,7 @@ const adminNavItems: NavItem[] = [
   { name: 'SaaS Management', href: '/admin/saas', icon: Layers },
   { name: 'Planners', href: '/admin/users', icon: Users },
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
+  { name: 'Advertising', href: '/admin/advertising', icon: Megaphone },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
 ];

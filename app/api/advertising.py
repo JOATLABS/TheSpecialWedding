@@ -94,7 +94,7 @@ async def toggle_feature_flag(
     - is_enabled: Whether to enable or disable sponsored vendors
     """
     # Check if user is admin
-    if not current_user.is_admin:
+    if not current_user.is_root_admin:
         raise HTTPException(
             status_code=403,
             detail="Only admins can modify the feature flag"
@@ -205,7 +205,7 @@ async def create_sponsored_vendor(
     - target_wedding_stages: Wedding stages to target (optional)
     """
     # Check if user is admin
-    if not current_user.is_admin:
+    if not current_user.is_root_admin:
         raise HTTPException(
             status_code=403,
             detail="Only admins can create sponsored vendors"
@@ -258,7 +258,7 @@ async def update_sponsored_vendor(
     - target_wedding_stages: Wedding stages to target
     """
     # Check if user is admin
-    if not current_user.is_admin:
+    if not current_user.is_root_admin:
         raise HTTPException(
             status_code=403,
             detail="Only admins can update sponsored vendors"
@@ -299,7 +299,7 @@ async def delete_sponsored_vendor(
     - sponsored_id: ID of the sponsored vendor to delete
     """
     # Check if user is admin
-    if not current_user.is_admin:
+    if not current_user.is_root_admin:
         raise HTTPException(
             status_code=403,
             detail="Only admins can delete sponsored vendors"
@@ -391,7 +391,7 @@ async def get_sponsored_vendor_stats(
     - days: Number of days to look back (1-90, default 7)
     """
     # Check if user is admin
-    if not current_user.is_admin:
+    if not current_user.is_root_admin:
         raise HTTPException(
             status_code=403,
             detail="Only admins can view advertising stats"

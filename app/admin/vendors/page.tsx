@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { VendorPaymentModal } from './components/VendorPaymentModal';
 import { PaymentMilestones } from './components/PaymentMilestones';
 import { getApiBaseUrl } from '@/utils/env';
+import { SponsoredVendorsRail } from './components/SponsoredVendorsRail';
 
 // AI Recommendation types
 interface VendorRecommendation {
@@ -449,6 +450,9 @@ export default function VendorManagementPage() {
                 <div className="text-xs text-orange-600 mt-1">{dashboard.payments.overdue_count} overdue</div>
               </div>
             </div>
+
+            {/* Sponsored Vendors Rail — only renders if feature flag is enabled */}
+            <SponsoredVendorsRail placement="vendor_rail" />
 
             {/* Quick Actions */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
