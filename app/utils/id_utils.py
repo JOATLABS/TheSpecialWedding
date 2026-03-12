@@ -37,7 +37,8 @@ def to_object_id(id_str: Union[str, ObjectId], field_name: str = "id") -> Object
     if isinstance(id_str, str):
         try:
             return ObjectId(id_str)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to convert {field_name} to ObjectId: {id_str}, error: {e}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid {field_name}: {id_str}"

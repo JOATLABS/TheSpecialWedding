@@ -224,7 +224,8 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                                     {"$set": {"last_active_at": datetime.now(timezone.utc)}}
                                 )
                             )
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"Failed to update team member last_active_at: {e}")
                             pass  # Non-critical
                 else:
                     # Team membership revoked or deactivated
@@ -245,7 +246,8 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
     except HTTPException:
         # Re-raise HTTP exceptions (including trial expiration 402) as-is
         raise
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error in require_auth_extended: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
@@ -355,7 +357,8 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
 
             if wedding:
                 return wedding.get("assigned_planner_email") == user.email
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Error checking wedding access for user {user.email}: {e}")
             return False
 
     # ── Team member wedding access ──
@@ -374,7 +377,8 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
                 wedding = await mongo.get_weddings_collection().find_one({"_id": query_id})
                 if wedding and user.team_owner_email:
                     return wedding.get("assigned_planner_email") == user.team_owner_email
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Error checking team wedding access for user {user.email}: {e}")
                 return False
         elif user.team_wedding_access == "assigned":
             # Team member with "assigned" access: must be in their list

@@ -13,6 +13,7 @@ from app.models.budget import (
 )
 from app.utils.security_validator import SecurityValidator
 from app.utils.serializers import serialize_mongo_doc
+from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
 import logging
 
 logger = logging.getLogger(__name__)
@@ -162,8 +163,11 @@ class BudgetService:
     async def update_budget_category(self, category_id: str, update_data: Dict) -> Dict:
         """Update an existing budget category"""
         try:
+            # Standardize ID to PyObjectId (compatible with to_object_id)
+            obj_id = PyObjectId(to_object_id(category_id, "category_id"))
+
             # Validate category exists
-            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            category = await self.budget_categories.find_one({"_id": obj_id})
             if not category:
                 raise ValueError("Budget category not found")
 
@@ -177,7 +181,7 @@ class BudgetService:
                     # Get all categories except this one (safety cap applied)
                     cursor = self.budget_categories.find({
                         "wedding_id": wedding_id,
-                        "_id": {"$ne": PyObjectId(category_id)}
+                        "_id": {"$ne": obj_id}
                     })
                     other_categories = await cursor.to_list(length=self.MAX_CATEGORIES)
                     other_total = sum(cat.get("budgeted_amount", 0) for cat in other_categories)
@@ -199,7 +203,7 @@ class BudgetService:
 
             # Update category
             result = await self.budget_categories.update_one(
-                {"_id": PyObjectId(category_id)},
+                {"_id": obj_id},
                 {"$set": update_data}
             )
 
@@ -230,19 +234,22 @@ class BudgetService:
     async def delete_budget_category(self, category_id: str) -> bool:
         """Delete a budget category"""
         try:
+            # Standardize ID to PyObjectId
+            obj_id = PyObjectId(to_object_id(category_id, "category_id"))
+
             # Get category to get wedding_id
-            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            category = await self.budget_categories.find_one({"_id": obj_id})
             if not category:
                 raise ValueError("Budget category not found")
 
             wedding_id = category["wedding_id"]
 
             # Delete associated quotes and payments
-            await self.vendor_quotes.delete_many({"category_id": category_id})
-            await self.payment_records.delete_many({"category_id": category_id})
+            await self.vendor_quotes.delete_many({"category_id": to_str_id(category_id)})
+            await self.payment_records.delete_many({"category_id": to_str_id(category_id)})
 
             # Delete category
-            result = await self.budget_categories.delete_one({"_id": PyObjectId(category_id)})
+            result = await self.budget_categories.delete_one({"_id": obj_id})
 
             if result.deleted_count == 0:
                 raise ValueError("Failed to delete category")

@@ -289,7 +289,8 @@ async def log_validation_errors(request: Request, exc: RequestValidationError):
     try:
         raw_body = await request.body()
         body = raw_body.decode("utf-8")[:2000]  # cap at 2 KB for logging
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to read request body for logging: {e}")
         body = "<could not read body>"
 
     logger.warning(

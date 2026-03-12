@@ -4,6 +4,7 @@ from app.core.database import mongo
 from app.models.plus_one import PlusOneModel
 from datetime import datetime, timezone
 import logging
+from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,7 @@ class PlusOneService:
 
     async def get_plus_one(self, plus_one_id: str, wedding_id: str = None):
         """Fetch a plus-one by id with optional wedding_id filter for multi-tenant isolation."""
-        try:
-            obj_id = ObjectId(plus_one_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid plus-one id")
-
+        obj_id = to_object_id(plus_one_id, "plus_one_id")
         query = {"_id": obj_id}
         if wedding_id:
             query["wedding_id"] = wedding_id
@@ -27,15 +24,15 @@ class PlusOneService:
         if not plus_one:
             raise HTTPException(status_code=404, detail="Plus-one not found")
 
-        plus_one["id"] = str(plus_one["_id"])
+        normalize_doc_id(plus_one)
         plus_one.pop("_id", None)
         return plus_one
 
     async def add_plus_one(self, plus_one_data: PlusOneModel):
         try:
             guest_collection = mongo.get_guest_collection()
-            guest_id = ObjectId(plus_one_data.guest_id)
-            guest_id_str = str(guest_id)
+            guest_id = to_object_id(plus_one_data.guest_id, "guest_id")
+            guest_id_str = to_str_id(guest_id)
 
             # Get guest to check permissions
             guest = await guest_collection.find_one({"_id": guest_id})
@@ -79,7 +76,7 @@ class PlusOneService:
                     {"$set": {"plus_one_submitted": True, "updated_at": datetime.now(timezone.utc)}}
                 )
 
-            return {"id": str(inserted_id), "message": "Plus-one added successfully"}
+            return {"id": to_str_id(inserted_id), "message": "Plus-one added successfully"}
         except HTTPException:
             raise
         except Exception as e:
@@ -89,7 +86,7 @@ class PlusOneService:
         try:
             results = await self.collection.find({"guest_id": guest_id}).to_list(length=None)
             for r in results:
-                r["id"] = str(r["_id"])
+                normalize_doc_id(r)
                 r.pop("_id", None)
             return results
         except Exception as e:
@@ -108,7 +105,7 @@ class PlusOneService:
                 return []
 
             # Convert ObjectIds to strings (plus_ones store guest_id as string)
-            guest_ids = [str(g["_id"]) for g in guests]
+            guest_ids = [to_str_id(g["_id"]) for g in guests]
 
             # 2. Find plus-ones for these guests
             results = await self.collection.find(
@@ -116,7 +113,7 @@ class PlusOneService:
             ).to_list(length=None)
 
             for r in results:
-                r["id"] = str(r["_id"])
+                normalize_doc_id(r)
                 r.pop("_id", None)
 
             return results
@@ -126,8 +123,9 @@ class PlusOneService:
 
     async def update_plus_one(self, plus_one_id: str, data: dict):
         try:
+            obj_id = to_object_id(plus_one_id, "plus_one_id")
             result = await self.collection.update_one(
-                {"_id": ObjectId(plus_one_id)},
+                {"_id": obj_id},
                 {"$set": data}
             )
             if result.matched_count == 0:
@@ -139,26 +137,28 @@ class PlusOneService:
     async def delete_plus_one(self, plus_one_id: str):
         try:
             # Get plus-one to find guest_id
-            plus_one = await self.collection.find_one({"_id": ObjectId(plus_one_id)})
+            obj_id = to_object_id(plus_one_id, "plus_one_id")
+            plus_one = await self.collection.find_one({"_id": obj_id})
             if not plus_one:
                 raise HTTPException(status_code=404, detail="Plus-one not found")
 
             # guest_id is stored as string in plus_ones collection
-            guest_id_str = str(plus_one["guest_id"])
+            guest_id_str = to_str_id(plus_one["guest_id"])
 
             # Delete the plus-one
-            await self.collection.delete_one({"_id": ObjectId(plus_one_id)})
+            await self.collection.delete_one({"_id": obj_id})
 
             # Update guest's plus_one_submitted status if needed
             guest_collection = mongo.get_guest_collection()
 
             # Convert to ObjectId for guest collection lookup (guests use ObjectId for _id)
+            guest_object_id = to_object_id(guest_id_str, "guest_id")
+
             try:
-                guest_object_id = ObjectId(guest_id_str)
+                guest = await guest_collection.find_one({"_id": guest_object_id})
             except Exception:
                 return {"message": "Plus-one deleted successfully"}
 
-            guest = await guest_collection.find_one({"_id": guest_object_id})
             if guest:
                 max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
 

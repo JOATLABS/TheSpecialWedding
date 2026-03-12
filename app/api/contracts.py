@@ -128,7 +128,8 @@ async def create_contract(
             body = await request.json()
             if isinstance(body, list):
                 custom_sections = body
-        except Exception:
+        except Exception as e:
+            logger.debug(f"No body or invalid JSON in request: {e}")
             pass  # No body or not JSON — that's fine
 
         contract = await contract_service.create_contract(

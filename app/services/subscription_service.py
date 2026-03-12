@@ -5,6 +5,7 @@ from app.services.stripe_service import stripe_service
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
+from app.utils.id_utils import to_object_id, to_str_id
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ class SubscriptionService:
         """Assign subscription plan to user"""
         try:
             # Verify user exists
-            user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+            user = await self.users_collection.find_one({"_id": to_object_id(user_id, "user_id")})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
@@ -306,7 +307,7 @@ class SubscriptionService:
                 user_updates["trial_warning_sent"] = False
 
             await self.users_collection.update_one(
-                {"_id": ObjectId(user_id)},
+                {"_id": to_object_id(user_id, "user_id")},
                 {"$set": user_updates}
             )
             return {
@@ -368,7 +369,7 @@ class SubscriptionService:
 
             # Update user status
             await self.users_collection.update_one(
-                {"_id": ObjectId(user_id)},
+                {"_id": to_object_id(user_id, "user_id")},
                 {"$set": {
                     "subscription_status": "cancelled",
                     "updated_at": now
