@@ -455,8 +455,9 @@ async def create_payment_indexes():
         return True
     except Exception as e:
         logger.error(f"Error creating payment indexes: {str(e)}")
-        
-        
+        return False
+
+
 async def create_admin_activity_log_indexes():
     """
     Create indexes for admin_activity_log collection (ROOT_ADMIN actions)
@@ -569,7 +570,15 @@ async def create_activity_logs_indexes():
         )
         logger.info("Created index: idx_type_timestamp")
 
-        # 7. TTL index - Auto-delete after 90 days
+        # 7. Wedding ID + metadata.guest_id (for guest-specific activity filtering)
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("metadata.guest_id", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_wedding_guest_timestamp",
+            sparse=True,
+        )
+        logger.info("Created index: idx_wedding_guest_timestamp")
+
+        # 8. TTL index - Auto-delete after 90 days
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_activity_logs_ttl",

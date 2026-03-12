@@ -17,6 +17,13 @@ from app.dependencies.auth_extended import (
     require_wedding_planner,
     enforce_team_permission,
 )
+from app.utils.query_validation import (
+    validated_page,
+    validated_limit_extended,
+    validated_string_filter,
+    validated_status_filter,
+    calculate_pagination_params
+)
 from app.models.calendar import (
     CalendarEventCreate,
     CalendarEventUpdate,
@@ -350,7 +357,7 @@ async def list_tasks(
     category: Optional[str] = Query(None, description="Filter by category"),
     start_date: Optional[datetime] = Query(None, description="Filter tasks after this date"),
     end_date: Optional[datetime] = Query(None, description="Filter tasks before this date"),
-    page: int = Query(default=1, ge=1, description="Page number"),
+    page: int = Query(default=1, ge=1, le=10000, description="Page number"),
     page_size: int = Query(default=50, ge=1, le=200, description="Items per page"),
 ) -> TaskListResponse:
     """
@@ -360,6 +367,11 @@ async def list_tasks(
     Results are sorted by start_date ascending.
     """
     tasks_collection = mongo.get_planner_tasks_collection()
+
+    # Validate filter parameters
+    wedding_id = validated_string_filter(wedding_id, max_length=100)
+    status = validated_status_filter(status, ['pending', 'in_progress', 'completed', 'on_hold'])
+    category = validated_string_filter(category, max_length=50)
 
     # Build query
     query: dict[str, Any] = {"planner_email": current_user.email}
@@ -382,8 +394,8 @@ async def list_tasks(
     total = await tasks_collection.count_documents(query)
 
     # Get paginated tasks
-    skip = (page - 1) * page_size
-    cursor = tasks_collection.find(query).sort("start_date", 1).skip(skip).limit(page_size)
+    skip, limit = calculate_pagination_params(page, page_size)
+    cursor = tasks_collection.find(query).sort("start_date", 1).skip(skip).limit(limit)
     tasks = await cursor.to_list(length=page_size)
 
     # Get wedding names for all tasks

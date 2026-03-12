@@ -5,6 +5,7 @@ import type { BudgetCategory, PaymentRecord } from '../../types/budget';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { formatDate } from '@/utils/dateFormat';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface PaymentHistoryPanelProps {
   payments: PaymentRecord[];
@@ -48,6 +49,7 @@ export function PaymentHistoryPanel({
   onEditPayment,
   onDeletePayment,
 }: PaymentHistoryPanelProps) {
+  const { confirm } = useConfirmDialog();
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [methodFilter, setMethodFilter] = useState<PaymentMethodFilter>('all');
   const [statusFilter, setStatusFilter] = useState<PaymentStatusFilter>('all');
@@ -315,8 +317,15 @@ export function PaymentHistoryPanel({
                           {onDeletePayment && (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (window.confirm(`Delete this ${formatCurrency(payment.amount)} payment? This cannot be undone.`)) {
+                              onClick={async () => {
+                                const confirmed = await confirm({
+                                  title: 'Delete Payment',
+                                  message: `Delete this ${formatCurrency(payment.amount)} payment? This cannot be undone.`,
+                                  variant: 'danger',
+                                  confirmText: 'Delete',
+                                  cancelText: 'Cancel',
+                                });
+                                if (confirmed) {
                                   onDeletePayment(payment);
                                 }
                               }}

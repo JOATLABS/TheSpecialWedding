@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from app.models.wedding import WeddingModel
 from app.services.wedding_service import WeddingService
+from app.services.cascade_delete_service import cascade_delete_service
 from app.dependencies.auth_extended import (
     require_root_admin,
     require_admin_or_planner,
@@ -11,6 +12,7 @@ from app.dependencies.auth_extended import (
 from app.services.subscription_service import SubscriptionService
 from app.services.stripe_service import stripe_service
 from app.models.subscription import SubscriptionStatus
+from app.utils.response import dict_response
 from app.core.database import mongo
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -147,14 +149,45 @@ async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: Ext
 
 
 @router.delete("/weddings/{wedding_id}", tags=["Admin"])
-async def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
-    """Soft-delete a wedding (mark cancelled) to prevent billing avoidance."""
+async def delete_wedding_admin(
+    wedding_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+    hard_delete: bool = False
+):
+    """
+    Delete a wedding and all dependent data.
+
+    By default, performs a soft delete (archives records with deleted_at/deleted_by fields).
+    If hard_delete=true, permanently removes all data (irreversible).
+
+    For soft delete with billing:
+    - Marks wedding status as 'cancelled'
+    - Archives all dependent records (guests, forms, budget, etc.)
+    - Handles meter reversal if on metered subscription
+    - Preserves data for audit and recovery
+
+    For hard delete:
+    - Permanently removes all records from database
+    - Should only be used for compliance, testing, or data cleanup
+    - WARNING: This is IRREVERSIBLE
+    """
     wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    # Attempt meter reversal only once per period to keep billing accurate without enabling avoidance
+    if hard_delete:
+        # Perform hard delete via cascade service
+        try:
+            result = await cascade_delete_service.hard_delete_wedding(wedding_id, current_user.email)
+            logger.info(f"Hard deleted wedding {wedding_id}: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Hard delete failed for wedding {wedding_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Hard delete failed: {str(e)}")
+
+    # Perform soft delete with meter handling
     try:
+        # Attempt meter reversal only once per period to keep billing accurate without enabling avoidance
         planner_email = wedding.get("assigned_planner_email")
         if planner_email:
             planner = await mongo.get_users_collection().find_one({"email": planner_email})
@@ -194,18 +227,28 @@ async def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser =
                                 "meter_pending_reason": None if reversal_success else reverse_result.get("message") or "meter_reversal_failed"
                             }}
                         )
-    except Exception as exc:
-        logger.error(f"Meter reversal on cancellation failed: {exc}")
 
-    # Preserve billing marker; do not decrement usage to avoid gaming billing
-    await mongo.db["weddings"].update_one(
-        {"_id": wedding_id},
-        {"$set": {
-            "status": "cancelled",
-            "cancelled_at": datetime.now(timezone.utc)
-        }}
-    )
-    return {"message": "Wedding cancelled (soft delete); billing usage preserved"}
+        # Perform soft delete cascade
+        result = await cascade_delete_service.soft_delete_wedding(wedding_id, current_user.email)
+
+        # Also mark wedding status as cancelled for backward compatibility
+        await mongo.db["weddings"].update_one(
+            {"_id": wedding_id},
+            {"$set": {
+                "status": "cancelled",
+                "cancelled_at": datetime.now(timezone.utc)
+            }}
+        )
+
+        logger.info(f"Soft deleted wedding {wedding_id}: {result}")
+        result["message"] = "Wedding cancelled (soft delete); all dependent records archived; billing usage preserved"
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Delete operation failed for wedding {wedding_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Delete operation failed: {str(exc)}")
 
 
 @router.get("/weddings/{wedding_id}", tags=["Wedding"])
@@ -230,9 +273,3 @@ async def get_wedding_by_slug(slug: str):
     privacy_info = await verification_service.get_wedding_privacy_info(slug)
 
     return privacy_info
-
-
-@router.delete("/weddings/{wedding_id}", tags=["Admin"])
-async def delete_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
-    """Alias soft-delete: mark cancelled; do not remove from billing usage."""
-    return await delete_wedding_admin(wedding_id, current_user)

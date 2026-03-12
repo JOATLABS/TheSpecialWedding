@@ -13,6 +13,11 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_admin_or_planner,
 )
+from app.utils.query_validation import (
+    validated_status_filter,
+    validated_string_filter,
+    validated_skip
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -63,10 +68,10 @@ class RefundPaymentRequest(BaseModel):
 async def list_contracts(
     status: Optional[str] = Query(
         None,
-        pattern="^(draft|sent|viewed|signed|active|completed|cancelled)$"
+        description="Filter by contract status"
     ),
-    limit: int = Query(50, ge=1, le=100),
-    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100, description="Items per page"),
+    skip: int = Query(0, ge=0, description="Items to skip"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
@@ -75,6 +80,9 @@ async def list_contracts(
     - **status**: Filter by contract status
     """
     try:
+        # Validate query parameters
+        status = validated_status_filter(status, ['draft', 'sent', 'viewed', 'signed', 'active', 'completed', 'cancelled'])
+
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         contracts = await contract_service.list_contracts(

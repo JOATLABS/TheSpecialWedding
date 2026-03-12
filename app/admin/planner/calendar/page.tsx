@@ -16,6 +16,7 @@ import {
   STATUS_CONFIG,
   TaskCategory,
 } from '@/services/calendarApi';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import TaskModal from './components/TaskModal';
 import GoogleCalendarConnect from './components/GoogleCalendarConnect';
 import { toast } from 'sonner';
@@ -108,6 +109,7 @@ interface Wedding {
 export default function PlannerCalendarPage() {
   const { token, userProfile, fetchUserProfile } = useAdmin();
   const router = useRouter();
+  const { confirm } = useConfirmDialog();
 
   // Calendar state
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -372,7 +374,13 @@ export default function PlannerCalendarPage() {
   const handleDeleteTask = async (task: PlannerTask) => {
     if (!token) return;
 
-    const confirmed = window.confirm('Are you sure you want to delete this task?');
+    const confirmed = await confirm({
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task?',
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
     if (!confirmed) return;
 
     try {

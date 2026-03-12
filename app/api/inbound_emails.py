@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.services.inbound_email_service import inbound_email_service
+from app.utils.response import dict_response
 import logging
 
 logger = logging.getLogger(__name__)

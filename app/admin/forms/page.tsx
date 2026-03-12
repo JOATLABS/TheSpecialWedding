@@ -7,6 +7,7 @@ import { SparklesIcon, SquaresPlusIcon, DocumentDuplicateIcon } from '@heroicons
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Button } from '@/components/ui/Button';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
 import { formatDate as formatUtcDate } from '@/utils/dateFormat';
 
@@ -137,6 +138,7 @@ function FormBadge({
 export default function FormsManagementPage(): ReactElement {
   const router = useRouter();
   const { token, userProfile } = useAdmin();
+  const { confirm } = useConfirmDialog();
 
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
@@ -283,7 +285,13 @@ export default function FormsManagementPage(): ReactElement {
       return;
     }
 
-    const confirmation = window.confirm('Are you sure you want to delete this form? This action cannot be undone.');
+    const confirmation = await confirm({
+      title: 'Delete Form',
+      message: 'Are you sure you want to delete this form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
     if (!confirmation) {
       return;
     }

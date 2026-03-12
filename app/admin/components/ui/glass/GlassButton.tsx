@@ -1,3 +1,21 @@
+'use client';
+
+/**
+ * GlassButton Component
+ *
+ * An animated glass-morphism button component using Framer Motion.
+ * Features smooth hover and tap animations for interactive feedback.
+ *
+ * Note on Framer Motion:
+ * Framer Motion is kept in the main bundle (not lazy-loaded) because:
+ * - It's relatively lightweight (~80-100KB gzipped)
+ * - Used across multiple components and pages
+ * - Provides critical UI animations for interactive feedback
+ * - Splitting would create unnecessary code complexity
+ *
+ * See LAZY_LOADING_OPTIMIZATION.md for more details
+ */
+
 import React from 'react';
 import { motion, type HTMLMotionProps } from 'framer-motion';
 import { twMerge } from 'tailwind-merge';
@@ -47,9 +65,9 @@ export function GlassButton({
       {...props}
     >
       {/* Glossy reflection effect */}
-      <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent" aria-hidden="true" />
 
-      {icon && <span className="w-4 h-4">{icon}</span>}
+      {icon && <span className="w-4 h-4" aria-hidden="true">{icon}</span>}
       {children}
     </motion.button>
   );

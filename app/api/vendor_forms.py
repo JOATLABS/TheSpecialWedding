@@ -66,16 +66,18 @@ class VendorFormService:
     async def get_vendor_forms_for_planner(self, planner_email: str) -> List[dict]:
         """Get all vendor forms for a specific planner"""
         try:
-            # Get planner's weddings
+            # Get planner's weddings (safety cap: typical planner has <500 weddings)
+            MAX_WEDDINGS = 1000
             planner_weddings = await self.weddings_collection.find(
                 {"assigned_planner_email": planner_email},
                 {"_id": 1}
-            ).to_list(length=None)
+            ).to_list(length=MAX_WEDDINGS)
             wedding_ids = [str(w["_id"]) for w in planner_weddings]
-            # Get vendor forms for these weddings
+            # Get vendor forms for these weddings (safety cap: ~10 forms per wedding)
+            MAX_VENDOR_FORMS = 5000
             vendor_forms = await self.vendor_forms_collection.find({
                 "wedding_id": {"$in": wedding_ids}
-            }).to_list(length=None)
+            }).to_list(length=MAX_VENDOR_FORMS)
 
             # Convert ObjectId to string
             for form in vendor_forms:
@@ -89,7 +91,9 @@ class VendorFormService:
     async def get_all_vendor_forms(self) -> List[dict]:
         """Get all vendor forms (ROOT_ADMIN only)"""
         try:
-            vendor_forms = await self.vendor_forms_collection.find().to_list(length=None)
+            # Safety cap: limit admin view to 10k forms (can paginate if needed)
+            MAX_ADMIN_FORMS = 10000
+            vendor_forms = await self.vendor_forms_collection.find().to_list(length=MAX_ADMIN_FORMS)
 
             # Convert ObjectId to string
             for form in vendor_forms:

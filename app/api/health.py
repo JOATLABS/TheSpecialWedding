@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from datetime import datetime, timezone
+from app.utils.response import dict_response
 import logging
 
 logger = logging.getLogger(__name__)
@@ -7,8 +8,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-<<<<<<< Updated upstream
-=======
 @router.get("/livez", tags=["Health"])
 async def liveness():
     """
@@ -16,7 +15,7 @@ async def liveness():
     Returns 200 if the process is alive — no dependency checks.
     K8s restarts the pod if this fails.
     """
-    return {"status": "alive"}
+    return dict_response(data={"status": "alive"})
 
 
 @router.get("/readyz", tags=["Health"])
@@ -64,7 +63,6 @@ async def readiness():
     )
 
 
->>>>>>> Stashed changes
 @router.get("/", tags=["Health"])
 async def health_check():
     """

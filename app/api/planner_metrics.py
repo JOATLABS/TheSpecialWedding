@@ -96,7 +96,9 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "status": {"$ne": "cancelled"}
             }
 
-        weddings = await weddings_collection.find(query).to_list(length=None)
+        # Safety cap: typical planner/admin has <5k weddings
+        MAX_WEDDINGS = 5000
+        weddings = await weddings_collection.find(query).to_list(length=MAX_WEDDINGS)
         current_date = datetime.now()
 
         # Activity query used for both recent activity and /planner/activity-log
@@ -106,7 +108,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             assigned_weddings = await weddings_collection.find(
                 {"assigned_planner_email": current_user.email},
                 {"_id": 1}
-            ).to_list(length=None)
+            ).to_list(length=MAX_WEDDINGS)
 
             wedding_id_values: list[Any] = []
             for wedding in assigned_weddings:
@@ -174,10 +176,12 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 metrics["summary"]["active_weddings"] += 1
 
             # Get all guests for this wedding (need plus-one and invite_sent data)
+            # Safety cap: large weddings may have up to 5000 guests
+            MAX_WEDDING_GUESTS = 5000
             guest_docs = await guests_collection.find(
                 {"wedding_id": wedding_id_str},
                 {"_id": 1, "number_of_plus_ones_allowed": 1, "invite_sent": 1}
-            ).to_list(length=None)
+            ).to_list(length=MAX_WEDDING_GUESTS)
             guest_count = len(guest_docs)
             metrics["summary"]["total_guests"] += guest_count
 
@@ -204,12 +208,13 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             metrics["summary"]["total_plus_ones_submitted"] += submitted_plus_ones
 
             # Get RSVP statistics - handle both ObjectId and string formats for wedding_id
+            # Safety cap: max guest RSVPs (same as guest cap)
             rsvps = await rsvps_collection.find({
                 "$or": [
                     {"wedding_id": wedding_id},
                     {"wedding_id": wedding_id_str}
                 ]
-            }).to_list(length=None)
+            }).to_list(length=MAX_WEDDING_GUESTS)
 
             confirmed = 0
             declined = 0
@@ -316,7 +321,9 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 user_query = {"email": current_user.email}
 
             user_id_values: list[Any] = []
-            users_for_revenue = await users_collection.find(user_query, {"_id": 1}).to_list(length=None)
+            # Safety cap: fetch revenue users (typically <10k)
+            MAX_REVENUE_USERS = 10000
+            users_for_revenue = await users_collection.find(user_query, {"_id": 1}).to_list(length=MAX_REVENUE_USERS)
             for user in users_for_revenue:
                 user_id = user.get("_id")
                 if user_id is None:
@@ -396,7 +403,8 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             monthly_revenue = 0.0
 
             try:
-                revenue_docs = await subscriptions_collection.aggregate(revenue_pipeline).to_list(length=None)
+                # Aggregate result should be single doc, but cap at 10 for safety
+                revenue_docs = await subscriptions_collection.aggregate(revenue_pipeline).to_list(length=10)
                 if revenue_docs:
                     monthly_revenue = float(revenue_docs[0].get("monthly", 0) or 0)
             except Exception as exc:
@@ -438,7 +446,8 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 }
             ).sort([("timestamp", -1), ("created_at", -1)]).limit(10)
 
-            activity_docs = await cursor.to_list(length=None)
+            # Activity already limited by .limit(10) in cursor
+            activity_docs = await cursor.to_list(length=10)
             for activity in activity_docs:
                 recent_activity.append(ActivityItemModel(
                     id=str(activity.get("_id")),
@@ -497,10 +506,12 @@ async def get_activity_log(
             query: dict[str, Any] = {}
         else:
             weddings_collection = mongo.get_weddings_collection()
+            # Safety cap: planner's assigned weddings (typically <1k)
+            MAX_PLANNER_WEDDINGS = 1000
             assigned_weddings = await weddings_collection.find(
                 {"assigned_planner_email": current_user.email},
                 {"_id": 1}
-            ).to_list(length=None)
+            ).to_list(length=MAX_PLANNER_WEDDINGS)
 
             wedding_id_values: list[Any] = []
             for wedding in assigned_weddings:
@@ -533,7 +544,8 @@ async def get_activity_log(
             }
         ).sort([("timestamp", -1), ("created_at", -1)]).limit(limit)
 
-        activities_raw = await cursor.to_list(length=None)
+        # Activity results already bounded by .limit(limit) above
+        activities_raw = await cursor.to_list(length=limit)
         total = await activity_logs_collection.count_documents(query)
 
         activities: List[ActivityItemModel] = []
@@ -586,7 +598,9 @@ async def get_planner_weddings(
         if not include_cancelled:
             query["status"] = {"$ne": "cancelled"}
 
-        weddings = await weddings_collection.find(query).to_list(length=None)
+        # Safety cap: typical planner has <5k weddings
+        MAX_WEDDINGS_LIST = 5000
+        weddings = await weddings_collection.find(query).to_list(length=MAX_WEDDINGS_LIST)
 
         # Convert ObjectId to string and format response
         wedding_list: List[PlannerWeddingModel] = []

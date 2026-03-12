@@ -4,6 +4,7 @@ from app.models.admin_user import AdminLoginModel
 from app.services.auth_service import AuthService
 from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser
 from app.utils.serializers import serialize_mongo_doc
+from app.utils.response import dict_response
 
 router = APIRouter()
 auth_service = AuthService()
@@ -12,7 +13,7 @@ auth_service = AuthService()
 @router.options("/token", tags=["Auth"])
 def login_options():
     """Handle CORS preflight for login endpoint"""
-    return {"message": "OK"}
+    return dict_response(message="OK")
 
 
 @router.post("/token", tags=["Auth"])

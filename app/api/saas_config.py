@@ -368,8 +368,10 @@ async def update_saas_config(
 async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get all content sections - ROOT_ADMIN only"""
     try:
+        # Safety cap: typically ~10-20 content sections
+        MAX_SECTIONS = 100
         sections_cursor = mongo.db["content_sections"].find({})
-        sections = await sections_cursor.to_list(length=None)
+        sections = await sections_cursor.to_list(length=MAX_SECTIONS)
 
         # Convert ObjectId to string for JSON serialization
         for section in sections:
@@ -442,8 +444,10 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
     """Get all wedding planners - ROOT_ADMIN only"""
     try:
         # Get users with wedding_planner role (async Motor query)
+        # Safety cap: typically platforms have <5k planners
+        MAX_PLANNERS = 5000
         planners_cursor = mongo.get_users_collection().find({"role": "wedding_planner"})
-        planners = await planners_cursor.to_list(length=None)
+        planners = await planners_cursor.to_list(length=MAX_PLANNERS)
         # Convert ObjectId to string and format data
         formatted_planners = []
         for planner in planners:
@@ -592,11 +596,13 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
         yearly_revenue = 0
 
         # Get all users with active subscriptions (async cursor)
+        # Safety cap: iterate through batches to avoid memory overload
+        MAX_ACTIVE_USERS = 10000
         active_users_cursor = mongo.get_users_collection().find({
             "subscription_status": {"$in": ["trial", "active"]},
             "is_active": True
         })
-        active_users = await active_users_cursor.to_list(length=None)
+        active_users = await active_users_cursor.to_list(length=MAX_ACTIVE_USERS)
         for user in active_users:
             # Skip trial users for revenue calculation
             if user.get("subscription_status") == "trial":
@@ -631,8 +637,10 @@ async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require
     try:
         # Revenue by subscription plan
         plan_revenue = []
+        # Safety cap: typically <100 subscription plans
+        MAX_PLANS = 500
         plans_cursor = mongo.get_subscription_plans_collection().find({"is_active": True})
-        plans = await plans_cursor.to_list(length=None)
+        plans = await plans_cursor.to_list(length=MAX_PLANS)
 
         for plan in plans:
             plan_id = plan["_id"]

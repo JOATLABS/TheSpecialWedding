@@ -146,7 +146,7 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             # Check email verification for new accounts
-            if user_data.get("email_verified") is False:
+            if not user_data.get("email_verified"):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Email address not verified. Please check your email and verify your account.",

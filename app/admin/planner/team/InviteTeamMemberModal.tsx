@@ -173,26 +173,30 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={handleClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={handleClose} role="presentation">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        aria-describedby="modal-description"
         data-testid="invite-modal"
         className="relative z-[10000] bg-slate-800 border border-slate-700/50 rounded-2xl w-full max-w-[560px] max-h-[85vh] overflow-y-auto shadow-2xl mx-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-0">
-          <h2 id="modal-title" className="text-xl font-bold text-slate-100">Invite Team Member</h2>
+          <div>
+            <h2 id="modal-title" className="text-xl font-bold text-slate-100">Invite Team Member</h2>
+            <p id="modal-description" className="text-sm text-slate-400 mt-1">Add a new team member to collaborate on wedding planning</p>
+          </div>
           <button
             onClick={handleClose}
-            aria-label="Close modal"
+            aria-label="Close invite team member modal"
             className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
           >
-            <X size={16} />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -200,54 +204,65 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
         <div className="p-6 space-y-5">
           {/* Email */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Email Address</label>
+            <label htmlFor="team-member-email" className="block text-xs font-medium text-slate-400 mb-1.5">Email Address</label>
             <input
+              id="team-member-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="teammate@company.com"
               data-testid="invite-email"
               className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors"
+              aria-required="true"
             />
           </div>
 
           {/* Role Selector */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Role</label>
-            <div className="grid grid-cols-3 gap-2.5" data-testid="role-selector">
-              {ROLES.map((r) => (
-                <button
-                  key={r.value}
-                  onClick={() => handleRoleChange(r.value)}
-                  className={`border-2 rounded-xl p-3.5 text-center transition-all ${
-                    role === r.value
-                      ? 'border-wedding-rose bg-wedding-rose/5'
-                      : 'border-slate-700/30 hover:border-slate-600/50'
-                  }`}
-                >
-                  <p className={`font-semibold text-sm ${r.color}`}>{r.label}</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{r.desc}</p>
-                </button>
-              ))}
-            </div>
+            <fieldset>
+              <legend className="block text-xs font-medium text-slate-400 mb-1.5">Role</legend>
+              <div className="grid grid-cols-3 gap-2.5" role="group">
+                {ROLES.map((r) => (
+                  <button
+                    key={r.value}
+                    onClick={() => handleRoleChange(r.value)}
+                    className={`border-2 rounded-xl p-3.5 text-center transition-all ${
+                      role === r.value
+                        ? 'border-wedding-rose bg-wedding-rose/5'
+                        : 'border-slate-700/30 hover:border-slate-600/50'
+                    }`}
+                    role="radio"
+                    aria-checked={role === r.value}
+                    aria-label={`${r.label} - ${r.desc}`}
+                  >
+                    <p className={`font-semibold text-sm ${r.color}`}>{r.label}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{r.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
           </div>
 
           {/* Permissions */}
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+          <fieldset>
+            <legend className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
               Customize Permissions
-            </p>
+            </legend>
             <div className="grid grid-cols-2 gap-2">
               {ALL_PERMISSIONS.map((perm) => (
                 <button
                   key={perm.key}
                   onClick={() => togglePermission(perm.key)}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg bg-slate-900/40 border border-slate-700/20 text-sm text-left"
+                  className="flex items-center gap-2.5 p-2.5 rounded-lg bg-slate-900/40 border border-slate-700/20 text-sm text-left hover:border-slate-600/40 transition-colors"
+                  role="switch"
+                  aria-checked={permissions[perm.key]}
+                  aria-label={`${perm.label} - ${permissions[perm.key] ? 'enabled' : 'disabled'}`}
                 >
                   <div
                     className={`w-8 h-[18px] rounded-full relative transition-colors flex-shrink-0 ${
                       permissions[perm.key] ? 'bg-wedding-rose' : 'bg-slate-600'
                     }`}
+                    aria-hidden="true"
                   >
                     <div
                       className={`w-3.5 h-3.5 rounded-full bg-white absolute top-[2px] transition-all ${
@@ -259,14 +274,14 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
                 </button>
               ))}
             </div>
-          </div>
+          </fieldset>
 
           {/* Wedding Access */}
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+          <fieldset>
+            <legend className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
               Wedding Access
-            </p>
-            <div className="grid grid-cols-2 gap-2.5">
+            </legend>
+            <div className="grid grid-cols-2 gap-2.5" role="group">
               <button
                 onClick={() => setWeddingAccess('all')}
                 className={`border-2 rounded-xl p-3 text-center transition-all ${
@@ -274,6 +289,9 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
                     ? 'border-wedding-sage bg-wedding-sage/5'
                     : 'border-slate-700/30 hover:border-slate-600/50'
                 }`}
+                role="radio"
+                aria-checked={weddingAccess === 'all'}
+                aria-label="All weddings - access every wedding"
               >
                 <p className="font-semibold text-sm text-slate-200">All Weddings</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">Access every wedding</p>
@@ -285,12 +303,15 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
                     ? 'border-wedding-sage bg-wedding-sage/5'
                     : 'border-slate-700/30 hover:border-slate-600/50'
                 }`}
+                role="radio"
+                aria-checked={weddingAccess === 'assigned'}
+                aria-label="Specific weddings - choose which weddings"
               >
                 <p className="font-semibold text-sm text-wedding-sage">Specific Weddings</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">Choose which weddings</p>
               </button>
             </div>
-          </div>
+          </fieldset>
 
           {/* Wedding picker */}
           {weddingAccess === 'assigned' && (

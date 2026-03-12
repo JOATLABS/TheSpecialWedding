@@ -12,14 +12,18 @@ class PlusOneService:
     def __init__(self):
         self.collection = mongo.db["plus_ones"]
 
-    async def get_plus_one(self, plus_one_id: str):
-        """Fetch a plus-one by id."""
+    async def get_plus_one(self, plus_one_id: str, wedding_id: str = None):
+        """Fetch a plus-one by id with optional wedding_id filter for multi-tenant isolation."""
         try:
             obj_id = ObjectId(plus_one_id)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid plus-one id")
 
-        plus_one = await self.collection.find_one({"_id": obj_id})
+        query = {"_id": obj_id}
+        if wedding_id:
+            query["wedding_id"] = wedding_id
+
+        plus_one = await self.collection.find_one(query)
         if not plus_one:
             raise HTTPException(status_code=404, detail="Plus-one not found")
 
@@ -43,22 +47,29 @@ class PlusOneService:
 
             max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
 
-            # Use insert-then-verify pattern to prevent race condition
-            # This is atomic: insert first, then check count, rollback if over limit
+            # Pre-check count (fast fail for obvious over-limit cases)
+            current_count = await self.collection.count_documents({"guest_id": guest_id_str})
+            if current_count >= max_plus_ones:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached"
+                )
+
+            # Insert the plus-one document
             doc = plus_one_data.dict()
             doc["guest_id"] = guest_id_str  # Ensure consistent string type
             result = await self.collection.insert_one(doc)
             inserted_id = result.inserted_id
 
-            # Verify we haven't exceeded the limit (atomic count after insert)
+            # Verify we haven't exceeded the limit after insert (handles race condition)
             current_count = await self.collection.count_documents({"guest_id": guest_id_str})
 
             if current_count > max_plus_ones:
                 # Race condition detected - rollback the insert
                 await self.collection.delete_one({"_id": inserted_id})
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached"
+                    status_code=409,
+                    detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached. Please try again."
                 )
 
             # Update guest if all slots filled
@@ -149,11 +160,16 @@ class PlusOneService:
 
             guest = await guest_collection.find_one({"_id": guest_object_id})
             if guest:
-                # Count using string format (plus_ones store guest_id as string)
-                current_count = await self.collection.count_documents({"guest_id": guest_id_str})
                 max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
 
+                # Count using string format (plus_ones store guest_id as string)
+                # This count happens after deletion, so it's the new post-deletion count
+                current_count = await self.collection.count_documents({"guest_id": guest_id_str})
+
                 # If we now have room for more plus-ones, set submitted to False
+                # Note: There is still a potential race condition if another plus-one is added
+                # between the count and the update, but this is acceptable as it would only
+                # briefly show an incorrect status that will be corrected on next operation
                 if current_count < max_plus_ones:
                     await guest_collection.update_one(
                         {"_id": guest_object_id},
