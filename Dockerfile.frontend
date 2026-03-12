@@ -1,0 +1,58 @@
+# =============================================================================
+# FRONTEND DOCKERFILE - Next.js (separate container for K8s)
+# Optimized multi-stage build with standalone output
+# =============================================================================
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files for layer caching
+COPY package.json package-lock.json* ./
+RUN npm ci --legacy-peer-deps
+
+# Copy source
+COPY . .
+
+# Build-time env vars (injected by CI/CD or K8s ConfigMap)
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+
+# Build Next.js with standalone output
+RUN npm run build
+
+# Prune dev dependencies
+RUN npm prune --omit=dev
+
+# -----------------------------------------------------------------------------
+# Production runtime
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Copy built application
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/next.config.js ./next.config.js
+
+# Set proper ownership
+RUN chown -R nextjs:nodejs /app
+
+USER nextjs
+
+EXPOSE 3000
+
+# Health check for K8s (Next.js serves on /)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+
+CMD ["npm", "start"]

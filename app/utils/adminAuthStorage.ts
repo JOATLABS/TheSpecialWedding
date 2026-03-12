@@ -3,7 +3,7 @@
  * JWTs are base64url-encoded and the payload (second segment) contains
  * the `exp` claim we need for client-side expiry checks.
  */
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
+export function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
@@ -76,4 +76,16 @@ export function persistAdminAuthToken(token: string, rememberMe: boolean): void 
   const secureAttribute = window.location.protocol === 'https:' ? 'Secure;' : '';
   const maxAge = rememberMe ? 'max-age=604800;' : 'max-age=3600;';
   document.cookie = `admin_token=${token}; path=/; SameSite=Strict; ${maxAge} ${secureAttribute}`;
+}
+
+/**
+ * Returns the number of milliseconds until the JWT expires.
+ * Returns 0 if the token is already expired, malformed, or missing `exp`.
+ */
+export function getTokenExpiresInMs(token: string | null): number {
+  if (!token) return 0;
+  const payload = decodeJwtPayload(token);
+  if (!payload || typeof payload.exp !== 'number') return 0;
+  const msUntilExpiry = payload.exp * 1000 - Date.now();
+  return Math.max(0, msUntilExpiry);
 }

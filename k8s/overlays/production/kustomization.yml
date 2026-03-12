@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: wedding-app
+
+resources:
+  - ../../base
+
+# Override images with specific tags in production
+images:
+  - name: ghcr.io/etastic/wedding-app-backend
+    newTag: latest
+  - name: ghcr.io/etastic/wedding-app-frontend
+    newTag: latest
+
+# Production-specific patches
+patches:
+  # Scale up replicas for production
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
