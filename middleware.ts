@@ -18,7 +18,7 @@ export function middleware(request: NextRequest) {
   // from reaching the [slug] dynamic route, which would trigger a pointless
   // backend API call and inflate error counts against the SSR container's IP.
   //
-  // We rewrite to /not-found so the request never reaches [slug]/layout.tsx.
+  // We return a 404 directly so the request never reaches [slug]/layout.tsx.
   // Reserved paths (admin, api, etc.) are left alone — they have their own
   // route handlers and Next.js won't match them to [slug].
   const segments = pathname.split('/').filter(Boolean);
@@ -27,7 +27,7 @@ export function middleware(request: NextRequest) {
     // Contains a dot → file with extension (favicon.ico, logo.png, sw.js, etc.)
     // These are NOT wedding slugs (slugs are alphanumeric + hyphens only).
     if (segment.includes('.')) {
-      return NextResponse.rewrite(new URL('/not-found', request.url));
+      return new NextResponse('Not Found', { status: 404 });
     }
   }
 
