@@ -6,8 +6,15 @@ import { notFound } from "next/navigation";
 import { WeddingProvider } from '@/components/WeddingProvider';
 import { Wedding } from '@/types/wedding';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { isNonWeddingSlug } from '@/utils/slug-constants';
 
 async function fetchWeddingPrivacyInfo(slug: string) {
+  // Defense-in-depth: the primary check is in middleware.ts, but we
+  // also guard here in case the middleware matcher changes.
+  if (isNonWeddingSlug(slug)) {
+    return null;
+  }
+
   const baseUrl = getApiBaseUrl();
   const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
   try {
