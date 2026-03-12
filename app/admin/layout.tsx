@@ -2,6 +2,7 @@
 
 import { AdminProvider } from '@/contexts/AdminContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { ConfirmDialogProvider } from '@/components/ui/ConfirmDialog';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
@@ -64,7 +65,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen overflow-x-hidden bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans transition-colors duration-300">
       {/* Background Mesh Gradient (Fixed) */}
-      <div className="fixed inset-0 z-0 pointer-events-none opacity-40 dark:opacity-20 overflow-hidden">
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-40 dark:opacity-20 overflow-hidden" aria-hidden="true">
          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary-400/30 blur-[100px] animate-float" />
          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-secondary-400/30 blur-[100px] animate-float" style={{ animationDelay: '-3s' }} />
       </div>
@@ -86,7 +87,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
           title={getPageTitle()}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden" id="main-content">
            <ErrorBoundary>
              {children}
            </ErrorBoundary>
@@ -109,9 +110,11 @@ export default function AdminLayout({
   return (
     <ThemeProvider>
       <AdminProvider>
-        <AdminRouteGuard>
-          <AdminLayoutContent>{children}</AdminLayoutContent>
-        </AdminRouteGuard>
+        <ConfirmDialogProvider>
+          <AdminRouteGuard>
+            <AdminLayoutContent>{children}</AdminLayoutContent>
+          </AdminRouteGuard>
+        </ConfirmDialogProvider>
       </AdminProvider>
     </ThemeProvider>
   );

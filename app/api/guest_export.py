@@ -170,19 +170,20 @@ async def export_qr_codes_zip(
         if not slug:
             raise HTTPException(status_code=400, detail="Wedding has no slug configured")
 
-        # Get guests
+        # Get guests (higher cap for exports since users may have large guest lists)
+        MAX_GUESTS_EXPORT = 10000
         if request.guest_ids:
             # Specific guests
             guest_object_ids = [ObjectId(gid) for gid in request.guest_ids]
             guests = await guest_collection.find({
                 "_id": {"$in": guest_object_ids},
                 "wedding_id": request.wedding_id
-            }).to_list(length=None)
+            }).to_list(length=MAX_GUESTS_EXPORT)
         else:
             # All guests for the wedding
             guests = await guest_collection.find({
                 "wedding_id": request.wedding_id
-            }).to_list(length=None)
+            }).to_list(length=MAX_GUESTS_EXPORT)
 
         if not guests:
             raise HTTPException(status_code=404, detail="No guests found")

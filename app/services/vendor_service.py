@@ -40,6 +40,15 @@ MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN")
 if not MEDIA_DOMAIN:
     logging.getLogger(__name__).warning("MEDIA_DOMAIN environment variable is not set")
 
+# Allowed MIME types for contract uploads
+ALLOWED_CONTRACT_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+}
+
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -1638,6 +1647,13 @@ class VendorService:
     ) -> dict:
         """Upload a contract document to S3"""
         try:
+            # Validate MIME type
+            if file.content_type not in ALLOWED_CONTRACT_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_CONTRACT_TYPES))}"
+                )
+
             # Generate unique key
             timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             filename = f"contracts/{contract_id}/{document_type}_{timestamp}_{file.filename}"
@@ -1662,6 +1678,8 @@ class VendorService:
 
             return {"url": file_url, "key": filename}
 
+        except HTTPException:
+            raise
         except ClientError as e:
             logger.error(f"S3 upload error: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to upload document")
@@ -1733,8 +1751,8 @@ class VendorService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             # Validate file is PDF
-            if not file.content_type or 'pdf' not in file.content_type.lower():
-                raise HTTPException(status_code=400, detail="File must be a PDF")
+            if file.content_type != "application/pdf":
+                raise HTTPException(status_code=400, detail="File must be a PDF (application/pdf)")
 
             # Read file content
             content = await file.read()

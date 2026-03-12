@@ -60,7 +60,7 @@ export default function AdminHeader() {
 
   return (
     <>
-      <header className="glass px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between relative">
+      <header className="glass px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between relative" role="banner">
         <div>
           <h1 className="font-heading text-xl sm:text-2xl text-wedding-rose">
             {userProfile?.is_root_admin ? 'Admin Panel' :
@@ -73,9 +73,9 @@ export default function AdminHeader() {
             </p>
           )}
         </div>
-        
+
         {/* Desktop Navigation */}
-        <nav className="hidden lg:flex space-x-4 xl:space-x-6 font-medium">
+        <nav className="hidden lg:flex space-x-4 xl:space-x-6 font-medium" aria-label="Main navigation">
           {navLinks.map((link) => (
             <Link
               key={link.href}
@@ -88,6 +88,7 @@ export default function AdminHeader() {
           <button
             onClick={logout}
             className="text-red-500 hover:underline"
+            aria-label="Logout from account"
           >
             Logout
           </button>
@@ -97,13 +98,16 @@ export default function AdminHeader() {
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="lg:hidden p-2 rounded-lg hover:bg-white/10 transition"
-          aria-label="Toggle menu"
+          aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-nav-menu"
         >
           <svg
             className="w-6 h-6"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
+            aria-hidden="true"
           >
             {mobileMenuOpen ? (
               <path
@@ -126,7 +130,7 @@ export default function AdminHeader() {
 
       {/* Mobile Navigation Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden glass border-t border-white/10">
+        <div className="lg:hidden glass border-t border-white/10" id="mobile-nav-menu" role="navigation" aria-label="Mobile navigation">
           <nav className="flex flex-col px-4 py-2 font-medium">
             {navLinks.map((link) => (
               <Link

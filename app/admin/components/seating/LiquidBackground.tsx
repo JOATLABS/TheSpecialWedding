@@ -1,4 +1,26 @@
-import React, { useRef } from 'react';
+'use client';
+
+/**
+ * LiquidBackground Component
+ *
+ * This component uses Three.js and React Three Fiber to render a beautiful
+ * animated 3D liquid sphere background. It's designed to be lazy-loaded
+ * using Next.js dynamic imports to avoid loading heavy 3D graphics libraries
+ * on initial page load.
+ *
+ * Usage:
+ * import dynamic from 'next/dynamic';
+ *
+ * const LiquidBackground = dynamic(
+ *   () => import('@/admin/components/seating/LiquidBackground').then(mod => ({ default: mod.LiquidBackground })),
+ *   {
+ *     ssr: false, // Critical: Three.js uses browser APIs, can't render on server
+ *     loading: () => <div className="...">Loading...</div>
+ *   }
+ * );
+ */
+
+import React, { useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { MeshDistortMaterial, Sphere, Environment, Float } from '@react-three/drei';
 import { useReducedMotion } from 'framer-motion';

@@ -11,6 +11,13 @@ from typing import Dict, Any, List, Optional, Iterable
 from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
+from app.utils.query_validation import (
+    validated_string_filter,
+    validated_status_filter,
+    validated_enum_filter,
+    validated_date_string,
+    validated_boolean_filter
+)
 from bson import ObjectId
 import logging
 
@@ -1083,6 +1090,12 @@ async def get_recent_errors(
         severity: Filter by severity level
         acknowledged: Filter by acknowledged status
     """
+    # Validate query parameters
+    direction = validated_enum_filter(direction, ["next", "prev"]) or "next"
+    severity = validated_status_filter(severity, ["critical", "warning", "all"])
+    cursor = validated_string_filter(cursor, max_length=100)
+    acknowledged = validated_boolean_filter(acknowledged)
+
     now = datetime.now(timezone.utc)
     default_cutoff = now - timedelta(days=30)
 
@@ -1406,6 +1419,10 @@ async def export_errors(
         days: Export errors from the last N days (default: 30)
     """
     try:
+        # Validate format parameter
+        format = validated_enum_filter(format, ["json", "csv"]) or "json"
+        acknowledged = validated_boolean_filter(acknowledged)
+
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Build query

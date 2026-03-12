@@ -26,8 +26,10 @@ async def list_tables(
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
+    # Safety cap for seating tables (typical weddings have <500 tables)
+    MAX_TABLES = 1000
     tables_cursor = mongo.db["tables"].find({"wedding_id": wedding_id})
-    tables = await tables_cursor.to_list(length=None)
+    tables = await tables_cursor.to_list(length=MAX_TABLES)
 
     # Convert ObjectIds to strings
     for table in tables:

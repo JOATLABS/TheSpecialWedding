@@ -6,6 +6,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { X, Loader2 } from 'lucide-react';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ROLES, ALL_PERMISSIONS, ROLE_DEFAULTS } from './teamConstants';
 
 interface TeamMember {
@@ -38,6 +39,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
   const { token } = useAdmin();
   const baseUrl = getApiBaseUrl();
   const modalRef = useRef<HTMLDivElement>(null);
+  const { confirm } = useConfirmDialog();
 
   const [role, setRole] = useState(member.role);
   const [permissions, setPermissions] = useState<Record<string, boolean>>({ ...member.permissions });
@@ -125,16 +127,20 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
     return () => modal.removeEventListener('keydown', handleTab);
   }, []);
 
-  const handleRoleChange = (newRole: string) => {
+  const handleRoleChange = async (newRole: string) => {
     if (newRole === role) return;
     // Check if user has customized permissions away from current role defaults
     const currentDefaults = ROLE_DEFAULTS[role] || {};
     const hasCustomPerms = ALL_PERMISSIONS.some((p) => permissions[p.key] !== currentDefaults[p.key]);
 
     if (hasCustomPerms) {
-      const confirmed = window.confirm(
-        'Changing roles will reset permissions to the new role\'s defaults. You can customize them again after. Continue?'
-      );
+      const confirmed = await confirm({
+        title: 'Change Role',
+        message: 'Changing roles will reset permissions to the new role\'s defaults. You can customize them again after. Continue?',
+        variant: 'warning',
+        confirmText: 'Change Role',
+        cancelText: 'Keep Current Role',
+      });
       if (!confirmed) return;
     }
 

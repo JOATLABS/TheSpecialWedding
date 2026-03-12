@@ -65,7 +65,7 @@ async def _authenticate_from_query(token: str) -> ExtendedAuthUser:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is deactivated")
 
         # Check email verification
-        if user.get("email_verified") is False:
+        if not user.get("email_verified"):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email not verified")
 
         # Check trial expiration for wedding planners

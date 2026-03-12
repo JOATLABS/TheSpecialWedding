@@ -7,6 +7,10 @@ from app.services.activity_log_service import activity_log_service
 from app.models.guest import UpdateGuestRequest, GuestModel, CreateGuestRequest
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.utils.token_generator import generate_token
+from app.utils.response import success_response, error_response, dict_response
+from app.utils.query_validation import (
+    validated_string_filter
+)
 from app.core.database import mongo
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -51,8 +55,8 @@ async def get_guest(token: str, wedding_id: str = Query(...)):
 @router.get("/invite/search", tags=["Guest"])
 async def search_guest(
     wedding_id: str = Query(..., description="Wedding ID to search within"),
-    phone: str = Query(None, description="Guest phone number"),
-    name: str = Query(None, description="Guest name"),
+    phone: Optional[str] = Query(None, description="Guest phone number"),
+    name: Optional[str] = Query(None, description="Guest name"),
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """
@@ -64,6 +68,10 @@ async def search_guest(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     try:
+        # Validate search parameters
+        phone = validated_string_filter(phone, max_length=20)
+        name = validated_string_filter(name, max_length=100)
+
         return await guest_service.get_guest_by_phone_or_name(
             phone=phone,
             name=name,
@@ -250,7 +258,8 @@ async def get_guest_activity(
             {"_id": 1, "type": 1, "message": 1, "timestamp": 1, "created_at": 1, "metadata": 1}
         ).sort([("timestamp", -1), ("created_at", -1)]).limit(limit)
 
-        activities_raw = await cursor.to_list(length=None)
+        # Bounded by the limit parameter already set by caller (max 100)
+        activities_raw = await cursor.to_list(length=limit)
 
         activities = []
         for activity in activities_raw:
@@ -269,7 +278,7 @@ async def get_guest_activity(
                 },
             })
 
-        return {"activities": activities, "total": len(activities)}
+        return dict_response(data={"activities": activities}, meta={"total": len(activities)})
 
     except HTTPException:
         raise
@@ -407,12 +416,14 @@ async def update_seating_constraints(
         except Exception as log_err:
             logger.warning(f"Failed to log seating constraints activity: {log_err}")
 
-        return {
-            "success": True,
-            "updated_count": len(results["updated"]),
-            "error_count": len(results["errors"]),
-            "details": results
-        }
+        return dict_response(
+            data={
+                "updated_count": len(results["updated"]),
+                "error_count": len(results["errors"]),
+                "details": results
+            },
+            message="Seating constraints updated"
+        )
 
     except Exception as err:
         logger.error(f"Failed to update seating constraints: {str(err)}")
@@ -444,7 +455,9 @@ async def get_seating_constraints(
             ]
         })
 
-        guests = await cursor.to_list(length=None)
+        # Safety cap: most weddings have far fewer guests with constraints
+        MAX_CONSTRAINED_GUESTS = 5000
+        guests = await cursor.to_list(length=MAX_CONSTRAINED_GUESTS)
 
         # Build unique constraint pairs
         must_sit_together = set()
@@ -484,7 +497,8 @@ async def get_seating_constraints(
                 "_id": {"$in": missing_oids},
                 "wedding_id": wedding_id
             })
-            missing_guests = await missing_cursor.to_list(length=None)
+            # Already limited by size of missing_ids (max 5000 from above fetch)
+            missing_guests = await missing_cursor.to_list(length=5000)
             for g in missing_guests:
                 guest_names[str(g.get("_id"))] = g.get("name", "Unknown")
 
@@ -498,16 +512,13 @@ async def get_seating_constraints(
                 for p in pairs
             ]
 
-        return {
-            "wedding_id": wedding_id,
-            "must_sit_together": format_pairs(must_sit_together),
-            "must_sit_apart": format_pairs(must_sit_apart),
-            "summary": {
-                "total_must_sit_together": len(must_sit_together),
-                "total_must_sit_apart": len(must_sit_apart),
-                "guests_with_constraints": len(guests)
-            }
-        }
+        return dict_response(
+            data={
+                "must_sit_together": format_pairs(must_sit_together),
+                "must_sit_apart": format_pairs(must_sit_apart),
+            },
+            message="Seating constraints retrieved"
+        )
 
     except Exception as err:
         logger.error(f"Failed to get seating constraints: {str(err)}")

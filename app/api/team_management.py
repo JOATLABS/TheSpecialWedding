@@ -30,6 +30,7 @@ from app.models.team_member import (
     InviteInfoResponse,
 )
 from app.services.team_management_service import TeamManagementService
+from app.utils.response import dict_response
 
 router = APIRouter()
 team_service = TeamManagementService()
@@ -268,19 +269,21 @@ async def get_my_permissions(
     Works for both planner-owners (returns full access) and team members.
     """
     if current_user.is_root_admin or current_user.is_wedding_planner:
-        return {
-            "is_team_member": False,
-            "is_owner": True,
-            "role": current_user.role,
-            "permissions": {k: True for k in [
-                "manage_guests", "manage_budget", "manage_gallery",
-                "manage_seating", "manage_vendors", "send_rsvp",
-                "send_reminders", "manage_forms", "view_analytics",
-                "manage_wedding_settings", "manage_contracts", "manage_packages",
-            ]},
-            "wedding_access": "all",
-            "assigned_wedding_ids": [],
-        }
+        return dict_response(
+            data={
+                "is_team_member": False,
+                "is_owner": True,
+                "role": current_user.role,
+                "permissions": {k: True for k in [
+                    "manage_guests", "manage_budget", "manage_gallery",
+                    "manage_seating", "manage_vendors", "send_rsvp",
+                    "send_reminders", "manage_forms", "view_analytics",
+                    "manage_wedding_settings", "manage_contracts", "manage_packages",
+                ]},
+                "wedding_access": "all",
+                "assigned_wedding_ids": [],
+            }
+        )
 
     # Team member — load from team_members collection
     user_id = current_user.user_data.get("_id", "")
@@ -289,11 +292,13 @@ async def get_my_permissions(
     if not member_data:
         raise HTTPException(status_code=403, detail="No team membership found")
 
-    return {
-        "is_team_member": True,
-        "is_owner": False,
-        "role": member_data["role"],
-        "permissions": member_data["permissions"],
-        "wedding_access": member_data["wedding_access"],
-        "assigned_wedding_ids": member_data["assigned_wedding_ids"],
-    }
+    return dict_response(
+        data={
+            "is_team_member": True,
+            "is_owner": False,
+            "role": member_data["role"],
+            "permissions": member_data["permissions"],
+            "wedding_access": member_data["wedding_access"],
+            "assigned_wedding_ids": member_data["assigned_wedding_ids"],
+        }
+    )

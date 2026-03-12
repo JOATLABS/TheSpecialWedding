@@ -12,6 +12,16 @@ from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 
+# Allowed MIME types for gallery uploads
+ALLOWED_GALLERY_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "video/mp4",
+    "video/quicktime"
+}
+
 # Get MEDIA_DOMAIN from environment - no fallback
 _raw_media_domain = os.getenv("MEDIA_DOMAIN")
 if not _raw_media_domain:
@@ -139,12 +149,21 @@ class GalleryUploadService:
 
     def upload_file_direct(self, file: UploadFile, wedding_slug: str, folder: str = "gallery"):
         try:
+            # Validate MIME type
+            if file.content_type not in ALLOWED_GALLERY_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_GALLERY_TYPES))}"
+                )
+
             timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             filename = os.path.basename(str(file.filename))
             key = f"{folder}/{wedding_slug}/{timestamp}_{filename}"
 
             self.s3.upload_fileobj(file.file, self.bucket_name, key)
             return {"message": "File uploaded successfully", "key": key}
+        except HTTPException:
+            raise
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')
             logger.error(f"S3 upload error ({error_code}): {str(e)}")

@@ -5,6 +5,7 @@ from app.services.email_service_resend import ResendEmailService
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner, enforce_team_permission
 from app.services.wedding_service import WeddingService
 from app.core.config import settings
+from app.utils.response import dict_response
 from pydantic import BaseModel
 from typing import Optional
 import base64
@@ -43,11 +44,13 @@ class EmailReminderModel(BaseModel):
 @router.get("/email/status", tags=["Admin"])
 def get_email_status():
     """Check if email service is configured and available"""
-    return {
-        "available": email_available,
-        "provider": "resend",
-        "message": "Email service configured and ready" if email_available else "Email service not configured (RESEND_API_KEY missing)"
-    }
+    return dict_response(
+        data={
+            "available": email_available,
+            "provider": "resend",
+        },
+        message="Email service configured and ready" if email_available else "Email service not configured (RESEND_API_KEY missing)"
+    )
 
 
 @router.post("/email/send-invites", tags=["Admin"])
@@ -245,12 +248,13 @@ async def get_email_logs(
     # Wedding planners can only see logs for their assigned weddings
     if current_user.is_wedding_planner:
         from app.core.database import mongo
-        # Get weddings assigned to this planner
+        # Get weddings assigned to this planner (safety cap: typical planner has <1k weddings)
+        MAX_PLANNER_WEDDINGS = 1000
         weddings_cursor = mongo.db["weddings"].find(
             {"assigned_planner_email": current_user.email},
             {"_id": 1}
         )
-        weddings = await weddings_cursor.to_list(length=None)
+        weddings = await weddings_cursor.to_list(length=MAX_PLANNER_WEDDINGS)
         wedding_ids = [w["_id"] for w in weddings]
 
         if not wedding_ids:

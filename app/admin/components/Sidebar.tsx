@@ -145,6 +145,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         <div
           onClick={() => setIsOpen(false)}
           className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-200"
+          aria-hidden="true"
         />
       )}
 
@@ -159,6 +160,9 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
           ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : ''}
         `}
         style={{ width: isOpen ? '18rem' : '5rem' }}
+        role="navigation"
+        aria-label="Main navigation"
+        aria-expanded={isOpen}
       >
         {/* Logo Section */}
         <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
@@ -205,7 +209,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" aria-label="Sidebar navigation menu">
           {filteredNavItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -223,8 +227,10 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }
                 `}
+                aria-current={active ? 'page' : undefined}
+                title={!isOpen ? item.name : undefined}
               >
-                <Icon size={20} className={active ? 'text-primary-500' : ''} />
+                <Icon size={20} className={active ? 'text-primary-500' : ''} aria-hidden="true" />
                 {isOpen && (
                   <span className="font-medium text-sm whitespace-nowrap overflow-hidden">
                     {item.name}
@@ -240,8 +246,10 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
           <button
             onClick={logout}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            aria-label="Logout from account"
+            title="Logout"
           >
-            <LogOut size={20} />
+            <LogOut size={20} aria-hidden="true" />
             {isOpen && (
               <span className="font-medium text-sm">
                 Logout

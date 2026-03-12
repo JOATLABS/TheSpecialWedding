@@ -19,6 +19,7 @@ import {
   Clock,
   XCircle,
 } from 'lucide-react';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import InviteTeamMemberModal from './InviteTeamMemberModal';
 import EditTeamMemberModal from './EditTeamMemberModal';
 
@@ -49,6 +50,7 @@ interface SeatsInfo {
 export default function TeamManagementPage() {
   const { token } = useAdmin();
   const baseUrl = getApiBaseUrl();
+  const { confirm } = useConfirmDialog();
 
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [seatsInfo, setSeatsInfo] = useState<SeatsInfo | null>(null);
@@ -118,7 +120,14 @@ export default function TeamManagementPage() {
   };
 
   const handleDeactivate = async (memberId: string) => {
-    if (!window.confirm('Are you sure you want to deactivate this team member? They will lose access immediately.')) return;
+    const confirmed = await confirm({
+      title: 'Deactivate Team Member',
+      message: 'Are you sure you want to deactivate this team member? They will lose access immediately.',
+      variant: 'danger',
+      confirmText: 'Deactivate',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
     if (actionLoading[memberId]) return;
 
     const prevMembers = [...members];
@@ -179,7 +188,14 @@ export default function TeamManagementPage() {
   };
 
   const handleRemove = async (memberId: string) => {
-    if (!window.confirm('Are you sure you want to remove this team member? This action cannot be undone.')) return;
+    const confirmed = await confirm({
+      title: 'Remove Team Member',
+      message: 'Are you sure you want to remove this team member? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
     if (actionLoading[memberId]) return;
 
     const prevMembers = [...members];

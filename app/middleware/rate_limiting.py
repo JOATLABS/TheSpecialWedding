@@ -64,19 +64,44 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ]
         return any(auth_path in path for auth_path in auth_paths)
 
+    def _get_auth_endpoint_specific_limit(self, path: str) -> tuple[int, int]:
+        """
+        Get specific rate limits for different auth endpoints.
+        Returns: (calls_per_period, period_in_seconds)
+        """
+        # Login endpoint: 5 attempts per minute
+        if "/admin/token" in path or "/admin/login" in path:
+            return (5, 60)
+        # Register endpoint: 3 attempts per minute
+        elif "/public/register" in path:
+            return (3, 60)
+        # Password reset endpoints: 3 attempts per minute
+        elif "/reset-password" in path or "/forgot-password" in path:
+            return (3, 60)
+        # OTP verification: 5 attempts per minute
+        elif "/otp/" in path:
+            return (5, 60)
+        # Default auth limit: 10 per minute
+        else:
+            return (self.auth_calls, self.auth_period)
+
     async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
         """Remove old requests outside the time window"""
         current_time = time.time()
         while request_queue and current_time - request_queue[0] > period:
             request_queue.popleft()
 
-    async def _check_redis_limit(self, client_ip: str, is_auth: bool) -> tuple[bool, int, int]:
+    async def _check_redis_limit(self, client_ip: str, is_auth: bool, path: str = "") -> tuple[bool, int, int]:
         """
         Check rate limit using Redis.
         Returns: (is_limited, remaining, reset_time)
         """
-        limit = self.auth_calls if is_auth else self.calls
-        period = self.auth_period if is_auth else self.period
+        # Get specific limits for auth endpoints if provided
+        if is_auth and path:
+            limit, period = self._get_auth_endpoint_specific_limit(path)
+        else:
+            limit = self.auth_calls if is_auth else self.calls
+            period = self.auth_period if is_auth else self.period
         endpoint_type = "auth" if is_auth else "api"
 
         # Use CacheKeys generator
@@ -160,7 +185,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Optimization: Don't lock for Redis calls, only for in-memory operations
         if cache.enabled and cache.redis_client:
-            is_limited, remaining, reset_time = await self._check_redis_limit(client_ip, is_auth)
+            is_limited, remaining, reset_time = await self._check_redis_limit(client_ip, is_auth, request.url.path)
         else:
             async with self.lock:
                 is_limited, remaining, reset_time = await self._check_memory_limit(client_ip, is_auth)

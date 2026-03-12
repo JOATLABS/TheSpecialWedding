@@ -170,16 +170,17 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50">
+    <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50" role="banner">
       <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
         {/* Left: Menu Button & Title */}
         <div className="flex items-center gap-4">
           <button
             onClick={onMenuClick}
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors lg:hidden"
-            aria-label="Toggle menu"
+            aria-label="Toggle navigation menu"
+            aria-controls="sidebar"
           >
-            <Menu size={20} className="text-slate-600 dark:text-slate-400" />
+            <Menu size={20} className="text-slate-600 dark:text-slate-400" aria-hidden="true" />
           </button>
 
           {title && (
@@ -195,12 +196,13 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            aria-label="Toggle theme"
+            aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
+            title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
           >
             {resolvedTheme === 'dark' ? (
-              <Sun size={20} className="text-amber-500" />
+              <Sun size={20} className="text-amber-500" aria-hidden="true" />
             ) : (
-              <Moon size={20} className="text-slate-600" />
+              <Moon size={20} className="text-slate-600" aria-hidden="true" />
             )}
           </button>
 
@@ -209,10 +211,11 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
             href="/admin/notifications?tab=history"
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
             aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+            title={`View notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
           >
-            <Bell size={20} className="text-slate-600 dark:text-slate-400" />
+            <Bell size={20} className="text-slate-600 dark:text-slate-400" aria-hidden="true" />
             {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full shadow-sm">
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full shadow-sm" aria-label={`${unreadCount} unread notifications`}>
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
@@ -224,12 +227,15 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
               onClick={() => setShowDropdown(!showDropdown)}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               aria-label="User menu"
+              aria-haspopup="true"
+              aria-expanded={showDropdown}
+              aria-controls="user-dropdown-menu"
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-secondary-400 flex items-center justify-center overflow-hidden">
                 {userProfile?.profile_image_url ? (
                   <img
                     src={userProfile.profile_image_url}
-                    alt="Profile"
+                    alt={`${userProfile?.first_name || 'User'} profile`}
                     className="w-full h-full object-cover"
                   />
                 ) : userProfile?.first_name || userProfile?.last_name ? (
@@ -237,26 +243,31 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
                     {(userProfile.first_name?.charAt(0) || '') + (userProfile.last_name?.charAt(0) || '')}
                   </span>
                 ) : (
-                  <User size={16} className="text-white" />
+                  <User size={16} className="text-white" aria-hidden="true" />
                 )}
               </div>
               <span className="hidden sm:block text-sm font-medium text-slate-700 dark:text-slate-300">
                 {userProfile?.first_name || userProfile?.email?.split('@')[0] || 'User'}
               </span>
-              <ChevronDown size={16} className="hidden sm:block text-slate-400" />
+              <ChevronDown size={16} className={`hidden sm:block text-slate-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
 
             {/* Dropdown Menu */}
             {showDropdown && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-50">
+              <div
+                className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-50"
+                id="user-dropdown-menu"
+                role="menu"
+              >
                 <button
                   onClick={() => {
                     setShowDropdown(false);
                     setShowSettingsModal(true);
                   }}
                   className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  role="menuitem"
                 >
-                  <Settings size={16} />
+                  <Settings size={16} aria-hidden="true" />
                   Account Settings
                 </button>
                 <hr className="my-1 border-slate-200 dark:border-slate-700" />
@@ -266,8 +277,9 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
                     logout();
                   }}
                   className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  role="menuitem"
                 >
-                  <LogOut size={16} />
+                  <LogOut size={16} aria-hidden="true" />
                   Logout
                 </button>
               </div>

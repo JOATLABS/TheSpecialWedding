@@ -1,13 +1,39 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useTables } from '@/admin/hooks/useTables';
 import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
 import { Sidebar } from '@/admin/components/seating/Sidebar';
-import { LiquidBackground } from '@/admin/components/seating/LiquidBackground';
 import { GlassButton } from '@/admin/components/ui/glass/GlassButton';
+
+/**
+ * Lazy-load Three.js heavy component with SSR disabled
+ *
+ * This dynamic import prevents Three.js (~500KB+), React Three Fiber, and Drei
+ * from being included in the main bundle. Instead, they're only downloaded when
+ * the seating page is accessed. This provides significant performance improvements
+ * for other pages that don't use 3D graphics.
+ *
+ * Key settings:
+ * - ssr: false - Three.js requires browser APIs (window, WebGL) and cannot render on server
+ * - loading: Custom loading component with gradient background matching page design
+ *
+ * See LAZY_LOADING_OPTIMIZATION.md for more details
+ */
+const LiquidBackground = dynamic(
+  () => import('@/admin/components/seating/LiquidBackground').then(mod => ({ default: mod.LiquidBackground })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="absolute inset-0 w-full h-full pointer-events-none -z-10 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900">
+        <div className="absolute inset-0 animate-pulse" />
+      </div>
+    ),
+  }
+);
 import { Plus, Download, Printer, Sparkles, X, Check } from 'lucide-react';
 import { Table } from '@/types/table';
 
