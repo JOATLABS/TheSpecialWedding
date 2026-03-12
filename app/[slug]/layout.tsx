@@ -7,7 +7,26 @@ import { WeddingProvider } from '@/components/WeddingProvider';
 import { Wedding } from '@/types/wedding';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
+// Defense-in-depth: reserved paths that should never hit the wedding API.
+// The primary check is in middleware.ts; this is a fallback in case
+// the middleware matcher changes or a new reserved path is added.
+const RESERVED_SLUGS = new Set([
+  '_next', 'api', 'admin', 'favicon', 'robots', 'sitemap',
+]);
+
+function isInvalidSlug(slug: string): boolean {
+  // Contains a dot → static asset (favicon.ico, apple-touch-icon.png, etc.)
+  if (slug.includes('.')) return true;
+  // Reserved path name
+  if (RESERVED_SLUGS.has(slug.toLowerCase())) return true;
+  return false;
+}
+
 async function fetchWeddingPrivacyInfo(slug: string) {
+  if (isInvalidSlug(slug)) {
+    return null;
+  }
+
   const baseUrl = getApiBaseUrl();
   const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
   try {
