@@ -355,7 +355,8 @@ async def get_sms_ticket(
     from bson import ObjectId
     try:
         obj_id = ObjectId(ticket_id)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
     # Multi-tenant security: combine access check into query for non-root-admin users
@@ -398,7 +399,8 @@ async def respond_to_sms_ticket(
     # Get ticket
     try:
         obj_id = ObjectId(ticket_id)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
     # Multi-tenant security: combine access check into query for non-root-admin users
@@ -498,7 +500,8 @@ async def update_sms_ticket_status(
     # Get ticket
     try:
         obj_id = ObjectId(ticket_id)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
 
     # Multi-tenant security: combine access check into query for non-root-admin users

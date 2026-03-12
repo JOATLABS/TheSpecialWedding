@@ -48,7 +48,8 @@ async def get_guest(token: str, wedding_id: str = Query(...)):
         return await guest_service.get_guest_by_token(token, wedding_id)
     except HTTPException as e:
         raise e
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error getting guest by token: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 
@@ -79,7 +80,8 @@ async def search_guest(
         )
     except HTTPException as e:
         raise e
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error searching guests: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 
@@ -162,7 +164,8 @@ async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(r
         return result
     except HTTPException as e:
         raise e
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error deleting guest: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 

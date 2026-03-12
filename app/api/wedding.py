@@ -78,7 +78,8 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                     if isinstance(current_period_start, str):
                         try:
                             current_period_start = datetime.fromisoformat(current_period_start.replace("Z", "+00:00"))
-                        except Exception:
+                        except Exception as e:
+                            logger.warning(f"Failed to parse current_period_start: {current_period_start}, error: {e}")
                             current_period_start = None
                     if isinstance(current_period_start, datetime) and current_period_start.tzinfo is None:
                         current_period_start = current_period_start.replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo)
@@ -90,7 +91,8 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                         if isinstance(last_billed_at, str):
                             try:
                                 last_billed_at = datetime.fromisoformat(last_billed_at.replace("Z", "+00:00"))
-                            except Exception:
+                            except Exception as e:
+                                logger.warning(f"Failed to parse last_billed_at: {last_billed_at}, error: {e}")
                                 last_billed_at = None
 
                     already_billed_this_period = (

@@ -60,7 +60,8 @@ class ContractPDFService:
             if isinstance(date_val, str):
                 try:
                     date_val = datetime.fromisoformat(date_val.replace("Z", "+00:00"))
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to parse date string: {date_val}, error: {e}")
                     return date_val
             return date_val.strftime("%B %d, %Y")
 

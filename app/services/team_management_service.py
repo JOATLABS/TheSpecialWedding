@@ -19,6 +19,7 @@ from fastapi import HTTPException, status
 
 from app.core.database import mongo
 from app.utils.auth_utils import get_password_hash
+from app.utils.id_utils import to_object_id, to_str_id
 from app.services.email_service_resend import ResendEmailService
 from app.services.activity_log_service import activity_log_service
 from app.models.team_member import (
@@ -161,8 +162,10 @@ class TeamManagementService:
             )
 
         try:
-            oids = [ObjectId(wid) for wid in wedding_ids]
-        except Exception:
+            oids = [to_object_id(wid, f"wedding_id[{i}]") for i, wid in enumerate(wedding_ids)]
+        except HTTPException:
+            raise
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid wedding ID format",
@@ -508,7 +511,7 @@ class TeamManagementService:
     async def resend_invite(self, owner_id: str, team_member_id: str) -> dict:
         """Regenerate token and resend the invitation email"""
         doc = await self.team_collection.find_one({
-            "_id": ObjectId(team_member_id),
+            "_id": to_object_id(team_member_id, "team_member_id"),
             "owner_id": owner_id,
         })
         if not doc:
@@ -676,7 +679,7 @@ class TeamManagementService:
             }
 
             user_result = await self.users_collection.insert_one(user_doc)
-            new_user_id = str(user_result.inserted_id)
+            new_user_id = to_str_id(user_result.inserted_id)
 
             # Finalize: set to ACTIVE and consume token
             await self.team_collection.update_one(
@@ -751,7 +754,7 @@ class TeamManagementService:
     async def get_team_member(self, owner_id: str, team_member_id: str) -> dict:
         """Get a single team member by ID"""
         doc = await self.team_collection.find_one({
-            "_id": ObjectId(team_member_id),
+            "_id": to_object_id(team_member_id, "team_member_id"),
             "owner_id": owner_id,
         })
         if not doc:
@@ -773,7 +776,7 @@ class TeamManagementService:
         (unless custom_permissions are also provided).
         """
         doc = await self.team_collection.find_one({
-            "_id": ObjectId(team_member_id),
+            "_id": to_object_id(team_member_id, "team_member_id"),
             "owner_id": owner_id,
         })
         if not doc:
@@ -860,7 +863,7 @@ class TeamManagementService:
     async def deactivate_team_member(self, owner_id: str, team_member_id: str) -> dict:
         """Soft-deactivate a team member (they can no longer log in)"""
         doc = await self.team_collection.find_one({
-            "_id": ObjectId(team_member_id),
+            "_id": to_object_id(team_member_id, "team_member_id"),
             "owner_id": owner_id,
         })
         if not doc:
@@ -880,7 +883,7 @@ class TeamManagementService:
         if doc.get("user_id"):
             try:
                 result = await self.users_collection.update_one(
-                    {"_id": ObjectId(doc["user_id"])},
+                    {"_id": to_object_id(doc["user_id"], "user_id")},
                     {"$set": {"is_active": False, "updated_at": now}},
                 )
                 if result.modified_count == 0:
@@ -910,7 +913,7 @@ class TeamManagementService:
         # Log activity asynchronously (non-blocking)
         async def _log_deactivation():
             try:
-                owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
+                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
                 await activity_log_service.log_team_member_deactivated(
                     planner_email=owner.get("email", "") if owner else "",
                     member_email=doc["email"],
@@ -928,7 +931,7 @@ class TeamManagementService:
     async def reactivate_team_member(self, owner_id: str, owner_email: str, team_member_id: str) -> dict:
         """Reactivate a previously deactivated team member"""
         doc = await self.team_collection.find_one({
-            "_id": ObjectId(team_member_id),
+            "_id": to_object_id(team_member_id, "team_member_id"),
             "owner_id": owner_id,
         })
         if not doc:
@@ -973,7 +976,7 @@ class TeamManagementService:
         if doc.get("user_id"):
             try:
                 result = await self.users_collection.update_one(
-                    {"_id": ObjectId(doc["user_id"])},
+                    {"_id": to_object_id(doc["user_id"], "user_id")},
                     {"$set": {"is_active": True, "updated_at": now}},
                 )
                 if result.modified_count == 0:
@@ -1023,7 +1026,7 @@ class TeamManagementService:
         to preserve activity log references.
         """
         doc = await self.team_collection.find_one({
-            "_id": ObjectId(team_member_id),
+            "_id": to_object_id(team_member_id, "team_member_id"),
             "owner_id": owner_id,
         })
         if not doc:
@@ -1035,7 +1038,7 @@ class TeamManagementService:
         if doc.get("user_id"):
             try:
                 await self.users_collection.update_one(
-                    {"_id": ObjectId(doc["user_id"])},
+                    {"_id": to_object_id(doc["user_id"], "user_id")},
                     {"$set": {"is_active": False, "team_member_id": None, "updated_at": now}},
                 )
             except Exception as e:
@@ -1051,7 +1054,7 @@ class TeamManagementService:
             if doc.get("user_id"):
                 try:
                     await self.users_collection.update_one(
-                        {"_id": ObjectId(doc["user_id"])},
+                        {"_id": to_object_id(doc["user_id"], "user_id")},
                         {"$set": {"is_active": True, "team_member_id": str(doc["_id"]), "updated_at": now}},
                     )
                 except Exception as rollback_err:
@@ -1069,7 +1072,7 @@ class TeamManagementService:
         # Log activity asynchronously (non-blocking)
         async def _log_removal():
             try:
-                owner = await self.users_collection.find_one({"_id": ObjectId(owner_id)})
+                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
                 await activity_log_service.log_team_member_removed(
                     planner_email=owner.get("email", "") if owner else "",
                     member_email=doc["email"],

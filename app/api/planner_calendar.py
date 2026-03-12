@@ -113,7 +113,8 @@ async def _get_wedding_name(wedding_id: Optional[str]) -> Optional[str]:
         oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
         wedding = await mongo.get_weddings_collection().find_one({"_id": oid})
         return wedding.get("couple_names") if wedding else None
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to get wedding name for {wedding_id}: {e}")
         return None
 
 

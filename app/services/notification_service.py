@@ -107,7 +107,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             notification = await self.notifications_collection.find_one({"_id": obj_id})
@@ -133,7 +134,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification exists
@@ -171,7 +173,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Delete notification
@@ -388,7 +391,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if already read by this user
@@ -480,7 +484,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification is dismissible
@@ -777,7 +782,8 @@ class NotificationService:
         try:
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             template = await self.templates_collection.find_one({"_id": obj_id})
@@ -800,7 +806,8 @@ class NotificationService:
         try:
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             existing = await self.templates_collection.find_one({"_id": obj_id})
@@ -834,7 +841,8 @@ class NotificationService:
         try:
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             result = await self.templates_collection.delete_one({"_id": obj_id})

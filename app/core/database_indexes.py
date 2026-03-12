@@ -699,7 +699,8 @@ async def create_errors_indexes():
             try:
                 await collection.drop_index(old_index_name)
                 logger.info(f"Dropped old conflicting index: {old_index_name}")
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Index {old_index_name} doesn't exist or couldn't be dropped: {e}")
                 pass  # Index doesn't exist, that's fine
 
         # 1. TTL index on timestamp - also serves as the timestamp sorting index
