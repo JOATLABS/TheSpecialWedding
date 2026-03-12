@@ -31,9 +31,11 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttempts = useRef(0);
   const isConnecting = useRef(false);
-  // AbortController for in-flight auth probes — cancelled on unmount/cleanup
-  // to prevent stale async callbacks from calling connect() after teardown.
-  const probeAbortRef = useRef<AbortController | null>(null);
+  // Track ALL in-flight auth probe controllers so cleanup can abort them all,
+  // even if multiple probes overlap due to rapid reconnection attempts.
+  const probeControllersRef = useRef<Set<AbortController>>(new Set());
+  // Guard against async callbacks executing after unmount / effect cleanup.
+  const isMountedRef = useRef(true);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -50,6 +52,9 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   useEffect(() => {
     if (!token) return;
 
+    // Mark as mounted for this effect cycle
+    isMountedRef.current = true;
+
     const closeConnection = () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -59,11 +64,9 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-      // Abort any in-flight auth probe so its callback never runs
-      if (probeAbortRef.current) {
-        probeAbortRef.current.abort();
-        probeAbortRef.current = null;
-      }
+      // Abort ALL in-flight auth probes so their callbacks never fire
+      probeControllersRef.current.forEach((c) => c.abort());
+      probeControllersRef.current.clear();
       isConnecting.current = false;
     };
 
@@ -117,7 +120,7 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
         // EventSource doesn't expose HTTP status codes, so we can't
         // distinguish a 401 from a network error. A quick auth check
         // prevents us from hammering the endpoint with an expired token.
-        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS && isMountedRef.current) {
           const delay = Math.min(
             INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current),
             MAX_RECONNECT_DELAY
@@ -125,9 +128,12 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
           reconnectAttempts.current += 1;
 
           reconnectTimeoutRef.current = setTimeout(() => {
-            // Create an AbortController for this probe so cleanup can cancel it
+            if (!isMountedRef.current) return;
+
+            // Create an AbortController for this probe; track it in the Set
+            // so cleanup can abort ALL in-flight probes (not just the latest).
             const controller = new AbortController();
-            probeAbortRef.current = controller;
+            probeControllersRef.current.add(controller);
 
             // 5-second timeout so a stalled probe doesn't block reconnection forever
             const probeTimeout = setTimeout(() => controller.abort(), 5000);
@@ -142,20 +148,20 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
                   reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS;
                   return;
                 }
-                // Token is still valid and component is still alive — reconnect
-                if (!controller.signal.aborted) {
+                // Only reconnect if still mounted and not aborted
+                if (isMountedRef.current && !controller.signal.aborted) {
                   connect();
                 }
               })
               .catch(() => {
-                // Network error or aborted — only retry if not aborted (unmounted)
-                if (!controller.signal.aborted) {
+                // Network error or aborted — only retry if mounted and not aborted
+                if (isMountedRef.current && !controller.signal.aborted) {
                   connect();
                 }
               })
               .finally(() => {
                 clearTimeout(probeTimeout);
-                probeAbortRef.current = null;
+                probeControllersRef.current.delete(controller);
               });
           }, delay);
         }
@@ -167,6 +173,7 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
 
     // Pause SSE when tab is hidden, resume when visible
     const handleVisibilityChange = () => {
+      if (!isMountedRef.current) return;
       if (document.hidden) {
         closeConnection();
       } else {
@@ -204,6 +211,7 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
     window.addEventListener('notifications-updated', handleNotificationsRead);
 
     return () => {
+      isMountedRef.current = false;
       closeConnection();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('notifications-updated', handleNotificationsRead);

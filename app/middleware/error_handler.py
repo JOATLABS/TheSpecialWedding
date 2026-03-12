@@ -167,7 +167,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         # Resolve the client IP (may follow proxy headers for trusted peers)
         client_ip = self._get_client_ip(request)
 
-        if not is_trusted and self._is_ip_blocked(client_ip):
+        if not is_trusted and client_ip in self.blocked_ips:
             return self._create_blocked_response(client_ip)
 
         # Block known scanner/probe paths — but let trusted services through
@@ -302,13 +302,21 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         total_requests = error_count + success_count
         return total_requests > 50 and (error_count / total_requests) > 0.9
 
-    def _is_private_ip(self, ip_str: str) -> bool:
-        """Check if an IP belongs to a private/loopback network (RFC 1918 / RFC 4193)."""
+    def _parse_ip(self, ip_str: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+        """Parse an IP string once; returns None for invalid input."""
         try:
-            addr = ipaddress.ip_address(ip_str)
+            return ipaddress.ip_address(ip_str)
         except ValueError:
-            return False
+            return None
+
+    def _is_in_private_network(self, addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+        """Check if a *parsed* IP belongs to a private/loopback network."""
         return any(addr in net for net in self.PRIVATE_NETWORKS)
+
+    def _is_private_ip(self, ip_str: str) -> bool:
+        """Check if an IP string belongs to a private/loopback network (RFC 1918 / RFC 4193)."""
+        addr = self._parse_ip(ip_str)
+        return addr is not None and self._is_in_private_network(addr)
 
     def _is_trusted_ip(self, client_ip: str) -> bool:
         """Check if the IP is an internal/trusted service (e.g. Next.js SSR container).
@@ -316,12 +324,10 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         This is checked against the *direct TCP peer* IP, not forwarded headers,
         so it cannot be spoofed by external attackers.
         """
-        try:
-            addr = ipaddress.ip_address(client_ip)
-        except ValueError:
+        addr = self._parse_ip(client_ip)
+        if addr is None:
             return False
-        # Check private RFC 1918 / loopback ranges
-        if any(addr in net for net in self.PRIVATE_NETWORKS):
+        if self._is_in_private_network(addr):
             return True
         # Check additional trusted networks from env var
         if any(addr in net for net in self.extra_trusted_networks):
@@ -329,6 +335,8 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         return False
 
     def _is_ip_blocked(self, client_ip: str) -> bool:
+        # Note: in dispatch(), is_trusted is pre-computed from the direct peer.
+        # This fallback is for any other callers.
         if self._is_trusted_ip(client_ip):
             return False
         return client_ip in self.blocked_ips
@@ -402,6 +410,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
     def _is_critical_error(self, exc: Exception) -> bool:
         error_type = type(exc).__name__
+        # Errors that always warrant an alert regardless of environment
         critical_errors = {
             "ConnectionError",
             "DatabaseError",
@@ -409,10 +418,18 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             "StripeError",
             "PaymentError",
             "AuthenticationError",
-            "KeyError",
         }
+        if error_type in critical_errors:
+            return True
+        # In production, also alert on system-level errors — but NOT on
+        # routine user-input errors like ValueError/TypeError/KeyError,
+        # which would cause alert fatigue.
         is_production = os.getenv("ENVIRONMENT", "development") == "production"
-        return error_type in critical_errors or is_production
+        if is_production and error_type in {
+            "MemoryError", "RuntimeError", "SystemError", "OSError",
+        }:
+            return True
+        return False
 
     def _get_error_severity(self, exc: Exception) -> str:
         if self._is_critical_error(exc):
