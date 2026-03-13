@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import PageHeader from '../../components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -653,13 +654,10 @@ export default function PlannerBillingPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Billing</h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">
-          Manage your subscription, payment methods, and billing history
-        </p>
-      </div>
+      <PageHeader
+        title="Billing"
+        description="Manage your subscription, payment methods, and billing history"
+      />
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">

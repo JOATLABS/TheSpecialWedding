@@ -87,7 +87,7 @@ export interface CreateSponsoredVendorRequest {
 // =============================================================================
 
 export async function getFeatureFlag(token: string): Promise<FeatureFlag> {
-  const response = await fetch(`${API_BASE}/api/v1/ads/feature-flag`, {
+  const response = await fetch(`${API_BASE}/admin/ads/feature-flag`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -100,11 +100,13 @@ export async function getFeatureFlag(token: string): Promise<FeatureFlag> {
 }
 
 export async function toggleFeatureFlag(token: string, isEnabled: boolean): Promise<FeatureFlag> {
-  const response = await fetch(`${API_BASE}/api/v1/ads/feature-flag?is_enabled=${isEnabled}`, {
+  const response = await fetch(`${API_BASE}/admin/ads/feature-flag`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({ is_enabled: isEnabled }),
   });
 
   if (!response.ok) {
@@ -134,7 +136,7 @@ export async function getSponsoredVendors(
   if (params?.wedding_stage) queryParams.append('wedding_stage', params.wedding_stage);
   if (params?.limit) queryParams.append('limit', String(params.limit));
 
-  const url = `${API_BASE}/api/v1/ads/sponsored-vendors?${queryParams.toString()}`;
+  const url = `${API_BASE}/admin/ads/sponsored-vendors?${queryParams.toString()}`;
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -151,7 +153,7 @@ export async function createSponsoredVendor(
   token: string,
   data: CreateSponsoredVendorRequest
 ): Promise<SponsoredVendor> {
-  const response = await fetch(`${API_BASE}/api/v1/ads/sponsored-vendors`, {
+  const response = await fetch(`${API_BASE}/admin/ads/sponsored-vendors`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -173,7 +175,7 @@ export async function updateSponsoredVendor(
   id: string,
   data: Partial<CreateSponsoredVendorRequest>
 ): Promise<SponsoredVendor> {
-  const response = await fetch(`${API_BASE}/api/v1/ads/sponsored-vendors/${id}`, {
+  const response = await fetch(`${API_BASE}/admin/ads/sponsored-vendors/${id}`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -191,7 +193,7 @@ export async function updateSponsoredVendor(
 }
 
 export async function deleteSponsoredVendor(token: string, id: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/v1/ads/sponsored-vendors/${id}`, {
+  const response = await fetch(`${API_BASE}/admin/ads/sponsored-vendors/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -210,7 +212,7 @@ export async function recordAdEvent(
   token: string,
   event: RecordAdEventRequest
 ): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/v1/ads/events`, {
+  const response = await fetch(`${API_BASE}/admin/ads/events`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -238,7 +240,7 @@ export async function getAdStats(
   const queryParams = new URLSearchParams();
   if (days) queryParams.append('days', String(days));
 
-  const url = `${API_BASE}/api/v1/ads/sponsored-vendors/${id}/stats?${queryParams.toString()}`;
+  const url = `${API_BASE}/admin/ads/sponsored-vendors/${id}/stats?${queryParams.toString()}`;
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });

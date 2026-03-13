@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
 import { formatDate as formatUtcDate } from '@/utils/dateFormat';
+import PageHeader from '../components/PageHeader';
 
 type CreationMode = 'template' | 'blank' | 'duplicate';
 
@@ -337,24 +338,10 @@ export default function FormsManagementPage(): ReactElement {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Forms</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Create and manage questionnaires, vendor workflows, and feedback forms
-          </p>
-          {forms.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {Object.entries(formCounts).map(([key, count]) => (
-                <FormBadge key={key} tone="neutral">
-                  {key.replace(/_/g, ' ')} · {count}
-                </FormBadge>
-              ))}
-            </div>
-          )}
-        </div>
-
+      <PageHeader
+        title="Forms"
+        description="Create and manage questionnaires, vendor workflows, and feedback forms"
+      >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Button
               id="create-form-button"
@@ -373,7 +360,17 @@ export default function FormsManagementPage(): ReactElement {
               Refresh workspace
             </Button>
           </div>
+      </PageHeader>
+
+      {forms.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(formCounts).map(([key, count]) => (
+            <FormBadge key={key} tone="neutral">
+              {key.replace(/_/g, ' ')} · {count}
+            </FormBadge>
+          ))}
         </div>
+      )}
 
       {error && (
         <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 dark:text-red-300 shadow-sm backdrop-blur">

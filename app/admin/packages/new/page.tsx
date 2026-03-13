@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Card } from '../../../components/ui/Card';
 import PackageForm, { type PackageFormData } from '../../../components/packages/PackageForm';
 import { ArrowLeft } from 'lucide-react';
+import PageHeader from '../../components/PageHeader';
 
 export default function NewPackagePage() {
   const router = useRouter();
@@ -55,23 +56,17 @@ export default function NewPackagePage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
+      <PageHeader
+        title="Create Package"
+        description="Define your wedding service package"
+      >
         <Link
           href="/admin/packages"
           className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
         >
           <ArrowLeft size={20} />
         </Link>
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
-            Create Package
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Define your wedding service package
-          </p>
-        </div>
-      </div>
+      </PageHeader>
 
       {/* Form */}
       <PackageForm
