@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
+import PageHeader from '../components/PageHeader';
 
 interface Wedding {
  id?: string;
@@ -182,17 +183,14 @@ export default function AdminImportPage() {
  };
 
  return (
- <div className="min-h-screen dark:bg-transparent p-4 sm:p-6">
- <div className="max-w-4xl mx-auto space-y-8">
+ <div className="space-y-6">
+ <PageHeader
+   title="Import Guests"
+   description="Upload a CSV file to import guest information"
+ />
+ <div className="max-w-4xl space-y-8">
  {/* === IMPORT FORM CARD === */}
  <Card className="overflow-hidden">
- {/* Card header with sage→gold gradient */}
- <div className="bg-gradient-to-r from-wedding-sage to-wedding-gold px-8 py-6">
- <h1 className="text-3xl font-elegant text-white">Import Guests</h1>
- <p className="text-wedding-ivory mt-2">
- Upload a CSV file to import guest information
- </p>
- </div>
 
  <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
  {/* CSV Format Documentation */}

@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
+import PageHeader from '../../components/PageHeader';
 
 type ActivityItem = {
   id: string;
@@ -101,18 +102,17 @@ export default function PlannerActivityLogPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Planner Activity Log</h1>
-          <p className="text-gray-600 dark:text-gray-400">Detailed activity across weddings you manage.</p>
-        </div>
+      <PageHeader
+        title="Planner Activity Log"
+        description="Detailed activity across weddings you manage."
+      >
         <button
           onClick={fetchActivities}
           className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors"
         >
           Refresh
         </button>
-      </div>
+      </PageHeader>
 
       {loading ? (
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 text-center text-gray-600 dark:text-gray-400">

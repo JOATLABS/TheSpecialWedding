@@ -67,3 +67,4 @@ localhost:8000
 scripts/sync_landing_page_content.py
 scripts/sync_landing_page_content.py
 mockups-planner-improvements.html
+.DS_Store
