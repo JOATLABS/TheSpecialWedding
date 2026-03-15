@@ -3,8 +3,9 @@ from app.core.database import mongo
 from app.models.wedding import WeddingModel
 from app.utils.serializers import serialize_mongo_doc
 from app.utils.id_utils import normalize_doc_id
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 from datetime import datetime, timezone
+from bson import ObjectId
 
 # import re
 
@@ -116,12 +117,21 @@ class WeddingService:
                 status_code=500, detail=f"Error listing weddings: {str(e)}"
             )
 
-    async def list_weddings_for_planner(self, planner_email: str) -> List[dict]:
-        """List weddings assigned to a specific planner"""
+    async def list_weddings_for_planner(self, planner_email: str, accessible_ids: Optional[List[str]] = None) -> List[dict]:
+        """
+        List weddings assigned to a specific planner.
+
+        Args:
+            planner_email: Email of the planner
+            accessible_ids: Optional list of wedding IDs to filter by (for team members with "assigned" access)
+        """
         try:
-            weddings = await self.collection.find(
-                {"assigned_planner_email": planner_email}
-            ).to_list(length=None)
+            query = {"assigned_planner_email": planner_email}
+            # Apply team member wedding scope filter if provided
+            if accessible_ids is not None:
+                query["_id"] = {"$in": [ObjectId(id) if len(id) == 24 else id for id in accessible_ids]}
+
+            weddings = await self.collection.find(query).to_list(length=None)
             for wedding in weddings:
                 normalize_doc_id(wedding)
             return serialize_mongo_doc(weddings)

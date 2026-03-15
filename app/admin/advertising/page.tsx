@@ -469,25 +469,25 @@ export default function AdvertisingPage() {
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Click Tracking</span>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Event Tracking</span>
                   <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.enable_click_tracking ? 'Enabled' : 'Disabled'}
+                    {featureFlag.config.enable_tracking ? 'Enabled' : 'Disabled'}
                   </p>
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Impression Tracking</span>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Min Priority Threshold</span>
                   <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.enable_impression_tracking ? 'Enabled' : 'Disabled'}
+                    {featureFlag.config.min_priority_threshold}
                   </p>
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
                   <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Minimum Impression Threshold
+                    Impressions Per Session
                   </span>
                   <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.minimum_impression_threshold}
+                    {featureFlag.config.impressions_per_session_limit}
                   </p>
                 </div>
               </div>

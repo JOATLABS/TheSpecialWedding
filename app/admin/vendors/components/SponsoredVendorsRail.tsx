@@ -145,10 +145,12 @@ export function SponsoredVendorsRail({
     }
   };
 
-  // Handle vendor click
+  // Handle vendor click — use callback if provided, otherwise navigate to public profile
   const handleVendorClick = (vendorProfileId: string) => {
     if (onVendorClick) {
       onVendorClick(vendorProfileId);
+    } else {
+      window.open(`/vendors/${vendorProfileId}`, '_blank');
     }
   };
 

@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    get_current_user_extended, ExtendedAuthUser,
+    enforce_team_permission, require_team_or_planner,
+    get_accessible_wedding_ids
+)
 from app.core.database import mongo
+from bson import ObjectId
 from app.models.planner_metrics import (
     PlannerMetricsResponse,
     MetricsSummaryModel,
@@ -71,15 +76,15 @@ def _calculate_rsvp_status(rsvp: dict) -> str:
 
 
 @router.get("/planner/metrics", tags=["Wedding Planner"], response_model=PlannerMetricsResponse)
-async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> PlannerMetricsResponse:
+async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_team_or_planner)) -> PlannerMetricsResponse:
     """
     Get comprehensive metrics for wedding planner dashboard.
 
     ROOT_ADMIN sees all weddings, wedding planners see only their assigned weddings.
+    Team members with "assigned" access see only their assigned weddings.
     """
 
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
+    enforce_team_permission(current_user, "view_analytics")
 
     try:
         weddings_collection = mongo.get_weddings_collection()
@@ -88,6 +93,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
 
         # Build query based on user role
         # ROOT_ADMIN can see all weddings, planners only see their assigned weddings
+        # Team members use accessible_wedding_ids for filtering
         if current_user.is_root_admin:
             query: dict[str, Any] = {"status": {"$ne": "cancelled"}}
         else:
@@ -95,6 +101,10 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "assigned_planner_email": current_user.email,
                 "status": {"$ne": "cancelled"}
             }
+            # Apply team member wedding scope filter
+            accessible_ids = get_accessible_wedding_ids(current_user)
+            if accessible_ids is not None:
+                query["_id"] = {"$in": [ObjectId(id) for id in accessible_ids]}
 
         # Safety cap: typical planner/admin has <5k weddings
         MAX_WEDDINGS = 5000
@@ -488,15 +498,14 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
 
 @router.get("/planner/activity-log", tags=["Wedding Planner"], response_model=ActivityLogResponse)
 async def get_activity_log(
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of activities to return")
 ) -> ActivityLogResponse:
     """
     Get detailed activity log for wedding planner.
     """
 
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
+    enforce_team_permission(current_user, "view_analytics")
 
     try:
         activity_logs_collection = mongo.get_collection("activity_logs")
@@ -573,17 +582,17 @@ async def get_activity_log(
 
 @router.get("/planner/weddings", tags=["Wedding Planner"], response_model=List[PlannerWeddingModel])
 async def get_planner_weddings(
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     include_cancelled: bool = Query(default=False, description="Include cancelled weddings")
 ) -> List[PlannerWeddingModel]:
     """
     Get all weddings assigned to the current planner.
 
     ROOT_ADMIN sees all weddings, wedding planners see only their assigned weddings.
+    Team members with "assigned" access see only their assigned weddings.
     """
 
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
+    enforce_team_permission(current_user, "view_analytics")
 
     try:
         weddings_collection = mongo.get_weddings_collection()
@@ -593,6 +602,10 @@ async def get_planner_weddings(
             query: dict[str, Any] = {}
         else:
             query = {"assigned_planner_email": current_user.email}
+            # Apply team member wedding scope filter
+            accessible_ids = get_accessible_wedding_ids(current_user)
+            if accessible_ids is not None:
+                query["_id"] = {"$in": [ObjectId(id) for id in accessible_ids]}
 
         # Optionally exclude cancelled weddings
         if not include_cancelled:

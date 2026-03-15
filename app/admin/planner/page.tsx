@@ -234,6 +234,19 @@ export default function WeddingPlannerDashboard() {
  description="Here's what's happening with your weddings today."
  />
 
+ {/* Team Member Access Notice */}
+ {userProfile?.is_team_member && userProfile?.team_wedding_access === 'assigned' && (
+ <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-900/50 rounded-lg px-4 py-3 border border-gray-200 dark:border-slate-700 flex items-start gap-3">
+ <svg className="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+ <path fillRule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0zM8 9a1 1 0 100-2 1 1 0 000 2zm5-1a1 1 0 11-2 0 1 1 0 012 0z" clipRule="evenodd" />
+ </svg>
+ <div>
+ <p className="font-medium text-gray-700 dark:text-gray-300">Filtered View</p>
+ <p className="text-gray-600 dark:text-gray-400">Showing data for your {userProfile.team_assigned_wedding_ids?.length || 0} assigned wedding{(userProfile.team_assigned_wedding_ids?.length || 0) !== 1 ? 's' : ''}</p>
+ </div>
+ </div>
+ )}
+
  {/* Stats Cards */}
  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
    {/* Active Weddings */}

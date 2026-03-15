@@ -23,6 +23,14 @@ interface UserProfile {
     onboarding_completed?: boolean;
     onboarding_completed_at?: string;
     onboarding_steps_completed?: string[];
+    // Team member fields
+    is_team_member?: boolean;
+    team_member_id?: string;
+    parent_planner_id?: string;
+    team_permissions?: Record<string, boolean>;
+    team_wedding_access?: 'all' | 'assigned';
+    team_assigned_wedding_ids?: string[];
+    team_owner_email?: string;
 }
 
 type AdminContextType = {
@@ -116,9 +124,39 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
             if (response.ok) {
                 const profile = await response.json();
+
+                // If user is a team member, fetch their team permissions
+                if (profile.role === 'team_member' || profile.is_team_member === true) {
+                    try {
+                        const permissionsResponse = await fetch(`${baseUrl}/admin/team/permissions`, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                                'Pragma': 'no-cache'
+                            },
+                            cache: 'no-store'
+                        });
+
+                        if (permissionsResponse.ok) {
+                            const { permissions, wedding_access, assigned_wedding_ids, owner_email } = await permissionsResponse.json();
+                            profile.is_team_member = true;
+                            profile.team_permissions = permissions;
+                            profile.team_wedding_access = wedding_access;
+                            profile.team_assigned_wedding_ids = assigned_wedding_ids;
+                            profile.team_owner_email = owner_email;
+                        } else {
+                            console.warn('Failed to fetch team permissions for team member');
+                        }
+                    } catch (error) {
+                        console.warn('Error fetching team permissions:', error);
+                    }
+                }
+
                 setUserProfile(profile);
-            } else if (response.status === 401 || response.status === 403) {
-                // Token rejected by server — session is dead
+            } else if (response.status === 401) {
+                // Token expired or invalid — session is dead
                 logout();
             }
         } catch (error) {
@@ -219,6 +257,33 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
             if (profileResponse.ok) {
                 const profile = await profileResponse.json();
+
+                // If user is a team member, fetch their team permissions
+                if (profile.role === 'team_member' || profile.is_team_member === true) {
+                    try {
+                        const permissionsResponse = await fetch(`${baseUrl}/admin/team/permissions`, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Bearer ${access_token}`,
+                                'Content-Type': 'application/json',
+                            },
+                        });
+
+                        if (permissionsResponse.ok) {
+                            const { permissions, wedding_access, assigned_wedding_ids, owner_email } = await permissionsResponse.json();
+                            profile.is_team_member = true;
+                            profile.team_permissions = permissions;
+                            profile.team_wedding_access = wedding_access;
+                            profile.team_assigned_wedding_ids = assigned_wedding_ids;
+                            profile.team_owner_email = owner_email;
+                        } else {
+                            console.warn('Failed to fetch team permissions for team member');
+                        }
+                    } catch (error) {
+                        console.warn('Error fetching team permissions:', error);
+                    }
+                }
+
                 setUserProfile(profile);
 
                 toast.success('Login successful');
@@ -228,6 +293,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 if (profile.is_root_admin) {
                     window.location.href = '/admin';
                 } else if (profile.is_wedding_planner) {
+                    window.location.href = '/admin/planner';
+                } else if (profile.role === 'team_member' || profile.is_team_member === true) {
+                    // Team members redirect to planner view
                     window.location.href = '/admin/planner';
                 } else {
                     // Unknown/undefined role — do not grant access
@@ -269,12 +337,13 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         });
 
         if (!response.ok) {
-            // Token rejected by server — force logout instead of showing a
-            // confusing error toast on every page that uses apiRequest.
-            if (response.status === 401 || response.status === 403) {
+            // 401 = token invalid/expired — force logout and re-auth
+            if (response.status === 401) {
                 logout();
                 return undefined;
             }
+            // 403 = permission denied — don't logout, let the caller handle it
+            // (user is authenticated but lacks permission for this resource)
             const detail = await response.text();
             throw new Error(detail || 'Request failed');
         }
@@ -311,16 +380,16 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         <AdminContext.Provider
             value={{
                 // Auth properties
-                isAuthenticated: auth.isAuthenticated,
-                isLoading: auth.isLoading,
-                token: auth.token,
-                userProfile: auth.userProfile,
+                isAuthenticated: !!token,
+                isLoading,
+                token,
+                userProfile,
                 // Auth methods
-                login: auth.login,
-                logout: auth.logout,
-                fetchUserProfile: auth.fetchUserProfile,
+                login,
+                logout,
+                fetchUserProfile,
                 // API methods
-                apiRequest: api.apiRequest,
+                apiRequest,
             }}
         >
             {children}

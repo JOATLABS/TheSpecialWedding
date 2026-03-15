@@ -12,6 +12,8 @@ from app.services.contract_service import contract_service
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_admin_or_planner,
+    require_team_or_planner,
+    enforce_team_permission,
 )
 from app.utils.query_validation import (
     validated_status_filter,
@@ -72,7 +74,7 @@ async def list_contracts(
     ),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
     skip: int = Query(0, ge=0, description="Items to skip"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     List all contracts for the authenticated planner.
@@ -112,13 +114,14 @@ async def create_contract(
     deposit_percentage: float = Query(50.0, ge=0, le=100, description="Deposit percentage"),
     service_date: Optional[str] = Query(None, description="Service date (ISO format)"),
     service_location: Optional[str] = Query(None, description="Service location"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Create a new vendor contract (C3).
 
     Custom sections can be sent as a JSON array in the request body.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -157,11 +160,12 @@ async def create_contract(
 async def update_contract(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update a contract. Only allowed for draft/pending_review contracts.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -190,11 +194,12 @@ async def update_contract(
 async def update_contract_sections(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update contract sections (C4).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -226,11 +231,12 @@ async def update_contract_sections(
 async def send_contract(
     contract_id: str,
     message: Optional[str] = Query(None, description="Personal message to include"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Send a contract to the vendor for review/signing.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -253,11 +259,12 @@ async def send_contract(
 async def create_milestones(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Create payment milestones for a contract.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -285,7 +292,7 @@ async def create_milestones(
 @router.get("/contracts/{contract_id}/form-data", tags=["Contracts"])
 async def get_contract_form_data(
     contract_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Get vendor form data submissions for a contract.
@@ -311,11 +318,12 @@ async def get_contract_form_data(
 async def apply_form_data_to_contract(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Apply vendor form data to a contract's placeholders.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -389,11 +397,12 @@ async def record_milestone_payment(
     payment_method: str = Query("manual"),
     payment_date: Optional[str] = Query(None),
     notes: Optional[str] = Query(None),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Record a payment against a milestone (C2).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -477,11 +486,12 @@ class UpdateDraftRequest(BaseModel):
 async def update_followup_draft(
     draft_id: str,
     update_data: UpdateDraftRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update a follow-up draft (edit content or dismiss).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         from app.services.contract_followup_service import contract_followup_service
 
@@ -512,11 +522,12 @@ async def update_followup_draft(
 @router.post("/contracts/followup-drafts/{draft_id}/send", tags=["Contracts"])
 async def send_followup_draft(
     draft_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Send a follow-up draft as an actual email to the couple.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         from app.services.contract_followup_service import contract_followup_service
 
@@ -575,13 +586,14 @@ async def get_contract(
 async def update_wedding_date(
     contract_id: str,
     update_data: UpdateWeddingDateRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update the wedding date for a contract.
 
     This will recalculate payment due dates for days_before_wedding triggers.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         from datetime import date
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
@@ -610,13 +622,14 @@ async def update_wedding_date(
 async def cancel_contract(
     contract_id: str,
     cancel_data: CancelContractRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Cancel a contract.
 
     This will also cancel all pending scheduled payments.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -677,7 +690,7 @@ async def get_contract_payments(
 async def mark_payment_paid_externally(
     payment_id: str,
     request_data: MarkPaidExternallyRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Mark a scheduled payment as paid externally.
@@ -685,6 +698,7 @@ async def mark_payment_paid_externally(
     Use this when a couple pays via cash, check, bank transfer, or other
     method outside of the automated Stripe payment flow.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -711,7 +725,7 @@ async def mark_payment_paid_externally(
 async def refund_payment(
     payment_id: str,
     request_data: RefundPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Process a refund for a succeeded payment.
@@ -721,6 +735,7 @@ async def refund_payment(
 
     Only succeeded payments can be refunded.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -747,7 +762,7 @@ async def refund_payment(
 @router.post("/payments/{payment_id}/retry", tags=["Contracts"])
 async def retry_payment(
     payment_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Retry a failed scheduled payment.
@@ -757,6 +772,7 @@ async def retry_payment(
 
     Only failed payments can be retried.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -788,7 +804,7 @@ class CancelPaymentRequest(BaseModel):
 async def cancel_payment(
     payment_id: str,
     request_data: Optional[CancelPaymentRequest] = None,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Cancel a scheduled payment.
@@ -796,6 +812,7 @@ async def cancel_payment(
     Only scheduled or failed payments can be cancelled.
     Succeeded payments cannot be cancelled (use refund instead).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 

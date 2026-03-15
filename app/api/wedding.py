@@ -6,8 +6,11 @@ from app.services.cascade_delete_service import cascade_delete_service
 from app.dependencies.auth_extended import (
     require_root_admin,
     require_admin_or_planner,
+    require_team_or_planner,
     ExtendedAuthUser,
-    check_wedding_access
+    check_wedding_access,
+    enforce_team_permission,
+    get_accessible_wedding_ids
 )
 from app.services.subscription_service import SubscriptionService
 from app.services.stripe_service import stripe_service
@@ -25,16 +28,28 @@ subscription_service = SubscriptionService()
 
 
 @router.get("/weddings", tags=["Admin"])
-async def list_weddings(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    """List weddings - ROOT_ADMIN sees all, planners see only assigned"""
+async def list_weddings(current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+    """
+    List weddings - ROOT_ADMIN sees all, planners see only assigned.
+    Team members with "assigned" access see only their assigned weddings.
+    """
     if current_user.is_root_admin:
         return await wedding_service.list_weddings_with_planner_info()
+
+    # Get accessible wedding IDs for team members
+    accessible_ids = get_accessible_wedding_ids(current_user)
+    if accessible_ids is not None:
+        # Team member with "assigned" access - filter by their assigned weddings
+        return await wedding_service.list_weddings_for_planner(current_user.email, accessible_ids=accessible_ids)
+
+    # Planner owner or team member with "all" access
     return await wedding_service.list_weddings_for_planner(current_user.email)
 
 
 @router.post("/weddings", tags=["Admin"])
-async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Create a new wedding with subscription metering"""
+    enforce_team_permission(current_user, "manage_wedding_settings")
     # Enforce limits for planners
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
@@ -138,8 +153,9 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
 
 
 @router.put("/weddings/{wedding_id}", tags=["Admin"])
-async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Update a wedding via admin interface - with access control"""
+    enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -254,7 +270,7 @@ async def delete_wedding_admin(
 
 
 @router.get("/weddings/{wedding_id}", tags=["Wedding"])
-async def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Get a wedding by ID - with access control"""
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):

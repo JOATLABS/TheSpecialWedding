@@ -12,7 +12,8 @@ from app.models.form import (
 )
 from app.services.form_service import FormService
 from app.dependencies.auth_extended import (
-    get_current_user_extended, ExtendedAuthUser, check_wedding_access
+    get_current_user_extended, ExtendedAuthUser, check_wedding_access,
+    enforce_team_permission, require_team_or_planner
 )
 from app.utils.security_utils import (
     InputSanitizer, SecurityHeaders, rate_limiter, FormSecurityValidator
@@ -35,36 +36,10 @@ form_service = FormService()
 async def create_form(
     form_data: CreateFormRequest,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Create a new form with enhanced security validation"""
-    # Enhanced authorization check
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        # Log unauthorized access attempt
-        client_ip = getattr(request.client, 'host', None) if request.client else None
-        await security_audit.log_security_event(
-            event_type=SecurityEventType.UNAUTHORIZED_ACCESS,
-            severity=SecuritySeverity.HIGH,
-            user_email=current_user.email,
-            ip_address=client_ip,
-            user_agent=request.headers.get('user-agent'),
-            resource="forms",
-            action="create",
-            details={
-                "user_role": current_user.role,
-                "required_role": "wedding_planner"
-            },
-            success=False,
-            error_message="Insufficient privileges"
-        )
-        logger.warning(
-            f"Unauthorized form creation attempt by {current_user.email} "
-            f"with role {current_user.role}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied. Wedding planner role required."
-        )
+    enforce_team_permission(current_user, "manage_forms")
 
     # Validate wedding access if wedding_id is provided
     if form_data.wedding_id:
@@ -126,18 +101,9 @@ async def create_form(
 async def get_forms(
     wedding_id: Optional[str] = None,
     request: Request = None,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get all forms for the current user with security validation"""
-    # Enhanced authorization check
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        logger.warning(
-            f"Unauthorized forms access attempt by {current_user.email}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied. Wedding planner role required."
-        )
 
     # Validate wedding_id if provided
     if wedding_id:
@@ -176,18 +142,9 @@ async def get_forms(
 async def get_form(
     form_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get a specific form with authorization validation"""
-    # Enhanced authorization check
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        logger.warning(
-            f"Unauthorized form access attempt by {current_user.email} for form {form_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied. Wedding planner role required."
-        )
 
     # Validate form_id
     if not form_id or not isinstance(form_id, str):
@@ -232,18 +189,10 @@ async def update_form(
     form_id: str,
     form_data: UpdateFormRequest,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Update a form with enhanced security validation"""
-    # Enhanced authorization check
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        logger.warning(
-            f"Unauthorized form update attempt by {current_user.email} for form {form_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied. Wedding planner role required."
-        )
+    enforce_team_permission(current_user, "manage_forms")
 
     # Validate form_id
     if not form_id or not isinstance(form_id, str):
@@ -298,19 +247,11 @@ async def update_form(
 async def delete_form(
     form_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Delete a form with enhanced security validation"""
     logger.info(f"DELETE /forms/{form_id} called by {current_user.email}, is_root_admin={current_user.is_root_admin}")
-    # Enhanced authorization check
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        logger.warning(
-            f"Unauthorized form deletion attempt by {current_user.email} for form {form_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied. Wedding planner role required."
-        )
+    enforce_team_permission(current_user, "manage_forms")
 
     # Validate form_id
     if not form_id or not isinstance(form_id, str):
@@ -378,21 +319,18 @@ async def delete_form(
 async def send_form(
     form_id: str,
     send_data: SendFormRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Send form to recipients via email"""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+    enforce_team_permission(current_user, "manage_forms")
     return await form_service.send_form(form_id, send_data, current_user.email)
 
 @router.get("/forms/{form_id}/responses", tags=["Forms"])
 async def get_form_responses(
     form_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get all responses for a form"""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
 
     return await form_service.get_form_responses(form_id, current_user.email)
 
@@ -401,11 +339,10 @@ async def get_form_responses(
 async def mark_form_view(
     form_id: str,
     payload: FormViewUpdateRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Update the planner's last viewed timestamp for a form scope."""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+    enforce_team_permission(current_user, "manage_forms")
 
     return await form_service.mark_form_viewed(
         form_id,
@@ -418,18 +355,16 @@ async def mark_form_view(
 @router.get("/forms/{form_id}/analytics", tags=["Forms"])
 async def get_form_analytics(
     form_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get analytics for a form"""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
     return await form_service.get_form_analytics(form_id, current_user.email)
 
 @router.get("/forms/{form_id}/export/csv", tags=["Forms"])
 async def export_form_responses_csv(
     form_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     date_from: Optional[str] = Query(None, description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
     date_to: Optional[str] = Query(None, description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
     include_metadata: bool = Query(True, description="Include submission metadata (date, IP, etc.)")
@@ -465,34 +400,7 @@ async def export_form_responses_csv(
         500: Server error during export processing
     """
     try:
-        # Enhanced authorization check
-        if not (current_user.is_wedding_planner or current_user.is_root_admin):
-            # Log unauthorized access attempt
-            client_ip = getattr(request.client, 'host', None) if request.client else None
-            await security_audit.log_security_event(
-                event_type=SecurityEventType.UNAUTHORIZED_ACCESS,
-                severity=SecuritySeverity.HIGH,
-                user_email=current_user.email,
-                ip_address=client_ip,
-                user_agent=request.headers.get('user-agent'),
-                resource="forms",
-                action="csv_export",
-                details={
-                    "form_id": form_id,
-                    "user_role": current_user.role,
-                    "required_role": "wedding_planner"
-                },
-                success=False,
-                error_message="Insufficient privileges for CSV export"
-            )
-            logger.warning(
-                f"Unauthorized CSV export attempt by {current_user.email} "
-                f"with role {current_user.role} for form {form_id}"
-            )
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied. Wedding planner role required for CSV export."
-            )
+        enforce_team_permission(current_user, "manage_forms")
 
         # Validate form_id format
         if not form_id or not isinstance(form_id, str):
@@ -762,11 +670,9 @@ async def submit_form(
 # Form template endpoints
 @router.get("/form-templates", tags=["Form Templates"])
 def get_form_templates(
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get available form templates"""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
     templates = [
         {
             "id": "wedding_feedback",
@@ -1027,11 +933,10 @@ async def create_form_from_template(
     template_id: str,
     form_name: str,
     wedding_id: Optional[str] = None,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Create a form from a template"""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+    enforce_team_permission(current_user, "manage_forms")
 
     # Get templates
     templates_response = get_form_templates(current_user)
@@ -1066,10 +971,9 @@ async def create_form_from_template(
 async def duplicate_form(
     form_id: str,
     duplicate_request: DuplicateFormRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Duplicate an existing form for the authenticated planner."""
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner role required.")
+    enforce_team_permission(current_user, "manage_forms")
 
     return await form_service.duplicate_form(form_id, duplicate_request, current_user.email)

@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Query, Depends, UploadFile, File, Form, HTTPException
 from app.services.gallery_upload_service import GalleryUploadService
 from app.services.wedding_service import WeddingService
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    get_current_user_extended,
+    ExtendedAuthUser,
+    check_wedding_access,
+    require_team_or_planner,
+    enforce_team_permission,
+)
 
 router = APIRouter()
 gallery_service = GalleryUploadService()
@@ -33,9 +39,10 @@ async def get_upload_url(
     filename: str = Query(...),
     wedding_slug: str = Query(..., description="Wedding slug to upload to"),
     folder: str = Query("gallery", description="Folder to upload to (gallery, our-story, wedding-party)"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get presigned URL for uploading to S3 - validates wedding ownership"""
+    enforce_team_permission(current_user, "manage_gallery")
     # Verify access to this wedding
     if not await verify_wedding_access_by_slug(wedding_slug, current_user):
         raise HTTPException(status_code=403, detail="Access denied to this wedding's gallery")
@@ -45,7 +52,7 @@ async def get_upload_url(
 
 # Admin Get File URL Endpoint
 @router.get("/gallery/file-url", tags=["Admin"])
-async def get_file_url(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_file_url(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Get URL for a specific file - validates wedding ownership"""
     # Extract wedding_slug from key (format: folder/wedding-slug/timestamp_filename)
     parts = key.split("/")
@@ -65,8 +72,9 @@ async def get_file_url(key: str = Query(...), current_user: ExtendedAuthUser = D
 
 # Admin Delete File Endpoint
 @router.delete("/gallery", tags=["Admin"])
-async def delete_file(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def delete_file(key: str = Query(...), current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Delete a gallery image - validates wedding ownership"""
+    enforce_team_permission(current_user, "manage_gallery")
     # Extract wedding_slug from key (format: folder/wedding-slug/timestamp_filename)
     parts = key.split("/")
     wedding_slug = parts[1] if len(parts) >= 2 else None
@@ -85,7 +93,7 @@ async def delete_file(key: str = Query(...), current_user: ExtendedAuthUser = De
 
 # Admin List Files Endpoint
 @router.get("/gallery/list", tags=["Admin"])
-async def list_gallery_files(prefix: str = Query("gallery/"), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def list_gallery_files(prefix: str = Query("gallery/"), current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """List all uploaded files (admin view) - filtered by wedding access"""
     # Extract wedding slug from prefix (format: "folder/wedding-slug/")
     parts = prefix.strip("/").split("/")
@@ -105,8 +113,9 @@ async def list_gallery_files(prefix: str = Query("gallery/"), current_user: Exte
 
 # Admin Direct Upload Endpoint
 @router.post("/gallery/upload", tags=["Admin"])
-async def upload_file(file: UploadFile = File(...), wedding_slug: str = Form(...), folder: str = Form("gallery"), current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def upload_file(file: UploadFile = File(...), wedding_slug: str = Form(...), folder: str = Form("gallery"), current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Upload image directly to gallery - verifies wedding access"""
+    enforce_team_permission(current_user, "manage_gallery")
     # Verify access to this wedding
     if not await verify_wedding_access_by_slug(wedding_slug, current_user):
         raise HTTPException(status_code=403, detail="Access denied to upload to this wedding's gallery")

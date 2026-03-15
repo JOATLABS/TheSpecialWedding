@@ -11,6 +11,8 @@ from app.services.package_service import package_service
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_admin_or_planner,
+    require_team_or_planner,
+    enforce_team_permission,
 )
 import logging
 
@@ -95,7 +97,7 @@ async def list_packages(
     status: Optional[str] = Query(None, pattern="^(draft|active|archived)$"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     List all packages for the authenticated planner.
@@ -127,13 +129,14 @@ async def list_packages(
 @router.post("/packages", tags=["Packages"], status_code=201)
 async def create_package(
     package_data: CreatePackageRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Create a new package.
 
     Packages start in 'draft' status. Activate them before sending to couples.
     """
+    enforce_team_permission(current_user, "manage_packages")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -156,7 +159,7 @@ async def create_package(
 
 @router.get("/packages/stats", tags=["Packages"])
 async def get_package_stats(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get package statistics for the planner."""
     try:
@@ -172,7 +175,7 @@ async def get_package_stats(
 @router.get("/packages/{package_id}", tags=["Packages"])
 async def get_package(
     package_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get a specific package by ID."""
     try:
@@ -195,13 +198,14 @@ async def get_package(
 async def update_package(
     package_id: str,
     update_data: UpdatePackageRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update an existing package.
 
     Note: Active packages have limited editable fields.
     """
+    enforce_team_permission(current_user, "manage_packages")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -226,13 +230,14 @@ async def update_package(
 @router.delete("/packages/{package_id}", tags=["Packages"])
 async def delete_package(
     package_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Delete a draft package.
 
     Only packages in 'draft' status without contracts can be deleted.
     """
+    enforce_team_permission(current_user, "manage_packages")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -252,13 +257,14 @@ async def duplicate_package(
     package_id: str,
     name: Optional[str] = None,
     as_template: bool = True,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Duplicate a package.
 
     Creates a copy of the package, optionally as a template.
     """
+    enforce_team_permission(current_user, "manage_packages")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -285,7 +291,7 @@ async def duplicate_package(
 async def send_package_to_couple(
     package_id: str,
     send_data: SendPackageRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Send a package to a couple, creating a contract.
@@ -293,6 +299,7 @@ async def send_package_to_couple(
     The package must be in 'active' status. This creates a contract
     with a unique token for the couple to view and sign.
     """
+    enforce_team_permission(current_user, "manage_packages")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -330,7 +337,7 @@ class AIPricingSuggestionRequest(BaseModel):
 @router.post("/packages/ai-pricing", tags=["Packages"])
 async def get_ai_pricing_suggestion(
     request_data: AIPricingSuggestionRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Get AI-powered pricing suggestions for a package.
@@ -340,6 +347,7 @@ async def get_ai_pricing_suggestion(
 
     Cost: 3 AI credits
     """
+    enforce_team_permission(current_user, "manage_packages")
     from app.services.ai_service import ai_service, InsufficientCreditsError, AIGenerationError
     from app.core.settings import settings
 
