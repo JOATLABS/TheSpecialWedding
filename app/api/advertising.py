@@ -31,7 +31,7 @@ from app.models.vendor import VendorCategory
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/ads", tags=["Advertising"])
+router = APIRouter(prefix="/admin/ads", tags=["Advertising"])
 
 
 # =============================================================================

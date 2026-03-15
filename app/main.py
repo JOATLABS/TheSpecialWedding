@@ -83,6 +83,7 @@ from app.api.notification_stream import router as notification_stream_router
 from app.api.team_management import router as team_management_router
 from app.api.inbound_emails import router as inbound_emails_router
 from app.api.advertising import router as advertising_router
+from app.api.vendor_public import router as vendor_public_router
 
 # Setup logging
 logging.basicConfig(
@@ -342,7 +343,8 @@ app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingesti
 app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
 app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
 app.include_router(scheduler_jobs_router, prefix="/scheduler", tags=["Scheduler"])  # Scheduled task processing
-app.include_router(advertising_router, tags=["Advertising"])  # Vendor advertising (has own /api/v1/ads prefix)
+app.include_router(advertising_router, tags=["Advertising"])  # Vendor advertising (has own /admin/ads prefix)
+app.include_router(vendor_public_router, tags=["Public Vendors"])  # Public vendor profiles (has own /api/v1/vendors prefix)
 
 # Admin routes (authentication required)
 # Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes

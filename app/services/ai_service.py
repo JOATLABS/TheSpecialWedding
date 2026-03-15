@@ -1041,7 +1041,7 @@ class AIService:
                 credits_used=0,
                 latency_ms=latency_ms,
                 status="error",
-                model=model,
+                model=locals().get("model", "unknown"),
                 error=str(e)
             )
 
@@ -1192,9 +1192,12 @@ class AIService:
                 logger.info(f"Successfully parsed JSON with keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}")
                 return parsed
             except json.JSONDecodeError as e:
-                # Return as text if not valid JSON
-                logger.warning(f"Failed to parse as JSON: {e}. Returning raw text.")
-                return {"text": response_text, "raw": True}
+                # Raise error instead of returning raw text — this triggers the
+                # cached fallback path in generate(), which is much better than
+                # returning {"text": ..., "raw": True} that breaks downstream
+                # code expecting structured JSON keys like "insights", "suggestions", etc.
+                logger.warning(f"Failed to parse as JSON for {feature}: {e}. Raising AIInvalidResponseError.")
+                raise AIInvalidResponseError()
 
         except (AIRateLimitError, AIContentBlockedError, AIServiceUnavailableError,
                 AIQuotaExceededError, AITimeoutError, AIInvalidResponseError):

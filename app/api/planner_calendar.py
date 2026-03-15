@@ -233,7 +233,7 @@ async def disconnect_google_calendar(
 
     Removes stored OAuth tokens. Tasks are preserved but sync is disabled.
     """
-    enforce_team_permission(current_user, "manage_calendar")
+    enforce_team_permission(current_user, "manage_wedding_settings")
     result = await google_calendar_service.disconnect(current_user.email)
     return result
 
@@ -282,7 +282,7 @@ async def create_task(
     If Google Calendar is connected and sync_to_google is True,
     the event will also be created in Google Calendar.
     """
-    enforce_team_permission(current_user, "manage_calendar")
+    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     now = datetime.now(UTC)
@@ -475,7 +475,7 @@ async def update_task(
     If the task is synced to Google Calendar, the Google event
     will also be updated.
     """
-    enforce_team_permission(current_user, "manage_calendar")
+    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     try:
@@ -539,7 +539,7 @@ async def delete_task(
     If the task is synced to Google Calendar, the Google event
     will also be deleted.
     """
-    enforce_team_permission(current_user, "manage_calendar")
+    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     try:
@@ -585,7 +585,7 @@ async def sync_task_to_google(
     Creates the event in Google Calendar if not already synced,
     or updates it if already synced.
     """
-    enforce_team_permission(current_user, "manage_calendar")
+    enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if Google Calendar is connected
     status = await google_calendar_service.get_connection_status(current_user.email)
     if not status.get("connected"):
@@ -641,7 +641,7 @@ async def bulk_update_task_status(
     """
     Update status for multiple tasks at once.
     """
-    enforce_team_permission(current_user, "manage_calendar")
+    enforce_team_permission(current_user, "manage_wedding_settings")
     if status not in ["pending", "in_progress", "completed", "cancelled"]:
         raise HTTPException(status_code=400, detail="Invalid status value")
 

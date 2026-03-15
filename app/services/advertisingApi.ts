@@ -44,18 +44,21 @@ export interface FeatureFlag {
   config: {
     max_sponsored_per_page: number;
     show_sponsored_badge: boolean;
-    enable_click_tracking: boolean;
-    enable_impression_tracking: boolean;
-    minimum_impression_threshold: number;
+    show_sponsored_label: boolean;
+    enable_tracking: boolean;
+    min_priority_threshold: number;
+    impressions_per_session_limit: number;
   };
 }
 
 export interface AdStats {
   sponsored_vendor_id: string;
+  vendor_profile_id: string;
+  placement: AdPlacement;
   total_impressions: number;
   total_clicks: number;
   ctr: number;
-  recent_events: number;
+  recent_events_count: number;
   period_days: number;
 }
 
@@ -100,13 +103,11 @@ export async function getFeatureFlag(token: string): Promise<FeatureFlag> {
 }
 
 export async function toggleFeatureFlag(token: string, isEnabled: boolean): Promise<FeatureFlag> {
-  const response = await fetch(`${API_BASE}/admin/ads/feature-flag`, {
+  const response = await fetch(`${API_BASE}/admin/ads/feature-flag?is_enabled=${isEnabled}`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ is_enabled: isEnabled }),
   });
 
   if (!response.ok) {

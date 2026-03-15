@@ -1,7 +1,7 @@
 import os
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.reminder_service import ReminderService
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import require_team_or_planner, enforce_team_permission, ExtendedAuthUser
 from app.core.database import mongo
 from app.core.config import settings
 from datetime import datetime, timezone
@@ -14,12 +14,13 @@ reminder_service = ReminderService()
 
 
 @router.post("/reminders/send", tags=["Admin"])
-async def send_reminder(event_type: str, message: str, target_group: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def send_reminder(event_type: str, message: str, target_group: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+    enforce_team_permission(current_user, "send_reminders")
     return await reminder_service.send_reminders(event_type, message, target_group)
 
 
 @router.get("/reminders/logs", tags=["Admin"])
-async def get_logs(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_logs(current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     return await reminder_service.get_logs()
 
 
