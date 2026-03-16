@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from 'next/image';
 
@@ -106,16 +106,16 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick }: WeddingC
 
       {/* Registry */}
       <SectionWrapper id={isClone ? undefined : "registry"}>
-        <GlassCard className="max-w-4xl mx-auto p-8 text-center" depth="far" theme={wedding.theme_config}>
-          <h2 className="text-4xl font-bold mb-6 theme-primary">Wedding Registry</h2>
-          <p className="text-lg text-gray-700 dark:text-gray-200 mb-8">
+        <GlassCard className="max-w-4xl mx-auto p-6 text-center" depth="far" theme={wedding.theme_config}>
+          <h2 className="text-4xl font-bold mb-4 theme-primary">Wedding Registry</h2>
+          <p className="text-base text-gray-700 dark:text-gray-200 mb-6">
             Your presence is the greatest gift, but if you&apos;d like to celebrate with us, we&apos;re registered at:
           </p>
           {wedding.registries && wedding.registries.length > 0 ? (
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className={`grid gap-4 ${wedding.registries.length === 1 ? 'grid-cols-1 max-w-xs mx-auto' : wedding.registries.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
               {wedding.registries.map((registry, index) => (
-                <div key={index} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold mb-4 dark:text-gray-100">{registry.name}</h3>
+                <div key={index} className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold mb-3 dark:text-gray-100">{registry.name}</h3>
                   {!isClone ? (
                     <a
                       href={registry.url}
@@ -271,6 +271,11 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
   const [showRSVPModal, setShowRSVPModal] = useState(!!rsvpToken);
   const [loopHeight, setLoopHeight] = useState(0);
 
+  // Shared ref holding the normalised (modulo'd) scroll position.
+  // Written by InfiniteScrollWrapper, read by Modern3DBackground —
+  // guarantees both layers see the exact same Y on every frame.
+  const normalizedScrollRef = useRef(0);
+
   // Stable callback for InfiniteScrollWrapper height reporting
   const handlePrimaryHeight = useCallback((h: number) => setLoopHeight(h), []);
 
@@ -294,6 +299,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
         fallbackImages={images.map(img => img.url)}
         theme={wedding.theme_config}
         loopHeight={loopHeight}
+        normalizedScrollRef={normalizedScrollRef}
       />
 
       {/* ── Fixed nav (stays on top of everything) ── */}
@@ -301,7 +307,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
 
       {/* ── Infinite scroll content ── */}
       <main className="relative w-full">
-        <InfiniteScrollWrapper onPrimaryHeight={handlePrimaryHeight}>
+        <InfiniteScrollWrapper onPrimaryHeight={handlePrimaryHeight} normalizedScrollRef={normalizedScrollRef}>
           {(isClone) => (
             <WeddingContent
               isClone={isClone}

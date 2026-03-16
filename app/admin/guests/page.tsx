@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { usePolling } from '@/hooks/usePolling';
 import PageHeader from '../components/PageHeader';
 
 // ==================== INTERFACES ====================
@@ -274,16 +275,9 @@ export default function AdminGuestsPage() {
     }
   }, [fetchGuestData, selectedWedding]);
 
-  // Auto-refresh data when planner switches back to this tab
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && selectedWedding) {
-        fetchGuestData();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [fetchGuestData, selectedWedding]);
+  // Auto-refresh guest data every 30 s (pauses when tab is hidden,
+  // fetches immediately when the planner returns to the tab).
+  usePolling(fetchGuestData, 30_000, !!selectedWedding);
 
   // Fetch QR code with authentication when modal opens
   useEffect(() => {

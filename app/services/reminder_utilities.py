@@ -52,6 +52,17 @@ class RSVPReminderHelper:
             try:
                 self.twilio_client.messages.create(to=phone, from_=self.from_phone, body=message)
                 sent += 1
+
+                # Mark guest as invited so the dashboard shows "Pending"
+                if not guest.get("invite_sent"):
+                    await self.guest_collection.update_one(
+                        {"_id": guest["_id"]},
+                        {"$set": {
+                            "invite_sent": True,
+                            "invite_sent_date": datetime.now(timezone.utc)
+                        }}
+                    )
+
                 # Log successful send
                 await self.log_collection.insert_one({
                     "wedding_id": wedding_id,
