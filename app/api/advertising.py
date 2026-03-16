@@ -9,13 +9,19 @@ Read endpoints (GET) are available to all authenticated users.
 """
 
 import logging
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime
 
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    require_admin_or_planner,
+    get_current_user_extended,
+    ExtendedAuthUser,
+)
 from app.core.database import mongo
 from app.services.advertising_service import AdvertisingService
+from app.services.ad_rollup_service import AdRollupService
 from app.models.advertising import (
     SponsoredVendor,
     AdEvent,
@@ -54,6 +60,15 @@ async def get_advertising_service() -> AdvertisingService:
     with the current async database connection.
     """
     return AdvertisingService(mongo.db)
+
+
+async def get_rollup_service() -> AdRollupService:
+    """
+    Get ad rollup service instance with database client.
+
+    Provides access to pre-aggregated daily stats from ad_stats_daily.
+    """
+    return AdRollupService(mongo.db)
 
 
 # =============================================================================
@@ -473,7 +488,7 @@ async def list_ad_leads(
     limit: int = Query(50, ge=1, le=500, description="Max results"),
     skip: int = Query(0, ge=0, description="Skip results"),
     service: AdvertisingService = Depends(get_advertising_service),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """
     List ad leads with optional filters.
@@ -496,10 +511,30 @@ async def list_ad_leads(
     if vendor_id:
         filters["vendor_profile_id"] = vendor_id
 
-    if planner_id and current_user.is_root_admin:
-        filters["planner_id"] = planner_id
-    elif not current_user.is_root_admin:
-        # Non-admins only see their own leads
+    # Role-based scoping:
+    # - Admins: can view all leads, optionally filter by planner
+    # - Vendors: can only see leads for vendor profiles matching their email
+    # - Planners: can only see their own leads
+    if current_user.is_root_admin:
+        if planner_id:
+            filters["planner_id"] = planner_id
+    elif current_user.is_vendor:
+        # Vendor users: scope to leads for their vendor profiles
+        # Look up vendor profiles matching this vendor's email
+        db = service.db
+        vendor_profiles = []
+        async for vp in db.vendor_profiles.find(
+            {"email": current_user.email},
+            {"_id": 1}
+        ):
+            vendor_profiles.append(str(vp["_id"]))
+        if vendor_profiles:
+            filters["vendor_profile_id"] = {"$in": vendor_profiles}
+        else:
+            # Vendor has no profiles — return empty
+            return []
+    else:
+        # Planners and team members: only see their own leads
         filters["planner_id"] = current_user.email
 
     if status:
@@ -527,7 +562,7 @@ async def list_ad_leads(
 async def get_ad_lead(
     lead_id: str,
     service: AdvertisingService = Depends(get_advertising_service),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """
     Get details of a specific ad lead.
@@ -539,14 +574,29 @@ async def get_ad_lead(
     """
     lead = await service.get_lead(lead_id=lead_id)
 
-    # Authorization check
-    if not current_user.is_root_admin and lead.get("planner_id") != current_user.email:
+    # Authorization check — admin sees all, planner sees own, vendor sees own
+    if current_user.is_root_admin:
+        return lead
+    elif current_user.is_vendor:
+        # Vendor can see leads for their vendor profiles
+        db = service.db
+        vendor_profile_id = lead.get("vendor_profile_id")
+        vendor_profile = await db.vendor_profiles.find_one(
+            {"email": current_user.email, "_id": ObjectId(vendor_profile_id)}
+        ) if vendor_profile_id else None
+        if not vendor_profile:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to view this lead"
+            )
+        return lead
+    elif lead.get("planner_id") == current_user.email:
+        return lead
+    else:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to view this lead"
         )
-
-    return lead
 
 
 @router.put(
@@ -558,7 +608,7 @@ async def update_ad_lead_status(
     lead_id: str,
     request: UpdateAdLeadStatusRequest,
     service: AdvertisingService = Depends(get_advertising_service),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
 ):
     """
     Update the status of an ad lead.
@@ -575,6 +625,26 @@ async def update_ad_lead_status(
     - responded_at: When vendor responded (optional)
     - converted_at: When lead was converted (optional)
     """
+    # Authorization: only admin or involved vendor can update lead status
+    if not current_user.is_root_admin:
+        lead = await service.get_lead(lead_id=lead_id)
+        if current_user.is_vendor:
+            db = service.db
+            vendor_profile_id = lead.get("vendor_profile_id")
+            vendor_profile = await db.vendor_profiles.find_one(
+                {"email": current_user.email, "_id": ObjectId(vendor_profile_id)}
+            ) if vendor_profile_id else None
+            if not vendor_profile:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to update this lead"
+                )
+        elif lead.get("planner_id") != current_user.email:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to update this lead"
+            )
+
     status_data = request.model_dump(exclude_unset=True)
 
     updated = await service.update_lead_status(
@@ -736,6 +806,258 @@ async def unhide_vendor_for_planner(
     )
 
     return updated
+
+
+# =============================================================================
+# ROLLUP DASHBOARD ENDPOINTS
+# =============================================================================
+
+@router.get(
+    "/dashboard/stats",
+    response_model=dict,
+    summary="Get Dashboard Stats from Rollups"
+)
+async def get_dashboard_stats(
+    days: int = Query(30, ge=1, le=365, description="Days to look back"),
+    sponsored_vendor_id: Optional[str] = Query(None, description="Filter by vendor"),
+    placement: Optional[str] = Query(None, description="Filter by placement"),
+    rollup_service: AdRollupService = Depends(get_rollup_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get pre-aggregated daily stats for the analytics dashboard.
+
+    Reads from the ad_stats_daily rollup collection for fast, indexed queries.
+    Returns daily breakdowns with event counts, CTR, lead funnels, and hourly patterns.
+
+    **Access:** Admin only
+
+    **Query Parameters:**
+    - days: Lookback period (1-365, default 30)
+    - sponsored_vendor_id: Filter by specific vendor (optional)
+    - placement: Filter by ad placement (optional)
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can view dashboard stats"
+        )
+
+    daily_stats = await rollup_service.get_dashboard_stats(
+        days=days,
+        sponsored_vendor_id=sponsored_vendor_id,
+        placement=placement,
+    )
+
+    # Aggregate totals across all days
+    totals = {
+        "impressions": 0,
+        "clicks": 0,
+        "leads": 0,
+        "conversions": 0,
+        "unique_planners": 0,
+        "unique_weddings": 0,
+    }
+    leads_by_type_totals = {}
+    leads_by_status_totals = {}
+    hourly_clicks_totals = [0] * 24
+    daily_series = []
+
+    for doc in daily_stats:
+        counts = doc.get("counts", {})
+        # Use impression_served only — impression_viewable is a subset, not additive
+        impressions = counts.get("impression_served", 0)
+        clicks = counts.get("click", 0)
+        leads = counts.get("lead_created", 0)
+
+        totals["impressions"] += impressions
+        totals["clicks"] += clicks
+        totals["leads"] += leads
+        totals["conversions"] += doc.get("leads_by_status", {}).get("converted", 0)
+        totals["unique_planners"] += doc.get("unique_planners", 0)
+        totals["unique_weddings"] += doc.get("unique_weddings", 0)
+
+        # Accumulate leads by type
+        for lt, count in doc.get("leads_by_type", {}).items():
+            leads_by_type_totals[lt] = leads_by_type_totals.get(lt, 0) + count
+
+        # Accumulate leads by status
+        for ls, count in doc.get("leads_by_status", {}).items():
+            leads_by_status_totals[ls] = leads_by_status_totals.get(ls, 0) + count
+
+        # Accumulate hourly clicks
+        for i, h in enumerate(doc.get("hourly_clicks", [0] * 24)):
+            hourly_clicks_totals[i] += h
+
+        # Build daily time series
+        date_str = doc["date"].strftime("%Y-%m-%d") if hasattr(doc["date"], "strftime") else str(doc["date"])
+        daily_series.append({
+            "date": date_str,
+            "impressions": impressions,
+            "clicks": clicks,
+            "leads": leads,
+            "ctr": doc.get("ctr", 0),
+            "vendor_profile_views": counts.get("vendor_profile_view", 0),
+            "vendor_added_to_wedding": counts.get("vendor_added_to_wedding", 0),
+        })
+
+    # Sort daily series by date ascending
+    daily_series.sort(key=lambda x: x["date"])
+
+    # Compute overall CTR
+    overall_ctr = (
+        round((totals["clicks"] / totals["impressions"]) * 100, 2)
+        if totals["impressions"] > 0 else 0.0
+    )
+
+    return {
+        "period_days": days,
+        "totals": {
+            **totals,
+            "ctr": overall_ctr,
+        },
+        "leads_by_type": leads_by_type_totals,
+        "leads_by_status": leads_by_status_totals,
+        "hourly_clicks": hourly_clicks_totals,
+        "daily_series": daily_series,
+    }
+
+
+@router.get(
+    "/dashboard/leaderboard",
+    response_model=list,
+    summary="Get Vendor Performance Leaderboard"
+)
+async def get_vendor_leaderboard(
+    days: int = Query(30, ge=1, le=365, description="Days to look back"),
+    limit: int = Query(20, ge=1, le=100, description="Max vendors to return"),
+    rollup_service: AdRollupService = Depends(get_rollup_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get vendor performance leaderboard ranked by total clicks.
+
+    Returns aggregated vendor stats from the rollup collection,
+    including impressions, clicks, CTR, leads, and conversion counts.
+
+    **Access:** Admin only
+
+    **Query Parameters:**
+    - days: Lookback period (1-365, default 30)
+    - limit: Maximum vendors to return (1-100, default 20)
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can view the vendor leaderboard"
+        )
+
+    leaderboard = await rollup_service.get_vendor_leaderboard(
+        days=days,
+        limit=limit,
+    )
+
+    # Clean up MongoDB _id fields for JSON response
+    results = []
+    for doc in leaderboard:
+        doc.pop("_id", None)
+        results.append(doc)
+
+    return results
+
+
+@router.post(
+    "/dashboard/rollup",
+    response_model=dict,
+    summary="Trigger Daily Rollup Computation"
+)
+async def trigger_rollup(
+    target_date: Optional[str] = Query(
+        None,
+        description="Date to compute rollup for (YYYY-MM-DD, defaults to yesterday)"
+    ),
+    rollup_service: AdRollupService = Depends(get_rollup_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Manually trigger a daily rollup computation.
+
+    Computes or recomputes the ad_stats_daily rollup for a specific date.
+    Idempotent: safe to re-run for the same date.
+
+    **Access:** Admin only
+
+    **Query Parameters:**
+    - target_date: Date in YYYY-MM-DD format (defaults to yesterday UTC)
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can trigger rollup computation"
+        )
+
+    date_obj = None
+    if target_date:
+        try:
+            date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid date format. Use YYYY-MM-DD."
+            )
+
+    count = await rollup_service.compute_daily_rollup(target_date=date_obj)
+
+    logger.info(
+        f"Rollup triggered by {current_user.email}: "
+        f"{count} documents for {target_date or 'yesterday'}"
+    )
+
+    return {
+        "status": "completed",
+        "documents_upserted": count,
+        "target_date": target_date or "yesterday",
+    }
+
+
+@router.post(
+    "/dashboard/backfill",
+    response_model=dict,
+    summary="Backfill Rollup Data"
+)
+async def backfill_rollups(
+    days_back: int = Query(90, ge=1, le=365, description="Days to backfill"),
+    rollup_service: AdRollupService = Depends(get_rollup_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Backfill rollup data for the specified number of past days.
+
+    Useful for initial setup or recovering from missed nightly runs.
+
+    **Access:** Admin only
+
+    **Query Parameters:**
+    - days_back: Number of days to backfill (1-365, default 90)
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can trigger backfill"
+        )
+
+    total = await rollup_service.backfill_rollups(days_back=days_back)
+
+    logger.info(
+        f"Backfill completed by {current_user.email}: "
+        f"{total} documents over {days_back} days"
+    )
+
+    return {
+        "status": "completed",
+        "total_documents": total,
+        "days_backfilled": days_back,
+    }
 
 
 # =============================================================================

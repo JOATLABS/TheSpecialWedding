@@ -50,6 +50,7 @@ class AdPlacement(str, Enum):
     VENDOR_DETAIL = "vendor_detail"  # On vendor detail page
     MILESTONE_MODULE = "milestone_module"  # Within wedding milestone modules
     DIRECTORY_BOOST = "directory_boost"  # Boosted in vendor directory
+    DASHBOARD_RAIL = "dashboard_rail"  # Right rail on planner dashboard
 
 
 # =============================================================================

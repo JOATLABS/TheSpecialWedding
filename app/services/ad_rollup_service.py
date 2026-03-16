@@ -226,10 +226,10 @@ class AdRollupService:
                     hourly[hour] += 1
 
             # Compute total impressions and CTR
-            total_impressions = (
-                doc.get("impression_served", 0) +
-                doc.get("impression_viewable", 0)
-            )
+            # Use impression_served only — impression_viewable is a subset of
+            # impression_served (not additive), so summing both double-counts.
+            total_impressions = doc.get("impression_served", 0)
+            total_viewable = doc.get("impression_viewable", 0)
             total_clicks = doc.get("click", 0)
             ctr = (
                 (total_clicks / total_impressions * 100)
@@ -516,13 +516,9 @@ class AdRollupService:
                         "sponsored_vendor_id": "$sponsored_vendor_id",
                         "vendor_profile_id": "$vendor_profile_id",
                     },
+                    # Use impression_served only — impression_viewable is a subset, not additive
                     "total_impressions": {
-                        "$sum": {
-                            "$add": [
-                                {"$ifNull": ["$counts.impression_served", 0]},
-                                {"$ifNull": ["$counts.impression_viewable", 0]},
-                            ]
-                        }
+                        "$sum": {"$ifNull": ["$counts.impression_served", 0]}
                     },
                     "total_clicks": {"$sum": {"$ifNull": ["$counts.click", 0]}},
                     "total_leads": {"$sum": {"$ifNull": ["$counts.lead_created", 0]}},

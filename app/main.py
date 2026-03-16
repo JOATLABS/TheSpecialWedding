@@ -7,10 +7,11 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import json
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # Import settings and core components
 from app.core.settings import settings
@@ -118,6 +119,45 @@ class MongoJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+async def _nightly_rollup_scheduler():
+    """
+    Background task that runs the ad stats daily rollup at 2:00 AM UTC.
+
+    Computes yesterday's rollup from raw ad_events into ad_stats_daily.
+    Idempotent and safe to re-run. Runs continuously until cancelled.
+    """
+    from app.core.database import mongo
+
+    while True:
+        try:
+            # Calculate seconds until next 2:00 AM UTC
+            now = datetime.now(timezone.utc)
+            next_run = now.replace(hour=2, minute=0, second=0, microsecond=0)
+            if now >= next_run:
+                next_run += timedelta(days=1)
+            wait_seconds = (next_run - now).total_seconds()
+
+            logger.info(
+                f"Ad rollup scheduler: next run at {next_run.isoformat()} "
+                f"({wait_seconds / 3600:.1f}h from now)"
+            )
+            await asyncio.sleep(wait_seconds)
+
+            # Run the rollup
+            from app.services.ad_rollup_service import AdRollupService
+            rollup_service = AdRollupService(mongo.db)
+            count = await rollup_service.compute_daily_rollup()
+            logger.info(f"Nightly ad rollup complete: {count} stats documents upserted")
+
+        except asyncio.CancelledError:
+            logger.info("Ad rollup scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Ad rollup scheduler error: {e}", exc_info=True)
+            # Wait 1 hour before retrying on error
+            await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
@@ -177,9 +217,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Knowledge Base seeding skipped: {e}")
 
+        # Start nightly ad stats rollup scheduler
+        rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
+        logger.info("Ad stats nightly rollup scheduler started")
+
         logger.info("Application startup complete")
 
         yield  # Application runs here
+
+        # Cancel background tasks on shutdown
+        rollup_task.cancel()
+        try:
+            await rollup_task
+        except asyncio.CancelledError:
+            pass
 
     finally:
         # Shutdown

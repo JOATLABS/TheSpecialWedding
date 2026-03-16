@@ -125,10 +125,50 @@ export interface UpdateAdLeadStatusRequest {
   converted_at?: string;
 }
 
+// Dashboard types (rollup-backed)
+export interface DashboardDailySeries {
+  date: string;
+  impressions: number;
+  clicks: number;
+  leads: number;
+  ctr: number;
+  vendor_profile_views: number;
+  vendor_added_to_wedding: number;
+}
+
+export interface DashboardStats {
+  period_days: number;
+  totals: {
+    impressions: number;
+    clicks: number;
+    leads: number;
+    conversions: number;
+    unique_planners: number;
+    unique_weddings: number;
+    ctr: number;
+  };
+  leads_by_type: Record<string, number>;
+  leads_by_status: Record<string, number>;
+  hourly_clicks: number[];
+  daily_series: DashboardDailySeries[];
+}
+
+export interface VendorLeaderboardEntry {
+  sponsored_vendor_id: string;
+  vendor_profile_id: string;
+  total_impressions: number;
+  total_clicks: number;
+  total_leads: number;
+  total_conversions: number;
+  unique_planners: number;
+  days_active: number;
+  ctr: number;
+}
+
 export interface AdPreferences {
   _id: string;
   planner_id: string;
-  hidden_vendors: string[];
+  hidden_vendor_ids: string[];
   hidden_categories: string[];
   reduced_frequency: boolean;
   updated_at: string;
@@ -456,6 +496,102 @@ export async function toggleReducedFrequency(token: string, reduced: boolean): P
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.detail?.message || error.detail || 'Failed to update frequency settings');
+  }
+
+  return response.json();
+}
+
+// =============================================================================
+// DASHBOARD API (Rollup-backed)
+// =============================================================================
+
+export async function getDashboardStats(
+  token: string,
+  params?: {
+    days?: number;
+    sponsored_vendor_id?: string;
+    placement?: string;
+  }
+): Promise<DashboardStats> {
+  const queryParams = new URLSearchParams();
+  if (params?.days) queryParams.append('days', String(params.days));
+  if (params?.sponsored_vendor_id) queryParams.append('sponsored_vendor_id', params.sponsored_vendor_id);
+  if (params?.placement) queryParams.append('placement', params.placement);
+
+  const url = `${API_BASE}/admin/ads/dashboard/stats?${queryParams.toString()}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to fetch dashboard stats');
+  }
+
+  return response.json();
+}
+
+export async function getVendorLeaderboard(
+  token: string,
+  params?: {
+    days?: number;
+    limit?: number;
+  }
+): Promise<VendorLeaderboardEntry[]> {
+  const queryParams = new URLSearchParams();
+  if (params?.days) queryParams.append('days', String(params.days));
+  if (params?.limit) queryParams.append('limit', String(params.limit));
+
+  const url = `${API_BASE}/admin/ads/dashboard/leaderboard?${queryParams.toString()}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to fetch vendor leaderboard');
+  }
+
+  return response.json();
+}
+
+export async function triggerRollup(
+  token: string,
+  targetDate?: string
+): Promise<{ status: string; documents_upserted: number; target_date: string }> {
+  const queryParams = new URLSearchParams();
+  if (targetDate) queryParams.append('target_date', targetDate);
+
+  const url = `${API_BASE}/admin/ads/dashboard/rollup?${queryParams.toString()}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to trigger rollup');
+  }
+
+  return response.json();
+}
+
+export async function backfillRollups(
+  token: string,
+  daysBack?: number
+): Promise<{ status: string; total_documents: number; days_backfilled: number }> {
+  const queryParams = new URLSearchParams();
+  if (daysBack) queryParams.append('days_back', String(daysBack));
+
+  const url = `${API_BASE}/admin/ads/dashboard/backfill?${queryParams.toString()}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to backfill rollups');
   }
 
   return response.json();

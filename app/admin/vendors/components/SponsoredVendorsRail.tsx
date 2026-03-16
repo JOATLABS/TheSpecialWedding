@@ -258,20 +258,30 @@ export function SponsoredVendorsRail({
     return null;
   }
 
-  // Don't render if loading, error, or no sponsored vendors
+  // Desktop: max 3 cards in vertical rail
+  const desktopMaxCards = 3;
+  const displayVendors = sponsoredVendors.slice(0, desktopMaxCards);
+
+  // Get wedding context label for rail-context badge
+  const selectedWedding = weddings?.find(w => w.id === selectedWeddingId) || weddings?.[0];
+
+  // Loading skeleton — responsive: vertical on desktop, horizontal on mobile
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="flex items-center gap-2 mb-4">
-          <Sparkles size={16} className="text-wedding-gold" />
-          <h2 className="text-lg font-semibold text-wedding-navy">Recommended for you</h2>
+        <div className="flex items-center justify-between">
+          <h3 className="text-[13px] font-bold text-wedding-navy">Sponsored Vendors</h3>
         </div>
-        <div className="flex gap-4 overflow-x-hidden">
+        {/* Desktop: vertical stack */}
+        <div className="hidden lg:flex lg:flex-col lg:gap-2.5">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="flex-shrink-0 w-80 h-72 rounded-lg bg-gray-100 animate-pulse"
-            />
+            <div key={i} className="w-full h-48 rounded-lg bg-gray-100 animate-pulse" />
+          ))}
+        </div>
+        {/* Mobile: horizontal scroll */}
+        <div className="flex gap-3 overflow-x-hidden lg:hidden">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex-shrink-0 w-72 h-48 rounded-lg bg-gray-100 animate-pulse" />
           ))}
         </div>
       </div>
@@ -279,105 +289,152 @@ export function SponsoredVendorsRail({
   }
 
   if (error || sponsoredVendors.length === 0) {
-    // Graceful degradation - render nothing on error or empty state
     return null;
   }
 
   return (
     <div className="space-y-3">
-      {/* Header with Info Icon */}
-      <div className="flex items-center gap-2 mb-4">
-        <Sparkles size={16} className="text-wedding-gold" />
-        <h2 className="text-lg font-semibold text-wedding-navy">Recommended for you</h2>
-
-        {/* "Why am I seeing this?" Info Icon */}
-        <div className="relative group">
+      {/* ===== HEADER — Desktop: "Sponsored Vendors" + Preferences, Mobile: "Recommended for you" ===== */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {/* Desktop header */}
+          <h3 className="hidden lg:block text-[13px] font-bold text-wedding-navy">Sponsored Vendors</h3>
+          {/* Mobile header */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <Sparkles size={16} className="text-wedding-gold" />
+            <h3 className="text-base font-semibold text-wedding-navy">Recommended for you</h3>
+          </div>
+        </div>
+        {/* Desktop: Preferences link */}
+        <span className="hidden lg:inline text-[10px] text-gray-400 cursor-pointer hover:text-wedding-sage transition-colors">
+          ⚙ Preferences
+        </span>
+        {/* Mobile: Info icon */}
+        <div className="relative lg:hidden">
           <button
             onClick={() => setShowTooltip(!showTooltip)}
-            className="p-1 ml-1 text-gray-400 hover:text-wedding-sage transition-colors"
+            className="p-1 text-gray-400 hover:text-wedding-sage transition-colors"
             aria-label="Why am I seeing this?"
-            title="Why am I seeing this?"
           >
             <HelpCircle size={16} />
           </button>
-
-          {/* Tooltip */}
           {showTooltip && (
-            <div className="absolute left-0 top-full mt-2 z-30 bg-wedding-navy text-white text-xs rounded-lg p-2 whitespace-nowrap shadow-lg">
-              These vendors are sponsored recommendations relevant to your wedding. You can hide any vendor you're not interested in.
-              <div className="absolute bottom-full left-3 -mb-1 w-2 h-2 bg-wedding-navy transform rotate-45" />
+            <div className="absolute right-0 top-full mt-2 z-30 bg-wedding-navy text-white text-xs rounded-lg p-2 w-56 shadow-lg">
+              These vendors are sponsored recommendations relevant to your wedding.
+              <div className="absolute bottom-full right-3 -mb-1 w-2 h-2 bg-wedding-navy transform rotate-45" />
             </div>
           )}
         </div>
-
-        {/* Wedding Context Selector */}
-        {weddings && weddings.length > 1 && (
-          <select
-            value={selectedWeddingId || ''}
-            onChange={(e) => handleWeddingChange(e.target.value)}
-            className="ml-auto px-2 py-1 text-sm border border-gray-300 rounded-md text-wedding-navy focus:outline-none focus:ring-2 focus:ring-wedding-gold"
-          >
-            <option value="">All weddings</option>
-            {weddings.map((wedding) => (
-              <option key={wedding.id} value={wedding.id}>
-                {wedding.name}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
 
-      {/* Rail Container */}
-      <div className="relative">
-        {/* Scroll Container */}
+      {/* ===== WEDDING CONTEXT BADGE (Desktop only) ===== */}
+      {selectedWedding && (
+        <div className="hidden lg:inline-flex items-center gap-1.5 text-[11px] text-wedding-sage bg-wedding-sage/[0.08] px-2.5 py-1 rounded-md">
+          <span className="w-1.5 h-1.5 rounded-full bg-wedding-sage" />
+          For: {selectedWedding.name}
+        </div>
+      )}
+
+      {/* ===== WEDDING SELECTOR (both, if multiple weddings) ===== */}
+      {weddings && weddings.length > 1 && (
+        <select
+          value={selectedWeddingId || ''}
+          onChange={(e) => handleWeddingChange(e.target.value)}
+          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md text-wedding-navy focus:outline-none focus:ring-2 focus:ring-wedding-sage lg:text-[11px]"
+        >
+          <option value="">All weddings</option>
+          {weddings.map((wedding) => (
+            <option key={wedding.id} value={wedding.id}>
+              {wedding.name}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {/* ===== DESKTOP LAYOUT: Vertical stacked cards ===== */}
+      <div className="hidden lg:flex lg:flex-col">
+        {displayVendors.map((vendor) => (
+          <SponsoredVendorCard
+            key={vendor._id}
+            vendor={vendor}
+            vendorProfile={vendorProfiles[vendor.vendor_profile_id]}
+            onView={handleVendorClick}
+            onRecordEvent={handleRecordEvent}
+            onHide={handleVendorHide}
+          />
+        ))}
+      </div>
+
+      {/* ===== MOBILE LAYOUT: Horizontal scroll carousel ===== */}
+      <div className="relative lg:hidden">
         <div
           ref={scrollContainerRef}
-          className="flex gap-4 overflow-x-auto scroll-smooth pb-2"
-          style={{ scrollBehavior: 'smooth', WebkitOverflowScrolling: 'touch' }}
+          className="flex gap-3 overflow-x-auto scroll-smooth pb-2 snap-x snap-mandatory"
+          style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {sponsoredVendors.map((vendor) => (
-            <SponsoredVendorCard
-              key={vendor._id}
-              vendor={vendor}
-              vendorProfile={vendorProfiles[vendor.vendor_profile_id]}
-              onView={handleVendorClick}
-              onRecordEvent={handleRecordEvent}
-              onHide={handleVendorHide}
-            />
+            <div key={vendor._id} className="snap-start">
+              <SponsoredVendorCard
+                vendor={vendor}
+                vendorProfile={vendorProfiles[vendor.vendor_profile_id]}
+                onView={handleVendorClick}
+                onRecordEvent={handleRecordEvent}
+                onHide={handleVendorHide}
+              />
+            </div>
           ))}
         </div>
-
-        {/* Left Scroll Arrow */}
+        {/* Left Arrow */}
         {canScrollLeft && (
           <button
             onClick={() => scroll('left')}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
             aria-label="Scroll left"
           >
-            <ChevronLeft size={20} />
+            <ChevronLeft size={18} />
           </button>
         )}
-
-        {/* Right Scroll Arrow */}
+        {/* Right Arrow */}
         {canScrollRight && (
           <button
             onClick={() => scroll('right')}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
             aria-label="Scroll right"
           >
-            <ChevronRight size={20} />
+            <ChevronRight size={18} />
           </button>
         )}
       </div>
 
-      {/* Footer with "See all" Link */}
-      <div className="flex justify-center pt-2">
-        <a
-          href="/vendors"
-          className="text-sm text-gray-600 hover:text-wedding-sage transition-colors flex items-center gap-1"
+      {/* ===== FOOTER — Desktop: mockup style, Mobile: centered link ===== */}
+      {/* Desktop footer */}
+      <div className="hidden lg:flex justify-between pt-2 border-t border-gray-200">
+        <button
+          onClick={() => setShowTooltip(!showTooltip)}
+          className="text-[10px] text-wedding-sage font-medium hover:underline"
         >
-          See all sponsored vendors
-          <span className="text-xs">→</span>
+          Why am I seeing this?
+        </button>
+        <a
+          href="/admin/vendors"
+          className="text-[10px] text-wedding-sage font-medium hover:underline"
+        >
+          See more vendors ›
+        </a>
+      </div>
+      {/* Desktop tooltip (below footer) */}
+      {showTooltip && (
+        <div className="hidden lg:block text-[10px] text-gray-500 bg-gray-50 px-3 py-2 rounded-md border border-gray-200">
+          These vendors are sponsored recommendations matched to your wedding location, budget, and vendor needs. You can hide any vendor or adjust preferences.
+        </div>
+      )}
+      {/* Mobile footer */}
+      <div className="flex justify-center pt-2 lg:hidden">
+        <a
+          href="/admin/vendors"
+          className="text-xs text-gray-500 hover:text-wedding-sage transition-colors"
+        >
+          See all sponsored vendors →
         </a>
       </div>
     </div>
