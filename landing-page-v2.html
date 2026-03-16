@@ -311,7 +311,12 @@ img{max-width:100%;display:block}
 @media(max-width:640px){
 .hero{padding:100px 20px 60px}
 .features{padding:20px 20px 60px}
-.feat-grid{grid-template-columns:1fr}
+.feat-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+.feat-card{padding:14px 12px;border-radius:14px}
+.feat-icon{width:28px;height:28px;border-radius:7px;font-size:14px;margin-bottom:8px}
+.feat-card h3{font-size:12px;margin-bottom:3px}
+.feat-card p{font-size:10px;line-height:1.4}
+.feat-demo{display:none}
 .nav-links a:not(.nav-cta){display:none}
 .dash-app{grid-template-columns:1fr}
 .dash-side{display:none}
@@ -645,7 +650,7 @@ img{max-width:100%;display:block}
     <div class="feat-card reveal d1">
       <div class="feat-icon" style="background:rgba(212,165,165,.12)">💬</div>
       <h3>Messaging & Inbox</h3>
-      <p>Vendor, couple, and team conversations — with payment context.</p>
+      <p>Vendor and team conversations — threaded, with payment context.</p>
       <div class="feat-demo">
         <div class="feat-msgs">
           <div class="feat-msg r" style="animation-delay:.2s"></div>
@@ -771,7 +776,7 @@ img{max-width:100%;display:block}
     <div class="feat-card reveal d3">
       <div class="feat-icon" style="background:rgba(168,218,220,.12)">📦</div>
       <h3>Service Packages</h3>
-      <p>Bundle your services into tiers couples can browse and book.</p>
+      <p>Bundle your services into bookable tiers with custom pricing.</p>
       <div class="feat-demo">
         <div class="feat-bars">
           <div class="feat-bar"><div class="feat-bar-fill" style="background:linear-gradient(90deg,var(--sage),#c8e8ea);--w:40%"></div></div>
@@ -797,11 +802,11 @@ img{max-width:100%;display:block}
       </div>
     </div>
 
-    <!-- 14 Couple Portal -->
+    <!-- 14 Multi-Event Dashboard -->
     <div class="feat-card reveal d2">
-      <div class="feat-icon" style="background:rgba(233,196,106,.12)">💑</div>
-      <h3>Couple Portal</h3>
-      <p>A curated dashboard for couples to approve and monitor.</p>
+      <div class="feat-icon" style="background:rgba(233,196,106,.12)">📊</div>
+      <h3>Multi-Event Dashboard</h3>
+      <p>Manage every wedding from one view — deadlines, tasks, status at a glance.</p>
       <div class="feat-demo">
         <div class="feat-checks">
           <div class="feat-check-row"><span class="feat-check-box done"></span>Guest list approved</div>
@@ -858,7 +863,7 @@ img{max-width:100%;display:block}
     <div class="feat-card reveal d3">
       <div class="feat-icon" style="background:rgba(168,218,220,.12)">🔐</div>
       <h3>Team Permissions</h3>
-      <p>Role-based access for planners, couples, vendors, and staff.</p>
+      <p>Role-based access for planners, assistants, vendors, and staff.</p>
       <div class="feat-demo">
         <div class="feat-dots">
           <span class="feat-dot filled" style="animation-delay:.1s;width:10px;height:10px;background:rgba(212,165,165,.4);border-color:rgba(212,165,165,.5)"></span>
@@ -903,7 +908,7 @@ img{max-width:100%;display:block}
 <section id="testimonials" class="testimonials">
   <div class="test-grid">
     <div class="test-card reveal d1">
-      <blockquote>"The Special Wedding gives our planners and couples a shared language. Every guest touchpoint feels intentional."</blockquote>
+      <blockquote>"The Special Wedding replaced five subscriptions overnight. Every guest touchpoint feels intentional now."</blockquote>
       <div class="author">Maya Glenn</div>
       <div class="role">Director of Events, Aurora Collective</div>
     </div>

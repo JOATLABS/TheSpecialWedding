@@ -18,6 +18,10 @@ from app.models.advertising import (
     AdvertisingFeatureFlag,
     AdPlacement,
     AdEventType,
+    AdLead,
+    AdLeadStatus,
+    AdLeadType,
+    PlannerAdPreference,
 )
 from app.models.vendor import VendorCategory
 
@@ -75,6 +79,8 @@ class AdvertisingService:
         self.sponsored_vendors = db["sponsored_vendors"]
         self.ad_events = db["ad_events"]
         self.ad_feature_flags = db["ad_feature_flags"]
+        self.ad_leads = db["ad_leads"]
+        self.planner_ad_preferences = db["planner_ad_preferences"]
 
     async def get_feature_flag(self) -> Dict[str, Any]:
         """
@@ -366,6 +372,16 @@ class AdvertisingService:
 
         event_type = event_data.get("event_type")
 
+        # Backward compatibility: map legacy event type names to new enum values
+        LEGACY_EVENT_TYPE_MAP = {
+            "impression": AdEventType.IMPRESSION_SERVED.value,
+            "viewable_impression": AdEventType.IMPRESSION_VIEWABLE.value,
+            "detail_view": AdEventType.VENDOR_PROFILE_VIEW.value,
+            "assignment": AdEventType.VENDOR_ADDED_TO_WEDDING.value,
+        }
+        if event_type in LEGACY_EVENT_TYPE_MAP:
+            event_type = LEGACY_EVENT_TYPE_MAP[event_type]
+
         ad_event = {
             "event_type": event_type,
             "sponsored_vendor_id": str(sponsored_id),
@@ -385,7 +401,7 @@ class AdvertisingService:
 
         # Update sponsored vendor counts
         update_query = {}
-        if event_type == AdEventType.IMPRESSION.value:
+        if event_type in [AdEventType.IMPRESSION_SERVED.value, AdEventType.IMPRESSION_VIEWABLE.value]:
             update_query["$inc"] = {"impression_count": 1}
         elif event_type == AdEventType.CLICK.value:
             update_query["$inc"] = {"click_count": 1}
@@ -459,6 +475,395 @@ class AdvertisingService:
         }
 
         return stats
+
+    async def create_lead(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a new ad lead from planner interest.
+
+        Args:
+            data: Lead data including planner_id, vendor_profile_id, lead_type, etc.
+
+        Returns:
+            Created ad lead document with _id
+        """
+        # Validate IDs
+        sponsored_id = validate_object_id(
+            data.get("sponsored_vendor_id"),
+            "sponsored_vendor_id"
+        )
+        vendor_id = validate_object_id(
+            data.get("vendor_profile_id"),
+            "vendor_profile_id"
+        )
+
+        # Validate optional wedding_id if provided
+        wedding_id = data.get("wedding_id")
+        if wedding_id:
+            wedding_id = validate_object_id(wedding_id, "wedding_id")
+
+        ad_lead = {
+            "sponsored_vendor_id": str(sponsored_id),
+            "vendor_profile_id": str(vendor_id),
+            "planner_id": data.get("planner_id"),
+            "wedding_id": str(wedding_id) if wedding_id else None,
+            "lead_type": data.get("lead_type"),
+            "status": data.get("status", AdLeadStatus.PENDING.value),
+            "click_id": data.get("click_id"),
+            "placement": data.get("placement", AdPlacement.VENDOR_RAIL.value),
+            "message": data.get("message"),
+            "quote_amount": data.get("quote_amount"),
+            "responded_at": None,
+            "converted_at": None,
+            "metadata": data.get("metadata", {}),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        result = await self.ad_leads.insert_one(ad_lead)
+        ad_lead["_id"] = result.inserted_id
+
+        logger.info(
+            f"Created ad lead {result.inserted_id} from planner {ad_lead['planner_id']} "
+            f"for vendor {vendor_id}"
+        )
+
+        return ad_lead
+
+    async def get_leads(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 50,
+        skip: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        Get ad leads with optional filters.
+
+        Args:
+            filters: Query filters (vendor_id, planner_id, status, lead_type, etc.)
+            limit: Maximum results to return
+            skip: Number of results to skip
+
+        Returns:
+            List of ad lead documents
+        """
+        if filters is None:
+            filters = {}
+
+        leads = []
+        async for lead in (
+            self.ad_leads
+            .find(filters)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        ):
+            leads.append(lead)
+
+        return leads
+
+    async def get_lead(self, lead_id: str) -> Dict[str, Any]:
+        """
+        Get a specific ad lead by ID.
+
+        Args:
+            lead_id: Lead ID
+
+        Returns:
+            Ad lead document
+
+        Raises:
+            HTTPException: If lead not found
+        """
+        lead_id_obj = validate_object_id(lead_id, "lead_id")
+
+        lead = await self.ad_leads.find_one({"_id": lead_id_obj})
+        if not lead:
+            raise HTTPException(status_code=404, detail="Ad lead not found")
+
+        return lead
+
+    async def update_lead_status(
+        self,
+        lead_id: str,
+        status_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Update the status of an ad lead.
+
+        Args:
+            lead_id: Lead ID
+            status_data: Status update data
+
+        Returns:
+            Updated ad lead document
+
+        Raises:
+            HTTPException: If lead not found
+        """
+        lead_id_obj = validate_object_id(lead_id, "lead_id")
+
+        updates = {
+            "status": status_data.get("status"),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        if status_data.get("responded_at"):
+            updates["responded_at"] = status_data.get("responded_at")
+
+        if status_data.get("converted_at"):
+            updates["converted_at"] = status_data.get("converted_at")
+
+        updated = await self.ad_leads.find_one_and_update(
+            {"_id": lead_id_obj},
+            {"$set": updates},
+            return_document=True,
+        )
+
+        if not updated:
+            raise HTTPException(status_code=404, detail="Ad lead not found")
+
+        logger.info(f"Updated ad lead {lead_id} status to {updates.get('status')}")
+
+        return updated
+
+    async def get_planner_preferences(self, planner_id: str) -> Dict[str, Any]:
+        """
+        Get or create ad preferences for a planner.
+
+        Args:
+            planner_id: Planner email
+
+        Returns:
+            Planner ad preferences document
+        """
+        prefs = await self.planner_ad_preferences.find_one(
+            {"planner_id": planner_id}
+        )
+
+        if not prefs:
+            # Create default preferences if they don't exist
+            default_prefs = {
+                "planner_id": planner_id,
+                "hidden_vendor_ids": [],
+                "hidden_categories": [],
+                "reduced_frequency": False,
+                "wedding_overrides": {},
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            result = await self.planner_ad_preferences.insert_one(default_prefs)
+            default_prefs["_id"] = result.inserted_id
+            prefs = default_prefs
+
+        return prefs
+
+    async def hide_vendor(self, planner_id: str, vendor_id: str) -> Dict[str, Any]:
+        """
+        Hide a sponsored vendor for a planner.
+
+        Args:
+            planner_id: Planner email
+            vendor_id: Sponsored vendor ID to hide
+
+        Returns:
+            Updated preferences document
+        """
+        vendor_id_obj = validate_object_id(vendor_id, "vendor_id")
+
+        prefs = await self.planner_ad_preferences.find_one_and_update(
+            {"planner_id": planner_id},
+            {
+                "$addToSet": {"hidden_vendor_ids": str(vendor_id_obj)},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+            upsert=True,
+            return_document=True,
+        )
+
+        logger.info(f"Hidden vendor {vendor_id} for planner {planner_id}")
+
+        return prefs
+
+    async def unhide_vendor(self, planner_id: str, vendor_id: str) -> Dict[str, Any]:
+        """
+        Unhide a previously hidden vendor for a planner.
+
+        Args:
+            planner_id: Planner email
+            vendor_id: Sponsored vendor ID to unhide
+
+        Returns:
+            Updated preferences document
+        """
+        vendor_id_obj = validate_object_id(vendor_id, "vendor_id")
+
+        prefs = await self.planner_ad_preferences.find_one_and_update(
+            {"planner_id": planner_id},
+            {
+                "$pull": {"hidden_vendor_ids": str(vendor_id_obj)},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+            return_document=True,
+        )
+
+        if not prefs:
+            # If no preferences exist, create default ones
+            prefs = await self.get_planner_preferences(planner_id)
+
+        logger.info(f"Unhidden vendor {vendor_id} for planner {planner_id}")
+
+        return prefs
+
+    async def hide_category(self, planner_id: str, category: str) -> Dict[str, Any]:
+        """
+        Hide a vendor category for a planner.
+
+        Args:
+            planner_id: Planner email
+            category: VendorCategory value to hide
+
+        Returns:
+            Updated preferences document
+        """
+        prefs = await self.planner_ad_preferences.find_one_and_update(
+            {"planner_id": planner_id},
+            {
+                "$addToSet": {"hidden_categories": category},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+            upsert=True,
+            return_document=True,
+        )
+
+        logger.info(f"Hidden category {category} for planner {planner_id}")
+
+        return prefs
+
+    async def toggle_reduced_frequency(
+        self,
+        planner_id: str,
+        reduced: bool
+    ) -> Dict[str, Any]:
+        """
+        Toggle reduced ad frequency for a planner.
+
+        Args:
+            planner_id: Planner email
+            reduced: Whether to enable reduced frequency
+
+        Returns:
+            Updated preferences document
+        """
+        prefs = await self.planner_ad_preferences.find_one_and_update(
+            {"planner_id": planner_id},
+            {
+                "$set": {
+                    "reduced_frequency": reduced,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+            upsert=True,
+            return_document=True,
+        )
+
+        logger.info(
+            f"{'Enabled' if reduced else 'Disabled'} reduced frequency "
+            f"for planner {planner_id}"
+        )
+
+        return prefs
+
+    async def get_sponsored_vendors_filtered(
+        self,
+        planner_id: str,
+        placement: Optional[AdPlacement] = None,
+        category_filter: Optional[VendorCategory] = None,
+        wedding_stage: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get active sponsored vendors filtered by planner preferences.
+
+        Excludes hidden vendors and hidden categories based on planner preferences.
+        Respects reduced_frequency setting if enabled.
+
+        Args:
+            planner_id: Planner email
+            placement: Ad placement filter (optional)
+            category_filter: Vendor category filter (optional)
+            wedding_stage: Wedding stage filter (optional)
+            limit: Maximum results to return
+
+        Returns:
+            List of active sponsored vendor documents
+        """
+        # Check if feature is enabled
+        flag = await self.get_feature_flag()
+        if not flag.get("is_enabled"):
+            return []
+
+        # Get planner preferences
+        prefs = await self.get_planner_preferences(planner_id)
+        hidden_vendors = prefs.get("hidden_vendor_ids", [])
+        hidden_categories = prefs.get("hidden_categories", [])
+        reduced_frequency = prefs.get("reduced_frequency", False)
+
+        # Build query
+        query = {
+            "is_active": True,
+            "_id": {"$nin": [ObjectId(vid) for vid in hidden_vendors if vid]},
+        }
+
+        # Add placement filter if provided
+        if placement:
+            query["placement"] = placement.value
+
+        # Add category filter and respect hidden categories
+        if category_filter:
+            query["target_categories"] = {
+                "$in": [category_filter.value]
+            }
+
+        # Exclude ads from hidden categories
+        if hidden_categories:
+            query["target_categories"] = {
+                "$nin": hidden_categories
+            }
+
+        # Add wedding stage filter if provided
+        if wedding_stage:
+            query["target_wedding_stages"] = {
+                "$in": [wedding_stage]
+            }
+
+        # Filter by date range
+        now = datetime.now(timezone.utc)
+        query["$or"] = [
+            {"start_date": {"$lte": now}},
+            {"start_date": None},
+        ]
+        query["$or"].append(
+            {"$and": [
+                {"end_date": {"$gte": now}},
+                {"end_date": {"$ne": None}},
+            ]}
+        )
+
+        # Adjust limit if reduced frequency is enabled
+        if reduced_frequency:
+            limit = max(1, limit // 2)
+
+        # Fetch sponsored vendors sorted by priority
+        vendors = []
+        async for vendor in (
+            self.sponsored_vendors
+            .find(query)
+            .sort("priority", -1)
+            .limit(limit)
+        ):
+            vendors.append(vendor)
+
+        return vendors
 
     async def health_check(self) -> bool:
         """

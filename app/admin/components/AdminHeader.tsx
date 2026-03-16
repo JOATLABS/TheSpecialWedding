@@ -50,6 +50,7 @@ export default function AdminHeader() {
       return [
         ...baseLinks,
         { href: '/admin/vendor', label: 'My Tasks', roles: ['vendor'] },
+        { href: '/admin/vendor/ads', label: 'Advertising', roles: ['vendor'] },
       ];
     }
 

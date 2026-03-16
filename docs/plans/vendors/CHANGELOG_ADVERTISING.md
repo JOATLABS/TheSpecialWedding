@@ -1,5 +1,165 @@
 # Vendor Advertising Feature — Changelog
 
+## Stage 1–3 Expansion: Full Advertising Platform Build-out
+**Date:** 2026-03-15
+**Version:** 1.0.0
+
+### Overview
+Major expansion of the advertising feature from basic sponsored rail to a full-platform advertising system with lead tracking, planner preferences, vendor self-serve dashboard, campaign wizard, and detailed analytics. Includes comprehensive QA review and bugfix pass across all layers.
+
+### New Data Models (`app/models/advertising.py`)
+
+**AdEventType expanded** — 7 → 12 event types:
+| Event | Description | Stage |
+|-------|-------------|-------|
+| `impression_served` | Ad rendered in DOM | 1 |
+| `impression_viewable` | 50%+ visible for 1+ sec (IntersectionObserver) | 1 |
+| `click` | Card or CTA clicked | 1 |
+| `vendor_profile_view` | Details drawer opened | 1 |
+| `vendor_added_to_wedding` | "Add to wedding" CTA used | 2 |
+| `lead_created` | Quote request, message, or invite sent | 2 |
+| `vendor_invited` | Vendor invited via ad | 2 |
+| `lead_accepted` | Vendor accepted lead | 2 |
+| `vendor_responded` | Vendor responded to lead | 2 |
+| `dismiss` | Planner dismissed/hid ad | 1 |
+| `hover` | Card hovered 500ms+ | 1 |
+| `contact_click` | Contact button clicked | 1 |
+
+**New: AdLead model** — Tracks planner→vendor interactions from sponsored ads:
+- `sponsored_vendor_id`, `vendor_profile_id`, `planner_id` (email)
+- `lead_type`: `quote_request` | `message` | `add_to_wedding` | `vendor_invite`
+- `status`: `pending` | `contacted` | `responded` | `converted` | `closed`
+- `click_id` (UUID) for full click→lead→conversion attribution
+- `placement`, `message`, `quote_amount`, `responded_at`, `converted_at`
+
+**New: PlannerAdPreference model** — Per-planner ad controls:
+- `hidden_vendor_ids[]`, `hidden_categories[]`
+- `reduced_frequency` (boolean — shows ~50% fewer ads)
+- `wedding_overrides` (per-wedding preference dict)
+
+### New Backend Endpoints (`app/api/advertising.py`)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /admin/ads/leads | Admin/Planner | Create a lead from ad interaction |
+| GET | /admin/ads/leads | Admin/Planner | List leads (filtered by vendor_id, planner_id, status, lead_type) |
+| GET | /admin/ads/leads/{id} | Admin/Planner | Get single lead detail |
+| PUT | /admin/ads/leads/{id}/status | Admin/Planner | Update lead status (with responded_at, converted_at timestamps) |
+| GET | /admin/ads/preferences | Planner | Get planner's ad preferences |
+| PUT | /admin/ads/preferences/hide-vendor?vendor_id= | Planner | Hide a vendor from ads |
+| DELETE | /admin/ads/preferences/unhide-vendor/{vendor_id} | Planner | Unhide a previously hidden vendor |
+| PUT | /admin/ads/preferences/hide-category?category= | Planner | Hide an entire vendor category |
+| PUT | /admin/ads/preferences/reduce-frequency?reduce= | Planner | Toggle reduced ad frequency |
+
+### New Frontend Pages
+
+**Vendor Ads Dashboard** (`app/admin/vendor/ads/page.tsx` — 573 lines):
+- 4-tab self-serve dashboard: Overview, Campaigns, Leads, Billing
+- Key metrics cards: impressions, clicks, CTR, active campaigns, total leads
+- Campaign table with status, budget, performance metrics
+- Lead table with planner info, type, status, response time
+- Billing section with spend tracking (mock data, awaiting Stripe integration)
+
+**Campaign Creation Wizard** (`app/admin/vendor/ads/campaigns/new/page.tsx` — 727 lines):
+- 5-step wizard flow:
+  1. **Goal** — visits, quote requests, or bookings
+  2. **Placement & Targeting** — multi-select placements, location targeting, category targeting
+  3. **Budget** — daily budget ($5 min), optional lifetime budget, date range, pacing strategy
+  4. **Creative** — image URL, headline (60 chars), description (150 chars), special offer, CTA text, live preview
+  5. **Review & Submit** — full campaign summary before creation
+
+**Public Vendor Profile** (`app/vendors/[id]/page.tsx` — 467 lines):
+- No-auth public page at `/vendors/{id}`
+- Backend: `GET /api/v1/vendors/{vendor_id}/public` (excludes internal_notes, tax_id, total_revenue)
+- Hero section, contact card, portfolio gallery, service areas
+
+### Enhanced Frontend Components
+
+**SponsoredVendorCard.tsx** — Major upgrade:
+- IntersectionObserver for viewable impression tracking (50% visible, 1+ second)
+- Per-card `click_id` UUID generation for full attribution chain
+- "Hide this vendor" dismiss button (X icon)
+- Fixed event types: `impression_viewable`, `vendor_profile_view`, `vendor_added_to_wedding`
+
+**SponsoredVendorsRail.tsx** — Major upgrade:
+- Wedding context selector dropdown for multi-wedding planners
+- "Why am I seeing this?" tooltip (HelpCircle icon)
+- "See all sponsored vendors" footer link
+- Preference-based filtering (fetches planner preferences, filters hidden vendors/categories)
+- `handleVendorHide` wired to `hideAdVendor` backend API
+- Fixed: `useEffect` moved before conditional returns (React rules-of-hooks compliance)
+
+**SponsoredVendorDetailsDrawer.tsx** — Major upgrade:
+- "Add to wedding" primary CTA (Heart icon, rose styling)
+- "Request quote" secondary CTA (FileText icon)
+- "Message vendor" secondary CTA (MessageSquare icon)
+- "View portfolio" conditional link
+- Fixed event types and added missing FileText import
+
+**SponsoredVendorsRail placements:**
+- `app/admin/planner/page.tsx` — Dashboard rail sidebar (`placement="dashboard_rail"`)
+- `app/admin/weddings/[id]/page.tsx` — Wedding detail sidebar (`placement="milestone_module"`)
+- `app/admin/components/AdminHeader.tsx` — "Advertising" nav link for vendor role
+
+### Frontend-Backend Alignment Fixes
+
+**advertisingApi.ts** — 10 fixes:
+1. `toggleFeatureFlag`: JSON body → query param `?is_enabled=`
+2. FeatureFlag config fields: `enable_click_tracking` → `enable_tracking`, etc.
+3. AdStats: `recent_events` → `recent_events_count`
+4. `hideAdVendor`: POST body → PUT query param
+5. `unhideAdVendor`: POST body → DELETE path param
+6. `hideAdCategory`: POST body → PUT query param
+7. `toggleReducedFrequency`: fixed URL path and param name
+8. `updateAdLeadStatus`: URL `/leads/{id}` → `/leads/{id}/status`
+9. `getAdLeads`: `offset` param → `skip` (matching backend)
+10. `CreateAdLeadRequest`: added required `lead_type` field
+
+**LeadStatus enum aligned**: `new/contacted/engaged/accepted/rejected/archived` → `pending/contacted/responded/converted/closed`
+
+### Backward Compatibility
+
+**Legacy event type mapping** (`advertising_service.py`):
+```python
+LEGACY_EVENT_TYPE_MAP = {
+    "impression": "impression_served",
+    "viewable_impression": "impression_viewable",
+    "detail_view": "vendor_profile_view",
+    "assignment": "vendor_added_to_wedding",
+}
+```
+Old event names are silently mapped to new names in `record_ad_event()`.
+
+### Critical Bugfixes (Non-Advertising)
+
+- **AdminContext.tsx crash** — Provider referenced non-existent `auth.X` objects; fixed to direct variables
+- **403 logout too aggressive** — Only logout on 401 (expired token), not 403 (permission denied)
+- **AI credit check key mismatch** — `has_credits` → `allowed`
+- **InsufficientCreditsError missing `message` param** — Added required constructor arg
+- **Vendor recommendation cache pollution** — Unique tenant_id for no-wedding context
+- **Undefined `model` in AI error handler** — `locals().get("model", "unknown")`
+- **AIInvalidResponseError takes no args** — Fixed to `raise AIInvalidResponseError()`
+
+### New MongoDB Collections
+
+| Collection | Description |
+|------------|-------------|
+| `ad_leads` | Planner→vendor interactions with click_id attribution, status workflow |
+| `planner_ad_preferences` | Per-planner hidden vendors/categories, frequency settings |
+
+### QA Verification Results
+
+**Python** — All 7 modified files pass `py_compile`:
+`advertising.py`, `advertising_service.py`, `models/advertising.py`, `ai.py`, `ai_service.py`, `vendor_public.py`, `main.py`
+
+**TypeScript** — 0 compilation errors (excluding pre-existing docs/ file)
+
+**Event type alignment** — All 6 frontend event types match backend AdEventType enum values exactly
+
+**API endpoint alignment** — All 13 advertising endpoints verified: HTTP methods, URL paths, query/path params, and request body shapes match between frontend and backend
+
+---
+
 ## Phase 1: Foundation (Data Models, Feature Flag, Backend API)
 **Date:** 2026-03-11
 **Files Added:**
@@ -273,6 +433,7 @@
 
 | Version | Date | Status | Notes |
 |---------|------|--------|-------|
+| 1.0.0 | 2026-03-15 | Release | Stages 1-3 complete: Full platform with leads, preferences, vendor self-serve, campaign wizard, analytics |
 | 0.3.0 | 2026-03-11 | Beta | Phase 3 complete: Admin controls and analytics |
 | 0.2.0 | 2026-03-11 | Beta | Phase 2 complete: Frontend display components |
 | 0.1.0 | 2026-03-11 | Beta | Phase 1 complete: Backend models and API endpoints |

@@ -5,6 +5,164 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-03-15 — Vendor Advertising Platform (Stages 1–3), Critical Bugfixes & Ad Analytics
+
+### Added
+
+- **Sponsored Vendor Rail component** (`app/admin/vendors/components/SponsoredVendorCard.tsx`, `SponsoredVendorsRail.tsx`, `SponsoredVendorDetailsDrawer.tsx`):
+
+  - Horizontal scrollable rail of sponsored vendor cards shown on planner dashboard and wedding detail pages
+  - IntersectionObserver-based viewable impression tracking (50% visible for 1+ second)
+  - Per-card `click_id` UUID generation for full conversion attribution across the click→lead→booking funnel
+  - "Hide this vendor" dismiss control that persists via planner ad preferences API
+  - "Why am I seeing this?" tooltip with HelpCircle icon explaining ad transparency
+  - "See all sponsored vendors" footer link for expanded directory view
+  - Wedding context selector dropdown for multi-wedding planners
+  - Preference-based filtering: fetches planner preferences on mount, filters hidden vendors/categories, respects reduced frequency toggle
+  - Details drawer with "Add to wedding", "Request quote", and "Message vendor" CTAs
+
+- **Sponsored Vendor Rail placements** (`app/admin/planner/page.tsx`, `app/admin/weddings/[id]/page.tsx`):
+
+  - Dashboard rail placement: right sidebar on the planner dashboard (`placement="dashboard_rail"`)
+  - Milestone module placement: right sidebar on wedding detail page (`placement="milestone_module"`)
+
+- **Ad event taxonomy** (`app/models/advertising.py`):
+
+  - Expanded from 7 to 12 event types: `impression_served`, `impression_viewable`, `click`, `vendor_profile_view`, `vendor_added_to_wedding`, `lead_created`, `vendor_invited`, `lead_accepted`, `vendor_responded`, `dismiss`, `hover`, `contact_click`
+  - Backend backward compatibility mapping for legacy event names (`impression` → `impression_served`, `viewable_impression` → `impression_viewable`, `detail_view` → `vendor_profile_view`, `assignment` → `vendor_added_to_wedding`)
+
+- **Ad leads system** (`app/models/advertising.py`, `app/services/advertising_service.py`, `app/api/advertising.py`, `app/services/advertisingApi.ts`):
+
+  - New `AdLead` model tracking planner-to-vendor interactions from sponsored ads with click_id attribution
+  - Lead types: `quote_request`, `message`, `add_to_wedding`, `vendor_invite`
+  - Lead statuses: `pending`, `contacted`, `responded`, `converted`, `closed`
+  - Backend: `POST /admin/ads/leads`, `GET /admin/ads/leads`, `GET /admin/ads/leads/{id}`, `PUT /admin/ads/leads/{id}/status`
+  - Frontend TypeScript types and API functions for full lead CRUD
+
+- **Planner ad preferences** (`app/models/advertising.py`, `app/services/advertising_service.py`, `app/api/advertising.py`, `app/services/advertisingApi.ts`):
+
+  - New `PlannerAdPreference` model with hidden vendor IDs, hidden categories, reduced frequency toggle, and per-wedding overrides
+  - Backend: `GET /admin/ads/preferences`, `PUT hide-vendor`, `PUT hide-category`, `PUT reduce-frequency`, `DELETE unhide-vendor/{vendor_id}`
+  - Frontend functions with correct HTTP methods and query parameter passing
+
+- **Vendor ads dashboard** (`app/admin/vendor/ads/page.tsx`, `app/admin/vendor/ads/layout.tsx`):
+
+  - 4-tab dashboard for vendor self-service: Overview (key metrics), Campaigns (table with status/metrics), Leads (table with status/actions), Billing (spend tracking)
+  - Layout with sub-navigation header
+  - "Advertising" nav link added to AdminHeader for vendor role users
+
+- **Campaign creation wizard** (`app/admin/vendor/ads/campaigns/new/page.tsx`):
+
+  - 5-step wizard: Goal selection → Placement & targeting → Budget configuration → Creative setup with live preview → Review & submit
+  - Creates one `SponsoredVendor` entry per selected placement
+  - Supports location targeting, service category targeting, daily/lifetime budgets, and custom creative (headline, description, image, CTA)
+
+- **Public vendor profile page** (`app/api/vendor_public.py`, `app/vendors/[id]/page.tsx`, `app/vendors/[id]/layout.tsx`, `app/vendors/layout.tsx`):
+
+  - Public (no auth) endpoint: `GET /api/v1/vendors/{vendor_id}/public` returning only safe fields (excludes internal_notes, tax_id, total_revenue)
+  - Full-page vendor profile with hero section, contact card, portfolio gallery, and service area info
+  - Registered in `main.py` on the public router
+
+### Fixed
+
+- **AdminContext.tsx crash — entire admin panel broken** (`app/contexts/AdminContext.tsx`):
+
+  - Root cause: Provider value referenced `auth.isAuthenticated`, `auth.token`, `auth.login`, `api.apiRequest` etc. but no `auth` or `api` objects existed — every page crashed on render
+  - Fix: replaced all references with direct variable names (`!!token`, `token`, `login`, `apiRequest`, etc.)
+
+- **403 response incorrectly logged users out** (`app/contexts/AdminContext.tsx`):
+
+  - `apiRequest()` and `fetchUserProfile()` both called `logout()` on HTTP 403 (permission denied) — should only logout on 401 (expired/invalid token)
+  - Fix: 401 triggers logout, 403 is left for the caller to handle (e.g., show "access denied" message)
+
+- **AI credit check key mismatch** (`app/api/ai.py`):
+
+  - `credit_check.get("has_credits", True)` used wrong key — `check_credits()` returns `"allowed"` not `"has_credits"`
+  - Fix: changed to `credit_check.get("allowed", True)` and aligned `credits_needed`/`credits_remaining` keys
+
+- **InsufficientCreditsError missing required `message` parameter** (`app/api/ai.py`):
+
+  - Constructor requires `message` as first positional arg, but it was omitted — raised `TypeError` instead of the intended credit error
+  - Fix: added `message=credit_check.get("message", "Insufficient AI credits")` with correct key names
+
+- **Vendor recommendation cache pollution** (`app/api/ai.py`):
+
+  - When `request.wedding_id` was `None`, `tenant_id` fell back to plain `user_id`, causing cross-user cache collisions
+  - Fix: use `f"user_{user_id}_no_wedding"` as tenant and force refresh when no wedding context
+
+- **Undefined `model` variable in AI error handler** (`app/services/ai_service.py`):
+
+  - `model` was defined inside `try` block but referenced in `except` — raised `NameError` masking the original error
+  - Fix: `locals().get("model", "unknown")`
+
+- **AIInvalidResponseError raised with args (takes none)** (`app/services/ai_service.py`):
+
+  - JSON parse failure path passed an f-string to `AIInvalidResponseError()` which accepts no constructor args
+  - Fix: `raise AIInvalidResponseError()` with no args, added warning log with parse details
+
+- **Frontend-backend URL mismatch for advertising endpoints** (`app/api/advertising.py`):
+
+  - Frontend called `/admin/ads/...` but backend router had prefix `/api/v1/ads`
+  - Fix: changed backend router prefix to `/admin/ads`
+
+- **toggleFeatureFlag sent JSON body instead of query parameter** (`app/services/advertisingApi.ts`):
+
+  - Backend uses `is_enabled: bool = Query(...)` but frontend sent `{ is_enabled }` as JSON body
+  - Fix: changed to query param in URL `?is_enabled=${isEnabled}`
+
+- **FeatureFlag config field names misaligned** (`app/services/advertisingApi.ts`, `app/admin/advertising/page.tsx`):
+
+  - Frontend: `enable_click_tracking`, `minimum_impression_threshold` — Backend: `enable_tracking`, `min_priority_threshold`, `impressions_per_session_limit`
+  - Fix: aligned TypeScript interface and admin page to match backend field names
+
+- **AdStats field name mismatch** (`app/services/advertisingApi.ts`):
+
+  - Frontend: `recent_events` — Backend: `recent_events_count`
+  - Fix: updated TypeScript `AdStats` interface
+
+- **Event type mismatches between frontend and backend** (`SponsoredVendorCard.tsx`, `SponsoredVendorDetailsDrawer.tsx`):
+
+  - Frontend sent `viewable_impression`, `detail_view`, `assignment` — Backend expected `impression_viewable`, `vendor_profile_view`, `vendor_added_to_wedding`
+  - Fix: updated all frontend event strings to match backend `AdEventType` enum values
+
+- **Missing FileText import** (`SponsoredVendorDetailsDrawer.tsx`):
+
+  - "Request quote" CTA used `<FileText />` icon but it wasn't imported from lucide-react
+  - Fix: added to imports
+
+- **React rules-of-hooks violation** (`SponsoredVendorsRail.tsx`):
+
+  - `useEffect` for impression tracking was placed after conditional `return null` statements — violates React's hook ordering rules and causes runtime crash
+  - Fix: moved `useEffect` before all conditional returns
+
+- **JSX structure broken in wedding detail page** (`app/admin/weddings/[id]/page.tsx`):
+
+  - SponsoredVendorsRail insertion broke the grid layout div nesting — mismatched closing tags caused TypeScript compilation failure
+  - Fix: corrected div hierarchy so `col-span-1` sidebar is properly nested as sibling to `col-span-3` main content inside the grid
+
+- **Ad preferences endpoints — HTTP method and parameter mismatches** (`app/services/advertisingApi.ts`):
+
+  - `hideAdVendor`: frontend POST with body → backend PUT with query param
+  - `unhideAdVendor`: frontend POST with body → backend DELETE with path param
+  - `hideAdCategory`: frontend POST with body → backend PUT with query param
+  - `toggleReducedFrequency`: wrong URL path and param name
+  - `updateAdLeadStatus`: URL missing `/status` suffix
+  - `getAdLeads`: `offset` param name → backend uses `skip`
+  - Fix: aligned all frontend API calls to match backend endpoint signatures exactly
+
+- **CreateAdLeadRequest missing required `lead_type` field** (`app/services/advertisingApi.ts`):
+
+  - Backend requires `lead_type: AdLeadType` but frontend interface omitted it entirely
+  - Fix: added `lead_type`, `message`, `quote_amount`, `click_id`, `placement` fields to match backend schema
+
+- **LeadStatus enum values misaligned** (`app/services/advertisingApi.ts`):
+
+  - Frontend: `new`, `contacted`, `engaged`, `accepted`, `rejected`, `archived`
+  - Backend: `pending`, `contacted`, `responded`, `converted`, `closed`
+  - Fix: aligned frontend `LeadStatus` type to match backend `AdLeadStatus` enum
+
+---
+
 ## [2.1.4] - 2026-03-10 — Budget Page Fixes, KB Typography & Inline Budget Editor
 
 ### Fixed
