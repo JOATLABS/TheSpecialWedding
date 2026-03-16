@@ -1,20 +1,9 @@
 "use client";
 
 import { getApiBaseUrl } from '@/utils/env';
-import {
-  BellAlertIcon,
-  CalendarDaysIcon,
-  CheckBadgeIcon,
-  EnvelopeIcon,
-  MapPinIcon,
-  PhotoIcon,
-  QrCodeIcon,
-  RectangleGroupIcon,
-  SparklesIcon,
-  UserGroupIcon,
-} from "@heroicons/react/24/outline";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 import HeroAurora from "./components/ui/HeroAurora";
 import HeroCanvas from "./components/ui/HeroCanvas";
@@ -27,29 +16,12 @@ import { ThemeConfig } from "./types/wedding";
    Types
    ═══════════════════════════════════════════════════════════ */
 
-type Feature = {
+type ShowcaseFeature = {
+  id: string;
   title: string;
-  description: string;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  tagline: string;
+  image: string;
   category: string;
-};
-
-type Metric = {
-  label: string;
-  value: string;
-  subtext: string;
-};
-
-type WorkflowStage = {
-  title: string;
-  subtitle: string;
-  bullets: string[];
-};
-
-type Suite = {
-  title: string;
-  description: string;
-  stat: string;
 };
 
 type Testimonial = {
@@ -74,154 +46,153 @@ type FAQ = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   Static data
+   Feature showcase data — hardcoded for performance
+   13 features mapped to real dashboard screenshots
    ═══════════════════════════════════════════════════════════ */
 
-const features: Feature[] = [
+const showcaseFeatures: ShowcaseFeature[] = [
   {
-    title: "Guest lists & households",
-    description: "Unify invites, plus‑ones, and households with filters for VIPs, vendors, and families.",
-    icon: UserGroupIcon,
+    id: "guests",
+    title: "Guest Management",
+    tagline: "242 guests, RSVPs, plus-ones, groups — one live view.",
+    image: "/guest_management.jpeg",
     category: "Planning",
   },
   {
-    title: "Signature invitations",
-    description: "Send branded email invitations, track bounces, and personalize every RSVP link.",
-    icon: EnvelopeIcon,
-    category: "Engagement",
+    id: "calendar",
+    title: "Planning Calendar",
+    tagline: "Tasks, deadlines, and Google Calendar sync built in.",
+    image: "/calendar_management.png",
+    category: "Planning",
   },
   {
-    title: "Wedding websites",
-    description: "Launch a stunning site for every celebration—custom domains, schedules, travel, and galleries.",
-    icon: SparklesIcon,
+    id: "budget",
+    title: "Budget Tracker",
+    tagline: "Track every dollar — $80k budget, $55k remaining, zero guesswork.",
+    image: "/budget_management_dark_mode.png",
+    category: "Finance",
+  },
+  {
+    id: "seating",
+    title: "Seating Orchestrator",
+    tagline: "Drag guests to tables. 240 seated across 5 sections, 10 tables.",
+    image: "/seating.png",
+    category: "Planning",
+  },
+  {
+    id: "packages",
+    title: "Service Packages",
+    tagline: "Build bookable tiers with AI pricing suggestions.",
+    image: "/create_package_flow_with_ai_pricing_suggestion.png",
+    category: "Business",
+  },
+  {
+    id: "vendor",
+    title: "Vendor Management",
+    tagline: "CRM, contracts, and payments — every vendor in one hub.",
+    image: "/vendor_management.png",
+    category: "Business",
+  },
+  {
+    id: "contracts",
+    title: "Contract Canvas",
+    tagline: "AI-generated clauses, placeholders, and e-sign — built from scratch.",
+    image: "/contract_canvas.png",
+    category: "Business",
+  },
+  {
+    id: "payments",
+    title: "Payment Management",
+    tagline: "Incoming, outgoing, forecasts — with AI cash flow predictions.",
+    image: "/payment_management.png",
+    category: "Finance",
+  },
+  {
+    id: "gallery",
+    title: "Photo Gallery",
+    tagline: "Upload, organize, and share wedding photos with clients.",
+    image: "/gallery_management.png",
     category: "Experience",
   },
   {
-    title: "RSVP & meal selections",
-    description: "Capture attendance, meal preferences, allergies, and notes in real time.",
-    icon: CheckBadgeIcon,
-    category: "Engagement",
+    id: "forms",
+    title: "Forms Canvas",
+    tagline: "Drag-and-drop intake forms, questionnaires, and feedback — AI-assisted.",
+    image: "/forms_canvas.png",
+    category: "Experience",
   },
   {
-    title: "Seating orchestration",
-    description: "Drag-and-drop tables, respect family groupings, and export final charts instantly.",
-    icon: RectangleGroupIcon,
-    category: "Planning",
-  },
-  {
-    title: "Ceremony & reception timeline",
-    description: "Publish schedules for planners, vendors, and couples with role-based visibility.",
-    icon: CalendarDaysIcon,
-    category: "Execution",
-  },
-  {
-    title: "Moments gallery",
-    description: "Collect guest photos, curate galleries, and share highlights after the celebration.",
-    icon: PhotoIcon,
-    category: "Celebration",
-  },
-  {
-    title: "Smart reminders",
-    description: "Automate nudges for RSVP deadlines, travel updates, and day-of changes.",
-    icon: BellAlertIcon,
+    id: "reminders",
+    title: "Reminders & Invites",
+    tagline: "SMS and email — event reminders, RSVP nudges, custom messages.",
+    image: "/reminders.png",
     category: "Communication",
   },
   {
-    title: "Touchless check-in",
-    description: "Scan QR codes, monitor arrivals, and keep lines moving with live capacity counts.",
-    icon: QrCodeIcon,
-    category: "Execution",
+    id: "config",
+    title: "Wedding Configuration",
+    tagline: "Events, privacy, RSVP settings, branding — all customizable per wedding.",
+    image: "/wedding_config1.png",
+    category: "Setup",
   },
   {
-    title: "Maps & travel",
-    description: "Share venues, shuttles, and hotel blocks with smart directions for every guest.",
-    icon: MapPinIcon,
-    category: "Communication",
+    id: "support",
+    title: "Knowledge Base",
+    tagline: "Guides, tutorials, and troubleshooting — searchable and categorized.",
+    image: "/knowledgebase.png",
+    category: "Support",
   },
 ];
 
-const metrics: Metric[] = [
-  { label: "Guest records", value: "48k", subtext: "managed across active weddings" },
-  { label: "Average RSVP window", value: "5 days", subtext: "to reach 90% response" },
-  { label: "Check-in speed", value: "2.8s", subtext: "median scan-to-confirm time" },
-  { label: "Automation reliability", value: "99.9%", subtext: "delivery across reminders" },
+/* ═══════════════════════════════════════════════════════════
+   Metrics + Replacements (hardcoded for speed)
+   ═══════════════════════════════════════════════════════════ */
+
+const metrics = [
+  { value: "48k+", label: "Guests managed" },
+  { value: "5 days", label: "Avg. RSVP turnaround" },
+  { value: "2.8s", label: "QR check-in speed" },
+  { value: "99.9%", label: "Uptime" },
 ];
 
-const workflow: WorkflowStage[] = [
-  {
-    title: "Design the experience",
-    subtitle: "Collaborative planning canvas",
-    bullets: [
-      "Launch weddings in minutes with reusable templates",
-      "Assign visibility by planner, couple, or vendor team",
-      "Model budgets, seating, and timelines side by side",
-    ],
-  },
-  {
-    title: "Invite & delight",
-    subtitle: "Intelligent guest journeys",
-    bullets: [
-      "Personalized wedding websites with per-wedding slugs",
-      "Automated reminders that adapt to RSVP behavior",
-      "Guest portal with travel guidance and gallery teasers",
-    ],
-  },
-  {
-    title: "Execute flawlessly",
-    subtitle: "Day-of command center",
-    bullets: [
-      "Touchless check-in with live headcounts and alerts",
-      "Role-based run of show for coordinators and crew",
-      "Instant galleries and thank-you follow ups post event",
-    ],
-  },
+const replacements = [
+  "HoneyBook", "Aisle Planner", "Zola", "Google Sheets",
+  "DocuSign", "Canva", "QuickBooks", "Trello",
 ];
 
-const suites: Suite[] = [
+/* ═══════════════════════════════════════════════════════════
+   FAQs (hardcoded for speed)
+   ═══════════════════════════════════════════════════════════ */
+
+const faqs: FAQ[] = [
   {
-    title: "Multi-tenant oversight",
-    description: "Serve every planner, partner, or franchise in isolated workspaces with shared brand standards.",
-    stat: "Scale to 100+ concurrent weddings with centralized governance.",
+    question: "Can I manage multiple weddings at once?",
+    answer: "Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard.",
   },
   {
-    title: "Vendor collaboration",
-    description: "Loop photographers, caterers, and venues into dedicated timelines and file exchanges.",
-    stat: "Reduce coordination rounds by 68% through unified updates.",
+    question: "Is there support on the wedding day?",
+    answer: "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
   },
   {
-    title: "Insights & compliance",
-    description: "Audit-ready exports cover guest consent, messaging logs, and accessibility notes.",
-    stat: "SOC 2 aligned infrastructure keeps client data secure.",
+    question: "How does AI pricing suggestions work?",
+    answer: "When creating service packages, our AI analyzes your market, services, and costs to suggest competitive pricing tiers — saving you hours of research.",
+  },
+  {
+    question: "Can vendors collaborate in the platform?",
+    answer: "Yes. Invite photographers, caterers, and venues into dedicated workspaces with role-based access to timelines, contracts, and file exchanges.",
   },
 ];
 
-const testimonials: Testimonial[] = [
-  {
-    quote:
-      "The Special Wedding gives our planners and couples a shared language. Every guest touchpoint feels intentional and elegant.",
-    name: "Maya Glenn",
-    role: "Director of Events, Aurora Collective",
-  },
-  {
-    quote:
-      "Check-in lines disappeared. The live dashboards let us choreograph the day like a performance instead of fighting fires.",
-    name: "Elias Romero",
-    role: "Lead Coordinator, Harbor & Bloom",
-  },
-];
+/* ═══════════════════════════════════════════════════════════
+   Fallback pricing (if API fails)
+   ═══════════════════════════════════════════════════════════ */
 
-// Fallback pricing if API fails
 const fallbackPricing: PricingTier[] = [
   {
     name: "Boutique",
     price: "$29",
     cadence: "per wedding / month",
-    features: [
-      "Guest & RSVP manager",
-      "Email invitations",
-      "Wedding website",
-      "Timeline builder",
-    ],
+    features: ["Guest & RSVP manager", "Email invitations", "Wedding website", "Timeline builder"],
     cta: "Start your free trial",
   },
   {
@@ -229,12 +200,7 @@ const fallbackPricing: PricingTier[] = [
     price: "$59",
     cadence: "per wedding / month",
     badge: "Popular",
-    features: [
-      "Seating orchestration",
-      "QR check-in & live counts",
-      "Automated reminders",
-      "Vendor collaboration",
-    ],
+    features: ["Seating orchestration", "QR check-in & live counts", "Automated reminders", "Vendor collaboration"],
     cta: "Start your free trial",
     emphasized: true,
   },
@@ -242,56 +208,19 @@ const fallbackPricing: PricingTier[] = [
     name: "Agency",
     price: "Custom",
     cadence: "multi-tenant deployments",
-    features: [
-      "Dedicated success architect",
-      "Custom domains & branding",
-      "SSO + role provisioning",
-      "Compliance reporting",
-    ],
+    features: ["Dedicated success architect", "Custom domains & branding", "SSO + role provisioning", "Compliance reporting"],
     cta: "Talk with sales",
   },
 ];
 
-// Agency tier (always hardcoded - contact sales only)
 const agencyTier: PricingTier = {
   name: "Agency",
   price: "Custom",
   cadence: "multi-tenant deployments",
-  features: [
-    "Dedicated success architect",
-    "Custom domains & branding",
-    "SSO + role provisioning",
-    "Compliance reporting",
-  ],
+  features: ["Dedicated success architect", "Custom domains & branding", "SSO + role provisioning", "Compliance reporting"],
   cta: "Talk with sales",
 };
 
-const faqs: FAQ[] = [
-  {
-    question: "Can I manage multiple weddings at once?",
-    answer:
-      "Yes. Workspaces let you run simultaneous weddings, each with their own permissions, branding, and analytics while maintaining agency-wide oversight.",
-  },
-  {
-    question: "How do couples collaborate with planners?",
-    answer:
-      "Invite couples to a curated dashboard where they approve guest lists, monitor RSVPs, and review timelines without seeing internal notes.",
-  },
-  {
-    question: "Is there support on the wedding day?",
-    answer:
-      "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
-  },
-  {
-    question: "What's next for messaging?",
-    answer:
-      "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon.",
-  },
-];
-
-const partners = ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"];
-
-// Default theme for the signup modal
 const defaultTheme: ThemeConfig = {
   primary_color: "#D4A5A5",
   secondary_color: "#E8C46A",
@@ -312,34 +241,164 @@ interface ApiPlan {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Transition microcopy between sections
+   Feature Showcase — Interactive Image Carousel
+   Merges feature list + dashboard images into ONE section
+   ═══════════════════════════════════════════════════════════ */
+
+function FeatureShowcase({ isClone }: { isClone: boolean }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-cycle through features every 4 seconds
+  const startAutoPlay = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setActiveIdx((prev) => (prev + 1) % showcaseFeatures.length);
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    if (!isClone) startAutoPlay();
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isClone, startAutoPlay]);
+
+  const handleFeatureClick = (idx: number) => {
+    setActiveIdx(idx);
+    startAutoPlay(); // restart timer on manual click
+  };
+
+  const active = showcaseFeatures[activeIdx];
+
+  return (
+    <section className="relative mx-auto max-w-7xl px-6 py-16 sm:px-10 lg:px-16">
+      <div className="text-center mb-12">
+        <p className="text-xs uppercase tracking-[0.5em] text-wedding-rose/80 mb-4">Every tool a planner needs</p>
+        <h2 className="text-3xl font-semibold text-white sm:text-4xl">
+          See what&apos;s inside your command center.
+        </h2>
+        <p className="mt-4 max-w-2xl mx-auto text-base text-slate-300">
+          13 tools that replace scattered subscriptions. Click any feature — see the real dashboard.
+        </p>
+      </div>
+
+      <div className="grid gap-8 lg:grid-cols-[320px_1fr] items-start">
+        {/* Feature list — left column */}
+        <div className="flex flex-col gap-1 max-h-[540px] overflow-y-auto pr-2 scrollbar-thin">
+          {showcaseFeatures.map((feature, idx) => (
+            <button
+              key={feature.id}
+              type="button"
+              onClick={() => handleFeatureClick(idx)}
+              className={`group text-left rounded-xl px-4 py-3 transition-all duration-300 ${
+                idx === activeIdx
+                  ? "bg-wedding-rose/15 border border-wedding-rose/40 shadow-lg shadow-wedding-rose/10"
+                  : "border border-transparent hover:bg-white/5"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={`text-[10px] uppercase tracking-[0.3em] px-2 py-0.5 rounded-full ${
+                    idx === activeIdx
+                      ? "bg-wedding-rose/25 text-wedding-rose"
+                      : "bg-white/5 text-slate-500"
+                  }`}
+                >
+                  {feature.category}
+                </span>
+              </div>
+              <h3
+                className={`mt-1.5 text-sm font-semibold transition-colors ${
+                  idx === activeIdx ? "text-white" : "text-slate-400 group-hover:text-slate-200"
+                }`}
+              >
+                {feature.title}
+              </h3>
+              {idx === activeIdx && (
+                <p className="mt-1 text-xs text-slate-300 leading-relaxed animate-fade-in">
+                  {feature.tagline}
+                </p>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Dashboard image — right column */}
+        <div className="relative">
+          <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-wedding-rose/10 via-transparent to-wedding-gold/10 blur-2xl opacity-60" />
+          <div className="relative rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur-sm shadow-[0_30px_100px_rgba(11,17,32,0.5)]">
+            {/* Browser chrome */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-400/60" />
+              <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
+              <span className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
+              <span className="ml-3 text-[10px] text-slate-500 font-mono">
+                thespecialwedding.io/admin/{active.id}
+              </span>
+            </div>
+            {/* Image container with smooth transition */}
+            <div className="relative aspect-[16/10] overflow-hidden rounded-b-xl bg-slate-900">
+              {showcaseFeatures.map((feature, idx) => (
+                <div
+                  key={feature.id}
+                  className={`absolute inset-0 transition-opacity duration-500 ${
+                    idx === activeIdx ? "opacity-100 z-10" : "opacity-0 z-0"
+                  }`}
+                >
+                  <Image
+                    src={feature.image}
+                    alt={`${feature.title} dashboard`}
+                    fill
+                    className="object-cover object-top"
+                    sizes="(max-width: 1024px) 100vw, 70vw"
+                    priority={idx < 3}
+                    loading={idx < 3 ? "eager" : "lazy"}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Progress dots */}
+          <div className="flex justify-center gap-1.5 mt-4">
+            {showcaseFeatures.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleFeatureClick(idx)}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  idx === activeIdx
+                    ? "w-6 bg-wedding-rose"
+                    : "w-1.5 bg-white/20 hover:bg-white/40"
+                }`}
+                aria-label={`View feature ${idx + 1}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Section bridges
    ═══════════════════════════════════════════════════════════ */
 
 function SectionBridge({ text }: { text: string }) {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 text-center sm:px-10 lg:px-16">
-      <p className="text-[11px] uppercase tracking-[0.5em] text-slate-400/50">
-        {text}
-      </p>
+      <p className="text-[11px] uppercase tracking-[0.5em] text-slate-400/50">{text}</p>
     </div>
   );
 }
-
-/* ═══════════════════════════════════════════════════════════
-   Scroll hint chevron (animated)
-   ═══════════════════════════════════════════════════════════ */
 
 function ScrollHint() {
   return (
     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-slate-400/60">
       <span className="text-[10px] uppercase tracking-[0.4em]">Scroll to explore</span>
-      <svg
-        className="h-5 w-5 animate-bounce"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2}
-      >
+      <svg className="h-5 w-5 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
       </svg>
     </div>
@@ -348,27 +407,25 @@ function ScrollHint() {
 
 /* ═══════════════════════════════════════════════════════════
    Landing page content
-   Rendered once as primary (with canvases + IDs)
-   and once as a lightweight clone (no canvases, no IDs)
    ═══════════════════════════════════════════════════════════ */
 
 function LandingContent({
   isClone,
   pricing,
+  testimonials,
   onPricingClick,
 }: {
   isClone: boolean;
   pricing: PricingTier[];
+  testimonials: Testimonial[];
   onPricingClick: (planId: string) => void;
 }) {
   return (
     <>
       {/* ── HERO ────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-b from-[#0b1120] via-slate-950 to-slate-950">
-        {/* Canvas backgrounds — primary copy only */}
         {!isClone && <HeroCanvas />}
         {!isClone && <PetalCanvas count={64} />}
-        {/* Aurora is CSS-only, safe to render in both copies for visual parity */}
         <HeroAurora />
 
         <div
@@ -380,251 +437,85 @@ function LandingContent({
         />
         <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'160\' height=\'160\' viewBox=\'0 0 40 40\'%3E%3Cg fill=%27none%27 stroke=%27rgba(255,255,255,0.06)%27 stroke-width=%270.5%27%3E%3Cpath d=%27M0 0h40v40H0z%27/%3E%3Cpath d=%27M0 20h40M20 0v40%27/%3E%3C/g%3E%3C/svg%3E')] opacity-40" />
 
-        <div className="relative mx-auto max-w-7xl px-6 pb-32 pt-40 sm:px-10 lg:px-16">
-          <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
-            {/* ── Hero copy ── */}
-            <div className="relative">
-              <div className="absolute -left-16 top-10 hidden h-60 w-60 rounded-full bg-wedding-rose/25 blur-3xl lg:block" />
-
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-sm uppercase tracking-[0.3em] backdrop-blur">
-                The Special Wedding
-              </div>
-
-              <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl">
-                Every wedding deserves a stage. Yours is ready.
-              </h1>
-
-              <p className="mt-6 text-lg text-slate-200 sm:max-w-xl">
-                Guest management, RSVP journeys, wedding websites, seating, timelines, and day-of orchestration — woven into one elegant workspace.
-              </p>
-
-              <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
-                {!isClone ? (
-                  <a
-                    href="#pricing"
-                    className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40 transition hover:bg-wedding-blush"
-                  >
-                    Start your free trial
-                  </a>
-                ) : (
-                  <span className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40">
-                    Start your free trial
-                  </span>
-                )}
-                {!isClone ? (
-                  <Link
-                    href="/admin/login"
-                    className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/60"
-                  >
-                    Launch console
-                  </Link>
-                ) : (
-                  <span className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur">
-                    Launch console
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-14 flex flex-wrap items-center gap-x-8 gap-y-4 text-sm text-slate-300/90">
-                <span className="text-xs uppercase tracking-[0.3em] text-slate-300/60">Trusted partners</span>
-                {partners.map((partner) => (
-                  <span key={partner}>{partner}</span>
-                ))}
-              </div>
+        <div className="relative mx-auto max-w-7xl px-6 pb-24 pt-36 sm:px-10 lg:px-16">
+          <div className="max-w-3xl mx-auto text-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-1.5 text-sm uppercase tracking-[0.3em] backdrop-blur">
+              The Special Wedding
             </div>
 
-            {/* ── Hero dashboard preview ── */}
-            <div className="relative">
-              <div className="absolute inset-0 -translate-x-10 translate-y-12 rounded-[3rem] bg-wedding-rose/25 blur-3xl" />
-              <div className="relative grid gap-6 rounded-[2.8rem] border border-white/15 bg-white/10 p-8 backdrop-blur-3xl shadow-[0_40px_140px_rgba(11,17,32,0.7)]">
-                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/15 via-white/5 to-transparent p-6 shadow-inner">
-                  <p className="text-sm uppercase tracking-[0.3em] text-slate-300">Wedding overview</p>
-                  <div className="mt-4 grid gap-4 text-slate-200 sm:grid-cols-3">
-                    <div>
-                      <p className="text-xs text-slate-300">Guests confirmed</p>
-                      <p className="text-2xl font-semibold text-white">182</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-300">VIP arrivals</p>
-                      <p className="text-2xl font-semibold text-white">17</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-300">Reminders queued</p>
-                      <p className="text-2xl font-semibold text-white">5</p>
-                    </div>
-                  </div>
+            <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl">
+              Every tool a planner needs. Finally, in one place.
+            </h1>
+
+            <p className="mt-6 text-lg text-slate-200 max-w-2xl mx-auto">
+              Guest management, budgets, contracts, vendor CRM, seating, payments, forms, reminders, and day-of execution — woven into one elegant workspace.
+            </p>
+
+            {/* Replacement pills */}
+            <div className="mt-8 flex flex-wrap justify-center gap-2">
+              {replacements.map((name) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400"
+                >
+                  <span className="text-wedding-rose">✕</span>
+                  {name}
+                </span>
+              ))}
+            </div>
+
+            <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
+              {!isClone ? (
+                <a
+                  href="#pricing"
+                  className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40 transition hover:bg-wedding-blush"
+                >
+                  Start your free trial
+                </a>
+              ) : (
+                <span className="flex items-center justify-center rounded-full bg-wedding-rose px-6 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-wedding-rose/40">
+                  Start your free trial
+                </span>
+              )}
+              {!isClone ? (
+                <Link
+                  href="/admin/login"
+                  className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/60"
+                >
+                  Launch console
+                </Link>
+              ) : (
+                <span className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur">
+                  Launch console
+                </span>
+              )}
+            </div>
+
+            {/* Metrics strip */}
+            <div className="mt-14 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {metrics.map((m) => (
+                <div key={m.label} className="text-center">
+                  <p className="text-2xl font-semibold text-white">{m.value}</p>
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.3em] text-slate-400">{m.label}</p>
                 </div>
-                <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/10 p-5">
-                  <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-wedding-rose/20 blur-3xl" />
-                  <h3 className="text-sm font-semibold text-white">Ceremony timeline</h3>
-                  <ul className="mt-3 space-y-2 text-xs text-slate-200">
-                    <li className="flex items-start gap-3">
-                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-wedding-rose" />
-                      2:00 PM Guest arrivals & prosecco welcome
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-wedding-rose" />
-                      3:00 PM Garden ceremony begins
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-wedding-rose" />
-                      4:15 PM Sunset portraits & lounge hour
-                    </li>
-                  </ul>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-3xl border border-white/10 bg-white/10 p-5">
-                    <h3 className="text-sm font-semibold text-white">Seating snapshot</h3>
-                    <ul className="mt-3 space-y-2 text-xs text-slate-200">
-                      <li>18 tables finalized</li>
-                      <li>Allergies flagged for 12 guests</li>
-                      <li>Vendor meals confirmed</li>
-                    </ul>
-                  </div>
-                  <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-wedding-rose/25 via-transparent to-slate-900/40 p-5">
-                    <h3 className="text-sm font-semibold text-white">Wedding website</h3>
-                    <p className="mt-3 text-xs text-slate-200">
-                      Share the per-wedding link with travel guides, RSVP, and gallery teasers—auto-updated from your workspace.
-                    </p>
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-white/10 bg-white/10 p-6">
-                  <p className="text-sm font-semibold text-white">Messaging studio (coming soon)</p>
-                  <p className="mt-3 text-xs text-slate-200">
-                    Centralize vendor and couple conversations with synced payments, contracts, and budgets in one timeline.
-                  </p>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Scroll hint — primary only */}
         {!isClone && <ScrollHint />}
       </section>
 
       {/* ── bridge: Hero → Features ── */}
-      <SectionBridge text="Here's what's inside" />
+      <SectionBridge text="See what's inside" />
 
-      {/* ── FEATURE MOSAIC ──────────────────────────────── */}
-      <section id={isClone ? undefined : "platform"} className="relative mx-auto max-w-7xl px-6 py-20 sm:px-10 lg:px-16">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-wedding-rose/40 to-transparent" />
-        <div className="grid gap-12 lg:grid-cols-[0.45fr_1fr]">
-          <div>
-            <h2 className="text-3xl font-semibold text-white sm:text-4xl">A suite tailored for planners who obsess over detail.</h2>
-            <p className="mt-4 text-base text-slate-200">
-              The Special Wedding unites every workflow—from first guest upload to final thank-you—in a harmonized, mobile-first interface.
-            </p>
-            <div className="mt-8 space-y-6">
-              {suites.map((suite) => (
-                <div key={suite.title} className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
-                  <p className="text-xs uppercase tracking-[0.3em] text-wedding-rose">{suite.title}</p>
-                  <h3 className="mt-3 text-lg font-semibold text-white">{suite.description}</h3>
-                  <p className="mt-3 text-sm text-slate-200">{suite.stat}</p>
-                </div>
-              ))}
-              <div className="rounded-3xl border border-wedding-rose/40 bg-wedding-rose/15 p-6 backdrop-blur-xl">
-                <p className="text-xs uppercase tracking-[0.3em] text-wedding-rose">On the horizon</p>
-                <h3 className="mt-3 text-lg font-semibold text-white">Messaging studio</h3>
-                <p className="mt-3 text-sm text-slate-200">
-                  A dedicated dashboard for planner, couple, and vendor conversations with searchable history, shared assets, and hooks into payments, contracts, and budgets. Joining the platform soon.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {features.map((feature) => (
-              <div
-                key={feature.title}
-                className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 transition hover:border-wedding-rose/60 hover:bg-wedding-rose/10"
-              >
-                <div className="flex items-center justify-between text-sm text-slate-200">
-                  <div className="flex items-center gap-2 text-wedding-rose">
-                    <feature.icon className="h-6 w-6" aria-hidden="true" />
-                    <span className="text-xs uppercase tracking-[0.3em] text-wedding-rose/80">{feature.category}</span>
-                  </div>
-                  <span className="text-xs uppercase tracking-[0.3em] text-slate-400 group-hover:text-wedding-rose/80">Included</span>
-                </div>
-                <h3 className="mt-4 text-lg font-semibold text-white">{feature.title}</h3>
-                <p className="mt-3 text-sm text-slate-200">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ── FEATURE SHOWCASE (images + features in one section) ── */}
+      <FeatureShowcase isClone={isClone} />
 
-      {/* ── bridge: Features → Workflow ── */}
-      <SectionBridge text="See it in motion" />
-
-      {/* ── WORKFLOW ─────────────────────────────────────── */}
-      <section className="relative bg-slate-900/60">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <div className="mx-auto max-w-6xl px-6 py-20 sm:px-10 lg:px-12">
-          <div className="text-center">
-            <h2 className="text-3xl font-semibold text-white sm:text-4xl">From planning to celebration, choreographed in three acts.</h2>
-            <p className="mt-4 text-base text-slate-200">
-              Guide couples and vendors through a curated journey that keeps everyone aligned and inspired.
-            </p>
-          </div>
-          <div className="mt-12 grid gap-8 lg:grid-cols-3">
-            {workflow.map((stage, idx) => (
-              <div key={stage.title} className="relative rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
-                <div className="absolute -top-8 left-8 h-14 w-14 rounded-full bg-wedding-rose/30 backdrop-blur">
-                  <div className="flex h-full items-center justify-center text-lg font-semibold text-white">0{idx + 1}</div>
-                </div>
-                <p className="text-xs uppercase tracking-[0.3em] text-wedding-rose">{stage.subtitle}</p>
-                <h3 className="mt-4 text-xl font-semibold text-white">{stage.title}</h3>
-                <ul className="mt-5 space-y-3 text-sm text-slate-200">
-                  {stage.bullets.map((item) => (
-                    <li key={item} className="flex gap-3">
-                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-wedding-rose" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── bridge: Workflow → Metrics ── */}
-      <SectionBridge text="Measured results" />
-
-      {/* ── METRICS & TESTIMONIALS ──────────────────────── */}
-      <section className="relative mx-auto max-w-7xl px-6 py-20 sm:px-10 lg:px-16">
-        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[2.5rem] border border-white/10 bg-white/5 p-10 backdrop-blur-xl">
-            <h3 className="text-2xl font-semibold text-white">Operational clarity you can feel.</h3>
-            <p className="mt-3 text-sm text-slate-200">
-              Live dashboards surface RSVP velocity, seating readiness, task completion, and check-in momentum across every wedding under your care.
-            </p>
-            <div className="mt-8 grid gap-5 sm:grid-cols-2">
-              {metrics.map((metric) => (
-                <div key={metric.label} className="rounded-3xl border border-white/10 bg-white/10 p-6 text-center text-slate-200">
-                  <p className="text-3xl font-semibold text-white">{metric.value}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.3em] text-slate-400">{metric.label}</p>
-                  <p className="mt-2 text-[11px] text-slate-300">{metric.subtext}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-6">
-            {testimonials.map((testimonial) => (
-              <blockquote key={testimonial.name} className="rounded-[2rem] border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
-                <p className="text-lg text-white">&ldquo;{testimonial.quote}&rdquo;</p>
-                <p className="mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-wedding-rose">{testimonial.name}</p>
-                <p className="mt-1 text-[11px] uppercase tracking-[0.4em] text-slate-300">{testimonial.role}</p>
-              </blockquote>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── bridge: Metrics → Pricing ── */}
+      {/* ── bridge: Features → Pricing ── */}
       <SectionBridge text="Find your fit" />
 
-      {/* ── PRICING ──────────────────────────────────────── */}
+      {/* ── PRICING (admin-configurable via API) ────────── */}
       <section id={isClone ? undefined : "pricing"} className="relative bg-gradient-to-b from-slate-900 via-[#101826] to-slate-950">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-wedding-rose/40 to-transparent" />
         <div className="relative mx-auto max-w-6xl px-6 py-20 sm:px-10 lg:px-12">
@@ -677,18 +568,33 @@ function LandingContent({
         </div>
       </section>
 
-      {/* ── bridge: Pricing → FAQ ── */}
+      {/* ── bridge: Pricing → Testimonials ── */}
+      <SectionBridge text="What planners say" />
+
+      {/* ── TESTIMONIALS (admin-configurable) ── */}
+      {testimonials.length > 0 && (
+        <section className="relative mx-auto max-w-5xl px-6 py-16 sm:px-10">
+          <div className="grid gap-6 md:grid-cols-2">
+            {testimonials.map((t) => (
+              <blockquote key={t.name} className="rounded-[2rem] border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
+                <p className="text-lg text-white">&ldquo;{t.quote}&rdquo;</p>
+                <p className="mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-wedding-rose">{t.name}</p>
+                <p className="mt-1 text-[11px] uppercase tracking-[0.4em] text-slate-300">{t.role}</p>
+              </blockquote>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── bridge: Testimonials → FAQ ── */}
       <SectionBridge text="Still exploring?" />
 
-      {/* ── FAQ ──────────────────────────────────────────── */}
-      <section className="relative mx-auto max-w-5xl px-6 py-20 sm:px-10">
+      {/* ── FAQ (hardcoded for speed) ── */}
+      <section className="relative mx-auto max-w-5xl px-6 py-16 sm:px-10">
         <div className="text-center">
           <h2 className="text-3xl font-semibold text-white sm:text-4xl">Frequently asked questions</h2>
-          <p className="mt-4 text-base text-slate-200">
-            Everything you need to know about working with The Special Wedding.
-          </p>
         </div>
-        <dl className="mt-10 space-y-6">
+        <dl className="mt-10 space-y-4">
           {faqs.map((faq) => (
             <div key={faq.question} className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
               <dt className="text-lg font-semibold text-white">{faq.question}</dt>
@@ -698,18 +604,15 @@ function LandingContent({
         </dl>
       </section>
 
-      {/* ── bridge: FAQ → CTA ── */}
-      <SectionBridge text="Ready when you are" />
-
-      {/* ── CTA ──────────────────────────────────────────── */}
+      {/* ── CTA ── */}
       <section id={isClone ? undefined : "cta"} className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-wedding-navy to-slate-950">
         <div className="absolute inset-0 opacity-60" style={{ background: "radial-gradient(circle at 50% 0%, rgba(212,165,165,0.35), transparent 65%)" }} />
         <div className="relative mx-auto max-w-4xl px-6 py-24 text-center sm:px-10">
           <h2 className="text-4xl font-semibold text-white sm:text-5xl">
-            Give every celebration the spotlight it deserves.
+            Stop stitching tools together. Start planning weddings.
           </h2>
           <p className="mt-6 text-base text-slate-200">
-            Start with a free trial, or let us walk you through it.
+            Join planners who replaced 8+ subscriptions with one platform.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             {!isClone ? (
@@ -740,7 +643,7 @@ function LandingContent({
         </div>
       </section>
 
-      {/* ── MINIMAL FOOTER (bridges CTA → cloned Hero) ── */}
+      {/* ── Footer ── */}
       <footer className="bg-slate-950">
         <div className="mx-auto max-w-6xl px-6 py-6 text-center">
           <p className="text-xs text-slate-500">
@@ -761,8 +664,21 @@ export default function HomePage() {
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
   const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([
+    {
+      quote: "The Special Wedding replaced five subscriptions overnight. Every guest touchpoint feels intentional now.",
+      name: "Maya Glenn",
+      role: "Director of Events, Aurora Collective",
+    },
+    {
+      quote: "Check-in lines disappeared. The live dashboards let us choreograph the day like a performance instead of fighting fires.",
+      name: "Elias Romero",
+      role: "Lead Coordinator, Harbor & Bloom",
+    },
+  ]);
 
-  // Fetch subscription plans from API
+  // Fetch subscription plans from API (admin-configurable)
   useEffect(() => {
     const fetchPlans = async () => {
       try {
@@ -780,6 +696,9 @@ export default function HomePage() {
     fetchPlans();
   }, []);
 
+  // TODO: Fetch testimonials from API when endpoint exists
+  // useEffect(() => { fetchTestimonials(); }, []);
+
   const handlePricingCTAClick = (planId: string) => {
     if (planId === 'agency') {
       window.location.href = 'mailto:sales@thespecialwedding.com?subject=Agency Plan Inquiry';
@@ -789,7 +708,6 @@ export default function HomePage() {
     setIsSignupModalOpen(true);
   };
 
-  // Map API plans to PricingTier format and add Agency tier
   const pricing: PricingTier[] = React.useMemo(() => {
     if (plansLoading || apiPlans.length === 0) {
       return fallbackPricing;
@@ -815,12 +733,12 @@ export default function HomePage() {
           <LandingContent
             isClone={isClone}
             pricing={pricing}
+            testimonials={testimonials}
             onPricingClick={isClone ? () => {} : handlePricingCTAClick}
           />
         )}
       </InfiniteScrollWrapper>
 
-      {/* Signup Modal — rendered once, outside the scroll wrapper */}
       <SignupModal
         isOpen={isSignupModalOpen}
         onClose={() => setIsSignupModalOpen(false)}

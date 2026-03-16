@@ -407,7 +407,7 @@ export default function PlannerCalendarPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <PageHeader
         title="Planning Calendar"
         description="Manage your tasks and schedule"
