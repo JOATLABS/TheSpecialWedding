@@ -1,76 +1,126 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { X, Phone, Mail, Globe, MapPin, Star, ExternalLink } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Phone, Mail, Globe, MapPin, Star, ExternalLink, Eye, EyeOff, HelpCircle, ChevronDown, ChevronUp, Heart, MessageSquare, FileText } from 'lucide-react';
 import { SponsoredVendor, recordAdEvent, type AdEventType } from '@/services/advertisingApi';
 import { VendorProfile } from '@/services/vendorManagementApi';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useToast } from '@/hooks/useToast';
 
 interface SponsoredVendorDetailsDrawerProps {
+  vendor: SponsoredVendor | null;
   isOpen: boolean;
   onClose: () => void;
-  sponsoredVendor: SponsoredVendor | null;
+  onRecordEvent: (eventType: string, sponsoredVendorId: string, vendorProfileId: string) => void;
   vendorProfile?: VendorProfile;
+  onAddToWedding?: (vendorProfileId: string) => void;
+  onRequestQuote?: (vendorProfileId: string) => void;
+  onMessage?: (vendorProfileId: string) => void;
+  onHideVendor?: (vendorProfileId: string) => void;
   onContactClick?: (vendorProfileId: string) => void;
 }
 
 export function SponsoredVendorDetailsDrawer({
+  vendor,
   isOpen,
   onClose,
-  sponsoredVendor,
+  onRecordEvent,
   vendorProfile,
+  onAddToWedding,
+  onRequestQuote,
+  onMessage,
+  onHideVendor,
   onContactClick,
 }: SponsoredVendorDetailsDrawerProps) {
   const { token } = useAdmin();
+  const { showToast } = useToast();
+  const [expandWhySection, setExpandWhySection] = useState(false);
 
   // Record detail_view event on open
   useEffect(() => {
-    if (isOpen && sponsoredVendor && token) {
+    if (isOpen && vendor && token) {
       recordAdEvent(token, {
-        sponsored_vendor_id: sponsoredVendor._id,
-        vendor_profile_id: sponsoredVendor.vendor_profile_id,
-        event_type: 'detail_view',
-        placement: sponsoredVendor.placement,
+        sponsored_vendor_id: vendor._id,
+        vendor_profile_id: vendor.vendor_profile_id,
+        event_type: 'vendor_profile_view',
+        placement: vendor.placement,
       }).catch((err) => console.error('Failed to record detail_view event:', err));
     }
-  }, [isOpen, sponsoredVendor, token]);
+  }, [isOpen, vendor, token]);
 
-  const handleContactClick = async () => {
-    if (!sponsoredVendor || !token) return;
+  const handleAddToWedding = async () => {
+    if (!vendor || !token) return;
+
+    // Record assignment event
+    await recordAdEvent(token, {
+      sponsored_vendor_id: vendor._id,
+      vendor_profile_id: vendor.vendor_profile_id,
+      event_type: 'vendor_added_to_wedding',
+      placement: vendor.placement,
+    }).catch((err) => console.error('Failed to record assignment event:', err));
+
+    if (onAddToWedding) {
+      onAddToWedding(vendor.vendor_profile_id);
+    }
+
+    showToast('Vendor added to your wedding!', 'success');
+  };
+
+  const handleRequestQuote = async () => {
+    if (!vendor || !token) return;
 
     // Record contact_click event
     await recordAdEvent(token, {
-      sponsored_vendor_id: sponsoredVendor._id,
-      vendor_profile_id: sponsoredVendor.vendor_profile_id,
+      sponsored_vendor_id: vendor._id,
+      vendor_profile_id: vendor.vendor_profile_id,
       event_type: 'contact_click',
-      placement: sponsoredVendor.placement,
+      placement: vendor.placement,
     }).catch((err) => console.error('Failed to record contact_click event:', err));
 
-    if (onContactClick) {
-      onContactClick(sponsoredVendor.vendor_profile_id);
-    }
-
-    // Navigate to contact
-    if (vendorProfile?.website) {
-      window.open(vendorProfile.website, '_blank');
-    } else if (vendorProfile?.email) {
-      window.location.href = `mailto:${vendorProfile.email}`;
+    if (onRequestQuote) {
+      onRequestQuote(vendor.vendor_profile_id);
     }
   };
 
-  const handleDismiss = async () => {
-    if (sponsoredVendor && token) {
-      await recordAdEvent(token, {
-        sponsored_vendor_id: sponsoredVendor._id,
-        vendor_profile_id: sponsoredVendor.vendor_profile_id,
-        event_type: 'dismiss',
-        placement: sponsoredVendor.placement,
-      }).catch((err) => console.error('Failed to record dismiss event:', err));
+  const handleMessage = async () => {
+    if (!vendor || !token) return;
+
+    // Record contact_click event
+    await recordAdEvent(token, {
+      sponsored_vendor_id: vendor._id,
+      vendor_profile_id: vendor.vendor_profile_id,
+      event_type: 'contact_click',
+      placement: vendor.placement,
+    }).catch((err) => console.error('Failed to record contact_click event:', err));
+
+    if (onMessage) {
+      onMessage(vendor.vendor_profile_id);
     }
+  };
+
+  const handleHideVendor = async () => {
+    if (!vendor || !token) return;
+
+    // Record dismiss event
+    await recordAdEvent(token, {
+      sponsored_vendor_id: vendor._id,
+      vendor_profile_id: vendor.vendor_profile_id,
+      event_type: 'dismiss',
+      placement: vendor.placement,
+    }).catch((err) => console.error('Failed to record dismiss event:', err));
+
+    if (onHideVendor) {
+      onHideVendor(vendor.vendor_profile_id);
+    }
+
     onClose();
   };
 
-  if (!isOpen || !sponsoredVendor || !vendorProfile) {
+  const handleClose = async () => {
+    onClose();
+  };
+
+  if (!isOpen || !vendor || !vendorProfile) {
     return null;
   }
 
@@ -81,7 +131,7 @@ export function SponsoredVendorDetailsDrawer({
         className={`fixed inset-0 bg-black/30 transition-opacity z-40 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
-        onClick={handleDismiss}
+        onClick={handleClose}
       />
 
       {/* Drawer */}
@@ -97,7 +147,7 @@ export function SponsoredVendorDetailsDrawer({
             <span className="text-xs text-wedding-sage font-medium">Sponsored</span>
           </div>
           <button
-            onClick={handleDismiss}
+            onClick={handleClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             aria-label="Close drawer"
           >
@@ -136,16 +186,16 @@ export function SponsoredVendorDetailsDrawer({
           </div>
 
           {/* Sponsored Headline & Description */}
-          {sponsoredVendor.headline && (
+          {vendor.headline && (
             <div>
               <h4 className="font-semibold text-wedding-navy mb-1">Featured Offer</h4>
-              <p className="text-sm font-medium text-wedding-sage">{sponsoredVendor.headline}</p>
+              <p className="text-sm font-medium text-wedding-sage">{vendor.headline}</p>
             </div>
           )}
 
-          {sponsoredVendor.description && (
+          {vendor.description && (
             <div>
-              <p className="text-sm text-gray-700">{sponsoredVendor.description}</p>
+              <p className="text-sm text-gray-700">{vendor.description}</p>
             </div>
           )}
 
@@ -260,6 +310,39 @@ export function SponsoredVendorDetailsDrawer({
             </div>
           )}
 
+          {/* Why am I seeing this? Section */}
+          <div className="pt-2 border-t border-gray-200">
+            <button
+              onClick={() => setExpandWhySection(!expandWhySection)}
+              className="w-full flex items-center justify-between py-2 text-sm text-wedding-navy hover:text-wedding-navy/80 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <HelpCircle size={16} className="text-wedding-sage" />
+                <span className="font-medium">Why am I seeing this?</span>
+              </div>
+              {expandWhySection ? (
+                <ChevronUp size={16} className="text-gray-400" />
+              ) : (
+                <ChevronDown size={16} className="text-gray-400" />
+              )}
+            </button>
+            {expandWhySection && (
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                This vendor is sponsored and matches your wedding category and location.
+              </p>
+            )}
+          </div>
+
+          {/* Hide this vendor */}
+          <div className="flex justify-end pt-2">
+            <button
+              onClick={handleHideVendor}
+              className="text-xs text-gray-500 hover:text-gray-700 transition-colors underline"
+            >
+              Hide this vendor
+            </button>
+          </div>
+
           {/* Tags */}
           {vendorProfile.tags && vendorProfile.tags.length > 0 && (
             <div className="pt-2 border-t border-gray-200">
@@ -324,20 +407,49 @@ export function SponsoredVendorDetailsDrawer({
           )}
         </div>
 
-        {/* Footer - Contact Button */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 space-y-2">
+        {/* Footer - Action Buttons */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 space-y-3">
+          {/* Primary CTA: Add to wedding */}
           <button
-            onClick={handleContactClick}
-            className="w-full px-4 py-3 bg-wedding-sage hover:bg-wedding-sage/90 text-white font-semibold rounded-lg transition-colors"
+            onClick={handleAddToWedding}
+            className="w-full px-4 py-3 bg-wedding-rose hover:bg-wedding-rose/90 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
           >
-            Contact Vendor
+            <Heart size={18} />
+            Add to wedding
           </button>
-          <button
-            onClick={handleDismiss}
-            className="w-full px-4 py-2 text-wedding-navy hover:bg-gray-100 font-medium rounded-lg transition-colors"
-          >
-            Dismiss
-          </button>
+
+          {/* Secondary CTAs */}
+          <div className="space-y-2">
+            <button
+              onClick={handleRequestQuote}
+              className="w-full px-4 py-2.5 border-2 border-wedding-sage text-wedding-sage hover:bg-wedding-sage/10 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <FileText size={16} />
+              Request quote
+            </button>
+            <button
+              onClick={handleMessage}
+              className="w-full px-4 py-2.5 border-2 border-wedding-sage text-wedding-sage hover:bg-wedding-sage/10 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <MessageSquare size={16} />
+              Message vendor
+            </button>
+          </div>
+
+          {/* View Portfolio Button */}
+          {vendorProfile.portfolio_urls && vendorProfile.portfolio_urls.length > 0 && (
+            <button
+              onClick={() => {
+                if (vendorProfile.portfolio_urls && vendorProfile.portfolio_urls[0]) {
+                  window.open(vendorProfile.portfolio_urls[0], '_blank');
+                }
+              }}
+              className="w-full px-4 py-2.5 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <Eye size={16} />
+              View portfolio
+            </button>
+          )}
         </div>
       </div>
     </>

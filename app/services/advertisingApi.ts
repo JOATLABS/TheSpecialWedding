@@ -12,8 +12,8 @@ const API_BASE = getApiBaseUrl();
 // TYPES
 // =============================================================================
 
-export type AdPlacement = 'vendor_rail' | 'vendor_detail' | 'milestone_module' | 'directory_boost';
-export type AdEventType = 'impression' | 'click' | 'dismiss' | 'hover' | 'detail_view' | 'contact_click' | 'assignment';
+export type AdPlacement = 'vendor_rail' | 'vendor_detail' | 'milestone_module' | 'directory_boost' | 'dashboard_rail';
+export type AdEventType = 'impression' | 'impression_served' | 'viewable_impression' | 'click' | 'dismiss' | 'hover' | 'detail_view' | 'contact_click' | 'assignment' | 'vendor_profile_view' | 'vendor_added_to_wedding' | 'lead_created' | 'vendor_invited' | 'lead_accepted' | 'vendor_responded';
 
 export interface SponsoredVendor {
   _id: string;
@@ -83,6 +83,55 @@ export interface CreateSponsoredVendorRequest {
   target_categories?: string[];
   target_wedding_stages?: string[];
   metadata?: Record<string, any>;
+}
+
+export type LeadStatus = 'pending' | 'contacted' | 'responded' | 'converted' | 'closed';
+export type AdLeadType = 'quote_request' | 'message' | 'add_to_wedding' | 'vendor_invite';
+
+export interface AdLead {
+  _id: string;
+  sponsored_vendor_id: string;
+  vendor_profile_id: string;
+  planner_id: string;
+  wedding_id?: string;
+  lead_type: AdLeadType;
+  status: LeadStatus;
+  click_id?: string;
+  placement: AdPlacement;
+  message?: string;
+  quote_amount?: number;
+  responded_at?: string;
+  converted_at?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAdLeadRequest {
+  sponsored_vendor_id: string;
+  vendor_profile_id: string;
+  wedding_id?: string;
+  lead_type: AdLeadType;
+  message?: string;
+  quote_amount?: number;
+  click_id?: string;
+  placement?: AdPlacement;
+  metadata?: Record<string, any>;
+}
+
+export interface UpdateAdLeadStatusRequest {
+  status: LeadStatus;
+  responded_at?: string;
+  converted_at?: string;
+}
+
+export interface AdPreferences {
+  _id: string;
+  planner_id: string;
+  hidden_vendors: string[];
+  hidden_categories: string[];
+  reduced_frequency: boolean;
+  updated_at: string;
 }
 
 // =============================================================================
@@ -255,6 +304,164 @@ export async function getAdStats(
 }
 
 // =============================================================================
+// AD LEADS API
+// =============================================================================
+
+export async function createAdLead(
+  token: string,
+  data: CreateAdLeadRequest
+): Promise<AdLead> {
+  const response = await fetch(`${API_BASE}/admin/ads/leads`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to create lead');
+  }
+
+  return response.json();
+}
+
+export async function getAdLeads(
+  token: string,
+  filters?: {
+    status?: LeadStatus;
+    vendor_id?: string;
+    wedding_id?: string;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<AdLead[]> {
+  const queryParams = new URLSearchParams();
+  if (filters?.status) queryParams.append('status', filters.status);
+  if (filters?.vendor_id) queryParams.append('vendor_id', filters.vendor_id);
+  if (filters?.wedding_id) queryParams.append('wedding_id', filters.wedding_id);
+  if (filters?.limit) queryParams.append('limit', String(filters.limit));
+  if (filters?.offset) queryParams.append('skip', String(filters.offset));
+
+  const url = `${API_BASE}/admin/ads/leads?${queryParams.toString()}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to fetch leads');
+  }
+
+  return response.json();
+}
+
+export async function updateAdLeadStatus(
+  token: string,
+  leadId: string,
+  update: UpdateAdLeadStatusRequest
+): Promise<AdLead> {
+  const response = await fetch(`${API_BASE}/admin/ads/leads/${leadId}/status`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(update),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to update lead');
+  }
+
+  return response.json();
+}
+
+// =============================================================================
+// AD PREFERENCES API
+// =============================================================================
+
+export async function getAdPreferences(token: string): Promise<AdPreferences> {
+  const response = await fetch(`${API_BASE}/admin/ads/preferences`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to fetch ad preferences');
+  }
+
+  return response.json();
+}
+
+export async function hideAdVendor(token: string, vendorId: string): Promise<AdPreferences> {
+  const response = await fetch(`${API_BASE}/admin/ads/preferences/hide-vendor?vendor_id=${encodeURIComponent(vendorId)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to hide vendor');
+  }
+
+  return response.json();
+}
+
+export async function unhideAdVendor(token: string, vendorId: string): Promise<AdPreferences> {
+  const response = await fetch(`${API_BASE}/admin/ads/preferences/unhide-vendor/${encodeURIComponent(vendorId)}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to unhide vendor');
+  }
+
+  return response.json();
+}
+
+export async function hideAdCategory(token: string, category: string): Promise<AdPreferences> {
+  const response = await fetch(`${API_BASE}/admin/ads/preferences/hide-category?category=${encodeURIComponent(category)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to hide category');
+  }
+
+  return response.json();
+}
+
+export async function toggleReducedFrequency(token: string, reduced: boolean): Promise<AdPreferences> {
+  const response = await fetch(`${API_BASE}/admin/ads/preferences/reduce-frequency?reduce=${reduced}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to update frequency settings');
+  }
+
+  return response.json();
+}
+
+// =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 
@@ -264,6 +471,7 @@ export function getAdPlacementLabel(placement: AdPlacement): string {
     vendor_detail: 'Vendor Detail',
     milestone_module: 'Milestone Module',
     directory_boost: 'Directory Boost',
+    dashboard_rail: 'Dashboard Rail',
   };
   return labels[placement] || placement;
 }
@@ -271,12 +479,20 @@ export function getAdPlacementLabel(placement: AdPlacement): string {
 export function getEventTypeLabel(eventType: AdEventType): string {
   const labels: Record<AdEventType, string> = {
     impression: 'Impression',
+    impression_served: 'Impression Served',
+    viewable_impression: 'Viewable Impression',
     click: 'Click',
     dismiss: 'Dismiss',
     hover: 'Hover',
     detail_view: 'Detail View',
     contact_click: 'Contact Click',
     assignment: 'Assignment',
+    vendor_profile_view: 'Vendor Profile View',
+    vendor_added_to_wedding: 'Vendor Added to Wedding',
+    lead_created: 'Lead Created',
+    vendor_invited: 'Vendor Invited',
+    lead_accepted: 'Lead Accepted',
+    vendor_responded: 'Vendor Responded',
   };
   return labels[eventType] || eventType;
 }

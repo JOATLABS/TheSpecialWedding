@@ -30,13 +30,18 @@ class AdCampaignStatus(str, Enum):
 
 class AdEventType(str, Enum):
     """Types of ad events that can be tracked."""
-    IMPRESSION = "impression"  # Ad was displayed
+    IMPRESSION_SERVED = "impression_served"  # Ad was displayed
+    IMPRESSION_VIEWABLE = "impression_viewable"  # Ad was viewable (IntersectionObserver-based)
     CLICK = "click"  # User clicked on ad
+    VENDOR_PROFILE_VIEW = "vendor_profile_view"  # User viewed vendor profile/details
+    VENDOR_ADDED_TO_WEDDING = "vendor_added_to_wedding"  # Vendor was added to wedding
+    LEAD_CREATED = "lead_created"  # Lead was created from ad
+    VENDOR_INVITED = "vendor_invited"  # Vendor was invited to wedding
+    LEAD_ACCEPTED = "lead_accepted"  # Lead was accepted/responded
+    VENDOR_RESPONDED = "vendor_responded"  # Vendor responded to lead
     DISMISS = "dismiss"  # User dismissed ad
     HOVER = "hover"  # User hovered over ad
-    DETAIL_VIEW = "detail_view"  # User viewed vendor details
     CONTACT_CLICK = "contact_click"  # User clicked contact button
-    ASSIGNMENT = "assignment"  # Vendor was assigned to wedding
 
 
 class AdPlacement(str, Enum):
@@ -232,6 +237,146 @@ class AdEvent(MongoModel):
 
 
 # =============================================================================
+# AD LEAD MODELS
+# =============================================================================
+
+class AdLeadStatus(str, Enum):
+    """Status of an ad lead."""
+    PENDING = "pending"
+    CONTACTED = "contacted"
+    RESPONDED = "responded"
+    CONVERTED = "converted"
+    CLOSED = "closed"
+
+
+class AdLeadType(str, Enum):
+    """Type of lead interaction."""
+    QUOTE_REQUEST = "quote_request"
+    MESSAGE = "message"
+    ADD_TO_WEDDING = "add_to_wedding"
+    VENDOR_INVITE = "vendor_invite"
+
+
+class AdLead(MongoModel):
+    """
+    Tracks planner-to-vendor interactions originating from sponsored ads.
+
+    Records leads created from ad clicks, including quote requests, messages,
+    and vendor invitations from sponsored placements.
+    """
+    # Core identifiers
+    sponsored_vendor_id: str = Field(
+        ...,
+        min_length=24,
+        max_length=24,
+        description="Reference to SponsoredVendor._id"
+    )
+    vendor_profile_id: str = Field(
+        ...,
+        min_length=24,
+        max_length=24,
+        description="Reference to VendorProfile._id"
+    )
+    planner_id: str = Field(
+        ...,
+        max_length=254,
+        description="Email of planner who created the lead"
+    )
+    wedding_id: Optional[str] = Field(
+        None,
+        min_length=24,
+        max_length=24,
+        description="Reference to Wedding._id"
+    )
+
+    # Lead details
+    lead_type: AdLeadType = Field(
+        ...,
+        description="Type of lead interaction"
+    )
+    status: AdLeadStatus = Field(
+        default=AdLeadStatus.PENDING,
+        description="Current status of the lead"
+    )
+
+    # Attribution
+    click_id: Optional[str] = Field(
+        None,
+        description="UUID linking to originating ad click"
+    )
+    placement: AdPlacement = Field(
+        default=AdPlacement.VENDOR_RAIL,
+        description="Ad placement where lead originated"
+    )
+
+    # Lead content
+    message: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Message or inquiry from planner"
+    )
+    quote_amount: Optional[float] = Field(
+        None,
+        ge=0,
+        description="Quote amount if lead_type is QUOTE_REQUEST"
+    )
+
+    # Timestamps
+    responded_at: Optional[datetime] = Field(
+        None,
+        description="When vendor responded to the lead"
+    )
+    converted_at: Optional[datetime] = Field(
+        None,
+        description="When lead was converted (booking made)"
+    )
+
+    # Metadata
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional lead context and attributes"
+    )
+
+
+# =============================================================================
+# PLANNER AD PREFERENCE MODEL
+# =============================================================================
+
+class PlannerAdPreference(MongoModel):
+    """
+    Stores planner preferences for ad display and interactions.
+
+    Allows planners to hide vendors, categories, and reduce ad frequency.
+    """
+    # Core identifier
+    planner_id: str = Field(
+        ...,
+        max_length=254,
+        description="Email of the planner"
+    )
+
+    # Preferences
+    hidden_vendor_ids: List[str] = Field(
+        default_factory=list,
+        description="List of SponsoredVendor IDs to hide from this planner"
+    )
+    hidden_categories: List[str] = Field(
+        default_factory=list,
+        description="List of VendorCategory values to hide"
+    )
+    reduced_frequency: bool = Field(
+        default=False,
+        description="Whether to show fewer ads to this planner"
+    )
+
+    # Per-wedding overrides
+    wedding_overrides: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Wedding-specific preference overrides (keyed by wedding_id)"
+    )
+
+
+# =============================================================================
 # ADVERTISING FEATURE FLAG MODEL
 # =============================================================================
 
@@ -290,6 +435,85 @@ class AdvertisingFeatureFlag(MongoModel):
 
 
 # =============================================================================
+# PRE-AGGREGATED DAILY ROLLUP MODEL
+# =============================================================================
+
+class AdStatsDaily(MongoModel):
+    """
+    Pre-aggregated daily rollup of ad events per vendor per placement.
+
+    Computed nightly via aggregation pipeline from ad_events.
+    Dashboard queries read from this collection instead of scanning
+    millions of raw events — response time drops from seconds to milliseconds.
+
+    Unique constraint: (date, sponsored_vendor_id, placement)
+    """
+    # Partition key: UTC midnight of the day
+    date: datetime = Field(
+        ...,
+        description="Day boundary (UTC midnight) — partition key"
+    )
+
+    # Dimension keys
+    sponsored_vendor_id: str = Field(
+        ...,
+        min_length=24,
+        max_length=24,
+        description="Reference to SponsoredVendor._id"
+    )
+    vendor_profile_id: str = Field(
+        ...,
+        min_length=24,
+        max_length=24,
+        description="Reference to VendorProfile._id (denormalized for joins)"
+    )
+    placement: str = Field(
+        ...,
+        description="Ad placement where events occurred"
+    )
+
+    # Event counts — keyed by AdEventType value
+    counts: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Event counts per type: {impression_served: N, click: N, lead_created: N, ...}"
+    )
+
+    # Lead breakdown
+    leads_by_type: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Lead counts by type: {quote_request: N, message: N, ...}"
+    )
+    leads_by_status: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Lead counts by status: {pending: N, contacted: N, ...}"
+    )
+
+    # Unique reach
+    unique_planners: int = Field(
+        default=0,
+        ge=0,
+        description="Distinct planner count for the day"
+    )
+    unique_weddings: int = Field(
+        default=0,
+        ge=0,
+        description="Distinct wedding context count"
+    )
+
+    # Hourly distribution (for heatmap)
+    hourly_clicks: List[int] = Field(
+        default_factory=lambda: [0] * 24,
+        description="Click distribution by hour (index 0-23)"
+    )
+
+    # Pre-computed metrics
+    ctr: float = Field(
+        default=0.0,
+        description="Pre-computed click-through rate for the day"
+    )
+
+
+# =============================================================================
 # REQUEST/RESPONSE MODELS
 # =============================================================================
 
@@ -343,3 +567,57 @@ class AdStatsResponse(MongoModel):
     ctr: float = Field(default=0.0)
     period_days: int = Field(default=7)
     recent_events_count: int = Field(default=0)
+
+
+class CreateAdLeadRequest(MongoModel):
+    """Request to create a new ad lead."""
+    sponsored_vendor_id: str = Field(..., min_length=24, max_length=24)
+    vendor_profile_id: str = Field(..., min_length=24, max_length=24)
+    wedding_id: Optional[str] = Field(None, min_length=24, max_length=24)
+    lead_type: AdLeadType = Field(...)
+    message: Optional[str] = Field(None, max_length=2000)
+    quote_amount: Optional[float] = Field(None, ge=0)
+    click_id: Optional[str] = Field(None)
+    placement: AdPlacement = Field(default=AdPlacement.VENDOR_RAIL)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AdLeadResponse(MongoModel):
+    """Response model for ad lead details."""
+    id: Optional[str] = Field(None, alias="_id")
+    sponsored_vendor_id: str = Field(...)
+    vendor_profile_id: str = Field(...)
+    planner_id: str = Field(...)
+    wedding_id: Optional[str] = Field(None)
+    lead_type: AdLeadType = Field(...)
+    status: AdLeadStatus = Field(...)
+    click_id: Optional[str] = Field(None)
+    placement: AdPlacement = Field(...)
+    message: Optional[str] = Field(None)
+    quote_amount: Optional[float] = Field(None)
+    responded_at: Optional[datetime] = Field(None)
+    converted_at: Optional[datetime] = Field(None)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[datetime] = Field(None)
+    updated_at: Optional[datetime] = Field(None)
+
+    class ConfigDict:
+        populate_by_name = True
+
+
+class UpdateAdLeadStatusRequest(MongoModel):
+    """Request to update ad lead status."""
+    status: AdLeadStatus = Field(...)
+    responded_at: Optional[datetime] = Field(None)
+    converted_at: Optional[datetime] = Field(None)
+
+
+class PlannerAdPreferenceResponse(MongoModel):
+    """Response model for planner ad preferences."""
+    planner_id: str = Field(...)
+    hidden_vendor_ids: List[str] = Field(default_factory=list)
+    hidden_categories: List[str] = Field(default_factory=list)
+    reduced_frequency: bool = Field(default=False)
+    wedding_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    created_at: Optional[datetime] = Field(None)
+    updated_at: Optional[datetime] = Field(None)

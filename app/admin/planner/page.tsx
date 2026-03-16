@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import OnboardingModal from '../components/OnboardingModal';
+import { SponsoredVendorsRail } from '../vendors/components/SponsoredVendorsRail';
 
 interface Wedding {
  id: string;
@@ -228,6 +229,8 @@ export default function WeddingPlannerDashboard() {
  }
 
  return (
+ <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+ <div className="lg:col-span-3">
  <div className="space-y-6">
  <PageHeader
  title={`Welcome back, ${userProfile?.user_data?.company_name || userProfile?.email}!`}
@@ -707,6 +710,15 @@ export default function WeddingPlannerDashboard() {
         onClose={() => setIsOnboardingOpen(false)}
         onComplete={handleOnboardingComplete}
       />
+ </div>
+ </div>
+
+ {/* Right Sidebar - Sponsored Vendors */}
+ <div className="lg:col-span-1">
+ <div className="sticky top-6">
+ <SponsoredVendorsRail placement="dashboard_rail" />
+ </div>
+ </div>
  </div>
  );
 }

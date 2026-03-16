@@ -22,10 +22,18 @@ from app.models.advertising import (
     AdvertisingFeatureFlag,
     AdPlacement,
     AdEventType,
+    AdLead,
+    AdLeadStatus,
+    AdLeadType,
+    PlannerAdPreference,
     CreateSponsoredVendorRequest,
     UpdateSponsoredVendorRequest,
     RecordAdEventRequest,
     AdStatsResponse,
+    CreateAdLeadRequest,
+    AdLeadResponse,
+    UpdateAdLeadStatusRequest,
+    PlannerAdPreferenceResponse,
 )
 from app.models.vendor import VendorCategory
 
@@ -403,6 +411,331 @@ async def get_sponsored_vendor_stats(
     )
 
     return stats
+
+
+# =============================================================================
+# AD LEAD ENDPOINTS
+# =============================================================================
+
+@router.post(
+    "/leads",
+    response_model=dict,
+    summary="Create Ad Lead",
+    status_code=201
+)
+async def create_ad_lead(
+    request: CreateAdLeadRequest,
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Create a new ad lead from planner interest in a sponsored vendor.
+
+    Records when a planner expresses interest in a sponsored vendor through
+    a quote request, message, add-to-wedding, or vendor invite.
+
+    **Access:** Any authenticated user
+
+    **Request Body:**
+    - sponsored_vendor_id: Sponsored vendor ID (required)
+    - vendor_profile_id: Vendor profile ID (required)
+    - wedding_id: Wedding ID (optional)
+    - lead_type: Type of lead interaction (required)
+    - message: Planner message (optional, max 2000 chars)
+    - quote_amount: Quote amount for QUOTE_REQUEST type (optional)
+    - click_id: UUID linking to originating ad click (optional)
+    - placement: Ad placement (default: vendor_rail)
+    - metadata: Additional context (optional)
+    """
+    lead_data = request.model_dump(exclude_unset=True)
+    lead_data["planner_id"] = current_user.email
+
+    lead = await service.create_lead(data=lead_data)
+
+    logger.info(
+        f"Ad lead created by {current_user.email}: "
+        f"{lead['lead_type']} for vendor {lead['vendor_profile_id']}"
+    )
+
+    return lead
+
+
+@router.get(
+    "/leads",
+    response_model=List[dict],
+    summary="List Ad Leads"
+)
+async def list_ad_leads(
+    vendor_id: Optional[str] = Query(None, description="Filter by vendor ID"),
+    planner_id: Optional[str] = Query(None, description="Filter by planner email"),
+    status: Optional[str] = Query(None, description="Filter by lead status"),
+    lead_type: Optional[str] = Query(None, description="Filter by lead type"),
+    limit: int = Query(50, ge=1, le=500, description="Max results"),
+    skip: int = Query(0, ge=0, description="Skip results"),
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    List ad leads with optional filters.
+
+    Admins can view all leads. Planners can only view their own leads.
+    Vendors can view leads for their sponsored placements.
+
+    **Access:** Admin, Planner, or Vendor
+
+    **Query Parameters:**
+    - vendor_id: Filter by vendor profile ID
+    - planner_id: Filter by planner email
+    - status: Filter by lead status
+    - lead_type: Filter by lead type
+    - limit: Maximum results (1-500, default 50)
+    - skip: Skip N results for pagination
+    """
+    filters = {}
+
+    if vendor_id:
+        filters["vendor_profile_id"] = vendor_id
+
+    if planner_id and current_user.is_root_admin:
+        filters["planner_id"] = planner_id
+    elif not current_user.is_root_admin:
+        # Non-admins only see their own leads
+        filters["planner_id"] = current_user.email
+
+    if status:
+        filters["status"] = status
+
+    if lead_type:
+        filters["lead_type"] = lead_type
+
+    leads = await service.get_leads(
+        filters=filters,
+        limit=limit,
+        skip=skip
+    )
+
+    logger.debug(f"Listed {len(leads)} ad leads for {current_user.email}")
+
+    return leads
+
+
+@router.get(
+    "/leads/{lead_id}",
+    response_model=dict,
+    summary="Get Ad Lead Details"
+)
+async def get_ad_lead(
+    lead_id: str,
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get details of a specific ad lead.
+
+    **Access:** Admin, lead creator, or involved vendor
+
+    **Parameters:**
+    - lead_id: ID of the ad lead
+    """
+    lead = await service.get_lead(lead_id=lead_id)
+
+    # Authorization check
+    if not current_user.is_root_admin and lead.get("planner_id") != current_user.email:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to view this lead"
+        )
+
+    return lead
+
+
+@router.put(
+    "/leads/{lead_id}/status",
+    response_model=dict,
+    summary="Update Ad Lead Status"
+)
+async def update_ad_lead_status(
+    lead_id: str,
+    request: UpdateAdLeadStatusRequest,
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Update the status of an ad lead.
+
+    Vendors use this to mark leads as contacted, responded, or converted.
+
+    **Access:** Admin or involved vendor
+
+    **Parameters:**
+    - lead_id: ID of the ad lead
+
+    **Request Body:**
+    - status: New status (pending, contacted, responded, converted, closed)
+    - responded_at: When vendor responded (optional)
+    - converted_at: When lead was converted (optional)
+    """
+    status_data = request.model_dump(exclude_unset=True)
+
+    updated = await service.update_lead_status(
+        lead_id=lead_id,
+        status_data=status_data
+    )
+
+    logger.info(
+        f"Ad lead {lead_id} status updated to {status_data.get('status')} "
+        f"by {current_user.email}"
+    )
+
+    return updated
+
+
+# =============================================================================
+# PLANNER AD PREFERENCE ENDPOINTS
+# =============================================================================
+
+@router.get(
+    "/preferences",
+    response_model=dict,
+    summary="Get Planner Ad Preferences"
+)
+async def get_ad_preferences(
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get ad display preferences for the current planner.
+
+    Returns hidden vendors, hidden categories, and frequency settings.
+
+    **Access:** Any authenticated planner
+    """
+    prefs = await service.get_planner_preferences(planner_id=current_user.email)
+
+    return prefs
+
+
+@router.put(
+    "/preferences/hide-vendor",
+    response_model=dict,
+    summary="Hide Vendor from Planner"
+)
+async def hide_vendor_for_planner(
+    vendor_id: str = Query(..., description="Sponsored vendor ID to hide"),
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Hide a sponsored vendor from the current planner's ad feed.
+
+    **Access:** Any authenticated planner
+
+    **Query Parameters:**
+    - vendor_id: ID of the sponsored vendor to hide
+    """
+    updated = await service.hide_vendor(
+        planner_id=current_user.email,
+        vendor_id=vendor_id
+    )
+
+    logger.info(
+        f"Vendor {vendor_id} hidden for planner {current_user.email}"
+    )
+
+    return updated
+
+
+@router.put(
+    "/preferences/hide-category",
+    response_model=dict,
+    summary="Hide Category from Planner"
+)
+async def hide_category_for_planner(
+    category: str = Query(..., description="Vendor category to hide"),
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Hide a vendor category from the current planner's ad feed.
+
+    **Access:** Any authenticated planner
+
+    **Query Parameters:**
+    - category: VendorCategory value to hide
+    """
+    updated = await service.hide_category(
+        planner_id=current_user.email,
+        category=category
+    )
+
+    logger.info(
+        f"Category {category} hidden for planner {current_user.email}"
+    )
+
+    return updated
+
+
+@router.put(
+    "/preferences/reduce-frequency",
+    response_model=dict,
+    summary="Toggle Reduced Ad Frequency"
+)
+async def toggle_reduced_frequency(
+    reduce: bool = Query(..., description="Enable or disable reduced frequency"),
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Toggle reduced ad frequency for the current planner.
+
+    When enabled, fewer ads will be shown to the planner.
+
+    **Access:** Any authenticated planner
+
+    **Query Parameters:**
+    - reduce: Whether to enable reduced frequency
+    """
+    updated = await service.toggle_reduced_frequency(
+        planner_id=current_user.email,
+        reduced=reduce
+    )
+
+    logger.info(
+        f"Reduced frequency {'enabled' if reduce else 'disabled'} "
+        f"for planner {current_user.email}"
+    )
+
+    return updated
+
+
+@router.delete(
+    "/preferences/unhide-vendor/{vendor_id}",
+    response_model=dict,
+    summary="Unhide Vendor for Planner"
+)
+async def unhide_vendor_for_planner(
+    vendor_id: str,
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Unhide a previously hidden sponsored vendor for the current planner.
+
+    **Access:** Any authenticated planner
+
+    **Parameters:**
+    - vendor_id: ID of the sponsored vendor to unhide
+    """
+    updated = await service.unhide_vendor(
+        planner_id=current_user.email,
+        vendor_id=vendor_id
+    )
+
+    logger.info(
+        f"Vendor {vendor_id} unhidden for planner {current_user.email}"
+    )
+
+    return updated
 
 
 # =============================================================================
