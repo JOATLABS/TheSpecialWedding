@@ -6,6 +6,10 @@ interface InfiniteScrollWrapperProps {
   children: (isClone: boolean) => React.ReactNode;
   /** Called whenever the primary content height is measured (for parallax sync) */
   onPrimaryHeight?: (height: number) => void;
+  /** Shared ref that always holds the normalised (modulo'd) scroll position.
+   *  Written here on every scroll tick so that the parallax background layer
+   *  can read the *exact* same value — zero chance of a 1-frame desync. */
+  normalizedScrollRef?: React.MutableRefObject<number>;
 }
 
 /**
@@ -22,6 +26,7 @@ interface InfiniteScrollWrapperProps {
 export default function InfiniteScrollWrapper({
   children,
   onPrimaryHeight,
+  normalizedScrollRef,
 }: InfiniteScrollWrapperProps) {
   const primaryRef = useRef<HTMLDivElement>(null);
   const resetting = useRef(false);
@@ -71,6 +76,12 @@ export default function InfiniteScrollWrapper({
     const h = primaryRef.current.offsetHeight;
     if (h === 0) return;
 
+    // Always write the normalised scroll position so the parallax
+    // background reads the correct value on every single frame.
+    if (normalizedScrollRef) {
+      normalizedScrollRef.current = h > 0 ? window.scrollY % h : window.scrollY;
+    }
+
     if (window.scrollY >= h) {
       resetting.current = true;
 
@@ -82,13 +93,19 @@ export default function InfiniteScrollWrapper({
       // zero delay between the current frame and the repositioned frame.
       window.scrollTo({ top: target, behavior: "instant" as ScrollBehavior });
 
+      // Write normalised value again after reset so subsequent
+      // readers within the same frame get the correct position.
+      if (normalizedScrollRef) {
+        normalizedScrollRef.current = target;
+      }
+
       // Single rAF is sufficient — the browser will have
       // committed the new scroll offset by the next frame.
       requestAnimationFrame(() => {
         resetting.current = false;
       });
     }
-  }, []);
+  }, [normalizedScrollRef]);
 
   useEffect(() => {
     window.addEventListener("scroll", onScroll, { passive: true });

@@ -13,6 +13,11 @@ interface Modern3DBackgroundProps {
    *  parallax position matches at every loop point — eliminating
    *  the visible jump when InfiniteScrollWrapper resets. */
   loopHeight?: number;
+  /** Shared ref holding the already-normalised scroll position written
+   *  by InfiniteScrollWrapper on every scroll event.  When provided the
+   *  parallax rAF reads from this ref instead of window.scrollY, which
+   *  eliminates any possible 1-frame desync at the loop boundary. */
+  normalizedScrollRef?: React.RefObject<number>;
 }
 
 export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
@@ -20,6 +25,7 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
   fallbackImages = [],
   theme,
   loopHeight = 0,
+  normalizedScrollRef,
 }) => {
   const [viewportHeight, setViewportHeight] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -64,12 +70,18 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
       : 9999;
 
     const tick = () => {
-      let y = window.scrollY;
-
-      // Normalise scroll position to one loop cycle so the
-      // parallax offset is identical at position x and x + loopHeight.
-      if (loopHeight > 0) {
-        y = y % loopHeight;
+      // Prefer the shared normalised ref (written synchronously by
+      // InfiniteScrollWrapper on every scroll event) to avoid any
+      // 1-frame desync at the loop boundary.  Fall back to computing
+      // the modulo ourselves when the ref isn't wired up.
+      let y: number;
+      if (normalizedScrollRef && loopHeight > 0) {
+        y = normalizedScrollRef.current;
+      } else {
+        y = window.scrollY;
+        if (loopHeight > 0) {
+          y = y % loopHeight;
+        }
       }
 
       scrollRef.current = y;
@@ -87,7 +99,7 @@ export const Modern3DBackground: React.FC<Modern3DBackgroundProps> = ({
 
     rafId.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId.current);
-  }, [loopHeight, viewportHeight, prefersReducedMotion]);
+  }, [loopHeight, viewportHeight, prefersReducedMotion, normalizedScrollRef]);
 
   // Use featured image or first fallback image
   const backgroundImage = imageUrl || fallbackImages[0];

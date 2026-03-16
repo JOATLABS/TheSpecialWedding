@@ -261,6 +261,6 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
   }, [count]);
 
   return (
-    <canvas ref={canvasRef} aria-hidden="true" className="petal-canvas pointer-events-none absolute inset-0 h-full w-full" />
+    <canvas ref={canvasRef} aria-hidden="true" className="petal-canvas pointer-events-none fixed inset-0 h-full w-full z-10" />
   );
 }

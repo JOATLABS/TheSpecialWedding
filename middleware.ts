@@ -37,6 +37,6 @@ export const config = {
   // We also exclude api routes to avoid unnecessary middleware overhead.
   matcher: [
     '/admin/:path*',
-    '/((?!_next/static|_next/image|api/).*)',
+    '/((?!_next/static|_next/image|api/|.*\\..*).*)',
   ],
 };
