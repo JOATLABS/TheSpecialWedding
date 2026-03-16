@@ -78,6 +78,35 @@ class SSEManager:
         if dead_queues and not self._connections.get(user_email):
             self._connections.pop(user_email, None)
 
+    async def broadcast_data_change(
+        self,
+        user_email: str,
+        resource: str,
+        action: str,
+        wedding_id: str | None = None,
+        record_id: str | None = None,
+    ):
+        """Notify a user that a data resource has changed.
+
+        The frontend uses `resource` + `wedding_id` to decide which queries to
+        invalidate — it never receives the actual data, just a "something changed"
+        signal so it can refetch what it needs.
+
+        Args:
+            user_email: The planner/admin who owns the data.
+            resource: One of 'guest', 'rsvp', 'wedding', 'plus_one', 'budget',
+                      'table', 'invite', 'checkin'.
+            action: One of 'created', 'updated', 'deleted', 'bulk_updated'.
+            wedding_id: Optional — scopes the change to a specific wedding.
+            record_id: Optional — the specific record that changed.
+        """
+        await self.broadcast_to_user(user_email, "data-change", {
+            "resource": resource,
+            "action": action,
+            "wedding_id": wedding_id,
+            "record_id": record_id,
+        })
+
     @property
     def active_connections(self) -> int:
         """Total number of active SSE connections."""
