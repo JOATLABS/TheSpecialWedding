@@ -3,7 +3,7 @@
 import { getApiBaseUrl } from '@/utils/env';
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import Image from "next/image";
+
 
 import HeroAurora from "./components/ui/HeroAurora";
 import HeroCanvas from "./components/ui/HeroCanvas";
@@ -55,7 +55,7 @@ const showcaseFeatures: ShowcaseFeature[] = [
     id: "guests",
     title: "Guest Management",
     tagline: "242 guests, RSVPs, plus-ones, groups — one live view.",
-    image: "/guest_management.jpeg",
+    image: "/guest_management.png",
     category: "Planning",
   },
   {
@@ -151,7 +151,7 @@ const showcaseFeatures: ShowcaseFeature[] = [
 const metrics = [
   { value: "48k+", label: "Guests managed" },
   { value: "5 days", label: "Avg. RSVP turnaround" },
-  { value: "2.8s", label: "QR check-in speed" },
+  { value: "13", label: "Tools in one platform" },
   { value: "99.9%", label: "Uptime" },
 ];
 
@@ -200,7 +200,7 @@ const fallbackPricing: PricingTier[] = [
     price: "$59",
     cadence: "per wedding / month",
     badge: "Popular",
-    features: ["Seating orchestration", "QR check-in & live counts", "Automated reminders", "Vendor collaboration"],
+    features: ["Seating orchestration", "AI pricing suggestions", "Automated reminders", "Vendor collaboration"],
     cta: "Start your free trial",
     emphasized: true,
   },
@@ -346,13 +346,11 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
                     idx === activeIdx ? "opacity-100 z-10" : "opacity-0 z-0"
                   }`}
                 >
-                  <Image
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
                     src={feature.image}
                     alt={`${feature.title} dashboard`}
-                    fill
-                    className="object-cover object-top"
-                    sizes="(max-width: 1024px) 100vw, 70vw"
-                    priority={idx < 3}
+                    className="absolute inset-0 w-full h-full object-cover object-top"
                     loading={idx < 3 ? "eager" : "lazy"}
                   />
                 </div>
@@ -425,7 +423,7 @@ function LandingContent({
       {/* ── HERO ────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-b from-[#0b1120] via-slate-950 to-slate-950">
         {!isClone && <HeroCanvas />}
-        {!isClone && <PetalCanvas count={64} />}
+        {/* PetalCanvas moved to main level for full-page coverage */}
         <HeroAurora />
 
         <div
@@ -672,7 +670,7 @@ export default function HomePage() {
       role: "Director of Events, Aurora Collective",
     },
     {
-      quote: "Check-in lines disappeared. The live dashboards let us choreograph the day like a performance instead of fighting fires.",
+      quote: "I built a full service package with AI-suggested pricing in under ten minutes. My clients saw the quote the same afternoon.",
       name: "Elias Romero",
       role: "Lead Coordinator, Harbor & Bloom",
     },
@@ -727,7 +725,8 @@ export default function HomePage() {
   }, [apiPlans, plansLoading]);
 
   return (
-    <main className="bg-slate-950 text-white">
+    <main className="bg-slate-950 text-white relative">
+      <PetalCanvas count={64} />
       <InfiniteScrollWrapper>
         {(isClone) => (
           <LandingContent

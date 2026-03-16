@@ -201,18 +201,27 @@ class AdvertisingService:
                 "$in": [wedding_stage]
             }
 
-        # Filter by date range
+        # Filter by date range using $and to combine with existing query conditions
         now = datetime.now(timezone.utc)
-        query["$or"] = [
-            {"start_date": {"$lte": now}},
-            {"start_date": None},
-        ]
-        query["$or"].append(
-            {"$and": [
-                {"end_date": {"$gte": now}},
-                {"end_date": {"$ne": None}},
-            ]}
-        )
+        date_filter = {
+            "$and": [
+                # Start date must be in the past or not set
+                {"$or": [
+                    {"start_date": {"$lte": now}},
+                    {"start_date": None},
+                ]},
+                # End date must be in the future or not set
+                {"$or": [
+                    {"end_date": {"$gte": now}},
+                    {"end_date": None},
+                ]},
+            ]
+        }
+        # Merge date filter into query using $and
+        if "$and" in query:
+            query["$and"].extend(date_filter["$and"])
+        else:
+            query["$and"] = date_filter["$and"]
 
         # Fetch sponsored vendors sorted by priority
         vendors = []
@@ -836,18 +845,27 @@ class AdvertisingService:
                 "$in": [wedding_stage]
             }
 
-        # Filter by date range
+        # Filter by date range using $and to combine with existing query conditions
         now = datetime.now(timezone.utc)
-        query["$or"] = [
-            {"start_date": {"$lte": now}},
-            {"start_date": None},
-        ]
-        query["$or"].append(
-            {"$and": [
-                {"end_date": {"$gte": now}},
-                {"end_date": {"$ne": None}},
-            ]}
-        )
+        date_filter = {
+            "$and": [
+                # Start date must be in the past or not set
+                {"$or": [
+                    {"start_date": {"$lte": now}},
+                    {"start_date": None},
+                ]},
+                # End date must be in the future or not set
+                {"$or": [
+                    {"end_date": {"$gte": now}},
+                    {"end_date": None},
+                ]},
+            ]
+        }
+        # Merge date filter into query using $and
+        if "$and" in query:
+            query["$and"].extend(date_filter["$and"])
+        else:
+            query["$and"] = date_filter["$and"]
 
         # Adjust limit if reduced frequency is enabled
         if reduced_frequency:

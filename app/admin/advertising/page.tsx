@@ -1,40 +1,47 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import PageHeader from '../components/PageHeader';
 import { toast } from 'sonner';
 import {
-  getFeatureFlag,
-  toggleFeatureFlag,
   getSponsoredVendors,
   createSponsoredVendor,
   updateSponsoredVendor,
   deleteSponsoredVendor,
   getAdStats,
   getAdPlacementLabel,
-  type FeatureFlag,
+  getDashboardStats,
+  getVendorLeaderboard,
+  triggerRollup,
   type SponsoredVendor,
   type AdStats,
   type AdPlacement,
   type CreateSponsoredVendorRequest,
+  type DashboardStats,
+  type VendorLeaderboardEntry,
 } from '@/services/advertisingApi';
 import { getVendorDirectory, type VendorProfile } from '@/services/vendorManagementApi';
 import {
   Trash2,
   Plus,
-  ToggleRight,
-  ToggleLeft,
   Eye,
   EyeOff,
   TrendingUp,
+  TrendingDown,
   Users,
-  Mouse,
+  MousePointerClick,
   Activity,
+  BarChart3,
+  Target,
+  Clock,
+  RefreshCw,
+  ArrowUpRight,
+  Zap,
 } from 'lucide-react';
 
-type TabId = 'settings' | 'vendors' | 'analytics';
+type TabId = 'vendors' | 'analytics';
 
 interface DateRange {
   label: string;
@@ -46,24 +53,25 @@ export default function AdvertisingPage() {
   const router = useRouter();
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<TabId>('settings');
+  const [activeTab, setActiveTab] = useState<TabId>('vendors');
 
   // Loading state
   const [loading, setLoading] = useState(true);
-  const [featureFlagLoading, setFeatureFlagLoading] = useState(false);
   const [vendorActionLoading, setVendorActionLoading] = useState<string | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [rollupLoading, setRollupLoading] = useState(false);
 
   // Data state
-  const [featureFlag, setFeatureFlag] = useState<FeatureFlag | null>(null);
   const [sponsoredVendors, setSponsoredVendors] = useState<SponsoredVendor[]>([]);
   const [allVendors, setAllVendors] = useState<VendorProfile[]>([]);
   const [vendorStats, setVendorStats] = useState<Record<string, AdStats | null>>({});
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [leaderboard, setLeaderboard] = useState<VendorLeaderboardEntry[]>([]);
 
   // UI state
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
-  const [selectedDateRange, setSelectedDateRange] = useState<DateRange>({ label: '7d', days: 7 });
+  const [selectedDateRange, setSelectedDateRange] = useState<DateRange>({ label: '30d', days: 30 });
 
   // Form state for adding/editing vendor
   const [formData, setFormData] = useState<CreateSponsoredVendorRequest>({
@@ -84,19 +92,17 @@ export default function AdvertisingPage() {
     }
   }, [token, router]);
 
-  // Fetch all data
-  const fetchAllData = useCallback(async () => {
+  // Fetch vendor data (for vendors tab)
+  const fetchVendorData = useCallback(async () => {
     if (!token) return;
 
     setLoading(true);
     try {
-      const [flagData, vendorsData, allVendorsData] = await Promise.all([
-        getFeatureFlag(token),
+      const [vendorsData, allVendorsData] = await Promise.all([
         getSponsoredVendors(token),
         getVendorDirectory(token, { limit: 1000 }),
       ]);
 
-      setFeatureFlag(flagData);
       setSponsoredVendors(vendorsData);
       setAllVendors(allVendorsData);
 
@@ -120,29 +126,56 @@ export default function AdvertisingPage() {
     }
   }, [token, selectedDateRange.days]);
 
+  // Fetch dashboard data (for analytics tab)
+  const fetchDashboardData = useCallback(async () => {
+    if (!token) return;
+
+    setDashboardLoading(true);
+    try {
+      const [stats, leaders] = await Promise.all([
+        getDashboardStats(token, { days: selectedDateRange.days }),
+        getVendorLeaderboard(token, { days: selectedDateRange.days, limit: 20 }),
+      ]);
+
+      setDashboardStats(stats);
+      setLeaderboard(leaders);
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+      // Don't toast error for dashboard — gracefully show empty state
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [token, selectedDateRange.days]);
+
   // Initial data load
   useEffect(() => {
     if (token) {
-      fetchAllData();
+      fetchVendorData();
     }
-  }, [token, selectedDateRange]);
+  }, [token]);
 
-  // Toggle feature flag
-  const handleToggleFeatureFlag = async () => {
-    if (!token || !featureFlag) return;
+  // Load dashboard data when analytics tab is activated or date range changes
+  useEffect(() => {
+    if (token && activeTab === 'analytics') {
+      fetchDashboardData();
+    }
+  }, [token, activeTab, selectedDateRange]);
 
-    setFeatureFlagLoading(true);
+  // Trigger manual rollup
+  const handleTriggerRollup = async () => {
+    if (!token) return;
+
+    setRollupLoading(true);
     try {
-      const updated = await toggleFeatureFlag(token, !featureFlag.is_enabled);
-      setFeatureFlag(updated);
-      toast.success(
-        updated.is_enabled ? 'Sponsored vendors feature enabled' : 'Sponsored vendors feature disabled'
-      );
+      const result = await triggerRollup(token);
+      toast.success(`Rollup complete: ${result.documents_upserted} stats updated`);
+      // Refresh dashboard after rollup
+      await fetchDashboardData();
     } catch (error) {
-      toast.error('Failed to update feature flag');
+      toast.error('Failed to trigger rollup');
       console.error(error);
     } finally {
-      setFeatureFlagLoading(false);
+      setRollupLoading(false);
     }
   };
 
@@ -244,53 +277,54 @@ export default function AdvertisingPage() {
     return allVendors.find((v) => v._id === vendorId)?.business_name || vendorId;
   };
 
-  // Calculate totals for analytics
-  const calculateAnalyticsTotals = () => {
-    let totalImpressions = 0;
-    let totalClicks = 0;
-    let activeCampaigns = 0;
-
-    sponsoredVendors.forEach((vendor) => {
-      const stats = vendorStats[vendor._id];
-      if (stats) {
-        totalImpressions += stats.total_impressions;
-        totalClicks += stats.total_clicks;
-      }
-      if (vendor.is_active) {
-        activeCampaigns += 1;
-      }
-    });
-
-    const averageCTR =
-      totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
-
-    return {
-      totalImpressions,
-      totalClicks,
-      averageCTR,
-      activeCampaigns,
-    };
+  // Format large numbers
+  const formatNumber = (num: number): string => {
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+    return num.toLocaleString();
   };
 
-  const analyticsTotals = calculateAnalyticsTotals();
+  // Compute hourly heatmap data
+  const hourlyHeatmapData = useMemo(() => {
+    if (!dashboardStats?.hourly_clicks) return [];
+    const clicks = dashboardStats.hourly_clicks;
+    const maxClicks = Math.max(...clicks, 1);
+    return clicks.map((count, hour) => ({
+      hour,
+      count,
+      intensity: count / maxClicks,
+      label: `${hour.toString().padStart(2, '0')}:00`,
+    }));
+  }, [dashboardStats?.hourly_clicks]);
+
+  // Compute lead funnel data
+  const leadFunnelData = useMemo(() => {
+    if (!dashboardStats?.leads_by_status) return [];
+    const statusOrder = ['pending', 'contacted', 'responded', 'converted', 'closed'];
+    const statusLabels: Record<string, string> = {
+      pending: 'Pending',
+      contacted: 'Contacted',
+      responded: 'Responded',
+      converted: 'Converted',
+      closed: 'Closed',
+    };
+    const statusColors: Record<string, string> = {
+      pending: 'bg-yellow-500',
+      contacted: 'bg-blue-500',
+      responded: 'bg-indigo-500',
+      converted: 'bg-green-500',
+      closed: 'bg-slate-400',
+    };
+    return statusOrder.map((status) => ({
+      status,
+      label: statusLabels[status] || status,
+      count: dashboardStats.leads_by_status[status] || 0,
+      color: statusColors[status] || 'bg-slate-400',
+    }));
+  }, [dashboardStats?.leads_by_status]);
 
   // Tabs configuration
   const tabs = [
-    {
-      id: 'settings' as TabId,
-      label: 'Feature Settings',
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-          />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
-    },
     {
       id: 'vendors' as TabId,
       label: 'Sponsored Vendors',
@@ -307,17 +341,8 @@ export default function AdvertisingPage() {
     },
     {
       id: 'analytics' as TabId,
-      label: 'Analytics',
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-          />
-        </svg>
-      ),
+      label: 'Analytics Dashboard',
+      icon: <BarChart3 className="w-5 h-5" />,
     },
   ];
 
@@ -326,7 +351,7 @@ export default function AdvertisingPage() {
       <div className="space-y-6">
         <PageHeader
           title="Advertising Management"
-          description="Manage sponsored vendors, feature flags, and ad analytics"
+          description="Manage sponsored vendors and ad analytics"
         />
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-8 text-center">
           <div className="inline-block">
@@ -342,7 +367,7 @@ export default function AdvertisingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Advertising Management"
-        description="Manage sponsored vendors, feature flags, and ad analytics"
+        description="Manage sponsored vendors and ad analytics"
       />
 
       {/* Tabs */}
@@ -367,136 +392,9 @@ export default function AdvertisingPage() {
         </div>
       </div>
 
-      {/* Tab Content */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6">
-        {/* Feature Settings Tab */}
-        {activeTab === 'settings' && featureFlag && (
-          <div className="space-y-8">
-            {/* Feature Toggle Section */}
-            <div className="border-b border-slate-200 dark:border-slate-700 pb-8">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Feature Toggle</h2>
-
-              <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800/50 dark:to-slate-800 rounded-xl p-8 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                      Sponsored Vendors Feature
-                    </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                      Enable or disable the sponsored vendors display across the platform
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleToggleFeatureFlag}
-                    disabled={featureFlagLoading}
-                    className="flex items-center gap-2 px-6 py-3 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {featureFlag.is_enabled ? (
-                      <>
-                        <ToggleRight className="w-6 h-6 text-green-600" />
-                        <span className="font-medium text-green-600">Enabled</span>
-                      </>
-                    ) : (
-                      <>
-                        <ToggleLeft className="w-6 h-6 text-slate-400" />
-                        <span className="font-medium text-slate-400">Disabled</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Status Indicators */}
-            <div className="border-b border-slate-200 dark:border-slate-700 pb-8">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Status</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Current Status</span>
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        featureFlag.is_enabled
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                          : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {featureFlag.is_enabled ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                </div>
-
-                {featureFlag.enabled_by && (
-                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                    <div>
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Last toggled by</span>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{featureFlag.enabled_by}</p>
-                    </div>
-                  </div>
-                )}
-
-                {featureFlag.enabled_at && (
-                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                    <div>
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Last toggled at</span>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        {new Date(featureFlag.enabled_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Configuration Display */}
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Configuration</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Max Sponsored per Page</span>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.max_sponsored_per_page}
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Show Sponsored Badge</span>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.show_sponsored_badge ? 'Yes' : 'No'}
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Event Tracking</span>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.enable_tracking ? 'Enabled' : 'Disabled'}
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Min Priority Threshold</span>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.min_priority_threshold}
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Impressions Per Session
-                  </span>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-                    {featureFlag.config.impressions_per_session_limit}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Sponsored Vendors Tab */}
-        {activeTab === 'vendors' && (
+      {/* Sponsored Vendors Tab */}
+      {activeTab === 'vendors' && (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">Sponsored Vendors</h2>
@@ -616,40 +514,21 @@ export default function AdvertisingPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Vendor Name
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Placement
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Priority
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Status
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Impressions
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Clicks
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        CTR
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Actions
-                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Vendor Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Placement</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Priority</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Impressions</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Clicks</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">CTR</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sponsoredVendors.map((vendor) => {
                       const stats = vendorStats[vendor._id];
                       return (
-                        <tr
-                          key={vendor._id}
-                          className="border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                        >
+                        <tr key={vendor._id} className="border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                           <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
                             {getVendorName(vendor.vendor_profile_id)}
                           </td>
@@ -667,42 +546,18 @@ export default function AdvertisingPage() {
                             />
                           </td>
                           <td className="px-4 py-3 text-sm">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                vendor.is_active
-                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                                  : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-300'
-                              }`}
-                            >
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${vendor.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-300'}`}>
                               {vendor.is_active ? 'Active' : 'Inactive'}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                            {stats?.total_impressions ?? 0}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                            {stats?.total_clicks ?? 0}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                            {stats ? `${(stats.ctr * 100).toFixed(2)}%` : '-'}
-                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{stats?.total_impressions ?? 0}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{stats?.total_clicks ?? 0}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{stats ? `${(stats.ctr * 100).toFixed(2)}%` : '-'}</td>
                           <td className="px-4 py-3 text-sm space-x-2">
-                            <button
-                              onClick={() => handleToggleVendorStatus(vendor)}
-                              disabled={vendorActionLoading === vendor._id}
-                              className="inline-flex items-center gap-1 px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-50"
-                            >
-                              {vendor.is_active ? (
-                                <EyeOff className="w-4 h-4" />
-                              ) : (
-                                <Eye className="w-4 h-4" />
-                              )}
+                            <button onClick={() => handleToggleVendorStatus(vendor)} disabled={vendorActionLoading === vendor._id} className="inline-flex items-center gap-1 px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-50">
+                              {vendor.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
-                            <button
-                              onClick={() => handleDeleteVendor(vendor._id)}
-                              disabled={vendorActionLoading === vendor._id}
-                              className="inline-flex items-center gap-1 px-3 py-1 rounded bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 transition-colors disabled:opacity-50"
-                            >
+                            <button onClick={() => handleDeleteVendor(vendor._id)} disabled={vendorActionLoading === vendor._id} className="inline-flex items-center gap-1 px-3 py-1 rounded bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 transition-colors disabled:opacity-50">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </td>
@@ -714,15 +569,18 @@ export default function AdvertisingPage() {
               </div>
             )}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Analytics Tab */}
-        {activeTab === 'analytics' && (
-          <div className="space-y-6">
-            {/* Date Range Filter */}
+      {/* Analytics Dashboard Tab */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          {/* Date Range & Actions Bar */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-4 flex flex-wrap items-center justify-between gap-4">
             <div className="flex gap-2">
               {[
                 { label: '7 days', days: 7 },
+                { label: '14 days', days: 14 },
                 { label: '30 days', days: 30 },
                 { label: '90 days', days: 90 },
               ].map((range) => (
@@ -732,7 +590,7 @@ export default function AdvertisingPage() {
                   className={`px-4 py-2 rounded-lg transition-colors font-medium text-sm ${
                     selectedDateRange.days === range.days
                       ? 'bg-wedding-rose text-white'
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                   }`}
                 >
                   {range.label}
@@ -740,124 +598,292 @@ export default function AdvertisingPage() {
               ))}
             </div>
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10 rounded-xl p-6 border border-blue-200 dark:border-blue-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Total Impressions</span>
-                  <Users className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                  {analyticsTotals.totalImpressions.toLocaleString()}
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/10 rounded-xl p-6 border border-green-200 dark:border-green-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-green-700 dark:text-green-300">Total Clicks</span>
-                  <Mouse className="w-5 h-5 text-green-600" />
-                </div>
-                <div className="text-2xl font-bold text-green-900 dark:text-green-100">
-                  {analyticsTotals.totalClicks.toLocaleString()}
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-900/10 rounded-xl p-6 border border-purple-200 dark:border-purple-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Average CTR</span>
-                  <Activity className="w-5 h-5 text-purple-600" />
-                </div>
-                <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
-                  {analyticsTotals.averageCTR}%
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-900/10 rounded-xl p-6 border border-orange-200 dark:border-orange-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-orange-700 dark:text-orange-300">Active Campaigns</span>
-                  <TrendingUp className="w-5 h-5 text-orange-600" />
-                </div>
-                <div className="text-2xl font-bold text-orange-900 dark:text-orange-100">
-                  {analyticsTotals.activeCampaigns}
-                </div>
-              </div>
-            </div>
-
-            {/* Vendor Performance Table */}
-            {sponsoredVendors.length === 0 ? (
-              <div className="text-center py-12 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                <TrendingUp className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                <p className="text-slate-600 dark:text-slate-400 font-medium">No analytics data yet</p>
-                <p className="text-sm text-slate-500 dark:text-slate-500 mt-1">
-                  Add sponsored vendors to see performance metrics
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Vendor
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Impressions
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Clicks
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        CTR
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sponsoredVendors
-                      .map((vendor) => ({
-                        vendor,
-                        stats: vendorStats[vendor._id],
-                      }))
-                      .sort((a, b) => (b.stats?.total_impressions ?? 0) - (a.stats?.total_impressions ?? 0))
-                      .map(({ vendor, stats }) => (
-                        <tr
-                          key={vendor._id}
-                          className="border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                        >
-                          <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
-                            {getVendorName(vendor.vendor_profile_id)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                            {stats?.total_impressions ?? 0}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                            {stats?.total_clicks ?? 0}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                            {stats ? `${(stats.ctr * 100).toFixed(2)}%` : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                vendor.is_active
-                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                                  : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-300'
-                              }`}
-                            >
-                              {vendor.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <button
+              onClick={handleTriggerRollup}
+              disabled={rollupLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors font-medium text-sm disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${rollupLoading ? 'animate-spin' : ''}`} />
+              {rollupLoading ? 'Computing...' : 'Refresh Rollup'}
+            </button>
           </div>
-        )}
-      </div>
+
+          {dashboardLoading ? (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-12 text-center">
+              <div className="inline-block">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-wedding-rose"></div>
+              </div>
+              <p className="mt-4 text-slate-600 dark:text-slate-400">Loading analytics...</p>
+            </div>
+          ) : !dashboardStats ? (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-12 text-center">
+              <BarChart3 className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+              <p className="text-lg font-semibold text-slate-700 dark:text-slate-300">No analytics data yet</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
+                Once ad events start collecting, click &quot;Refresh Rollup&quot; to compute the daily aggregations for the dashboard.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* KPI Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Eye className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Impressions</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {formatNumber(dashboardStats.totals.impressions)}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MousePointerClick className="w-4 h-4 text-green-600" />
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Clicks</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {formatNumber(dashboardStats.totals.clicks)}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Activity className="w-4 h-4 text-purple-600" />
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">CTR</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {dashboardStats.totals.ctr}%
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Target className="w-4 h-4 text-orange-600" />
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Leads</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {formatNumber(dashboardStats.totals.leads)}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Zap className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Conversions</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {formatNumber(dashboardStats.totals.conversions)}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-lg border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Users className="w-4 h-4 text-indigo-600" />
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Unique Planners</span>
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {formatNumber(dashboardStats.totals.unique_planners)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily Trend Chart (CSS bar chart) */}
+              {dashboardStats.daily_series.length > 0 && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-700">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Daily Performance Trend</h3>
+                  <div className="overflow-x-auto">
+                    <div className="flex items-end gap-1 min-w-[600px]" style={{ height: '200px' }}>
+                      {dashboardStats.daily_series.map((day, idx) => {
+                        const maxImpressions = Math.max(...dashboardStats.daily_series.map((d) => d.impressions), 1);
+                        const barHeight = Math.max((day.impressions / maxImpressions) * 180, 2);
+                        const clickBarHeight = Math.max((day.clicks / maxImpressions) * 180, 0);
+                        return (
+                          <div key={day.date} className="flex-1 flex flex-col items-center gap-0.5 group relative" title={`${day.date}\nImpressions: ${day.impressions}\nClicks: ${day.clicks}\nCTR: ${day.ctr}%`}>
+                            <div className="w-full flex flex-col items-center justify-end" style={{ height: '180px' }}>
+                              <div
+                                className="w-full bg-blue-200 dark:bg-blue-900/40 rounded-t relative overflow-hidden transition-all group-hover:bg-blue-300 dark:group-hover:bg-blue-900/60"
+                                style={{ height: `${barHeight}px` }}
+                              >
+                                <div
+                                  className="absolute bottom-0 w-full bg-blue-500 dark:bg-blue-400 rounded-t"
+                                  style={{ height: `${clickBarHeight}px` }}
+                                />
+                              </div>
+                            </div>
+                            {idx % Math.ceil(dashboardStats.daily_series.length / 10) === 0 && (
+                              <span className="text-[9px] text-slate-400 whitespace-nowrap mt-1">
+                                {day.date.slice(5)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6 mt-3 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-200 dark:bg-blue-900/40 inline-block"></span> Impressions</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500 dark:bg-blue-400 inline-block"></span> Clicks</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Two-column layout: Lead Funnel + Hourly Heatmap */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Lead Funnel */}
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-700">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Lead Funnel</h3>
+                  {leadFunnelData.length === 0 || leadFunnelData.every((d) => d.count === 0) ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No lead data yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {leadFunnelData.map((item) => {
+                        const maxCount = Math.max(...leadFunnelData.map((d) => d.count), 1);
+                        const widthPercent = (item.count / maxCount) * 100;
+                        return (
+                          <div key={item.status}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{item.label}</span>
+                              <span className="text-slate-600 dark:text-slate-400">{item.count}</span>
+                            </div>
+                            <div className="h-6 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${item.color} rounded-full transition-all duration-500`}
+                                style={{ width: `${widthPercent}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Lead Types Breakdown */}
+                  {dashboardStats.leads_by_type && Object.keys(dashboardStats.leads_by_type).length > 0 && (
+                    <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Lead Types</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {Object.entries(dashboardStats.leads_by_type).map(([type, count]) => (
+                          <div key={type} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                            <span className="text-xs text-slate-500 dark:text-slate-400 capitalize">{type.replace(/_/g, ' ')}</span>
+                            <p className="text-lg font-bold text-slate-900 dark:text-white">{count}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Hourly Click Heatmap */}
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-700">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Hourly Click Activity</h3>
+                  {hourlyHeatmapData.every((d) => d.count === 0) ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No click data yet</p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-6 gap-2">
+                        {hourlyHeatmapData.map((cell) => (
+                          <div
+                            key={cell.hour}
+                            className="aspect-square rounded-lg flex flex-col items-center justify-center text-xs transition-all hover:scale-105"
+                            style={{
+                              backgroundColor: cell.intensity > 0
+                                ? `rgba(59, 130, 246, ${0.1 + cell.intensity * 0.8})`
+                                : 'rgb(241, 245, 249)',
+                            }}
+                            title={`${cell.label}: ${cell.count} clicks`}
+                          >
+                            <span className={`font-medium ${cell.intensity > 0.5 ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>
+                              {cell.label.slice(0, 2)}
+                            </span>
+                            <span className={`text-[10px] ${cell.intensity > 0.5 ? 'text-blue-100' : 'text-slate-400'}`}>
+                              {cell.count}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 mt-4 text-xs text-slate-500">
+                        <span>Low</span>
+                        <div className="flex gap-0.5">
+                          {[0.1, 0.3, 0.5, 0.7, 0.9].map((opacity) => (
+                            <div
+                              key={opacity}
+                              className="w-4 h-3 rounded"
+                              style={{ backgroundColor: `rgba(59, 130, 246, ${opacity})` }}
+                            />
+                          ))}
+                        </div>
+                        <span>High</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Vendor Leaderboard */}
+              {leaderboard.length > 0 && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 border border-slate-200 dark:border-slate-700">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Vendor Performance Leaderboard</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">#</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">Vendor</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">Impressions</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">Clicks</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">CTR</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">Leads</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">Conversions</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">Unique Planners</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">Days Active</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leaderboard.map((entry, idx) => (
+                          <tr key={entry.sponsored_vendor_id} className="border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <td className="px-4 py-3 text-sm font-bold text-slate-500 dark:text-slate-400">
+                              {idx + 1}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
+                              {getVendorName(entry.vendor_profile_id)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-slate-600 dark:text-slate-400">
+                              {entry.total_impressions.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-slate-600 dark:text-slate-400">
+                              {entry.total_clicks.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right">
+                              <span className={`font-medium ${entry.ctr > 2 ? 'text-green-600' : entry.ctr > 1 ? 'text-yellow-600' : 'text-slate-600 dark:text-slate-400'}`}>
+                                {entry.ctr.toFixed(2)}%
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-slate-600 dark:text-slate-400">
+                              {entry.total_leads}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right">
+                              <span className={`font-medium ${entry.total_conversions > 0 ? 'text-green-600' : 'text-slate-400'}`}>
+                                {entry.total_conversions}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-slate-600 dark:text-slate-400">
+                              {entry.unique_planners}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-right text-slate-600 dark:text-slate-400">
+                              {entry.days_active}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
