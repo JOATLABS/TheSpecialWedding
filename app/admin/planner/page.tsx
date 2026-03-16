@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
-import { usePolling } from '@/hooks/usePolling';
+import { useSSE } from '@/hooks/useSSE';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
@@ -195,9 +195,13 @@ export default function WeddingPlannerDashboard() {
  fetchMyWeddings();
  }, [fetchMyWeddings, fetchUserProfile, router, token, userProfile]);
 
- // Auto-refresh wedding list every 30 s so changes from other tabs
- // (e.g. new RSVPs, guest updates) appear without a manual reload.
- usePolling(fetchMyWeddings, 30_000, !!token);
+ // Real-time updates via SSE — refetch wedding list when the server
+ // signals any wedding, guest, or RSVP change.
+ useSSE({
+   resources: ['wedding', 'guest', 'rsvp'],
+   onDataChange: fetchMyWeddings,
+   enabled: !!token,
+ });
 
  // Check if onboarding should be shown (one-time only for new planners)
  useEffect(() => {

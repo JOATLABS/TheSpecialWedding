@@ -140,6 +140,10 @@ async def _event_stream(user_email: str, user_role: str, request: Request):
                     # Also send an updated count
                     counts = await _get_combined_count(user_email, user_role)
                     yield f"event: notification-count\ndata: {json.dumps(counts)}\n\n"
+                elif event["type"] == "data-change":
+                    # Real-time data invalidation signal — tells the frontend
+                    # which resource changed so it can refetch the relevant data.
+                    yield f"event: data-change\ndata: {json.dumps(event['data'])}\n\n"
 
             except asyncio.TimeoutError:
                 # No events — send heartbeat to keep connection alive

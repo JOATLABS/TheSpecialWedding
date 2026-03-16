@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
-import { usePolling } from '@/hooks/usePolling';
+import { useSSE } from '@/hooks/useSSE';
 import PageHeader from '../components/PageHeader';
 
 // ==================== INTERFACES ====================
@@ -275,9 +275,15 @@ export default function AdminGuestsPage() {
     }
   }, [fetchGuestData, selectedWedding]);
 
-  // Auto-refresh guest data every 30 s (pauses when tab is hidden,
-  // fetches immediately when the planner returns to the tab).
-  usePolling(fetchGuestData, 30_000, !!selectedWedding);
+  // Real-time updates via SSE — refetch guest data when the server
+  // signals a change to guests, RSVPs, plus-ones, or invites for
+  // the currently selected wedding.
+  useSSE({
+    resources: ['guest', 'rsvp', 'plus_one', 'invite'],
+    weddingId: selectedWedding,
+    onDataChange: fetchGuestData,
+    enabled: !!selectedWedding,
+  });
 
   // Fetch QR code with authentication when modal opens
   useEffect(() => {

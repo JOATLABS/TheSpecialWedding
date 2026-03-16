@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-03-16 — Landing Page Polish, Performance Fixes & Real-Time Architecture
+
+### Added
+
+- **Server-Sent Events (SSE) real-time update system** — Replaced 30-second polling with persistent SSE connections for instant data propagation across admin pages. Backend streams `guest_update`, `rsvp_update`, `wedding_update`, and `invite_sent` events. Frontend `useSSE` hook manages auto-reconnect with exponential backoff. (`app/api/sse.py`, `app/services/sse_manager.py`, `app/hooks/useSSE.ts`)
+- **`usePolling` hook** — Configurable interval polling with visibility-aware pause/resume. Still available as a fallback when SSE is not supported. (`app/hooks/usePolling.ts`)
+- **Shared normalised scroll ref for parallax sync** — `InfiniteScrollWrapper` writes the modulo-normalised scroll position to a shared React ref on every scroll event; `Modern3DBackground` reads from it in its rAF tick, eliminating any 1-frame desync at the loop boundary. (`app/components/ui/InfiniteScrollWrapper.tsx`, `app/components/landing-page/Modern3DBackground.tsx`, `app/components/landing-page/LandingLayout.tsx`)
+- **Feature scope documents** — Couple Portal (`docs/FEATURE_SCOPE_couple_portal.md`) and Guest Check-In (`docs/FEATURE_SCOPE_guest_checkin.md`) with architecture, effort estimates, and implementation plans.
+- **Performance & API Alignment Audit** — Full-stack review with 25 findings (6 critical, 8 high, 7 medium, 4 low) and prioritised action plan. (`docs/PERFORMANCE_AUDIT.html`)
+
+### Fixed
+
+- **Dashboard images returning 404** — `middleware.ts` matcher was intercepting static file paths because `isNonWeddingSlug()` returns true for any path containing a dot. Updated matcher to exclude dotted paths: `'/((?!_next/static|_next/image|api/|.*\\..*).*)'`. (`middleware.ts`)
+- **Rose petal animation stopping at hero section** — `PetalCanvas` was inside the hero `<section>` with `overflow-hidden`. Moved to `<main>` level and changed from `absolute` to `fixed inset-0 z-10`. (`app/components/ui/PetalCanvas.tsx`, `app/page.tsx`)
+- **Guest invite status not updating to "Pending" after SMS send** — The SMS service (`reminder_utilities.py`) sent via Twilio and logged to `reminders_sent` but never set `invite_sent: true` on the guest record. Added the missing `update_one()` after successful send. (`app/services/reminder_utilities.py`)
+- **Registry section misaligned on couple slug page** — Changed from fixed `md:grid-cols-2` to dynamic grid (1/2/3 columns based on count), reduced padding and gaps. (`app/components/landing-page/LandingLayout.tsx`)
+
+### Changed
+
+- **Landing page copy updates** — Replaced "2.8s QR check-in speed" metric with "13 Tools in one platform". Replaced fabricated check-in testimonial with AI pricing quote. Updated fallback pricing feature from "QR check-in & live counts" to "AI pricing suggestions". (`app/page.tsx`)
+- **Dashboard images switched to native `<img>`** — Replaced `next/image` `<Image>` components with `<img>` tags for dashboard screenshots. (`app/page.tsx`)
+- **Auto-refresh on guest management page** — Replaced the `visibilitychange`-only listener with `usePolling` (30s) and then SSE for continuous real-time updates. (`app/admin/guests/page.tsx`)
+- **Auto-refresh on planner dashboard** — Added real-time updates so wedding stats reflect new RSVPs and guest changes without manual reload. (`app/admin/planner/page.tsx`)
+
+### Removed
+
+- **SaaS admin content/theme tabs** — Removed "SAAS Content" tab (hero editor, statistics, trust indicators, animation settings) and "Theme & Design" tab (brand colors, backgrounds). Removed `ContentEditModal`, `DEFAULT_SAAS_CONFIG`, and related interfaces/functions. Landing page content is now hardcoded for performance. (`app/admin/saas/page.tsx`)
+
 ## [2.2.0] - 2026-03-15 — Vendor Advertising Platform (Stages 1–3), Critical Bugfixes & Ad Analytics
 
 ### Added
