@@ -28,6 +28,14 @@ class AdCampaignStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class AdReviewStatus(str, Enum):
+    """Review status for campaign creative approval."""
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CHANGES_REQUESTED = "changes_requested"
+
+
 class AdEventType(str, Enum):
     """Types of ad events that can be tracked."""
     IMPRESSION_SERVED = "impression_served"  # Ad was displayed
@@ -139,6 +147,26 @@ class SponsoredVendor(MongoModel):
         default=0,
         ge=0,
         description="Total clicks for this sponsored vendor"
+    )
+
+    # Review Workflow
+    review_status: Optional[str] = Field(
+        None,
+        description="Creative review status: pending_review, approved, rejected, changes_requested"
+    )
+    reviewed_by: Optional[str] = Field(
+        None,
+        max_length=254,
+        description="Admin email who reviewed this campaign"
+    )
+    reviewed_at: Optional[datetime] = Field(
+        None,
+        description="When the campaign was last reviewed"
+    )
+    review_notes: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Notes from the reviewer (reason for rejection, requested changes, etc.)"
     )
 
     # Additional Data
@@ -416,7 +444,11 @@ class AdvertisingFeatureFlag(MongoModel):
             "show_sponsored_label": True,
             "enable_tracking": True,
             "min_priority_threshold": 1,
-            "impressions_per_session_limit": 5
+            "impressions_per_session_limit": 5,
+            # Review workflow settings
+            "require_review": True,
+            "auto_approve_returning_vendors": False,
+            "review_sla_hours": 48,
         },
         description="Feature configuration settings"
     )
@@ -525,10 +557,12 @@ class CreateSponsoredVendorRequest(MongoModel):
     priority: int = Field(default=50, ge=1, le=100)
     headline: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, max_length=300)
+    is_active: bool = Field(default=True)
     start_date: Optional[datetime] = Field(None)
     end_date: Optional[datetime] = Field(None)
     target_categories: List[VendorCategory] = Field(default_factory=list)
     target_wedding_stages: List[str] = Field(default_factory=list)
+    review_status: Optional[str] = Field(None, description="Set to pending_review for review workflow")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -611,6 +645,12 @@ class UpdateAdLeadStatusRequest(MongoModel):
     status: AdLeadStatus = Field(...)
     responded_at: Optional[datetime] = Field(None)
     converted_at: Optional[datetime] = Field(None)
+
+
+class ReviewCampaignRequest(MongoModel):
+    """Request to review a campaign (approve, reject, or request changes)."""
+    review_status: AdReviewStatus = Field(..., description="New review status")
+    review_notes: Optional[str] = Field(None, max_length=2000, description="Reviewer notes")
 
 
 class PlannerAdPreferenceResponse(MongoModel):

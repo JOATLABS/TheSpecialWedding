@@ -74,8 +74,35 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     formState: { errors, isSubmitting },
     watch,
     reset,
-    trigger
+    trigger,
+    setValue,
   } = useForm<FormValues>();
+
+  // Chrome autofill workaround: when transitioning to step 2, Chrome may
+  // inject the password into Company / Phone DOM inputs (without triggering
+  // React onChange).  We clear them at the DOM level and sync react-hook-form.
+  useEffect(() => {
+    if (step === 2) {
+      const timer = setTimeout(() => {
+        const form = document.querySelector('form[autocomplete="off"]');
+        if (!form) return;
+        const companyInput = form.querySelector<HTMLInputElement>('input[name="companyName"]');
+        const phoneInput = form.querySelector<HTMLInputElement>('input[name="phone"]');
+        if (companyInput && companyInput.value && !companyInput.value.includes(' ')) {
+          // Heuristic: passwords don't contain spaces; company names usually do
+          // but more importantly, if the value matches the password, clear it
+          companyInput.value = '';
+          setValue('companyName', '');
+        }
+        if (phoneInput && phoneInput.value && !/^[\d\s()+\-.,]*$/.test(phoneInput.value)) {
+          // If phone value contains non-phone chars, it's autofill junk
+          phoneInput.value = '';
+          setValue('phone', '');
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [step, setValue]);
 
   // Lock body scroll when modal is open
   useEffect(() => {

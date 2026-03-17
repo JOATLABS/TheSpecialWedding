@@ -1,5 +1,104 @@
 # Vendor Advertising Feature — Changelog
 
+## View 7 — Admin Moderation Console & Review Workflow
+**Date:** 2026-03-17
+**Version:** 1.8.0
+
+### Creative Review Workflow (Backend)
+
+- **`AdReviewStatus` enum** — `pending_review`, `approved`, `rejected`, `changes_requested` added to `advertising.py` models.
+- **`SponsoredVendor` review fields** — `review_status`, `reviewed_by`, `reviewed_at`, `review_notes` fields added to the model for full review audit trail.
+- **`ReviewCampaignRequest` model** — New request model for the review endpoint with `review_status` and `review_notes`.
+- **`review_sponsored_vendor()` service method** — Approves (activates), rejects (deactivates), or requests changes. Stores reviewer email and timestamp.
+- **`get_review_queue()` service method** — Fetches campaigns by review status with vendor profile enrichment for review UI cards.
+- **`get_review_queue_counts()` service method** — Aggregation pipeline returning counts per review status for the queue stats bar.
+- **`PUT /admin/ads/sponsored-vendors/{id}/review`** — New endpoint for admin creative review. Root admin only.
+- **`GET /admin/ads/review-queue`** — New endpoint returning enriched review queue with vendor profile data.
+- **`GET /admin/ads/review-queue/counts`** — New endpoint returning status counts for queue stats.
+- **`PUT /admin/ads/feature-flag/config`** — New endpoint to update individual config keys (allowlisted) without toggling the entire feature.
+- **Review workflow config** — Added `require_review`, `auto_approve_returning_vendors`, `review_sla_hours` to `AdvertisingFeatureFlag.config` defaults.
+- **Campaign Wizard submission** — Now submits with `is_active: false` and `review_status: "pending_review"` so campaigns enter the review queue.
+
+### Frontend API Functions (advertisingApi.ts)
+
+- `ReviewStatus` type and `ReviewQueueItem`, `ReviewQueueCounts`, `FeatureFlagConfig` interfaces
+- `getReviewQueue()`, `getReviewQueueCounts()`, `reviewCampaign()` — Review queue operations
+- `getFeatureFlag()`, `toggleFeatureFlag()`, `updateFeatureFlagConfig()` — Feature flag management
+
+### View 7 Admin Console Page (`/admin/ads/console`)
+
+- **4-tab root admin console** — Creative Review, Performance Dashboard, System Config, Revenue & Billing
+- **Creative Review tab** — Queue stats bar (pending/approved/rejected/changes requested counts), review cards with vendor profile enrichment, creative preview, approve/reject/request changes actions with inline notes modal, placement and status filters
+- **Performance Dashboard tab** — Top-level metrics (impressions, clicks, CTR, leads, revenue placeholder), daily impressions trend bar chart, platform health grid, vendor leaderboard table with rank/impressions/clicks/CTR/leads, configurable lookback period (7/14/30/90 days)
+- **System Config tab** — Feature flag toggles (ads enabled, show badge, enable tracking), serving limits (max per page, impressions per session, min priority) with inline editing, review workflow config (require review, auto-approve returning, SLA hours), data pipeline controls (manual rollup, 90-day backfill)
+- **Revenue & Billing tab** — All $0 values, no fake data. Shows what data is already captured (pricing_model, bids, budgets, events, rollups) vs. what needs to be built (Stripe integration, usage metering, budget enforcement, invoices, webhooks)
+- **RootAdminGuard** — Page is protected and only accessible to root admins
+
+### Vendor Placeholder Pages
+
+- **`/admin/vendor/ads/campaigns`** — Campaign list page showing all vendor campaigns with status badges (pending/approved/rejected/active/inactive), impression/click counts, and "New Campaign" button
+- **`/admin/vendor/ads/leads`** — Leads list page showing planner interactions from sponsored ads with status filter, lead type labels, quote amounts, and response timestamps
+- **`/admin/vendor/ads/billing`** — Billing placeholder with free-tier notice, zeroed metrics (no fake data), tracked usage data list, and "coming soon" feature roadmap
+
+### Files Created
+- `app/admin/ads/console/page.tsx` — View 7 Admin Console (4-tab root admin page)
+- `app/admin/vendor/ads/campaigns/page.tsx` — Campaign list placeholder
+- `app/admin/vendor/ads/leads/page.tsx` — Leads list placeholder
+- `app/admin/vendor/ads/billing/page.tsx` — Billing placeholder
+
+### Files Modified
+- `app/models/advertising.py` — AdReviewStatus enum, SponsoredVendor review fields, ReviewCampaignRequest model, FeatureFlag config defaults
+- `app/services/advertising_service.py` — review_sponsored_vendor(), get_review_queue(), get_review_queue_counts(), create_sponsored_vendor() review fields
+- `app/api/advertising.py` — Review queue endpoints, review endpoint, feature flag config endpoint
+- `app/services/advertisingApi.ts` — ReviewStatus type, review/flag API functions, CreateSponsoredVendorRequest updated
+- `app/admin/vendor/ads/campaigns/new/page.tsx` — Submits with is_active: false, review_status: pending_review
+
+---
+
+## Ad Image Upload & Separate S3 Bucket
+**Date:** 2026-03-17
+**Version:** 1.7.0
+
+### Separate S3/R2 Bucket for Ad Assets
+
+- **New `vendor-ad-assets` bucket** — Vendor ad creative images are now stored in a dedicated Cloudflare R2 bucket, fully isolated from the `wedding-gallery` bucket. Enables independent access controls, cost tracking, lifecycle rules, and future billing metering.
+- **New env variables** — `S3_AD_BUCKET_NAME` and `AD_MEDIA_DOMAIN` added to `.env` and `.env.example`. Same R2 credentials (same Cloudflare account), different bucket.
+- **`AdUploadService` class** — New service in `gallery_upload_service.py` alongside existing `GalleryUploadService`. Handles presigned URL generation, file deletion, and vendor file listing for the ad bucket. Only allows JPEG/PNG/WebP, max 5 MB. Key format: `ads/{vendor_id}/{timestamp}_{filename}`.
+
+### Campaign Wizard Image Uploader (Step 5)
+
+- **Drag-and-drop image uploader** — Replaced the plain text "Image URL" field with a proper file upload zone. Supports drag-and-drop, click-to-browse, upload progress states (spinner + status text), file type validation, size validation, and error display.
+- **Image preview with remove** — After upload, shows the image preview with an X button to remove and re-upload.
+- **3-step upload flow** — (1) Get presigned PUT URL from `/admin/ads/upload-url`, (2) PUT file directly to R2, (3) Persist CDN URL on vendor profile via `/admin/ads/update-logo`.
+- **Auto-saves to `logo_url`** — The uploaded CDN URL is automatically saved as the vendor's `logo_url` on their VendorProfile, which is the same field the ad cards (SponsoredVendorCard, BoostedVendorCard) render.
+
+### Backend Endpoints
+
+- **`GET /admin/ads/upload-url`** — Returns presigned PUT URL for the ad bucket. Accepts `filename` and `content_type` query params. Restricted to vendors and root admins.
+- **`POST /admin/ads/update-logo`** — Persists CDN URL on vendor_profiles.logo_url. Restricted to vendors and root admins.
+
+### Frontend API Functions
+
+- `getAdImageUploadUrl()` — Gets presigned URL from our API
+- `uploadFileToPresignedUrl()` — PUTs file directly to R2 (no round-trip through our server)
+- `updateVendorLogo()` — Saves CDN URL on vendor profile
+
+### Config
+
+- **`next.config.js`** — Added `AD_MEDIA_DOMAIN` to `remotePatterns` for Next.js image optimization
+- **`.env.example`** — Rebuilt from scratch with all current env variables (placeholder values, no secrets)
+
+### Files Modified
+- `.env` — Added S3_AD_BUCKET_NAME, AD_MEDIA_DOMAIN
+- `.env.example` — Full rebuild with all env vars
+- `app/services/gallery_upload_service.py` — Added AdUploadService class
+- `app/api/advertising.py` — Added upload-url and update-logo endpoints
+- `app/services/advertisingApi.ts` — Added 3 upload functions
+- `app/admin/vendor/ads/campaigns/new/page.tsx` — Replaced URL input with drag-and-drop uploader
+- `next.config.js` — Added AD_MEDIA_DOMAIN to remotePatterns
+
+---
+
 ## Planner Action Wiring — Add to Wedding, Request Quote (mailto), Vendor Images
 **Date:** 2026-03-16
 **Version:** 1.6.0

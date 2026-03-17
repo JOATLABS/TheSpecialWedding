@@ -72,6 +72,8 @@ export interface RecordAdEventRequest {
   metadata?: Record<string, any>;
 }
 
+export type ReviewStatus = 'pending_review' | 'approved' | 'rejected' | 'changes_requested';
+
 export interface CreateSponsoredVendorRequest {
   vendor_profile_id: string;
   placement: AdPlacement;
@@ -79,6 +81,7 @@ export interface CreateSponsoredVendorRequest {
   headline?: string;
   description?: string;
   is_active?: boolean;
+  review_status?: ReviewStatus;
   start_date?: string;
   end_date?: string;
   target_categories?: string[];
@@ -601,6 +604,164 @@ export async function backfillRollups(
 
   return response.json();
 }
+
+// =============================================================================
+// CREATIVE REVIEW API
+// =============================================================================
+
+export interface ReviewQueueItem extends SponsoredVendor {
+  vendor_profile?: {
+    business_name?: string;
+    email?: string;
+    logo_url?: string;
+    service_category?: string;
+    phone?: string;
+  };
+}
+
+export interface ReviewQueueCounts {
+  pending_review: number;
+  approved: number;
+  rejected: number;
+  changes_requested: number;
+}
+
+export async function getReviewQueue(
+  token: string,
+  params?: {
+    status?: ReviewStatus;
+    placement?: string;
+    limit?: number;
+    skip?: number;
+  }
+): Promise<ReviewQueueItem[]> {
+  const queryParams = new URLSearchParams();
+  if (params?.status) queryParams.append('status', params.status);
+  if (params?.placement) queryParams.append('placement', params.placement);
+  if (params?.limit) queryParams.append('limit', String(params.limit));
+  if (params?.skip) queryParams.append('skip', String(params.skip));
+
+  const url = `${API_BASE}/admin/ads/review-queue?${queryParams.toString()}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to fetch review queue');
+  }
+
+  return response.json();
+}
+
+export async function getReviewQueueCounts(token: string): Promise<ReviewQueueCounts> {
+  const response = await fetch(`${API_BASE}/admin/ads/review-queue/counts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to fetch review counts');
+  }
+
+  return response.json();
+}
+
+export async function reviewCampaign(
+  token: string,
+  sponsoredId: string,
+  data: { review_status: ReviewStatus; review_notes?: string }
+): Promise<SponsoredVendor> {
+  const response = await fetch(`${API_BASE}/admin/ads/sponsored-vendors/${sponsoredId}/review`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to review campaign');
+  }
+
+  return response.json();
+}
+
+// =============================================================================
+// FEATURE FLAG CONFIG API
+// =============================================================================
+
+export interface FeatureFlagConfig {
+  max_sponsored_per_page: number;
+  show_sponsored_badge: boolean;
+  show_sponsored_label: boolean;
+  enable_tracking: boolean;
+  min_priority_threshold: number;
+  impressions_per_session_limit: number;
+  require_review: boolean;
+  auto_approve_returning_vendors: boolean;
+  review_sla_hours: number;
+}
+
+export async function getFeatureFlag(token: string): Promise<{
+  feature_key: string;
+  is_enabled: boolean;
+  enabled_by?: string;
+  enabled_at?: string;
+  config: FeatureFlagConfig;
+}> {
+  const response = await fetch(`${API_BASE}/admin/ads/feature-flag`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to fetch feature flag');
+  }
+
+  return response.json();
+}
+
+export async function toggleFeatureFlag(
+  token: string,
+  isEnabled: boolean
+): Promise<any> {
+  const response = await fetch(`${API_BASE}/admin/ads/feature-flag?is_enabled=${isEnabled}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to toggle feature flag');
+  }
+
+  return response.json();
+}
+
+export async function updateFeatureFlagConfig(
+  token: string,
+  configUpdates: Partial<FeatureFlagConfig>
+): Promise<any> {
+  const response = await fetch(`${API_BASE}/admin/ads/feature-flag/config`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(configUpdates),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail?.message || error.detail || 'Failed to update feature flag config');
+  }
+
+  return response.json();
+}
+
 
 // =============================================================================
 // AD IMAGE UPLOAD

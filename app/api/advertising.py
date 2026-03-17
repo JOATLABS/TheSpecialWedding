@@ -28,6 +28,7 @@ from app.models.advertising import (
     AdvertisingFeatureFlag,
     AdPlacement,
     AdEventType,
+    AdReviewStatus,
     AdLead,
     AdLeadStatus,
     AdLeadType,
@@ -39,6 +40,7 @@ from app.models.advertising import (
     CreateAdLeadRequest,
     AdLeadResponse,
     UpdateAdLeadStatusRequest,
+    ReviewCampaignRequest,
     PlannerAdPreferenceResponse,
 )
 from app.models.vendor import VendorCategory
@@ -335,6 +337,195 @@ async def delete_sponsored_vendor(
     )
 
     return deleted
+
+
+# =============================================================================
+# CREATIVE REVIEW ENDPOINTS
+# =============================================================================
+
+@router.get(
+    "/review-queue",
+    response_model=List[dict],
+    summary="Get Campaign Review Queue"
+)
+async def get_review_queue(
+    status: Optional[str] = Query(None, description="Filter by review status (default: pending_review)"),
+    placement: Optional[str] = Query(None, description="Filter by placement"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    skip: int = Query(0, ge=0, description="Skip results for pagination"),
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get campaigns in the review queue, enriched with vendor profile info.
+
+    Returns campaigns filtered by review status (defaults to pending_review).
+    Each result includes vendor_profile data for the review UI cards.
+
+    **Access:** Root admin only
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only root admins can access the review queue"
+        )
+
+    queue = await service.get_review_queue(
+        status_filter=status,
+        placement_filter=placement,
+        limit=limit,
+        skip=skip,
+    )
+
+    return queue
+
+
+@router.get(
+    "/review-queue/counts",
+    response_model=dict,
+    summary="Get Review Queue Status Counts"
+)
+async def get_review_queue_counts(
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get counts of campaigns grouped by review status.
+
+    Returns {pending_review: N, approved: N, rejected: N, changes_requested: N}.
+    Used by the admin console queue stats bar.
+
+    **Access:** Root admin only
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only root admins can view review queue counts"
+        )
+
+    counts = await service.get_review_queue_counts()
+    return counts
+
+
+@router.put(
+    "/sponsored-vendors/{sponsored_id}/review",
+    response_model=dict,
+    summary="Review Campaign Creative"
+)
+async def review_sponsored_vendor(
+    sponsored_id: str,
+    request: ReviewCampaignRequest,
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Review a sponsored vendor campaign — approve, reject, or request changes.
+
+    When approved, the campaign is activated and eligible for serving.
+    When rejected or changes requested, the campaign remains inactive.
+
+    **Access:** Root admin only
+
+    **Parameters:**
+    - sponsored_id: ID of the sponsored vendor to review
+
+    **Request Body:**
+    - review_status: New status (approved, rejected, changes_requested)
+    - review_notes: Optional reviewer notes (reason for rejection, requested changes)
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only root admins can review campaigns"
+        )
+
+    updated = await service.review_sponsored_vendor(
+        sponsored_id=sponsored_id,
+        review_status=request.review_status.value,
+        reviewer_email=current_user.email,
+        review_notes=request.review_notes,
+    )
+
+    logger.info(
+        f"Campaign {sponsored_id} reviewed as {request.review_status.value} "
+        f"by {current_user.email}"
+    )
+
+    return updated
+
+
+# =============================================================================
+# FEATURE FLAG CONFIG UPDATE ENDPOINT
+# =============================================================================
+
+@router.put(
+    "/feature-flag/config",
+    response_model=dict,
+    summary="Update Feature Flag Configuration"
+)
+async def update_feature_flag_config(
+    config_updates: dict = Body(..., description="Config key-value pairs to update"),
+    service: AdvertisingService = Depends(get_advertising_service),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Update individual configuration settings on the advertising feature flag.
+
+    Allows root admins to modify settings like max_sponsored_per_page,
+    show_sponsored_badge, enable_tracking, require_review, etc.
+    without toggling the entire feature on/off.
+
+    **Access:** Root admin only
+
+    **Request Body:**
+    A flat dict of config keys to update, e.g.:
+    {"require_review": false, "max_sponsored_per_page": 5}
+    """
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only root admins can update feature flag config"
+        )
+
+    # Allowlist of valid config keys
+    allowed_keys = {
+        "max_sponsored_per_page",
+        "show_sponsored_badge",
+        "show_sponsored_label",
+        "enable_tracking",
+        "min_priority_threshold",
+        "impressions_per_session_limit",
+        "require_review",
+        "auto_approve_returning_vendors",
+        "review_sla_hours",
+    }
+
+    invalid_keys = set(config_updates.keys()) - allowed_keys
+    if invalid_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid config keys: {', '.join(invalid_keys)}"
+        )
+
+    # Build $set operations prefixed with "config."
+    set_ops = {f"config.{k}": v for k, v in config_updates.items()}
+    set_ops["updated_at"] = datetime.now(timezone.utc)
+
+    updated = await mongo.db.ad_feature_flags.find_one_and_update(
+        {"feature_key": "sponsored_vendors"},
+        {"$set": set_ops},
+        return_document=True,
+    )
+
+    if not updated:
+        raise HTTPException(status_code=404, detail="Feature flag not found")
+
+    logger.info(
+        f"Feature flag config updated by {current_user.email}: "
+        f"{list(config_updates.keys())}"
+    )
+
+    return updated
 
 
 # =============================================================================
