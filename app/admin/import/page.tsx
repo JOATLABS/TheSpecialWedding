@@ -31,13 +31,19 @@ interface Guest {
  updated_at?: string;
 }
 
+interface GuestImportResult {
+ imported: number;
+ tokens: string[];
+ warnings?: string[];
+}
+
 export default function AdminImportPage() {
  const { token } = useAdmin();
  const [file, setFile] = useState<File | null>(null);
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [selectedWedding, setSelectedWedding] = useState<string>('');
  const [loading, setLoading] = useState(false);
- const [result, setResult] = useState<{ imported: number; tokens: string[] } | null>(null);
+ const [result, setResult] = useState<GuestImportResult | null>(null);
  const [error, setError] = useState<string>('');
  const [guests, setGuests] = useState<Guest[]>([]);
  const [loadingGuests, setLoadingGuests] = useState(false);
@@ -278,7 +284,21 @@ export default function AdminImportPage() {
  )}
  {result && (
  <div className="p-4 sm:p-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
- {/* … */}
+ <p className="font-semibold text-green-700 dark:text-green-300">
+ Successfully imported {result.imported} guests!
+ </p>
+ {result.warnings && result.warnings.length > 0 && (
+ <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+ <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+ {result.warnings.length} row{result.warnings.length === 1 ? '' : 's'} skipped during import.
+ </p>
+ <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-700 dark:text-amber-300">
+ {result.warnings.map((warning, index) => (
+ <li key={`${warning}-${index}`}>{warning}</li>
+ ))}
+ </ul>
+ </div>
+ )}
  </div>
  )}
 

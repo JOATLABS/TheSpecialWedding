@@ -1,5 +1,17 @@
 # Vendor Advertising Feature — Changelog
 
+## Planner Action Wiring — Add to Wedding, Request Quote (mailto), Vendor Images
+**Date:** 2026-03-16
+**Version:** 1.6.0
+
+### Planner-to-Vendor Action Flow (4 gaps closed)
+
+- **"Request Quote" opens native email client** — Both SponsoredVendorCard (rail) and BoostedVendorCard (directory) now generate a `mailto:` link with the vendor's email pre-filled in the To field, a contextual subject line ("Quote Request – {vendor} for {wedding}"), and a pre-drafted body. Creates an AdLead (lead_type: quote_request) for attribution tracking.
+- **"Add to Wedding" creates VendorAssignment** — Both card types now call `assignVendorToWedding()` to create a real VendorAssignment record in the database. Button transitions to "✓ Added" (green) on success, handles duplicate-assignment gracefully, and falls back to vendor profile if no wedding context is available. Creates an AdLead (lead_type: add_to_wedding) for attribution.
+- **Vendor images render from logo_url** — Both card types now check `vendorProfile.logo_url` and render the actual vendor image. Falls back to category emoji only when no image is available.
+- **VendorProfile TypeScript interface updated** — Added `logo_url`, `service_radius`, `country`, `postal_code` fields to match backend model.
+- **Removed fake toast callbacks** — Vendor directory page no longer passes `onAddToWedding`/`onRequestQuote` callbacks that showed misleading success toasts. Cards now handle real API calls internally.
+
 ## UX Copy Audit — Cross-Component Terminology & Microcopy Review
 **Date:** 2026-03-16
 **Version:** 1.5.0

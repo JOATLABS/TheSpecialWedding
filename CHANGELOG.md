@@ -5,6 +5,125 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.6] - 2026-03-17 — Stripe Webhook Resilience & API v13+ Compatibility
+
+### Fixed
+
+- **Checkout session missing metadata** — `stripe.checkout.Session.create()` now includes `metadata` with `user_id`, `plan_id`, and `billing_interval` on the checkout session itself (previously only set on `subscription_data.metadata`). This ensures `_handle_checkout_completed` can resolve the user even when the checkout session webhook fires before the subscription is queryable.
+
+- **Webhook handler fallback for empty session metadata** — `_handle_checkout_completed` now falls back to retrieving `user_id` and `plan_id` from the Stripe subscription's metadata when the checkout session metadata is empty. Prevents permanent webhook failures with "Missing user_id or plan_id" for sessions created before the metadata fix.
+
+- **Stripe API v13+ compatibility for subscription period dates** — `_sync_subscription_state` now reads `current_period_start` and `current_period_end` from subscription items (Stripe API v13+ location) with fallback to top-level fields (legacy) and `start_date`. Prevents period dates from defaulting to `now` on active subscriptions.
+
+### Added
+
+- **`scripts/resend_checkout_webhook.py`** — Utility script to manually replay checkout completion sync for users whose Stripe webhook was missed (e.g., during local development without `stripe listen`). Uses pymongo directly for portability.
+
+## [2.10.5] - 2026-03-17 — Stripe Checkout: Subscription Record & Plan Sync Fixes
+
+### Fixed
+
+- **Subscription record missing status and created_at on checkout** — `create_checkout_session` upsert in `stripe_service.py` now sets `status: "pending_checkout"` and `$setOnInsert: {created_at}` so the admin billing dashboard shows a proper state instead of `"unknown"` with empty timestamps before the Stripe webhook fires.
+
+- **Users collection plan_id not updated during checkout** — When a user selects a plan during checkout via `/public/create-checkout-session`, the `users` collection `plan_id` was not updated (only the `user_subscriptions` record was). Now syncs `plan_id` on the user document when the checkout plan differs from what was stored at registration. (`app/api/stripe_payment.py`)
+
+## [2.10.4] - 2026-03-16 — Migrate Bulk SMS to Twilio Service & Add Throughput Throttling
+
+### Changed
+
+- **Frontend bulk event reminder migrated from legacy to Twilio service** — `handleSendEventReminder()` now calls `POST /admin/reminders/twilio/send` instead of the legacy `POST /admin/reminders/send`, gaining delivery tracking, messaging service SID routing, retry logic, and error classification
+- **SMS error handling improved on frontend** — Bulk event reminder SMS responses now surface errors to the user (previously silently ignored non-ok responses) and report skipped counts (no phone, opted out)
+
+### Added
+
+- **SMS throughput throttling** — All bulk SMS send loops (`TwilioReminderService.send_reminders()`, `TwilioRSVPReminderHelper.send_personalized_rsvp_links()`, `send-to-guests`, `send-to-plus-ones` endpoints) now include a configurable inter-message delay (default 200ms ≈ 5 req/s) to stay within Twilio MPS limits and avoid carrier flagging
+- **`SMS_THROTTLE_DELAY_MS` env var** — Configurable throttle delay between SMS API calls (default: 200ms). Lower for higher-throughput sender types (toll-free, short code), raise for conservative 10DLC sending
+
+### Technical Notes
+
+- Twilio 10DLC default throughput: 1 MPS per number (varies by Trust Score up to ~75 MPS)
+- Toll-free default: 3 MPS (upgradeable to 25+ MPS)
+- Short code: 100 MPS
+- T-Mobile also enforces daily message limits per subscriber (separate from MPS)
+- Twilio queues messages internally (up to 36,000 segments per US long code), but firing API calls too fast triggers 429 rate limits
+- "Snowshoeing" (using multiple numbers to increase throughput) causes carrier filtering — use Messaging Service SID with a single sender pool instead
+
+## [2.10.3] - 2026-03-16 — Wire Planner Ad Actions (mailto, VendorAssignment, Vendor Images)
+
+### Added
+
+- **Request Quote mailto integration** — Ad cards now open planner's native email client with vendor email pre-filled, contextual subject line, and pre-drafted body
+- **Add to Wedding wiring** — Ad cards now create real VendorAssignment records via API instead of showing fake success toasts
+- **AdLead attribution** — Both quote requests and add-to-wedding actions create AdLead records for full funnel tracking
+- **Vendor image rendering** — Ad cards display vendor logo_url when available, falling back to category emoji
+
+### Changed
+
+- VendorProfile TypeScript interface now includes logo_url, service_radius, country, postal_code
+- BoostedVendorCard no longer accepts onAddToWedding/onRequestQuote callbacks (handles internally)
+- SponsoredVendorCard accepts weddingId/weddingName props for contextual actions
+
+## [2.10.2] - 2026-03-16 — Fix Systemic Datetime Comparison Errors
+
+### Fixed
+
+- **Offset-naive vs offset-aware datetime errors across entire app** — MongoDB Motor client was not configured with `tz_aware=True`, causing all datetimes returned from MongoDB to be timezone-naive. Any comparison with `datetime.now(timezone.utc)` raised `TypeError: can't compare offset-naive and offset-aware datetimes`. This affected `/otp/request`, `/verify-email`, `/admin/profile`, and many other endpoints (~8800 errors in production). Fixed by adding `tz_aware=True` and `tzinfo=datetime.timezone.utc` to `AsyncIOMotorClient` in `app/core/database.py` — a single root fix that resolves all datetime comparison errors system-wide.
+
+### Removed
+
+- Temporary test endpoint `/public/test/lookup-verification-token/{email}` removed from `app/api/user_management.py`
+- Debug logging and redundant per-method datetime workarounds removed from `app/services/user_management_service.py`
+
+## [2.10.1] - 2026-03-16 — QA Fixes: Validator Edge Cases, SMS Fallback Safety & Partial Success UI
+
+### Fixed
+
+- **Empty string phone stored instead of null** — All phone validators (`GuestModel`, `UpdateGuestRequest`, `CreateGuestRequest`, `PlusOneModel`) returned `""` instead of `None` when given an empty string, allowing invalid empty phone values in the database. Now consistently return `None` for any falsy input. Same fix applied to email validators. (`app/models/guest.py`, `app/models/plus_one.py`)
+
+- **Unsafe `or to` fallback in bulk SMS services** — `_send_sms()` in Twilio, Telnyx, and generic services used `normalize_phone_e164(to) or to`, which fell back to the raw unsanitized phone if normalization returned `None`. Now explicitly checks for `None` and returns a failure status with `invalid_number` error code instead of passing garbage to the SMS provider. (`app/services/reminder_service_twilio.py`, `app/services/reminder_service.py`, `app/services/reminder_service_telnyx.py`)
+
+- **Email error message showed `None` instead of original value** — `ResendEmailService.send_email()` sanitized the email before the error message, so whitespace-only emails produced `"Invalid recipient email: None"`. Now preserves the original value for the error message. (`app/services/email_service_resend.py`)
+
+- **Frontend partial success masked by error** — If guest SMS sent successfully but plus-one SMS endpoint returned an error, the UI threw and showed only the error, losing the guest success count. Both endpoints now catch errors independently and accumulate results, showing combined stats like "Sent 3 of 5. 2 failed." (`app/admin/reminders/page.tsx`)
+
+## [2.10.0] - 2026-03-16 — Contact Validation, Plus-One Individual Messaging & Guest Page Filters
+
+### Added
+
+- **Shared contact sanitization utility** — New `app/utils/contact_sanitizer.py` with `sanitize_phone()`, `normalize_phone_e164()`, `sanitize_email()`, `validate_phone_format()`, and `validate_email_format()` functions used across all models and send-time services for consistent phone/email handling.
+
+- **Plus-one individual SMS messaging** — New `POST /reminders/send-to-plus-ones` endpoint allows planners to send SMS reminders to specific plus-ones by ID. Includes wedding ownership verification (plus-one → guest → wedding chain), sms_opt_in compliance check, E.164 phone normalization, delivery tracking with message_sid, and activity logging with SSE broadcast. (`app/api/reminder_twilio.py`)
+
+- **Plus-ones in individual messaging UI** — Reminders page MultiSelect now merges guests and plus-ones with prefixed values (`guest:{token}` / `plusone:{id}`). Plus-ones display as "Name (Host's +1)" with phone sublabel. `handleSendIndividualMessage` splits by prefix and calls both endpoints in parallel. (`app/admin/reminders/page.tsx`)
+
+- **"Not Invited" guest tab** — Guest management page now has a dedicated "Not Invited" tab (previously lumped into "Awaiting RSVP") with correct filter logic checking `invite_sent` and RSVP status. (`app/admin/guests/page.tsx`)
+
+- **Clickable stat cards** — All guest stat cards (Total, RSVP'd, Pending, Not Invited) now set the active tab filter on click, with a visual ring highlight on the active card. (`app/admin/guests/page.tsx`)
+
+- **Email validators on GuestModel** — `GuestModel`, `UpdateGuestRequest`, and `CreateGuestRequest` now validate email format (strip whitespace, lowercase, regex check), matching the validation that `PlusOneModel` already had. (`app/models/guest.py`)
+
+### Fixed
+
+- **SMS opt-in compliance for plus-ones (Telnyx & generic)** — Telnyx and generic reminder services were sending SMS to plus-ones without checking `sms_opt_in` status. Both now skip explicitly opted-out plus-ones and track `skipped_opted_out` in return values. (`app/services/reminder_service.py`, `app/services/reminder_service_telnyx.py`)
+
+- **Missing E.164 normalization in generic SMS service** — `reminder_service.py` `_send_sms()` passed raw phone numbers to Twilio without any E.164 formatting. Now uses `normalize_phone_e164()` to strip delimiters and prepend country code. (`app/services/reminder_service.py`)
+
+- **Phone sanitization at model level** — All phone validators (`GuestModel`, `UpdateGuestRequest`, `CreateGuestRequest`, `PlusOneModel`) now sanitize input before validation — stripping whitespace, parentheses, dashes, dots, and spaces — so user-entered formats like `(234) 567-8901` are cleaned to `2345678901` instead of being rejected. (`app/models/guest.py`, `app/models/plus_one.py`)
+
+- **Send-time phone sanitization (defense-in-depth)** — All SMS send paths now run `normalize_phone_e164()` on phone numbers read from MongoDB before passing to Twilio/Telnyx, catching any data that bypassed model validation (CSV imports, direct DB edits, legacy data). (`app/api/reminder_twilio.py`, `app/services/reminder_service_twilio.py`, `app/services/reminder_service.py`, `app/services/reminder_service_telnyx.py`)
+
+- **Send-time email sanitization** — `ResendEmailService.send_email()` now sanitizes and validates recipient email before calling the Resend API, returning a clear error for invalid addresses instead of letting the API call fail. (`app/services/email_service_resend.py`)
+
+- **CSV import phone/email sanitization** — `GuestImportService.import_csv()` now uses `sanitize_phone()` and `sanitize_email()` with format validation instead of basic `.strip()`, so phones with delimiters (e.g. `(234) 567-8901` from spreadsheets) are cleaned before storage. Invalid phone/email values are dropped but the guest is kept if the other contact method is valid. (`app/services/import_service.py`)
+
+- **N+1 RSVP query in Telnyx service** — Replaced per-guest `find_one()` RSVP lookups with pre-fetch lookup map, matching the pattern used in the Twilio service. (`app/services/reminder_service_telnyx.py`)
+
+## [2.9.2] - 2026-03-16 — Guest Import: Non-Blocking Planner Warnings
+
+### Fixed
+
+- **Planner-visible CSV skip feedback** — Guest CSV imports now return inline warnings for skipped rows with CSV row numbers and reasons (invalid name or missing valid contact info) so planners can correct bad entries without the import failing. The warnings render in both admin import screens after a successful upload. (`app/services/import_service.py`, `app/admin/guests/page.tsx`, `app/admin/import/page.tsx`)
+
 ## [2.9.1] - 2026-03-16 — Stripe Signup: Atomicity & Concurrency Hardening
 
 ### Fixed

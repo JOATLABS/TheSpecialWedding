@@ -420,6 +420,7 @@ async def get_public_subscription_plans():
             "features_list": plan.get("features_list", []),
             "is_featured": plan.get("is_featured", False),
             "is_active": plan.get("is_active", True),
+            "trial_days": plan.get("trial_days", 0),
             "display_order": plan.get("display_order", plan.get("sort_order", 0)),
             # Explicitly EXCLUDE: stripe_product_id, stripe_price_id_*, created_by, etc.
         })

@@ -65,9 +65,10 @@ class ResendEmailService:
             return {"success": False, "error": "Email service not configured"}
 
         # Sanitize email address — strip whitespace, lowercase
-        to_email = sanitize_email(to_email) or to_email
+        original_email = to_email
+        to_email = sanitize_email(to_email)
         if not to_email or not validate_email_format(to_email):
-            return {"success": False, "error": f"Invalid recipient email: {to_email!r}"}
+            return {"success": False, "error": f"Invalid recipient email: {original_email!r}"}
 
         try:
             # Use provided from_email or default

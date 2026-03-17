@@ -10,9 +10,9 @@ Read endpoints (GET) are available to all authenticated users.
 
 import logging
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.dependencies.auth_extended import (
     require_admin_or_planner,
@@ -1093,3 +1093,91 @@ async def health_check(
         "status": "healthy",
         "service": "advertising"
     }
+
+
+# =============================================================================
+# AD CREATIVE IMAGE UPLOAD
+# =============================================================================
+
+from app.services.gallery_upload_service import AdUploadService
+
+_ad_upload_service = AdUploadService()
+
+
+@router.get(
+    "/upload-url",
+    summary="Get Presigned URL for Ad Image Upload",
+)
+async def get_ad_upload_url(
+    filename: str = Query(..., description="Original filename of the image"),
+    content_type: str = Query(..., description="MIME type (image/jpeg, image/png, image/webp)"),
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+):
+    """
+    Generate a presigned PUT URL for uploading ad creative images
+    to the dedicated ad-assets S3 bucket.
+
+    The vendor must be the owner of the ad campaign.
+    Returns upload_url (presigned PUT), key, and cdn_url.
+
+    **Access:** Authenticated vendors or root admins.
+    """
+    if not current_user.is_root_admin and not current_user.is_vendor:
+        raise HTTPException(status_code=403, detail="Only vendors or admins can upload ad images")
+
+    # Resolve vendor_id: vendors use their own ID, admins must pass it
+    vendor_id = None
+    if current_user.is_vendor and hasattr(current_user, 'user_data'):
+        vendor_id = getattr(current_user.user_data, 'vendor_id', None) if hasattr(current_user.user_data, 'vendor_id') else current_user.user_data.get('vendor_id') if isinstance(current_user.user_data, dict) else None
+
+    if not vendor_id and current_user.is_root_admin:
+        # Root admin can upload for any vendor — use a generic key
+        vendor_id = "admin"
+    elif not vendor_id:
+        raise HTTPException(status_code=400, detail="Could not resolve vendor ID from your profile")
+
+    result = _ad_upload_service.create_presigned_upload_url(
+        filename=filename,
+        vendor_id=vendor_id,
+        content_type=content_type,
+    )
+    return result
+
+
+@router.post(
+    "/update-logo",
+    summary="Update Vendor Profile Logo URL after Ad Image Upload",
+)
+async def update_vendor_logo(
+    logo_url: str = Body(..., embed=True, description="CDN URL of the uploaded image"),
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+):
+    """
+    After a successful image upload to the ad bucket, call this endpoint
+    to persist the CDN URL on the vendor's profile as logo_url.
+
+    **Access:** Authenticated vendors or root admins.
+    """
+    if not current_user.is_root_admin and not current_user.is_vendor:
+        raise HTTPException(status_code=403, detail="Only vendors or admins can update vendor logos")
+
+    vendor_id = None
+    if current_user.is_vendor and hasattr(current_user, 'user_data'):
+        vendor_id = getattr(current_user.user_data, 'vendor_id', None) if hasattr(current_user.user_data, 'vendor_id') else current_user.user_data.get('vendor_id') if isinstance(current_user.user_data, dict) else None
+
+    if not vendor_id and current_user.is_root_admin:
+        raise HTTPException(status_code=400, detail="Admin must specify a vendor_id via query param")
+    elif not vendor_id:
+        raise HTTPException(status_code=400, detail="Could not resolve vendor ID from your profile")
+
+    # Update logo_url on vendor profile
+    result = await mongo.db.vendor_profiles.find_one_and_update(
+        {"_id": ObjectId(vendor_id)},
+        {"$set": {"logo_url": logo_url, "updated_at": datetime.now(timezone.utc)}},
+        return_document=True,
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Vendor profile not found")
+
+    return {"message": "Logo updated successfully", "logo_url": logo_url}

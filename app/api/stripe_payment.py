@@ -126,6 +126,13 @@ async def create_public_checkout_session(
             trial_days=request.trial_days
         )
 
+        # Keep the users collection plan_id in sync with the checkout selection
+        if request.plan_id and pending_user.get("plan_id") != request.plan_id:
+            await stripe_service.users_collection.update_one(
+                {"_id": pending_user["_id"]},
+                {"$set": {"plan_id": request.plan_id}}
+            )
+
         return {
             "status": "success",
             "checkout_session": session

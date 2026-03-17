@@ -41,6 +41,7 @@ export interface VendorProfile {
   email: string;
   phone?: string;
   website?: string;
+  logo_url?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -58,6 +59,9 @@ export interface VendorProfile {
   weddings_count: number;
   total_revenue: number;
   is_active: boolean;
+  service_radius?: number;
+  country?: string;
+  postal_code?: string;
   created_at: string;
   updated_at: string;
 }

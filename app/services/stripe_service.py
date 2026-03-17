@@ -487,6 +487,11 @@ class StripeService:
                 success_url=success_url,
                 cancel_url=cancel_url,
                 subscription_data=subscription_data,  # type: ignore
+                metadata={
+                    "user_id": user_id,
+                    "plan_id": plan_id,
+                    "billing_interval": billing_interval,
+                },
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
                 payment_method_collection="always",
@@ -519,6 +524,10 @@ class StripeService:
                         "stripe_customer_id": customer_id,
                         "billing_interval": billing_interval,
                         "plan_id": plan_id,
+                        "status": "pending_checkout",
+                    },
+                    "$setOnInsert": {
+                        "created_at": datetime.now(timezone.utc),
                     }
                 },
                 upsert=True,
@@ -614,8 +623,31 @@ class StripeService:
 
         trial_end = self._parse_timestamp(subscription.get("trial_end"))
         trial_start = self._parse_timestamp(subscription.get("trial_start"))
-        current_period_start = self._parse_timestamp(subscription.get("current_period_start")) or now
-        current_period_end = self._parse_timestamp(subscription.get("current_period_end")) or now
+
+        # Stripe API v13+: current_period_start/end moved to subscription items.
+        # Try top-level first (legacy/older API), then fall back to first item.
+        current_period_start = self._parse_timestamp(subscription.get("current_period_start"))
+        current_period_end = self._parse_timestamp(subscription.get("current_period_end"))
+
+        if not current_period_start or not current_period_end:
+            items_data = subscription.get("items", {})
+            if isinstance(items_data, dict):
+                items_list = items_data.get("data", [])
+            elif hasattr(items_data, "data"):
+                items_list = items_data.data or []
+            else:
+                items_list = []
+
+            if items_list:
+                first_item = items_list[0] if isinstance(items_list[0], dict) else items_list[0].to_dict() if hasattr(items_list[0], 'to_dict') else {}
+                current_period_start = current_period_start or self._parse_timestamp(first_item.get("current_period_start"))
+                current_period_end = current_period_end or self._parse_timestamp(first_item.get("current_period_end"))
+
+        # Final fallback: use start_date or now
+        if not current_period_start:
+            current_period_start = self._parse_timestamp(subscription.get("start_date")) or now
+        if not current_period_end:
+            current_period_end = now
 
         subscription_updates: Dict[str, Any] = {
             "stripe_subscription_id": stripe_subscription_id,
@@ -1032,8 +1064,20 @@ class StripeService:
         plan_id = session.get("metadata", {}).get("plan_id")
         subscription_id = session.get("subscription")
 
+        # Fallback: if checkout session metadata is empty, retrieve from
+        # the Stripe subscription metadata (which is always populated).
+        if (not user_id or not plan_id) and subscription_id:
+            try:
+                sub_obj = stripe.Subscription.retrieve(subscription_id)
+                sub_meta = sub_obj.get("metadata", {}) if isinstance(sub_obj, dict) else dict(getattr(sub_obj, "metadata", {}))
+                user_id = user_id or sub_meta.get("user_id")
+                plan_id = plan_id or sub_meta.get("plan_id")
+                logger.info(f"Retrieved metadata from subscription: user_id={user_id}, plan_id={plan_id}")
+            except Exception as e:
+                logger.error(f"Failed to retrieve subscription metadata fallback: {str(e)}")
+
         if not user_id or not plan_id:
-            logger.error("Missing metadata in checkout session")
+            logger.error("Missing metadata in checkout session and subscription")
             return {"status": "error", "message": "Missing user_id or plan_id metadata in checkout session"}
 
         # Verify user still exists before syncing subscription

@@ -3,7 +3,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { createSponsoredVendor, type AdPlacement } from '@/services/advertisingApi';
+import {
+  createSponsoredVendor,
+  getAdImageUploadUrl,
+  uploadFileToPresignedUrl,
+  updateVendorLogo,
+  type AdPlacement,
+} from '@/services/advertisingApi';
 import {
   ChevronRight,
   ChevronLeft,
@@ -13,7 +19,12 @@ import {
   Zap,
   Image as ImageIcon,
   Eye,
+  Mail,
+  Calendar,
   Check,
+  Upload,
+  X,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -36,9 +47,9 @@ const WIZARD_STEPS = [
 ];
 
 const GOAL_OPTIONS: Array<{ value: GoalType; label: string; description: string; icon: string }> = [
-  { value: 'visits', label: 'Get profile visits', description: 'Drive planners to view your profile and learn about your services', icon: '👁' },
-  { value: 'quotes', label: 'Get quote requests', description: 'Generate quote requests directly from interested planners', icon: '💌' },
-  { value: 'bookings', label: 'Boost bookings', description: 'Drive direct bookings and grow your wedding business', icon: '📅' },
+  { value: 'visits', label: 'Get profile visits', description: 'Drive planners to view your profile and learn about your services', icon: 'eye' },
+  { value: 'quotes', label: 'Get quote requests', description: 'Generate quote requests directly from interested planners', icon: 'mail' },
+  { value: 'bookings', label: 'Boost bookings', description: 'Drive direct bookings and grow your wedding business', icon: 'calendar' },
 ];
 
 const PLACEMENT_OPTIONS: Array<{ value: PlacementType; label: string; description: string }> = [
@@ -106,6 +117,13 @@ export default function CampaignWizardPage() {
   const [description, setDescription] = useState('');
   const [offer, setOffer] = useState('');
   const [cta, setCta] = useState('Get Quote');
+
+  // Image upload state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -214,6 +232,84 @@ export default function CampaignWizardPage() {
     }
   };
 
+  // ── Image upload handler ──
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+  const handleImageUpload = async (file: File) => {
+    if (!token) {
+      setUploadError('You must be logged in to upload images.');
+      return;
+    }
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setUploadError('Only JPEG, PNG, and WebP images are allowed.');
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      setUploadError('Image must be under 5 MB.');
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setUploadError(null);
+      setUploadProgress('Getting upload URL...');
+
+      // 1. Get presigned URL from our API
+      const { upload_url, cdn_url } = await getAdImageUploadUrl(token, file.name, file.type);
+
+      // 2. Upload file directly to S3/R2
+      setUploadProgress('Uploading image...');
+      await uploadFileToPresignedUrl(upload_url, file);
+
+      // 3. Update vendor profile logo_url
+      setUploadProgress('Saving to profile...');
+      await updateVendorLogo(token, cdn_url);
+
+      // 4. Set the image URL in form state
+      setImageUrl(cdn_url);
+      setUploadProgress(null);
+      toast.success('Image uploaded successfully');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setUploadError(msg);
+      setUploadProgress(null);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleImageUpload(file);
+    // Reset input so re-selecting the same file triggers onChange
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleImageUpload(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const removeImage = () => {
+    setImageUrl('');
+    setUploadError(null);
+  };
+
   // ── Shared card style helper ──
   const cardClass = (selected: boolean) =>
     `flex-1 p-3 rounded-lg border-2 cursor-pointer transition-all text-left ${
@@ -290,7 +386,11 @@ export default function CampaignWizardPage() {
                 aria-pressed={goal === opt.value}
               >
                 <div className="flex items-start gap-3">
-                  <span className="text-[24px]" aria-hidden="true">{opt.icon}</span>
+                  <span className="flex-shrink-0" aria-hidden="true">
+                    {opt.icon === 'eye' && <Eye size={22} className="text-wedding-sage" />}
+                    {opt.icon === 'mail' && <Mail size={22} className="text-wedding-sage" />}
+                    {opt.icon === 'calendar' && <Calendar size={22} className="text-wedding-sage" />}
+                  </span>
                   <div>
                     <p className="font-bold text-[14px] text-wedding-navy">{opt.label}</p>
                     <p className="text-[12px] text-gray-500 mt-0.5">{opt.description}</p>
@@ -543,18 +643,82 @@ export default function CampaignWizardPage() {
         {/* ─── STEP 5: Creative ─── */}
         {currentStep === 5 && (
           <div className="space-y-5">
+            {/* Image Upload */}
             <div>
               <label className="block text-[12px] font-semibold text-wedding-navy mb-1.5 flex items-center gap-1.5">
-                <ImageIcon className="w-3.5 h-3.5" /> Image URL
+                <ImageIcon className="w-3.5 h-3.5" /> Ad Image
               </label>
-              <input
-                type="url"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://example.com/image.jpg"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-wedding-navy focus:border-wedding-sage focus:outline-none focus:ring-1 focus:ring-wedding-sage"
-              />
-              <p className="text-[10px] text-gray-400 mt-1">Best size: 1200x628px, max 5MB</p>
+
+              {imageUrl ? (
+                /* ── Image Preview ── */
+                <div className="relative rounded-lg border border-gray-200 overflow-hidden">
+                  <img
+                    src={imageUrl}
+                    alt="Ad creative preview"
+                    className="w-full h-40 object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 border border-gray-200 flex items-center justify-center hover:bg-red-50 hover:border-red-300 transition-colors"
+                    aria-label="Remove image"
+                  >
+                    <X size={14} className="text-gray-600" />
+                  </button>
+                  <div className="px-3 py-2 bg-gray-50 border-t border-gray-200">
+                    <p className="text-[11px] text-gray-500 truncate">{imageUrl.split('/').pop()}</p>
+                  </div>
+                </div>
+              ) : (
+                /* ── Drop Zone ── */
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onClick={() => !isUploading && fileInputRef.current?.click()}
+                  className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 cursor-pointer transition-all ${
+                    isDragging
+                      ? 'border-wedding-sage bg-wedding-sage/5'
+                      : 'border-gray-300 hover:border-wedding-sage/50 hover:bg-gray-50'
+                  } ${isUploading ? 'pointer-events-none opacity-70' : ''}`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    aria-label="Upload ad image"
+                  />
+
+                  {isUploading ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 size={28} className="text-wedding-sage animate-spin" />
+                      <p className="text-[12px] text-wedding-navy font-medium">{uploadProgress}</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={28} className="text-gray-400 mb-2" />
+                      <p className="text-[13px] font-medium text-wedding-navy">
+                        Drop your image here or click to browse
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        JPEG, PNG, or WebP. Best size: 1200 x 628px. Max 5 MB.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {uploadError && (
+                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-red-600">
+                  <AlertCircle size={12} />
+                  <span>{uploadError}</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -616,11 +780,16 @@ export default function CampaignWizardPage() {
               </h4>
               <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden max-w-sm">
                 {imageUrl && (
-                  <img src={imageUrl} alt="Preview" className="w-full h-32 object-cover" onError={() => null} />
+                  <img
+                    src={imageUrl}
+                    alt="Preview"
+                    className="w-full h-32 object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
                 )}
                 <div className="p-3">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded bg-amber-50 text-amber-700 mb-1.5">
-                    ✦ Sponsored
+                    Sponsored
                   </span>
                   <h5 className="font-bold text-[14px] text-wedding-navy">{headline || 'Your Headline'}</h5>
                   {description && <p className="text-[12px] text-gray-500 mt-1">{description}</p>}

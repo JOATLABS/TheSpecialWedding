@@ -1,6 +1,7 @@
 # app/services/reminder_service_twilio.py
 
 import os
+import asyncio
 from typing import Optional
 from twilio.rest import Client  # type: ignore
 from fastapi import HTTPException
@@ -8,6 +9,25 @@ from datetime import datetime, timezone
 from app.core.database import mongo
 from app.utils.contact_sanitizer import normalize_phone_e164
 import logging
+
+# ---------------------------------------------------------------------------
+# Throttling configuration
+# ---------------------------------------------------------------------------
+# Twilio enforces MPS (messages-per-second) limits that depend on your sender
+# type and 10DLC trust score.  Typical limits:
+#   - 10DLC long code:  1 MPS (default) – up to ~75 MPS at highest trust
+#   - Toll-free:        3 MPS (default) – upgradeable to 25+ MPS
+#   - Short code:     100 MPS
+#
+# Even though Twilio queues messages internally, firing API requests in a
+# tight loop risks 429 rate-limit errors and may cause carriers to flag the
+# traffic pattern.  The delay below is applied between each Twilio API call
+# in bulk send loops.  Override via the SMS_THROTTLE_DELAY_MS env var.
+#
+# Default 200 ms ≈ 5 req/s – safely under default 10DLC limits and friendly
+# to carrier heuristics.  For higher-throughput senders, lower this value.
+# ---------------------------------------------------------------------------
+SMS_THROTTLE_DELAY_S = float(os.getenv("SMS_THROTTLE_DELAY_MS", "200")) / 1000.0
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +107,9 @@ class TwilioReminderService:
                         status,
                         now,
                     ))
+                    # Throttle to stay within Twilio MPS / API rate limits
+                    if SMS_THROTTLE_DELAY_S > 0:
+                        await asyncio.sleep(SMS_THROTTLE_DELAY_S)
 
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
@@ -110,6 +133,9 @@ class TwilioReminderService:
                         status,
                         now,
                     ))
+                    # Throttle to stay within Twilio MPS / API rate limits
+                    if SMS_THROTTLE_DELAY_S > 0:
+                        await asyncio.sleep(SMS_THROTTLE_DELAY_S)
 
         if logs:
             await self.log_collection.insert_many(logs)
@@ -143,7 +169,16 @@ class TwilioReminderService:
             }
 
         # Sanitize and normalize phone to E.164 format
-        to = normalize_phone_e164(to) or to
+        normalized = normalize_phone_e164(to)
+        if not normalized:
+            return {
+                "status": f"failed: Invalid phone number: {to!r}",
+                "message_sid": None,
+                "initial_status": None,
+                "error_code": "invalid_number",
+                "retryable": False
+            }
+        to = normalized
         status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
         last_error = None
 
@@ -443,6 +478,10 @@ class TwilioRSVPReminderHelper:
                 log_record["delivery_events"] = []
 
             logs.append(log_record)
+
+            # Throttle to stay within Twilio MPS / API rate limits
+            if SMS_THROTTLE_DELAY_S > 0:
+                await asyncio.sleep(SMS_THROTTLE_DELAY_S)
 
         if logs:
             await self.log_collection.insert_many(logs)

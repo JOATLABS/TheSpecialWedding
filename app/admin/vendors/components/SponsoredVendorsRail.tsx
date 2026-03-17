@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, HelpCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, HelpCircle, Settings } from 'lucide-react';
 import {
   getSponsoredVendors,
   recordAdEvent,
@@ -324,13 +324,13 @@ export function SponsoredVendorsRail({
           <h3 className="hidden lg:block text-[13px] font-bold text-wedding-navy">Sponsored Vendors</h3>
           {/* Mobile header */}
           <div className="flex items-center gap-2 lg:hidden">
-            <Sparkles size={16} className="text-wedding-gold" />
             <h3 className="text-base font-semibold text-wedding-navy">Recommended for you</h3>
           </div>
         </div>
         {/* Desktop: Preferences button — contrast-safe gray-600 (5.7:1) */}
-        <button className="hidden lg:inline text-[10px] text-gray-600 hover:text-wedding-sage transition-colors">
-          ⚙ Preferences
+        <button className="hidden lg:inline-flex items-center gap-1 text-[10px] text-gray-600 hover:text-wedding-sage transition-colors">
+          <Settings size={10} />
+          Preferences
         </button>
         {/* Mobile: Info icon — 44px touch target */}
         <div className="relative lg:hidden">
@@ -387,6 +387,8 @@ export function SponsoredVendorsRail({
             onRecordEvent={handleRecordEvent}
             onHide={handleVendorHide}
             whyTag={getWhyTag(vendor)}
+            weddingId={selectedWeddingId || weddings?.[0]?.id}
+            weddingName={selectedWedding?.name}
           />
         ))}
       </div>
@@ -409,6 +411,8 @@ export function SponsoredVendorsRail({
                 onRecordEvent={handleRecordEvent}
                 onHide={handleVendorHide}
                 whyTag={getWhyTag(vendor)}
+                weddingId={selectedWeddingId || weddings?.[0]?.id}
+                weddingName={selectedWedding?.name}
               />
             </div>
           ))}

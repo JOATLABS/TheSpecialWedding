@@ -38,7 +38,7 @@ interface SponsoredMilestoneModuleProps {
  * Max 2 cards per module.
  *
  * Design:
- * - "✦ Sponsored {Category} Options" header
+ * - "Sponsored {Category} Options" header
  * - "Hide this section" link
  * - 2-column card grid
  * - Why-tags contextual to wedding (location, guest count, budget match)
@@ -154,10 +154,10 @@ export function SponsoredMilestoneModule({
     const parts: string[] = [];
     if (weddingContext?.city && profile.city) {
       const distance = profile.service_radius ? `${profile.service_radius}mi from ${weddingContext.city}` : `Near ${weddingContext.city}`;
-      parts.push(`📍 ${distance}`);
+      parts.push(distance);
     }
     if (weddingContext?.guestCount) {
-      parts.push(`👥 Fits ${weddingContext.guestCount}+ guests`);
+      parts.push(`Fits ${weddingContext.guestCount}+ guests`);
     }
     if (weddingContext?.budgetForCategory && profile.typical_price_min && profile.typical_price_max) {
       const budget = weddingContext.budgetForCategory;
@@ -192,7 +192,7 @@ export function SponsoredMilestoneModule({
       {/* Module Header */}
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-[13px] font-bold text-wedding-navy">
-          ✦ Sponsored {categoryLabel} Options
+          Sponsored {categoryLabel} Options
         </h4>
         <button
           onClick={() => setHidden(true)}

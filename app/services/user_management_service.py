@@ -858,7 +858,8 @@ class UserManagementService:
                 raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
             # Check if token has expired
-            if user.get("verification_token_expires") and user["verification_token_expires"] < datetime.now(timezone.utc):
+            token_expires = user.get("verification_token_expires")
+            if token_expires and isinstance(token_expires, datetime) and token_expires < datetime.now(timezone.utc):
                 raise HTTPException(status_code=400, detail="Verification token has expired. Please register again.")
 
             # Update user to verified status

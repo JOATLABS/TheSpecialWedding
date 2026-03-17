@@ -740,12 +740,6 @@ export default function VendorManagementPage() {
                     onView={(vendorId) => window.open(`/vendors/${vendorId}`, '_blank')}
                     onRecordEvent={handleBoostedRecordEvent}
                     onHide={handleBoostedHide}
-                    onAddToWedding={(vendorId) => {
-                      toast.success(`Added ${boostedVendorProfiles[vendorId]?.business_name || 'vendor'} to wedding`);
-                    }}
-                    onRequestQuote={(vendorId) => {
-                      toast.success(`Quote request sent to ${boostedVendorProfiles[vendorId]?.business_name || 'vendor'}`);
-                    }}
                   />
                 ))}
                 {/* Organic Vendors */}

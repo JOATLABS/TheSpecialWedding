@@ -371,7 +371,7 @@ export default function AdminRemindersPage() {
  target_group: targetGroup,
  });
 
- const response = await fetch(`${baseUrl}/admin/reminders/send?${params}`, {
+ const response = await fetch(`${baseUrl}/admin/reminders/twilio/send?${params}`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -381,6 +381,13 @@ export default function AdminRemindersPage() {
  if (response.ok) {
  const result = await response.json();
  totalSent += result.sent || 0;
+ totalFailed += result.skipped_no_phone || 0;
+ totalFailed += result.skipped_opted_out || 0;
+ } else {
+ const errorData = await response.json().catch(() => ({}));
+ const detail = errorData.detail || 'SMS reminder send failed';
+ console.error('SMS reminder error:', detail);
+ setError(`SMS error: ${detail}`);
  }
  }
 
@@ -459,6 +466,7 @@ export default function AdminRemindersPage() {
 
  // Send to guests if any selected
  if (guestTokens.length > 0) {
+ try {
  const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
  method: 'POST',
  headers: {
@@ -472,19 +480,27 @@ export default function AdminRemindersPage() {
  });
 
  if (!response.ok) {
- const errorData = await response.json();
- throw new Error(errorData.detail || 'Failed to send messages to guests');
- }
-
+ const errorData = await response.json().catch(() => ({}));
+ allFailureReasons.push(errorData.detail || 'Failed to send messages to guests');
+ totalFailed += guestTokens.length;
+ totalCount += guestTokens.length;
+ } else {
  const result = await response.json();
  totalSent += result.sent || 0;
  totalFailed += result.failed || 0;
  totalCount += result.total || 0;
  if (result.failure_reasons) allFailureReasons.push(...result.failure_reasons);
  }
+ } catch {
+ allFailureReasons.push('Failed to send messages to guests (network error)');
+ totalFailed += guestTokens.length;
+ totalCount += guestTokens.length;
+ }
+ }
 
  // Send to plus-ones if any selected
  if (plusOneIds.length > 0) {
+ try {
  const response = await fetch(`${baseUrl}/admin/reminders/send-to-plus-ones`, {
  method: 'POST',
  headers: {
@@ -499,15 +515,22 @@ export default function AdminRemindersPage() {
  });
 
  if (!response.ok) {
- const errorData = await response.json();
- throw new Error(errorData.detail || 'Failed to send messages to plus-ones');
- }
-
+ const errorData = await response.json().catch(() => ({}));
+ allFailureReasons.push(errorData.detail || 'Failed to send messages to plus-ones');
+ totalFailed += plusOneIds.length;
+ totalCount += plusOneIds.length;
+ } else {
  const result = await response.json();
  totalSent += result.sent || 0;
  totalFailed += result.failed || 0;
  totalCount += result.total || 0;
  if (result.failure_reasons) allFailureReasons.push(...result.failure_reasons);
+ }
+ } catch {
+ allFailureReasons.push('Failed to send messages to plus-ones (network error)');
+ totalFailed += plusOneIds.length;
+ totalCount += plusOneIds.length;
+ }
  }
 
  if (totalSent > 0) {

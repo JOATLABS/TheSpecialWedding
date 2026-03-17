@@ -603,6 +603,86 @@ export async function backfillRollups(
 }
 
 // =============================================================================
+// AD IMAGE UPLOAD
+// =============================================================================
+
+export interface AdUploadUrlResponse {
+  upload_url: string;
+  key: string;
+  cdn_url: string;
+}
+
+/**
+ * Get a presigned PUT URL for uploading ad creative images
+ * to the dedicated ad-assets bucket (separate from wedding gallery).
+ */
+export async function getAdImageUploadUrl(
+  token: string,
+  filename: string,
+  contentType: string
+): Promise<AdUploadUrlResponse> {
+  const params = new URLSearchParams({
+    filename,
+    content_type: contentType,
+  });
+
+  const response = await fetch(`${API_BASE}/admin/ads/upload-url?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Failed to get ad image upload URL');
+  }
+
+  return response.json();
+}
+
+/**
+ * Upload a file directly to S3/R2 via presigned URL.
+ * This is a PUT request directly to the storage provider, not our API.
+ */
+export async function uploadFileToPresignedUrl(
+  presignedUrl: string,
+  file: File
+): Promise<void> {
+  const response = await fetch(presignedUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Upload failed with status ${response.status}`);
+  }
+}
+
+/**
+ * After a successful upload, persist the CDN URL on the vendor profile
+ * as logo_url so ad cards display the image.
+ */
+export async function updateVendorLogo(
+  token: string,
+  logoUrl: string
+): Promise<{ message: string; logo_url: string }> {
+  const response = await fetch(`${API_BASE}/admin/ads/update-logo`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ logo_url: logoUrl }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Failed to update vendor logo');
+  }
+
+  return response.json();
+}
+
+// =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 

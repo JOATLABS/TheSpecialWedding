@@ -21,8 +21,9 @@ class GuestImportService:
 
         success = 0
         tokens = []
+        warnings = []
 
-        for row in reader:
+        for row_number, row in enumerate(reader, start=2):
             name = row.get("name")
             phone = row.get("phone", None)
             email = row.get("email", None)
@@ -32,7 +33,9 @@ class GuestImportService:
             group_id = row.get("group_id", None)
 
             if not name or len(name.strip()) < 2:
-                # TODO log invalid entry
+                warnings.append(
+                    f"Row {row_number} was skipped: name is required and must be at least 2 characters."
+                )
                 continue
 
             # Sanitize phone: strip whitespace and delimiters like (), -, .
@@ -47,7 +50,9 @@ class GuestImportService:
 
             # Require at least phone or email for contact
             if not phone and not email:
-                # TODO log invalid entry and should not continue because atleast one is required
+                warnings.append(
+                    f"Row {row_number} was skipped: at least one valid phone or email is required."
+                )
                 continue
 
             token = generate_token()
@@ -80,4 +85,4 @@ class GuestImportService:
             except Exception:
                 continue
 
-        return {"imported": success, "tokens": tokens}
+        return {"imported": success, "tokens": tokens, "warnings": warnings}

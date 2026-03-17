@@ -179,7 +179,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
           billing_interval: billingInterval,
           success_url: `${window.location.origin}/admin/login?payment=success`,
           cancel_url: `${window.location.origin}/?payment=cancelled`,
-          trial_days: 0
+          // trial_days omitted — backend reads from plan configuration
         })
       });
 

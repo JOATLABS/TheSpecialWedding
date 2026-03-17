@@ -121,9 +121,11 @@ class ReminderService:
     def _send_sms(self, to: str, body: str) -> str:
         try:
             # Sanitize and normalize phone to E.164 format
-            to = normalize_phone_e164(to) or to
+            normalized = normalize_phone_e164(to)
+            if not normalized:
+                return f"failed: Invalid phone number: {to!r}"
             self.twilio_client.messages.create(
-                to=to,
+                to=normalized,
                 from_=self.from_phone,
                 body=body,
             )
