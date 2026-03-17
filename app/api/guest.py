@@ -4,6 +4,7 @@ from typing import List, Optional, Literal, Any
 import inspect
 from app.services.guest_service import GuestService
 from app.services.activity_log_service import activity_log_service
+from app.services.sse_manager import sse_manager
 from app.models.guest import UpdateGuestRequest, GuestModel, CreateGuestRequest
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.utils.token_generator import generate_token
@@ -130,6 +131,12 @@ async def update_guest(
         except Exception as log_err:
             logger.warning(f"Failed to log guest update activity: {log_err}")
 
+        # Notify connected clients so they see the change instantly
+        await sse_manager.broadcast_data_change(
+            current_user.email, "guest", "updated",
+            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+        )
+
         return result
     except HTTPException as e:
         raise e
@@ -160,6 +167,11 @@ async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(r
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest delete activity: {log_err}")
+
+        await sse_manager.broadcast_data_change(
+            current_user.email, "guest", "deleted",
+            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+        )
 
         return result
     except HTTPException as e:
@@ -195,6 +207,11 @@ async def create_guest(
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest create activity: {log_err}")
+
+        await sse_manager.broadcast_data_change(
+            current_user.email, "guest", "created",
+            wedding_id=wedding_id, record_id=result.get("id"),
+        )
 
         return result
     except HTTPException as e:

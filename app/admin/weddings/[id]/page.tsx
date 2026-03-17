@@ -9,6 +9,7 @@ import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMem
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
 import { SponsoredVendorsRail } from '../../vendors/components/SponsoredVendorsRail';
+import { SponsoredMilestoneModule } from '../../vendors/components/SponsoredMilestoneModule';
 
 // Wedding party group mappings for sync
 // Wedding party = bridesmaids, groomsmen, maid of honor, best man
@@ -1405,6 +1406,50 @@ export default function WeddingDetailsPage() {
  </div>
  </div>
  </div>
+ )}
+
+ {/* Sponsored Milestone Modules — View 4 spec */}
+ {/* Show contextual vendor suggestions for key milestone categories */}
+ {wedding && (
+   <div className="mt-8 space-y-4">
+     <SponsoredMilestoneModule
+       milestoneCategory="venue"
+       isBooked={!!wedding.events?.some(e => e.details?.venue_name)}
+       weddingContext={{
+         city: wedding.city || undefined,
+         state: wedding.state || undefined,
+         guestCount: wedding.guest_count || undefined,
+         budgetForCategory: wedding.budget_venue || undefined,
+       }}
+     />
+     <SponsoredMilestoneModule
+       milestoneCategory="photographer"
+       weddingContext={{
+         city: wedding.city || undefined,
+         state: wedding.state || undefined,
+         guestCount: wedding.guest_count || undefined,
+         budgetForCategory: wedding.budget_photographer || undefined,
+       }}
+     />
+     <SponsoredMilestoneModule
+       milestoneCategory="catering"
+       weddingContext={{
+         city: wedding.city || undefined,
+         state: wedding.state || undefined,
+         guestCount: wedding.guest_count || undefined,
+         budgetForCategory: wedding.budget_catering || undefined,
+       }}
+     />
+     <SponsoredMilestoneModule
+       milestoneCategory="florist"
+       weddingContext={{
+         city: wedding.city || undefined,
+         state: wedding.state || undefined,
+         guestCount: wedding.guest_count || undefined,
+         budgetForCategory: wedding.budget_florist || undefined,
+       }}
+     />
+   </div>
  )}
  </div>
 

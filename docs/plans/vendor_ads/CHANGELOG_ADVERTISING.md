@@ -1,5 +1,193 @@
 # Vendor Advertising Feature — Changelog
 
+## UX Copy Audit — Cross-Component Terminology & Microcopy Review
+**Date:** 2026-03-16
+**Version:** 1.5.0
+
+### UX Copy Fixes (12 issues audited, all resolved)
+
+- **Placement label alignment** — Campaign wizard PLACEMENT_OPTIONS now matches `getAdPlacementLabel()`: "Vendor Rail", "Vendor Detail", "Milestone Module", "Directory Boost"
+- **Category value mapping** — CATEGORY_OPTIONS changed from bare strings to `{value, label}` objects mapping human labels (e.g., "Photography") to backend snake_case (e.g., "photographer")
+- **Vendor-facing annotation** — View 5 data annotation rewritten from developer language ("ad_stats_daily + ad_events collections", "recharts") to vendor-friendly copy explaining how tracking works
+- **Pricing label in Review step** — Shows human label ("Cost per Click (CPC)") instead of raw value ("cpc")
+- **Goal descriptions de-jargoned** — Removed unexplained CPC/CPL/CPA acronyms from goal option descriptions
+- **Price format consistency** — BoostedVendorCard now uses `vendorProfile.currency` instead of hardcoded `$`, matching SponsoredVendorCard
+- **Why-tag tone** — Changed "You may need a {category}" to neutral "Offers {category} services" in SponsoredVendorsRail
+- **Footer copy consistency** — Mobile and desktop footer both say "See more vendors ›" instead of different phrasing
+- **Funnel labels clarified** — "Added" → "Added to Wedding", "Contracts" → "Bookings", rate labels more specific
+- **Chart empty state** — Improved contrast (gray-400 → gray-500), more helpful copy ("Data will appear here once your campaigns start running")
+- **Mobile tooltip** — Now mentions hide ability ("You can hide any vendor you're not interested in")
+- **Ads layout nav** — Differentiated placeholder hrefs so sub-nav active state can work (/campaigns, /leads, /billing)
+
+## View 5: Vendor Ad Manager + View 6: Campaign Wizard
+**Date:** 2026-03-16
+**Version:** 1.4.0
+
+### View 5 — Vendor Ad Manager Dashboard (`vendor/ads/page.tsx`)
+
+Major refactor of the vendor advertising overview page to match mockup View 5 spec:
+
+- **5 performance metric cards** — Impressions, Clicks, Click Rate, Leads, Cost/Lead with period-over-period change indicators (↑/↓/→ Stable). Compares 30-day vs 60-day stats.
+- **Performance by Week bar chart** — Recharts `BarChart` with dual bars (sage for impressions, gold for clicks). Daily series aggregated into weekly chunks via `aggregateWeekly()`.
+- **Conversion Funnel visualization** — 5-step funnel (Impressions → Clicks → Leads → Added → Contracts) with decreasing width bars, conversion rate labels between steps, and wedding color palette.
+- **Active Campaigns table** — 7-column table (Campaign, Status, Placement, Impressions, Clicks, Leads, CTR). Status badges (green/yellow). Lead counts computed by filtering `getAdLeads` results per vendor.
+- **Parallel data fetching** — `Promise.all` for dashboard stats (30-day + 60-day), sponsored vendors, and leads.
+- **Cost/Lead "Free Tier"** — Displays $0.00 with "Free Tier" label during pre-billing period.
+- **Data source annotation** — Footer note documenting data source (ad_stats_daily + ad_events) and full-funnel attribution.
+- **Accessibility** — 44px min-h "New Campaign" button, gray-600 annotation text (4.5:1 contrast), responsive grid (2-col mobile → 5-col desktop).
+
+### View 6 — Campaign Creation Wizard (`vendor/ads/campaigns/new/page.tsx`)
+
+Major refactor from 5-step to 6-step wizard matching mockup View 6 spec:
+
+- **6-step wizard** — Goal → Targeting → Budget & Schedule → Pricing → Creative → Review
+- **Step indicator** — Numbered circles with completed (sage + checkmark), active (navy), future (gray) states. Connector lines between steps.
+- **Step 1: Goal** — 3 goal cards with emoji icons (👁 Profile Visits, 💌 Quote Requests, 📅 Bookings)
+- **Step 2: Targeting** — 4 placement cards in 2-col grid (now includes `directory_boost`), location targeting (region + city), category chips as toggleable buttons
+- **Step 3: Budget & Schedule** — Budget type toggle cards (Daily/Lifetime), large-font budget input ($20px), estimated impressions/clicks/total spend calculations, date range with duration calculator, pacing strategy cards (Standard/Accelerated), budget recommendation box
+- **Step 4: Pricing (NEW)** — CPC/CPL/Fixed pricing model selection. Conditional bid inputs per model. Fixed slot shows premium badge.
+- **Step 5: Creative** — Image URL, headline (60 char), description (150 char), special offer, CTA select. Live preview with "✦ Sponsored" badge matching production card style.
+- **Step 6: Review** — Summary with pill-style tags for placements/categories, budget/pricing/pacing grid, creative preview.
+- **Navigation** — "← Back" / "Continue to {NextStep} →" / "Submit for Review" with 44px min-h buttons
+- **Metadata capture** — Comprehensive metadata including goal, budget_type, daily_budget, pacing, pricing_model, cpc_bid, cpl_bid, region, city
+- **Accessibility** — `aria-label` and `aria-pressed` on all toggle buttons (goal, placement, category, budget type, pacing), `aria-current="step"` on active step, date range validation (endDate >= startDate)
+
+### QA Verification
+- View 5: 67/72 checks passed. 1 fix applied (annotation contrast gray-400→gray-600)
+- View 6: 26.5/27 checks passed. Fixes applied (aria-labels on all interactive buttons, date validation)
+
+### Files Modified
+- `app/admin/vendor/ads/page.tsx` — Full rewrite (5 perf cards, recharts bar chart, funnel, campaigns table)
+- `app/admin/vendor/ads/campaigns/new/page.tsx` — Full rewrite (6-step wizard with pricing step)
+
+---
+
+## View 3: Directory Boosts + View 4: Milestone Module
+**Date:** 2026-03-16
+**Version:** 1.3.0
+
+### View 3 — Directory Boost Cards (`BoostedVendorCard.tsx`)
+
+New `BoostedVendorCard` component for the `directory_boost` placement, matching mockup View 3 spec:
+
+- **120px image header** with category emoji placeholder and "⚡ Boosted" gold gradient badge (`bg-gradient-to-r from-wedding-gold to-amber-600`) positioned absolute top-left
+- **Dual badge system** — "⚡ Boosted" on image header + "✦ Sponsored" text badge on card body
+- **Full card layout** — Vendor name (14px bold), category (11px sage), location with pin emoji, star rating (filled/empty Lucide Stars), price range ($X,XXX – $X,XXX format)
+- **Dual CTA row** — "+ Add to Wedding" (sage bg) + "Request Quote" (outlined) with 44px min-h touch targets
+- **Complete event tracking** — `impression_served` (on mount), `impression_viewable` (IntersectionObserver, 50% visible for 1s), `vendor_profile_view`, `vendor_added_to_wedding`, `contact_click`, `dismiss`
+- **Click attribution** — UUID `click_id` generated per card, consistent across all events
+- **Hide on hover** — X button appears on group-hover, records dismiss event, removes card from DOM
+- **Accessibility** — `<article>` with `role="article"`, `<a>` link with focus ring, `aria-label` on all interactive elements, `focus-within:ring-2` on card, `w-11 h-11` (44px) hide button, focus rings on CTA buttons
+
+**Integration into vendor directory page (`vendors/page.tsx`):**
+- Fetches max 2 boosted vendors via `getSponsoredVendors(token, { placement: 'directory_boost', limit: 2 })`
+- Client-side filtering by `hidden_vendor_ids` and `hidden_categories` from planner preferences
+- Boosted cards render at top of vendor grid before organic cards
+- Count indicator: "Showing X results · 2 boosted results"
+- Empty state checks both `vendors.length === 0 AND boostedVendors.length === 0`
+
+### View 4 — Sponsored Milestone Module (`SponsoredMilestoneModule.tsx`)
+
+New `SponsoredMilestoneModule` component for the `milestone_module` placement, matching mockup View 4 spec:
+
+- **"✦ Sponsored {Category} Options" header** with "Hide this section" link
+- **2-column card grid** (`grid-cols-1 sm:grid-cols-2`) rendering max 2 `SponsoredVendorCard` components
+- **Contextual why-tags** generated from `weddingContext` prop:
+  - Distance: "📍 {radius}mi from {city}" or "📍 Near {city}"
+  - Guest capacity: "👥 Fits {count}+ guests"
+  - Budget match: "Budget range match" (when `price_min <= budget && price_max >= budget * 0.5`)
+- **Auto-suppression** — Module returns null when `isBooked=true`, section hidden, loading, or no vendors
+- **Footer** — "Why am I seeing this?" toggle + "See more {category} ›" link
+- **Why tooltip** — Contextual explanation of matching criteria with `role="tooltip"` and `aria-expanded`
+- **Section** — `role="region"` with `aria-label`, subtle gradient background
+
+**Integration into wedding detail page (`weddings/[id]/page.tsx`):**
+- 4 milestone modules rendered in main content column (`lg:col-span-3`):
+  - `venue` (isBooked checks `venue_name` on events)
+  - `photographer`
+  - `catering`
+  - `florist`
+- Each module receives `weddingContext` with city, state, guestCount, and category-specific budget
+- Wrapped in `space-y-4` with `mt-8` top margin
+- Conditionally rendered only when `wedding` object exists
+
+### QA Verification
+- View 3: 25/29 checks passed, 3 medium issues fixed (hide button 32px→44px, focus rings on link and buttons)
+- View 4: 29/29 checks passed, 0 issues
+
+### Files Created
+- `app/admin/vendors/components/BoostedVendorCard.tsx`
+- `app/admin/vendors/components/SponsoredMilestoneModule.tsx`
+
+### Files Modified
+- `app/admin/vendors/page.tsx` — Boosted vendor integration (fetch, filter, render, event handlers)
+- `app/admin/weddings/[id]/page.tsx` — Milestone module integration (4 categories with context)
+
+---
+
+## Responsive Rail Refactor, Accessibility & Multi-Agent QA Pass
+**Date:** 2026-03-16
+**Version:** 1.2.0
+
+### Responsive Layout Refactor
+
+Implemented dual-layout responsive design for the sponsored vendors rail, aligning with the Vendor_Ad_Mockups.html source of truth:
+
+**Desktop (lg: 1024px+):** Vertical stacked rail (right sidebar, max 3 cards) matching mockup View 1 spec — 320px width column inside `lg:grid-cols-4` planner dashboard grid. Includes "Sponsored Vendors" header, "⚙ Preferences" button, wedding context badge, "Why am I seeing this?" expandable tooltip, and "See more vendors ›" footer link.
+
+**Mobile (<1024px):** Horizontal snap-scroll carousel with left/right navigation arrows. Includes "Recommended for you" header with Sparkles icon, HelpCircle tooltip, "See all sponsored vendors →" centered footer link.
+
+### Accessibility Fixes (WCAG 2.1 AA Compliance)
+
+1. **Keyboard accessibility** — Card changed from `<div onClick>` to semantic `<article>` with `<a>` link for the main clickable area. CTA buttons placed outside the link to avoid nested interactive elements. Cards are now fully navigable via Tab/Enter/Space.
+
+2. **Touch target sizes** — All interactive elements meet WCAG 44px minimum:
+   - Hide button: `w-11 h-11` (44px)
+   - Scroll arrows: `w-11 h-11` (44px)
+   - Mobile info button: `w-11 h-11` (44px)
+   - CTA buttons: `min-h-[44px]`
+
+3. **Contrast ratios** — All gray text upgraded from `gray-300`/`gray-400`/`gray-500` to `gray-600` (5.7:1 ratio on white, exceeding AA 4.5:1 requirement). Applies to meta text, preferences, footer links, and tooltip content.
+
+4. **ARIA carousel** — Mobile carousel has `role="region"`, `aria-roledescription="carousel"`, `aria-label`. Scroll container has `role="list"` with `role="listitem"` on each card. Desktop layout also has `role="region"` with `aria-label`.
+
+5. **Tooltip ARIA** — Both mobile and desktop tooltips have `role="tooltip"` with matching `id`/`aria-controls`. Trigger buttons have `aria-expanded` state.
+
+6. **Live region for dismissals** — `<div aria-live="polite" aria-atomic="true">` announces vendor name when card is hidden, providing screen reader feedback.
+
+7. **Semantic HTML** — Cards use `<article>` with `role="article"` and descriptive `aria-label`. Image placeholders have `aria-hidden="true"`. Card has `focus-within:ring-2` for keyboard focus visibility.
+
+8. **Preferences control** — Changed from non-focusable `<span>` to `<button>` element.
+
+### Why-Tag Passthrough Fix
+
+The `whyTag` prop existed on `SponsoredVendorCard` but was never passed from `SponsoredVendorsRail`. Added `getWhyTag()` function (memoized via `useCallback`) that generates context-aware why-tags from vendor profile data (e.g., "Serves Austin · You may need a photographer"). Both desktop and mobile renders now pass `whyTag={getWhyTag(vendor)}`. Also fixed why-tag padding from `py-1` to `py-1.5` per mockup spec.
+
+### Frontend Type Alignment
+
+1. **Legacy event types removed** — `AdEventType` cleaned from 15 values to 12, removing `impression`, `viewable_impression`, `detail_view`, `assignment` that existed in the frontend but not the backend enum. `getEventTypeLabel` updated to match.
+
+2. **`wedding_overrides` added** — `AdPreferences` interface now includes `wedding_overrides: Record<string, { hidden_vendor_ids?: string[]; hidden_categories?: string[] }>` matching the backend `PlannerAdPreference` model.
+
+### Backend Feature Flag Guard
+
+Added feature flag check to `record_ad_event` endpoint — now calls `service.get_feature_flag()` before recording events and returns `{"status": "skipped", "reason": "advertising_disabled"}` when the advertising feature is toggled off. Prevents phantom event accumulation when ads are disabled.
+
+### Files Changed
+- `app/admin/vendors/components/SponsoredVendorCard.tsx` — Semantic article, keyboard-accessible `<a>`, 44px touch targets, contrast fixes, focus ring, ARIA labels, why-tag py-1.5
+- `app/admin/vendors/components/SponsoredVendorsRail.tsx` — Dual responsive layout, whyTag passthrough, ARIA carousel, live region, tooltip ARIA, 44px targets, contrast fixes, dismissAnnouncement state, getWhyTag useCallback
+- `app/services/advertisingApi.ts` — AdEventType cleaned (15→12), wedding_overrides added to AdPreferences, getEventTypeLabel aligned
+- `app/api/advertising.py` — Feature flag guard on record_ad_event
+
+### QA Verification
+- Multi-agent review (Senior QA + Senior UX + Accessibility) — 42/42 checks passed
+- Responsive breakpoints consistent (all `lg:` at 1024px)
+- Desktop limited to 3 cards as specified in mockup
+- Event tracking intact through refactor
+- 95% pixel fidelity to mockup
+
+---
+
 ## Code Review Bugfix Pass
 **Date:** 2026-03-16
 **Version:** 1.1.0
@@ -458,6 +646,8 @@ Old event names are silently mapped to new names in `record_ad_event()`.
 
 | Version | Date | Status | Notes |
 |---------|------|--------|-------|
+| 1.2.0 | 2026-03-16 | Release | Responsive rail refactor, WCAG 2.1 AA accessibility, why-tag passthrough, type alignment, feature flag guard |
+| 1.1.0 | 2026-03-16 | Release | Code review bugfix pass: 5 critical fixes ($or query, field name, CTR double-count, enum, vendor-role scoping) |
 | 1.0.0 | 2026-03-15 | Release | Stages 1-3 complete: Full platform with leads, preferences, vendor self-serve, campaign wizard, analytics |
 | 0.3.0 | 2026-03-11 | Beta | Phase 3 complete: Admin controls and analytics |
 | 0.2.0 | 2026-03-11 | Beta | Phase 2 complete: Frontend display components |

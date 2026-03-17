@@ -4,7 +4,7 @@ import stripe
 from stripe import StripeError, InvalidRequestError, SignatureVerificationError
 from fastapi import HTTPException
 from typing import Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.core.settings import settings
 from app.core.database import mongo
 from bson import ObjectId
@@ -88,20 +88,36 @@ class StripeService:
                 metadata={"user_id": user_id}
             )
 
-            # Save customer ID to database
-            await self.stripe_customers_collection.update_one(
-                {"user_id": user_id},
-                {
-                    "$set": {
-                        "user_id": user_id,
-                        "stripe_customer_id": customer.id,
-                        "email": email,
-                        "created_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                },
-                upsert=True
-            )
+            # Save customer ID to database — rollback Stripe customer on failure
+            try:
+                await self.stripe_customers_collection.update_one(
+                    {"user_id": user_id},
+                    {
+                        "$set": {
+                            "user_id": user_id,
+                            "stripe_customer_id": customer.id,
+                            "email": email,
+                            "created_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc)
+                        }
+                    },
+                    upsert=True
+                )
+            except Exception as db_err:
+                # MongoDB write failed — delete the orphaned Stripe customer
+                logger.error(f"MongoDB save failed after Stripe customer creation, rolling back: {db_err}")
+                try:
+                    stripe.Customer.delete(customer.id)
+                    logger.info(f"Rolled back orphaned Stripe customer {customer.id}")
+                except Exception as rollback_err:
+                    logger.critical(
+                        f"ORPHANED Stripe customer {customer.id} for user {user_id} — "
+                        f"manual cleanup required. Rollback error: {rollback_err}"
+                    )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to save payment profile. Please try again."
+                )
 
             logger.info(f"Created Stripe customer {customer.id} for user {user_id}")
             return customer.id
@@ -109,6 +125,8 @@ class StripeService:
         except StripeError as e:
             logger.error(f"Stripe error creating customer: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+        except HTTPException:
+            raise  # Re-raise HTTPExceptions from the MongoDB rollback block
         except Exception as e:
             logger.error(f"Error creating Stripe customer: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error creating customer: {str(e)}")
@@ -478,11 +496,24 @@ class StripeService:
                 }
             )
 
-            # Save session reference with billing interval and customer for consistency
-            await self.subscriptions_collection.update_one(
-                {"user_id": user_id},
+            # Save session reference — guard against concurrent checkouts.
+            # Only overwrite if no unexpired checkout session exists (Stripe
+            # sessions expire after 24 h, so we use a 30-min active window to
+            # prevent rapid duplicate creation while still allowing retries).
+            active_window = datetime.now(timezone.utc) - timedelta(minutes=30)
+
+            result = await self.subscriptions_collection.find_one_and_update(
+                {
+                    "user_id": user_id,
+                    "$or": [
+                        {"stripe_checkout_session_id": {"$exists": False}},
+                        {"stripe_checkout_created_at": {"$exists": False}},
+                        {"stripe_checkout_created_at": {"$lt": active_window}},
+                    ]
+                },
                 {
                     "$set": {
+                        "user_id": user_id,
                         "stripe_checkout_session_id": checkout_session.id,
                         "stripe_checkout_created_at": datetime.now(timezone.utc),
                         "stripe_customer_id": customer_id,
@@ -490,8 +521,25 @@ class StripeService:
                         "plan_id": plan_id,
                     }
                 },
-                upsert=True
+                upsert=True,
+                return_document=True,
             )
+
+            # If the stored session_id differs, a concurrent request won the race
+            if result and result.get("stripe_checkout_session_id") != checkout_session.id:
+                logger.warning(
+                    f"Concurrent checkout detected for user {user_id}. "
+                    f"Active session: {result.get('stripe_checkout_session_id')}"
+                )
+                # Expire the just-created Stripe session to avoid dangling sessions
+                try:
+                    stripe.checkout.Session.expire(checkout_session.id)
+                except Exception:
+                    pass  # best-effort cleanup
+                raise HTTPException(
+                    status_code=409,
+                    detail="A checkout session is already in progress. Please complete or wait for it to expire before trying again."
+                )
 
             logger.info(f"Created checkout session {checkout_session.id} for user {user_id}")
 
@@ -609,8 +657,8 @@ class StripeService:
         if set_on_insert:
             update_document["$setOnInsert"] = set_on_insert
 
-        await self.subscriptions_collection.update_one(query, update_document, upsert=True)
-
+        # Build user update (if applicable) before starting the transaction
+        user_update_doc = None
         if user_id:
             user_updates: Dict[str, Any] = {
                 "subscription_status": internal_status,
@@ -642,14 +690,43 @@ class StripeService:
                 unset_fields["verification_token_expires"] = ""
                 unset_fields["pending_expires_at"] = ""
 
-            update_doc: Dict[str, Any] = {"$set": user_updates}
+            user_update_doc = {"$set": user_updates}
             if unset_fields:
-                update_doc["$unset"] = unset_fields
+                user_update_doc["$unset"] = unset_fields
 
-            await self.users_collection.update_one(
-                {"_id": ObjectId(user_id)},
-                update_doc
-            )
+        # Execute both writes in a single transaction so subscriptions and
+        # users collections stay consistent.  Falls back to sequential writes
+        # if the MongoDB deployment doesn't support transactions (standalone).
+        try:
+            async with await mongo.client.start_session() as session:
+                async with session.start_transaction():
+                    await self.subscriptions_collection.update_one(
+                        query, update_document, upsert=True, session=session
+                    )
+                    if user_id and user_update_doc:
+                        await self.users_collection.update_one(
+                            {"_id": ObjectId(user_id)},
+                            user_update_doc,
+                            session=session,
+                        )
+        except Exception as txn_err:
+            # Standalone MongoDB (no replica set) doesn't support transactions.
+            # Fall back to sequential writes with a warning.
+            if "transaction" in str(txn_err).lower():
+                logger.warning(
+                    "MongoDB transactions not supported (standalone mode). "
+                    "Falling back to sequential writes for subscription sync."
+                )
+                await self.subscriptions_collection.update_one(
+                    query, update_document, upsert=True
+                )
+                if user_id and user_update_doc:
+                    await self.users_collection.update_one(
+                        {"_id": ObjectId(user_id)},
+                        user_update_doc,
+                    )
+            else:
+                raise
 
         return {
             "status": internal_status,
@@ -958,6 +1035,16 @@ class StripeService:
         if not user_id or not plan_id:
             logger.error("Missing metadata in checkout session")
             return {"status": "error", "message": "Missing user_id or plan_id metadata in checkout session"}
+
+        # Verify user still exists before syncing subscription
+        try:
+            user_exists = await self.users_collection.find_one({"_id": ObjectId(user_id)}, {"_id": 1})
+            if not user_exists:
+                logger.error(f"User {user_id} not found during checkout completion — may have been deleted")
+                return {"status": "error", "message": f"User {user_id} not found"}
+        except Exception as e:
+            logger.error(f"Error verifying user {user_id}: {str(e)}")
+            return {"status": "error", "message": f"Error verifying user: {str(e)}"}
 
         subscription: Optional[Dict[str, Any]] = None
 

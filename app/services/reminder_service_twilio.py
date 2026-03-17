@@ -6,6 +6,7 @@ from twilio.rest import Client  # type: ignore
 from fastapi import HTTPException
 from datetime import datetime, timezone
 from app.core.database import mongo
+from app.utils.contact_sanitizer import normalize_phone_e164
 import logging
 
 logger = logging.getLogger(__name__)
@@ -141,10 +142,8 @@ class TwilioReminderService:
                 "retryable": False
             }
 
-        # Ensure phone number is in E.164 format
-        if not to.startswith('+'):
-            to = f"+1{to}"  # Assume US number if no country code
-
+        # Sanitize and normalize phone to E.164 format
+        to = normalize_phone_e164(to) or to
         status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
         last_error = None
 
@@ -372,8 +371,12 @@ class TwilioRSVPReminderHelper:
             else:
                 message = f"You're invited! RSVP here: {url}"
 
-            if not phone.startswith('+'):
-                phone = f"+1{phone}"
+            # Sanitize and normalize phone to E.164 format
+            phone = normalize_phone_e164(phone)
+            if not phone:
+                skipped_no_phone += 1
+                logger.warning(f"Skipping {guest.get('name')} - phone sanitized to empty")
+                continue
 
             # Delivery tracking fields
             message_sid = None

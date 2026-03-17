@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useSSEEvent } from '@/contexts/SSEContext';
 import { Menu, Sun, Moon, Bell, User, Settings, LogOut, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
@@ -13,11 +14,6 @@ interface TopHeaderProps {
   title?: string;
 }
 
-// SSE reconnection configuration
-const INITIAL_RECONNECT_DELAY = 1000; // 1 second
-const MAX_RECONNECT_DELAY = 30000;    // 30 seconds cap
-const MAX_RECONNECT_ATTEMPTS = 20;    // Stop after 20 consecutive failures
-
 export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { userProfile, token, logout } = useAdmin();
@@ -25,17 +21,6 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // SSE connection refs
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttempts = useRef(0);
-  const isConnecting = useRef(false);
-  // Track ALL in-flight auth probe controllers so cleanup can abort them all,
-  // even if multiple probes overlap due to rapid reconnection attempts.
-  const probeControllersRef = useRef<Set<AbortController>>(new Set());
-  // Guard against async callbacks executing after unmount / effect cleanup.
-  const isMountedRef = useRef(true);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -48,142 +33,20 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // SSE connection management
+  // --- SSE: subscribe to notification events via the shared SSEProvider ---
+  useSSEEvent('notification-count', useCallback((data: unknown) => {
+    const d = data as { unread?: number };
+    setUnreadCount(d.unread || 0);
+  }, []));
+
+  useSSEEvent('notification-new', useCallback((data: unknown) => {
+    window.dispatchEvent(new CustomEvent('notification-received', { detail: data }));
+  }, []));
+
+  // Listen for local "notifications-updated" events (e.g. user marks as read)
+  // to trigger an immediate re-fetch via a one-shot REST call
   useEffect(() => {
     if (!token) return;
-
-    // Mark as mounted for this effect cycle
-    isMountedRef.current = true;
-
-    const closeConnection = () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-      // Abort ALL in-flight auth probes so their callbacks never fire
-      probeControllersRef.current.forEach((c) => c.abort());
-      probeControllersRef.current.clear();
-      isConnecting.current = false;
-    };
-
-    const connect = () => {
-      // Close any existing connection before opening a new one (prevents race on token change)
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      if (isConnecting.current) return;
-      isConnecting.current = true;
-
-      // EventSource doesn't support custom headers, so we pass the token as a query param.
-      // The backend SSE endpoint accepts ?token= for this reason.
-      const url = `${getApiBaseUrl()}/admin/notifications/stream?token=${encodeURIComponent(token)}`;
-      const es = new EventSource(url);
-      eventSourceRef.current = es;
-
-      es.addEventListener('notification-count', (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          setUnreadCount(data.unread || 0);
-          // Reset reconnect counter on successful data
-          reconnectAttempts.current = 0;
-        } catch {
-          // Ignore malformed events
-        }
-      });
-
-      es.addEventListener('notification-new', (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          // Dispatch custom event so other components (e.g. notification panel) can react
-          window.dispatchEvent(new CustomEvent('notification-received', { detail: data }));
-        } catch {
-          // Ignore malformed events
-        }
-      });
-
-      es.onopen = () => {
-        isConnecting.current = false;
-        reconnectAttempts.current = 0;
-      };
-
-      es.onerror = () => {
-        isConnecting.current = false;
-        es.close();
-        eventSourceRef.current = null;
-
-        // Before reconnecting, verify the token is still valid.
-        // EventSource doesn't expose HTTP status codes, so we can't
-        // distinguish a 401 from a network error. A quick auth check
-        // prevents us from hammering the endpoint with an expired token.
-        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS && isMountedRef.current) {
-          const delay = Math.min(
-            INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current),
-            MAX_RECONNECT_DELAY
-          );
-          reconnectAttempts.current += 1;
-
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (!isMountedRef.current) return;
-
-            // Create an AbortController for this probe; track it in the Set
-            // so cleanup can abort ALL in-flight probes (not just the latest).
-            const controller = new AbortController();
-            probeControllersRef.current.add(controller);
-
-            // 5-second timeout so a stalled probe doesn't block reconnection forever
-            const probeTimeout = setTimeout(() => controller.abort(), 5000);
-
-            fetch(`${getApiBaseUrl()}/admin/user/notifications/count`, {
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              signal: controller.signal,
-            })
-              .then((probe) => {
-                if (probe.status === 401 || probe.status === 402) {
-                  // Token is expired/invalid — stop reconnecting
-                  reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS;
-                  return;
-                }
-                // Only reconnect if still mounted and not aborted
-                if (isMountedRef.current && !controller.signal.aborted) {
-                  connect();
-                }
-              })
-              .catch(() => {
-                // Network error or aborted — only retry if mounted and not aborted
-                if (isMountedRef.current && !controller.signal.aborted) {
-                  connect();
-                }
-              })
-              .finally(() => {
-                clearTimeout(probeTimeout);
-                probeControllersRef.current.delete(controller);
-              });
-          }, delay);
-        }
-      };
-    };
-
-    // Connect on mount
-    connect();
-
-    // Pause SSE when tab is hidden, resume when visible
-    const handleVisibilityChange = () => {
-      if (!isMountedRef.current) return;
-      if (document.hidden) {
-        closeConnection();
-      } else {
-        reconnectAttempts.current = 0;
-        connect();
-      }
-    };
-
-    // Listen for local "notifications-updated" events (e.g. user marks as read)
-    // to trigger an immediate re-fetch via a one-shot REST call
     const handleNotificationsRead = async () => {
       try {
         const [platformRes, activityRes] = await Promise.allSettled([
@@ -206,16 +69,8 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
         // SSE will catch up on next push
       }
     };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('notifications-updated', handleNotificationsRead);
-
-    return () => {
-      isMountedRef.current = false;
-      closeConnection();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('notifications-updated', handleNotificationsRead);
-    };
+    return () => window.removeEventListener('notifications-updated', handleNotificationsRead);
   }, [token]);
 
   const toggleTheme = () => {

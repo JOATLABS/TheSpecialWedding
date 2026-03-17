@@ -2,6 +2,7 @@
 
 import { AdminProvider } from '@/contexts/AdminContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { SSEProvider } from '@/contexts/SSEContext';
 import { ConfirmDialogProvider } from '@/components/ui/ConfirmDialog';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -110,11 +111,13 @@ export default function AdminLayout({
   return (
     <ThemeProvider>
       <AdminProvider>
-        <ConfirmDialogProvider>
-          <AdminRouteGuard>
-            <AdminLayoutContent>{children}</AdminLayoutContent>
-          </AdminRouteGuard>
-        </ConfirmDialogProvider>
+        <SSEProvider>
+          <ConfirmDialogProvider>
+            <AdminRouteGuard>
+              <AdminLayoutContent>{children}</AdminLayoutContent>
+            </AdminRouteGuard>
+          </ConfirmDialogProvider>
+        </SSEProvider>
       </AdminProvider>
     </ThemeProvider>
   );

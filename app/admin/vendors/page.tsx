@@ -26,6 +26,16 @@ import { VendorPaymentModal } from './components/VendorPaymentModal';
 import { PaymentMilestones } from './components/PaymentMilestones';
 import { getApiBaseUrl } from '@/utils/env';
 import { SponsoredVendorsRail } from './components/SponsoredVendorsRail';
+import { BoostedVendorCard } from './components/BoostedVendorCard';
+import {
+  getSponsoredVendors,
+  recordAdEvent,
+  getAdPreferences,
+  hideAdVendor,
+  type SponsoredVendor as SponsoredVendorType,
+  type AdEventType,
+  type AdPreferences,
+} from '@/services/advertisingApi';
 
 // AI Recommendation types
 interface VendorRecommendation {
@@ -74,6 +84,9 @@ export default function VendorManagementPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [preferredOnly, setPreferredOnly] = useState(false);
+
+  // Directory Boost state
+  const [boostedVendors, setBoostedVendors] = useState<SponsoredVendorType[]>([]);
 
   // Modal state
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -235,6 +248,75 @@ export default function VendorManagementPage() {
       fetchData();
     }
   }, [fetchData, fetchUserProfile, router, userProfile]);
+
+  // Fetch boosted vendors for directory_boost placement
+  useEffect(() => {
+    const fetchBoostedVendors = async () => {
+      if (!token) return;
+      try {
+        let prefs: AdPreferences | null = null;
+        try { prefs = await getAdPreferences(token); } catch { /* continue */ }
+
+        let boosted = await getSponsoredVendors(token, {
+          placement: 'directory_boost',
+          category: categoryFilter || undefined,
+          limit: 2,
+        });
+
+        // Client-side filtering based on planner preferences
+        if (prefs) {
+          if (prefs.hidden_vendor_ids?.length) {
+            boosted = boosted.filter(v => !prefs!.hidden_vendor_ids.includes(v.vendor_profile_id));
+          }
+          if (prefs.hidden_categories?.length) {
+            boosted = boosted.filter(v => {
+              const cats = v.target_categories || [];
+              return !cats.some((c: string) => prefs!.hidden_categories.includes(c));
+            });
+          }
+        }
+
+        setBoostedVendors(boosted);
+      } catch (err) {
+        console.error('Failed to fetch boosted vendors:', err);
+      }
+    };
+
+    fetchBoostedVendors();
+  }, [token, categoryFilter]);
+
+  // Build a vendor profile map for boosted cards
+  const boostedVendorProfiles: Record<string, VendorProfile> = {};
+  vendors.forEach((v) => { boostedVendorProfiles[v._id] = v; });
+
+  // Boosted vendor event handler
+  const handleBoostedRecordEvent = async (
+    eventType: AdEventType,
+    sponsoredVendorId: string,
+    vendorProfileId: string,
+    metadata?: Record<string, any>
+  ) => {
+    if (!token) return;
+    try {
+      await recordAdEvent(token, {
+        sponsored_vendor_id: sponsoredVendorId,
+        vendor_profile_id: vendorProfileId,
+        event_type: eventType,
+        placement: 'directory_boost',
+        metadata,
+      });
+    } catch (err) {
+      console.error('Failed to record boosted event:', err);
+    }
+  };
+
+  // Handle boosted vendor hide
+  const handleBoostedHide = async (vendorProfileId: string) => {
+    if (token) {
+      try { await hideAdVendor(token, vendorProfileId); } catch { /* continue */ }
+    }
+    setBoostedVendors(prev => prev.filter(v => v.vendor_profile_id !== vendorProfileId));
+  };
 
   // Handle add vendor
   const handleAddVendor = async (e: React.FormEvent) => {
@@ -618,8 +700,18 @@ export default function VendorManagementPage() {
               </button>
             </div>
 
+            {/* Boosted count indicator */}
+            {boostedVendors.length > 0 && (
+              <p className="text-xs text-gray-600">
+                Showing {vendors.length + boostedVendors.length} results
+                {categoryFilter ? ` for "${VENDOR_CATEGORIES.find(c => c.value === categoryFilter)?.label || categoryFilter}"` : ''}
+                {' · '}
+                <span className="text-wedding-sage font-semibold">{boostedVendors.length} boosted result{boostedVendors.length !== 1 ? 's' : ''}</span>
+              </p>
+            )}
+
             {/* Vendor Grid */}
-            {vendors.length === 0 ? (
+            {vendors.length === 0 && boostedVendors.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
                   <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -639,6 +731,24 @@ export default function VendorManagementPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Boosted Vendors — appear first in grid */}
+                {boostedVendors.map((boosted) => (
+                  <BoostedVendorCard
+                    key={`boosted-${boosted._id}`}
+                    vendor={boosted}
+                    vendorProfile={boostedVendorProfiles[boosted.vendor_profile_id]}
+                    onView={(vendorId) => window.open(`/vendors/${vendorId}`, '_blank')}
+                    onRecordEvent={handleBoostedRecordEvent}
+                    onHide={handleBoostedHide}
+                    onAddToWedding={(vendorId) => {
+                      toast.success(`Added ${boostedVendorProfiles[vendorId]?.business_name || 'vendor'} to wedding`);
+                    }}
+                    onRequestQuote={(vendorId) => {
+                      toast.success(`Quote request sent to ${boostedVendorProfiles[vendorId]?.business_name || 'vendor'}`);
+                    }}
+                  />
+                ))}
+                {/* Organic Vendors */}
                 {vendors.map((vendor) => (
                   <div
                     key={vendor._id}

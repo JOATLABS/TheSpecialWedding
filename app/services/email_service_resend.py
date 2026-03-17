@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any, cast
 import logging
 from app.core.database import mongo
+from app.utils.contact_sanitizer import sanitize_email, validate_email_format
 import time
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,11 @@ class ResendEmailService:
         """Send a single email using Resend"""
         if not self.configured:
             return {"success": False, "error": "Email service not configured"}
+
+        # Sanitize email address — strip whitespace, lowercase
+        to_email = sanitize_email(to_email) or to_email
+        if not to_email or not validate_email_format(to_email):
+            return {"success": False, "error": f"Invalid recipient email: {to_email!r}"}
 
         try:
             # Use provided from_email or default

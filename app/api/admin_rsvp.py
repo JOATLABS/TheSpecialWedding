@@ -2,6 +2,7 @@ from fastapi import APIRouter, Response, Depends, Query, HTTPException
 from app.services.admin_rsvp_service import AdminRSVPService
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.services.guest_service import GuestService
+from app.services.sse_manager import sse_manager
 from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime
@@ -51,13 +52,20 @@ async def admin_update_rsvp(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     try:
-        return await admin_service.admin_create_or_update_rsvp(
+        result = await admin_service.admin_create_or_update_rsvp(
             guest_id=guest_id,
             wedding_id=guest.get("wedding_id"),
             attending=rsvp_data.attending,
             dietary=rsvp_data.dietary,
             confirmed_by_admin=rsvp_data.confirmed_by_admin
         )
+
+        await sse_manager.broadcast_data_change(
+            current_user.email, "rsvp", "updated",
+            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+        )
+
+        return result
     except HTTPException as e:
         raise e
     except Exception as err:
@@ -77,7 +85,14 @@ async def admin_delete_rsvp(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     try:
-        return await admin_service.delete_rsvp(guest_id)
+        result = await admin_service.delete_rsvp(guest_id)
+
+        await sse_manager.broadcast_data_change(
+            current_user.email, "rsvp", "deleted",
+            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+        )
+
+        return result
     except HTTPException as e:
         raise e
     except Exception as err:

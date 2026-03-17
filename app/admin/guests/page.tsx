@@ -105,7 +105,7 @@ export default function AdminGuestsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending' | 'import'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending' | 'not_invited' | 'import'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
@@ -451,7 +451,8 @@ export default function AdminGuestsPage() {
       const hasRSVP = rsvps.some(r => normalizeId(r.guest_id) === guestId);
 
       if (activeTab === 'rsvp' && !hasRSVP) return false;
-      if (activeTab === 'pending' && hasRSVP) return false;
+      if (activeTab === 'pending' && (!guest.invite_sent || hasRSVP)) return false;
+      if (activeTab === 'not_invited' && (guest.invite_sent || hasRSVP)) return false;
 
       // Group filter
       if (filterGroup && guest.group_id !== filterGroup) return false;
@@ -1263,7 +1264,7 @@ export default function AdminGuestsPage() {
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                   {/* Total Guests */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('all')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-wedding-navy/30 ${activeTab === 'all' ? 'ring-2 ring-wedding-navy' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Guests</h3>
                       <div className="flex items-baseline gap-2 justify-center">
@@ -1281,7 +1282,7 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* RSVPs Received */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('rsvp')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-green-500/30 ${activeTab === 'rsvp' ? 'ring-2 ring-green-500' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">RSVPs Confirmed</h3>
                       <div className="flex items-baseline gap-2 justify-center">
@@ -1299,7 +1300,7 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* Awaiting Response */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('pending')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-yellow-500/30 ${activeTab === 'pending' ? 'ring-2 ring-yellow-500' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Awaiting Response</h3>
                       <div className="flex items-baseline gap-2 justify-center">
@@ -1317,7 +1318,7 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* Not Invited */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('not_invited')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-gray-400/30 ${activeTab === 'not_invited' ? 'ring-2 ring-gray-400' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Not Invited</h3>
                       <p className="text-3xl font-bold text-gray-500 mt-1">{notInvited}</p>
@@ -1363,11 +1364,21 @@ export default function AdminGuestsPage() {
                       onClick={() => setActiveTab('pending')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                         activeTab === 'pending'
-                          ? 'bg-wedding-navy text-white'
+                          ? 'bg-yellow-500 text-white'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
-                      Awaiting RSVP ({invitedNoRsvp})
+                      Pending ({invitedNoRsvp})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('not_invited')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        activeTab === 'not_invited'
+                          ? 'bg-gray-500 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Not Invited ({notInvited})
                     </button>
                     <button
                       onClick={() => setActiveTab('import')}

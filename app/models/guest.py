@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, field_validator, field_serializer
 from typing import Optional
 from datetime import datetime
 import re
+from app.utils.contact_sanitizer import sanitize_phone, sanitize_email, validate_email_format
 
 
 class GuestModel(BaseModel):
@@ -44,9 +45,26 @@ class GuestModel(BaseModel):
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\+?\d{10,15}$", value):
+        if not value:
+            return value
+        # Sanitize: strip whitespace and delimiters like (), -, .
+        value = sanitize_phone(value)
+        if not value:
+            return None
+        if not re.match(r"^\+?\d{10,15}$", value):
             raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
+
+    @field_validator("email")
+    def validate_email(cls, v):
+        if v is None:
+            return v
+        v = sanitize_email(v)
+        if not v:
+            return None
+        if not validate_email_format(v):
+            raise ValueError("Invalid email format")
+        return v
 
     @field_serializer(
         'sms_opt_in_date', 'sms_opt_out_date', 'phone_status_updated_at',
@@ -97,9 +115,25 @@ class UpdateGuestRequest(BaseModel):
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\+?\d{10,15}$", value):
+        if not value:
+            return value
+        value = sanitize_phone(value)
+        if not value:
+            return None
+        if not re.match(r"^\+?\d{10,15}$", value):
             raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
+
+    @field_validator("email")
+    def validate_email(cls, v):
+        if v is None:
+            return v
+        v = sanitize_email(v)
+        if not v:
+            return None
+        if not validate_email_format(v):
+            raise ValueError("Invalid email format")
+        return v
 
     class Config:
         json_schema_extra = {
@@ -128,9 +162,25 @@ class CreateGuestRequest(BaseModel):
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\+?\d{10,15}$", value):
+        if not value:
+            return value
+        value = sanitize_phone(value)
+        if not value:
+            return None
+        if not re.match(r"^\+?\d{10,15}$", value):
             raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
+
+    @field_validator("email")
+    def validate_email(cls, v):
+        if v is None:
+            return v
+        v = sanitize_email(v)
+        if not v:
+            return None
+        if not validate_email_format(v):
+            raise ValueError("Invalid email format")
+        return v
 
     class Config:
         json_schema_extra = {

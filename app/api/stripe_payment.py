@@ -110,11 +110,12 @@ async def create_public_checkout_session(
     try:
         pending_user = await stripe_service.users_collection.find_one({"email": request.email})
 
+        # Use a generic error message for all failure cases to prevent email enumeration
         if not pending_user:
-            raise HTTPException(status_code=404, detail="Pending user not found")
+            raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
         if pending_user.get("subscription_status") not in ["pending_payment", "trial", "active"]:
-            raise HTTPException(status_code=400, detail="User is not eligible for checkout")
+            raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
         session = await stripe_service.create_checkout_session(
             user_id=str(pending_user["_id"]),
@@ -288,13 +289,23 @@ async def stripe_webhook(
         # Process webhook
         result = await stripe_service.handle_webhook_event(payload, stripe_signature)
 
-        # Check if the handler reported an internal failure.
-        # Return 500 so Stripe retries instead of silently losing the event.
+        # Distinguish retriable errors from permanent failures.
+        # Missing metadata or deleted users will never succeed — return 200 so Stripe stops retrying.
+        # Transient errors (DB timeout, network) should return 500 so Stripe retries.
         if isinstance(result, dict) and result.get("status") == "error":
-            logger.error(f"Webhook handler returned error: {result.get('message', 'unknown')}")
+            error_msg = result.get("message", "unknown")
+            logger.error(f"Webhook handler returned error: {error_msg}")
+
+            # Permanent failures: acknowledge receipt, log for manual investigation
+            permanent_keywords = ["not found", "Missing user_id", "Missing plan_id", "metadata"]
+            if any(kw.lower() in error_msg.lower() for kw in permanent_keywords):
+                logger.warning(f"Permanent webhook failure (will not retry): {error_msg}")
+                return {"status": "error_acknowledged", "message": error_msg}
+
+            # Transient failures: return 500 so Stripe retries
             raise HTTPException(
                 status_code=500,
-                detail=f"Webhook handler error: {result.get('message', 'unknown')}"
+                detail=f"Webhook handler error: {error_msg}"
             )
 
         return {"status": "success", "result": result}

@@ -371,6 +371,11 @@ async def record_ad_event(
     - click_id: Click attribution ID (optional)
     - metadata: Additional event context (optional)
     """
+    # Check if advertising feature is enabled before recording events
+    flag = await service.get_feature_flag()
+    if flag and not flag.get("is_enabled", True):
+        return {"status": "skipped", "reason": "advertising_disabled"}
+
     event_data = request.model_dump(exclude_unset=True)
 
     # Add planner info if not provided

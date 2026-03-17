@@ -35,6 +35,17 @@ interface Guest {
  sms_opt_in?: boolean;
 }
 
+interface PlusOne {
+ id: string;
+ guest_id: string;
+ name: string;
+ phone?: string;
+ email?: string;
+ sms_opt_in?: boolean;
+ email_opt_in?: boolean;
+ attending?: string[];
+}
+
 interface MessageLog {
  phone?: string;
  to?: string; // For email logs
@@ -64,6 +75,7 @@ export default function AdminRemindersPage() {
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [selectedWedding, setSelectedWedding] = useState<string>('');
  const [guests, setGuests] = useState<Guest[]>([]);
+ const [plusOnes, setPlusOnes] = useState<PlusOne[]>([]);
  const [messageHistory, setMessageHistory] = useState<MessageLog[]>([]);
  const [loading, setLoading] = useState(false);
  const [error, setError] = useState<string>('');
@@ -143,6 +155,30 @@ export default function AdminRemindersPage() {
  }
  }, [selectedWedding, token]);
 
+ const fetchPlusOnes = useCallback(async () => {
+ if (!selectedWedding || !token) return;
+
+ try {
+ const baseUrl = getApiBaseUrl();
+ const response = await fetch(
+ `${baseUrl}/admin/plus-ones/wedding/${selectedWedding}`,
+ {
+ headers: { 'Authorization': `Bearer ${token}` },
+ }
+ );
+
+ if (!response.ok) {
+ console.error('Failed to fetch plus-ones:', response.status);
+ return;
+ }
+
+ const data = await response.json();
+ setPlusOnes(Array.isArray(data) ? data : []);
+ } catch (err) {
+ console.error('Failed to load plus-ones:', err);
+ }
+ }, [selectedWedding, token]);
+
  const fetchMessageHistory = useCallback(async () => {
  if (!token) return;
 
@@ -184,8 +220,9 @@ export default function AdminRemindersPage() {
  useEffect(() => {
  if (selectedWedding && token) {
  fetchGuests();
+ fetchPlusOnes();
  }
- }, [fetchGuests, selectedWedding, token]);
+ }, [fetchGuests, fetchPlusOnes, selectedWedding, token]);
 
  const handleSendInviteLinks = async () => {
  if (!selectedWedding) {
@@ -406,6 +443,22 @@ export default function AdminRemindersPage() {
 
  try {
  const baseUrl = getApiBaseUrl();
+
+ // Split selections by type: guest tokens vs plus-one IDs
+ const guestTokens = selectedGuests
+ .filter(s => s.startsWith('guest:'))
+ .map(s => s.replace('guest:', ''));
+ const plusOneIds = selectedGuests
+ .filter(s => s.startsWith('plusone:'))
+ .map(s => s.replace('plusone:', ''));
+
+ let totalSent = 0;
+ let totalFailed = 0;
+ let totalCount = 0;
+ const allFailureReasons: string[] = [];
+
+ // Send to guests if any selected
+ if (guestTokens.length > 0) {
  const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
  method: 'POST',
  headers: {
@@ -413,35 +466,68 @@ export default function AdminRemindersPage() {
  'Content-Type': 'application/json',
  },
  body: JSON.stringify({
- guest_tokens: selectedGuests,
+ guest_tokens: guestTokens,
  message: customMessage,
  }),
  });
 
  if (!response.ok) {
  const errorData = await response.json();
- throw new Error(errorData.detail || 'Failed to send messages');
+ throw new Error(errorData.detail || 'Failed to send messages to guests');
  }
 
  const result = await response.json();
- if (result.sent > 0) {
- let msg = `Sent messages to ${result.sent} of ${result.total} guests.`;
- if (result.failed > 0) msg += ` ${result.failed} failed.`;
- if (result.failure_reasons?.length > 0) {
- msg += ` Details: ${result.failure_reasons.slice(0, 5).join('; ')}`;
- if (result.failure_reasons.length > 5) msg += `... and ${result.failure_reasons.length - 5} more`;
+ totalSent += result.sent || 0;
+ totalFailed += result.failed || 0;
+ totalCount += result.total || 0;
+ if (result.failure_reasons) allFailureReasons.push(...result.failure_reasons);
+ }
+
+ // Send to plus-ones if any selected
+ if (plusOneIds.length > 0) {
+ const response = await fetch(`${baseUrl}/admin/reminders/send-to-plus-ones`, {
+ method: 'POST',
+ headers: {
+ 'Authorization': `Bearer ${token}`,
+ 'Content-Type': 'application/json',
+ },
+ body: JSON.stringify({
+ plus_one_ids: plusOneIds,
+ message: customMessage,
+ wedding_id: selectedWedding,
+ }),
+ });
+
+ if (!response.ok) {
+ const errorData = await response.json();
+ throw new Error(errorData.detail || 'Failed to send messages to plus-ones');
+ }
+
+ const result = await response.json();
+ totalSent += result.sent || 0;
+ totalFailed += result.failed || 0;
+ totalCount += result.total || 0;
+ if (result.failure_reasons) allFailureReasons.push(...result.failure_reasons);
+ }
+
+ if (totalSent > 0) {
+ let msg = `Sent messages to ${totalSent} of ${totalCount} recipients.`;
+ if (totalFailed > 0) msg += ` ${totalFailed} failed.`;
+ if (allFailureReasons.length > 0) {
+ msg += ` Details: ${allFailureReasons.slice(0, 5).join('; ')}`;
+ if (allFailureReasons.length > 5) msg += `... and ${allFailureReasons.length - 5} more`;
  }
  setSuccess(msg);
  } else {
- const reasons = result.failure_reasons?.length > 0
- ? result.failure_reasons.slice(0, 5).join('; ')
- : 'Guests may have opted out or have no phone numbers.';
+ const reasons = allFailureReasons.length > 0
+ ? allFailureReasons.slice(0, 5).join('; ')
+ : 'Recipients may have opted out or have no phone numbers.';
  setError(`No messages sent. ${reasons}`);
  }
  setCustomMessage('');
  setSelectedGuests([]);
  fetchMessageHistory();
- fetchGuests(); // Refresh to pick up any phone_status changes
+ fetchGuests();
  } catch (err) {
  setError(err instanceof Error ? err.message : 'Failed to send messages');
  } finally {
@@ -518,6 +604,13 @@ export default function AdminRemindersPage() {
  const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
  const guestsWithPhone = guests.filter(g => g.phone && g.phone.trim() !== '');
  const guestsWithEmail = guests.filter(g => g.email && g.email.trim() !== '');
+
+ // Plus-ones with phone numbers for individual messaging
+ const plusOnesWithPhone = plusOnes.filter(po => po.phone && po.phone.trim() !== '');
+
+ // Build a guest name lookup for showing "Host's +1: Name" in the dropdown
+ const guestNameMap = new Map(guests.map(g => [g.id || g._id, g.name]));
+ const getHostName = (guestId: string) => guestNameMap.get(guestId) || 'Unknown';
  const guestsWithPhoneOrEmail = guests.filter(g =>
  (g.phone && g.phone.trim() !== '') || (g.email && g.email.trim() !== '')
  );
@@ -944,19 +1037,26 @@ export default function AdminRemindersPage() {
  <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100 mb-6">Send Individual Messages</h2>
  {selectedWedding ? (
  <div className="space-y-6">
- {/* Modern Multi-Select Dropdown */}
+ {/* Modern Multi-Select Dropdown — Guests + Plus-Ones */}
  <MultiSelect
- label={`Select Guests (${selectedGuests.length} selected)`}
- options={guestsWithPhone.map((guest) => ({
- value: guest.token,
+ label={`Select Recipients (${selectedGuests.length} selected)`}
+ options={[
+ ...guestsWithPhone.map((guest) => ({
+ value: `guest:${guest.token}`,
  label: guest.name,
  sublabel: guest.phone || undefined,
- }))}
+ })),
+ ...plusOnesWithPhone.map((po) => ({
+ value: `plusone:${po.id}`,
+ label: `${po.name} (${getHostName(po.guest_id)}'s +1)`,
+ sublabel: po.phone || undefined,
+ })),
+ ]}
  selected={selectedGuests}
  onChange={setSelectedGuests}
- placeholder="Click to select guests..."
+ placeholder="Click to select guests or plus-ones..."
  searchPlaceholder="Search by name or phone..."
- emptyMessage="No guests with phone numbers found"
+ emptyMessage="No guests or plus-ones with phone numbers found"
  />
 
  {/* Message Enrichment Options */}
@@ -991,7 +1091,7 @@ export default function AdminRemindersPage() {
  disabled={loading || !customMessage.trim() || selectedGuests.length === 0}
  className="w-full bg-gradient-to-r from-wedding-navy to-wedding-sage text-white py-3 px-6 rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
  >
- {loading ? 'Sending...' : `Send Message to ${selectedGuests.length} Guest(s)`}
+ {loading ? 'Sending...' : `Send Message to ${selectedGuests.length} Recipient(s)`}
  </button>
  </div>
  ) : (

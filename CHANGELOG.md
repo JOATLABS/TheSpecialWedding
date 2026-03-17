@@ -5,6 +5,142 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-03-16 — Stripe Signup: Atomicity & Concurrency Hardening
+
+### Fixed
+
+- **Atomic Stripe customer creation** — `get_or_create_customer()` now rolls back the Stripe customer if the subsequent MongoDB write fails, preventing orphaned Stripe customers that are unreachable from the platform. Logs `CRITICAL` if the rollback itself fails for manual cleanup. (`app/services/stripe_service.py`)
+
+- **Concurrent checkout race condition** — `create_checkout_session()` now uses `find_one_and_update` with a 30-minute active-window guard so a second concurrent checkout for the same user is rejected with HTTP 409 instead of silently overwriting the first session. The losing Stripe session is expired automatically. (`app/services/stripe_service.py`)
+
+- **Transactional subscription sync** — `_sync_subscription_state()` now updates both the `user_subscriptions` and `users` collections inside a single MongoDB transaction, preventing split-brain states where one collection is updated but the other isn't. Gracefully falls back to sequential writes on standalone MongoDB (no replica set) with a warning. (`app/services/stripe_service.py`)
+
+## [2.9.0] - 2026-03-16 — Stripe Signup: Security Audit & Critical Fixes
+
+### Fixed
+
+- **Payment bypass vulnerability** — Planners with `pending_payment` status could log in and use the platform without completing Stripe checkout. Added subscription status gate in auth middleware that blocks `pending_payment`, `cancelled`, `suspended`, and `expired` users with appropriate 402 messages. (`app/dependencies/auth_extended.py`)
+
+- **Email enumeration on public checkout** — `POST /public/create-checkout-session` returned different error messages for valid vs. invalid emails, allowing attackers to enumerate registered users. Unified error messages to prevent information disclosure. (`app/api/stripe_payment.py`)
+
+- **Webhook infinite retry on permanent failures** — Missing metadata or deleted users caused webhook handler to return 500, making Stripe retry forever. Now returns 200 for permanent failures (missing data, user not found) while preserving 500 for transient errors (DB timeout, network) so Stripe correctly retries only retriable failures. (`app/api/stripe_payment.py`)
+
+- **User existence check in checkout webhook** — `_handle_checkout_completed` could activate subscriptions for deleted users. Added user existence verification before syncing subscription state. (`app/services/stripe_service.py`)
+
+### Added
+
+- **End-to-end Stripe signup test script** — Comprehensive test that exercises the full registration → email verification → plan listing → checkout session flow with cleanup, validation, and detailed error reporting. Run with `python tests/test_stripe_signup.py --api-url http://localhost:8000`. (`tests/test_stripe_signup.py`)
+
+## [2.8.0] - 2026-03-16 — Advertising: UX Copy Audit & Terminology Alignment
+
+### Fixed
+
+- **Placement label consistency** — Campaign wizard placement labels now match the canonical `getAdPlacementLabel()` function across all views (Vendor Rail, Vendor Detail, Milestone Module, Directory Boost).
+
+- **Category backend alignment** — Campaign wizard category options now send snake_case values matching backend `service_category` field (e.g., "photographer" not "Photography"), with human-readable labels for display.
+
+- **Vendor-facing copy** — Replaced developer-facing language in View 5 data annotation and chart footnotes with vendor-friendly explanations of how performance tracking works.
+
+- **UX microcopy improvements** — De-jargoned goal descriptions (removed CPC/CPL/CPA acronyms), clarified funnel labels ("Added to Wedding", "Bookings"), improved empty states, aligned mobile/desktop footer copy, enriched mobile tooltip, and showed human-readable pricing labels in campaign review step.
+
+- **Price format consistency** — BoostedVendorCard now uses `vendorProfile.currency` instead of hardcoded `$`, matching SponsoredVendorCard behavior.
+
+- **Ads sub-navigation** — Layout nav items now have distinct hrefs (/campaigns, /leads, /billing) so active state can function correctly.
+
+## [2.7.0] - 2026-03-16 — Advertising: Vendor Ad Manager (View 5) & Campaign Wizard (View 6)
+
+### Added
+
+- **Vendor Ad Manager dashboard** — Full rewrite of vendor advertising overview with 5 performance metric cards (Impressions, Clicks, Click Rate, Leads, Cost/Lead) with period-over-period change indicators, Performance by Week recharts bar chart, 5-step Conversion Funnel visualization, and Active Campaigns table with per-vendor lead counts. Uses parallel `getDashboardStats` + `getAdLeads` API calls. (`app/admin/vendor/ads/page.tsx`)
+
+- **6-step Campaign Creation Wizard** — Expanded from 5 to 6 steps matching mockup spec. New Pricing step (Step 4) with CPC/CPL/Fixed model selection and bid inputs. Budget step adds type toggle cards (Daily/Lifetime), estimated spend calculations, pacing strategy cards, and budget recommendation box. Creative step includes live preview with production-style "✦ Sponsored" badge. Full metadata capture for all wizard selections. (`app/admin/vendor/ads/campaigns/new/page.tsx`)
+
+- **`directory_boost` placement in wizard** — Campaign wizard now includes Directory Boost as a fourth placement option alongside Vendor Rail, Vendor Directory, and Milestone Pages.
+
+### Fixed
+
+- **Accessibility improvements** — Added `aria-label` and `aria-pressed` on all toggle buttons in campaign wizard. Added date range validation (endDate >= startDate). Fixed annotation text contrast from gray-400 to gray-600 for WCAG AA compliance.
+
+## [2.6.0] - 2026-03-16 — Advertising: Directory Boosts (View 3) & Milestone Modules (View 4)
+
+### Added
+
+- **BoostedVendorCard component** — New card for `directory_boost` placement with 120px image header, dual badges (⚡ Boosted + ✦ Sponsored), star ratings, price range, dual CTAs (Add to Wedding + Request Quote), full event tracking with click_id attribution, IntersectionObserver viewability, and WCAG 2.1 AA accessibility (44px targets, focus rings, ARIA). (`app/admin/vendors/components/BoostedVendorCard.tsx`)
+
+- **SponsoredMilestoneModule component** — New contextual ad module for `milestone_module` placement. Renders max 2 sponsored vendor cards scoped to a milestone category (venue, photographer, catering, florist). Generates contextual why-tags from wedding data (distance, guest capacity, budget match). Auto-suppresses when milestone is booked. Includes "Why am I seeing this?" tooltip and section hide controls. (`app/admin/vendors/components/SponsoredMilestoneModule.tsx`)
+
+- **Directory boost integration** — Vendor directory page fetches up to 2 boosted vendors, filters by planner preferences, renders them at the top of the grid before organic results, and shows boosted count indicator. (`app/admin/vendors/page.tsx`)
+
+- **Milestone module integration** — Wedding detail page renders 4 milestone modules (venue, photographer, catering, florist) in the main content column with category-specific budget context and venue booking detection. (`app/admin/weddings/[id]/page.tsx`)
+
+## [2.5.0] - 2026-03-16 — SSE Production Hardening: Cross-Worker Broadcast, Connection Consolidation & Nginx Tuning
+
+### Added
+- **Redis pub/sub for SSE cross-worker broadcast** — `SSEManager` now publishes events to a Redis channel so all uvicorn workers deliver data-change events to connected clients, not just the worker that handled the mutation; falls back to in-process delivery when Redis is unavailable (`app/services/sse_manager.py`)
+- **SSE Redis listener lifecycle** — `start_redis_listener()` / `stop_redis_listener()` wired into FastAPI lifespan in `app/main.py` for clean startup/shutdown
+- **Shared SSEProvider context** (`app/contexts/SSEContext.tsx`) — single EventSource connection per browser tab shared across all admin components via React context; eliminates the duplicate connection previously opened by TopHeader and useSSE independently
+- **Reconnect catch-up refetch** — when the SSE connection recovers after network loss or laptop sleep, a synthetic `__reconnected__` event fires so all `useSSE` consumers automatically refetch stale data instead of silently showing outdated information
+- **`useSSEEvent` hook** — low-level hook for subscribing to any SSE event type from the shared connection (used by TopHeader for notification-count/notification-new events)
+- **Dedicated nginx SSE location blocks** — added to `nginx-api-ssl.conf`, `nginx-api-backend.conf`, and `nginx-load-balancer.conf` with `proxy_buffering off`, `proxy_read_timeout 3600s`, and `chunked_transfer_encoding off` so events stream immediately without proxy buffering
+- **K8s SSE ingress** (`k8s/base/ingress-sse.yml`) — separate Ingress resource for `/admin/notifications/stream` with 1-hour timeouts and buffering disabled
+- **Global SSE connection ceiling** — `MAX_GLOBAL_CONNECTIONS = 2000` prevents unbounded memory growth from SSE connections across all users; returns `ConnectionError` when exceeded
+- **GZip bypass for SSE** — `SSEGzipBypassMiddleware` strips `Accept-Encoding` for SSE requests so the GZip middleware never buffers streaming event responses (`app/main.py`)
+- **SSE broadcast on all remaining mutation endpoints** — `broadcast_data_change()` calls added to: `rsvp_service.py` (public RSVP submission), `email_reminders.py` (3 send endpoints), `reminder_twilio.py` (bulk SMS + individual reminders), `reminder_utilities.py` (personalized links), `wedding.py` (create/update/delete), `plus_one.py` (create/update/delete)
+
+### Changed
+- **TopHeader.tsx** — removed ~140 lines of standalone EventSource management (connection, reconnection, auth probing, visibility handling); now subscribes to the shared SSEProvider via `useSSEEvent` hook
+- **useSSE.ts** — no longer creates its own EventSource; subscribes to the shared SSEProvider context and filters events by resource type and wedding ID
+- **admin/layout.tsx** — wrapped admin layout with `<SSEProvider>` between AdminProvider and ConfirmDialogProvider
+
+### Fixed
+- **Multi-worker event delivery** — previously, only ~25% of SSE clients received data-change events because the in-process singleton was isolated per uvicorn worker process; Redis pub/sub ensures all workers deliver every event
+- **Missed events after sleep/network loss** — previously no catch-up mechanism existed; clients that reconnected had stale UI until the next manual refresh or unrelated event
+- **Nginx buffering delayed SSE events** — `proxy_buffering on` in the general location block could delay or stall event delivery; SSE now has its own unbuffered location
+- **Duplicate browser connections** — 2 EventSource connections per tab (TopHeader + useSSE) consumed browser connection slots and doubled server-side queue memory; consolidated to 1
+
+## [2.4.0] - 2026-03-16 — Advertising: Code Review, Responsive Rail, Accessibility & Type Safety
+
+### Added
+
+- **Responsive sponsored vendors rail** — Desktop (lg: 1024px+) renders a vertical stacked rail with max 3 cards in the planner dashboard right sidebar; mobile renders a horizontal snap-scroll carousel with navigation arrows. Both layouts match the Vendor_Ad_Mockups.html design spec. (`SponsoredVendorsRail.tsx`, `SponsoredVendorCard.tsx`)
+
+- **Why-tag contextual relevance** — `getWhyTag()` function generates vendor-specific context (e.g., "Serves Austin · You may need a photographer") from profile data. Passed to both desktop and mobile card renders via `whyTag` prop. (`SponsoredVendorsRail.tsx`)
+
+- **WCAG 2.1 AA accessibility** — Full accessibility pass on sponsored vendor components:
+  - Semantic `<article>` cards with keyboard-accessible `<a>` link (Tab/Enter/Space navigable)
+  - 44px minimum touch targets on hide button, scroll arrows, info button, and CTA buttons
+  - ARIA carousel roles (`role="region"`, `aria-roledescription="carousel"`, `role="list"`, `role="listitem"`)
+  - Tooltip ARIA (`role="tooltip"`, `aria-controls`, `aria-expanded`)
+  - Live region (`aria-live="polite"`) announcing vendor dismissals to screen readers
+  - `focus-within:ring-2` visual focus indicator on cards
+  - Preferences control changed from `<span>` to `<button>`
+
+- **Feature flag guard on event recording** — `record_ad_event` endpoint now checks if advertising feature is enabled before recording; returns skip response when disabled. Prevents phantom event accumulation. (`app/api/advertising.py`)
+
+- **`wedding_overrides` in TypeScript interface** — `AdPreferences` now includes `wedding_overrides` field matching backend `PlannerAdPreference` model. (`advertisingApi.ts`)
+
+### Fixed
+
+- **$or query construction bug** — Date range filtering in `get_sponsored_vendors()` and `get_sponsored_vendors_filtered()` used malformed `$or` that could serve expired vendors. Replaced with proper `$and` + nested `$or`. (`advertising_service.py`)
+
+- **CTR double-counting** — `total_impressions` summed `impression_served + impression_viewable` (a subset, not additive), deflating CTR. Fixed in daily rollup, dashboard stats, and vendor leaderboard to use `impression_served` only. (`ad_rollup_service.py`, `advertising.py`)
+
+- **Lead endpoint vendor-role scoping** — Lead endpoints blocked vendor users entirely. Updated to allow vendors to see leads for their own profiles via email lookup with ObjectId conversion. (`advertising.py`)
+
+- **Missing `dashboard_rail` placement enum** — Backend `AdPlacement` enum had 4 values but frontend needed 5. Added `DASHBOARD_RAIL = "dashboard_rail"`. (`models/advertising.py`)
+
+- **Field name mismatch** — `AdPreferences.hidden_vendors` renamed to `hidden_vendor_ids` to match backend. (`advertisingApi.ts`)
+
+- **Contrast failures** — Gray text on white backgrounds upgraded from `gray-300`/`gray-400`/`gray-500` to `gray-600` (5.7:1 ratio), meeting WCAG AA 4.5:1 requirement. (`SponsoredVendorCard.tsx`, `SponsoredVendorsRail.tsx`)
+
+### Changed
+
+- **Frontend AdEventType cleaned** — Removed 4 legacy types (`impression`, `viewable_impression`, `detail_view`, `assignment`) that don't exist in backend enum. Reduced from 15 to 12 values. `getEventTypeLabel` updated to match. (`advertisingApi.ts`)
+
+- **Card component restructured** — `<div onClick>` replaced with `<article>` + `<a>` for accessibility. CTA buttons moved outside the link element to avoid nested interactive elements. (`SponsoredVendorCard.tsx`)
+
+---
+
 ## [2.3.0] - 2026-03-16 — Landing Page Polish, Performance Fixes & Real-Time Architecture
 
 ### Added
