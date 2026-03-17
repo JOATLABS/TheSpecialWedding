@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
-import { useAdmin } from '@/contexts/AdminContext';
-import { getApiBaseUrl } from '@/utils/env';
+import { useEffect, useRef } from 'react';
+import { useSSEEvent } from '@/contexts/SSEContext';
 
 /**
  * Resource types that the backend can signal as changed.
@@ -19,7 +18,7 @@ export type SSEResource =
   | 'checkin';
 
 export interface DataChangeEvent {
-  resource: SSEResource;
+  resource: SSEResource | '__reconnected__';
   action: 'created' | 'updated' | 'deleted' | 'bulk_updated';
   wedding_id?: string | null;
   record_id?: string | null;
@@ -38,6 +37,10 @@ interface UseSSEOptions {
   /**
    * Called whenever a matching data-change event arrives.
    * Typically this triggers a refetch of the affected data.
+   *
+   * Also called once on reconnect (after network drop / laptop sleep)
+   * with `resource: '__reconnected__'` so the UI can catch up on any
+   * events that were missed while disconnected.
    */
   onDataChange: (event: DataChangeEvent) => void;
   /**
@@ -48,15 +51,14 @@ interface UseSSEOptions {
 }
 
 /**
- * Subscribe to the existing SSE notification stream and listen for
- * `data-change` events so the UI updates in real-time without polling.
+ * Subscribe to data-change events from the shared SSE connection.
  *
- * The TopHeader component already maintains its own EventSource for
- * notification badges. This hook does NOT create a duplicate connection —
- * it re-uses the same SSE endpoint but listens for a different event type.
+ * This hook does NOT create its own EventSource — it subscribes to the
+ * single connection managed by SSEProvider, eliminating the duplicate
+ * connection that previously wasted browser slots and server memory.
  *
- * NOTE: The browser SSE EventSource API does not support custom headers,
- * so the JWT is passed as a query parameter (same as TopHeader).
+ * On reconnect (after sleep / network loss), the callback fires once
+ * with `resource: '__reconnected__'` so consumers can refetch stale data.
  */
 export function useSSE({
   resources,
@@ -64,91 +66,39 @@ export function useSSE({
   onDataChange,
   enabled = true,
 }: UseSSEOptions) {
-  const { token } = useAdmin();
   const savedCallback = useRef(onDataChange);
-  const esRef = useRef<EventSource | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const attempts = useRef(0);
+  useEffect(() => { savedCallback.current = onDataChange; }, [onDataChange]);
 
-  // Always keep the latest callback in the ref to avoid stale closures.
-  useEffect(() => {
-    savedCallback.current = onDataChange;
-  }, [onDataChange]);
-
-  // Memoised resource set for stable comparison.
   const resourceSet = useRef(new Set(resources));
-  useEffect(() => {
-    resourceSet.current = new Set(resources);
-  }, [resources]);
+  useEffect(() => { resourceSet.current = new Set(resources); }, [resources]);
 
   const weddingIdRef = useRef(weddingId);
-  useEffect(() => {
-    weddingIdRef.current = weddingId;
-  }, [weddingId]);
+  useEffect(() => { weddingIdRef.current = weddingId; }, [weddingId]);
 
-  const cleanup = useCallback(() => {
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-    if (reconnectTimer.current) {
-      clearTimeout(reconnectTimer.current);
-      reconnectTimer.current = null;
-    }
-  }, []);
+  const enabledRef = useRef(enabled);
+  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
 
-  useEffect(() => {
-    if (!enabled || !token) {
-      cleanup();
+  useSSEEvent('data-change', (raw) => {
+    if (!enabledRef.current) return;
+
+    const data = raw as DataChangeEvent;
+
+    // Always let the reconnect signal through so consumers can catch up
+    if (data.resource === '__reconnected__') {
+      savedCallback.current(data);
       return;
     }
 
-    const connect = () => {
-      cleanup();
+    // Filter by resource type if specified
+    if (resourceSet.current.size > 0 && !resourceSet.current.has(data.resource as SSEResource)) {
+      return;
+    }
 
-      const url = `${getApiBaseUrl()}/admin/notifications/stream?token=${encodeURIComponent(token)}`;
-      const es = new EventSource(url);
-      esRef.current = es;
+    // Filter by wedding ID if specified
+    if (weddingIdRef.current && data.wedding_id && data.wedding_id !== weddingIdRef.current) {
+      return;
+    }
 
-      es.addEventListener('data-change', (evt) => {
-        try {
-          const data: DataChangeEvent = JSON.parse(evt.data);
-
-          // Filter by resource type if specified
-          if (resourceSet.current.size > 0 && !resourceSet.current.has(data.resource)) {
-            return;
-          }
-
-          // Filter by wedding ID if specified
-          if (weddingIdRef.current && data.wedding_id && data.wedding_id !== weddingIdRef.current) {
-            return;
-          }
-
-          savedCallback.current(data);
-        } catch {
-          // Ignore malformed events
-        }
-      });
-
-      es.onopen = () => {
-        attempts.current = 0;
-      };
-
-      es.onerror = () => {
-        es.close();
-        esRef.current = null;
-
-        // Exponential backoff — max 60 seconds, max 12 attempts
-        if (attempts.current < 12) {
-          const delay = Math.min(1000 * Math.pow(2, attempts.current), 60_000);
-          attempts.current += 1;
-          reconnectTimer.current = setTimeout(connect, delay);
-        }
-      };
-    };
-
-    connect();
-
-    return cleanup;
-  }, [enabled, token, cleanup]);
+    savedCallback.current(data);
+  });
 }

@@ -217,6 +217,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Knowledge Base seeding skipped: {e}")
 
+        # Start SSE Redis pub/sub listener for cross-worker broadcasting
+        from app.services.sse_manager import sse_manager
+        await sse_manager.start_redis_listener()
+        logger.info("SSE Redis pub/sub listener started")
+
         # Start nightly ad stats rollup scheduler
         rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
         logger.info("Ad stats nightly rollup scheduler started")
@@ -231,6 +236,9 @@ async def lifespan(app: FastAPI):
             await rollup_task
         except asyncio.CancelledError:
             pass
+
+        # Stop SSE Redis listener
+        await sse_manager.stop_redis_listener()
 
     finally:
         # Shutdown
@@ -329,8 +337,25 @@ app.add_middleware(
 )
 
 # 8. Compression (innermost)
+# NOTE: GZipMiddleware must NOT compress SSE (text/event-stream) responses.
+# Starlette's GZip skips streaming responses without Content-Length, but we add
+# an explicit guard: a thin middleware that strips Accept-Encoding for SSE
+# requests so the compressor never buffers them.
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SSEGzipBypassMiddleware(BaseHTTPMiddleware):
+    """Prevent GZip from buffering SSE responses by removing Accept-Encoding."""
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.endswith("/notifications/stream"):
+            # Mutate scope so downstream middleware sees no Accept-Encoding
+            headers = dict(request.scope["headers"])
+            headers.pop(b"accept-encoding", None)
+            request.scope["headers"] = list(headers.items())
+        return await call_next(request)
+
 if settings.enable_compression:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(SSEGzipBypassMiddleware)
 
 
 # ==================== VALIDATION ERROR LOGGING ====================

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Sparkles, HelpCircle } from 'lucide-react';
 import {
   getSponsoredVendors,
@@ -51,6 +51,7 @@ export function SponsoredVendorsRail({
   const [shouldRender, setShouldRender] = useState(true);
   const [showTooltip, setShowTooltip] = useState(false);
   const [selectedWeddingId, setSelectedWeddingId] = useState<string | null>(null);
+  const [dismissAnnouncement, setDismissAnnouncement] = useState<string>('');
 
   // Fetch feature flag and check frequency capping
   useEffect(() => {
@@ -206,8 +207,12 @@ export function SponsoredVendorsRail({
     }
   };
 
-  // Handle vendor hide/dismiss
+  // Handle vendor hide/dismiss with screen reader announcement
   const handleVendorHide = async (vendorProfileId: string) => {
+    // Find vendor name for announcement before removing
+    const hiddenVendor = sponsoredVendors.find(v => v.vendor_profile_id === vendorProfileId);
+    const vendorName = hiddenVendor ? vendorProfiles[vendorProfileId]?.business_name || 'Vendor' : 'Vendor';
+
     // Persist hide preference to backend and remove from local state
     if (token) {
       try {
@@ -218,7 +223,25 @@ export function SponsoredVendorsRail({
     }
     // Remove from local state immediately for responsive UX
     setSponsoredVendors(prev => prev.filter(v => v.vendor_profile_id !== vendorProfileId));
+
+    // Announce to screen readers
+    setDismissAnnouncement(`${vendorName} has been hidden from sponsored vendors.`);
+    setTimeout(() => setDismissAnnouncement(''), 3000);
   };
+
+  // Generate why-tag for a vendor based on their profile and targeting
+  const getWhyTag = useCallback((vendor: SponsoredVendor): string | undefined => {
+    const profile = vendorProfiles[vendor.vendor_profile_id];
+    if (!profile) return undefined;
+
+    const parts: string[] = [];
+    if (profile.city) parts.push(`Serves ${profile.city}`);
+    if (profile.service_category) {
+      const categoryLabel = profile.service_category.replace(/_/g, ' ');
+      parts.push(`Offers ${categoryLabel} services`);
+    }
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  }, [vendorProfiles]);
 
   // Handle vendor click — use callback if provided, otherwise navigate to public profile
   const handleVendorClick = (vendorProfileId: string) => {
@@ -305,22 +328,24 @@ export function SponsoredVendorsRail({
             <h3 className="text-base font-semibold text-wedding-navy">Recommended for you</h3>
           </div>
         </div>
-        {/* Desktop: Preferences link */}
-        <span className="hidden lg:inline text-[10px] text-gray-400 cursor-pointer hover:text-wedding-sage transition-colors">
+        {/* Desktop: Preferences button — contrast-safe gray-600 (5.7:1) */}
+        <button className="hidden lg:inline text-[10px] text-gray-600 hover:text-wedding-sage transition-colors">
           ⚙ Preferences
-        </span>
-        {/* Mobile: Info icon */}
+        </button>
+        {/* Mobile: Info icon — 44px touch target */}
         <div className="relative lg:hidden">
           <button
             onClick={() => setShowTooltip(!showTooltip)}
-            className="p-1 text-gray-400 hover:text-wedding-sage transition-colors"
+            className="w-11 h-11 flex items-center justify-center text-gray-600 hover:text-wedding-sage transition-colors"
             aria-label="Why am I seeing this?"
+            aria-expanded={showTooltip}
+            aria-controls="mobile-tooltip"
           >
             <HelpCircle size={16} />
           </button>
           {showTooltip && (
-            <div className="absolute right-0 top-full mt-2 z-30 bg-wedding-navy text-white text-xs rounded-lg p-2 w-56 shadow-lg">
-              These vendors are sponsored recommendations relevant to your wedding.
+            <div id="mobile-tooltip" role="tooltip" className="absolute right-0 top-full mt-2 z-30 bg-wedding-navy text-white text-xs rounded-lg p-2 w-56 shadow-lg">
+              These vendors are sponsored recommendations matched to your wedding. You can hide any vendor you&apos;re not interested in.
               <div className="absolute bottom-full right-3 -mb-1 w-2 h-2 bg-wedding-navy transform rotate-45" />
             </div>
           )}
@@ -352,7 +377,7 @@ export function SponsoredVendorsRail({
       )}
 
       {/* ===== DESKTOP LAYOUT: Vertical stacked cards ===== */}
-      <div className="hidden lg:flex lg:flex-col">
+      <div className="hidden lg:flex lg:flex-col" role="region" aria-label="Sponsored vendors">
         {displayVendors.map((vendor) => (
           <SponsoredVendorCard
             key={vendor._id}
@@ -361,45 +386,49 @@ export function SponsoredVendorsRail({
             onView={handleVendorClick}
             onRecordEvent={handleRecordEvent}
             onHide={handleVendorHide}
+            whyTag={getWhyTag(vendor)}
           />
         ))}
       </div>
 
       {/* ===== MOBILE LAYOUT: Horizontal scroll carousel ===== */}
-      <div className="relative lg:hidden">
+      <div className="relative lg:hidden" role="region" aria-label="Sponsored vendors carousel" aria-roledescription="carousel">
         <div
           ref={scrollContainerRef}
           className="flex gap-3 overflow-x-auto scroll-smooth pb-2 snap-x snap-mandatory"
+          role="list"
+          aria-label="Sponsored vendor cards"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {sponsoredVendors.map((vendor) => (
-            <div key={vendor._id} className="snap-start">
+          {sponsoredVendors.map((vendor, index) => (
+            <div key={vendor._id} className="snap-start" role="listitem" aria-label={`Vendor ${index + 1} of ${sponsoredVendors.length}`}>
               <SponsoredVendorCard
                 vendor={vendor}
                 vendorProfile={vendorProfiles[vendor.vendor_profile_id]}
                 onView={handleVendorClick}
                 onRecordEvent={handleRecordEvent}
                 onHide={handleVendorHide}
+                whyTag={getWhyTag(vendor)}
               />
             </div>
           ))}
         </div>
-        {/* Left Arrow */}
+        {/* Left Arrow — 44px touch target */}
         {canScrollLeft && (
           <button
             onClick={() => scroll('left')}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
-            aria-label="Scroll left"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-11 h-11 flex items-center justify-center rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
+            aria-label="Scroll to previous vendors"
           >
             <ChevronLeft size={18} />
           </button>
         )}
-        {/* Right Arrow */}
+        {/* Right Arrow — 44px touch target */}
         {canScrollRight && (
           <button
             onClick={() => scroll('right')}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
-            aria-label="Scroll right"
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-11 h-11 flex items-center justify-center rounded-full bg-white shadow-md hover:shadow-lg text-wedding-navy transition-shadow"
+            aria-label="Scroll to more vendors"
           >
             <ChevronRight size={18} />
           </button>
@@ -412,6 +441,8 @@ export function SponsoredVendorsRail({
         <button
           onClick={() => setShowTooltip(!showTooltip)}
           className="text-[10px] text-wedding-sage font-medium hover:underline"
+          aria-expanded={showTooltip}
+          aria-controls="desktop-tooltip"
         >
           Why am I seeing this?
         </button>
@@ -424,18 +455,23 @@ export function SponsoredVendorsRail({
       </div>
       {/* Desktop tooltip (below footer) */}
       {showTooltip && (
-        <div className="hidden lg:block text-[10px] text-gray-500 bg-gray-50 px-3 py-2 rounded-md border border-gray-200">
+        <div id="desktop-tooltip" role="tooltip" className="hidden lg:block text-[10px] text-gray-600 bg-gray-50 px-3 py-2 rounded-md border border-gray-200">
           These vendors are sponsored recommendations matched to your wedding location, budget, and vendor needs. You can hide any vendor or adjust preferences.
         </div>
       )}
-      {/* Mobile footer */}
+      {/* Mobile footer — contrast-safe gray-600 */}
       <div className="flex justify-center pt-2 lg:hidden">
         <a
           href="/admin/vendors"
-          className="text-xs text-gray-500 hover:text-wedding-sage transition-colors"
+          className="text-xs text-gray-600 hover:text-wedding-sage transition-colors"
         >
-          See all sponsored vendors →
+          See more vendors ›
         </a>
+      </div>
+
+      {/* Live region for screen reader announcements on vendor dismissal */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {dismissAnnouncement}
       </div>
     </div>
   );

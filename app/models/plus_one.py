@@ -3,6 +3,7 @@ from typing import List, Optional
 from bson import ObjectId
 from datetime import datetime
 import re
+from app.utils.contact_sanitizer import sanitize_phone, sanitize_email, validate_email_format
 
 
 class PyObjectId(ObjectId):
@@ -37,7 +38,13 @@ class PlusOneModel(BaseModel):
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\+?\d{10,15}$", value):
+        if not value:
+            return value
+        # Sanitize: strip whitespace and delimiters like (), -, .
+        value = sanitize_phone(value)
+        if not value:
+            return None
+        if not re.match(r"^\+?\d{10,15}$", value):
             raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
 
@@ -45,10 +52,12 @@ class PlusOneModel(BaseModel):
     def validate_email(cls, v):
         if v is None:
             return v
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
-        return v.lower().strip()
+        v = sanitize_email(v)
+        if not v:
+            return None
+        if not validate_email_format(v):
+            raise ValueError("Invalid email format")
+        return v
 
     @field_validator("attending")
     def validate_attending(cls, v):

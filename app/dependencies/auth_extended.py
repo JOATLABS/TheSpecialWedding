@@ -152,6 +152,20 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                     detail="Email address not verified. Please check your email and verify your account.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+            # Block users who haven't completed payment
+            sub_status = user_data.get("subscription_status")
+            if role == "wedding_planner" and sub_status in ("pending_payment", "cancelled", "suspended", "expired"):
+                status_messages = {
+                    "pending_payment": "Please complete your subscription payment to access the platform.",
+                    "cancelled": "Your subscription has been cancelled. Please resubscribe to continue.",
+                    "suspended": "Your subscription is suspended due to a payment issue. Please update your payment method.",
+                    "expired": "Free trial has expired. Please upgrade your subscription to continue using the platform.",
+                }
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=status_messages.get(sub_status, "Subscription issue. Please contact support."),
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             # Check trial expiration for wedding planners
             if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
                 trial_end_date = user_data.get("trial_end_date")

@@ -3,6 +3,7 @@ from app.models.plus_one import PlusOneModel
 from app.services.plus_one_service import PlusOneService
 from app.services.guest_service import GuestService
 from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
+from app.services.sse_manager import sse_manager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,14 @@ async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = 
     if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    return await plus_one_service.add_plus_one(plus_one)
+    result = await plus_one_service.add_plus_one(plus_one)
+
+    await sse_manager.broadcast_data_change(
+        current_user.email, "plus_one", "created",
+        wedding_id=guest.get("wedding_id"),
+    )
+
+    return result
 
 
 @router.get("/wedding/{wedding_id}", tags=["Plus-Ones"])
@@ -64,7 +72,15 @@ async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), 
     if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    return await plus_one_service.update_plus_one(plus_one_id, data)
+    result = await plus_one_service.update_plus_one(plus_one_id, data)
+
+    await sse_manager.broadcast_data_change(
+        current_user.email, "plus_one", "updated",
+        wedding_id=guest.get("wedding_id"),
+        record_id=plus_one_id,
+    )
+
+    return result
 
 
 @router.delete("/{plus_one_id}", tags=["Plus-Ones"])
@@ -83,4 +99,12 @@ async def delete_plus_one(plus_one_id: str, current_user: ExtendedAuthUser = Dep
     if not await check_wedding_access(current_user, guest.get("wedding_id")):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    return await plus_one_service.delete_plus_one(plus_one_id)
+    result = await plus_one_service.delete_plus_one(plus_one_id)
+
+    await sse_manager.broadcast_data_change(
+        current_user.email, "plus_one", "deleted",
+        wedding_id=guest.get("wedding_id"),
+        record_id=plus_one_id,
+    )
+
+    return result

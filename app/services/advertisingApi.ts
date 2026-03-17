@@ -13,7 +13,8 @@ const API_BASE = getApiBaseUrl();
 // =============================================================================
 
 export type AdPlacement = 'vendor_rail' | 'vendor_detail' | 'milestone_module' | 'directory_boost' | 'dashboard_rail';
-export type AdEventType = 'impression' | 'impression_served' | 'viewable_impression' | 'click' | 'dismiss' | 'hover' | 'detail_view' | 'contact_click' | 'assignment' | 'vendor_profile_view' | 'vendor_added_to_wedding' | 'lead_created' | 'vendor_invited' | 'lead_accepted' | 'vendor_responded';
+// Matches backend AdEventType enum exactly — no legacy aliases
+export type AdEventType = 'impression_served' | 'impression_viewable' | 'click' | 'dismiss' | 'hover' | 'contact_click' | 'vendor_profile_view' | 'vendor_added_to_wedding' | 'lead_created' | 'vendor_invited' | 'lead_accepted' | 'vendor_responded';
 
 export interface SponsoredVendor {
   _id: string;
@@ -171,6 +172,10 @@ export interface AdPreferences {
   hidden_vendor_ids: string[];
   hidden_categories: string[];
   reduced_frequency: boolean;
+  wedding_overrides: Record<string, {
+    hidden_vendor_ids?: string[];
+    hidden_categories?: string[];
+  }>;
   updated_at: string;
 }
 
@@ -614,15 +619,12 @@ export function getAdPlacementLabel(placement: AdPlacement): string {
 
 export function getEventTypeLabel(eventType: AdEventType): string {
   const labels: Record<AdEventType, string> = {
-    impression: 'Impression',
     impression_served: 'Impression Served',
-    viewable_impression: 'Viewable Impression',
+    impression_viewable: 'Impression Viewable',
     click: 'Click',
     dismiss: 'Dismiss',
     hover: 'Hover',
-    detail_view: 'Detail View',
     contact_click: 'Contact Click',
-    assignment: 'Assignment',
     vendor_profile_view: 'Vendor Profile View',
     vendor_added_to_wedding: 'Vendor Added to Wedding',
     lead_created: 'Lead Created',

@@ -1,6 +1,7 @@
 # app/api/reminder_twilio.py
 
 from fastapi import APIRouter, HTTPException, Depends, Query
+from app.utils.contact_sanitizer import normalize_phone_e164
 from app.services.reminder_service_twilio import (
     TwilioReminderService,
     TwilioRSVPReminderHelper,
@@ -13,6 +14,7 @@ from app.dependencies.auth_extended import require_root_admin, require_team_or_p
 from app.core.database import mongo
 from pydantic import BaseModel
 from typing import Optional, List
+from app.services.sse_manager import sse_manager
 from datetime import datetime, timezone
 import logging
 import os
@@ -38,6 +40,13 @@ class IndividualReminderRequest(BaseModel):
     """Request model for sending reminders to specific guests by their tokens"""
     guest_tokens: List[str]
     message: str
+
+
+class IndividualPlusOneReminderRequest(BaseModel):
+    """Request model for sending reminders to specific plus-ones by their IDs"""
+    plus_one_ids: List[str]
+    message: str
+    wedding_id: str
 
 
 @router.get("/reminders/twilio/status", tags=["Admin"])
@@ -87,6 +96,14 @@ async def send_invites_twilio(
         result=result,
     )
 
+    # Broadcast invite status change so planner UI refreshes
+    wedding = await mongo.db["weddings"].find_one({"slug": payload.slug}, {"_id": 1})
+    if wedding:
+        await sse_manager.broadcast_data_change(
+            current_user.email, "invite", "created",
+            wedding_id=str(wedding["_id"]),
+        )
+
     return result
 
 
@@ -134,9 +151,10 @@ async def send_individual_reminders(
             continue
 
         guest_name = guest.get("name", "Unknown")
-        phone = guest.get("phone")
+        raw_phone = guest.get("phone")
+        phone = normalize_phone_e164(raw_phone)
         if not phone:
-            logger.warning(f"Guest {guest_name} has no phone number")
+            logger.warning(f"Guest {guest_name} has no valid phone number (raw: {raw_phone!r})")
             failed_count += 1
             failure_reasons.append(f"{guest_name} has no phone number")
             continue
@@ -164,10 +182,6 @@ async def send_individual_reminders(
                 failed_count += 1
                 failure_reasons.append(f"{guest_name} has opted out of SMS notifications")
                 continue
-
-        # Ensure phone is in E.164 format
-        if not phone.startswith('+'):
-            phone = f"+1{phone}"
 
         # Send SMS with delivery tracking
         status = "failed"
@@ -265,6 +279,13 @@ async def send_individual_reminders(
                     planner_email=current_user.email,
                     channel="sms"
                 )
+
+            # Broadcast SSE data-change per wedding so planner UI refreshes
+            for wedding_id in wedding_sent_counts:
+                await sse_manager.broadcast_data_change(
+                    current_user.email, "invite", "created",
+                    wedding_id=wedding_id,
+                )
         except Exception as log_err:
             logger.warning(f"Failed to log SMS activity: {log_err}")
 
@@ -272,6 +293,174 @@ async def send_individual_reminders(
         "sent": sent_count,
         "failed": failed_count,
         "total": len(payload.guest_tokens),
+        "provider": "twilio",
+        "failure_reasons": failure_reasons if failure_reasons else None
+    }
+
+
+@router.post("/reminders/send-to-plus-ones", tags=["Admin"])
+async def send_plus_one_reminders(
+    payload: IndividualPlusOneReminderRequest,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+):
+    """
+    Send SMS reminders to specific plus-ones by their IDs.
+    Used for individual messaging from the reminders page.
+    """
+    enforce_team_permission(current_user, "send_reminders")
+    if not twilio_configured or not twilio_client:
+        raise HTTPException(status_code=503, detail="SMS service not configured")
+
+    from app.dependencies.auth_extended import check_wedding_access
+    if not await check_wedding_access(current_user, payload.wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+    if not payload.plus_one_ids:
+        raise HTTPException(status_code=400, detail="No plus-one IDs provided")
+
+    if not payload.message or not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    from bson import ObjectId
+
+    plus_one_collection = mongo.db["plus_ones"]
+    guest_collection = mongo.get_guest_collection()
+    log_collection = mongo.db["reminders_sent"]
+
+    # Pre-fetch all guest IDs for this wedding to verify plus-one ownership
+    wedding_guests = await guest_collection.find(
+        {"wedding_id": payload.wedding_id},
+        {"_id": 1}
+    ).to_list(length=None)
+    wedding_guest_ids = {str(g["_id"]) for g in wedding_guests}
+
+    sent_count = 0
+    failed_count = 0
+    failure_reasons = []
+    logs = []
+    now = datetime.now(timezone.utc)
+
+    from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
+    status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
+
+    for po_id in payload.plus_one_ids:
+        # Find plus-one by ID
+        try:
+            plus_one = await plus_one_collection.find_one({"_id": ObjectId(po_id)})
+        except Exception:
+            failed_count += 1
+            failure_reasons.append(f"Invalid plus-one ID: {po_id}")
+            continue
+
+        if not plus_one:
+            failed_count += 1
+            failure_reasons.append(f"Plus-one not found: {po_id}")
+            continue
+
+        po_name = plus_one.get("name", "Unknown")
+
+        # Verify this plus-one belongs to a guest in the specified wedding
+        if plus_one.get("guest_id") not in wedding_guest_ids:
+            failed_count += 1
+            failure_reasons.append(f"{po_name} does not belong to this wedding")
+            continue
+
+        raw_phone = plus_one.get("phone")
+        phone = normalize_phone_e164(raw_phone)
+        if not phone:
+            failed_count += 1
+            failure_reasons.append(f"{po_name} has no phone number")
+            continue
+
+        # Check opt-in status
+        sms_opt_in = plus_one.get("sms_opt_in", None)
+        if sms_opt_in is False:
+            failed_count += 1
+            failure_reasons.append(f"{po_name} has opted out of SMS notifications")
+            continue
+
+        # Send SMS with delivery tracking
+        status = "failed"
+        message_sid = None
+        initial_status = None
+        try:
+            send_kwargs = {"body": payload.message, "to": phone}
+            if status_callback_url:
+                send_kwargs["status_callback"] = status_callback_url
+
+            try:
+                message = twilio_client.messages.create(
+                    messaging_service_sid=MESSAGING_SERVICE_SID,
+                    **send_kwargs
+                )
+            except Exception as msg_service_error:
+                logger.warning(f"Messaging service failed, trying direct number: {msg_service_error}")
+                message = twilio_client.messages.create(
+                    from_=from_number,
+                    **send_kwargs
+                )
+
+            logger.info(f"SMS sent to plus-one {po_name} at {phone}, SID: {message.sid}")
+            sent_count += 1
+            status = "success"
+            message_sid = message.sid
+            initial_status = message.status
+        except Exception as e:
+            logger.error(f"Failed to send SMS to plus-one {po_name} at {phone}: {e}")
+            failed_count += 1
+            status = f"failed: {str(e)}"
+            failure_reasons.append(f"SMS to {po_name} failed: {str(e)}")
+
+        # Log the attempt
+        log_record = {
+            "phone": phone,
+            "guest_id": plus_one.get("guest_id"),
+            "wedding_id": payload.wedding_id,
+            "message": payload.message,
+            "target_type": "plus-one",
+            "event_type": "individual_reminder",
+            "status": status,
+            "sent_at": now,
+            "provider": "twilio",
+            "delivery_status": initial_status,
+            "delivery_status_updated_at": now if message_sid else None,
+        }
+        if message_sid:
+            log_record["message_sid"] = message_sid
+            log_record["delivery_events"] = [{
+                "status": initial_status,
+                "timestamp": now,
+                "error_code": None
+            }] if initial_status else []
+        else:
+            log_record["delivery_events"] = []
+        logs.append(log_record)
+
+    # Save logs
+    if logs:
+        await log_collection.insert_many(logs)
+
+    # Log activity and broadcast SSE
+    if sent_count > 0:
+        try:
+            await activity_log_service.log_reminder_sent(
+                wedding_id=payload.wedding_id,
+                recipient_count=sent_count,
+                reminder_type="individual_plus_one",
+                planner_email=current_user.email,
+                channel="sms"
+            )
+            await sse_manager.broadcast_data_change(
+                current_user.email, "reminder", "created",
+                wedding_id=payload.wedding_id,
+            )
+        except Exception as log_err:
+            logger.warning(f"Failed to log plus-one SMS activity: {log_err}")
+
+    return {
+        "sent": sent_count,
+        "failed": failed_count,
+        "total": len(payload.plus_one_ids),
         "provider": "twilio",
         "failure_reasons": failure_reasons if failure_reasons else None
     }

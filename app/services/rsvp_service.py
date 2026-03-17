@@ -207,6 +207,13 @@ class RSVPService:
                 metadata={"guest_id": guest_id, "couple_names": couple_names}
             )
 
+            # Broadcast SSE data-change so planner UI updates in real time
+            from app.services.sse_manager import sse_manager
+            await sse_manager.broadcast_data_change(
+                planner_email, "rsvp", "created",
+                wedding_id=wedding_id, record_id=guest_id,
+            )
+
         except Exception as e:
             # Don't fail the RSVP submission if notification fails
             logger.error(f"Failed to send RSVP notification for wedding {wedding_id}: {str(e)}", exc_info=True)

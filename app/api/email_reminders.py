@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.utils.response import dict_response
 from pydantic import BaseModel
 from typing import Optional
+from app.services.sse_manager import sse_manager
 import base64
 import logging
 
@@ -75,6 +76,12 @@ async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAu
         attachments=[]
     )
 
+    # Broadcast invite status change so planner UI refreshes guest list
+    await sse_manager.broadcast_data_change(
+        current_user.email, "invite", "created",
+        wedding_id=wedding["_id"],
+    )
+
     return result
 
 
@@ -115,6 +122,12 @@ async def send_email_invites_with_attachment(
         custom_html=custom_html,
         custom_subject=custom_subject,
         attachments=attachments
+    )
+
+    # Broadcast invite status change so planner UI refreshes guest list
+    await sse_manager.broadcast_data_change(
+        current_user.email, "invite", "created",
+        wedding_id=wedding["_id"],
     )
 
     return result
@@ -232,6 +245,12 @@ async def send_individual_email_reminder(
                     {"$set": {"invite_sent": True, "invite_sent_date": datetime.now(timezone.utc)}}
                 )
                 logger.info(f"Set invite_sent=True for guest {payload.guest_name} (email reminder)")
+
+            # Broadcast invite status change
+            await sse_manager.broadcast_data_change(
+                current_user.email, "invite", "created",
+                wedding_id=str(wedding["_id"]),
+            )
             return {"sent": 1, "success": True}
         else:
             return {"sent": 0, "success": False, "error": result.get("error", "Unknown error")}

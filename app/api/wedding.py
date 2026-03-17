@@ -16,6 +16,7 @@ from app.services.subscription_service import SubscriptionService
 from app.services.stripe_service import stripe_service
 from app.models.subscription import SubscriptionStatus
 from app.utils.response import dict_response
+from app.services.sse_manager import sse_manager
 from app.core.database import mongo
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -149,6 +150,12 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
         except Exception as e:
             logger.error(f"Error reporting meter event on creation: {e}")
 
+    # Broadcast SSE data-change so planner UI updates
+    await sse_manager.broadcast_data_change(
+        current_user.email, "wedding", "created",
+        wedding_id=str(wedding_data.get("_id", "")),
+    )
+
     return result
 
 
@@ -163,7 +170,15 @@ async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: Ext
     # Add update metadata
     wedding["updated_by"] = current_user.email
 
-    return await wedding_service.update_wedding(wedding_id, wedding)
+    result = await wedding_service.update_wedding(wedding_id, wedding)
+
+    # Broadcast SSE data-change so planner UI updates
+    await sse_manager.broadcast_data_change(
+        current_user.email, "wedding", "updated",
+        wedding_id=wedding_id,
+    )
+
+    return result
 
 
 @router.delete("/weddings/{wedding_id}", tags=["Admin"])
@@ -198,6 +213,10 @@ async def delete_wedding_admin(
         try:
             result = await cascade_delete_service.hard_delete_wedding(wedding_id, current_user.email)
             logger.info(f"Hard deleted wedding {wedding_id}: {result}")
+            await sse_manager.broadcast_data_change(
+                current_user.email, "wedding", "deleted",
+                wedding_id=wedding_id,
+            )
             return result
         except Exception as e:
             logger.error(f"Hard delete failed for wedding {wedding_id}: {str(e)}")
@@ -260,6 +279,12 @@ async def delete_wedding_admin(
 
         logger.info(f"Soft deleted wedding {wedding_id}: {result}")
         result["message"] = "Wedding cancelled (soft delete); all dependent records archived; billing usage preserved"
+
+        await sse_manager.broadcast_data_change(
+            current_user.email, "wedding", "deleted",
+            wedding_id=wedding_id,
+        )
+
         return result
 
     except HTTPException:

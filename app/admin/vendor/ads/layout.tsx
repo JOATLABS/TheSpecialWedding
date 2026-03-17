@@ -18,17 +18,17 @@ const navItems: NavItem[] = [
     icon: <BarChart3 className="w-4 h-4" />,
   },
   {
-    href: '/admin/vendor/ads',
+    href: '/admin/vendor/ads/campaigns',
     label: 'Campaigns',
     icon: <Settings className="w-4 h-4" />,
   },
   {
-    href: '/admin/vendor/ads',
+    href: '/admin/vendor/ads/leads',
     label: 'Leads',
     icon: <MessageSquare className="w-4 h-4" />,
   },
   {
-    href: '/admin/vendor/ads',
+    href: '/admin/vendor/ads/billing',
     label: 'Billing',
     icon: <CreditCard className="w-4 h-4" />,
   },
