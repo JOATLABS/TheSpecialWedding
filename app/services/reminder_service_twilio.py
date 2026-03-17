@@ -14,9 +14,9 @@ import logging
 # Throttling configuration
 # ---------------------------------------------------------------------------
 # Twilio enforces MPS (messages-per-second) limits that depend on your sender
-# type and 10DLC trust score.  Typical limits:
+# type.  Limits for US destinations:
+#   - Toll-free:        3 MPS (default) – upgradeable to 25+ MPS via Sales
 #   - 10DLC long code:  1 MPS (default) – up to ~75 MPS at highest trust
-#   - Toll-free:        3 MPS (default) – upgradeable to 25+ MPS
 #   - Short code:     100 MPS
 #
 # Even though Twilio queues messages internally, firing API requests in a
@@ -24,10 +24,15 @@ import logging
 # traffic pattern.  The delay below is applied between each Twilio API call
 # in bulk send loops.  Override via the SMS_THROTTLE_DELAY_MS env var.
 #
-# Default 200 ms ≈ 5 req/s – safely under default 10DLC limits and friendly
-# to carrier heuristics.  For higher-throughput senders, lower this value.
+# Default 350 ms ≈ ~2.8 req/s – safely under the toll-free 3 MPS limit
+# with headroom for Twilio's internal queue processing.  At this rate,
+# 7,500 messages would take ~44 minutes to enqueue.
+#
+# To increase (e.g. after upgrading to high-throughput toll-free):
+#   SMS_THROTTLE_DELAY_MS=100  →  10 req/s  (for 25+ MPS toll-free)
+#   SMS_THROTTLE_DELAY_MS=50   →  20 req/s  (for short codes)
 # ---------------------------------------------------------------------------
-SMS_THROTTLE_DELAY_S = float(os.getenv("SMS_THROTTLE_DELAY_MS", "200")) / 1000.0
+SMS_THROTTLE_DELAY_S = float(os.getenv("SMS_THROTTLE_DELAY_MS", "350")) / 1000.0
 
 logger = logging.getLogger(__name__)
 

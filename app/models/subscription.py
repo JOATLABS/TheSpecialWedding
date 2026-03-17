@@ -87,7 +87,7 @@ class SubscriptionPlanModel(BaseModel):
                 "is_active": True,
                 "is_featured": False,
                 "sort_order": 1,
-                "created_by": "thedeveloper@thespecialwedding.com"
+                "created_by": "thedeveloper@thespecialwedding.io"
             }
         }
 
@@ -157,7 +157,7 @@ class UserSubscriptionModel(BaseModel):
                     "storage_used_gb": 2.3,
                     "staff_seats_used": 1
                 },
-                "created_by": "thedeveloper@thespecialwedding.com"
+                "created_by": "thedeveloper@thespecialwedding.io"
             }
         }
 

@@ -123,7 +123,7 @@ class AdminUserModel(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "email": "thedeveloper@thespecialwedding.com",
+                "email": "thedeveloper@thespecialwedding.io",
                 "password_hash": "hashed_password_here",
                 "role": "wedding_planner"
             }
