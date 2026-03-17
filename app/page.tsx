@@ -537,39 +537,46 @@ function LandingContent({
             {pricing.map((tier) => (
               <div
                 key={tier.name}
-                className={`relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-7 text-slate-200 backdrop-blur-xl transition hover:border-wedding-rose/60 ${
+                className={`relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-7 text-slate-200 backdrop-blur-xl transition hover:border-wedding-rose/60 ${
                   tier.emphasized ? "shadow-[0_35px_120px_rgba(212,165,165,0.3)]" : ""
                 }`}
               >
                 {tier.badge ? (
-                  <div className="absolute right-5 top-6 inline-flex items-center gap-1.5 rounded-full border border-wedding-rose/40 bg-wedding-rose/20 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-wedding-rose">
+                  <div className="absolute right-4 top-4 lg:right-5 lg:top-6 inline-flex items-center gap-1.5 rounded-full border border-wedding-rose/40 bg-wedding-rose/20 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-wedding-rose">
                     {tier.badge}
                   </div>
                 ) : null}
-                <h3 className="text-base font-semibold text-white">{tier.name}</h3>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="text-2xl sm:text-3xl font-semibold text-white">{tier.price}</span>
-                  <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{tier.cadence}</span>
+                {/* Mobile: horizontal layout — content left, button right */}
+                <div className="flex items-center gap-4 lg:flex-col lg:items-stretch">
+                  {/* Left: plan info + features */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base font-semibold text-white">{tier.name}</h3>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <span className="text-2xl sm:text-3xl font-semibold text-white">{tier.price}</span>
+                      <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{tier.cadence}</span>
+                    </div>
+                    <ul className="mt-2 space-y-0.5 text-sm text-slate-200">
+                      {tier.features.map((feature) => (
+                        <li key={feature} className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-wedding-rose flex-shrink-0" />
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  {/* Right on mobile, bottom-center on desktop */}
+                  <button
+                    type="button"
+                    onClick={() => onPricingClick(tier.name.toLowerCase())}
+                    className={`flex-shrink-0 lg:mt-4 lg:mx-auto rounded-full px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] whitespace-nowrap transition ${
+                      tier.emphasized
+                        ? "bg-wedding-rose text-slate-900 shadow-lg hover:bg-wedding-blush"
+                        : "border border-white/20 text-white hover:border-white/40"
+                    }`}
+                  >
+                    {tier.cta}
+                  </button>
                 </div>
-                <ul className="mt-2 space-y-0.5 text-sm text-slate-200">
-                  {tier.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-wedding-rose flex-shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => onPricingClick(tier.name.toLowerCase())}
-                  className={`mt-auto pt-3 sm:pt-4 ml-auto lg:mx-auto rounded-full px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] whitespace-nowrap transition ${
-                    tier.emphasized
-                      ? "bg-wedding-rose text-slate-900 shadow-lg hover:bg-wedding-blush"
-                      : "border border-white/20 text-white hover:border-white/40"
-                  }`}
-                >
-                  {tier.cta}
-                </button>
               </div>
             ))}
           </div>
