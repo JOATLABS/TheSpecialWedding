@@ -61,6 +61,12 @@ interface PlusOne {
   email_opt_in?: boolean | null;
 }
 
+interface GuestImportResult {
+  imported: number;
+  tokens: string[];
+  warnings?: string[];
+}
+
 type SortField = 'name' | 'email' | 'phone' | 'role' | 'group_id' | 'rsvp_status' | 'plus_ones';
 type SortDirection = 'asc' | 'desc';
 type ViewMode = 'table' | 'cards';
@@ -155,7 +161,7 @@ export default function AdminGuestsPage() {
   // Import state
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
-  const [importResult, setImportResult] = useState<{ imported: number; tokens: string[] } | null>(null);
+  const [importResult, setImportResult] = useState<GuestImportResult | null>(null);
   const [importError, setImportError] = useState<string>('');
 
   // Bulk action state
@@ -1599,6 +1605,18 @@ export default function AdminGuestsPage() {
                         <p className="text-green-700 dark:text-green-300 font-semibold">
                           Successfully imported {importResult.imported} guests!
                         </p>
+                        {importResult.warnings && importResult.warnings.length > 0 && (
+                          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+                            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                              {importResult.warnings.length} row{importResult.warnings.length === 1 ? '' : 's'} skipped during import.
+                            </p>
+                            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-700 dark:text-amber-300">
+                              {importResult.warnings.map((warning, index) => (
+                                <li key={`${warning}-${index}`}>{warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
 

@@ -201,6 +201,7 @@ plans = [
         "description": "For new planners onboarding their first weddings",
         "price_monthly": 29,
         "price_yearly": 290,  # ~2 months free
+        "trial_days": 30,
         "is_metered": False,
         "max_weddings": 3,
         "max_guests_per_wedding": 150,
@@ -240,6 +241,7 @@ plans = [
         "description": "Most popular plan with full automation features",
         "price_monthly": 59,
         "price_yearly": 590,  # ~2 months free
+        "trial_days": 30,
         "is_metered": False,
         "max_weddings": 10,
         "max_guests_per_wedding": 350,
@@ -285,6 +287,7 @@ plans = [
         "description": "For agencies and high-volume wedding planners",
         "price_monthly": 149,
         "price_yearly": 1490,  # ~2 months free
+        "trial_days": 30,
         "is_metered": False,
         "max_weddings": -1,  # Unlimited
         "max_guests_per_wedding": -1,  # Unlimited

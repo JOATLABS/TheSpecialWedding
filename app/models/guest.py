@@ -46,7 +46,7 @@ class GuestModel(BaseModel):
     @field_validator("phone")
     def validate_phone(cls, value):
         if not value:
-            return value
+            return None
         # Sanitize: strip whitespace and delimiters like (), -, .
         value = sanitize_phone(value)
         if not value:
@@ -57,8 +57,8 @@ class GuestModel(BaseModel):
 
     @field_validator("email")
     def validate_email(cls, v):
-        if v is None:
-            return v
+        if not v:
+            return None
         v = sanitize_email(v)
         if not v:
             return None
@@ -116,7 +116,7 @@ class UpdateGuestRequest(BaseModel):
     @field_validator("phone")
     def validate_phone(cls, value):
         if not value:
-            return value
+            return None
         value = sanitize_phone(value)
         if not value:
             return None
@@ -126,8 +126,8 @@ class UpdateGuestRequest(BaseModel):
 
     @field_validator("email")
     def validate_email(cls, v):
-        if v is None:
-            return v
+        if not v:
+            return None
         v = sanitize_email(v)
         if not v:
             return None
@@ -163,7 +163,7 @@ class CreateGuestRequest(BaseModel):
     @field_validator("phone")
     def validate_phone(cls, value):
         if not value:
-            return value
+            return None
         value = sanitize_phone(value)
         if not value:
             return None
@@ -173,8 +173,8 @@ class CreateGuestRequest(BaseModel):
 
     @field_validator("email")
     def validate_email(cls, v):
-        if v is None:
-            return v
+        if not v:
+            return None
         v = sanitize_email(v)
         if not v:
             return None

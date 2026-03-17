@@ -1,9 +1,24 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Star, Phone, Mail, ExternalLink, X, Plus } from 'lucide-react';
-import { SponsoredVendor, AdEventType, recordAdEvent } from '@/services/advertisingApi';
-import { VendorProfile } from '@/services/vendorManagementApi';
+import { Star, Phone, Mail, ExternalLink, X, Plus, Camera, Flower2, Music, UtensilsCrossed, Building2, Video, MapPin } from 'lucide-react';
+import { SponsoredVendor, AdEventType, recordAdEvent, createAdLead, type AdPlacement } from '@/services/advertisingApi';
+import { VendorProfile, assignVendorToWedding } from '@/services/vendorManagementApi';
+import { useAdmin } from '@/contexts/AdminContext';
+
+/** Maps service categories to Lucide icons for the image placeholder */
+function getCategoryIcon(category?: string): React.ReactNode {
+  const iconProps = { size: 28, className: 'text-gray-400' };
+  switch (category) {
+    case 'photographer': return <Camera {...iconProps} />;
+    case 'florist': return <Flower2 {...iconProps} />;
+    case 'dj': case 'live_music': case 'band': return <Music {...iconProps} />;
+    case 'caterer': case 'catering': return <UtensilsCrossed {...iconProps} />;
+    case 'venue': return <Building2 {...iconProps} />;
+    case 'videographer': return <Video {...iconProps} />;
+    default: return <Building2 {...iconProps} />;
+  }
+}
 
 interface SponsoredVendorCardProps {
   vendor: SponsoredVendor;
@@ -13,6 +28,10 @@ interface SponsoredVendorCardProps {
   onHide?: (vendorProfileId: string) => void;
   /** Why-tag text explaining why this vendor is shown (e.g. "Serves Austin · You need a photographer") */
   whyTag?: string;
+  /** Current wedding ID for vendor assignment */
+  weddingId?: string;
+  /** Current wedding name for the mailto subject line */
+  weddingName?: string;
 }
 
 // Utility to generate UUID v4
@@ -31,12 +50,17 @@ export function SponsoredVendorCard({
   onRecordEvent,
   onHide,
   whyTag,
+  weddingId,
+  weddingName,
 }: SponsoredVendorCardProps) {
+  const { token } = useAdmin();
   const cardRef = useRef<HTMLDivElement>(null);
   const [hasRecordedImpressionServed, setHasRecordedImpressionServed] = useState(false);
   const [hasRecordedViewableImpression, setHasRecordedViewableImpression] = useState(false);
   const [clickId] = useState(generateUUID());
   const [isHidden, setIsHidden] = useState(false);
+  const [addedToWedding, setAddedToWedding] = useState(false);
+  const [addToWeddingError, setAddToWeddingError] = useState<string | null>(null);
 
   // Record impression_served on mount (card rendered)
   useEffect(() => {
@@ -78,10 +102,44 @@ export function SponsoredVendorCard({
     };
   }, [vendor._id, vendor.vendor_profile_id, hasRecordedViewableImpression, onRecordEvent, clickId]);
 
-  const handleAddToWedding = () => {
+  const handleAddToWedding = async () => {
     onRecordEvent('vendor_added_to_wedding', vendor._id, vendor.vendor_profile_id, { click_id: clickId });
-    // TODO: Implement actual add to wedding logic
-    console.log('Add to wedding:', vendor.vendor_profile_id);
+
+    if (!token || !weddingId) {
+      // Fallback: navigate to vendor profile if no wedding context
+      if (onView) onView(vendor.vendor_profile_id);
+      return;
+    }
+
+    try {
+      setAddToWeddingError(null);
+      // Create VendorAssignment record
+      await assignVendorToWedding(token, {
+        vendor_profile_id: vendor.vendor_profile_id,
+        wedding_id: weddingId,
+      });
+
+      // Also record an ad lead for attribution
+      await createAdLead(token, {
+        sponsored_vendor_id: vendor._id,
+        vendor_profile_id: vendor.vendor_profile_id,
+        wedding_id: weddingId,
+        lead_type: 'add_to_wedding',
+        click_id: clickId,
+        placement: vendor.placement as AdPlacement,
+        metadata: { source: 'sponsored_vendor_card' },
+      }).catch(() => { /* lead creation is best-effort */ });
+
+      setAddedToWedding(true);
+    } catch (err: any) {
+      const msg = err?.message || 'Could not add vendor';
+      // If already assigned, treat as success
+      if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('duplicate')) {
+        setAddedToWedding(true);
+      } else {
+        setAddToWeddingError(msg);
+      }
+    }
   };
 
   const handleViewDetails = () => {
@@ -91,12 +149,37 @@ export function SponsoredVendorCard({
     }
   };
 
-  const handleContactClick = () => {
+  const handleRequestQuote = () => {
     onRecordEvent('contact_click', vendor._id, vendor.vendor_profile_id, { click_id: clickId });
-    if (vendorProfile?.website) {
-      window.open(vendorProfile.website, '_blank');
-    } else if (vendorProfile?.email) {
-      window.location.href = `mailto:${vendorProfile.email}`;
+
+    // Create ad lead (best-effort, don't block the mailto)
+    if (token) {
+      createAdLead(token, {
+        sponsored_vendor_id: vendor._id,
+        vendor_profile_id: vendor.vendor_profile_id,
+        wedding_id: weddingId,
+        lead_type: 'quote_request',
+        click_id: clickId,
+        placement: vendor.placement as AdPlacement,
+        metadata: { source: 'sponsored_vendor_card' },
+      }).catch(() => { /* best-effort */ });
+    }
+
+    // Open the planner's email client with vendor email pre-filled
+    if (vendorProfile?.email) {
+      const businessName = vendorProfile.business_name || 'Vendor';
+      const subject = encodeURIComponent(
+        weddingName
+          ? `Quote Request – ${businessName} for ${weddingName}`
+          : `Quote Request – ${businessName}`
+      );
+      const body = encodeURIComponent(
+        `Hi ${vendorProfile.contact_name || businessName},\n\nI found your profile on The Special Wedding and would love to discuss your services${weddingName ? ` for our wedding (${weddingName})` : ''}.\n\nCould you provide a quote for your services?\n\nThank you!`
+      );
+      window.location.href = `mailto:${vendorProfile.email}?subject=${subject}&body=${body}`;
+    } else {
+      // No email available — fall back to vendor profile page
+      if (onView) onView(vendor.vendor_profile_id);
     }
   };
 
@@ -149,16 +232,21 @@ export function SponsoredVendorCard({
       >
         {/* Sponsored Badge */}
         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded bg-amber-50 text-amber-700" aria-label="Sponsored">
-          ✦ Sponsored
+          Sponsored
         </span>
-        {/* Vendor Image Placeholder */}
-        <div className="w-full h-20 rounded-md bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-2xl" aria-hidden="true">
-          {vendorProfile?.service_category === 'photographer' ? '📸' :
-           vendorProfile?.service_category === 'florist' ? '💐' :
-           vendorProfile?.service_category === 'dj' || vendorProfile?.service_category === 'live_music' ? '🎶' :
-           vendorProfile?.service_category === 'catering' ? '🍽' :
-           vendorProfile?.service_category === 'venue' ? '🏛' : '🏢'}
-        </div>
+        {/* Vendor Image */}
+        {vendorProfile?.logo_url ? (
+          <img
+            src={vendorProfile.logo_url}
+            alt={`${businessName} logo`}
+            className="w-full h-20 rounded-md object-cover bg-gray-100"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-20 rounded-md bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center" aria-hidden="true">
+            {getCategoryIcon(vendorProfile?.service_category)}
+          </div>
+        )}
 
         {/* Business Name & Meta — contrast-safe gray-600 on white (5.7:1) */}
         <div>
@@ -189,17 +277,27 @@ export function SponsoredVendorCard({
       <div className="flex gap-1.5 px-3 pb-3">
         <button
           onClick={handleAddToWedding}
-          className="flex-1 px-2 py-1.5 text-[11px] font-semibold text-white bg-wedding-sage hover:bg-wedding-navy rounded-md transition-colors text-center min-h-[44px]"
+          disabled={addedToWedding}
+          className={`flex-1 px-2 py-1.5 text-[11px] font-semibold rounded-md transition-colors text-center min-h-[44px] ${
+            addedToWedding
+              ? 'bg-green-100 text-green-700 cursor-default'
+              : 'text-white bg-wedding-sage hover:bg-wedding-navy'
+          }`}
+          aria-label={addedToWedding ? `${businessName} added to wedding` : `Add ${businessName} to wedding`}
         >
-          + Add to Wedding
+          {addedToWedding ? 'Added' : '+ Add to Wedding'}
         </button>
         <button
-          onClick={handleContactClick}
+          onClick={handleRequestQuote}
           className="flex-1 px-2 py-1.5 text-[11px] font-semibold text-wedding-sage bg-white border border-wedding-sage hover:bg-wedding-sage/5 rounded-md transition-colors text-center min-h-[44px]"
+          aria-label={`Request quote from ${businessName}`}
         >
           Request Quote
         </button>
       </div>
+      {addToWeddingError && (
+        <p className="px-3 pb-2 text-[10px] text-red-500">{addToWeddingError}</p>
+      )}
     </article>
   );
 }

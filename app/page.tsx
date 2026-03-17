@@ -284,8 +284,8 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[320px_1fr] items-start">
-        {/* Feature list — left column */}
-        <div className="flex flex-col gap-1 max-h-[540px] overflow-y-auto pr-2 scrollbar-thin">
+        {/* Feature list — left column (hidden on mobile, shown on lg+) */}
+        <div className="hidden lg:flex flex-col gap-1 max-h-[540px] overflow-y-auto pr-2 scrollbar-thin">
           {showcaseFeatures.map((feature, idx) => (
             <button
               key={feature.id}
@@ -324,6 +324,15 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
           ))}
         </div>
 
+        {/* Mobile: active feature label above image */}
+        <div className="lg:hidden text-center mb-2">
+          <span className="text-[10px] uppercase tracking-[0.3em] px-2.5 py-1 rounded-full bg-wedding-rose/20 text-wedding-rose">
+            {active.category}
+          </span>
+          <h3 className="mt-2 text-lg font-semibold text-white">{active.title}</h3>
+          <p className="mt-1 text-sm text-slate-300">{active.tagline}</p>
+        </div>
+
         {/* Dashboard image — right column */}
         <div className="relative">
           <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-wedding-rose/10 via-transparent to-wedding-gold/10 blur-2xl opacity-60" />
@@ -334,7 +343,7 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
               <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
               <span className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
               <span className="ml-3 text-[10px] text-slate-500 font-mono">
-                thespecialwedding.io/admin/{active.id}
+                thespecialwedding.io/dashboard/{active.id}
               </span>
             </div>
             {/* Image container with smooth transition */}
@@ -516,35 +525,36 @@ function LandingContent({
       {/* ── PRICING (admin-configurable via API) ────────── */}
       <section id={isClone ? undefined : "pricing"} className="relative bg-gradient-to-b from-slate-900 via-[#101826] to-slate-950">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-wedding-rose/40 to-transparent" />
-        <div className="relative mx-auto max-w-6xl px-6 py-20 sm:px-10 lg:px-12">
+        <div className="relative mx-auto max-w-7xl px-6 py-20 sm:px-10 lg:px-12">
           <div className="text-center">
             <h2 className="text-3xl font-semibold text-white sm:text-4xl">Plans that scale with every celebration.</h2>
             <p className="mt-4 text-base text-slate-200">
               Choose the plan that matches your roster. Scale up or down as your season unfolds.
             </p>
           </div>
-          <div className="mt-12 grid gap-6 lg:grid-cols-3">
+          {/* Horizontal scroll on mobile/tablet, single row on desktop */}
+          <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
             {pricing.map((tier) => (
               <div
                 key={tier.name}
-                className={`relative overflow-hidden rounded-[2.2rem] border border-white/10 bg-white/5 p-9 text-slate-200 backdrop-blur-xl transition hover:border-wedding-rose/60 ${
+                className={`relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-7 text-slate-200 backdrop-blur-xl transition hover:border-wedding-rose/60 ${
                   tier.emphasized ? "shadow-[0_35px_120px_rgba(212,165,165,0.3)]" : ""
                 }`}
               >
                 {tier.badge ? (
-                  <div className="absolute right-8 top-8 inline-flex items-center gap-2 rounded-full border border-wedding-rose/40 bg-wedding-rose/20 px-4 py-1 text-xs font-semibold uppercase tracking-[0.4em] text-wedding-rose">
+                  <div className="absolute right-5 top-6 inline-flex items-center gap-1.5 rounded-full border border-wedding-rose/40 bg-wedding-rose/20 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-wedding-rose">
                     {tier.badge}
                   </div>
                 ) : null}
-                <h3 className="text-xl font-semibold text-white">{tier.name}</h3>
-                <div className="mt-4 flex items-baseline gap-2">
-                  <span className="text-4xl font-semibold text-white">{tier.price}</span>
-                  <span className="text-xs uppercase tracking-[0.4em] text-slate-400">{tier.cadence}</span>
+                <h3 className="text-base font-semibold text-white">{tier.name}</h3>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-2xl sm:text-3xl font-semibold text-white">{tier.price}</span>
+                  <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{tier.cadence}</span>
                 </div>
-                <ul className="mt-6 space-y-3 text-sm text-slate-200">
+                <ul className="mt-2 space-y-0.5 text-sm text-slate-200">
                   {tier.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-3">
-                      <span className="h-1.5 w-1.5 rounded-full bg-wedding-rose" />
+                    <li key={feature} className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-wedding-rose flex-shrink-0" />
                       {feature}
                     </li>
                   ))}
@@ -552,7 +562,7 @@ function LandingContent({
                 <button
                   type="button"
                   onClick={() => onPricingClick(tier.name.toLowerCase())}
-                  className={`mt-9 flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold uppercase tracking-[0.3em] transition ${
+                  className={`mt-auto pt-3 sm:pt-4 ml-auto lg:mx-auto rounded-full px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] whitespace-nowrap transition ${
                     tier.emphasized
                       ? "bg-wedding-rose text-slate-900 shadow-lg hover:bg-wedding-blush"
                       : "border border-white/20 text-white hover:border-white/40"

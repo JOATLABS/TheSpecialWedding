@@ -133,7 +133,9 @@ export default function PetalCanvas({ count = 26 }: { count?: number }) {
       canvas.style.width = "100%";
       canvas.style.height = "100%";
 
-      const target = reduce ? 0 : Math.max(count, Math.min(72, Math.round(window.innerWidth / 22)));
+      const isMobile = window.innerWidth < 640;
+      const maxPetals = isMobile ? 18 : 72;
+      const target = reduce ? 0 : Math.max(isMobile ? 12 : count, Math.min(maxPetals, Math.round(window.innerWidth / 22)));
       petals.current = Array.from({ length: target }, (_, i) => createPetal(w, h, i + 1));
       ctx.clearRect(0, 0, w, h);
     };

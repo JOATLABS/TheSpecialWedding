@@ -1,5 +1,6 @@
 # app/api/reminder_twilio.py
 
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, Query
 from app.utils.contact_sanitizer import normalize_phone_e164
 from app.services.reminder_service_twilio import (
@@ -7,7 +8,8 @@ from app.services.reminder_service_twilio import (
     TwilioRSVPReminderHelper,
     twilio_configured,
     twilio_client,
-    MESSAGING_SERVICE_SID
+    MESSAGING_SERVICE_SID,
+    SMS_THROTTLE_DELAY_S,
 )
 from app.services.activity_log_service import activity_log_service
 from app.dependencies.auth_extended import require_root_admin, require_team_or_planner, enforce_team_permission, ExtendedAuthUser
@@ -256,6 +258,10 @@ async def send_individual_reminders(
             log_record["delivery_events"] = []
         logs.append(log_record)
 
+        # Throttle to stay within Twilio MPS / API rate limits
+        if SMS_THROTTLE_DELAY_S > 0:
+            await asyncio.sleep(SMS_THROTTLE_DELAY_S)
+
     # Save logs
     if logs:
         await log_collection.insert_many(logs)
@@ -435,6 +441,10 @@ async def send_plus_one_reminders(
         else:
             log_record["delivery_events"] = []
         logs.append(log_record)
+
+        # Throttle to stay within Twilio MPS / API rate limits
+        if SMS_THROTTLE_DELAY_S > 0:
+            await asyncio.sleep(SMS_THROTTLE_DELAY_S)
 
     # Save logs
     if logs:

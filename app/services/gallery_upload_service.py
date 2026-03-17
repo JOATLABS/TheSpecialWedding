@@ -168,3 +168,119 @@ class GalleryUploadService:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')
             logger.error(f"S3 upload error ({error_code}): {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+
+
+# =============================================================================
+# AD ASSET UPLOAD SERVICE — Separate bucket for vendor ad creative
+# =============================================================================
+
+# Allowed MIME types for ad creative uploads (images only, no video)
+ALLOWED_AD_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+
+MAX_AD_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+# Get AD_MEDIA_DOMAIN from environment
+_raw_ad_media_domain = os.getenv("AD_MEDIA_DOMAIN")
+if not _raw_ad_media_domain:
+    logger.warning("AD_MEDIA_DOMAIN environment variable is not set — falling back to MEDIA_DOMAIN for ad assets")
+    AD_MEDIA_DOMAIN = MEDIA_DOMAIN
+else:
+    if _raw_ad_media_domain.startswith(('http://', 'https://')):
+        AD_MEDIA_DOMAIN = _raw_ad_media_domain.rstrip('/')
+    else:
+        AD_MEDIA_DOMAIN = f"https://{_raw_ad_media_domain}".rstrip('/')
+
+
+class AdUploadService:
+    """
+    Handles file uploads for vendor ad creative assets.
+    Uses a separate S3/R2 bucket (S3_AD_BUCKET_NAME) so wedding gallery
+    content and ad assets are fully isolated.
+
+    Shares the same R2 credentials (S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY)
+    since both buckets live under the same Cloudflare account.
+    """
+
+    def __init__(self):
+        self.bucket_name = os.getenv("S3_AD_BUCKET_NAME")
+        if not self.bucket_name:
+            logger.warning("S3_AD_BUCKET_NAME not set — ad uploads will fail")
+        self.s3 = boto3.client(
+            "s3",
+            endpoint_url=os.getenv("S3_ENDPOINT_URL"),
+            aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
+            config=Config(signature_version='s3v4'),
+        )
+
+    def create_presigned_upload_url(
+        self, filename: str, vendor_id: str, content_type: str, expires_in: int = 300
+    ) -> dict:
+        """
+        Generate a presigned PUT URL for the ad assets bucket.
+        Key format: ads/{vendor_id}/{timestamp}_{filename}
+        Returns: { upload_url, key, cdn_url }
+        """
+        if content_type not in ALLOWED_AD_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File type '{content_type}' not allowed for ad images. Allowed: {', '.join(sorted(ALLOWED_AD_TYPES))}"
+            )
+
+        try:
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+            safe_filename = os.path.basename(filename)
+            key = f"ads/{vendor_id}/{timestamp}_{safe_filename}"
+
+            url = self.s3.generate_presigned_url(
+                ClientMethod="put_object",
+                Params={
+                    "Bucket": self.bucket_name,
+                    "Key": key,
+                    "ContentType": content_type,
+                },
+                ExpiresIn=expires_in,
+            )
+
+            cdn_url = f"{AD_MEDIA_DOMAIN}/{key}" if AD_MEDIA_DOMAIN else key
+
+            return {"upload_url": url, "key": key, "cdn_url": cdn_url}
+        except ClientError as e:
+            logger.error(f"Ad presigned URL error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error creating ad upload URL: {str(e)}")
+
+    def delete_ad_file(self, key: str):
+        """Delete an ad creative file from the ad bucket."""
+        try:
+            self.s3.delete_object(Bucket=self.bucket_name, Key=key)
+            return {"message": "Ad file deleted successfully"}
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"Ad S3 delete error ({error_code}): {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error deleting ad file: {str(e)}")
+
+    def list_vendor_ad_files(self, vendor_id: str) -> list:
+        """List all ad creative files for a specific vendor."""
+        try:
+            prefix = f"ads/{vendor_id}/"
+            response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
+            if 'Contents' not in response:
+                return []
+
+            files = [
+                {
+                    "key": obj["Key"],
+                    "url": f"{AD_MEDIA_DOMAIN}/{obj['Key']}" if AD_MEDIA_DOMAIN else obj["Key"],
+                    "size": obj.get("Size", 0),
+                }
+                for obj in response["Contents"]
+            ]
+            return sorted(files, key=lambda x: x["key"], reverse=True)
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"Ad S3 list error ({error_code}): {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error listing ad files: {str(e)}")

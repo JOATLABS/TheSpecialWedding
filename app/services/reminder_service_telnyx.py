@@ -112,7 +112,10 @@ class TelnyxReminderService:
     def _send_sms(self, to: str, body: str) -> str:
         try:
             # Sanitize and normalize phone to E.164 format
-            to = normalize_phone_e164(to) or to
+            normalized = normalize_phone_e164(to)
+            if not normalized:
+                return f"failed: Invalid phone number: {to!r}"
+            to = normalized
 
             # Create message with Telnyx
             message = telnyx.Message.create(

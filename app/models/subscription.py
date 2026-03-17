@@ -212,6 +212,7 @@ class CreateSubscriptionPlanRequest(BaseModel):
     features: Dict[str, bool] = Field(default_factory=dict)
     is_featured: bool = False
     sort_order: int = 0
+    trial_days: int = Field(default=0, ge=0, description="Trial days (0 = no trial)")
 
 
 class UpdateSubscriptionPlanRequest(BaseModel):
@@ -232,6 +233,7 @@ class UpdateSubscriptionPlanRequest(BaseModel):
     is_active: Optional[bool] = None
     is_featured: Optional[bool] = None
     sort_order: Optional[int] = None
+    trial_days: Optional[int] = Field(default=None, ge=0, description="Trial days (0 = no trial)")
 
 
 class AssignSubscriptionRequest(BaseModel):
