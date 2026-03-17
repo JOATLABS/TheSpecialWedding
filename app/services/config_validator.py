@@ -35,7 +35,7 @@ def _get_web_push_service():
 
 
 # Root admin email - the platform developer
-ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 # Critical environment variables that MUST be set for the platform to function
 CRITICAL_ENV_VARS = {

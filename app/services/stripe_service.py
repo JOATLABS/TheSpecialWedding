@@ -667,23 +667,42 @@ class StripeService:
         if extra_updates:
             subscription_updates.update(extra_updates)
 
+        # Build query to find the existing subscription record.
+        # Priority: match by stripe_subscription_id first (authoritative).
+        # If no stripe_subscription_id, or no matching record exists yet,
+        # fall back to user_id so we update the record created at checkout
+        # initiation (which won't have a stripe_subscription_id yet).
         query: Dict[str, Any] = {}
-        if stripe_subscription_id:
+        if stripe_subscription_id and user_id:
+            # Try stripe_subscription_id first; if no doc exists, fall back to user_id
+            existing = await self.subscriptions_collection.find_one(
+                {"stripe_subscription_id": stripe_subscription_id}
+            )
+            if existing:
+                query["stripe_subscription_id"] = stripe_subscription_id
+            else:
+                # Fall back: find by user_id (pre-existing record from checkout init)
+                query["user_id"] = user_id
+        elif stripe_subscription_id:
             query["stripe_subscription_id"] = stripe_subscription_id
-        if user_id:
-            query.setdefault("user_id", user_id)
+        elif user_id:
+            query["user_id"] = user_id
 
         if not query:
             raise HTTPException(status_code=500, detail="Unable to associate Stripe subscription with local record")
 
         update_document: Dict[str, Any] = {"$set": subscription_updates}
+
+        # $setOnInsert must NOT overlap with $set — MongoDB rejects duplicate
+        # field paths across update operators.  Only include fields that are
+        # absent from subscription_updates.
         set_on_insert: Dict[str, Any] = {}
 
-        if user_id:
+        if user_id and "user_id" not in subscription_updates:
             set_on_insert["user_id"] = user_id
-        if plan_id:
+        if plan_id and "plan_id" not in subscription_updates:
             set_on_insert["plan_id"] = plan_id
-        if stripe_subscription_id:
+        if stripe_subscription_id and "stripe_subscription_id" not in subscription_updates:
             set_on_insert["stripe_subscription_id"] = stripe_subscription_id
 
         if set_on_insert:

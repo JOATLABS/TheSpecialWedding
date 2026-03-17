@@ -91,7 +91,7 @@ class WeddingModel(BaseModel):
     # SAAS Multi-tenancy fields (backward compatible - won't break existing weddings)
     assigned_planner_email: Optional[str] = Field(None, description="Wedding planner responsible for this wedding")
     assigned_planner_id: Optional[str] = Field(None, description="Wedding planner ID (MongoDB ObjectId)")
-    created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.com)")
+    created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.io)")
     updated_by: Optional[str] = Field(None, description="Email of last user to update this wedding")
     status: str = Field(default="active", description="Wedding status: active, inactive, deleted")
     # Budget and guest tracking

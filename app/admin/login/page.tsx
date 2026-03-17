@@ -188,7 +188,7 @@ export default function AdminLoginPage() {
                         className="w-full rounded-xl border border-white/40 bg-white/60 px-4 py-3 text-base text-wedding-navy shadow-inner placeholder:text-wedding-navy/40 focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
                       />
                       <p id="email-guidance" className="text-xs text-wedding-navy/60">
-                        We use your email to match your planner workspace. Use the address registered with your organisation.
+                        The email address used during registration with my platform.
                       </p>
                     </div>
 

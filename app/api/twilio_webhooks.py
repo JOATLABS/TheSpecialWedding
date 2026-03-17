@@ -418,7 +418,7 @@ async def _notify_root_admin_twilio_error(error_code: int, error_message: str, m
         from app.services.email_service_resend import ResendEmailService
         email_service = ResendEmailService()
 
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
         subject = f"CRITICAL: Twilio Account Error ({error_code})"
 
         html_content = f"""
@@ -605,7 +605,7 @@ async def _check_delivery_rate_alert():
         # Email ROOT_ADMIN
         from app.services.email_service_resend import ResendEmailService
         email_service = ResendEmailService()
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
         await email_service.send_email(
             to_email=root_admin_email,
@@ -1029,7 +1029,7 @@ async def _notify_root_admin_support_ticket(ticket: dict):
     Logs to errors collection so it appears in the platform monitoring dashboard.
     """
     try:
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
         # Log to errors collection for dashboard visibility
         error_record = {

@@ -547,7 +547,8 @@ function LandingContent({
                   </div>
                 ) : null}
                 {/* Mobile: horizontal layout — content left, button right */}
-                <div className="flex items-center gap-4 lg:flex-col lg:items-stretch">
+                {/* Desktop: vertical column with button pinned to bottom via mt-auto */}
+                <div className="flex items-center gap-4 lg:flex-col lg:items-stretch lg:h-full">
                   {/* Left: plan info + features */}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-white">{tier.name}</h3>
@@ -564,11 +565,11 @@ function LandingContent({
                       ))}
                     </ul>
                   </div>
-                  {/* Right on mobile, bottom-center on desktop */}
+                  {/* Right on mobile, bottom-center on desktop — mt-auto pushes to bottom */}
                   <button
                     type="button"
                     onClick={() => onPricingClick(tier.name.toLowerCase())}
-                    className={`flex-shrink-0 lg:mt-4 lg:mx-auto rounded-full px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] whitespace-nowrap transition ${
+                    className={`flex-shrink-0 lg:mt-auto lg:pt-4 lg:mx-auto rounded-full px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] whitespace-nowrap transition ${
                       tier.emphasized
                         ? "bg-wedding-rose text-slate-900 shadow-lg hover:bg-wedding-blush"
                         : "border border-white/20 text-white hover:border-white/40"

@@ -345,7 +345,7 @@ async def _notify_root_admin_support_ticket(ticket: dict):
             logger.info("Slack notification sent to ROOT_ADMIN for unassigned ticket")
 
         # Also send email to ROOT_ADMIN
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
         await _notify_planner_support_ticket(ticket, root_admin_email)
 
     except Exception as e:

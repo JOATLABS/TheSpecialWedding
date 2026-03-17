@@ -36,8 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **SMS throughput throttling** — All bulk SMS send loops (`TwilioReminderService.send_reminders()`, `TwilioRSVPReminderHelper.send_personalized_rsvp_links()`, `send-to-guests`, `send-to-plus-ones` endpoints) now include a configurable inter-message delay (default 200ms ≈ 5 req/s) to stay within Twilio MPS limits and avoid carrier flagging
-- **`SMS_THROTTLE_DELAY_MS` env var** — Configurable throttle delay between SMS API calls (default: 200ms). Lower for higher-throughput sender types (toll-free, short code), raise for conservative 10DLC sending
+- **SMS throughput throttling** — All bulk SMS send loops (`TwilioReminderService.send_reminders()`, `TwilioRSVPReminderHelper.send_personalized_rsvp_links()`, `send-to-guests`, `send-to-plus-ones` endpoints) now include a configurable inter-message delay (default 350ms ≈ 2.8 req/s) to stay safely under the toll-free 3 MPS limit and avoid carrier flagging
+- **`SMS_THROTTLE_DELAY_MS` env var** — Configurable throttle delay between SMS API calls (default: 350ms for toll-free). Set to 100ms after upgrading to high-throughput toll-free (25+ MPS), or 50ms for short codes
 
 ### Technical Notes
 

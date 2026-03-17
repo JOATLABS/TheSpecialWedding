@@ -41,11 +41,13 @@ async def _authenticate_from_query(token: str) -> ExtendedAuthUser:
     """
     try:
         payload = verify_token(token)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"SSE auth: token verification failed: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     email = payload.get("sub")
     if not email:
+        logger.warning("SSE auth: no 'sub' claim in token payload")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
     role = payload.get("role", "wedding_planner")
@@ -53,19 +55,23 @@ async def _authenticate_from_query(token: str) -> ExtendedAuthUser:
 
     user = await mongo.get_users_collection().find_one({"email": email})
     if not user:
+        logger.warning(f"SSE auth: user not found in DB for email={email}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     if email == root_admin_email:
         role = "ROOT_ADMIN"
+        logger.debug(f"SSE auth: root admin authenticated: {email}")
     else:
         role = user.get("role", "wedding_planner")
 
         # Check if account is active
         if not user.get("is_active", True):
+            logger.warning(f"SSE auth: account deactivated for {email}")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is deactivated")
 
         # Check email verification
         if not user.get("email_verified"):
+            logger.warning(f"SSE auth: email not verified for {email}, email_verified={user.get('email_verified')}")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email not verified")
 
         # Check trial expiration for wedding planners

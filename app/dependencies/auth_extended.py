@@ -75,7 +75,7 @@ class ExtendedAuthUser:
         self.role = role
         self.user_data = user_data or {}
         # Role-specific properties
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
         self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
@@ -107,7 +107,7 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
         user_data = {}
 
         # Check if this is the ROOT_ADMIN
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
         if email == root_admin_email:
             # ROOT_ADMIN must exist in the users collection
             user = await mongo.get_users_collection().find_one({"email": email})
@@ -271,7 +271,7 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
 
 # Role-based dependency factories
 async def require_root_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require ROOT_ADMIN access (only thedeveloper@thespecialwedding.com)"""
+    """Require ROOT_ADMIN access (only thedeveloper@thespecialwedding.io)"""
     if not current_user.is_root_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
