@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.8] - 2026-03-17 — View 7 Admin Moderation Console & Review Workflow
+
+### Added
+
+- **Creative review workflow** — Campaigns now submit as `pending_review` and require root admin approval before going live. New `AdReviewStatus` enum, review fields on `SponsoredVendor`, and `ReviewCampaignRequest` model
+- **Review API endpoints** — `GET /admin/ads/review-queue`, `GET /admin/ads/review-queue/counts`, `PUT /admin/ads/sponsored-vendors/{id}/review`, `PUT /admin/ads/feature-flag/config`
+- **View 7 Admin Console** (`/admin/ads/console`) — 4-tab root admin page: Creative Review (queue with approve/reject/request changes), Performance Dashboard (metrics, daily trend, leaderboard), System Config (feature flags, serving limits, review workflow, data pipeline), Revenue & Billing (placeholder with real vs. planned feature inventory)
+- **Vendor placeholder pages** — `/admin/vendor/ads/campaigns` (campaign list), `/admin/vendor/ads/leads` (lead list with filters), `/admin/vendor/ads/billing` (free tier notice, tracked data, coming-soon roadmap)
+
+### Changed
+
+- **Campaign Wizard** — Submits with `is_active: false` and `review_status: "pending_review"` instead of auto-activating
+- **Feature flag config** — Added `require_review`, `auto_approve_returning_vendors`, `review_sla_hours` to defaults
+
+## [2.10.7] - 2026-03-17 — Ad Image Upload with Separate S3 Bucket
+
+### Added
+
+- **Separate R2 bucket for vendor ad assets** — New `vendor-ad-assets` bucket isolates ad creative from wedding gallery content. New env vars: `S3_AD_BUCKET_NAME`, `AD_MEDIA_DOMAIN`
+- **`AdUploadService`** — Dedicated upload service for ad images (JPEG/PNG/WebP, max 5 MB) with presigned URL generation, keyed by `ads/{vendor_id}/{timestamp}_{filename}`
+- **`GET /admin/ads/upload-url`** — Backend endpoint returning presigned PUT URL for the ad bucket
+- **`POST /admin/ads/update-logo`** — Backend endpoint to persist CDN URL on vendor profile's `logo_url`
+- **Campaign Wizard drag-and-drop image uploader** — Step 5 (Creative) now has a proper file upload zone with drag-and-drop, progress states, preview with remove, and file validation. Replaces the plain text URL input
+- **`.env.example` rebuilt** — Full template with all current env variables using placeholder values
+
+### Changed
+
+- **`next.config.js`** — Added `AD_MEDIA_DOMAIN` to image `remotePatterns`
+
 ## [2.10.6] - 2026-03-17 — Stripe Webhook Resilience & API v13+ Compatibility
 
 ### Fixed

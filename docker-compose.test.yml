@@ -1,0 +1,112 @@
+# =============================================================================
+# Test Stack - Spins up backend + MongoDB + Redis for integration testing
+# Used by: GitHub Actions CI, local development testing
+# Usage: docker compose -f docker-compose.test.yml up -d
+# =============================================================================
+
+services:
+  # ── MongoDB for tests ──────────────────────────────────────────────────────
+  mongo-test:
+    image: mongo:7.0
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: wedding_test
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    tmpfs:
+      - /data/db  # In-memory for speed, no persistence needed
+
+  # ── Redis for tests ────────────────────────────────────────────────────────
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+
+  # ── Backend API under test ─────────────────────────────────────────────────
+  backend-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Database - no auth for test MongoDB
+      MONGODB_URL: mongodb://mongo-test:27017/wedding_test
+      MONGODB_URI: mongodb://mongo-test:27017/wedding_test
+      MONGO_URI: mongodb://mongo-test:27017
+      MONGO_DB: wedding_test
+
+      # Redis
+      REDIS_URL: redis://redis-test:6379/0
+
+      # Security - use a long test key to pass validation
+      SECRET_KEY: integration-test-secret-key-that-is-long-enough-for-validation-purposes
+      API_KEY: test-api-key-for-ci
+      JWT_ALGORITHM: HS256
+
+      # App config
+      ENVIRONMENT: testing
+      PYTHONPATH: /app
+      LOG_LEVEL: WARNING
+
+      # Admin user for seeding
+      ROOT_ADMIN_EMAIL: testadmin@thespecialwedding.com
+      ROOT_ADMIN_PASSWORD: TestAdmin123!SecurePassword
+
+      # Disable external services in tests
+      MOCK_SMS_PROVIDER: "true"
+      MOCK_EMAIL_PROVIDER: "true"
+      BYPASS_AUTH: "false"
+
+      # CORS - allow test runner
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:8000"
+
+      # Feature flags
+      ENABLE_SAAS_FEATURES: "true"
+      ENABLE_RATE_LIMITING: "false"
+      ENABLE_CSRF_PROTECTION: "false"
+
+      # Frontend URL (for email templates etc)
+      FRONTEND_URL: http://localhost:3000
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      mongo-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health/livez"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    # Override default CMD to skip seed scripts (we seed in tests)
+    command: >
+      sh -c "python scripts/setup_admin_user.py --auto-create &&
+             python scripts/seed_subscription_plans.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
+
+  # ── Frontend (optional - for E2E tests later) ─────────────────────────────
+  # frontend-test:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.frontend
+  #     args:
+  #       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     backend-test:
+  #       condition: service_healthy

@@ -270,6 +270,11 @@ class AdvertisingService:
             "created_by": admin_email,
             "impression_count": 0,
             "click_count": 0,
+            # Review workflow fields
+            "review_status": data.get("review_status"),
+            "reviewed_by": None,
+            "reviewed_at": None,
+            "review_notes": None,
             "metadata": data.get("metadata", {}),
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
@@ -356,6 +361,155 @@ class AdvertisingService:
         logger.info(f"Deactivated sponsored vendor {sponsored_id}")
 
         return deleted
+
+    async def review_sponsored_vendor(
+        self,
+        sponsored_id: str,
+        review_status: str,
+        reviewer_email: str,
+        review_notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Review a sponsored vendor campaign (approve, reject, or request changes).
+
+        When approved and the feature flag config requires review, the campaign
+        becomes eligible for serving. When rejected or changes requested, the
+        campaign stays inactive.
+
+        Args:
+            sponsored_id: Sponsored vendor ID
+            review_status: New review status (approved, rejected, changes_requested)
+            reviewer_email: Email of the admin performing the review
+            review_notes: Optional reviewer notes
+
+        Returns:
+            Updated sponsored vendor document
+
+        Raises:
+            HTTPException: If sponsored vendor not found
+        """
+        sponsored_id_obj = validate_object_id(sponsored_id, "sponsored_vendor_id")
+
+        now = datetime.now(timezone.utc)
+
+        update_fields = {
+            "review_status": review_status,
+            "reviewed_by": reviewer_email,
+            "reviewed_at": now,
+            "updated_at": now,
+        }
+
+        if review_notes is not None:
+            update_fields["review_notes"] = review_notes
+
+        # If approved, activate the campaign; otherwise keep it inactive
+        if review_status == "approved":
+            update_fields["is_active"] = True
+        elif review_status in ("rejected", "changes_requested"):
+            update_fields["is_active"] = False
+
+        updated = await self.sponsored_vendors.find_one_and_update(
+            {"_id": sponsored_id_obj},
+            {"$set": update_fields},
+            return_document=True,
+        )
+
+        if not updated:
+            raise HTTPException(status_code=404, detail="Sponsored vendor not found")
+
+        logger.info(
+            f"Sponsored vendor {sponsored_id} reviewed as {review_status} "
+            f"by {reviewer_email}"
+        )
+
+        return updated
+
+    async def get_review_queue(
+        self,
+        status_filter: Optional[str] = None,
+        placement_filter: Optional[str] = None,
+        limit: int = 50,
+        skip: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get campaigns pending review or filtered by review status.
+
+        Args:
+            status_filter: Filter by review_status (default: pending_review)
+            placement_filter: Filter by placement
+            limit: Max results
+            skip: Skip for pagination
+
+        Returns:
+            List of sponsored vendor documents with vendor profile info
+        """
+        query: Dict[str, Any] = {}
+
+        if status_filter:
+            query["review_status"] = status_filter
+        else:
+            query["review_status"] = "pending_review"
+
+        if placement_filter:
+            query["placement"] = placement_filter
+
+        results = []
+        async for doc in (
+            self.sponsored_vendors
+            .find(query)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        ):
+            # Enrich with vendor profile info for the review UI
+            vendor_profile_id = doc.get("vendor_profile_id")
+            if vendor_profile_id:
+                try:
+                    vendor_profile = await self.db.vendor_profiles.find_one(
+                        {"_id": ObjectId(vendor_profile_id)},
+                        {"business_name": 1, "email": 1, "logo_url": 1,
+                         "service_category": 1, "phone": 1}
+                    )
+                    if vendor_profile:
+                        doc["vendor_profile"] = {
+                            "business_name": vendor_profile.get("business_name"),
+                            "email": vendor_profile.get("email"),
+                            "logo_url": vendor_profile.get("logo_url"),
+                            "service_category": vendor_profile.get("service_category"),
+                            "phone": vendor_profile.get("phone"),
+                        }
+                except Exception:
+                    pass
+
+            results.append(doc)
+
+        return results
+
+    async def get_review_queue_counts(self) -> Dict[str, int]:
+        """
+        Get counts of campaigns by review status for the queue stats bar.
+
+        Returns:
+            Dict with counts: {pending_review: N, approved: N, rejected: N, changes_requested: N}
+        """
+        pipeline = [
+            {"$match": {"review_status": {"$ne": None}}},
+            {"$group": {"_id": "$review_status", "count": {"$sum": 1}}},
+        ]
+
+        counts = {
+            "pending_review": 0,
+            "approved": 0,
+            "rejected": 0,
+            "changes_requested": 0,
+        }
+
+        async for doc in self.sponsored_vendors.aggregate(pipeline):
+            status = doc["_id"]
+            if status in counts:
+                counts[status] = doc["count"]
+
+        return counts
 
     async def record_ad_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """
