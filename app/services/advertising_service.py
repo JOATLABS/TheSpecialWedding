@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def validate_object_id(id_str: str, field_name: str = "ID") -> ObjectId:
+def validate_object_id(id_str: Optional[str], field_name: str = "ID") -> ObjectId:
     """
     Validate and convert a string to ObjectId.
 
@@ -93,6 +93,19 @@ class AdvertisingService:
         """
         flag = await self.ad_feature_flags.find_one({"feature_key": "sponsored_vendors"})
 
+        # Default config with all expected keys
+        _DEFAULT_CONFIG = {
+            "max_sponsored_per_page": 3,
+            "show_sponsored_badge": True,
+            "show_sponsored_label": True,
+            "enable_tracking": True,
+            "min_priority_threshold": 1,
+            "impressions_per_session_limit": 5,
+            "require_review": True,
+            "auto_approve_returning_vendors": False,
+            "review_sla_hours": 48,
+        }
+
         if not flag:
             # Create default flag if it doesn't exist
             default_flag = {
@@ -100,20 +113,28 @@ class AdvertisingService:
                 "is_enabled": False,
                 "enabled_by": None,
                 "enabled_at": None,
-                "config": {
-                    "max_sponsored_per_page": 3,
-                    "show_sponsored_badge": True,
-                    "show_sponsored_label": True,
-                    "enable_tracking": True,
-                    "min_priority_threshold": 1,
-                    "impressions_per_session_limit": 5,
-                },
+                "config": dict(_DEFAULT_CONFIG),
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
             result = await self.ad_feature_flags.insert_one(default_flag)
             default_flag["_id"] = result.inserted_id
             flag = default_flag
+        else:
+            # Back-fill any missing config keys on existing documents
+            existing_config = flag.get("config", {})
+            missing_keys = {k: v for k, v in _DEFAULT_CONFIG.items() if k not in existing_config}
+            if missing_keys:
+                existing_config.update(missing_keys)
+                await self.ad_feature_flags.update_one(
+                    {"_id": flag["_id"]},
+                    {"$set": {f"config.{k}": v for k, v in missing_keys.items()}}
+                )
+                flag["config"] = existing_config
+
+        # Ensure _id is JSON-serializable
+        if "_id" in flag:
+            flag["_id"] = str(flag["_id"])
 
         return flag
 
@@ -179,7 +200,7 @@ class AdvertisingService:
             return []
 
         # Build query
-        query = {
+        query: Dict[str, Any] = {
             "is_active": True,
         }
 
@@ -208,12 +229,13 @@ class AdvertisingService:
                 # Start date must be in the past or not set
                 {"$or": [
                     {"start_date": {"$lte": now}},
-                    {"start_date": None},
+                    {"start_date": {"$in": [None]}},
+                    {"start_date": {"$exists": False}},
                 ]},
-                # End date must be in the future or not set
                 {"$or": [
                     {"end_date": {"$gte": now}},
-                    {"end_date": None},
+                    {"end_date": {"$in": [None]}},
+                    {"end_date": {"$exists": False}},
                 ]},
             ]
         }
@@ -478,8 +500,11 @@ class AdvertisingService:
                             "service_category": vendor_profile.get("service_category"),
                             "phone": vendor_profile.get("phone"),
                         }
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to enrich vendor profile {vendor_profile_id} "
+                        f"in review queue: {e}"
+                    )
 
             results.append(doc)
 
@@ -525,11 +550,11 @@ class AdvertisingService:
         """
         # Validate IDs
         sponsored_id = validate_object_id(
-            event_data.get("sponsored_vendor_id"),
+            event_data.get("sponsored_vendor_id") or "",
             "sponsored_vendor_id"
         )
         vendor_id = validate_object_id(
-            event_data.get("vendor_profile_id"),
+            event_data.get("vendor_profile_id") or "",
             "vendor_profile_id"
         )
 
@@ -659,6 +684,14 @@ class AdvertisingService:
             "vendor_profile_id"
         )
 
+        # Validate required planner_id
+        planner_id = data.get("planner_id")
+        if not planner_id:
+            raise HTTPException(
+                status_code=400,
+                detail="planner_id is required to create an ad lead"
+            )
+
         # Validate optional wedding_id if provided
         wedding_id = data.get("wedding_id")
         if wedding_id:
@@ -667,7 +700,7 @@ class AdvertisingService:
         ad_lead = {
             "sponsored_vendor_id": str(sponsored_id),
             "vendor_profile_id": str(vendor_id),
-            "planner_id": data.get("planner_id"),
+            "planner_id": planner_id,
             "wedding_id": str(wedding_id) if wedding_id else None,
             "lead_type": data.get("lead_type"),
             "status": data.get("status", AdLeadStatus.PENDING.value),
@@ -971,27 +1004,38 @@ class AdvertisingService:
         hidden_categories = prefs.get("hidden_categories", [])
         reduced_frequency = prefs.get("reduced_frequency", False)
 
-        # Build query
-        query = {
+        # Build query — validate ObjectIds before converting
+        valid_hidden_ids = []
+        for vid in hidden_vendors:
+            if vid:
+                try:
+                    valid_hidden_ids.append(ObjectId(vid))
+                except (InvalidId, Exception):
+                    logger.warning(f"Invalid ObjectId in hidden vendors: {vid}")
+
+        query: Dict[str, Any] = {
             "is_active": True,
-            "_id": {"$nin": [ObjectId(vid) for vid in hidden_vendors if vid]},
         }
+        if valid_hidden_ids:
+            query["_id"] = {"$nin": valid_hidden_ids}
 
         # Add placement filter if provided
         if placement:
             query["placement"] = placement.value
 
         # Add category filter and respect hidden categories
+        # Use $and to avoid overwriting target_categories when both are set
+        category_conditions = []
         if category_filter:
-            query["target_categories"] = {
-                "$in": [category_filter.value]
-            }
-
-        # Exclude ads from hidden categories
+            category_conditions.append(
+                {"target_categories": {"$in": [category_filter.value]}}
+            )
         if hidden_categories:
-            query["target_categories"] = {
-                "$nin": hidden_categories
-            }
+            category_conditions.append(
+                {"target_categories": {"$nin": hidden_categories}}
+            )
+        if category_conditions:
+            query.setdefault("$and", []).extend(category_conditions)
 
         # Add wedding stage filter if provided
         if wedding_stage:
@@ -1006,12 +1050,13 @@ class AdvertisingService:
                 # Start date must be in the past or not set
                 {"$or": [
                     {"start_date": {"$lte": now}},
-                    {"start_date": None},
+                    {"start_date": {"$in": [None]}},
+                    {"start_date": {"$exists": False}},
                 ]},
-                # End date must be in the future or not set
                 {"$or": [
                     {"end_date": {"$gte": now}},
-                    {"end_date": None},
+                    {"end_date": {"$in": [None]}},
+                    {"end_date": {"$exists": False}},
                 ]},
             ]
         }

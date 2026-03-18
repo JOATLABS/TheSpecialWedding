@@ -651,24 +651,22 @@ export default function AdminRemindersPage() {
 
  return (
  <div className="space-y-6">
- <div className="max-w-7xl mx-auto">
  <PageHeader
    title="Reminders & Invites"
    description="Send invitations and reminders via SMS or Email"
  />
 
  {/* Wedding Selection and Channel */}
- <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
- <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
- <div>
- <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
- Select Wedding
+ <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+ <div className="flex flex-col sm:flex-row gap-4 items-center">
+ <label htmlFor="wedding" className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
+ Select Wedding:
  </label>
  <select
  id="wedding"
  value={selectedWedding}
  onChange={(e) => setSelectedWedding(e.target.value)}
- className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+ className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  >
  <option value="">Choose a wedding...</option>
  {weddings.map((wedding) => (
@@ -677,44 +675,39 @@ export default function AdminRemindersPage() {
  </option>
  ))}
  </select>
- </div>
 
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 dark:text-gray-300 mb-2">
- Communication Channel
- </label>
- <div className="flex gap-4">
+ <div className="flex items-center gap-1 whitespace-nowrap">
+ <span className="font-medium text-slate-700 dark:text-gray-200 mr-2">Channel:</span>
  <label className="flex items-center">
  <input
  type="radio"
  value="sms"
  checked={channel === 'sms'}
  onChange={(e) => setChannel(e.target.value as 'sms' | 'email' | 'both')}
- className="mr-2"
+ className="mr-1"
  />
- <span>SMS</span>
+ <span className="text-sm">SMS</span>
  </label>
- <label className="flex items-center">
+ <label className="flex items-center ml-3">
  <input
  type="radio"
  value="email"
  checked={channel === 'email'}
  onChange={(e) => setChannel(e.target.value as 'sms' | 'email' | 'both')}
- className="mr-2"
+ className="mr-1"
  />
- <span>Email</span>
+ <span className="text-sm">Email</span>
  </label>
- <label className="flex items-center">
+ <label className="flex items-center ml-3">
  <input
  type="radio"
  value="both"
  checked={channel === 'both'}
  onChange={(e) => setChannel(e.target.value as 'sms' | 'email' | 'both')}
- className="mr-2"
+ className="mr-1"
  />
- <span>Both</span>
+ <span className="text-sm">Both</span>
  </label>
- </div>
  </div>
  </div>
  </div>
@@ -1393,7 +1386,6 @@ export default function AdminRemindersPage() {
  )}
  </div>
  )}
- </div>
 
  {/* AI Draft Modal */}
  {showAiDraftModal && (

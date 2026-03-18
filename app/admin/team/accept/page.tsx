@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast, Toaster } from 'sonner';
@@ -31,7 +31,25 @@ const PERMISSION_LABELS: Record<string, string> = {
   manage_packages: 'Manage Packages',
 };
 
+// Next.js 16 requires useSearchParams to be inside a Suspense boundary
 export default function AcceptInvitePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-br from-dark-bg to-slate-800 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 animate-spin text-wedding-rose mx-auto" />
+            <p className="mt-4 text-slate-400 text-sm">Loading invitation...</p>
+          </div>
+        </div>
+      }
+    >
+      <AcceptInviteContent />
+    </Suspense>
+  );
+}
+
+function AcceptInviteContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get('token');

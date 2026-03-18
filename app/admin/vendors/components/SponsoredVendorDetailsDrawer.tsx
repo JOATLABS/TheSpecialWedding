@@ -5,7 +5,7 @@ import { X, Phone, Mail, Globe, MapPin, Star, ExternalLink, Eye, EyeOff, HelpCir
 import { SponsoredVendor, recordAdEvent, type AdEventType } from '@/services/advertisingApi';
 import { VendorProfile } from '@/services/vendorManagementApi';
 import { useAdmin } from '@/contexts/AdminContext';
-import { useToast } from '@/hooks/useToast';
+import { toast } from 'sonner';
 
 interface SponsoredVendorDetailsDrawerProps {
   vendor: SponsoredVendor | null;
@@ -33,7 +33,7 @@ export function SponsoredVendorDetailsDrawer({
   onContactClick,
 }: SponsoredVendorDetailsDrawerProps) {
   const { token } = useAdmin();
-  const { showToast } = useToast();
+  // Using sonner toast
   const [expandWhySection, setExpandWhySection] = useState(false);
 
   // Record detail_view event on open
@@ -63,7 +63,7 @@ export function SponsoredVendorDetailsDrawer({
       onAddToWedding(vendor.vendor_profile_id);
     }
 
-    showToast('Vendor added to your wedding!', 'success');
+    toast.success('Vendor added to your wedding!');
   };
 
   const handleRequestQuote = async () => {

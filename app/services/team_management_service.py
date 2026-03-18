@@ -17,6 +17,7 @@ from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from fastapi import HTTPException, status
 
+from app.core.config import settings
 from app.core.database import mongo
 from app.utils.auth_utils import get_password_hash
 from app.utils.id_utils import to_object_id, to_str_id
@@ -450,8 +451,10 @@ class TeamManagementService:
             ln = owner.get("last_name", "")
             planner_name = f"{fn} {ln}".strip()
 
-        base_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
-        accept_url = f"{base_url}/admin/team/accept?token={token}"
+        base_url = settings.FRONTEND_URL
+        if not base_url:
+            raise ValueError("FRONTEND_URL environment variable is not configured")
+        accept_url = f"{base_url.rstrip('/')}/admin/team/accept?token={token}"
 
         # Build permissions list for the email
         enabled_perms = [

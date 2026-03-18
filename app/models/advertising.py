@@ -264,6 +264,10 @@ class AdEvent(MongoModel):
         description="Additional event context (user_agent, referrer, etc.)"
     )
 
+    # Timestamps (written by service layer)
+    created_at: Optional[datetime] = Field(None, description="When the event was recorded")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
 
 # =============================================================================
 # AD LEAD MODELS
@@ -366,6 +370,10 @@ class AdLead(MongoModel):
         description="Additional lead context and attributes"
     )
 
+    # Timestamps (written by service layer)
+    created_at: Optional[datetime] = Field(None, description="When the lead was created")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
 
 # =============================================================================
 # PLANNER AD PREFERENCE MODEL
@@ -403,6 +411,10 @@ class PlannerAdPreference(MongoModel):
         default_factory=dict,
         description="Wedding-specific preference overrides (keyed by wedding_id)"
     )
+
+    # Timestamps (written by service layer)
+    created_at: Optional[datetime] = Field(None, description="When preferences were created")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
 
 # =============================================================================
@@ -452,6 +464,10 @@ class AdvertisingFeatureFlag(MongoModel):
         },
         description="Feature configuration settings"
     )
+
+    # Timestamps (written by service layer)
+    created_at: Optional[datetime] = Field(None, description="When the flag was created")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
     def get_config(self, key: str, default: Any = None) -> Any:
         """

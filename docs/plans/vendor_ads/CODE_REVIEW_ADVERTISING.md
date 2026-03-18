@@ -164,7 +164,7 @@ Comparing the implementation against the 8-tab `Vendor_Ad_Mockups.html`:
 | **View 7: Admin Console** | `admin/advertising/page.tsx` (partial) | Analytics tab has basic stats. Missing: Creative Review queue, Revenue Dashboard, System Config, Planner Feedback tabs. |
 | **View 8: System Flows** | Rollup pipeline + event tracking built | Architecture matches flow diagrams. Attribution via `click_id` is implemented. Fraud detection not yet built. |
 
-**Key takeaway:** The backend data layer (models, events, rollup, indexes) is solid and well-aligned with the mockup's data requirements. The frontend is significantly behind — only View 1 (with layout mismatch) and partial View 2/7 are built. Views 3–6 are entirely missing.
+**UPDATE (2026-03-17):** All 8 views are now built and integrated. View 2 drawer wired to card clicks. Views 3-7 frontend complete. Remaining items: ad placement layout refinement (Budget page has no ads, inline rail on Vendors page should be sidebar), fraud detection (View 8).
 
 ---
 

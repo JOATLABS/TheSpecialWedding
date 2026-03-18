@@ -190,6 +190,15 @@ export default function VendorAdsDashboard() {
   const ctrChange = computeChange(totals.ctr, prevTotals.ctr);
   const leadChange = computeChange(totals.leads, prevTotals.leads);
 
+  const getStatusBadge = (vendor: SponsoredVendor) => {
+    const rs = vendor.review_status;
+    if (rs === 'pending_review') return { label: 'Pending Review', cls: 'bg-purple-100 text-purple-700' };
+    if (rs === 'rejected') return { label: 'Rejected', cls: 'bg-red-100 text-red-700' };
+    if (rs === 'changes_requested') return { label: 'Changes Requested', cls: 'bg-amber-100 text-amber-700' };
+    if (vendor.is_active) return { label: 'Active', cls: 'bg-emerald-100 text-emerald-700' };
+    return { label: 'Paused', cls: 'bg-yellow-100 text-yellow-700' };
+  };
+  // Keep legacy helper for backwards compatibility
   const getStatusBadgeColor = (isActive: boolean) =>
     isActive
       ? 'bg-emerald-100 text-emerald-700'
@@ -342,11 +351,12 @@ export default function VendorAdsDashboard() {
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="px-4 py-3 text-left text-[11px] font-bold text-wedding-navy uppercase tracking-wide">Campaign</th>
                     <th className="px-4 py-3 text-left text-[11px] font-bold text-wedding-navy uppercase tracking-wide">Status</th>
-                    <th className="px-4 py-3 text-left text-[11px] font-bold text-wedding-navy uppercase tracking-wide">Placement</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold text-wedding-navy uppercase tracking-wide">Budget</th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-wedding-navy uppercase tracking-wide">Impressions</th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-wedding-navy uppercase tracking-wide">Clicks</th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-wedding-navy uppercase tracking-wide">Leads</th>
                     <th className="px-4 py-3 text-right text-[11px] font-bold text-wedding-navy uppercase tracking-wide">CTR</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold text-wedding-navy uppercase tracking-wide">CPL</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -367,12 +377,21 @@ export default function VendorAdsDashboard() {
                           <p className="text-[10px] text-gray-400">ID: {vendor._id.slice(0, 8)}</p>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${getStatusBadgeColor(vendor.is_active)}`}>
-                            {vendor.is_active ? 'Active' : 'Paused'}
-                          </span>
+                          {(() => {
+                            const badge = getStatusBadge(vendor);
+                            return (
+                              <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${badge.cls}`}>
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-gray-600">
-                          {getAdPlacementLabel(vendor.placement)}
+                        <td className="px-4 py-3 text-right text-[12px] text-gray-600">
+                          {vendor.metadata?.daily_budget
+                            ? `$${Number(vendor.metadata.daily_budget).toLocaleString()}/day`
+                            : vendor.metadata?.lifetime_budget
+                            ? `$${Number(vendor.metadata.lifetime_budget).toLocaleString()}`
+                            : <span className="text-gray-400 italic">Free tier</span>}
                         </td>
                         <td className="px-4 py-3 text-right text-[13px] font-medium text-wedding-navy">
                           {impressions.toLocaleString()}
@@ -385,6 +404,9 @@ export default function VendorAdsDashboard() {
                         </td>
                         <td className="px-4 py-3 text-right text-[13px] font-bold text-wedding-navy">
                           {ctr}%
+                        </td>
+                        <td className="px-4 py-3 text-right text-[12px] text-gray-500 italic">
+                          {vendorLeads > 0 ? '$0.00' : '--'}
                         </td>
                       </tr>
                     );

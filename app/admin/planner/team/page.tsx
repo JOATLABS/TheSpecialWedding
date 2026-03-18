@@ -33,18 +33,21 @@ interface TeamMember {
   permissions: Record<string, boolean>;
   wedding_access: string;
   assigned_wedding_ids: string[];
-  assigned_wedding_names?: string[];
   created_at: string;
-  activated_at?: string;
+  invited_at?: string;
+  accepted_at?: string;
+  deactivated_at?: string;
   last_active_at?: string;
+  updated_at?: string;
   user_id?: string;
+  owner_email?: string;
 }
 
 interface SeatsInfo {
   total_seats: number;
   used_seats: number;
   available_seats: number;
-  plan_name: string;
+  members_by_status?: Record<string, number>;
 }
 
 export default function TeamManagementPage() {
@@ -79,7 +82,8 @@ export default function TeamManagementPage() {
 
       if (membersRes.ok) {
         const data = await membersRes.json();
-        setMembers(data);
+        // API returns { members: [...], total, skip, limit }
+        setMembers(Array.isArray(data) ? data : data.members ?? []);
       }
 
       if (seatsRes.ok) {

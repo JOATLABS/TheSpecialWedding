@@ -327,10 +327,10 @@ export default function FormsManagementPage(): ReactElement {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900/5 via-white to-wedding-rose/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-        <div className="rounded-3xl border border-white/60 dark:border-slate-700 bg-white/70 dark:bg-slate-800/90 px-8 py-10 text-center shadow-xl backdrop-blur">
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-wedding-rose"></div>
-          <p className="text-sm font-medium text-wedding-navy dark:text-white">Loading your glass workspace…</p>
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading forms...</p>
         </div>
       </div>
     );

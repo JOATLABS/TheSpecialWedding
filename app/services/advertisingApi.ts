@@ -31,9 +31,26 @@ export interface SponsoredVendor {
   created_by: string;
   click_count: number;
   impression_count: number;
+  // Review workflow
+  review_status?: ReviewStatus;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  review_notes?: string;
   metadata: Record<string, any>;
   created_at: string;
   updated_at: string;
+}
+
+export interface FeatureFlagConfig {
+  max_sponsored_per_page: number;
+  show_sponsored_badge: boolean;
+  show_sponsored_label: boolean;
+  enable_tracking: boolean;
+  min_priority_threshold: number;
+  impressions_per_session_limit: number;
+  require_review: boolean;
+  auto_approve_returning_vendors: boolean;
+  review_sla_hours: number;
 }
 
 export interface FeatureFlag {
@@ -42,14 +59,7 @@ export interface FeatureFlag {
   is_enabled: boolean;
   enabled_by?: string;
   enabled_at?: string;
-  config: {
-    max_sponsored_per_page: number;
-    show_sponsored_badge: boolean;
-    show_sponsored_label: boolean;
-    enable_tracking: boolean;
-    min_priority_threshold: number;
-    impressions_per_session_limit: number;
-  };
+  config: FeatureFlagConfig;
 }
 
 export interface AdStats {
@@ -64,11 +74,14 @@ export interface AdStats {
 }
 
 export interface RecordAdEventRequest {
+  event_type: AdEventType;
   sponsored_vendor_id: string;
   vendor_profile_id: string;
-  event_type: AdEventType;
   placement: AdPlacement;
-  user_id?: string;
+  wedding_id?: string;
+  planner_id?: string;
+  session_id?: string;
+  click_id?: string;
   metadata?: Record<string, any>;
 }
 
@@ -692,54 +705,6 @@ export async function reviewCampaign(
 // =============================================================================
 // FEATURE FLAG CONFIG API
 // =============================================================================
-
-export interface FeatureFlagConfig {
-  max_sponsored_per_page: number;
-  show_sponsored_badge: boolean;
-  show_sponsored_label: boolean;
-  enable_tracking: boolean;
-  min_priority_threshold: number;
-  impressions_per_session_limit: number;
-  require_review: boolean;
-  auto_approve_returning_vendors: boolean;
-  review_sla_hours: number;
-}
-
-export async function getFeatureFlag(token: string): Promise<{
-  feature_key: string;
-  is_enabled: boolean;
-  enabled_by?: string;
-  enabled_at?: string;
-  config: FeatureFlagConfig;
-}> {
-  const response = await fetch(`${API_BASE}/admin/ads/feature-flag`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to fetch feature flag');
-  }
-
-  return response.json();
-}
-
-export async function toggleFeatureFlag(
-  token: string,
-  isEnabled: boolean
-): Promise<any> {
-  const response = await fetch(`${API_BASE}/admin/ads/feature-flag?is_enabled=${isEnabled}`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to toggle feature flag');
-  }
-
-  return response.json();
-}
 
 export async function updateFeatureFlagConfig(
   token: string,

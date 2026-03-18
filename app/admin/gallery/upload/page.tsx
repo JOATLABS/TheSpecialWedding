@@ -199,33 +199,28 @@ export default function AdminGalleryUploadPage() {
         title="Gallery Management"
         description="Upload and manage wedding photos"
       />
-      <div className="w-full max-w-6xl mx-auto">
 
-        {/* Wedding Selection - Global */}
-        <Card className="mb-8 shadow-lg border-0">
-          <div className="p-8">
-            <label className="flex items-center gap-2 text-sm font-semibold text-wedding-navy dark:text-gray-200 mb-3">
-              <Heart className="w-4 h-4 text-wedding-rose" />
-              Select Wedding
+        {/* Wedding Selection */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <div className="flex flex-col sm:flex-row gap-4 items-center">
+            <label className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
+              Select Wedding:
             </label>
-            <div className="relative">
-              <select
-                value={selectedWedding}
-                onChange={(e) => handleWeddingChange(e.target.value)}
-                className="w-full px-5 py-4 pr-12 border border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 appearance-none cursor-pointer focus:ring-2 focus:ring-wedding-sage/50 focus:border-wedding-sage hover:border-wedding-sage/50 transition-all duration-200 shadow-sm text-base font-medium"
-                required
-              >
-                <option value="">Choose a wedding...</option>
-                {weddings.map((wedding) => (
-                  <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                    {wedding.couple_names} - {wedding.date}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-            </div>
+            <select
+              value={selectedWedding}
+              onChange={(e) => handleWeddingChange(e.target.value)}
+              className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+              required
+            >
+              <option value="">Choose a wedding...</option>
+              {weddings.map((wedding) => (
+                <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
+                  {wedding.couple_names} - {wedding.date}
+                </option>
+              ))}
+            </select>
           </div>
-        </Card>
+        </div>
 
         {selectedWedding && (
           <>
@@ -524,7 +519,6 @@ export default function AdminGalleryUploadPage() {
             )}
           </>
         )}
-      </div>
     </div>
   );
 }

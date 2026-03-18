@@ -152,20 +152,17 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                     detail="Email address not verified. Please check your email and verify your account.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            # Block users who haven't completed payment
+            # Tag users with subscription issues — don't block here so they can
+            # still access profile and billing endpoints to upgrade/reactivate.
             sub_status = user_data.get("subscription_status")
             if role == "wedding_planner" and sub_status in ("pending_payment", "cancelled", "suspended", "expired"):
-                status_messages = {
+                user_data["_subscription_blocked"] = True
+                user_data["_subscription_block_reason"] = {
                     "pending_payment": "Please complete your subscription payment to access the platform.",
                     "cancelled": "Your subscription has been cancelled. Please resubscribe to continue.",
                     "suspended": "Your subscription is suspended due to a payment issue. Please update your payment method.",
                     "expired": "Free trial has expired. Please upgrade your subscription to continue using the platform.",
-                }
-                raise HTTPException(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail=status_messages.get(sub_status, "Subscription issue. Please contact support."),
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+                }.get(sub_status, "Subscription issue. Please contact support.")
             # Check trial expiration for wedding planners
             if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
                 trial_end_date = user_data.get("trial_end_date")
@@ -181,20 +178,31 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                         # Handle naive datetime objects from MongoDB
                         trial_end_date = trial_end_date.replace(tzinfo=timezone.utc)
                     if datetime.now(timezone.utc) > trial_end_date:
-                        # Auto-expire the trial
+                        # Auto-expire the trial — update BOTH users and user_subscriptions
+                        expire_time = datetime.now(timezone.utc)
                         await mongo.get_users_collection().update_one(
                             {"email": email},
                             {"$set": {
                                 "subscription_status": "expired",
                                 "is_active": False,
-                                "trial_expired_at": datetime.now(timezone.utc)
+                                "trial_expired_at": expire_time
                             }}
                         )
-                        raise HTTPException(
-                            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                            detail="Free trial has expired. Please upgrade your subscription to continue using the platform.",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
+                        # Keep user_subscriptions in sync (user_id is stored as string)
+                        user_id_str = str(user_data.get("_id", ""))
+                        if user_id_str:
+                            await mongo.db["user_subscriptions"].update_one(
+                                {"user_id": user_id_str, "status": {"$in": ["trial", "active"]}},
+                                {"$set": {
+                                    "status": "expired",
+                                    "updated_at": expire_time,
+                                    "trial_expired_at": expire_time
+                                }}
+                            )
+                        # Tag as blocked — don't raise so user can access billing
+                        user_data["subscription_status"] = "expired"
+                        user_data["_subscription_blocked"] = True
+                        user_data["_subscription_block_reason"] = "Free trial has expired. Please upgrade your subscription to continue using the platform."
 
         auth_user = ExtendedAuthUser(email=email, role=role, user_data=user_data)
 
@@ -310,6 +318,22 @@ async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Admin or wedding planner access required"
     )
+
+
+async def require_active_subscription(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+    """Require an active or trial subscription — blocks expired/cancelled/suspended users.
+
+    Use this for feature endpoints (weddings, guests, etc.) that should be locked
+    behind an active subscription. Profile and billing endpoints should use
+    require_admin_or_planner instead so expired users can still upgrade.
+    """
+    if current_user.user_data.get("_subscription_blocked"):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=current_user.user_data.get("_subscription_block_reason", "Subscription issue."),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return current_user
 
 
 async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:

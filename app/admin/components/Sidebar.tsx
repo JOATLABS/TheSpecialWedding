@@ -83,8 +83,10 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
   const { userProfile, logout } = useAdmin();
 
   const isActive = (href: string) => {
-    if (href === '/admin' && pathname === '/admin') return true;
-    if (href !== '/admin' && pathname.startsWith(href)) return true;
+    // Exact match for root admin and planner dashboard
+    if (href === '/admin' || href === '/admin/planner') return pathname === href;
+    // Prefix match for all other pages
+    if (pathname.startsWith(href)) return true;
     return false;
   };
 

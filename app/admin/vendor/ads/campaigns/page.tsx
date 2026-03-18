@@ -48,7 +48,7 @@ export default function CampaignsPage() {
   }, [fetchCampaigns]);
 
   const getStatusInfo = (campaign: SponsoredVendor) => {
-    const reviewStatus = (campaign as any).review_status;
+    const reviewStatus = campaign.review_status;
     if (reviewStatus === 'pending_review') {
       return { label: 'Pending Review', color: '#8b5cf6', icon: <Clock size={12} /> };
     }

@@ -4,6 +4,7 @@ from app.dependencies.auth_extended import require_root_admin, require_admin_or_
 from app.services.user_management_service import UserManagementService
 from app.services.gallery_upload_service import GalleryUploadService
 from pydantic import BaseModel, Field, validator, EmailStr
+from datetime import datetime
 import os
 
 router = APIRouter()
@@ -47,6 +48,7 @@ class UserUpdateModel(BaseModel):
     company_name: Optional[str] = None
     plan_id: Optional[str] = None
     subscription_status: Optional[str] = None
+    trial_end_date: Optional[datetime] = None
     max_weddings: Optional[int] = None
     is_active: Optional[bool] = None
     role: Optional[str] = None

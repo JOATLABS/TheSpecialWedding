@@ -38,12 +38,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
 
   // Determine Page Title based on Path (Simplistic mapping)
   const getPageTitle = () => {
-    if (pathname.includes('/admin/planner')) return 'Dashboard';
-    // if (pathname.includes('/admin/weddings')) return 'Weddings';
-    // if (pathname.includes('/admin/guests')) return 'Guest Management';
-    // if (pathname.includes('/admin/budget')) return 'Budget Tracker';
-    // if (pathname.includes('/admin/profile')) return 'Settings';
-    return undefined; // Let Header decide default
+    // Only show "Dashboard" for the exact planner dashboard page, not sub-pages
+    if (pathname === '/admin/planner') return 'Dashboard';
+    return undefined; // Let individual pages use their own PageHeader
   };
 
   // For public pages (login, accept invite), render without sidebar/header
@@ -56,7 +53,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-secondary-400/30 blur-[100px] animate-float" style={{ animationDelay: '-3s' }} />
         </div>
         <main className="relative z-10 min-h-screen">
-          {children}
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
         </main>
         <Toaster position="top-right" richColors theme="system" />
       </div>

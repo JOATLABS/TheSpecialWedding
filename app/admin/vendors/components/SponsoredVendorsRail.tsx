@@ -17,6 +17,7 @@ import {
 import { getVendorDirectory, type VendorProfile } from '@/services/vendorManagementApi';
 import { useAdmin } from '@/contexts/AdminContext';
 import { SponsoredVendorCard } from './SponsoredVendorCard';
+import { SponsoredVendorDetailsDrawer } from './SponsoredVendorDetailsDrawer';
 
 interface SponsoredVendorsRailProps {
   placement?: AdPlacement;
@@ -52,6 +53,7 @@ export function SponsoredVendorsRail({
   const [showTooltip, setShowTooltip] = useState(false);
   const [selectedWeddingId, setSelectedWeddingId] = useState<string | null>(null);
   const [dismissAnnouncement, setDismissAnnouncement] = useState<string>('');
+  const [drawerVendor, setDrawerVendor] = useState<SponsoredVendor | null>(null);
 
   // Fetch feature flag and check frequency capping
   useEffect(() => {
@@ -243,12 +245,16 @@ export function SponsoredVendorsRail({
     return parts.length > 0 ? parts.join(' · ') : undefined;
   }, [vendorProfiles]);
 
-  // Handle vendor click — use callback if provided, otherwise navigate to public profile
+  // Handle vendor click — use callback if provided, otherwise open details drawer
   const handleVendorClick = (vendorProfileId: string) => {
     if (onVendorClick) {
       onVendorClick(vendorProfileId);
-    } else {
-      window.open(`/vendors/${vendorProfileId}`, '_blank');
+      return;
+    }
+    // Open the details drawer for this vendor
+    const vendor = sponsoredVendors.find(v => v.vendor_profile_id === vendorProfileId);
+    if (vendor) {
+      setDrawerVendor(vendor);
     }
   };
 
@@ -477,6 +483,31 @@ export function SponsoredVendorsRail({
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {dismissAnnouncement}
       </div>
+
+      {/* Vendor Details Drawer — View 2 */}
+      <SponsoredVendorDetailsDrawer
+        vendor={drawerVendor}
+        isOpen={!!drawerVendor}
+        onClose={() => setDrawerVendor(null)}
+        onRecordEvent={handleRecordEvent}
+        vendorProfile={drawerVendor ? vendorProfiles[drawerVendor.vendor_profile_id] : undefined}
+        onAddToWedding={(vpId) => {
+          handleRecordEvent('vendor_added_to_wedding', drawerVendor?._id || '', vpId);
+        }}
+        onRequestQuote={(vpId) => {
+          const profile = vendorProfiles[vpId];
+          if (profile?.email) {
+            const weddingName = weddings?.find(w => w.id === selectedWeddingId)?.name || '';
+            const subject = encodeURIComponent(`Quote Request - ${profile.business_name}${weddingName ? ` for ${weddingName}` : ''}`);
+            const body = encodeURIComponent(`Hi ${profile.contact_name || profile.business_name},\n\nI would like to request a quote for your services.\n\nThank you`);
+            window.open(`mailto:${profile.email}?subject=${subject}&body=${body}`, '_self');
+          }
+        }}
+        onHideVendor={(vpId) => {
+          handleVendorHide(vpId);
+          setDrawerVendor(null);
+        }}
+      />
     </div>
   );
 }

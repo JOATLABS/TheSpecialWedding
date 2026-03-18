@@ -5,6 +5,83 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.4] - 2026-03-17 — Root Admin & Loading State Layout Consistency
+
+### Fixed
+
+- **Loading state `min-h-screen` overflow** — Replaced `min-h-screen` on loading/empty state returns across 6 pages (root admin dashboard, SaaS management, Billing, Vendors, Forms) with `py-24` padding so spinners center within the admin layout instead of pushing past the viewport
+- **Forms loading state** — Removed decorative gradient background (`bg-gradient-to-br`) and glass-blur card from loading spinner to match the simple, consistent loading pattern used across all other pages
+
+## [2.11.3] - 2026-03-17 — Ad Rail Layout Fix & Budget Page Ads
+
+### Fixed
+
+- **Vendors page ad layout** -- `SponsoredVendorsRail` moved from inline stacked position to proper right-sidebar column using `lg:grid-cols-4` grid layout, matching the Dashboard page pattern
+- **SponsoredVendorDetailsDrawer build error** -- Replaced missing `@/hooks/useToast` import with `sonner` toast
+
+### Added
+
+- **Budget page sponsored vendors rail** -- Added `SponsoredVendorsRail` to the Budget page in a right-sidebar column. All four planner-facing pages (Dashboard, Vendors, Wedding Detail, Budget) now have consistent ad placement: horizontal scroll on mobile, vertical right rail on desktop
+
+## [2.11.2] - 2026-03-17 — Root Admin Page Layout Consistency
+
+### Fixed
+
+- **Profile page centering** — Removed `max-w-4xl mx-auto` wrapper from Account Settings page so content fills the full available width like all other admin pages
+- **Planner Billing page centering** — Removed `max-w-4xl mx-auto` from the no-subscription state and `max-w-5xl mx-auto` from the billing dashboard state
+- **Platform page error state** — Replaced `max-w-4xl mx-auto` + `p-8` wrapper on the error fallback with standard `space-y-6` wrapper
+- **Vendors page JSX parse error** — Fixed Turbopack build failure caused by a JSX comment placed between closing tags in the grid layout
+
+## [2.11.1] - 2026-03-17 — Vendor Details Drawer Wiring
+
+### Added
+
+- **SponsoredVendorDetailsDrawer wired to card clicks** -- Clicking a sponsored vendor card in the SponsoredVendorsRail now opens a slide-out drawer with full vendor details, pricing, contact info, portfolio, and 4 action buttons instead of navigating to a new page
+
+## [2.11.0] - 2026-03-17 — Dashboard UI Consistency & Inbox Resizable Panels
+
+### Fixed
+
+- **Page layout alignment** — Removed `max-w-*` + `mx-auto` centering from 8 admin pages (Calendar, Guests, Gallery, Inbox, Reminders, Weddings, Budget, Seating) so all pages fill the available width consistently, matching the admin layout's built-in padding
+- **Wedding selector dropdown inconsistency** — Standardized the "Select Wedding" dropdown across all pages to use the same inline label + dropdown pattern with identical card container, border radius, padding, and focus ring styling. Previously each page had a unique style (Gallery had a heart-icon oversized dropdown, Reminders had a stacked label, Seating used glass-blur, Guests used a block label)
+- **Sidebar active state for Dashboard** — `isActive()` in `Sidebar.tsx` now uses exact-match for `/admin/planner` instead of `startsWith`, so navigating to Calendar (`/admin/planner/calendar`) or Team (`/admin/planner/team`) no longer falsely highlights the Dashboard nav item
+- **"Dashboard" label bleeding into sub-pages** — `getPageTitle()` in `layout.tsx` changed from `pathname.includes('/admin/planner')` to `pathname === '/admin/planner'` so Calendar, Team, and Billing pages no longer show "Dashboard" in the top header bar
+- **Inbox page wrapper** — Replaced `min-h-screen bg-gray-50` + `max-w-7xl mx-auto px-4` with standard `space-y-6` wrapper matching all other pages
+
+### Added
+
+- **Inbox resizable panels** — The message list and preview panes now have a draggable vertical divider (grip handle) that lets planners resize the two panels horizontally between 20% and 70% width. Defaults to a 40/60 split. Uses mouse event listeners for smooth drag behavior with cursor feedback
+
+### Changed
+
+- **Budget page** — Replaced `Card` component wrapper for wedding selector with standard `div` to match the uniform card styling used across all pages
+- **Seating page** — Replaced glass-blur (`backdrop-blur-xl`, `bg-white/70`) wedding selector with standard opaque card styling for visual consistency
+- **Reminders page** — Consolidated the two-row wedding selector + channel picker into a single inline row within the standard card container
+
+## [2.10.9] - 2026-03-17 — Views 3-5 QA Audit & Tech Debt Fixes
+
+### Fixed
+
+- **Feature flag config back-fill** — Existing feature flag documents in MongoDB now auto-migrate to include new review workflow config keys, preventing frontend crashes
+- **Feature flag `_id` serialization** — ObjectId converted to string before JSON response
+- **Category filter clobber** — `get_sponsored_vendors_filtered()` no longer overwrites `target_categories` when both category filter and hidden categories are set
+- **Hidden vendor ObjectId validation** — Invalid ObjectId strings in hidden vendor preferences no longer crash the query
+- **Dashboard stats unbounded cursor** — Added 5000-document limit to `get_dashboard_stats()`
+- **Duplicate `getFeatureFlag` export** — Removed duplicate function in `advertisingApi.ts` that caused build error
+- **`SponsoredVendor` TypeScript interface** — Added `review_status`, `reviewed_by`, `reviewed_at`, `review_notes` fields; removed unsafe `as any` casts
+
+### Added
+
+- **Campaigns table Budget column** — Shows daily/lifetime budget from campaign metadata
+- **Campaigns table CPL column** — Placeholder for cost-per-lead (will compute from billing when Stripe is connected)
+- **Review-aware status badges** — Campaign status now distinguishes pending_review, rejected, changes_requested from active/paused
+
+### Verified
+
+- View 3 (Directory Boosts) — `BoostedVendorCard` already integrated in vendor directory grid
+- View 4 (Milestone Module) — `SponsoredMilestoneModule` already integrated on wedding detail page for 4 categories
+- View 5 (Vendor Ad Manager) — Core dashboard complete with metrics, weekly chart, conversion funnel, campaigns table
+
 ## [2.10.8] - 2026-03-17 — View 7 Admin Moderation Console & Review Workflow
 
 ### Added
