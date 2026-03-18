@@ -202,6 +202,7 @@ export function SponsoredVendorsRail({
         vendor_profile_id: vendorProfileId,
         event_type: eventType,
         placement,
+        wedding_id: selectedWeddingId || weddings?.[0]?.id,
         metadata,
       });
     } catch (err) {
@@ -489,7 +490,9 @@ export function SponsoredVendorsRail({
         vendor={drawerVendor}
         isOpen={!!drawerVendor}
         onClose={() => setDrawerVendor(null)}
-        onRecordEvent={handleRecordEvent}
+        onRecordEvent={(eventType: string, sponsoredVendorId: string, vendorProfileId: string) => {
+          handleRecordEvent(eventType as AdEventType, sponsoredVendorId, vendorProfileId);
+        }}
         vendorProfile={drawerVendor ? vendorProfiles[drawerVendor.vendor_profile_id] : undefined}
         onAddToWedding={(vpId) => {
           handleRecordEvent('vendor_added_to_wedding', drawerVendor?._id || '', vpId);

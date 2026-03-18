@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.8] - 2026-03-17 — Fix Package Creation Crash (Decimal BSON Serialization)
+
+### Fixed
+
+- **Package creation crash** — `WeddingPackage.total_amount` used Python `Decimal` type which BSON cannot encode, causing `InvalidDocument: cannot encode object: Decimal(...)` on `insert_one`. Changed to `float` in the model and service layer. Same fix applied to `ScheduleItem.amount` and `PaymentExecution.amount` to prevent the same issue in contracts
+- **"Create & Activate" always saved as draft** — `CreatePackageRequest` was missing the `status` field so the frontend's status choice was silently dropped. Added `status: Optional[str]` with pattern validation to the request model so packages can be created directly as active
+
+### Changed
+
+- **`WeddingPackage.total_amount`** — `Decimal` → `float` (MongoDB stores as BSON double regardless)
+- **`ScheduleItem.amount`** — `Decimal` → `float` for BSON compatibility
+- **`PaymentExecution.amount`** — `Decimal` → `float` for BSON compatibility
+- **`field_serializer` on `total_amount`** — Changed from `when_used='json'` to `when_used='always'` so float conversion applies in `model_dump()` too
+
+## [2.11.7] - 2026-03-17 — Feature Flag Config ObjectId + AI Bug Verification
+
+### Fixed
+
+- **Feature flag config endpoint ObjectId** -- `PUT /admin/ads/feature-flag/config` now serializes `_id` to string before returning response
+
+### Verified (already fixed in prior sessions)
+
+- BUG-006: `model=model` in error handler -- already uses `locals().get("model", "unknown")`
+- BUG-008: JSON parse failure -- already raises `AIInvalidResponseError` instead of returning raw object
+- BUG-009: Credit deduction before validation -- already resolved because parsing happens inside `_call_gemini`, so `increment_usage` is only reached on valid responses
+
+## [2.11.6] - 2026-03-17 — ObjectId Serialization & Attribution Tracking
+
+### Fixed
+
+- **ObjectId serialization across entire advertising service** -- All 15+ methods that return MongoDB documents now convert `_id` from ObjectId to string via `_serialize_doc()` helper. Prevents JSON serialization 500 errors on every ad-related API endpoint
+- **Wedding ID attribution** -- `SponsoredVendorsRail` and `SponsoredMilestoneModule` now pass `wedding_id` in all `recordAdEvent` calls. All 4 milestone module instances on wedding detail page receive `weddingId` from route params
+
+## [2.11.5] - 2026-03-17 — Advertising Frontend-Backend Alignment Audit
+
+### Fixed
+
+- **RecordAdEventRequest interface** -- Added missing `wedding_id`, `planner_id`, `session_id`, `click_id` fields; removed nonexistent `user_id`. Attribution tracking context was lost without these fields
+- **create_lead() planner_id validation** -- Required `planner_id` field now enforced with 400 error instead of silently writing null
+- **Date range null comparison** -- Sponsored vendor date queries now use `$in: [None]` + `$exists: false` for explicit null/missing coverage
+- **Model timestamp fields** -- Added `created_at`/`updated_at` to AdEvent, AdLead, PlannerAdPreference, AdvertisingFeatureFlag models to match what service layer writes
+
+### Added
+
+- **Review status index** -- Compound index `(review_status, created_at)` on sponsored_vendors for review queue queries
+
 ## [2.11.4] - 2026-03-17 — Root Admin & Loading State Layout Consistency
 
 ### Fixed

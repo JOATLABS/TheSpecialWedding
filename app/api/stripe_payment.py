@@ -7,7 +7,7 @@ from bson import ObjectId
 from pydantic import BaseModel, Field
 import stripe
 from app.services.stripe_service import stripe_service
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import require_admin_or_planner, require_auth_no_sub_check, ExtendedAuthUser
 import logging
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class VendorPaymentRequest(BaseModel):
 @router.post("/create-checkout-session")
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
 ):
     """
     Create a Stripe Checkout Session for subscription signup
@@ -214,7 +214,7 @@ async def get_payment_intent_details(id: str):
 @router.post("/create-portal-session")
 async def create_portal_session(
     request: CreatePortalSessionRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
 ):
     """
     Create a Stripe Customer Portal session
@@ -607,7 +607,7 @@ async def get_payment_requests(
 @router.get("/invoices")
 async def get_invoices(
     limit: int = 10,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
 ):
     """
     Get billing history (invoices) for the current user
@@ -662,7 +662,7 @@ async def get_invoices(
 
 @router.get("/payment-method")
 async def get_payment_method(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
 ):
     """
     Get the default payment method details for the current user
@@ -745,7 +745,7 @@ async def get_payment_method(
 
 @router.get("/subscription")
 async def get_subscription_details(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
 ):
     """
     Get detailed subscription information including payment method

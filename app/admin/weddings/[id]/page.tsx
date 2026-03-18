@@ -1415,6 +1415,7 @@ export default function WeddingDetailsPage() {
      <SponsoredMilestoneModule
        milestoneCategory="venue"
        isBooked={!!wedding.events?.some(e => e.details?.venue_name)}
+       weddingId={weddingId}
        weddingContext={{
          city: wedding.city || undefined,
          state: wedding.state || undefined,
@@ -1424,6 +1425,7 @@ export default function WeddingDetailsPage() {
      />
      <SponsoredMilestoneModule
        milestoneCategory="photographer"
+       weddingId={weddingId}
        weddingContext={{
          city: wedding.city || undefined,
          state: wedding.state || undefined,
@@ -1433,6 +1435,7 @@ export default function WeddingDetailsPage() {
      />
      <SponsoredMilestoneModule
        milestoneCategory="catering"
+       weddingId={weddingId}
        weddingContext={{
          city: wedding.city || undefined,
          state: wedding.state || undefined,
@@ -1442,6 +1445,7 @@ export default function WeddingDetailsPage() {
      />
      <SponsoredMilestoneModule
        milestoneCategory="florist"
+       weddingId={weddingId}
        weddingContext={{
          city: wedding.city || undefined,
          state: wedding.state || undefined,

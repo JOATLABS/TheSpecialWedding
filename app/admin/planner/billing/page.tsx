@@ -743,7 +743,7 @@ export default function PlannerBillingPage() {
       )}
 
       {/* Main Grid */}
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-6 max-w-5xl">
         {/* Left Column - Subscription & Payment */}
         <div className="lg:col-span-2 space-y-6">
 

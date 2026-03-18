@@ -265,8 +265,8 @@ class AdEvent(MongoModel):
     )
 
     # Timestamps (written by service layer)
-    created_at: Optional[datetime] = Field(None, description="When the event was recorded")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the event was recorded")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last update timestamp")
 
 
 # =============================================================================
@@ -371,8 +371,8 @@ class AdLead(MongoModel):
     )
 
     # Timestamps (written by service layer)
-    created_at: Optional[datetime] = Field(None, description="When the lead was created")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the lead was created")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last update timestamp")
 
 
 # =============================================================================
@@ -413,8 +413,8 @@ class PlannerAdPreference(MongoModel):
     )
 
     # Timestamps (written by service layer)
-    created_at: Optional[datetime] = Field(None, description="When preferences were created")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When preferences were created")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last update timestamp")
 
 
 # =============================================================================
@@ -466,8 +466,8 @@ class AdvertisingFeatureFlag(MongoModel):
     )
 
     # Timestamps (written by service layer)
-    created_at: Optional[datetime] = Field(None, description="When the flag was created")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the flag was created")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last update timestamp")
 
     def get_config(self, key: str, default: Any = None) -> Any:
         """
@@ -635,7 +635,6 @@ class CreateAdLeadRequest(MongoModel):
 
 class AdLeadResponse(MongoModel):
     """Response model for ad lead details."""
-    id: Optional[str] = Field(None, alias="_id")
     sponsored_vendor_id: str = Field(...)
     vendor_profile_id: str = Field(...)
     planner_id: str = Field(...)
@@ -649,8 +648,6 @@ class AdLeadResponse(MongoModel):
     responded_at: Optional[datetime] = Field(None)
     converted_at: Optional[datetime] = Field(None)
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    created_at: Optional[datetime] = Field(None)
-    updated_at: Optional[datetime] = Field(None)
 
     class ConfigDict:
         populate_by_name = True
@@ -676,5 +673,5 @@ class PlannerAdPreferenceResponse(MongoModel):
     hidden_categories: List[str] = Field(default_factory=list)
     reduced_frequency: bool = Field(default=False)
     wedding_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    created_at: Optional[datetime] = Field(None)
-    updated_at: Optional[datetime] = Field(None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

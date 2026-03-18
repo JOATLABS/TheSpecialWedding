@@ -40,9 +40,10 @@ class PackageService:
             Created package dict with ID
         """
         try:
-            # Convert total_amount to Decimal if needed
+            # Keep total_amount as float for MongoDB BSON compatibility
+            # (BSON cannot encode Python Decimal, only float or Decimal128)
             if "total_amount" in package_data:
-                package_data["total_amount"] = Decimal(str(package_data["total_amount"]))
+                package_data["total_amount"] = float(package_data["total_amount"])
 
             package = WeddingPackage(
                 planner_id=planner_id,
@@ -50,6 +51,9 @@ class PackageService:
             )
 
             package_dict = package.model_dump(by_alias=True)
+            # Ensure total_amount is float for BSON serialization
+            if "total_amount" in package_dict:
+                package_dict["total_amount"] = float(package_dict["total_amount"])
             result = await self.packages.insert_one(package_dict)
 
             logger.info(f"Created package '{package.name}' for planner {planner_id}")
