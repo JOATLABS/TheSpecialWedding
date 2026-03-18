@@ -528,6 +528,9 @@ class StripeService:
                     },
                     "$setOnInsert": {
                         "created_at": datetime.now(timezone.utc),
+                        "user_email": user["email"],
+                        "start_date": datetime.now(timezone.utc),
+                        "created_by": "system:public_signup",
                     }
                 },
                 upsert=True,
@@ -704,6 +707,18 @@ class StripeService:
             set_on_insert["plan_id"] = plan_id
         if stripe_subscription_id and "stripe_subscription_id" not in subscription_updates:
             set_on_insert["stripe_subscription_id"] = stripe_subscription_id
+
+        # Ensure required schema fields are populated on first insert
+        if user_id and "user_email" not in subscription_updates:
+            user_doc = await self.users_collection.find_one(
+                {"_id": ObjectId(user_id)}, {"email": 1}
+            )
+            if user_doc:
+                set_on_insert["user_email"] = user_doc["email"]
+        if "start_date" not in subscription_updates:
+            set_on_insert["start_date"] = now
+        if "created_by" not in subscription_updates:
+            set_on_insert["created_by"] = "system:stripe_webhook"
 
         if set_on_insert:
             update_document["$setOnInsert"] = set_on_insert

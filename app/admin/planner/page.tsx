@@ -238,13 +238,15 @@ export default function WeddingPlannerDashboard() {
  }
 
  return (
- <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
- <div className="lg:col-span-3">
  <div className="space-y-6">
  <PageHeader
  title={`Welcome back, ${userProfile?.user_data?.company_name || userProfile?.email}!`}
  description="Here's what's happening with your weddings today."
  />
+
+ <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+ <div className="lg:col-span-3">
+ <div className="space-y-6">
 
  {/* Team Member Access Notice */}
  {userProfile?.is_team_member && userProfile?.team_wedding_access === 'assigned' && (
@@ -726,6 +728,7 @@ export default function WeddingPlannerDashboard() {
  <div className="lg:col-span-1">
  <div className="sticky top-6">
  <SponsoredVendorsRail placement="dashboard_rail" />
+ </div>
  </div>
  </div>
  </div>

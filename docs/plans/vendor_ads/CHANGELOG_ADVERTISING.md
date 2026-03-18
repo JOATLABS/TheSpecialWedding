@@ -1,5 +1,117 @@
 # Vendor Advertising Feature — Changelog
 
+## Ad Placement Layout Fix — Consistent Right-Rail Across All Pages
+**Date:** 2026-03-17
+**Version:** 2.1.0
+
+### Layout Standardization
+
+All four planner-facing pages now use the same grid layout for the sponsored vendors rail: `grid-cols-1 lg:grid-cols-4` with main content in `lg:col-span-3` and the `SponsoredVendorsRail` in `lg:col-span-1` with `sticky top-6`. This matches the agreed design: horizontal scroll on mobile, vertical right rail on desktop (1024px+).
+
+| Page | Before | After |
+|------|--------|-------|
+| Dashboard (`/admin/planner`) | Already correct | No change |
+| Vendors (`/admin/vendors`) | Rail stacked inline between stats and quick actions | Moved to right sidebar column |
+| Wedding Detail (`/admin/weddings/[id]`) | Already correct | No change |
+| Budget (`/admin/budget`) | No ad surface at all | Added rail in right sidebar column |
+
+### Bug Fix: SponsoredVendorDetailsDrawer
+
+- **`useToast` import error** -- Drawer imported from `@/hooks/useToast` which doesn't exist. Replaced with `toast` from `sonner` (the project's actual toast library).
+
+### Files Modified
+- `app/admin/vendors/page.tsx` -- Wrapped content in `lg:grid-cols-4` grid, moved rail from inline to `lg:col-span-1` sidebar
+- `app/admin/budget/page.tsx` -- Added `SponsoredVendorsRail` import, wrapped content in `lg:grid-cols-4` grid with rail in sidebar
+- `app/admin/vendors/components/SponsoredVendorDetailsDrawer.tsx` -- Replaced `useToast` with `sonner` toast
+
+---
+
+## View 2 Drawer Wiring & View Status Reconciliation
+**Date:** 2026-03-17
+**Version:** 2.0.0
+
+### SponsoredVendorDetailsDrawer Wired Up (View 2)
+
+- **Drawer now opens on card click** -- When a planner clicks a sponsored vendor card in the `SponsoredVendorsRail`, the `SponsoredVendorDetailsDrawer` opens instead of navigating to a new page. Shows vendor photo/placeholder, business info, pricing, contact details, portfolio links, "Why am I seeing this?" disclosure, ratings, stats, and 4 action buttons (Add to Wedding, Request Quote, Message Vendor, View Portfolio).
+- **Event tracking on open** -- Records `vendor_profile_view` event when drawer opens.
+- **Request Quote from drawer** -- Opens `mailto:` with pre-filled subject line and body including wedding name.
+- **Hide from drawer** -- Dismiss event recorded, vendor hidden, drawer auto-closes.
+
+### View Status Reconciliation
+
+Updated the gap analysis to reflect current reality. The code review report from March 16 was stale.
+
+| View | Status | Notes |
+|------|--------|-------|
+| View 1: Planner Dashboard Rail | Built | Layout uses `lg:grid-cols-4` right sidebar. **Known issue:** rail not visible when feature flag is disabled |
+| View 2: Vendor Details Drawer | **Now wired up** | Was built but not connected to any click handler. Now opens from SponsoredVendorsRail card clicks |
+| View 3: Directory Boosts | Built | BoostedVendorCard integrated in `/admin/vendors` grid with count indicator |
+| View 4: Milestone Module | Built | SponsoredMilestoneModule on `/admin/weddings/[id]` for venue, photographer, catering, florist |
+| View 5: Vendor Ad Manager | Built | `/admin/vendor/ads/page.tsx` with metrics, weekly chart, funnel, campaigns table |
+| View 6: Campaign Wizard | Built | 6-step wizard at `/admin/vendor/ads/campaigns/new` with image upload + review workflow |
+| View 7: Admin Console | Built | 4-tab root admin page at `/admin/ads/console` |
+| View 8: System Flows | Built | Rollup pipeline, event tracking, attribution, nightly scheduler |
+
+### Known Open Items
+- ~~Ad placement layout fix~~ -- **RESOLVED in v2.1.0** -- All four pages now use consistent `lg:grid-cols-4` right-rail layout
+- Dashboard rail only visible on `lg` breakpoint (1024px+) and only when feature flag is enabled (by design)
+- Fraud detection not built (View 8, Flow 5) -- rate limiter, session anomaly detection, auto-void clicks, quality score penalty system
+
+### Files Modified
+- `app/admin/vendors/components/SponsoredVendorsRail.tsx` -- Imported drawer, added `drawerVendor` state, wired click handler to open drawer with event tracking and action callbacks
+
+---
+
+## Views 3-5 QA Audit, Tech Debt Fixes & Refinements
+**Date:** 2026-03-17
+**Version:** 1.9.0
+
+### Tech Debt Audit & Fixes
+
+**Backend fixes:**
+- **Feature flag config back-fill** — `get_feature_flag()` now auto-migrates existing MongoDB documents by adding missing config keys (`require_review`, `auto_approve_returning_vendors`, `review_sla_hours`). Prevents frontend crashes when the FeatureFlag document was created before the review workflow was added.
+- **`_id` serialization** — `get_feature_flag()` now converts ObjectId to string before returning, preventing JSON serialization errors in endpoints that return raw documents.
+- **Category filter clobber fix** — `get_sponsored_vendors_filtered()` previously overwrote `target_categories` when both `category_filter` and `hidden_categories` were set. Now uses `$and` to combine both conditions.
+- **ObjectId validation** — Hidden vendor IDs in `get_sponsored_vendors_filtered()` are now validated with try/except before converting to ObjectId, preventing crashes on malformed strings.
+- **Review queue enrichment logging** — Silent `except: pass` in review queue vendor profile enrichment now logs warnings.
+- **Dashboard stats cursor limit** — `get_dashboard_stats()` now caps results at 5000 documents to prevent unbounded memory usage.
+
+**Frontend fixes:**
+- **`SponsoredVendor` interface** — Added `review_status`, `reviewed_by`, `reviewed_at`, `review_notes` fields. Removed unsafe `as any` casts in campaigns page.
+- **`FeatureFlagConfig` interface** — Moved to top of `advertisingApi.ts` and merged with `FeatureFlag` interface, eliminating duplicate definitions.
+- **Duplicate `getFeatureFlag` export** — Removed duplicate function that caused build error.
+
+### View 3 (Directory Boosts) — Verification
+
+- **Status: Already integrated** — `BoostedVendorCard` is rendered at the top of the vendor directory grid in `/admin/vendors/page.tsx`
+- Boosted vendors fetched via `getSponsoredVendors(token, { placement: 'directory_boost' })` with category/preference filtering
+- Count indicator shows "N boosted results" in search results header
+
+### View 4 (Milestone Module) — Verification
+
+- **Status: Already integrated** — `SponsoredMilestoneModule` is rendered on `/admin/weddings/[id]/page.tsx` for venue, photographer, catering, and florist categories
+- Wedding context (city, state, guest count, budget) passed as props for contextual why-tags
+
+### View 5 (Vendor Ad Manager) — Refinements
+
+- **Budget column added** — Campaigns table now shows daily_budget or lifetime_budget from campaign metadata, with "Free tier" fallback
+- **CPL column added** — Shows $0.00 during free tier (will compute from billing when Stripe integration is built)
+- **Review-aware status badges** — Campaign status now shows pending_review (purple), rejected (red), changes_requested (amber) in addition to Active (green) and Paused (yellow)
+
+### Previously Flagged Issues Verified as Already Fixed
+- `dashboard_rail` was already in backend `AdPlacement` enum
+- `hidden_vendor_ids` field names already matched on both frontend and backend
+- CTR calculation was already using `impression_served` only (not double-counting)
+
+### Files Modified
+- `app/services/advertising_service.py` — Feature flag back-fill, ObjectId validation, category query fix, enrichment logging
+- `app/services/ad_rollup_service.py` — Dashboard stats cursor limit
+- `app/services/advertisingApi.ts` — FeatureFlagConfig dedup, SponsoredVendor review fields, duplicate function removal
+- `app/admin/vendor/ads/page.tsx` — Budget column, CPL column, review-aware status badges
+- `app/admin/vendor/ads/campaigns/page.tsx` — Removed unsafe `as any` cast
+
+---
+
 ## View 7 — Admin Moderation Console & Review Workflow
 **Date:** 2026-03-17
 **Version:** 1.8.0

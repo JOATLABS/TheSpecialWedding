@@ -360,7 +360,7 @@ export default function VendorManagementPage() {
   // Feature not enabled view
   if (!featureEnabled) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="flex items-center justify-center py-24 p-4">
         <div className="max-w-md text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-wedding-rose to-wedding-gold rounded-2xl flex items-center justify-center mx-auto mb-6">
             <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -387,7 +387,7 @@ export default function VendorManagementPage() {
   // Loading state
   if (loading && !dashboard) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex items-center justify-center py-24">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400">Loading vendor management...</p>
@@ -444,6 +444,10 @@ export default function VendorManagementPage() {
         title="Vendor Management"
         description="Your complete vendor CRM - directory, contracts, and payments in one place"
       />
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      {/* Main Content — 3 columns on desktop */}
+      <div className="lg:col-span-3">
 
       <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
 
@@ -532,9 +536,6 @@ export default function VendorManagementPage() {
                 <div className="text-xs text-orange-600 mt-1">{dashboard.payments.overdue_count} overdue</div>
               </div>
             </div>
-
-            {/* Sponsored Vendors Rail — only renders if feature flag is enabled */}
-            <SponsoredVendorsRail placement="vendor_rail" />
 
             {/* Quick Actions */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1453,6 +1454,17 @@ export default function VendorManagementPage() {
           </div>
         </div>
       )}
+
+      </div>
+
+      {/* Right Sidebar — Sponsored Vendors Rail */}
+      <div className="lg:col-span-1">
+        <div className="sticky top-6">
+          <SponsoredVendorsRail placement="vendor_rail" />
+        </div>
+      </div>
+
+      </div>
     </div>
   );
 }

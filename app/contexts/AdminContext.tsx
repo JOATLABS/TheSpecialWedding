@@ -140,12 +140,14 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                         });
 
                         if (permissionsResponse.ok) {
-                            const { permissions, wedding_access, assigned_wedding_ids, owner_email } = await permissionsResponse.json();
+                            const permJson = await permissionsResponse.json();
+                            // Endpoint uses dict_response() → {success, data: {...}}
+                            const permData = permJson.data ?? permJson;
                             profile.is_team_member = true;
-                            profile.team_permissions = permissions;
-                            profile.team_wedding_access = wedding_access;
-                            profile.team_assigned_wedding_ids = assigned_wedding_ids;
-                            profile.team_owner_email = owner_email;
+                            profile.team_permissions = permData.permissions;
+                            profile.team_wedding_access = permData.wedding_access;
+                            profile.team_assigned_wedding_ids = permData.assigned_wedding_ids;
+                            profile.team_owner_email = permData.owner_email;
                         } else {
                             console.warn('Failed to fetch team permissions for team member');
                         }
@@ -270,12 +272,14 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                         });
 
                         if (permissionsResponse.ok) {
-                            const { permissions, wedding_access, assigned_wedding_ids, owner_email } = await permissionsResponse.json();
+                            const permJson = await permissionsResponse.json();
+                            // Endpoint uses dict_response() → {success, data: {...}}
+                            const permData = permJson.data ?? permJson;
                             profile.is_team_member = true;
-                            profile.team_permissions = permissions;
-                            profile.team_wedding_access = wedding_access;
-                            profile.team_assigned_wedding_ids = assigned_wedding_ids;
-                            profile.team_owner_email = owner_email;
+                            profile.team_permissions = permData.permissions;
+                            profile.team_wedding_access = permData.wedding_access;
+                            profile.team_assigned_wedding_ids = permData.assigned_wedding_ids;
+                            profile.team_owner_email = permData.owner_email;
                         } else {
                             console.warn('Failed to fetch team permissions for team member');
                         }

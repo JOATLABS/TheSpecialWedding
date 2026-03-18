@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import {
@@ -13,7 +13,8 @@ import {
   Send,
   Filter,
   RefreshCw,
-  MailOpen
+  MailOpen,
+  GripVertical
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
@@ -69,6 +70,38 @@ export default function InboxPage() {
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
+
+  // Draggable panel resize
+  const [listWidthPercent, setListWidthPercent] = useState(40);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const percent = (x / rect.width) * 100;
+      // Clamp between 20% and 70%
+      setListWidthPercent(Math.min(70, Math.max(20, percent)));
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, []);
 
   // ==================== DATA FETCHING ====================
 
@@ -198,13 +231,13 @@ export default function InboxPage() {
   // ==================== RENDER ====================
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950">
+    <div className="space-y-6">
       <PageHeader
         title="Inbox"
         description="Guest replies and messages"
       />
 
-      <div className="max-w-7xl mx-auto px-4 pb-6">
+      <div>
         {/* Stats bar */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -251,10 +284,13 @@ export default function InboxPage() {
         </div>
 
         {/* Main content area */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-[600px]">
+        <div ref={containerRef} className="flex min-h-[600px] gap-0">
 
           {/* Email List Panel */}
-          <div className={`lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden ${mobileShowDetail ? 'hidden lg:block' : ''}`}>
+          <div
+            className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex-shrink-0 ${mobileShowDetail ? 'hidden lg:block' : ''}`}
+            style={{ width: `${listWidthPercent}%` }}
+          >
             <div className="divide-y divide-gray-100 dark:divide-slate-800 max-h-[calc(100vh-250px)] overflow-y-auto">
               {loading ? (
                 <div className="p-8 text-center text-gray-400">
@@ -365,8 +401,17 @@ export default function InboxPage() {
             )}
           </div>
 
+          {/* Drag Handle */}
+          <div
+            onMouseDown={handleMouseDown}
+            className="hidden lg:flex items-center justify-center w-3 cursor-col-resize group flex-shrink-0 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 rounded transition-colors mx-0.5"
+            title="Drag to resize panels"
+          >
+            <GripVertical className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
+          </div>
+
           {/* Email Detail Panel */}
-          <div className={`lg:col-span-3 ${!mobileShowDetail ? 'hidden lg:block' : ''}`}>
+          <div className={`flex-1 min-w-0 ${!mobileShowDetail ? 'hidden lg:block' : ''}`}>
             {selectedEmail && selectedEmailDetail ? (
               <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 flex flex-col h-[calc(100vh-250px)]">
 

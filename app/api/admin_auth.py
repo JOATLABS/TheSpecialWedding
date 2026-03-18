@@ -61,6 +61,10 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
         "onboarding_completed": serialized_user_data.get("onboarding_completed", False),
         "onboarding_completed_at": serialized_user_data.get("onboarding_completed_at"),
         "onboarding_steps_completed": serialized_user_data.get("onboarding_steps_completed", []),
+        # Subscription fields for billing and access control
+        "subscription_status": serialized_user_data.get("subscription_status"),
+        "trial_end_date": serialized_user_data.get("trial_end_date"),
+        "_subscription_blocked": serialized_user_data.get("_subscription_blocked", False),
         "user_data": serialized_user_data
     }
     # Add team member context if applicable

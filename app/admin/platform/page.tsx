@@ -444,8 +444,8 @@ export default function PlatformInfrastructurePage() {
 
   if (error && !metrics) {
     return (
-      <div className="p-8">
-        <div className="max-w-4xl mx-auto">
+      <div className="space-y-6">
+        <div>
           <Card className="p-6 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
             <div className="flex items-center gap-3 mb-4">
               <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />

@@ -575,7 +575,7 @@ export default function PlannerBillingPage() {
   // No subscription - show simple onboarding
   if (!currentSubscription || !currentPlan) {
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <div className="text-center py-12">
           <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
             <CreditCard className="w-8 h-8 text-blue-600 dark:text-blue-400" />
@@ -653,7 +653,7 @@ export default function PlannerBillingPage() {
   const displayedInvoices = showAllInvoices ? invoices : invoices.slice(0, 3);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <PageHeader
         title="Billing"
         description="Manage your subscription, payment methods, and billing history"

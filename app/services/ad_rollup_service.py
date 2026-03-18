@@ -469,7 +469,7 @@ class AdRollupService:
             hour=0, minute=0, second=0, microsecond=0
         )
 
-        query = {"date": {"$gte": period_start}}
+        query: dict = {"date": {"$gte": period_start}}
 
         if sponsored_vendor_id:
             query["sponsored_vendor_id"] = sponsored_vendor_id
@@ -481,6 +481,7 @@ class AdRollupService:
             self.ad_stats_daily
             .find(query)
             .sort("date", -1)
+            .limit(5000)
         ):
             results.append(doc)
 

@@ -428,7 +428,7 @@ export default function AdminWeddingsPage() {
           + Add Wedding
         </button>
       </PageHeader>
-      <div className="max-w-6xl mx-auto">
+      <div>
 
         {/* Error Message */}
         {error && (

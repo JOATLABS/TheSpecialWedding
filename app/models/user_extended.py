@@ -49,6 +49,11 @@ class UserModel(BaseModel):
     plan_id: Optional[str] = Field(None, description="Current subscription plan ID")
     subscription_status: str = Field(default="trial", description="Subscription status: trial, active, cancelled")
     trial_end_date: Optional[datetime] = Field(None, description="Trial expiration date")
+    trial_warning_sent: bool = Field(default=False, description="Whether trial expiration warning email was sent")
+    trial_expired_at: Optional[datetime] = Field(None, description="When the trial was expired by the system")
+
+    # Registration metadata
+    registration_source: Optional[str] = Field(None, description="How the user signed up: public_signup, admin_invite, etc.")
 
     # Billing information
     stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
