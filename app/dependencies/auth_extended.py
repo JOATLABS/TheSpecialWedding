@@ -1,5 +1,5 @@
 from typing import Optional, Union, List
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
 import os
@@ -184,7 +184,6 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                             {"email": email},
                             {"$set": {
                                 "subscription_status": "expired",
-                                "is_active": False,
                                 "trial_expired_at": expire_time
                             }}
                         )
@@ -308,8 +307,18 @@ async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_us
     return current_user
 
 
-async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require root admin, wedding planner, or team member access"""
+async def require_auth_no_sub_check(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+    """Require root admin, wedding planner, or team member access — NO subscription check.
+
+    Use ONLY on endpoints that expired/blocked planners must still reach:
+      - GET  /admin/profile
+      - GET  /stripe/subscription, /stripe/config
+      - POST /stripe/create-checkout-session, /stripe/create-portal-session
+      - Billing page data endpoints
+
+    All other endpoints should use require_admin_or_planner (default, includes
+    subscription gate).
+    """
     if current_user.is_root_admin or current_user.is_wedding_planner:
         return current_user
     if current_user.is_team_member and current_user.team_permissions is not None:
@@ -320,19 +329,57 @@ async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_
     )
 
 
-async def require_active_subscription(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require an active or trial subscription — blocks expired/cancelled/suspended users.
+async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+    """Require root admin, wedding planner, or team member access WITH active subscription.
 
-    Use this for feature endpoints (weddings, guests, etc.) that should be locked
-    behind an active subscription. Profile and billing endpoints should use
-    require_admin_or_planner instead so expired users can still upgrade.
+    This is the default dependency for all feature endpoints. It checks role
+    first, then verifies the planner has an active/trial subscription.
+
+    Root admins: always pass — never need a subscription.
+    Team members: checked against parent planner's subscription.
+    Wedding planners: checked against their own subscription status.
+
+    For the ~3-5 endpoints that expired planners must reach (profile, billing),
+    use require_auth_no_sub_check instead.
     """
+    # Role check first
+    if not (current_user.is_root_admin or current_user.is_wedding_planner
+            or (current_user.is_team_member and current_user.team_permissions is not None)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or wedding planner access required"
+        )
+
+    # Root admins skip subscription checks entirely
+    if current_user.is_root_admin:
+        return current_user
+
+    # Wedding planners: check their own subscription
     if current_user.user_data.get("_subscription_blocked"):
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=current_user.user_data.get("_subscription_block_reason", "Subscription issue."),
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Team members: check the parent planner's subscription
+    if current_user.is_team_member and current_user.parent_planner_id:
+        try:
+            parent = await mongo.get_users_collection().find_one(
+                {"_id": ObjectId(current_user.parent_planner_id)},
+                {"subscription_status": 1}
+            )
+            if parent and parent.get("subscription_status") in ("expired", "cancelled", "suspended", "pending_payment"):
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail="Your team's subscription is inactive. Please contact your account owner.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Could not verify parent planner subscription: {e}")
+
     return current_user
 
 
@@ -366,7 +413,6 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
 
     if user.is_wedding_planner:
         # Check if this wedding is assigned to this planner
-        from bson import ObjectId
         import re
 
         # Validate and sanitize wedding_id
@@ -407,7 +453,6 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
             if not wedding_id or not isinstance(wedding_id, str) or len(wedding_id) > 100:
                 return False
             try:
-                query_id: Union[str, ObjectId]
                 if re.match(r'^[0-9a-fA-F]{24}$', wedding_id):
                     query_id = ObjectId(wedding_id)
                 else:

@@ -7,6 +7,7 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     require_wedding_planner,
+    require_admin_or_planner,
     enforce_team_permission,
 )
 from app.models.budget import BudgetCategory, VendorQuote, BudgetTemplate, PaymentRecord
@@ -121,7 +122,7 @@ class CostEstimationRequest(BaseModel):
 @router.get("/weddings/{wedding_id}/budget", tags=["Budget"])
 async def get_wedding_budget(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get complete budget information for a wedding"""
     try:
@@ -144,7 +145,7 @@ async def get_wedding_budget(
 async def create_budget_category(
     wedding_id: str,
     category_data: CreateBudgetCategoryRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Create a new budget category for a wedding"""
     enforce_team_permission(current_user, "manage_budget")
@@ -171,7 +172,7 @@ async def create_budget_category(
 async def update_budget_category(
     category_id: str,
     update_data: UpdateBudgetCategoryRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Update an existing budget category"""
     enforce_team_permission(current_user, "manage_budget")
@@ -200,7 +201,7 @@ async def update_budget_category(
 @router.delete("/budget/category/{category_id}", tags=["Budget"])
 async def delete_budget_category(
     category_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Delete a budget category"""
     enforce_team_permission(current_user, "manage_budget")
@@ -231,7 +232,7 @@ async def delete_budget_category(
 async def get_vendor_quotes(
     wedding_id: str,
     service_category: Optional[str] = Query(None, description="Filter by service category"),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get vendor quotes for a wedding, optionally filtered by service category"""
     try:
@@ -254,7 +255,7 @@ async def get_vendor_quotes(
 async def create_vendor_quote(
     wedding_id: str,
     quote_data: CreateVendorQuoteRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Create a new vendor quote"""
     enforce_team_permission(current_user, "manage_budget")
@@ -276,7 +277,7 @@ async def create_vendor_quote(
 async def compare_vendor_quotes(
     wedding_id: str,
     service_category: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Compare vendor quotes for a specific service category"""
     try:
@@ -297,7 +298,7 @@ async def update_quote_status(
     quote_id: str,
     status: str = Body(..., embed=True),
     notes: Optional[str] = Body(None, embed=True),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Update vendor quote status (accept/reject/pending)"""
     enforce_team_permission(current_user, "manage_budget")
@@ -328,7 +329,7 @@ async def rate_vendor_quote(
     quote_id: str,
     rating: int = Body(..., embed=True, ge=1, le=5),
     notes: Optional[str] = Body(None, embed=True),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Rate a vendor quote (1-5 stars)"""
     enforce_team_permission(current_user, "manage_budget")
@@ -356,7 +357,7 @@ async def rate_vendor_quote(
 @router.get("/budget/templates", tags=["Budget"])
 async def get_budget_templates(
     wedding_type: Optional[str] = Query(None, description="Filter by wedding type"),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get available budget templates"""
     try:
@@ -395,7 +396,7 @@ async def create_budget_template(
 async def apply_budget_template(
     wedding_id: str,
     request_data: ApplyBudgetTemplateRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Apply a budget template to a wedding"""
     try:
@@ -421,7 +422,7 @@ async def apply_budget_template(
 async def record_payment(
     category_id: str,
     payment_data: RecordPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Record a payment for a budget category"""
     enforce_team_permission(current_user, "manage_budget")
@@ -455,7 +456,7 @@ async def record_payment(
 async def update_payment(
     payment_id: str,
     payment_data: RecordPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Update an existing payment record"""
     try:
@@ -486,7 +487,7 @@ async def update_payment(
 @router.delete("/budget/payment/{payment_id}", tags=["Budget"])
 async def delete_payment(
     payment_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Delete a payment record"""
     try:
@@ -516,7 +517,7 @@ async def delete_payment(
 @router.get("/weddings/{wedding_id}/payments", tags=["Budget"])
 async def get_payment_history(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get payment history for a wedding"""
     from fastapi.responses import JSONResponse
@@ -545,7 +546,7 @@ async def get_payment_history(
 async def set_total_budget(
     wedding_id: str,
     request_data: SetTotalBudgetRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Set or update the overall total budget for a wedding"""
     try:
@@ -571,7 +572,7 @@ async def set_total_budget(
 @router.get("/weddings/{wedding_id}/budget/report", tags=["Budget", "Reports"])
 async def generate_financial_report(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Generate comprehensive financial report for a wedding"""
     try:
@@ -592,7 +593,7 @@ async def generate_financial_report(
 @router.post("/budget/estimate", tags=["Budget"])
 def estimate_wedding_costs(
     estimation_request: CostEstimationRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Estimate wedding costs based on guest count, type, and region"""
     try:
@@ -611,7 +612,7 @@ def estimate_wedding_costs(
 @router.get("/budget/categories/suggestions", tags=["Budget"])
 def get_category_suggestions(
     wedding_type: str = Query(default="traditional", description="Wedding type for category suggestions"),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get suggested budget categories for a wedding type"""
     try:
@@ -662,7 +663,7 @@ def get_category_suggestions(
 async def get_budget_alerts(
     wedding_id: str,
     include_resolved: bool = Query(default=False, description="Include resolved alerts"),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get budget alerts for a wedding"""
     try:
@@ -685,7 +686,7 @@ async def get_budget_alerts(
 @router.put("/budget/alerts/{alert_id}/read", tags=["Budget"])
 async def mark_alert_as_read(
     alert_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Mark a budget alert as read"""
     try:
@@ -700,7 +701,7 @@ async def mark_alert_as_read(
 @router.put("/budget/alerts/{alert_id}/resolve", tags=["Budget"])
 async def resolve_alert(
     alert_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Resolve a budget alert"""
     try:

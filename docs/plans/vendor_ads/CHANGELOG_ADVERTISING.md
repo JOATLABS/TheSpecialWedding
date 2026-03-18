@@ -1,5 +1,83 @@
 # Vendor Advertising Feature — Changelog
 
+## Senior QA: ObjectId Serialization & Attribution Tracking
+**Date:** 2026-03-17
+**Version:** 2.3.0
+
+### CRITICAL: ObjectId Serialization (15+ locations)
+
+Every service method that returns MongoDB documents now converts `_id` from ObjectId to string. Added `_serialize_doc()` helper that wraps all return points.
+
+**insert_one returns fixed:**
+- `create_sponsored_vendor()` -- `str(result.inserted_id)`
+- `record_ad_event()` -- `str(result.inserted_id)`
+- `create_lead()` -- `str(result.inserted_id)`
+- `get_feature_flag()` default creation -- `str(result.inserted_id)`
+- `get_planner_preferences()` default creation -- `str(result.inserted_id)`
+
+**find_one_and_update returns fixed (wrapped with `_serialize_doc()`):**
+- `toggle_feature_flag()`
+- `update_sponsored_vendor()`
+- `delete_sponsored_vendor()`
+- `review_sponsored_vendor()`
+- `update_lead_status()`
+- `hide_vendor()`, `unhide_vendor()`, `hide_category()`, `toggle_reduced_frequency()` (all 4 preference methods)
+
+**find/cursor returns fixed:**
+- `get_sponsored_vendors()` -- both instances
+- `get_sponsored_vendors_filtered()`
+- `get_review_queue()`
+- `get_leads()`
+- `get_lead()`
+
+### HIGH: Wedding ID Attribution Tracking
+
+- **SponsoredVendorsRail** -- `handleRecordEvent` now passes `wedding_id: selectedWeddingId || weddings?.[0]?.id` to every `recordAdEvent` call
+- **SponsoredMilestoneModule** -- Added `weddingId?: string` prop, passed to `recordAdEvent` calls
+- **Wedding Detail page** -- All 4 `SponsoredMilestoneModule` instances now receive `weddingId={weddingId}` from route params
+
+### Files Modified
+- `app/services/advertising_service.py` -- `_serialize_doc()` helper, all ObjectId conversions, all return points wrapped
+- `app/admin/vendors/components/SponsoredVendorsRail.tsx` -- wedding_id in handleRecordEvent
+- `app/admin/vendors/components/SponsoredMilestoneModule.tsx` -- weddingId prop, passed to events
+- `app/admin/weddings/[id]/page.tsx` -- weddingId prop passed to all 4 milestone modules
+
+---
+
+## Frontend-Backend Alignment Audit & Fixes
+**Date:** 2026-03-17
+**Version:** 2.2.0
+
+### Audit Results
+- **26 API endpoints audited**: All frontend fetch calls match backend routes, HTTP methods, query params, request bodies, and auth headers. Zero mismatches.
+- **12 model pairs compared**: Field-by-field alignment between TypeScript interfaces and Python Pydantic models.
+- **MongoDB query patterns**: Cross-referenced against model fields and index definitions.
+
+### Fixes Applied
+
+**CRITICAL: RecordAdEventRequest missing fields**
+- Frontend `RecordAdEventRequest` was missing `wedding_id`, `planner_id`, `session_id`, `click_id` and had a nonexistent `user_id` field. All attribution tracking context was lost on the frontend side. Fixed by aligning the TS interface to match the backend Pydantic model exactly.
+
+**HIGH: planner_id not enforced in create_lead()**
+- `create_lead()` used `data.get("planner_id")` for a required field, allowing null values to be written to MongoDB. Added explicit validation that raises 400 if `planner_id` is missing.
+
+**HIGH: Date range null comparison**
+- `get_sponsored_vendors()` and `get_sponsored_vendors_filtered()` used `{"start_date": None}` to match null dates. While PyMongo handles this correctly, replaced with `{"$in": [None]}` + `{"$exists": False}` for explicit coverage of both null and missing field cases.
+
+**MEDIUM: Timestamp fields missing from 4 models**
+- `AdEvent`, `AdLead`, `PlannerAdPreference`, and `AdvertisingFeatureFlag` models were missing `created_at` and `updated_at` fields despite the service layer writing them. Added `Optional[datetime]` fields to all four models so the schema matches reality.
+
+**MEDIUM: Missing review_status index**
+- `get_review_queue()` and `get_review_queue_counts()` query on `review_status` without a supporting index. Added compound index `(review_status ASC, created_at DESC)` in `database_indexes.py`.
+
+### Files Modified
+- `app/services/advertisingApi.ts` -- RecordAdEventRequest aligned with backend (removed user_id, added wedding_id/planner_id/session_id/click_id)
+- `app/services/advertising_service.py` -- planner_id validation in create_lead(), date range null comparison fix
+- `app/models/advertising.py` -- Added created_at/updated_at to AdEvent, AdLead, PlannerAdPreference, AdvertisingFeatureFlag
+- `app/core/database_indexes.py` -- Added idx_sponsored_review_status_created index
+
+---
+
 ## Ad Placement Layout Fix — Consistent Right-Rail Across All Pages
 **Date:** 2026-03-17
 **Version:** 2.1.0

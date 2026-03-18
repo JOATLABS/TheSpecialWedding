@@ -980,6 +980,14 @@ async def create_advertising_indexes():
         )
         logger.info("Created index: idx_sponsored_created_desc")
 
+        # 4. Review queue queries: filter by review_status, sort by created_at
+        # Powers: get_review_queue(), get_review_queue_counts()
+        await sponsored.create_index(
+            [("review_status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_sponsored_review_status_created",
+        )
+        logger.info("Created index: idx_sponsored_review_status_created")
+
         logger.info("All sponsored_vendors indexes created successfully")
     except Exception as e:
         logger.error(f"Error creating sponsored_vendors indexes: {str(e)}")

@@ -520,6 +520,10 @@ async def update_feature_flag_config(
     if not updated:
         raise HTTPException(status_code=404, detail="Feature flag not found")
 
+    # Serialize ObjectId for JSON response
+    if "_id" in updated:
+        updated["_id"] = str(updated["_id"])
+
     logger.info(
         f"Feature flag config updated by {current_user.email}: "
         f"{list(config_updates.keys())}"
@@ -684,7 +688,7 @@ async def list_ad_leads(
     limit: int = Query(50, ge=1, le=500, description="Max results"),
     skip: int = Query(0, ge=0, description="Skip results"),
     service: AdvertisingService = Depends(get_advertising_service),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     List ad leads with optional filters.
@@ -702,7 +706,7 @@ async def list_ad_leads(
     - limit: Maximum results (1-500, default 50)
     - skip: Skip N results for pagination
     """
-    filters = {}
+    filters: dict = {}
 
     if vendor_id:
         filters["vendor_profile_id"] = vendor_id
@@ -758,7 +762,7 @@ async def list_ad_leads(
 async def get_ad_lead(
     lead_id: str,
     service: AdvertisingService = Depends(get_advertising_service),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get details of a specific ad lead.
@@ -804,7 +808,7 @@ async def update_ad_lead_status(
     lead_id: str,
     request: UpdateAdLeadStatusRequest,
     service: AdvertisingService = Depends(get_advertising_service),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Update the status of an ad lead.
@@ -1046,7 +1050,7 @@ async def get_dashboard_stats(
     )
 
     # Aggregate totals across all days
-    totals = {
+    totals: dict[str, int] = {
         "impressions": 0,
         "clicks": 0,
         "leads": 0,
@@ -1054,10 +1058,10 @@ async def get_dashboard_stats(
         "unique_planners": 0,
         "unique_weddings": 0,
     }
-    leads_by_type_totals = {}
-    leads_by_status_totals = {}
-    hourly_clicks_totals = [0] * 24
-    daily_series = []
+    leads_by_type_totals: dict[str, int] = {}
+    leads_by_status_totals: dict[str, int] = {}
+    hourly_clicks_totals: list[int] = [0] * 24
+    daily_series: list[dict] = []
 
     for doc in daily_stats:
         counts = doc.get("counts", {})
@@ -1302,7 +1306,7 @@ _ad_upload_service = AdUploadService()
 async def get_ad_upload_url(
     filename: str = Query(..., description="Original filename of the image"),
     content_type: str = Query(..., description="MIME type (image/jpeg, image/png, image/webp)"),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Generate a presigned PUT URL for uploading ad creative images
@@ -1341,7 +1345,7 @@ async def get_ad_upload_url(
 )
 async def update_vendor_logo(
     logo_url: str = Body(..., embed=True, description="CDN URL of the uploaded image"),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     After a successful image upload to the ad bucket, call this endpoint

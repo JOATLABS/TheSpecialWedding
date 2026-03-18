@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 # UTILITY FUNCTIONS
 # =============================================================================
 
+def _serialize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert MongoDB ObjectId fields to strings for JSON serialization.
+
+    Call this AFTER null-checking the document (e.g. after raising HTTPException
+    for not-found). The caller is responsible for ensuring doc is not None.
+    """
+    if "_id" in doc and isinstance(doc["_id"], ObjectId):
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+
 def validate_object_id(id_str: Optional[str], field_name: str = "ID") -> ObjectId:
     """
     Validate and convert a string to ObjectId.
@@ -106,7 +117,7 @@ class AdvertisingService:
             "review_sla_hours": 48,
         }
 
-        if not flag:
+        if flag is None:
             # Create default flag if it doesn't exist
             default_flag = {
                 "feature_key": "sponsored_vendors",
@@ -118,7 +129,7 @@ class AdvertisingService:
                 "updated_at": datetime.now(timezone.utc),
             }
             result = await self.ad_feature_flags.insert_one(default_flag)
-            default_flag["_id"] = result.inserted_id
+            default_flag["_id"] = str(result.inserted_id)
             flag = default_flag
         else:
             # Back-fill any missing config keys on existing documents
@@ -167,10 +178,10 @@ class AdvertisingService:
             upsert=False,
         )
 
-        if not updated_flag:
+        if updated_flag is None:
             raise HTTPException(status_code=404, detail="Feature flag not found")
 
-        return updated_flag
+        return _serialize_doc(updated_flag)
 
     async def get_sponsored_vendors(
         self,
@@ -253,7 +264,7 @@ class AdvertisingService:
             .sort("priority", -1)
             .limit(limit)
         ):
-            vendors.append(vendor)
+            vendors.append(_serialize_doc(vendor))
 
         return vendors
 
@@ -303,7 +314,7 @@ class AdvertisingService:
         }
 
         result = await self.sponsored_vendors.insert_one(sponsored_vendor)
-        sponsored_vendor["_id"] = result.inserted_id
+        sponsored_vendor["_id"] = str(result.inserted_id)
 
         logger.info(
             f"Created sponsored vendor {result.inserted_id} for vendor {vendor_profile_id}"
@@ -346,10 +357,10 @@ class AdvertisingService:
             return_document=True,
         )
 
-        if not updated:
+        if updated is None:
             raise HTTPException(status_code=404, detail="Sponsored vendor not found")
 
-        return updated
+        return _serialize_doc(updated)
 
     async def delete_sponsored_vendor(self, sponsored_id: str) -> Dict[str, Any]:
         """
@@ -377,12 +388,12 @@ class AdvertisingService:
             return_document=True,
         )
 
-        if not deleted:
+        if deleted is None:
             raise HTTPException(status_code=404, detail="Sponsored vendor not found")
 
         logger.info(f"Deactivated sponsored vendor {sponsored_id}")
 
-        return deleted
+        return _serialize_doc(deleted)
 
     async def review_sponsored_vendor(
         self,
@@ -436,7 +447,7 @@ class AdvertisingService:
             return_document=True,
         )
 
-        if not updated:
+        if updated is None:
             raise HTTPException(status_code=404, detail="Sponsored vendor not found")
 
         logger.info(
@@ -444,7 +455,7 @@ class AdvertisingService:
             f"by {reviewer_email}"
         )
 
-        return updated
+        return _serialize_doc(updated)
 
     async def get_review_queue(
         self,
@@ -506,7 +517,7 @@ class AdvertisingService:
                         f"in review queue: {e}"
                     )
 
-            results.append(doc)
+            results.append(_serialize_doc(doc))
 
         return results
 
@@ -585,7 +596,7 @@ class AdvertisingService:
         }
 
         result = await self.ad_events.insert_one(ad_event)
-        ad_event["_id"] = result.inserted_id
+        ad_event["_id"] = str(result.inserted_id)
 
         # Update sponsored vendor counts
         update_query = {}
@@ -633,7 +644,7 @@ class AdvertisingService:
 
         # Get the sponsored vendor
         sponsored = await self.sponsored_vendors.find_one({"_id": sponsored_id_obj})
-        if not sponsored:
+        if sponsored is None:
             raise HTTPException(status_code=404, detail="Sponsored vendor not found")
 
         # Calculate date range
@@ -716,7 +727,7 @@ class AdvertisingService:
         }
 
         result = await self.ad_leads.insert_one(ad_lead)
-        ad_lead["_id"] = result.inserted_id
+        ad_lead["_id"] = str(result.inserted_id)
 
         logger.info(
             f"Created ad lead {result.inserted_id} from planner {ad_lead['planner_id']} "
@@ -753,7 +764,7 @@ class AdvertisingService:
             .skip(skip)
             .limit(limit)
         ):
-            leads.append(lead)
+            leads.append(_serialize_doc(lead))
 
         return leads
 
@@ -773,10 +784,10 @@ class AdvertisingService:
         lead_id_obj = validate_object_id(lead_id, "lead_id")
 
         lead = await self.ad_leads.find_one({"_id": lead_id_obj})
-        if not lead:
+        if lead is None:
             raise HTTPException(status_code=404, detail="Ad lead not found")
 
-        return lead
+        return _serialize_doc(lead)
 
     async def update_lead_status(
         self,
@@ -815,12 +826,12 @@ class AdvertisingService:
             return_document=True,
         )
 
-        if not updated:
+        if updated is None:
             raise HTTPException(status_code=404, detail="Ad lead not found")
 
         logger.info(f"Updated ad lead {lead_id} status to {updates.get('status')}")
 
-        return updated
+        return _serialize_doc(updated)
 
     async def get_planner_preferences(self, planner_id: str) -> Dict[str, Any]:
         """
@@ -836,9 +847,9 @@ class AdvertisingService:
             {"planner_id": planner_id}
         )
 
-        if not prefs:
+        if prefs is None:
             # Create default preferences if they don't exist
-            default_prefs = {
+            default_prefs: Dict[str, Any] = {
                 "planner_id": planner_id,
                 "hidden_vendor_ids": [],
                 "hidden_categories": [],
@@ -848,10 +859,10 @@ class AdvertisingService:
                 "updated_at": datetime.now(timezone.utc),
             }
             result = await self.planner_ad_preferences.insert_one(default_prefs)
-            default_prefs["_id"] = result.inserted_id
-            prefs = default_prefs
+            default_prefs["_id"] = str(result.inserted_id)
+            return default_prefs
 
-        return prefs
+        return _serialize_doc(prefs)
 
     async def hide_vendor(self, planner_id: str, vendor_id: str) -> Dict[str, Any]:
         """
@@ -875,10 +886,11 @@ class AdvertisingService:
             upsert=True,
             return_document=True,
         )
+        assert prefs is not None  # upsert=True guarantees a document
 
         logger.info(f"Hidden vendor {vendor_id} for planner {planner_id}")
 
-        return prefs
+        return _serialize_doc(prefs)
 
     async def unhide_vendor(self, planner_id: str, vendor_id: str) -> Dict[str, Any]:
         """
@@ -902,13 +914,13 @@ class AdvertisingService:
             return_document=True,
         )
 
-        if not prefs:
+        if prefs is None:
             # If no preferences exist, create default ones
-            prefs = await self.get_planner_preferences(planner_id)
+            return await self.get_planner_preferences(planner_id)
 
         logger.info(f"Unhidden vendor {vendor_id} for planner {planner_id}")
 
-        return prefs
+        return _serialize_doc(prefs)
 
     async def hide_category(self, planner_id: str, category: str) -> Dict[str, Any]:
         """
@@ -930,10 +942,11 @@ class AdvertisingService:
             upsert=True,
             return_document=True,
         )
+        assert prefs is not None  # upsert=True guarantees a document
 
         logger.info(f"Hidden category {category} for planner {planner_id}")
 
-        return prefs
+        return _serialize_doc(prefs)
 
     async def toggle_reduced_frequency(
         self,
@@ -961,13 +974,14 @@ class AdvertisingService:
             upsert=True,
             return_document=True,
         )
+        assert prefs is not None  # upsert=True guarantees a document
 
         logger.info(
             f"{'Enabled' if reduced else 'Disabled'} reduced frequency "
             f"for planner {planner_id}"
         )
 
-        return prefs
+        return _serialize_doc(prefs)
 
     async def get_sponsored_vendors_filtered(
         self,
@@ -1078,7 +1092,7 @@ class AdvertisingService:
             .sort("priority", -1)
             .limit(limit)
         ):
-            vendors.append(vendor)
+            vendors.append(_serialize_doc(vendor))
 
         return vendors
 

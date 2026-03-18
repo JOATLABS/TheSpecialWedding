@@ -57,6 +57,7 @@ class CreatePackageRequest(BaseModel):
     late_payment_policy: Optional[str] = None
     custom_terms: Optional[str] = None
     is_template: bool = False
+    status: Optional[str] = Field(default="draft", pattern="^(draft|active)$")
 
 
 class UpdatePackageRequest(BaseModel):

@@ -37,11 +37,14 @@ async def force_expire(email: str):
     print(f"[INFO] Current trial_end_date: {user.get('trial_end_date')}")
     print(f"[INFO] Setting trial_end_date to: {past_date.isoformat()}")
 
-    # Update users collection
+    # Update users collection — keep is_active=True so planner can
+    # still log in and reach the billing page to upgrade
     await users_col.update_one(
         {"_id": user["_id"]},
         {"$set": {
             "trial_end_date": past_date,
+            "is_active": True,
+            "subscription_status": "trial",
             "updated_at": datetime.now(timezone.utc),
         }}
     )

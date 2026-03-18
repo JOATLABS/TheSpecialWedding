@@ -19,6 +19,8 @@ interface SponsoredMilestoneModuleProps {
   milestoneCategory: string;
   /** Whether this milestone is already booked — if true, module is suppressed */
   isBooked?: boolean;
+  /** Wedding ID for attribution tracking */
+  weddingId?: string;
   /** Wedding context for why-tags */
   weddingContext?: {
     city?: string;
@@ -47,6 +49,7 @@ interface SponsoredMilestoneModuleProps {
 export function SponsoredMilestoneModule({
   milestoneCategory,
   isBooked = false,
+  weddingId,
   weddingContext,
   onVendorClick,
 }: SponsoredMilestoneModuleProps) {
@@ -131,6 +134,7 @@ export function SponsoredMilestoneModule({
         vendor_profile_id: vendorProfileId,
         event_type: eventType,
         placement: 'milestone_module',
+        wedding_id: weddingId,
         metadata,
       });
     } catch (err) {

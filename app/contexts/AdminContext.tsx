@@ -23,6 +23,11 @@ interface UserProfile {
     onboarding_completed?: boolean;
     onboarding_completed_at?: string;
     onboarding_steps_completed?: string[];
+    // Subscription fields
+    subscription_status?: string;
+    trial_end_date?: string;
+    _subscription_blocked?: boolean;
+    _subscription_block_reason?: string;
     // Team member fields
     is_team_member?: boolean;
     team_member_id?: string;
@@ -157,6 +162,11 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 }
 
                 setUserProfile(profile);
+            } else if (response.status === 402) {
+                // Subscription blocked — user is authenticated but expired/cancelled.
+                // This shouldn't happen anymore since backend tags instead of 402s on profile,
+                // but handle it gracefully as a safety net.
+                console.warn('Subscription blocked (402) — redirecting to billing');
             } else if (response.status === 401) {
                 // Token expired or invalid — session is dead
                 logout();
@@ -310,6 +320,34 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     toast.error('Your account role is not recognized. Please contact support.');
                     return;
                 }
+            } else if (profileResponse.status === 402) {
+                // Subscription expired/cancelled — user IS authenticated but needs to upgrade.
+                // Store token so they can access the upgrade page.
+                // Parse the error to get subscription info
+                let detail = 'Your subscription requires attention.';
+                try {
+                    const errData = await profileResponse.json();
+                    detail = errData.detail || detail;
+                } catch {}
+
+                // We still need basic profile data. The backend now returns profile
+                // even for expired users (tagged with _subscription_blocked).
+                // Re-fetch — the backend no longer 402s on profile, it tags the user.
+                const retryProfile = await fetch(`${baseUrl}/admin/profile`, {
+                    headers: {
+                        'Authorization': `Bearer ${access_token}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                if (retryProfile.ok) {
+                    const profile = await retryProfile.json();
+                    setUserProfile(profile);
+                }
+
+                toast.warning(detail);
+                window.location.href = '/admin/planner/billing';
+                return;
             } else {
                 // Profile fetch failed — do not grant access without a confirmed role
                 console.error('Profile fetch failed after login');
@@ -344,6 +382,11 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             // 401 = token invalid/expired — force logout and re-auth
             if (response.status === 401) {
                 logout();
+                return undefined;
+            }
+            // 402 = subscription expired/blocked — redirect to billing
+            if (response.status === 402) {
+                window.location.href = '/admin/planner/billing';
                 return undefined;
             }
             // 403 = permission denied — don't logout, let the caller handle it

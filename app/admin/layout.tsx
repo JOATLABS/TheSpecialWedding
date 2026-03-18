@@ -8,6 +8,7 @@ import AdminRouteGuard from '@/components/AdminRouteGuard';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
+import TrialBanner from './components/TrialBanner';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { Toaster } from 'sonner';
 import { useState, useEffect } from 'react';
@@ -82,6 +83,8 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
           marginLeft: !isMobile ? (sidebarOpen ? '18rem' : '5rem') : '0'
         }}
       >
+        <TrialBanner />
+
         <TopHeader
           onMenuClick={() => setSidebarOpen(!sidebarOpen)}
           title={getPageTitle()}
