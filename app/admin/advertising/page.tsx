@@ -100,7 +100,7 @@ export default function AdvertisingPage() {
     try {
       const [vendorsData, allVendorsData] = await Promise.all([
         getSponsoredVendors(token),
-        getVendorDirectory(token, { limit: 1000 }),
+        getVendorDirectory(token, { limit: 100 }),
       ]);
 
       setSponsoredVendors(vendorsData);

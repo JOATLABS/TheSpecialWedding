@@ -5,6 +5,99 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.4] - 2026-03-18 — Standalone Ad Admin Pages + Sidebar Navigation
+
+### Fixed
+
+- **Advertising page 422 crash** -- `/admin/advertising` called `getVendorDirectory(token, { limit: 1000 })` but backend enforces `limit <= 100`. Changed to `limit: 100`
+- **Structured error parsing** -- Added `extractErrorMessage()` helper to `vendorManagementApi.ts` that handles string, dict (feature gate), and array (Pydantic 422) error formats. Applied to all 24 API error handlers
+
+### Added
+
+- **4 standalone ad admin pages** -- Broke the tabbed `/admin/ads/console` into separate pages matching the mockup sidebar structure. Each page is its own route with `RootAdminGuard`, page header, and self-contained state:
+  - `/admin/ads/creative-review` -- Campaign review queue with approve/reject/request changes
+  - `/admin/ads/performance` -- Metrics, platform health, vendor leaderboard
+  - `/admin/ads/config` -- Feature flags, serving limits, review workflow, data pipeline controls
+  - `/admin/ads/revenue` -- Revenue placeholder (billing not active)
+- **Root admin sidebar** -- 4 advertising nav items: Creative Review, All Campaigns, Performance, Ad Config. Each links directly to its own page (no tabs, no query params)
+
+## [2.12.3] - 2026-03-18 — Feature Gate Error Handling & Drawer Visual Fix
+
+### Fixed
+
+- **Vendor dashboard 403 error crash** -- `getVendorDashboard` threw `[object Object]` when the feature gate returned a structured error dict. Now extracts `detail.message` string before throwing
+- **7 vendor management API functions** with same broken error parsing -- `getVendorCategories`, `getWeddingVendors`, `getContractTemplates`, `getContracts`, `getPaymentMilestones`, `getPaymentLinks` all fixed to handle structured `detail` objects from feature gate 403s
+- **Drawer stats grid** -- Changed from 2-column (Weddings, Total Revenue) to 3-column (Weddings, Rating, Starting at) matching the mockup spec. Shows `typical_price_min` with currency prefix
+
+## [2.12.2] - 2026-03-17 — Full System QA: Data Flow Integrity & Visual Audit
+
+### Security
+
+- **planner_id enforcement** -- `POST /events` endpoint now always overrides `planner_id` from authenticated user instead of trusting frontend value
+
+### Fixed
+
+- **ObjectId serialization in rollup service** -- `get_dashboard_stats()` and `get_vendor_leaderboard()` now serialize `_id` fields via `_serialize_rollup_doc()`. Previously returned raw ObjectIds causing JSON serialization failures
+- **wedding_id missing from drawer events** -- `SponsoredVendorDetailsDrawer` now accepts `weddingId` prop and passes it to all 4 `recordAdEvent` calls (vendor_profile_view, vendor_added_to_wedding, contact_click, dismiss). Previously all drawer interactions had null wedding attribution
+- **WCAG touch targets** -- All interactive elements in admin console updated from 36px to 44px minimum height (10 instances: dropdowns, buttons, inputs)
+
+### QA Audit Results (3 parallel agents)
+
+- **API alignment**: 26 endpoints verified, all request/response structures match between TS interfaces and Python models
+- **Visual fidelity**: 85% match against HTML mockups across all 8 views. No blocking gaps.
+- **Data flow**: Event tracking chain verified from frontend through rollup. click_id attribution intact. CTR calculation correct (impression_served only). Wedding attribution now complete across all 5 frontend components.
+
+## [2.12.1] - 2026-03-17 — Team Management Phases 5 & 6: Activity Logs & Notifications
+
+### Added
+
+- **Activity log enrichment (Phase 6A)** -- `log_activity()` now accepts `actor_name` and `actor_role` fields, stored on every log entry. All 6 team member log methods now include member name and role in messages (e.g. "John (Editor) accepted their team invitation" instead of "john@email.com accepted their team invitation")
+- **Team notification types (Phase 6B)** -- Added 3 methods to `NotificationService`: `notify_team_member_accepted` (alerts owner when member joins), `notify_team_member_action` (alerts owner on high-impact team member actions with wedding context), `notify_team_member_deactivated` (alerts owner when member is deactivated)
+
+### Verified (already implemented in prior sessions)
+
+- Phase 5A: AdminContext `UserProfile` interface already has `is_team_member`, `team_permissions`, `team_wedding_access`, `team_assigned_wedding_ids` -- populated from `/admin/team/permissions` on login
+- Phase 5B: Dashboard already filtered for team members via `get_accessible_wedding_ids()` in planner_metrics.py backend, with "Filtered View" notice on frontend
+
+## [2.12.0] - 2026-03-17 — Team Management Phase 3: Endpoint Permission Protection
+
+### Security
+
+- **All 10 previously unprotected API files now have team permission enforcement.** Team members accessing these endpoints without the required permission will receive a 403 error instead of unrestricted access.
+
+| File | Permission | Enforcement Count |
+|------|-----------|------------------|
+| gallery_admin.py | manage_gallery | 4 |
+| gallery_upload.py | manage_gallery | 3 (NEW) |
+| vendor_dashboard.py | manage_vendors | 2 (NEW) |
+| reminder.py | send_reminders | 2 |
+| reminder_twilio.py | send_reminders | 5 |
+| forms.py | manage_forms | 9 |
+| planner_metrics.py | view_analytics | 4 |
+| wedding.py | manage_wedding_settings | 3 |
+| planner_calendar.py | manage_wedding_settings | 7 |
+| packages.py | manage_contracts | 7 (FIXED: was manage_packages) |
+
+### Fixed
+
+- **packages.py invalid permission key** -- Changed `manage_packages` (not in valid permission keys) to `manage_contracts`
+- **gallery_upload.py missing protection** -- Added `enforce_team_permission` with `manage_gallery` to DELETE and POST endpoints
+- **vendor_dashboard.py missing protection** -- Added `enforce_team_permission` with `manage_vendors` to PATCH task endpoint
+
+## [2.11.9] - 2026-03-17 — Billing Page Layout Fix & Cancel Subscription Bug
+
+### Fixed
+
+- **Billing page card padding** — All `Card` components on the billing page were missing internal padding (`p-6`), causing text like "0 / 10", "0.0 / 50 GB" to clip against the right edge of the viewport
+- **Billing page grid overflow** — Added `min-w-0` and `overflow-hidden` to both grid columns so content stays within its allocated track instead of bleeding past the column boundary
+- **Cancel Subscription redirected to payment update** — The "Cancel Subscription" button called `handleManageBilling()` which sent no `flow_type` to the backend. The backend defaulted `null` to `"payment_method_update"`, so clicking cancel always opened Stripe's payment method page instead of the cancellation flow
+- **Backend portal session default** — `create-portal-session` API no longer defaults `null` flow type to `"payment_method_update"`. A `null` flow type now opens the general Stripe billing portal overview
+
+### Added
+
+- **`subscription_cancel` Stripe portal flow** — New flow type supported in both frontend and backend. The "Cancel Subscription" button now opens Stripe's cancellation flow directly with the correct subscription ID
+- **Cancel button styling** — Cancel Subscription button now has red border/text styling to visually distinguish it as a destructive action
+
 ## [2.11.8] - 2026-03-17 — Fix Package Creation Crash (Decimal BSON Serialization)
 
 ### Fixed

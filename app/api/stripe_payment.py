@@ -7,7 +7,7 @@ from bson import ObjectId
 from pydantic import BaseModel, Field
 import stripe
 from app.services.stripe_service import stripe_service
-from app.dependencies.auth_extended import require_admin_or_planner, require_auth_no_sub_check, ExtendedAuthUser
+from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):
 class CreatePortalSessionRequest(BaseModel):
     """Request model for creating a Customer Portal Session"""
     return_url: Optional[str] = Field(None, description="Return URL after portal session")
-    flow_type: Optional[str] = Field(None, description="Portal flow type: 'payment_method_update' or 'subscription_update'")
+    flow_type: Optional[str] = Field(None, description="Portal flow type: 'payment_method_update', 'subscription_update', or 'subscription_cancel'")
 
 
 class CreatePaymentIntentRequest(BaseModel):
@@ -67,7 +67,7 @@ class VendorPaymentRequest(BaseModel):
 @router.post("/create-checkout-session")
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,
-    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Create a Stripe Checkout Session for subscription signup
@@ -214,7 +214,7 @@ async def get_payment_intent_details(id: str):
 @router.post("/create-portal-session")
 async def create_portal_session(
     request: CreatePortalSessionRequest,
-    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Create a Stripe Customer Portal session
@@ -231,7 +231,7 @@ async def create_portal_session(
         portal_session = await stripe_service.create_portal_session(
             user_id=user_id,
             return_url=request.return_url or "",
-            flow_type=request.flow_type or "payment_method_update"
+            flow_type=request.flow_type or None
         )
 
         return {
@@ -607,7 +607,7 @@ async def get_payment_requests(
 @router.get("/invoices")
 async def get_invoices(
     limit: int = 10,
-    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get billing history (invoices) for the current user
@@ -662,7 +662,7 @@ async def get_invoices(
 
 @router.get("/payment-method")
 async def get_payment_method(
-    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get the default payment method details for the current user
@@ -745,7 +745,7 @@ async def get_payment_method(
 
 @router.get("/subscription")
 async def get_subscription_details(
-    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get detailed subscription information including payment method

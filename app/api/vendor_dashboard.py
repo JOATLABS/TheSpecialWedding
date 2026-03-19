@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query
 
-from app.dependencies.auth_extended import ExtendedAuthUser, require_vendor
+from app.dependencies.auth_extended import ExtendedAuthUser, require_vendor, enforce_team_permission
 from app.services.vendor_dashboard_service import VendorDashboardService
 
 
@@ -31,6 +31,7 @@ def update_vendor_task_status(
     current_user: ExtendedAuthUser = Depends(require_vendor),
 ):
     """Update a vendor task status while enforcing ownership."""
+    enforce_team_permission(current_user, "manage_vendors")
 
     user_data = current_user.user_data or {}
     assigned_weddings = user_data.get("assigned_wedding_ids", [])

@@ -137,7 +137,7 @@ async def create_package(
 
     Packages start in 'draft' status. Activate them before sending to couples.
     """
-    enforce_team_permission(current_user, "manage_packages")
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -206,7 +206,7 @@ async def update_package(
 
     Note: Active packages have limited editable fields.
     """
-    enforce_team_permission(current_user, "manage_packages")
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -238,7 +238,7 @@ async def delete_package(
 
     Only packages in 'draft' status without contracts can be deleted.
     """
-    enforce_team_permission(current_user, "manage_packages")
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -265,7 +265,7 @@ async def duplicate_package(
 
     Creates a copy of the package, optionally as a template.
     """
-    enforce_team_permission(current_user, "manage_packages")
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -300,7 +300,7 @@ async def send_package_to_couple(
     The package must be in 'active' status. This creates a contract
     with a unique token for the couple to view and sign.
     """
-    enforce_team_permission(current_user, "manage_packages")
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -348,7 +348,7 @@ async def get_ai_pricing_suggestion(
 
     Cost: 3 AI credits
     """
-    enforce_team_permission(current_user, "manage_packages")
+    enforce_team_permission(current_user, "manage_contracts")
     from app.services.ai_service import ai_service, InsufficientCreditsError, AIGenerationError
     from app.core.settings import settings
 

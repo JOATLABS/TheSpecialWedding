@@ -28,6 +28,11 @@ import {
   LayoutGrid,
   Mail,
   Megaphone,
+  ShieldCheck,
+  BarChart3,
+  Trophy,
+  Settings,
+  Target,
   type LucideIcon
 } from 'lucide-react';
 
@@ -53,7 +58,11 @@ const adminNavItems: NavItem[] = [
   { name: 'SaaS Management', href: '/admin/saas', icon: Layers },
   { name: 'Planners', href: '/admin/users', icon: Users },
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
-  { name: 'Advertising', href: '/admin/advertising', icon: Megaphone },
+  // Advertising section -- each is a standalone page per mockup
+  { name: 'Creative Review', href: '/admin/ads/creative-review', icon: ShieldCheck },
+  { name: 'All Campaigns', href: '/admin/advertising', icon: Megaphone },
+  { name: 'Performance', href: '/admin/ads/performance', icon: BarChart3 },
+  { name: 'Ad Config', href: '/admin/ads/config', icon: Settings },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
 ];

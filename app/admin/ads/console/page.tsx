@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import RootAdminGuard from '@/components/RootAdminGuard';
 import { toast } from 'sonner';
@@ -80,7 +81,25 @@ export default function AdminConsole() {
 
 function AdminConsoleContent() {
   const { token } = useAdmin();
-  const [activeTab, setActiveTab] = useState<TabKey>('creative-review');
+  const searchParams = useSearchParams();
+  const validTabs: TabKey[] = ['creative-review', 'performance', 'config', 'revenue'];
+
+  // Derive active tab from URL param
+  const tabParam = searchParams.get('tab') as TabKey | null;
+  const resolvedTab: TabKey = tabParam && validTabs.includes(tabParam) ? tabParam : 'creative-review';
+  const [activeTab, setActiveTabState] = useState<TabKey>(resolvedTab);
+
+  // Sync when URL changes (sidebar click)
+  useEffect(() => {
+    setActiveTabState(resolvedTab);
+  }, [resolvedTab]);
+
+  // When user clicks a tab directly, update both state and URL
+  const setActiveTab = (tab: TabKey) => {
+    setActiveTabState(tab);
+    window.history.replaceState({}, '', `/admin/ads/console?tab=${tab}`);
+  };
+
   const [queueCounts, setQueueCounts] = useState<ReviewQueueCounts>({
     pending_review: 0,
     approved: 0,
@@ -288,7 +307,7 @@ function CreativeReviewTab({
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as ReviewStatus | '')}
             className="px-2.5 py-1.5 border rounded-md text-xs"
-            style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 36 }}
+            style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 44 }}
           >
             <option value="pending_review">Pending Review</option>
             <option value="approved">Approved</option>
@@ -299,7 +318,7 @@ function CreativeReviewTab({
             value={placementFilter}
             onChange={(e) => setPlacementFilter(e.target.value)}
             className="px-2.5 py-1.5 border rounded-md text-xs"
-            style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 36 }}
+            style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 44 }}
           >
             <option value="">All Placements</option>
             <option value="vendor_rail">Vendor Rail</option>
@@ -456,7 +475,7 @@ function CreativeReviewTab({
                           }
                           disabled={isReviewing}
                           className="px-3 py-1.5 rounded-md text-xs font-semibold text-white"
-                          style={{ background: '#dc2626', minHeight: 36 }}
+                          style={{ background: '#dc2626', minHeight: 44 }}
                         >
                           {isReviewing ? 'Submitting...' : 'Confirm'}
                         </button>
@@ -466,7 +485,7 @@ function CreativeReviewTab({
                             setReviewNotes('');
                           }}
                           className="px-3 py-1.5 rounded-md text-xs font-semibold border"
-                          style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 36 }}
+                          style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 44 }}
                         >
                           Cancel
                         </button>
@@ -481,7 +500,7 @@ function CreativeReviewTab({
                         onClick={() => handleReview(id, 'approved')}
                         disabled={isReviewing}
                         className="px-4 py-1.5 rounded-md text-[11px] font-semibold text-white"
-                        style={{ background: '#16a34a', minHeight: 36 }}
+                        style={{ background: '#16a34a', minHeight: 44 }}
                       >
                         {isReviewing ? (
                           <Loader2 size={14} className="animate-spin" />
@@ -493,7 +512,7 @@ function CreativeReviewTab({
                         onClick={() => setNotesModalId(id)}
                         disabled={isReviewing}
                         className="px-4 py-1.5 rounded-md text-[11px] font-semibold text-white"
-                        style={{ background: '#dc2626', minHeight: 36 }}
+                        style={{ background: '#dc2626', minHeight: 44 }}
                       >
                         Reject
                       </button>
@@ -505,7 +524,7 @@ function CreativeReviewTab({
                           background: '#f1f5f9',
                           color: '#64748b',
                           borderColor: '#e2e8f0',
-                          minHeight: 36,
+                          minHeight: 44,
                         }}
                       >
                         Request Changes
@@ -594,7 +613,7 @@ function PerformanceDashboardTab({ token }: { token: string | null }) {
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
           className="px-2.5 py-1.5 border rounded-md text-xs"
-          style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 36 }}
+          style={{ borderColor: '#e2e8f0', color: '#64748b', minHeight: 44 }}
         >
           <option value={7}>Last 7 Days</option>
           <option value={14}>Last 14 Days</option>
@@ -990,7 +1009,7 @@ function SystemConfigTab({ token }: { token: string | null }) {
             onClick={handleTriggerRollup}
             disabled={saving}
             className="px-3.5 py-1.5 rounded-md text-[11px] font-semibold text-white"
-            style={{ background: SAGE, minHeight: 36 }}
+            style={{ background: SAGE, minHeight: 44 }}
           >
             {saving ? (
               <Loader2 size={14} className="animate-spin" />
@@ -1021,7 +1040,7 @@ function SystemConfigTab({ token }: { token: string | null }) {
               background: '#f1f5f9',
               color: '#64748b',
               borderColor: '#e2e8f0',
-              minHeight: 36,
+              minHeight: 44,
             }}
           >
             {saving ? (

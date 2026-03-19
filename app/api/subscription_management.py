@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
-from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, require_auth_no_sub_check, ExtendedAuthUser
+from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.subscription_service import SubscriptionService
 from app.models.subscription import (
     CreateSubscriptionPlanRequest,
@@ -76,7 +76,7 @@ async def assign_subscription_to_user(
 @router.get("/users/{user_id}/subscription", tags=["ROOT_ADMIN", "User"])
 async def get_user_subscription(
     user_id: str,
-    current_user: ExtendedAuthUser = Depends(require_auth_no_sub_check)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get user's current subscription"""
     # Users can only see their own subscription unless they're ROOT_ADMIN

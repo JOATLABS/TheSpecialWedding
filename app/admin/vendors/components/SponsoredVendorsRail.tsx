@@ -494,6 +494,7 @@ export function SponsoredVendorsRail({
           handleRecordEvent(eventType as AdEventType, sponsoredVendorId, vendorProfileId);
         }}
         vendorProfile={drawerVendor ? vendorProfiles[drawerVendor.vendor_profile_id] : undefined}
+        weddingId={selectedWeddingId || weddings?.[0]?.id}
         onAddToWedding={(vpId) => {
           handleRecordEvent('vendor_added_to_wedding', drawerVendor?._id || '', vpId);
         }}

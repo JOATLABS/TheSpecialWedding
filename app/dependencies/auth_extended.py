@@ -90,7 +90,10 @@ class ExtendedAuthUser:
         self.team_owner_email: Optional[str] = None
 
 
-async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = Depends(security)) -> ExtendedAuthUser:
+async def get_current_user_extended(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request = None,
+) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
     token = credentials.credentials
     try:
@@ -262,6 +265,32 @@ async def get_current_user_extended(credentials: HTTPAuthorizationCredentials = 
                 # Non-fatal: allow login but without team permissions
                 pass
 
+        # ── Subscription gate ─────────────────────────────────────
+        # Block expired/cancelled/suspended planners on feature endpoints.
+        # Root admins are never tagged so they always pass through.
+        # Whitelisted paths (profile, billing, stripe, public) are allowed
+        # so expired planners can still log in and upgrade.
+        if auth_user.user_data.get("_subscription_blocked") and request:
+            path = request.url.path
+            _SUB_WHITELIST = (
+                "/admin/profile",
+                "/admin/token",
+                "/stripe/",
+                "/api/stripe/",
+                "/public/",
+                "/users/",           # subscription management self-view
+                "/subscription-plans",  # view available plans
+            )
+            if not any(path.startswith(p) or f"/{p.lstrip('/')}" in path for p in _SUB_WHITELIST):
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=auth_user.user_data.get(
+                        "_subscription_block_reason",
+                        "Subscription issue. Please upgrade your plan."
+                    ),
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
         return auth_user
 
     except HTTPException:
@@ -307,18 +336,8 @@ async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_us
     return current_user
 
 
-async def require_auth_no_sub_check(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require root admin, wedding planner, or team member access — NO subscription check.
-
-    Use ONLY on endpoints that expired/blocked planners must still reach:
-      - GET  /admin/profile
-      - GET  /stripe/subscription, /stripe/config
-      - POST /stripe/create-checkout-session, /stripe/create-portal-session
-      - Billing page data endpoints
-
-    All other endpoints should use require_admin_or_planner (default, includes
-    subscription gate).
-    """
+async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+    """Require root admin, wedding planner, or team member access"""
     if current_user.is_root_admin or current_user.is_wedding_planner:
         return current_user
     if current_user.is_team_member and current_user.team_permissions is not None:
@@ -327,60 +346,6 @@ async def require_auth_no_sub_check(current_user: ExtendedAuthUser = Depends(get
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Admin or wedding planner access required"
     )
-
-
-async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require root admin, wedding planner, or team member access WITH active subscription.
-
-    This is the default dependency for all feature endpoints. It checks role
-    first, then verifies the planner has an active/trial subscription.
-
-    Root admins: always pass — never need a subscription.
-    Team members: checked against parent planner's subscription.
-    Wedding planners: checked against their own subscription status.
-
-    For the ~3-5 endpoints that expired planners must reach (profile, billing),
-    use require_auth_no_sub_check instead.
-    """
-    # Role check first
-    if not (current_user.is_root_admin or current_user.is_wedding_planner
-            or (current_user.is_team_member and current_user.team_permissions is not None)):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin or wedding planner access required"
-        )
-
-    # Root admins skip subscription checks entirely
-    if current_user.is_root_admin:
-        return current_user
-
-    # Wedding planners: check their own subscription
-    if current_user.user_data.get("_subscription_blocked"):
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=current_user.user_data.get("_subscription_block_reason", "Subscription issue."),
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Team members: check the parent planner's subscription
-    if current_user.is_team_member and current_user.parent_planner_id:
-        try:
-            parent = await mongo.get_users_collection().find_one(
-                {"_id": ObjectId(current_user.parent_planner_id)},
-                {"subscription_status": 1}
-            )
-            if parent and parent.get("subscription_status") in ("expired", "cancelled", "suspended", "pending_payment"):
-                raise HTTPException(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail="Your team's subscription is inactive. Please contact your account owner.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.warning(f"Could not verify parent planner subscription: {e}")
-
-    return current_user
 
 
 async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:

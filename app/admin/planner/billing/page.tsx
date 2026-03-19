@@ -385,7 +385,7 @@ export default function PlannerBillingPage() {
     }
   }, [userProfile, loadData]);
 
-  const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update', loadingMessage?: string) => {
+  const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update' | 'subscription_cancel', loadingMessage?: string) => {
     try {
       const baseUrl = getApiBaseUrl();
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
@@ -445,7 +445,8 @@ export default function PlannerBillingPage() {
 
   const handleChangePlan = () => openBillingPortal('subscription_update', 'Opening plan options...');
   const handleUpdatePayment = () => openBillingPortal('payment_method_update', 'Opening payment settings...');
-  const handleManageBilling = () => openBillingPortal();
+  const handleCancelSubscription = () => openBillingPortal('subscription_cancel', 'Opening cancellation page...');
+  const handleManageBilling = () => openBillingPortal(undefined, 'Opening billing portal...');
 
   const handlePaymentCreated = (newPayment: any) => {
     // Refresh list
@@ -572,8 +573,11 @@ export default function PlannerBillingPage() {
     );
   }
 
-  // No subscription - show simple onboarding
-  if (!currentSubscription || !currentPlan) {
+  // No subscription OR expired/cancelled — show plan selection with fresh checkout
+  const subStatus = currentSubscription?.status;
+  const needsNewSubscription = !currentSubscription || !currentPlan
+    || subStatus === 'expired' || subStatus === 'cancelled' || subStatus === 'suspended';
+  if (needsNewSubscription) {
     return (
       <div className="space-y-6">
         <div className="text-center py-12">
@@ -581,10 +585,14 @@ export default function PlannerBillingPage() {
             <CreditCard className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Choose Your Plan
+            {subStatus === 'expired' ? 'Reactivate Your Account' : subStatus === 'cancelled' ? 'Resubscribe' : 'Choose Your Plan'}
           </h1>
           <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-            Select a subscription plan to unlock all features and start managing your weddings.
+            {subStatus === 'expired'
+              ? 'Your trial has ended. Choose a plan to continue — all your data is safe and will be restored instantly.'
+              : subStatus === 'cancelled'
+              ? 'Welcome back! Pick a plan to reactivate your account.'
+              : 'Select a subscription plan to unlock all features and start managing your weddings.'}
           </p>
         </div>
 
@@ -743,14 +751,14 @@ export default function PlannerBillingPage() {
       )}
 
       {/* Main Grid */}
-      <div className="grid lg:grid-cols-3 gap-6 max-w-5xl">
+      <div className="grid lg:grid-cols-3 gap-6 overflow-hidden">
         {/* Left Column - Subscription & Payment */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6 min-w-0">
 
           {activeTab === 'subscription' ? (
             <>
           {/* Current Subscription */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-gray-900 dark:text-gray-100">Your Subscription</CardTitle>
@@ -816,9 +824,9 @@ export default function PlannerBillingPage() {
                   Change Plan
                 </Button>
                 <Button
-                  onClick={handleManageBilling}
+                  onClick={handleCancelSubscription}
                   variant="outline"
-                  className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                  className="border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                 >
                   <XCircle className="w-4 h-4 mr-2" />
                   Cancel Subscription
@@ -828,7 +836,7 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Payment Method */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <CardTitle className="text-gray-900 dark:text-gray-100">Payment Method</CardTitle>
             </CardHeader>
@@ -870,7 +878,7 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Billing History */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-gray-900 dark:text-gray-100">Billing History</CardTitle>
@@ -943,7 +951,7 @@ export default function PlannerBillingPage() {
               {/* Hide Connect card for root admin - they don't collect client payments */}
               {!userProfile?.is_root_admin && <StripeConnectCard />}
 
-              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
                 <CardHeader className="pb-4 flex flex-row items-center justify-between">
                   <CardTitle className="text-gray-900 dark:text-gray-100">Payment Requests</CardTitle>
                   <Button onClick={() => setShowCreatePaymentModal(true)}>
@@ -992,11 +1000,11 @@ export default function PlannerBillingPage() {
         </div>
 
         {/* Right Column - Usage & Quick Actions */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0 overflow-hidden">
           {activeTab === 'subscription' && (
             <>
           {/* Usage This Period */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <CardTitle className="text-gray-900 dark:text-gray-100 text-base">Usage This Period</CardTitle>
             </CardHeader>
@@ -1080,7 +1088,7 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Plan Features */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <CardTitle className="text-gray-900 dark:text-gray-100 text-base">Plan Features</CardTitle>
             </CardHeader>
@@ -1102,8 +1110,8 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Need Help */}
-          <Card className="bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700">
-            <CardContent className="pt-6">
+          <Card className="bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 p-6">
+            <CardContent>
               <div className="flex items-start gap-3">
                 <Shield className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
                 <div>
