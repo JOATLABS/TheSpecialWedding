@@ -1,9 +1,60 @@
 import type { Metadata } from 'next';
+import { getApiBaseUrl } from '@/utils/env';
 
-export const metadata: Metadata = {
-  title: 'Vendor Profile',
-  description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
-};
+interface VendorMeta {
+  business_name: string;
+  service_category: string;
+  city?: string;
+  state?: string;
+  service_description?: string;
+}
+
+async function fetchVendorMeta(id: string): Promise<VendorMeta | null> {
+  try {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/v1/vendors/${id}/public`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const vendor = await fetchVendorMeta(id);
+
+  if (!vendor) {
+    return {
+      title: 'Vendor Profile',
+      description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
+    };
+  }
+
+  const location = [vendor.city, vendor.state].filter(Boolean).join(', ');
+  const title = location
+    ? `${vendor.business_name} — ${vendor.service_category} in ${location}`
+    : `${vendor.business_name} — ${vendor.service_category}`;
+
+  const description = vendor.service_description
+    ? vendor.service_description.slice(0, 155)
+    : `${vendor.business_name} is a ${vendor.service_category.toLowerCase()}${location ? ` based in ${location}` : ''}. View services, pricing, and portfolio.`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title: `${title} | The Special Wedding`,
+      description,
+    },
+  };
+}
 
 export default function VendorProfileLayout({
   children,

@@ -1,6 +1,7 @@
 // app/[slug]/layout.tsx
 
 import React from "react";
+import type { Metadata } from "next";
 import { getApiBaseUrl } from '@/utils/env';
 import { notFound } from "next/navigation";
 import { WeddingProvider } from '@/components/WeddingProvider';
@@ -24,6 +25,47 @@ async function fetchWeddingPrivacyInfo(slug: string) {
   } catch (error) {
     return null;
   }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const privacyInfo = await fetchWeddingPrivacyInfo(slug);
+
+  if (!privacyInfo) {
+    return { title: 'Wedding' };
+  }
+
+  const coupleNames = privacyInfo.couple_names || 'Wedding';
+  const weddingDate = privacyInfo.date
+    ? new Date(privacyInfo.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
+  const venue = privacyInfo.venue?.name || '';
+
+  const titleParts = [coupleNames];
+  if (weddingDate) titleParts.push(weddingDate);
+  const title = titleParts.join(' — ');
+
+  const descParts = [`Celebrate with ${coupleNames}`];
+  if (weddingDate) descParts.push(`on ${weddingDate}`);
+  if (venue) descParts.push(`at ${venue}`);
+  const description = descParts.join(' ') + '. View event details, RSVP, and more.';
+
+  // Private weddings should not be indexed by search engines
+  const isPrivate = privacyInfo.privacy_mode !== 'public';
+
+  return {
+    title,
+    description,
+    robots: isPrivate ? { index: false, follow: false } : undefined,
+    openGraph: isPrivate ? undefined : {
+      title: `${coupleNames} | The Special Wedding`,
+      description,
+    },
+  };
 }
 
 export default async function WeddingLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
