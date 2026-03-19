@@ -13,9 +13,17 @@ The rollup pipeline:
 
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 
+from bson import ObjectId
 from app.core.database import mongo
+
+
+def _serialize_rollup_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert ObjectId _id to string for JSON serialization."""
+    if "_id" in doc and isinstance(doc["_id"], ObjectId):
+        doc["_id"] = str(doc["_id"])
+    return doc
 
 logger = logging.getLogger(__name__)
 
@@ -483,7 +491,7 @@ class AdRollupService:
             .sort("date", -1)
             .limit(5000)
         ):
-            results.append(doc)
+            results.append(_serialize_rollup_doc(doc))
 
         return results
 
@@ -560,6 +568,6 @@ class AdRollupService:
 
         results = []
         async for doc in self.ad_stats_daily.aggregate(pipeline):
-            results.append(doc)
+            results.append(_serialize_rollup_doc(doc))
 
         return results

@@ -13,6 +13,7 @@ interface SponsoredVendorDetailsDrawerProps {
   onClose: () => void;
   onRecordEvent: (eventType: string, sponsoredVendorId: string, vendorProfileId: string) => void;
   vendorProfile?: VendorProfile;
+  weddingId?: string;
   onAddToWedding?: (vendorProfileId: string) => void;
   onRequestQuote?: (vendorProfileId: string) => void;
   onMessage?: (vendorProfileId: string) => void;
@@ -26,6 +27,7 @@ export function SponsoredVendorDetailsDrawer({
   onClose,
   onRecordEvent,
   vendorProfile,
+  weddingId,
   onAddToWedding,
   onRequestQuote,
   onMessage,
@@ -44,6 +46,7 @@ export function SponsoredVendorDetailsDrawer({
         vendor_profile_id: vendor.vendor_profile_id,
         event_type: 'vendor_profile_view',
         placement: vendor.placement,
+        wedding_id: weddingId,
       }).catch((err) => console.error('Failed to record detail_view event:', err));
     }
   }, [isOpen, vendor, token]);
@@ -57,6 +60,7 @@ export function SponsoredVendorDetailsDrawer({
       vendor_profile_id: vendor.vendor_profile_id,
       event_type: 'vendor_added_to_wedding',
       placement: vendor.placement,
+      wedding_id: weddingId,
     }).catch((err) => console.error('Failed to record assignment event:', err));
 
     if (onAddToWedding) {
@@ -75,6 +79,7 @@ export function SponsoredVendorDetailsDrawer({
       vendor_profile_id: vendor.vendor_profile_id,
       event_type: 'contact_click',
       placement: vendor.placement,
+      wedding_id: weddingId,
     }).catch((err) => console.error('Failed to record contact_click event:', err));
 
     if (onRequestQuote) {
@@ -91,6 +96,7 @@ export function SponsoredVendorDetailsDrawer({
       vendor_profile_id: vendor.vendor_profile_id,
       event_type: 'contact_click',
       placement: vendor.placement,
+      wedding_id: weddingId,
     }).catch((err) => console.error('Failed to record contact_click event:', err));
 
     if (onMessage) {
@@ -107,6 +113,7 @@ export function SponsoredVendorDetailsDrawer({
       vendor_profile_id: vendor.vendor_profile_id,
       event_type: 'dismiss',
       placement: vendor.placement,
+      wedding_id: weddingId,
     }).catch((err) => console.error('Failed to record dismiss event:', err));
 
     if (onHideVendor) {
@@ -385,8 +392,8 @@ export function SponsoredVendorDetailsDrawer({
           )}
 
           {/* Stats */}
-          {(vendorProfile.weddings_count > 0 || vendorProfile.total_revenue > 0) && (
-            <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg">
+          {(vendorProfile.weddings_count > 0 || vendorProfile.internal_rating || vendorProfile.typical_price_min) && (
+            <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
               {vendorProfile.weddings_count > 0 && (
                 <div>
                   <p className="text-xs text-gray-500">Weddings</p>
@@ -395,11 +402,19 @@ export function SponsoredVendorDetailsDrawer({
                   </p>
                 </div>
               )}
-              {vendorProfile.total_revenue > 0 && (
+              {vendorProfile.internal_rating && (
                 <div>
-                  <p className="text-xs text-gray-500">Total Revenue</p>
+                  <p className="text-xs text-gray-500">Rating</p>
                   <p className="text-lg font-semibold text-wedding-navy">
-                    ${Math.round(vendorProfile.total_revenue).toLocaleString()}
+                    {vendorProfile.internal_rating.toFixed(1)}
+                  </p>
+                </div>
+              )}
+              {vendorProfile.typical_price_min && (
+                <div>
+                  <p className="text-xs text-gray-500">Starting at</p>
+                  <p className="text-lg font-semibold text-wedding-navy">
+                    {vendorProfile.currency || '$'}{Math.round(vendorProfile.typical_price_min).toLocaleString()}
                   </p>
                 </div>
               )}

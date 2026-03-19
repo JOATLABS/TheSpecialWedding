@@ -617,8 +617,51 @@ class StripeService:
         if not plan_id:
             plan_id = subscription.get("metadata", {}).get("plan_id")
 
+        # When a plan is changed via Stripe Customer Portal, the metadata
+        # still holds the original plan_id. Resolve the ACTUAL plan from
+        # the current Stripe price on the subscription items.
+        try:
+            items_data = subscription.get("items", {})
+            items_list = items_data.get("data", []) if isinstance(items_data, dict) else (items_data.data if hasattr(items_data, "data") else [])
+            if items_list:
+                first_item = items_list[0] if isinstance(items_list[0], dict) else (items_list[0].to_dict() if hasattr(items_list[0], "to_dict") else {})
+                current_price_id = first_item.get("price", {}).get("id") if isinstance(first_item.get("price"), dict) else first_item.get("price")
+                if current_price_id:
+                    # Look up which platform plan owns this Stripe price
+                    matched_plan = await self.plans_collection.find_one({
+                        "$or": [
+                            {"stripe_price_id_monthly": current_price_id},
+                            {"stripe_price_id_yearly": current_price_id},
+                        ]
+                    })
+                    if matched_plan:
+                        resolved_plan_id = matched_plan["_id"]
+                        if resolved_plan_id != plan_id:
+                            logger.info(f"Plan change detected via Stripe price: {plan_id} → {resolved_plan_id} (price: {current_price_id})")
+                            plan_id = resolved_plan_id
+        except Exception as e:
+            logger.warning(f"Could not resolve plan from Stripe price: {e}")
+
         if not user_id:
             user_id = subscription.get("metadata", {}).get("user_id")
+
+        # Fallback: if user_id still missing (e.g. Portal-initiated changes
+        # where metadata may be empty), look it up from existing subscription
+        # or stripe_customers collection so the users collection stays in sync.
+        if not user_id and stripe_subscription_id:
+            existing_sub = await self.subscriptions_collection.find_one(
+                {"stripe_subscription_id": stripe_subscription_id}, {"user_id": 1}
+            )
+            if existing_sub and existing_sub.get("user_id"):
+                user_id = existing_sub["user_id"]
+                logger.info(f"Resolved user_id from existing subscription: {user_id}")
+        if not user_id and customer_id:
+            cust_record = await mongo.db["stripe_customers"].find_one(
+                {"stripe_customer_id": customer_id}, {"user_id": 1}
+            )
+            if cust_record and cust_record.get("user_id"):
+                user_id = cust_record["user_id"]
+                logger.info(f"Resolved user_id from stripe_customers: {user_id}")
 
         stripe_subscription_id = subscription.get("id")
         stripe_status = subscription.get("status")
@@ -980,6 +1023,16 @@ class StripeService:
                     portal_params["flow_data"] = {
                         "type": "subscription_update",
                         "subscription_update": {
+                            "subscription": subscription["stripe_subscription_id"]
+                        }
+                    }
+            elif flow_type == "subscription_cancel":
+                # Direct to subscription cancellation flow
+                subscription = await self.subscriptions_collection.find_one({"user_id": user_id})
+                if subscription and subscription.get("stripe_subscription_id"):
+                    portal_params["flow_data"] = {
+                        "type": "subscription_cancel",
+                        "subscription_cancel": {
                             "subscription": subscription["stripe_subscription_id"]
                         }
                     }

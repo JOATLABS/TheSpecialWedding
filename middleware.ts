@@ -6,7 +6,11 @@ export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   // ---------- Admin auth guard ----------
-  if (pathname.startsWith('/admin') && !pathname.startsWith('/admin/login')) {
+  if (
+    pathname.startsWith('/admin') &&
+    !pathname.startsWith('/admin/login') &&
+    !pathname.startsWith('/admin/team/accept')
+  ) {
     const token = request.cookies.get('admin_token')?.value;
     if (!token) {
       return NextResponse.redirect(new URL('/admin/login', request.url));
@@ -20,11 +24,14 @@ export function middleware(request: NextRequest) {
   //
   // Uses the shared isNonWeddingSlug() helper (slug-constants.ts) so the
   // validation logic stays in one place between middleware and layout.tsx.
-  const segments = pathname.split('/').filter(Boolean);
-  if (segments.length === 1) {
-    const segment = segments[0];
-    if (isNonWeddingSlug(segment)) {
-      return new NextResponse('Not Found', { status: 404 });
+  // Skip slug guard for admin routes (already handled above)
+  if (!pathname.startsWith('/admin')) {
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments.length === 1) {
+      const segment = segments[0];
+      if (isNonWeddingSlug(segment)) {
+        return new NextResponse('Not Found', { status: 404 });
+      }
     }
   }
 

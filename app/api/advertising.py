@@ -11,7 +11,7 @@ Read endpoints (GET) are available to all authenticated users.
 import logging
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime, timezone
 
 from app.dependencies.auth_extended import (
@@ -79,7 +79,7 @@ async def get_rollup_service() -> AdRollupService:
 
 @router.get(
     "/feature-flag",
-    response_model=dict,
+
     summary="Get Advertising Feature Flag Status"
 )
 async def get_feature_flag(
@@ -100,7 +100,7 @@ async def get_feature_flag(
 
 @router.put(
     "/feature-flag",
-    response_model=dict,
+
     summary="Toggle Advertising Feature Flag"
 )
 async def toggle_feature_flag(
@@ -143,7 +143,7 @@ async def toggle_feature_flag(
 
 @router.get(
     "/sponsored-vendors",
-    response_model=List[dict],
+
     summary="List Sponsored Vendors"
 )
 async def list_sponsored_vendors(
@@ -201,7 +201,7 @@ async def list_sponsored_vendors(
 
 @router.post(
     "/sponsored-vendors",
-    response_model=dict,
+
     summary="Create Sponsored Vendor",
     status_code=201
 )
@@ -252,7 +252,7 @@ async def create_sponsored_vendor(
 
 @router.put(
     "/sponsored-vendors/{sponsored_id}",
-    response_model=dict,
+
     summary="Update Sponsored Vendor"
 )
 async def update_sponsored_vendor(
@@ -305,7 +305,7 @@ async def update_sponsored_vendor(
 
 @router.delete(
     "/sponsored-vendors/{sponsored_id}",
-    response_model=dict,
+
     summary="Delete Sponsored Vendor"
 )
 async def delete_sponsored_vendor(
@@ -345,7 +345,7 @@ async def delete_sponsored_vendor(
 
 @router.get(
     "/review-queue",
-    response_model=List[dict],
+
     summary="Get Campaign Review Queue"
 )
 async def get_review_queue(
@@ -382,7 +382,7 @@ async def get_review_queue(
 
 @router.get(
     "/review-queue/counts",
-    response_model=dict,
+
     summary="Get Review Queue Status Counts"
 )
 async def get_review_queue_counts(
@@ -409,7 +409,7 @@ async def get_review_queue_counts(
 
 @router.put(
     "/sponsored-vendors/{sponsored_id}/review",
-    response_model=dict,
+
     summary="Review Campaign Creative"
 )
 async def review_sponsored_vendor(
@@ -460,7 +460,7 @@ async def review_sponsored_vendor(
 
 @router.put(
     "/feature-flag/config",
-    response_model=dict,
+
     summary="Update Feature Flag Configuration"
 )
 async def update_feature_flag_config(
@@ -538,7 +538,7 @@ async def update_feature_flag_config(
 
 @router.post(
     "/events",
-    response_model=dict,
+
     summary="Record Ad Event",
     status_code=201
 )
@@ -573,9 +573,8 @@ async def record_ad_event(
 
     event_data = request.model_dump(exclude_unset=True)
 
-    # Add planner info if not provided
-    if not event_data.get("planner_id"):
-        event_data["planner_id"] = current_user.email
+    # Always set planner_id from authenticated user — never trust frontend value
+    event_data["planner_id"] = current_user.email
 
     ad_event = await service.record_ad_event(event_data=event_data)
 
@@ -593,7 +592,7 @@ async def record_ad_event(
 
 @router.get(
     "/sponsored-vendors/{sponsored_id}/stats",
-    response_model=dict,
+
     summary="Get Sponsored Vendor Stats"
 )
 async def get_sponsored_vendor_stats(
@@ -634,7 +633,7 @@ async def get_sponsored_vendor_stats(
 
 @router.post(
     "/leads",
-    response_model=dict,
+
     summary="Create Ad Lead",
     status_code=201
 )
@@ -677,7 +676,7 @@ async def create_ad_lead(
 
 @router.get(
     "/leads",
-    response_model=List[dict],
+
     summary="List Ad Leads"
 )
 async def list_ad_leads(
@@ -756,7 +755,7 @@ async def list_ad_leads(
 
 @router.get(
     "/leads/{lead_id}",
-    response_model=dict,
+
     summary="Get Ad Lead Details"
 )
 async def get_ad_lead(
@@ -801,7 +800,7 @@ async def get_ad_lead(
 
 @router.put(
     "/leads/{lead_id}/status",
-    response_model=dict,
+
     summary="Update Ad Lead Status"
 )
 async def update_ad_lead_status(
@@ -866,7 +865,7 @@ async def update_ad_lead_status(
 
 @router.get(
     "/preferences",
-    response_model=dict,
+
     summary="Get Planner Ad Preferences"
 )
 async def get_ad_preferences(
@@ -887,7 +886,7 @@ async def get_ad_preferences(
 
 @router.put(
     "/preferences/hide-vendor",
-    response_model=dict,
+
     summary="Hide Vendor from Planner"
 )
 async def hide_vendor_for_planner(
@@ -917,7 +916,7 @@ async def hide_vendor_for_planner(
 
 @router.put(
     "/preferences/hide-category",
-    response_model=dict,
+
     summary="Hide Category from Planner"
 )
 async def hide_category_for_planner(
@@ -947,7 +946,7 @@ async def hide_category_for_planner(
 
 @router.put(
     "/preferences/reduce-frequency",
-    response_model=dict,
+
     summary="Toggle Reduced Ad Frequency"
 )
 async def toggle_reduced_frequency(
@@ -980,7 +979,7 @@ async def toggle_reduced_frequency(
 
 @router.delete(
     "/preferences/unhide-vendor/{vendor_id}",
-    response_model=dict,
+
     summary="Unhide Vendor for Planner"
 )
 async def unhide_vendor_for_planner(
@@ -1014,7 +1013,7 @@ async def unhide_vendor_for_planner(
 
 @router.get(
     "/dashboard/stats",
-    response_model=dict,
+
     summary="Get Dashboard Stats from Rollups"
 )
 async def get_dashboard_stats(
@@ -1125,7 +1124,7 @@ async def get_dashboard_stats(
 
 @router.get(
     "/dashboard/leaderboard",
-    response_model=list,
+
     summary="Get Vendor Performance Leaderboard"
 )
 async def get_vendor_leaderboard(
@@ -1168,7 +1167,7 @@ async def get_vendor_leaderboard(
 
 @router.post(
     "/dashboard/rollup",
-    response_model=dict,
+
     summary="Trigger Daily Rollup Computation"
 )
 async def trigger_rollup(
@@ -1222,7 +1221,7 @@ async def trigger_rollup(
 
 @router.post(
     "/dashboard/backfill",
-    response_model=dict,
+
     summary="Backfill Rollup Data"
 )
 async def backfill_rollups(

@@ -8,6 +8,24 @@ import { getApiBaseUrl } from '@/utils/env';
 
 const API_BASE = getApiBaseUrl();
 
+/**
+ * Extract a human-readable error message from FastAPI error responses.
+ * Handles three response shapes:
+ * - string detail: "Some error"
+ * - structured dict: {error, message, feature}  (feature gates)
+ * - Pydantic validation array: [{type, msg, loc}] (422 errors)
+ */
+function extractErrorMessage(errBody: any, fallback: string): string {
+  const detail = errBody?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (typeof detail === 'object' && !Array.isArray(detail) && detail.message) return detail.message;
+  if (Array.isArray(detail) && detail.length > 0 && detail[0].msg) {
+    return detail.map((d: any) => d.msg).join('; ');
+  }
+  return fallback;
+}
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -222,7 +240,7 @@ export async function getVendorDirectory(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to fetch vendors');
+    throw new Error(extractErrorMessage(error, 'Failed to fetch vendors'));
   }
 
   return response.json();
@@ -243,7 +261,7 @@ export async function createVendorProfile(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to create vendor'));
   }
 
   return response.json();
@@ -265,7 +283,7 @@ export async function updateVendorProfile(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to update vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to update vendor'));
   }
 
   return response.json();
@@ -279,7 +297,7 @@ export async function deleteVendorProfile(token: string, vendorId: string): Prom
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to delete vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to delete vendor'));
   }
 }
 
@@ -291,7 +309,7 @@ export async function getVendorCategories(token: string): Promise<string[]> {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     console.error('Failed to fetch vendor categories:', err);
-    throw new Error(err.detail || 'Failed to fetch vendor categories');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch vendor categories'));
   }
   const data = await response.json();
   return data.categories || [];
@@ -321,7 +339,7 @@ export async function assignVendorToWedding(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to assign vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to assign vendor'));
   }
 
   return response.json();
@@ -335,7 +353,7 @@ export async function getWeddingVendors(token: string, weddingId: string): Promi
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     console.error('Failed to fetch wedding vendors:', err);
-    throw new Error(err.detail || 'Failed to fetch wedding vendors');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch wedding vendors'));
   }
   return response.json();
 }
@@ -359,7 +377,7 @@ export async function getContractTemplates(
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     console.error('Failed to fetch contract templates:', err);
-    throw new Error(err.detail || 'Failed to fetch contract templates');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch contract templates'));
   }
   return response.json();
 }
@@ -415,7 +433,7 @@ export async function createContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create contract');
+    throw new Error(extractErrorMessage(error, 'Failed to create contract'));
   }
 
   return response.json();
@@ -440,7 +458,7 @@ export async function getContracts(
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to fetch contracts');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch contracts'));
   }
   return response.json();
 }
@@ -473,7 +491,7 @@ export async function updateContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to update contract');
+    throw new Error(extractErrorMessage(error, 'Failed to update contract'));
   }
 
   return response.json();
@@ -494,7 +512,7 @@ export async function sendContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to send contract');
+    throw new Error(extractErrorMessage(error, 'Failed to send contract'));
   }
 
   return response.json();
@@ -544,7 +562,7 @@ export async function createPaymentMilestones(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create milestones');
+    throw new Error(extractErrorMessage(error, 'Failed to create milestones'));
   }
 
   return response.json();
@@ -569,7 +587,7 @@ export async function getPaymentMilestones(
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to fetch payment milestones');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch payment milestones'));
   }
   return response.json();
 }
@@ -597,7 +615,7 @@ export async function recordPayment(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to record payment');
+    throw new Error(extractErrorMessage(error, 'Failed to record payment'));
   }
 
   return response.json();
@@ -621,8 +639,11 @@ export async function getVendorDashboard(
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    console.error('Failed to fetch vendor dashboard:', err);
-    throw new Error(err.detail || 'Failed to fetch vendor dashboard');
+    const detail = err.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : detail?.message || 'Failed to fetch vendor dashboard';
+    throw new Error(message);
   }
 
   return response.json();
@@ -752,7 +773,7 @@ export async function createPaymentLink(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create payment link');
+    throw new Error(extractErrorMessage(error, 'Failed to create payment link'));
   }
 
   return response.json();
@@ -776,7 +797,7 @@ export async function sendPaymentLink(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to send payment link');
+    throw new Error(extractErrorMessage(error, 'Failed to send payment link'));
   }
 
   return response.json();
@@ -803,7 +824,7 @@ export async function getPaymentLinks(
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to fetch payment links');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch payment links'));
   }
   return response.json();
 }
@@ -847,7 +868,7 @@ export async function uploadContractPdf(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to upload contract PDF');
+    throw new Error(extractErrorMessage(error, 'Failed to upload contract PDF'));
   }
 
   return response.json();
@@ -907,7 +928,7 @@ export async function applyFormDataToContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to apply form data');
+    throw new Error(extractErrorMessage(error, 'Failed to apply form data'));
   }
 
   return response.json();
@@ -938,7 +959,7 @@ export async function updateContractSections(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to update contract sections');
+    throw new Error(extractErrorMessage(error, 'Failed to update contract sections'));
   }
 
   return response.json();
@@ -1024,7 +1045,7 @@ export async function signPublicContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to sign contract');
+    throw new Error(extractErrorMessage(error, 'Failed to sign contract'));
   }
 
   return response.json();
@@ -1061,7 +1082,7 @@ export async function createContractTemplate(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create template');
+    throw new Error(extractErrorMessage(error, 'Failed to create template'));
   }
 
   return response.json();

@@ -303,17 +303,12 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 toast.success('Login successful');
 
                 // Use window.location.href for immediate navigation to avoid race condition with AdminRouteGuard
-                // Redirect based on user role
-                if (profile.is_root_admin) {
-                    window.location.href = '/admin';
-                } else if (profile.is_wedding_planner) {
-                    window.location.href = '/admin/planner';
-                } else if (profile.role === 'team_member' || profile.is_team_member === true) {
-                    // Team members redirect to planner view
+                // All authenticated users go to /admin/planner (the main dashboard)
+                if (profile.is_root_admin || profile.is_wedding_planner || profile.role === 'team_member' || profile.is_team_member === true) {
                     window.location.href = '/admin/planner';
                 } else {
                     // Unknown/undefined role — do not grant access
-                    console.error('Login rejected: unrecognized user role', profile.role);
+                    console.error('Login rejected: unrecognized user role', profile.role, profile);
                     clearAdminAuthStorage();
                     setToken(null);
                     setUserProfile(null);

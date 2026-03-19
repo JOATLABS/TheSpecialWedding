@@ -87,6 +87,8 @@ class ActivityLogService:
         wedding_id: Optional[str] = None,
         planner_email: Optional[str] = None,
         actor_email: Optional[str] = None,
+        actor_name: Optional[str] = None,
+        actor_role: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -98,6 +100,8 @@ class ActivityLogService:
             wedding_id: ID of the wedding this activity relates to
             planner_email: Email of the planner who owns the wedding
             actor_email: Email of who performed the action (may be guest, planner, or system)
+            actor_name: Display name of the actor (e.g. "John Smith")
+            actor_role: Role of the actor (e.g. "Editor", "Admin", "Planner")
             metadata: Additional context data
         """
         try:
@@ -110,6 +114,8 @@ class ActivityLogService:
                 "wedding_id": wedding_id,
                 "planner_email": planner_email,
                 "actor_email": actor_email or planner_email,
+                "actor_name": actor_name,
+                "actor_role": actor_role,
                 "metadata": metadata or {}
             }
 
@@ -387,69 +393,91 @@ class ActivityLogService:
     # ── Team management activity helpers ─────────────────────────────────
 
     async def log_team_member_invited(
-        self, planner_email: str, member_email: str, role: str, invited_by: str
+        self, planner_email: str, member_email: str, role: str,
+        invited_by: str, member_name: Optional[str] = None
     ):
+        display = member_name or member_email
         return await self.log_activity(
             activity_type=ActivityTypes.TEAM_MEMBER_INVITED,
-            message=f"Invited {member_email} as {role}",
+            message=f"Invited {display} as {role}",
             planner_email=planner_email,
             actor_email=invited_by,
-            metadata={"member_email": member_email, "role": role}
+            actor_role="Planner",
+            metadata={"member_email": member_email, "member_name": member_name, "role": role}
         )
 
     async def log_team_member_accepted(
-        self, planner_email: str, member_email: str, member_name: str
+        self, planner_email: str, member_email: str, member_name: str,
+        role: Optional[str] = None
     ):
+        role_label = f" ({role})" if role else ""
         return await self.log_activity(
             activity_type=ActivityTypes.TEAM_MEMBER_ACCEPTED,
-            message=f"{member_name} accepted their team invitation",
+            message=f"{member_name}{role_label} accepted their team invitation",
             planner_email=planner_email,
             actor_email=member_email,
-            metadata={"member_email": member_email, "member_name": member_name}
+            actor_name=member_name,
+            actor_role=role,
+            metadata={"member_email": member_email, "member_name": member_name, "role": role}
         )
 
     async def log_team_member_updated(
-        self, planner_email: str, member_email: str, changes: dict, updated_by: str
+        self, planner_email: str, member_email: str, changes: dict,
+        updated_by: str, member_name: Optional[str] = None,
+        member_role: Optional[str] = None
     ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
         return await self.log_activity(
             activity_type=ActivityTypes.TEAM_MEMBER_UPDATED,
-            message=f"Updated team member {member_email}",
+            message=f"Updated team member {display}{role_label}",
             planner_email=planner_email,
             actor_email=updated_by,
-            metadata={"member_email": member_email, "changes": changes}
+            actor_name=member_name,
+            actor_role=member_role,
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role, "changes": changes}
         )
 
     async def log_team_member_deactivated(
-        self, planner_email: str, member_email: str, deactivated_by: str
+        self, planner_email: str, member_email: str, deactivated_by: str,
+        member_name: Optional[str] = None, member_role: Optional[str] = None
     ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
         return await self.log_activity(
             activity_type=ActivityTypes.TEAM_MEMBER_DEACTIVATED,
-            message=f"Deactivated team member {member_email}",
+            message=f"Deactivated {display}{role_label}",
             planner_email=planner_email,
             actor_email=deactivated_by,
-            metadata={"member_email": member_email}
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role}
         )
 
     async def log_team_member_reactivated(
-        self, planner_email: str, member_email: str, reactivated_by: str
+        self, planner_email: str, member_email: str, reactivated_by: str,
+        member_name: Optional[str] = None, member_role: Optional[str] = None
     ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
         return await self.log_activity(
             activity_type=ActivityTypes.TEAM_MEMBER_REACTIVATED,
-            message=f"Reactivated team member {member_email}",
+            message=f"Reactivated {display}{role_label}",
             planner_email=planner_email,
             actor_email=reactivated_by,
-            metadata={"member_email": member_email}
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role}
         )
 
     async def log_team_member_removed(
-        self, planner_email: str, member_email: str, removed_by: str
+        self, planner_email: str, member_email: str, removed_by: str,
+        member_name: Optional[str] = None, member_role: Optional[str] = None
     ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
         return await self.log_activity(
             activity_type=ActivityTypes.TEAM_MEMBER_REMOVED,
-            message=f"Removed team member {member_email}",
+            message=f"Removed {display}{role_label}",
             planner_email=planner_email,
             actor_email=removed_by,
-            metadata={"member_email": member_email}
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role}
         )
 
 

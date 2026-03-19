@@ -857,3 +857,77 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error deleting template: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error deleting template: {str(e)}")
+
+    # =========================================================================
+    # TEAM MANAGEMENT NOTIFICATIONS
+    # =========================================================================
+
+    async def notify_team_member_accepted(
+        self,
+        owner_email: str,
+        member_name: str,
+        member_email: str,
+        member_role: str,
+    ) -> dict:
+        """Notify the planner owner when a team member accepts their invite."""
+        return await self.create_notification(
+            notification_data={
+                "title": "Team Member Joined",
+                "message": f"{member_name} ({member_role}) has accepted your team invitation and can now access the platform.",
+                "type": "team_member_accepted",
+                "target_audience": "planner",
+                "user_id": owner_email,
+                "is_dismissible": True,
+                "priority": "normal",
+            },
+            created_by="system",
+        )
+
+    async def notify_team_member_action(
+        self,
+        owner_email: str,
+        member_name: str,
+        member_role: str,
+        action_description: str,
+        wedding_name: Optional[str] = None,
+    ) -> dict:
+        """
+        Notify the planner owner when a team member performs a significant action.
+
+        Used for destructive or high-impact actions: deleting guests, modifying
+        budgets, sending bulk communications, etc.
+        """
+        wedding_context = f" on {wedding_name}" if wedding_name else ""
+        return await self.create_notification(
+            notification_data={
+                "title": "Team Activity",
+                "message": f"{member_name} ({member_role}) {action_description}{wedding_context}.",
+                "type": "team_member_action",
+                "target_audience": "planner",
+                "user_id": owner_email,
+                "is_dismissible": True,
+                "priority": "normal",
+            },
+            created_by="system",
+        )
+
+    async def notify_team_member_deactivated(
+        self,
+        owner_email: str,
+        member_name: str,
+        member_email: str,
+        deactivated_by: str,
+    ) -> dict:
+        """Notify the planner owner when a team member is deactivated."""
+        return await self.create_notification(
+            notification_data={
+                "title": "Team Member Deactivated",
+                "message": f"{member_name} ({member_email}) has been deactivated by {deactivated_by}.",
+                "type": "team_member_deactivated",
+                "target_audience": "planner",
+                "user_id": owner_email,
+                "is_dismissible": True,
+                "priority": "low",
+            },
+            created_by="system",
+        )
