@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2026-03-18 — Trial & Subscription Lifecycle, Billing Paywall, Stripe Plan Sync
+
+### Added
+
+- **Trial expiration warning system** — 7-day early warning email + 3-day countdown (daily emails on days 3, 2, 1) before trial expires. Tracked via `trial_warning_sent` and `trial_countdown_last_day` fields
+- **In-app trial banner** (`TrialBanner.tsx`) — persistent banner for planners within 3 days of expiration or with expired/cancelled subscriptions. Shows contextual messaging with "Upgrade Now" CTA
+- **Billing paywall for expired planners** — expired/cancelled/suspended planners are redirected to `/admin/planner/billing` via `AdminRouteGuard`. Cannot access any feature pages until they resubscribe
+- **Reactivation flow on billing page** — expired planners see "Reactivate Your Account" with plan cards and fresh Stripe Checkout sessions (not the Portal update flow which doesn't work for expired subs)
+- **Subscription gate in `get_current_user_extended`** — path-based whitelist blocks expired planners on feature endpoints (402) while allowing access to profile, billing, and Stripe endpoints. Root admin always bypasses
+- **Stripe plan change sync** — webhook handler now resolves `plan_id` from the current Stripe price on subscription items instead of relying on stale `metadata.plan_id`. Handles Portal-initiated plan changes correctly
+- **User ID fallback in webhook handler** — when `metadata.user_id` is missing (Portal changes), looks up user from `user_subscriptions` or `stripe_customers` collection so both DB collections stay in sync
+- **Migration script** (`migrate_subscription_fields.py`) — backfills `user_email`, `start_date`, `created_by` on existing `user_subscriptions` records + `trial_warning_sent`, `registration_source` on users. Runs on deploy via Dockerfile
+- **Sync script** (`sync_stripe_subscription.py`) — manually syncs a user's subscription state from Stripe to the platform DB. Handles Stripe API v2023+ where period dates moved to subscription items
+- **Force-expire script** (`force_expire_trial.py`) — test utility to force-expire a planner's trial for development testing
+- **Knowledge base article** — "Understanding Your Trial, Billing & Subscription" added to `seed_knowledge_base.py` (category: billing-subscription)
+- **ROOT_ADMIN email migration** in `setup_admin_user.py` — detects existing ROOT_ADMIN with different email and migrates it to match env var
+
+### Fixed
+
+- **Stripe webhook secret** — `.env` had placeholder `whsec_YOUR_NEW_VALUE`, replaced with actual Stripe CLI signing secret
+- **Trial expiration no longer sets `is_active=False`** — expired planners keep `is_active=True` so they can still log in and reach the billing page. Only admin-deactivated accounts use `is_active=False`
+- **Auth-layer trial expiration syncs both collections** — `get_current_user_extended` now updates `user_subscriptions` alongside `users` when auto-expiring a trial
+- **Email failure no longer breaks expiration batch** — `send_trial_expired_email` wrapped in try/except so one failed email doesn't skip remaining users
+- **SSE notification stream auth** (`notification_stream.py`) — replaced duplicated auth logic with call to `get_current_user_extended`, eliminating 401 polling from stale/divergent auth code
+- **Budget endpoints** (`budget.py`) — 16 endpoints changed from `get_current_user_extended` to `require_admin_or_planner` to enforce subscription paywall
+- **Advertising endpoints** (`advertising.py`) — 5 endpoints same fix
+- **Frontend 402 handling** — `apiRequest` in `AdminContext.tsx` now redirects to billing on 402 instead of showing generic error. Login flow handles 402 from profile fetch gracefully
+- **`datetime.utcnow()` deprecation** — replaced with `datetime.now(timezone.utc)` in `setup_admin_user.py`
+
+### Changed
+
+- **`UserModel`** — added `trial_warning_sent`, `trial_expired_at`, `registration_source` fields to match service layer usage
+- **`UserUpdateModel`** — added `trial_end_date` field for admin user updates
+- **`AdminRouteGuard`** — checks `subscription_status` and redirects expired planners to billing before rendering any page
+- **`/admin/page.tsx`** — expired planners redirected to `/admin/planner/billing` instead of `/admin/planner` (prevents redirect loop)
+- **Billing page** — treats expired/cancelled subscriptions same as no subscription, showing plan selection with "Reactivate Your Account" messaging and fresh checkout buttons
+- **Dockerfile.coolify** — startup chain includes `migrate_subscription_fields.py`
+
 ## [2.12.4] - 2026-03-18 — Standalone Ad Admin Pages + Sidebar Navigation
 
 ### Fixed

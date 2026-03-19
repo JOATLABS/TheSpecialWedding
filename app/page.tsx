@@ -174,8 +174,8 @@ const faqs: FAQ[] = [
     answer: "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
   },
   {
-    question: "How does AI pricing suggestions work?",
-    answer: "When creating service packages, our AI analyzes your market, services, and costs to suggest competitive pricing tiers — saving you hours of research.",
+    question: "How do AI pricing suggestions work?",
+    answer: "When you create a service package, our AI analyzes your market, services, and costs to suggest competitive pricing tiers — saving you hours of research.",
   },
   {
     question: "Can vendors collaborate in the platform?",
@@ -274,12 +274,12 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
   return (
     <section className="relative mx-auto max-w-7xl px-6 py-16 sm:px-10 lg:px-16">
       <div className="text-center mb-12">
-        <p className="text-xs uppercase tracking-[0.5em] text-wedding-rose/80 mb-4">Every tool a planner needs</p>
+        <p className="text-xs uppercase tracking-[0.5em] text-wedding-rose/80 mb-4">13 tools in one platform</p>
         <h2 className="text-3xl font-semibold text-white sm:text-4xl">
-          See what&apos;s inside your command center.
+          Your wedding planning command center.
         </h2>
         <p className="mt-4 max-w-2xl mx-auto text-base text-slate-300">
-          13 tools that replace scattered subscriptions. Click any feature — see the real dashboard.
+          Guests, budgets, vendors, seating, contracts, and more — explore each feature below.
         </p>
       </div>
 
@@ -358,7 +358,7 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={feature.image}
-                    alt={`${feature.title} dashboard`}
+                    alt={`${feature.title} — ${feature.tagline}`}
                     className="absolute inset-0 w-full h-full object-cover object-top"
                     loading={idx < 3 ? "eager" : "lazy"}
                   />
@@ -451,7 +451,7 @@ function LandingContent({
             </div>
 
             <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl">
-              Every tool a planner needs. Finally, in one place.
+              The all-in-one platform for professional wedding planners.
             </h1>
 
             <p className="mt-6 text-lg text-slate-200 max-w-2xl mx-auto">
@@ -489,11 +489,11 @@ function LandingContent({
                   href="/admin/login"
                   className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/60"
                 >
-                  Launch console
+                  Sign in to dashboard
                 </Link>
               ) : (
                 <span className="flex items-center justify-center rounded-full border border-white/30 px-6 py-3 text-base font-semibold text-white backdrop-blur">
-                  Launch console
+                  Sign in to dashboard
                 </span>
               )}
             </div>
@@ -625,10 +625,10 @@ function LandingContent({
         <div className="absolute inset-0 opacity-60" style={{ background: "radial-gradient(circle at 50% 0%, rgba(212,165,165,0.35), transparent 65%)" }} />
         <div className="relative mx-auto max-w-4xl px-6 py-24 text-center sm:px-10">
           <h2 className="text-4xl font-semibold text-white sm:text-5xl">
-            Stop stitching tools together. Start planning weddings.
+            Stop juggling tools. Start planning weddings.
           </h2>
           <p className="mt-6 text-base text-slate-200">
-            Join planners who replaced 8+ subscriptions with one platform.
+            Join planners who replaced 8+ subscriptions with one platform. Start free — no credit card required.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             {!isClone ? (
@@ -645,14 +645,14 @@ function LandingContent({
             )}
             {!isClone ? (
               <a
-                href="mailto:hello@thespecialwedding.io"
+                href="mailto:hello@thespecialwedding.io?subject=I'd like a demo of The Special Wedding"
                 className="flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-base font-semibold text-white backdrop-blur transition hover:border-white/40"
               >
-                See it in action
+                Request a demo
               </a>
             ) : (
               <span className="flex items-center justify-center rounded-full border border-white/20 px-6 py-3 text-base font-semibold text-white backdrop-blur">
-                See it in action
+                Request a demo
               </span>
             )}
           </div>

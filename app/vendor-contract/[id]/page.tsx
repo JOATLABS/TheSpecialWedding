@@ -127,7 +127,7 @@ export default function PublicContractPage() {
       fetchContract();
     } catch (err) {
       console.error('Error signing contract:', err);
-      alert('Failed to sign contract. Please try again.');
+      setError('We couldn\u2019t complete the signature. Please check your connection and try again.');
     } finally {
       setSigning(false);
     }

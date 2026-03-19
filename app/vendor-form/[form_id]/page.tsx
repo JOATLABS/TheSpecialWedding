@@ -55,7 +55,7 @@ export default function PublicVendorFormPage() {
 
   useEffect(() => {
     if (!formId || !token) {
-      setError('Invalid form link. Please check your email for the correct link.');
+      setError('This form link isn\u2019t valid. Check the email from your wedding planner for the correct link.');
       setLoading(false);
       return;
     }

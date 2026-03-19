@@ -107,7 +107,7 @@ export default function AdminLoginPage() {
     event.preventDefault();
 
     if (disableSubmit) {
-      setError('Enter a valid email address and password to continue.');
+      setError('Please enter your email and password to sign in.');
       return;
     }
 
@@ -117,7 +117,7 @@ export default function AdminLoginPage() {
     try {
       await login(email.trim(), password, rememberMe);
     } catch (err) {
-      setError('We could not sign you in. Double-check your credentials or try another method.');
+      setError('Sign-in failed. Please check your email and password, then try again.');
     } finally {
       setSubmitting(false);
     }
@@ -188,7 +188,7 @@ export default function AdminLoginPage() {
                         className="w-full rounded-xl border border-white/40 bg-white/60 px-4 py-3 text-base text-wedding-navy shadow-inner placeholder:text-wedding-navy/40 focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
                       />
                       <p id="email-guidance" className="text-xs text-wedding-navy/60">
-                        The email address used during registration with my platform.
+                        The email you used when creating your account.
                       </p>
                     </div>
 
@@ -239,7 +239,7 @@ export default function AdminLoginPage() {
                           href="/"
                           className="text-sm font-medium text-wedding-navy/60 transition hover:text-wedding-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
                         >
-                          Return to SaaS home
+                          Back to homepage
                         </Link>
                       </div>
                     </div>
@@ -276,7 +276,7 @@ export default function AdminLoginPage() {
                       className="w-full justify-center rounded-xl py-3 text-base shadow-lg transition disabled:cursor-not-allowed disabled:opacity-60"
                       aria-busy={submitting}
                     >
-                      {submitting ? 'Signing you in…' : 'Log in to planner portal'}
+                      {submitting ? 'Signing you in…' : 'Sign in'}
                     </Button>
                   </form>
                 </div>

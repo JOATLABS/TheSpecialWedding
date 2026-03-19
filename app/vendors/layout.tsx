@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Vendor Directory - The Special Wedding',
-  description: 'Find and connect with wedding vendors',
+  title: 'Vendor Directory',
+  description: 'Browse wedding vendors by category — photographers, caterers, florists, venues, and more. View profiles, pricing, and portfolios.',
 };
 
 export default function VendorsLayout({
