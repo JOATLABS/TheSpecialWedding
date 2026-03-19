@@ -1184,8 +1184,20 @@ async def create_advertising_indexes():
     except Exception as e:
         logger.error(f"Error creating ad_stats_daily indexes: {str(e)}")
 
-    logger.info("All advertising indexes created/verified (18 total)")
+    logger.info("All advertising indexes created/verified (19 total)")
     return True
+
+
+# NOTE: The full campaign platform indexes (ad_campaigns, ad_creatives,
+# campaign_day_stats, placement_day_stats, ad_fraud_signals, vendor_ad_billing)
+# will be added when the independent vendor advertising system is built.
+# See PRD Sections 6-8 for the target architecture.
+
+
+# =========================================================================
+# DEAD CODE REMOVED — campaign platform indexes were here but the
+# collections don't exist yet. They'll be added with the ad_campaigns build.
+# =========================================================================
 
 
 async def create_all_indexes():
