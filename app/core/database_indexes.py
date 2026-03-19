@@ -1188,16 +1188,184 @@ async def create_advertising_indexes():
     return True
 
 
-# NOTE: The full campaign platform indexes (ad_campaigns, ad_creatives,
-# campaign_day_stats, placement_day_stats, ad_fraud_signals, vendor_ad_billing)
-# will be added when the independent vendor advertising system is built.
-# See PRD Sections 6-8 for the target architecture.
+async def create_campaign_platform_indexes():
+    """
+    Create indexes for the independent vendor advertising campaign platform.
 
+    Collections: ad_campaigns, ad_creatives, campaign_day_stats,
+    placement_day_stats, ad_fraud_signals, vendor_ad_billing.
+    Also adds campaign_id indexes on existing ad_events and ad_leads.
 
-# =========================================================================
-# DEAD CODE REMOVED — campaign platform indexes were here but the
-# collections don't exist yet. They'll be added with the ad_campaigns build.
-# =========================================================================
+    PRD Sections 6-8. Vendor images in separate R2 bucket (S3_AD_BUCKET_NAME).
+    """
+
+    # =========================================================================
+    # ad_campaigns — 6 indexes
+    # =========================================================================
+    campaigns = mongo.db["ad_campaigns"]
+    try:
+        await campaigns.create_index(
+            [("vendor_id", ASCENDING), ("status", ASCENDING)],
+            name="idx_campaigns_vendor_status",
+        )
+        await campaigns.create_index(
+            [("status", ASCENDING), ("submitted_at", DESCENDING)],
+            name="idx_campaigns_status_submitted",
+        )
+        await campaigns.create_index(
+            [("status", ASCENDING), ("target_categories", ASCENDING),
+             ("start_date", ASCENDING), ("end_date", ASCENDING)],
+            name="idx_campaigns_serving_eligibility",
+        )
+        await campaigns.create_index(
+            [("status", ASCENDING), ("quality_score", DESCENDING)],
+            name="idx_campaigns_active_quality",
+        )
+        await campaigns.create_index(
+            [("created_at", DESCENDING)],
+            name="idx_campaigns_created_desc",
+        )
+        await campaigns.create_index(
+            [("vendor_email", ASCENDING)],
+            name="idx_campaigns_vendor_email",
+        )
+        logger.info("All ad_campaigns indexes created (6)")
+    except Exception as e:
+        logger.error(f"Error creating ad_campaigns indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_creatives — 3 indexes
+    # =========================================================================
+    creatives = mongo.db["ad_creatives"]
+    try:
+        await creatives.create_index(
+            [("campaign_id", ASCENDING), ("review_status", ASCENDING)],
+            name="idx_creatives_campaign_review",
+        )
+        await creatives.create_index(
+            [("review_status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_creatives_review_queue",
+        )
+        await creatives.create_index(
+            [("vendor_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_creatives_vendor_date",
+        )
+        logger.info("All ad_creatives indexes created (3)")
+    except Exception as e:
+        logger.error(f"Error creating ad_creatives indexes: {str(e)}")
+
+    # =========================================================================
+    # campaign_day_stats — 3 indexes
+    # =========================================================================
+    campaign_stats = mongo.db["campaign_day_stats"]
+    try:
+        await campaign_stats.create_index(
+            [("date", ASCENDING), ("campaign_id", ASCENDING)],
+            name="idx_campaign_stats_unique",
+            unique=True,
+        )
+        await campaign_stats.create_index(
+            [("campaign_id", ASCENDING), ("date", DESCENDING)],
+            name="idx_campaign_stats_campaign_date",
+        )
+        await campaign_stats.create_index(
+            [("vendor_id", ASCENDING), ("date", DESCENDING)],
+            name="idx_campaign_stats_vendor_date",
+        )
+        logger.info("All campaign_day_stats indexes created (3)")
+    except Exception as e:
+        logger.error(f"Error creating campaign_day_stats indexes: {str(e)}")
+
+    # =========================================================================
+    # placement_day_stats — 2 indexes
+    # =========================================================================
+    placement_stats = mongo.db["placement_day_stats"]
+    try:
+        await placement_stats.create_index(
+            [("date", ASCENDING), ("placement", ASCENDING)],
+            name="idx_placement_stats_unique",
+            unique=True,
+        )
+        await placement_stats.create_index(
+            [("placement", ASCENDING), ("date", DESCENDING)],
+            name="idx_placement_stats_trend",
+        )
+        logger.info("All placement_day_stats indexes created (2)")
+    except Exception as e:
+        logger.error(f"Error creating placement_day_stats indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_fraud_signals — 2 indexes (including 7-day TTL)
+    # =========================================================================
+    fraud = mongo.db["ad_fraud_signals"]
+    try:
+        await fraud.create_index(
+            [("campaign_id", ASCENDING), ("flagged_at", DESCENDING)],
+            name="idx_fraud_campaign_flagged",
+        )
+        await fraud.create_index(
+            [("created_at", ASCENDING)],
+            name="idx_fraud_signals_ttl",
+            expireAfterSeconds=7 * 24 * 60 * 60,  # 7 days
+        )
+        logger.info("All ad_fraud_signals indexes created (2, incl. TTL)")
+    except Exception as e:
+        logger.error(f"Error creating ad_fraud_signals indexes: {str(e)}")
+
+    # =========================================================================
+    # vendor_ad_billing — 2 indexes
+    # =========================================================================
+    billing = mongo.db["vendor_ad_billing"]
+    try:
+        await billing.create_index(
+            [("vendor_id", ASCENDING), ("billing_period_start", DESCENDING)],
+            name="idx_billing_vendor_period",
+        )
+        await billing.create_index(
+            [("campaign_id", ASCENDING), ("billing_period_start", DESCENDING)],
+            name="idx_billing_campaign_period",
+        )
+        logger.info("All vendor_ad_billing indexes created (2)")
+    except Exception as e:
+        logger.error(f"Error creating vendor_ad_billing indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_events — add campaign_id compound index (supplements existing indexes)
+    # =========================================================================
+    ad_events = mongo.db["ad_events"]
+    try:
+        await ad_events.create_index(
+            [("campaign_id", ASCENDING), ("event_type", ASCENDING),
+             ("created_at", DESCENDING)],
+            name="idx_ad_events_campaign_type_date",
+            sparse=True,
+        )
+        await ad_events.create_index(
+            [("click_id", ASCENDING)],
+            name="idx_ad_events_click_id",
+            unique=True,
+            sparse=True,
+        )
+        logger.info("Campaign platform ad_events indexes created (2)")
+    except Exception as e:
+        logger.error(f"Error creating campaign ad_events indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_leads — add campaign_id index (supplements existing indexes)
+    # =========================================================================
+    ad_leads = mongo.db["ad_leads"]
+    try:
+        await ad_leads.create_index(
+            [("campaign_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_ad_leads_campaign_date",
+            sparse=True,
+        )
+        logger.info("Campaign platform ad_leads index created (1)")
+    except Exception as e:
+        logger.error(f"Error creating campaign ad_leads indexes: {str(e)}")
+
+    logger.info("All campaign platform indexes created/verified (21 total)")
+    return True
 
 
 async def create_all_indexes():
@@ -1221,7 +1389,8 @@ async def create_all_indexes():
         await create_kb_articles_indexes()  # Knowledge Base articles
         await create_invitation_indexes()  # User invitation cleanup
         await create_team_member_indexes()  # Team management
-        await create_advertising_indexes()  # Advertising analytics (18 indexes)
+        await create_advertising_indexes()  # Legacy advertising (19 indexes)
+        await create_campaign_platform_indexes()  # Campaign platform (21 indexes)
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")

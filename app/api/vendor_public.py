@@ -44,6 +44,20 @@ PUBLIC_VENDOR_FIELDS = {
 }
 
 
+@router.get("/sitemap-ids")
+async def get_vendor_sitemap_ids():
+    """
+    Return a list of active vendor IDs for the XML sitemap.
+    No authentication required. Returns only IDs, no sensitive data.
+    """
+    cursor = mongo.db["vendor_profiles"].find(
+        {"is_active": True},
+        {"_id": 1}
+    )
+    ids = [str(doc["_id"]) async for doc in cursor]
+    return ids
+
+
 @router.get("/{vendor_id}/public")
 async def get_public_vendor_profile(vendor_id: str):
     """

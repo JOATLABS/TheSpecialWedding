@@ -43,6 +43,7 @@ class AdEventType(str, Enum):
     CLICK = "click"  # User clicked on ad
     VENDOR_PROFILE_VIEW = "vendor_profile_view"  # User viewed vendor profile/details
     VENDOR_ADDED_TO_WEDDING = "vendor_added_to_wedding"  # Vendor was added to wedding
+    VENDOR_ADDED_TO_DIRECTORY = "vendor_added_to_directory"  # Vendor added to planner's directory from ad
     LEAD_CREATED = "lead_created"  # Lead was created from ad
     VENDOR_INVITED = "vendor_invited"  # Vendor was invited to wedding
     LEAD_ACCEPTED = "lead_accepted"  # Lead was accepted/responded
@@ -237,6 +238,16 @@ class AdEvent(MongoModel):
         description="Where the event occurred"
     )
 
+    # Campaign platform references (optional for backward compat with legacy sponsored_vendors)
+    campaign_id: Optional[str] = Field(
+        None,
+        description="Reference to AdCampaign._id (new campaign platform)"
+    )
+    creative_id: Optional[str] = Field(
+        None,
+        description="Reference to AdCreative._id (new campaign platform)"
+    )
+
     # Context
     wedding_id: Optional[str] = Field(
         None,
@@ -287,6 +298,7 @@ class AdLeadType(str, Enum):
     QUOTE_REQUEST = "quote_request"
     MESSAGE = "message"
     ADD_TO_WEDDING = "add_to_wedding"
+    ADD_TO_DIRECTORY = "add_to_directory"
     VENDOR_INVITE = "vendor_invite"
 
 
@@ -302,14 +314,21 @@ class AdLead(MongoModel):
         ...,
         min_length=24,
         max_length=24,
-        description="Reference to SponsoredVendor._id"
+        description="Reference to SponsoredVendor._id (legacy) or campaign vendor"
     )
     vendor_profile_id: str = Field(
         ...,
         min_length=24,
         max_length=24,
-        description="Reference to VendorProfile._id"
+        description="Reference to VendorProfile._id (legacy) or campaign vendor user _id"
     )
+
+    # Campaign platform reference (optional for backward compat)
+    campaign_id: Optional[str] = Field(
+        None,
+        description="Reference to AdCampaign._id (new campaign platform)"
+    )
+
     planner_id: str = Field(
         ...,
         max_length=254,

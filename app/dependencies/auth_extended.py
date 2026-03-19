@@ -80,6 +80,7 @@ class ExtendedAuthUser:
         self.is_wedding_planner = (role == "wedding_planner")
         self.is_vendor = (role == "vendor")
         self.is_team_member = (role == "team_member")
+        self.is_advertising_vendor = (role == "advertising_vendor")
 
         # Team member properties (populated by get_current_user_extended for team members)
         self.parent_planner_id: Optional[str] = user_data.get("parent_planner_id") if user_data else None

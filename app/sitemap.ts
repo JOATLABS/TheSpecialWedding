@@ -1,9 +1,24 @@
 import { MetadataRoute } from 'next';
+import { getApiBaseUrl } from '@/utils/env';
 
-export default function sitemap(): MetadataRoute.Sitemap {
+async function fetchVendorIds(): Promise<string[]> {
+  try {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/v1/vendors/sitemap-ids`, {
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = 'https://thespecialwedding.io';
 
-  return [
+  const staticPages: MetadataRoute.Sitemap = [
     {
       url: baseUrl,
       lastModified: new Date(),
@@ -11,20 +26,33 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1,
     },
     {
+      url: `${baseUrl}/features`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/resources`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    },
+    {
       url: `${baseUrl}/vendors`,
       lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 0.8,
     },
-    {
-      url: `${baseUrl}/admin/login`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.3,
-    },
-    // Dynamic wedding pages (/{slug}) are generated per-wedding and
-    // should be added dynamically if you want them indexed.
-    // Dynamic vendor profiles (/vendors/{id}) are generated per-vendor
-    // and should be added dynamically if you want them indexed.
   ];
+
+  // Dynamically include vendor profile pages
+  const vendorIds = await fetchVendorIds();
+  const vendorPages: MetadataRoute.Sitemap = vendorIds.map((id) => ({
+    url: `${baseUrl}/vendors/${id}`,
+    lastModified: new Date(),
+    changeFrequency: 'weekly' as const,
+    priority: 0.6,
+  }));
+
+  return [...staticPages, ...vendorPages];
 }
