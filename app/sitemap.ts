@@ -45,6 +45,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
+  // Blog post pages
+  const blogSlugs = [
+    'introducing-the-special-wedding',
+    'how-to-price-wedding-planning-services',
+    'managing-200-guests',
+    'honeybook-vs-aisle-planner',
+    'wedding-planner-contract-essentials',
+    'ai-changing-wedding-planning',
+    'seating-chart-strategy',
+  ];
+  const blogPages: MetadataRoute.Sitemap = blogSlugs.map((slug) => ({
+    url: `${baseUrl}/resources/blog/${slug}`,
+    lastModified: new Date(),
+    changeFrequency: 'monthly' as const,
+    priority: 0.7,
+  }));
+
   // Dynamically include vendor profile pages
   const vendorIds = await fetchVendorIds();
   const vendorPages: MetadataRoute.Sitemap = vendorIds.map((id) => ({
@@ -54,5 +71,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...staticPages, ...vendorPages];
+  return [...staticPages, ...blogPages, ...vendorPages];
 }

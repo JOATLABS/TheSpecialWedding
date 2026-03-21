@@ -201,28 +201,28 @@ export default function FeaturesPage() {
                     {row.you ? (
                       <span className="text-emerald-400 text-base">✓</span>
                     ) : (
-                      <span className="text-slate-600">\u2014</span>
+                      <span className="text-slate-600">—</span>
                     )}
                   </td>
                   <td className="text-center px-4 py-3.5">
                     {row.honeybook ? (
                       <span className="text-emerald-400/60 text-base">✓</span>
                     ) : (
-                      <span className="text-slate-600">\u2014</span>
+                      <span className="text-slate-600">—</span>
                     )}
                   </td>
                   <td className="text-center px-4 py-3.5">
                     {row.aislePlanner ? (
                       <span className="text-emerald-400/60 text-base">✓</span>
                     ) : (
-                      <span className="text-slate-600">\u2014</span>
+                      <span className="text-slate-600">—</span>
                     )}
                   </td>
                   <td className="text-center px-4 py-3.5">
                     {row.planningPod ? (
                       <span className="text-emerald-400/60 text-base">✓</span>
                     ) : (
-                      <span className="text-slate-600">\u2014</span>
+                      <span className="text-slate-600">—</span>
                     )}
                   </td>
                 </tr>
