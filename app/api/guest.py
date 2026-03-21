@@ -87,12 +87,17 @@ async def search_guest(
 
 
 @router.get("/guests", tags=["Admin"])
-async def list_guests(wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def list_guests(
+    wedding_id: str = Query(...),
+    page: int = Query(1, ge=1, le=10000, description="Page number (1-indexed)"),
+    limit: int = Query(50, ge=1, le=100, description="Number of guests per page"),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+):
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
-        return await guest_service.list_guests_by_wedding(wedding_id)
+        return await guest_service.list_guests_by_wedding(wedding_id, page=page, limit=limit)
     except HTTPException as e:
         raise e
     except Exception:

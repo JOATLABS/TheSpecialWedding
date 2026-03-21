@@ -31,6 +31,8 @@ import {
 import { toast } from 'sonner';
 import StripeConnectCard from './connect';
 import { CollectPaymentModal } from '@/components/payments/CollectPaymentModal';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 
 interface SubscriptionPlan {
   _id: string;
@@ -116,10 +118,11 @@ export default function PlannerBillingPage() {
     ai_credits_remaining: 100
   });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [billingAlerts, setBillingAlerts] = useState<BillingAlert[]>([]);
-  const [showAllInvoices, setShowAllInvoices] = useState(false);
   const [showCreatePaymentModal, setShowCreatePaymentModal] = useState(false);
+  const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
 
   // Access control - only for wedding planners
   useEffect(() => {
@@ -284,7 +287,8 @@ export default function PlannerBillingPage() {
             ...inv,
             date: new Date(inv.date * 1000).toISOString()
           }));
-          setInvoices(formattedInvoices);
+          setAllInvoices(formattedInvoices);
+          paginationInvoices.setTotalItems(formattedInvoices.length);
         }
       } catch (error) {
         console.warn('Invoices not available:', error);
@@ -317,7 +321,8 @@ export default function PlannerBillingPage() {
     } finally {
       setLoading(false);
     }
-  }, [userProfile]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile, paginationInvoices.currentPage, paginationInvoices.itemsPerPage]);
 
   const generateBillingAlerts = (subscription: UserSubscription, plan: SubscriptionPlan | null | undefined) => {
     const alerts: BillingAlert[] = [];
@@ -658,7 +663,11 @@ export default function PlannerBillingPage() {
   // Has subscription - show billing dashboard
   const statusConfig = getStatusConfig(currentSubscription.status);
   const daysUntilRenewal = getDaysUntilRenewal();
-  const displayedInvoices = showAllInvoices ? invoices : invoices.slice(0, 3);
+  // Compute displayed invoices from all invoices using pagination
+  const displayedInvoices = allInvoices.slice(
+    (paginationInvoices.currentPage - 1) * paginationInvoices.itemsPerPage,
+    paginationInvoices.currentPage * paginationInvoices.itemsPerPage
+  );
 
   return (
     <div className="space-y-6">
@@ -880,62 +889,74 @@ export default function PlannerBillingPage() {
           {/* Billing History */}
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-gray-900 dark:text-gray-100">Billing History</CardTitle>
-                {invoices.length > 3 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowAllInvoices(!showAllInvoices)}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
-                  >
-                    {showAllInvoices ? 'Show Less' : `View All (${invoices.length})`}
-                  </Button>
-                )}
-              </div>
+              <CardTitle className="text-gray-900 dark:text-gray-100">Billing History</CardTitle>
             </CardHeader>
             <CardContent>
-              {invoices.length > 0 ? (
-                <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {displayedInvoices.map((invoice) => (
-                    <div
-                      key={invoice.id}
-                      className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Receipt className="w-5 h-5 text-gray-400" />
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                            {invoice.description || 'Invoice'}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {formatDate(invoice.date)}
-                          </p>
+              {allInvoices.length > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <GlassPagination
+                      currentPage={paginationInvoices.currentPage}
+                      totalPages={paginationInvoices.totalPages}
+                      totalItems={paginationInvoices.totalItems}
+                      itemsPerPage={paginationInvoices.itemsPerPage}
+                      onPageChange={paginationInvoices.setPage}
+                      variant="compact"
+                      itemLabel="invoices"
+                    />
+                  </div>
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {displayedInvoices.map((invoice) => (
+                      <div
+                        key={invoice.id}
+                        className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Receipt className="w-5 h-5 text-gray-400" />
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+                              {invoice.description || 'Invoice'}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {formatDate(invoice.date)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            ${(invoice.amount / 100).toFixed(2)}
+                          </span>
+                          {invoice.status === 'paid' && (
+                            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">
+                              Paid
+                            </Badge>
+                          )}
+                          {invoice.invoice_pdf && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-gray-500 hover:text-gray-700 p-1 h-auto"
+                              onClick={() => window.open(invoice.invoice_pdf, '_blank')}
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-medium text-gray-900 dark:text-gray-100">
-                          ${(invoice.amount / 100).toFixed(2)}
-                        </span>
-                        {invoice.status === 'paid' && (
-                          <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">
-                            Paid
-                          </Badge>
-                        )}
-                        {invoice.invoice_pdf && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-gray-500 hover:text-gray-700 p-1 h-auto"
-                            onClick={() => window.open(invoice.invoice_pdf, '_blank')}
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <GlassPagination
+                      currentPage={paginationInvoices.currentPage}
+                      totalPages={paginationInvoices.totalPages}
+                      totalItems={paginationInvoices.totalItems}
+                      itemsPerPage={paginationInvoices.itemsPerPage}
+                      onPageChange={paginationInvoices.setPage}
+                      onItemsPerPageChange={paginationInvoices.setItemsPerPage}
+                      itemLabel="invoices"
+                    />
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                   <Receipt className="w-10 h-10 mx-auto mb-2 opacity-50" />

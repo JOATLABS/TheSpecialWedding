@@ -10,6 +10,7 @@ import HeroCanvas from "./components/ui/HeroCanvas";
 import PetalCanvas from "./components/ui/PetalCanvas";
 import InfiniteScrollWrapper from "./components/ui/InfiniteScrollWrapper";
 import { SignupModal } from "./components/saas/SignupModal";
+import SaasNav from "./components/saas/SaasNav";
 import { ThemeConfig } from "./types/wedding";
 
 /* ═══════════════════════════════════════════════════════════
@@ -661,47 +662,28 @@ function LandingContent({
 
       {/* ── Footer ── */}
       <footer className="bg-slate-950 border-t border-white/5">
-        <div className="mx-auto max-w-6xl px-6 py-10">
-          {/* Top row: nav links */}
-          <nav className="flex flex-wrap justify-center gap-x-8 gap-y-3 mb-8">
-            {!isClone ? (
-              <>
-                <Link href="/features" className="text-sm text-slate-400 transition hover:text-white">Features</Link>
-                <Link href="/resources" className="text-sm text-slate-400 transition hover:text-white">Resources</Link>
-                <Link href="/vendors" className="text-sm text-slate-400 transition hover:text-white">Vendor directory</Link>
-                <Link href="/admin/login" className="text-sm text-slate-400 transition hover:text-white">Sign in</Link>
-                <a href="mailto:hello@thespecialwedding.io" className="text-sm text-slate-400 transition hover:text-white">Contact</a>
-              </>
-            ) : (
-              <>
-                <span className="text-sm text-slate-400">Features</span>
-                <span className="text-sm text-slate-400">Resources</span>
-                <span className="text-sm text-slate-400">Vendor directory</span>
-                <span className="text-sm text-slate-400">Sign in</span>
-                <span className="text-sm text-slate-400">Contact</span>
-              </>
-            )}
-          </nav>
-
-          {/* Divider */}
-          <div className="h-px bg-white/5 mb-6" />
-
-          {/* Bottom row: legal + credit */}
+        <div className="mx-auto max-w-6xl px-6 py-6">
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
             <p className="text-xs text-slate-500">
               © {new Date().getFullYear()} The Special Wedding. All rights reserved.
             </p>
-            <p className="text-xs text-slate-500">
-              Built by{' '}
+            <div className="flex items-center gap-4">
               {!isClone ? (
-                <a href="https://joatlabs.dev" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition hover:text-white">
-                  JOATLABS LLC
-                </a>
+                <a href="mailto:hello@thespecialwedding.io" className="text-xs text-slate-500 transition hover:text-slate-300">Contact</a>
               ) : (
-                <span className="text-slate-400">JOATLABS LLC</span>
+                <span className="text-xs text-slate-500">Contact</span>
               )}
-              {' '}© 2026
-            </p>
+              <p className="text-xs text-slate-500">
+                Built by{' '}
+                {!isClone ? (
+                  <a href="https://joatlabs.dev" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition hover:text-white">
+                    JOATLABS LLC
+                  </a>
+                ) : (
+                  <span className="text-slate-400">JOATLABS LLC</span>
+                )}
+              </p>
+            </div>
           </div>
         </div>
       </footer>
@@ -782,6 +764,7 @@ export default function HomePage() {
 
   return (
     <main className="bg-slate-950 text-white relative">
+      <SaasNav />
       <PetalCanvas count={64} />
       <InfiniteScrollWrapper>
         {(isClone) => (

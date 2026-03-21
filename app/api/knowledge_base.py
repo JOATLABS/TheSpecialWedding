@@ -25,6 +25,8 @@ class ArticleCreateRequest(BaseModel):
     category: str = Field(default="general", description="Article category")
     tags: List[str] = Field(default_factory=list, description="Article tags")
     status: str = Field(default="published", description="Article status")
+    card_image: Optional[str] = Field(None, max_length=500, description="Card/thumbnail image URL")
+    og_image: Optional[str] = Field(None, max_length=500, description="OG/social share image URL")
 
     @field_validator('category')
     @classmethod
@@ -58,6 +60,8 @@ class ArticleUpdateRequest(BaseModel):
     status: Optional[str] = None
     featured: Optional[bool] = None
     order: Optional[int] = None
+    card_image: Optional[str] = Field(None, max_length=500)
+    og_image: Optional[str] = Field(None, max_length=500)
 
     @field_validator('category')
     @classmethod
@@ -225,7 +229,9 @@ async def create_article(
         excerpt=article_data.excerpt,
         category=article_data.category,
         tags=article_data.tags,
-        status=article_data.status
+        status=article_data.status,
+        card_image=article_data.card_image,
+        og_image=article_data.og_image,
     )
 
     logger.info(f"Creating KB article '{article_data.title}' by {current_user.email}")
@@ -257,7 +263,9 @@ async def update_article(
         tags=article_data.tags,
         status=article_data.status,
         featured=article_data.featured,
-        order=article_data.order
+        order=article_data.order,
+        card_image=article_data.card_image,
+        og_image=article_data.og_image,
     )
 
     return await knowledge_base_service.update_article(

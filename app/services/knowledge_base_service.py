@@ -73,6 +73,8 @@ class KnowledgeBaseService:
                 "feedback": [],
                 "order": 0,
                 "estimated_read_minutes": estimated_read_minutes,
+                "card_image": getattr(article_data, "card_image", None),
+                "og_image": getattr(article_data, "og_image", None),
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }

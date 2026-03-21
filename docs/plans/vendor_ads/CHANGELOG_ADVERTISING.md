@@ -1,5 +1,243 @@
 # Vendor Advertising Feature — Changelog
 
+## Phase 5.3: Documentation & Phase 5.1: E2E Flow Verification
+**Date:** 2026-03-20
+**Version:** 4.1.0
+
+### Phase 5.1: End-to-End Flow Verification
+
+Code-level trace of all 9 user journey steps from the roadmap. Every chain from frontend → API call → backend route → service method → MongoDB collection was verified intact.
+
+1. Vendor signup → campaign creation → creative upload → submit for review ✅
+2. Admin reviews → approves campaign and creative ✅
+3. Planner loads homepage → sees vendor in right rail ✅
+4. Planner clicks 'Request Quote' → modal → AI-drafted email → send ✅
+5. Vendor receives email + lead appears in portal ✅
+6. Planner clicks 'Add to Directory' → vendor in directory ✅
+7. Planner assigns vendor to wedding (existing flow) ✅
+8. Admin revenue dashboard shows engagement metrics ✅
+9. Nightly rollup computes campaign_day_stats + placement_day_stats ✅
+
+Phase 5 Final Test Checkpoint — all items pass:
+- All Python files compile (0 errors)
+- All TypeScript compiles (0 errors in app/)
+- No references to vendor_profile_id in new campaign code (only docstring clarifications)
+- No dead imports of deprecated components
+- Rollup service compiles and is wired to nightly cron
+- click_id chain present in service, API client, and models
+- No hardcoded hex colors in new frontend pages
+
+### Phase 5.3: Documentation
+
+Three documentation files created in `docs/plans/vendor_ads/`:
+
+- **API_DOCUMENTATION.md** (34KB) — Complete API reference for all 3 routers (Vendor Portal, Admin Campaigns, Planner Interactions). Includes 30+ endpoints with request/response examples, authentication details, data models, status lifecycle, and error codes.
+- **VENDOR_PORTAL_GUIDE.md** (6KB) — User guide for independent vendor advertisers. Covers account creation, 6-step campaign wizard, campaign lifecycle, creative management, lead viewing, billing, and tips for success.
+- **ADMIN_RUNBOOK.md** (10KB) — Operational runbook for root administrators. Covers daily operations across all 5 admin console tabs, vendor management workflows, system configuration, fraud monitoring, and troubleshooting guides.
+
+---
+
+## Phase 5.2: Legacy System Deprecation & Full Cleanup
+**Date:** 2026-03-20
+**Version:** 4.0.0
+
+### Overview
+
+Completed the Phase 5.2 deprecation checklist from the Advertising Development Roadmap. All legacy `sponsored_vendors`-based code has been removed from the codebase. The platform now runs exclusively on the campaign-centric architecture (`ad_campaigns` + `ad_creatives` collections).
+
+### Frontend Removals
+
+- **Deleted `SponsoredMilestoneModule.tsx`** — Legacy milestone-based vendor suggestions removed from wedding detail page (`/admin/weddings/[id]/page.tsx`). Four `<SponsoredMilestoneModule>` instances (venue, photographer, catering, florist) removed.
+- **Deleted `BoostedVendorCard.tsx`** — Legacy "boosted" vendor cards removed from vendor directory page (`/admin/vendors/page.tsx`). All related state (`boostedVendors`), fetch logic (`getSponsoredVendors`), event handlers (`handleBoostedRecordEvent`, `handleBoostedHide`), and UI (boosted count indicator, boosted grid section) removed.
+- **Deleted `/admin/advertising/` directory** — Legacy 2-tab admin page (vendors + analytics) removed. Replaced by the 5-tab admin console at `/admin/ads/`.
+- **Deleted `/admin/vendor/ads/` directory** — Legacy vendor portal pages (6 files) removed. Replaced by the independent vendor portal at `/portal/ads/`.
+- **Updated admin sidebar** — Removed "Ads (Legacy)" link to `/admin/advertising`. Single "Ad Platform" link to `/admin/ads/` remains.
+- **Updated `AdminHeader.tsx`** — Vendor advertising link changed from `/admin/vendor/ads` to `/portal/ads` (the new independent portal).
+- **Removed `Target` icon import** from `Sidebar.tsx` (no longer needed).
+
+### Backend Removals
+
+- **Removed `advertising_router`** from `main.py` — Legacy `/admin/ads/sponsored-vendors/*` endpoints no longer registered. The new campaign routers (`admin_campaigns_router`, `vendor_campaigns_router`, `planner_ad_interactions_router`) are the sole ad platform API.
+- **Deleted `app/api/advertising.py`** — Legacy router with 28+ endpoints for sponsored vendor CRUD, review workflow, rollup triggers. All functionality replaced by `admin_campaigns.py`, `vendor_campaigns.py`, and `planner_ad_interactions.py`.
+- **Deleted `app/services/advertising_service.py`** — Legacy service for sponsored vendor management. Replaced by `vendor_campaign_service.py`, `admin_campaign_service.py`, and `planner_ad_interaction_service.py`.
+- **Deleted `app/models/advertising.py`** — Legacy `SponsoredVendor`, `AdEvent`, `AdLead` Pydantic models. Replaced by `advertising_campaign.py` with `AdCampaign`, `AdCreative`, and updated event/lead models.
+- **Deleted `app/services/ad_rollup_service.py`** — Legacy rollup that aggregated by `sponsored_vendor_id` into `ad_stats_daily`. Replaced by `campaign_rollup_service.py` which rolls up into `campaign_day_stats` and `placement_day_stats`.
+- **Removed legacy rollup from nightly cron** — `main.py` startup task now only runs the campaign-centric `CampaignRollupService`, not the old `AdRollupService`.
+
+### Files Deleted (11 total)
+
+1. `app/admin/vendors/components/SponsoredMilestoneModule.tsx`
+2. `app/admin/vendors/components/BoostedVendorCard.tsx`
+3. `app/admin/advertising/page.tsx`
+4. `app/admin/advertising/layout.tsx`
+5. `app/admin/vendor/ads/page.tsx` + `layout.tsx` + `billing/page.tsx` + `campaigns/page.tsx` + `campaigns/new/page.tsx` + `leads/page.tsx`
+6. `app/api/advertising.py`
+7. `app/models/advertising.py`
+8. `app/services/advertising_service.py`
+9. `app/services/ad_rollup_service.py`
+
+### Files Modified (5 total)
+
+1. `app/admin/weddings/[id]/page.tsx` — Removed SponsoredMilestoneModule import + 4 JSX instances
+2. `app/admin/vendors/page.tsx` — Removed BoostedVendorCard import, advertisingApi imports, all boosted vendor state/logic/UI
+3. `app/admin/components/Sidebar.tsx` — Removed "Ads (Legacy)" nav item and Target icon import
+4. `app/admin/components/AdminHeader.tsx` — Updated vendor ad link to new portal path
+5. `app/main.py` — Removed advertising_router import/registration, removed legacy rollup from cron
+
+### Deprecated Collections (data preserved, no new writes)
+
+- `sponsored_vendors` — Legacy admin-managed vendor ads. Data retained for historical reference.
+- `ad_stats_daily` — Legacy rollup by sponsored_vendor_id. Data retained; no longer computed.
+
+### Active Campaign Platform Architecture
+
+The platform now consists of:
+
+- **3 API routers**: `admin_campaigns.py`, `vendor_campaigns.py`, `planner_ad_interactions.py`
+- **3 services**: `admin_campaign_service.py`, `vendor_campaign_service.py`, `planner_ad_interaction_service.py`
+- **1 rollup service**: `campaign_rollup_service.py` (campaign_day_stats + placement_day_stats)
+- **1 model file**: `advertising_campaign.py` (AdCampaign, AdCreative, all request/response models)
+- **1 frontend API client**: `campaignAdvertisingApi.ts` (36+ typed fetch functions)
+- **Admin console**: `/admin/ads/` (5-tab: Creative Review, Campaign Monitor, Revenue, Vendors, Feedback)
+- **Vendor portal**: `/portal/ads/` (Overview, Campaigns, Creatives, Leads, Billing + auth)
+- **Planner surface**: `CampaignSponsoredRail` on 4 pages (dashboard, budget, vendors, wedding detail)
+
+---
+
+## Phase 4.1: Legacy Rail Removal, UX Copy Audit & P0/P1 Bug Fixes
+**Date:** 2026-03-20
+**Version:** 3.1.0
+
+### Overview
+
+Removed the legacy `SponsoredVendorsRail` from all four planner-facing pages and replaced it with the Phase 4 `CampaignSponsoredRail`. Completed a comprehensive UX copy audit of the vendor portal. Fixed critical P0 bugs (IntersectionObserver timer leak, double event recording) and P1 issues (N+All profile fetch, missing drawer logo) in the legacy rail components.
+
+### Legacy Rail → Campaign Rail Migration
+
+All four planner-facing pages now import `CampaignSponsoredRail` (campaign-based, fetches from `/planner/ads/sponsored-cards`) instead of the legacy `SponsoredVendorsRail` (admin-managed, fetches from `/admin/ads/sponsored-vendors`). The rail renders nothing when no approved campaigns exist, which is the correct behavior for the current state of the system.
+
+- **`app/admin/planner/page.tsx`** — `SponsoredVendorsRail placement="dashboard_rail"` → `CampaignSponsoredRail`
+- **`app/admin/budget/page.tsx`** — `SponsoredVendorsRail placement="vendor_rail"` → `CampaignSponsoredRail`
+- **`app/admin/vendors/page.tsx`** — `SponsoredVendorsRail placement="vendor_rail"` → `CampaignSponsoredRail`
+- **`app/admin/weddings/[id]/page.tsx`** — `SponsoredVendorsRail placement="milestone_module"` → `CampaignSponsoredRail`
+
+No pages import `SponsoredVendorsRail` anymore. The legacy rail component files (`SponsoredVendorsRail.tsx`, `SponsoredVendorCard.tsx`, `SponsoredVendorDetailsDrawer.tsx`) remain in the codebase but are unused — candidates for cleanup.
+
+### P0 Bug Fixes (Legacy Rail — retained for reference)
+
+- **`dashboard_rail` placement mismatch** — `SponsoredVendorsRail` queried the backend with `placement="dashboard_rail"` but admin creates entries with `vendor_rail`, returning 0 results. Added `queryPlacement` mapping so `dashboard_rail` queries as `vendor_rail` while preserving the original placement for event recording.
+- **IntersectionObserver timer leak** (`SponsoredVendorCard.tsx:74-122`) — `setTimeout` inside the observer callback returned a cleanup function from `forEach`, which the observer ignores. Replaced with a `viewableTimerRef` + `observedElementRef` pattern: timer stored in ref, cleared on both out-of-view scroll and effect cleanup. Also fixed stale `cardRef.current` in cleanup by capturing the element reference.
+
+### P1 Bug Fixes (Legacy Rail — retained for reference)
+
+- **Double `vendor_profile_view` event** (`SponsoredVendorDetailsDrawer.tsx:42-51`) — Drawer's `useEffect` recorded a duplicate `vendor_profile_view` on open, but the card's `handleViewDetails()` already fires this before opening the drawer. Removed the drawer's `useEffect` and added a comment explaining the single-recording design.
+- **N+All vendor profile fetch** (`SponsoredVendorsRail.tsx:129`) — Rail fetched `getVendorDirectory(token, { limit: 100 })` to display 3 cards. Reduced to `Math.max(neededIds.size * 3, 20)` and filters results to only the `vendor_profile_id`s from sponsored vendors.
+- **Missing vendor logo in drawer** (`SponsoredVendorDetailsDrawer.tsx:167-183`) — Drawer always showed a letter-initial placeholder. Now renders `vendorProfile.logo_url` as an `<img>` when available, falling back to the placeholder only when no logo exists.
+
+### UX Copy Audit Fixes (Vendor Portal)
+
+- **`app/portal/ads/campaigns/new/page.tsx`** — Replaced snake_case dropdown values with `{value, label}` objects for categories, wedding stages, and goals. Budget copy reframed from "$0" to free tier language. Schedule copy clarified approval flow. Review section shows "Free Tier" / "After approval" / "Until paused" instead of raw values.
+- **`app/portal/ads/campaigns/page.tsx`** — Added `window.confirm()` dialogs for delete and pause actions. "Re-submit" → "Edit & Re-submit" for rejected campaigns. Added contextual empty state with filter awareness.
+- **`app/portal/ads/page.tsx`** — CTA consistency: "Create New Campaign" → "Create Campaign".
+- **`app/portal/ads/creatives/page.tsx`** — Added `<label>` for campaign selector, character counters for headline (100) and description (300), "CTA Button" → "Button Text", empty state explaining what creatives are, tooltip on "Set Primary" button.
+- **`app/portal/ads/leads/page.tsx`** — Added `getTypeLabel()` function for human-readable lead types, planner emails as `mailto:` links, descriptive empty state.
+- **`app/portal/ads/billing/page.tsx`** — `$0.00` → "Free", subtitle "No charges on the free tier".
+
+### Console Error Fixes
+
+- **`app/services/advertisingApi.ts`** — `recordAdEvent` wrapped in try-catch, silently returns on network error (endpoint may not exist yet).
+- **`app/services/vendorManagementApi.ts`** — 4 functions (`getVendorDirectory`, `getContracts`, `getPaymentMilestones`, `getVendorDashboard`) wrapped fetch in try-catch with descriptive error messages.
+- **`app/admin/vendors/page.tsx`** — Changed `Promise.all` → `Promise.allSettled` for 4 parallel API calls with independent fallbacks per result.
+
+### Files Modified
+- `app/admin/planner/page.tsx`
+- `app/admin/budget/page.tsx`
+- `app/admin/vendors/page.tsx`
+- `app/admin/weddings/[id]/page.tsx`
+- `app/admin/vendors/components/SponsoredVendorsRail.tsx`
+- `app/admin/vendors/components/SponsoredVendorCard.tsx`
+- `app/admin/vendors/components/SponsoredVendorDetailsDrawer.tsx`
+- `app/services/advertisingApi.ts`
+- `app/services/vendorManagementApi.ts`
+- `app/portal/ads/campaigns/new/page.tsx`
+- `app/portal/ads/campaigns/page.tsx`
+- `app/portal/ads/page.tsx`
+- `app/portal/ads/creatives/page.tsx`
+- `app/portal/ads/leads/page.tsx`
+- `app/portal/ads/billing/page.tsx`
+
+---
+
+## Phase 4: Campaign-Based Frontend — Three Portal Architecture
+**Date:** 2026-03-19
+**Version:** 3.0.0
+
+### Overview
+
+Complete frontend rebuild for the new campaign-based advertising platform. Replaces the old `vendor_profile_id`-keyed system with an `ad_campaigns`-centric architecture across three portals: Root Admin, Vendor Portal, and Planner-facing sponsored rail. All new frontend code talks to the Phase 1–3 backend endpoints (`/admin/ads/*`, `/portal/ads/*`, `/planner/ads/*`).
+
+### New API Client
+
+- **`app/services/campaignAdvertisingApi.ts`** — New API client with 36 fetch functions for all three portals, full TypeScript types matching Phase 1 Pydantic models, and utility functions (`formatNumber`, `formatCurrency`, `formatPercent`, status label/color helpers). Null guards added to all format functions to prevent runtime crashes on undefined data.
+
+### Root Admin Portal (`/admin/ads`)
+
+- **5-tab layout** (down from 6 — Platform Config moved to SaaS Management):
+  - **Creative Review** — Review queue with approve/reject/request-changes actions, counts by status, creative review queue
+  - **Campaign Monitor** — Campaign list with status filters, pause/deactivate actions, fraud signal monitoring
+  - **Revenue Dashboard** — 8 KPI stat cards (revenue, impressions, clicks, leads, conversions, active campaigns, active vendors, avg CTR), daily trend table, free tier notice
+  - **Vendor Accounts** — Vendor account list with status filters
+  - **Planner Feedback** — Feedback entries from planners with type badges and timestamps
+- **Defensive data handling** — All list-state setters use `Array.isArray()` guards to handle both array and paginated object (`{ items: [...] }`) API responses
+- **`app/admin/ads/layout.tsx`** — Simple passthrough layout
+
+### SaaS Management Integration
+
+- **Platform Config moved to `/admin/saas`** — Ad platform configuration (display settings, review settings) relocated to the SaaS Management page as a new "Ad Platform" tab. This includes max sponsored per page, sponsored badge toggle, tracking toggle, require review, auto-approve returning vendors, and review SLA settings.
+- **Sidebar updated** — "Ad Platform" nav item points to `/admin/ads` (operational dashboard), "Ads (Legacy)" points to old `/admin/advertising`
+
+### Vendor Portal (`/portal/ads`)
+
+- **`app/portal/ads/layout.tsx`** — Self-contained auth system with `VendorAuthContext`, login page, sidebar navigation (Overview, Campaigns, Creatives, Leads, Billing), mobile-responsive layout
+- **`app/portal/ads/page.tsx`** — Overview dashboard with welcome hero, 5 KPI cards (active campaigns, impressions, clicks, leads, avg CTR), recent campaigns list, lead funnel visualization
+- **`app/portal/ads/campaigns/page.tsx`** — Campaign list with search and status filter, action menus (submit for review, pause, delete, re-submit), review notes display for rejected campaigns
+- **`app/portal/ads/campaigns/new/page.tsx`** — 6-step campaign creation wizard (Basics → Targeting → Creative → Budget → Schedule → Review) with campaign goal selector, multi-select targeting pills, creative form, budget pacing, save-as-draft and submit-for-review actions
+- **`app/portal/ads/creatives/page.tsx`** — Creative management with campaign selector, create/edit form, grid view with status badges and set-primary action
+- **`app/portal/ads/leads/page.tsx`** — Filterable leads table with status/type filters, planner info, messages
+- **`app/portal/ads/billing/page.tsx`** — Free tier banner, 3 summary cards, billing history table
+
+### Planner-Facing Components
+
+- **`app/admin/vendors/components/CampaignSponsoredRail.tsx`** — New campaign-based sponsored rail fetching from `/planner/ads/sponsored-cards`, same visual pattern as old rail (vertical desktop, horizontal mobile carousel)
+- **`app/admin/vendors/components/CampaignSponsoredCard.tsx`** — "Add to Directory" and "Request Quote" buttons, impression tracking, click ID generation, hide functionality
+- **`app/admin/vendors/components/QuoteRequestModal.tsx`** — Modal with wedding selector, collapsible context fields, message textarea with 2000 char limit, auto-add-to-directory checkbox
+
+### Bug Fixes (Post-Deploy)
+
+- **`formatNumber` crash** — Added null/NaN guards to `formatNumber`, `formatCurrency`, and `formatPercent` in `campaignAdvertisingApi.ts` to prevent `TypeError: Cannot read properties of undefined` when backend returns partial data
+- **`feedback.map` crash** — API returning paginated objects instead of arrays; added `Array.isArray()` guards to all 6 data-fetching points in the admin ads page
+
+### Files Created
+- `app/services/campaignAdvertisingApi.ts`
+- `app/admin/ads/layout.tsx`
+- `app/admin/ads/page.tsx`
+- `app/portal/ads/layout.tsx`
+- `app/portal/ads/page.tsx`
+- `app/portal/ads/campaigns/page.tsx`
+- `app/portal/ads/campaigns/new/page.tsx`
+- `app/portal/ads/creatives/page.tsx`
+- `app/portal/ads/leads/page.tsx`
+- `app/portal/ads/billing/page.tsx`
+- `app/admin/vendors/components/CampaignSponsoredRail.tsx`
+- `app/admin/vendors/components/CampaignSponsoredCard.tsx`
+- `app/admin/vendors/components/QuoteRequestModal.tsx`
+
+### Files Modified
+- `app/admin/components/Sidebar.tsx` — Added "Ad Platform" and "Ads (Legacy)" nav items replacing single "Advertising" item
+- `app/admin/saas/page.tsx` — Added "Ad Platform" tab with platform config (moved from ads page)
+
+---
+
 ## Senior QA: ObjectId Serialization & Attribution Tracking
 **Date:** 2026-03-17
 **Version:** 2.3.0

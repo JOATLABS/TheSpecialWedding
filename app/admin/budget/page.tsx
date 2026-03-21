@@ -21,7 +21,7 @@ import {
 } from '../../services/vendorManagementApi';
 import { formatDate } from '@/utils/dateFormat';
 import { Sparkles, X, Loader2, AlertCircle, Lightbulb } from 'lucide-react';
-import { SponsoredVendorsRail } from '../vendors/components/SponsoredVendorsRail';
+import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
 import type {
   BudgetCategory,
   BudgetSummary,
@@ -927,7 +927,7 @@ export default function BudgetDashboard() {
       {/* Right Sidebar — Sponsored Vendors Rail */}
       <div className="lg:col-span-1">
         <div className="sticky top-6">
-          <SponsoredVendorsRail placement="vendor_rail" />
+          <CampaignSponsoredRail />
         </div>
       </div>
 

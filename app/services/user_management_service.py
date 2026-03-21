@@ -277,16 +277,35 @@ class UserManagementService:
             # Log error without exposing sensitive information
             return False
 
-    async def list_users(self, role_filter: Optional[str] = None) -> List[dict]:
-        """List all users with optional role filter"""
+    async def list_users(self, role_filter: Optional[str] = None, page: int = 1, limit: int = 50, search: Optional[str] = None) -> dict:
+        """List all users with optional role filter, pagination, and search"""
         try:
+            from math import ceil
+
             query = {}
             if role_filter:
                 query["role"] = role_filter
 
-            users = await self.users_collection.find(query, {"password_hash": 0, "password": 0}).to_list(length=None)  # Exclude password fields
+            # Add search filter if provided (search by email or company_name)
+            if search:
+                query["$or"] = [
+                    {"email": {"$regex": search, "$options": "i"}},
+                    {"company_name": {"$regex": search, "$options": "i"}},
+                    {"first_name": {"$regex": search, "$options": "i"}},
+                    {"last_name": {"$regex": search, "$options": "i"}}
+                ]
+
+            # Count total matching documents
+            total = await self.users_collection.count_documents(query)
+
+            # Calculate skip and pages
+            skip = (page - 1) * limit
+            pages = ceil(total / limit) if total > 0 else 1
+
+            users = await self.users_collection.find(query, {"password_hash": 0, "password": 0}).skip(skip).limit(limit).to_list(length=None)
 
             # Serialize and calculate wedding_count for each user
+            serialized_users = []
             for user in users:
                 # Serialize to handle ObjectId and datetime objects
                 user = serialize_mongo_doc(user)
@@ -301,8 +320,15 @@ class UserManagementService:
                     ]
                 })
                 user["wedding_count"] = wedding_count
+                serialized_users.append(user)
 
-            return users
+            return {
+                "users": serialized_users,
+                "total": total,
+                "page": page,
+                "pages": pages,
+                "limit": limit
+            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing users: {str(e)}")
 

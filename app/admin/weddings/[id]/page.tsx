@@ -8,8 +8,8 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
-import { SponsoredVendorsRail } from '../../vendors/components/SponsoredVendorsRail';
-import { SponsoredMilestoneModule } from '../../vendors/components/SponsoredMilestoneModule';
+import { CampaignSponsoredRail } from '../../vendors/components/CampaignSponsoredRail';
+
 
 // Wedding party group mappings for sync
 // Wedding party = bridesmaids, groomsmen, maid of honor, best man
@@ -1408,59 +1408,12 @@ export default function WeddingDetailsPage() {
  </div>
  )}
 
- {/* Sponsored Milestone Modules — View 4 spec */}
- {/* Show contextual vendor suggestions for key milestone categories */}
- {wedding && (
-   <div className="mt-8 space-y-4">
-     <SponsoredMilestoneModule
-       milestoneCategory="venue"
-       isBooked={!!wedding.events?.some(e => e.details?.venue_name)}
-       weddingId={weddingId}
-       weddingContext={{
-         city: wedding.city || undefined,
-         state: wedding.state || undefined,
-         guestCount: wedding.guest_count || undefined,
-         budgetForCategory: wedding.budget_venue || undefined,
-       }}
-     />
-     <SponsoredMilestoneModule
-       milestoneCategory="photographer"
-       weddingId={weddingId}
-       weddingContext={{
-         city: wedding.city || undefined,
-         state: wedding.state || undefined,
-         guestCount: wedding.guest_count || undefined,
-         budgetForCategory: wedding.budget_photographer || undefined,
-       }}
-     />
-     <SponsoredMilestoneModule
-       milestoneCategory="catering"
-       weddingId={weddingId}
-       weddingContext={{
-         city: wedding.city || undefined,
-         state: wedding.state || undefined,
-         guestCount: wedding.guest_count || undefined,
-         budgetForCategory: wedding.budget_catering || undefined,
-       }}
-     />
-     <SponsoredMilestoneModule
-       milestoneCategory="florist"
-       weddingId={weddingId}
-       weddingContext={{
-         city: wedding.city || undefined,
-         state: wedding.state || undefined,
-         guestCount: wedding.guest_count || undefined,
-         budgetForCategory: wedding.budget_florist || undefined,
-       }}
-     />
-   </div>
- )}
  </div>
 
  {/* Right Sidebar - Sponsored Vendors for Wedding Management */}
  <div className="lg:col-span-1">
  <div className="sticky top-6">
- <SponsoredVendorsRail placement="milestone_module" />
+ <CampaignSponsoredRail />
  </div>
  </div>
  </div>

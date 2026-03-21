@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from typing import List, Optional, Any
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.user_management_service import UserManagementService
 from app.services.gallery_upload_service import GalleryUploadService
 from pydantic import BaseModel, Field, validator, EmailStr
 from datetime import datetime
+from math import ceil
 import os
 
 router = APIRouter()
@@ -165,9 +166,16 @@ async def invite_user(invite_data: UserInviteModel, current_user: ExtendedAuthUs
 
 
 @router.get("/users", tags=["ROOT_ADMIN"])
-async def list_users(role: Optional[str] = None, current_user: ExtendedAuthUser = Depends(require_root_admin)):
-    """List all users with optional role filter - ROOT_ADMIN only"""
-    return await user_service.list_users(role_filter=role)
+async def list_users(
+    role: Optional[str] = None,
+    page: int = Query(1, ge=1, le=10000),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    current_user: ExtendedAuthUser = Depends(require_root_admin)
+):
+    """List all users with optional role filter, pagination, and search - ROOT_ADMIN only"""
+    result = await user_service.list_users(role_filter=role, page=page, limit=limit, search=search)
+    return result
 
 
 @router.get("/users/{user_id}", tags=["ROOT_ADMIN"])

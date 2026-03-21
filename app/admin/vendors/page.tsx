@@ -25,17 +25,9 @@ import { toast } from 'sonner';
 import { VendorPaymentModal } from './components/VendorPaymentModal';
 import { PaymentMilestones } from './components/PaymentMilestones';
 import { getApiBaseUrl } from '@/utils/env';
-import { SponsoredVendorsRail } from './components/SponsoredVendorsRail';
-import { BoostedVendorCard } from './components/BoostedVendorCard';
-import {
-  getSponsoredVendors,
-  recordAdEvent,
-  getAdPreferences,
-  hideAdVendor,
-  type SponsoredVendor as SponsoredVendorType,
-  type AdEventType,
-  type AdPreferences,
-} from '@/services/advertisingApi';
+import { CampaignSponsoredRail } from './components/CampaignSponsoredRail';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 
 // AI Recommendation types
 interface VendorRecommendation {
@@ -85,8 +77,6 @@ export default function VendorManagementPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [preferredOnly, setPreferredOnly] = useState(false);
 
-  // Directory Boost state
-  const [boostedVendors, setBoostedVendors] = useState<SponsoredVendorType[]>([]);
 
   // Modal state
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -125,6 +115,9 @@ export default function VendorManagementPage() {
   const [priceVendorType, setPriceVendorType] = useState<VendorCategory>('photographer');
   const [priceQuotedAmount, setPriceQuotedAmount] = useState<string>('');
   const [priceDescription, setPriceDescription] = useState<string>('');
+
+  // Pagination
+  const pagination = usePagination({ initialItemsPerPage: 50 });
 
   // AI Functions
   const fetchAiRecommendations = async () => {
@@ -211,33 +204,46 @@ export default function VendorManagementPage() {
 
     setLoading(true);
     try {
-      const [dashboardData, vendorsData, contractsData, milestonesData] = await Promise.all([
+      const results = await Promise.allSettled([
         getVendorDashboard(token),
         getVendorDirectory(token, {
           search: searchQuery || undefined,
           category: categoryFilter || undefined,
           is_preferred: preferredOnly ? true : undefined,
+          skip: pagination.skip,
+          limit: pagination.itemsPerPage,
         }),
         getContracts(token),
         getPaymentMilestones(token),
       ]);
 
-      setDashboard(dashboardData);
-      setVendors(vendorsData);
-      setContracts(contractsData);
-      setMilestones(milestonesData);
+      const [dashboardResult, vendorsResult, contractsResult, milestonesResult] = results;
+
+      // Check if any failure indicates a plan restriction
+      const planError = results.find(
+        (r) => r.status === 'rejected' && r.reason?.message?.includes('not included in your plan')
+      );
+      if (planError) {
+        setFeatureEnabled(false);
+        return;
+      }
+
+      if (dashboardResult.status === 'fulfilled') setDashboard(dashboardResult.value);
+      if (vendorsResult.status === 'fulfilled') {
+        const vendorList = vendorsResult.value || [];
+        setVendors(vendorList);
+        pagination.setTotalItems(vendorList.length);
+      }
+      if (contractsResult.status === 'fulfilled') setContracts(contractsResult.value);
+      if (milestonesResult.status === 'fulfilled') setMilestones(milestonesResult.value);
       setFeatureEnabled(true);
     } catch (error: unknown) {
-      const err = error as { message?: string };
-      if (err.message?.includes('not included in your plan')) {
-        setFeatureEnabled(false);
-      } else {
-        console.error('Error fetching vendor data:', error);
-      }
+      console.error('Error fetching vendor data:', error);
     } finally {
       setLoading(false);
     }
-  }, [token, searchQuery, categoryFilter, preferredOnly]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, searchQuery, categoryFilter, preferredOnly, pagination.currentPage, pagination.itemsPerPage]);
 
   useEffect(() => {
     if (!userProfile) {
@@ -249,74 +255,11 @@ export default function VendorManagementPage() {
     }
   }, [fetchData, fetchUserProfile, router, userProfile]);
 
-  // Fetch boosted vendors for directory_boost placement
+  // Reset to page 1 when filters change
   useEffect(() => {
-    const fetchBoostedVendors = async () => {
-      if (!token) return;
-      try {
-        let prefs: AdPreferences | null = null;
-        try { prefs = await getAdPreferences(token); } catch { /* continue */ }
+    pagination.setPage(1);
+  }, [searchQuery, categoryFilter, preferredOnly]);
 
-        let boosted = await getSponsoredVendors(token, {
-          placement: 'directory_boost',
-          category: categoryFilter || undefined,
-          limit: 2,
-        });
-
-        // Client-side filtering based on planner preferences
-        if (prefs) {
-          if (prefs.hidden_vendor_ids?.length) {
-            boosted = boosted.filter(v => !prefs!.hidden_vendor_ids.includes(v.vendor_profile_id));
-          }
-          if (prefs.hidden_categories?.length) {
-            boosted = boosted.filter(v => {
-              const cats = v.target_categories || [];
-              return !cats.some((c: string) => prefs!.hidden_categories.includes(c));
-            });
-          }
-        }
-
-        setBoostedVendors(boosted);
-      } catch (err) {
-        console.error('Failed to fetch boosted vendors:', err);
-      }
-    };
-
-    fetchBoostedVendors();
-  }, [token, categoryFilter]);
-
-  // Build a vendor profile map for boosted cards
-  const boostedVendorProfiles: Record<string, VendorProfile> = {};
-  vendors.forEach((v) => { boostedVendorProfiles[v._id] = v; });
-
-  // Boosted vendor event handler
-  const handleBoostedRecordEvent = async (
-    eventType: AdEventType,
-    sponsoredVendorId: string,
-    vendorProfileId: string,
-    metadata?: Record<string, any>
-  ) => {
-    if (!token) return;
-    try {
-      await recordAdEvent(token, {
-        sponsored_vendor_id: sponsoredVendorId,
-        vendor_profile_id: vendorProfileId,
-        event_type: eventType,
-        placement: 'directory_boost',
-        metadata,
-      });
-    } catch (err) {
-      console.error('Failed to record boosted event:', err);
-    }
-  };
-
-  // Handle boosted vendor hide
-  const handleBoostedHide = async (vendorProfileId: string) => {
-    if (token) {
-      try { await hideAdVendor(token, vendorProfileId); } catch { /* continue */ }
-    }
-    setBoostedVendors(prev => prev.filter(v => v.vendor_profile_id !== vendorProfileId));
-  };
 
   // Handle add vendor
   const handleAddVendor = async (e: React.FormEvent) => {
@@ -701,18 +644,8 @@ export default function VendorManagementPage() {
               </button>
             </div>
 
-            {/* Boosted count indicator */}
-            {boostedVendors.length > 0 && (
-              <p className="text-xs text-gray-600">
-                Showing {vendors.length + boostedVendors.length} results
-                {categoryFilter ? ` for "${VENDOR_CATEGORIES.find(c => c.value === categoryFilter)?.label || categoryFilter}"` : ''}
-                {' · '}
-                <span className="text-wedding-sage font-semibold">{boostedVendors.length} boosted result{boostedVendors.length !== 1 ? 's' : ''}</span>
-              </p>
-            )}
-
             {/* Vendor Grid */}
-            {vendors.length === 0 && boostedVendors.length === 0 ? (
+            {vendors.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
                   <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -731,19 +664,18 @@ export default function VendorManagementPage() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Boosted Vendors — appear first in grid */}
-                {boostedVendors.map((boosted) => (
-                  <BoostedVendorCard
-                    key={`boosted-${boosted._id}`}
-                    vendor={boosted}
-                    vendorProfile={boostedVendorProfiles[boosted.vendor_profile_id]}
-                    onView={(vendorId) => window.open(`/vendors/${vendorId}`, '_blank')}
-                    onRecordEvent={handleBoostedRecordEvent}
-                    onHide={handleBoostedHide}
-                  />
-                ))}
-                {/* Organic Vendors */}
+              <div className="space-y-4">
+                <GlassPagination
+                  currentPage={pagination.currentPage}
+                  totalPages={pagination.totalPages}
+                  totalItems={pagination.totalItems}
+                  itemsPerPage={pagination.itemsPerPage}
+                  onPageChange={pagination.setPage}
+                  variant="compact"
+                  itemLabel="vendors"
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Vendors */}
                 {vendors.map((vendor) => (
                   <div
                     key={vendor._id}
@@ -833,6 +765,16 @@ export default function VendorManagementPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+              <GlassPagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                totalItems={pagination.totalItems}
+                itemsPerPage={pagination.itemsPerPage}
+                onPageChange={pagination.setPage}
+                onItemsPerPageChange={pagination.setItemsPerPage}
+                itemLabel="vendors"
+              />
               </div>
             )}
           </div>
@@ -1460,7 +1402,7 @@ export default function VendorManagementPage() {
       {/* Right Sidebar — Sponsored Vendors Rail */}
       <div className="lg:col-span-1">
         <div className="sticky top-6">
-          <SponsoredVendorsRail placement="vendor_rail" />
+          <CampaignSponsoredRail />
         </div>
       </div>
 
