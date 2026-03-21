@@ -84,6 +84,8 @@ from app.api.notification_stream import router as notification_stream_router
 from app.api.team_management import router as team_management_router
 from app.api.inbound_emails import router as inbound_emails_router
 from app.api.advertising import router as advertising_router
+from app.api.vendor_campaigns import router as vendor_campaigns_router
+from app.api.admin_campaigns import router as admin_campaigns_router
 from app.api.vendor_public import router as vendor_public_router
 
 # Setup logging
@@ -101,12 +103,12 @@ ENCODERS_BY_TYPE[ObjectId] = str
 
 class MongoJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles MongoDB ObjectId and datetime objects."""
-    def default(self, obj):
-        if isinstance(obj, ObjectId):
-            return str(obj)
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        return super().default(obj)
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super().default(o)
 
 
 class MongoJSONResponse(JSONResponse):
@@ -143,11 +145,28 @@ async def _nightly_rollup_scheduler():
             )
             await asyncio.sleep(wait_seconds)
 
-            # Run the rollup
+            # Run the legacy rollup (sponsored_vendors -> ad_stats_daily)
             from app.services.ad_rollup_service import AdRollupService
             rollup_service = AdRollupService(mongo.db)
             count = await rollup_service.compute_daily_rollup()
-            logger.info(f"Nightly ad rollup complete: {count} stats documents upserted")
+            logger.info(f"Nightly ad rollup (legacy) complete: {count} stats documents upserted")
+
+            # Run the campaign-centric rollup (ad_campaigns -> campaign_day_stats + placement_day_stats)
+            from app.services.campaign_rollup_service import CampaignRollupService
+            campaign_rollup = CampaignRollupService(mongo.db)
+            campaign_result = await campaign_rollup.compute_daily_rollup()
+            logger.info(
+                f"Nightly campaign rollup complete: "
+                f"{campaign_result['campaign_stats']} campaign_day_stats + "
+                f"{campaign_result['placement_stats']} placement_day_stats upserted"
+            )
+
+            # Auto-complete expired campaigns
+            from app.services.vendor_campaign_service import VendorCampaignService
+            vendor_svc = VendorCampaignService(mongo.db)
+            expired_count = await vendor_svc.complete_expired_campaigns()
+            if expired_count > 0:
+                logger.info(f"Auto-completed {expired_count} expired campaigns")
 
         except asyncio.CancelledError:
             logger.info("Ad rollup scheduler shutting down")
@@ -419,7 +438,9 @@ app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingesti
 app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
 app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
 app.include_router(scheduler_jobs_router, prefix="/scheduler", tags=["Scheduler"])  # Scheduled task processing
-app.include_router(advertising_router, tags=["Advertising"])  # Vendor advertising (has own /admin/ads prefix)
+app.include_router(advertising_router, tags=["Advertising"])  # Legacy vendor advertising (has own /admin/ads prefix)
+app.include_router(vendor_campaigns_router, tags=["Vendor Campaigns"])  # Vendor campaign portal (has own /portal/ads prefix)
+app.include_router(admin_campaigns_router, tags=["Admin Campaigns"])  # Admin campaign management (has own /admin/ads/campaigns prefix)
 app.include_router(vendor_public_router, tags=["Public Vendors"])  # Public vendor profiles (has own /api/v1/vendors prefix)
 
 # Admin routes (authentication required)

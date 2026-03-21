@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.0] - 2026-03-19 — Advertising Campaign Platform Phase 2: Vendor & Admin Backend
+
+### Context
+
+This is Phase 2 of the advertising platform rebuild. The old architecture was keyed on `vendor_profile_id` from the planner vendor directory — external vendors could not advertise without a planner adding them first. The rebuild centers everything on `ad_campaigns` with independent vendor identity (`role: advertising_vendor`).
+
+Phase 1 (v2.13.1) laid the data model foundation. Phase 2 builds the full service layer and API surface for both vendor self-service and root admin moderation.
+
+### Added
+
+- **`app/services/admin_campaign_service.py`** — Root admin campaign operations service
+  - Review queue: FIFO by `submitted_at` with primary creative inlined for review card display
+  - Review counts by status for dashboard widgets (pending_review, active, paused, rejected, draft, completed)
+  - Campaign review actions: approve (auto-approves all pending creatives), reject, request-changes (returns to draft with notes)
+  - Creative review: separate queue, approve, reject with notes
+  - Campaign monitoring: list all campaigns across vendors, admin pause (policy concerns), admin deactivate (emergency kill from any non-terminal status)
+  - Revenue/engagement dashboard: aggregates impressions, clicks, leads, unique planners from `ad_events` (free tier = $0 spend)
+  - Planner feedback: surfaces hidden vendors, suppressed categories, reduced frequency requests
+  - Fraud signals: list and update investigation status from `ad_fraud_signals` (7-day TTL)
+  - Vendor account management: list `advertising_vendor` accounts
+  - Platform config: get/update advertising feature flags
+
+- **`app/api/vendor_campaigns.py`** — Vendor portal API router (14 routes at `/portal/ads/*`)
+  - Campaign CRUD: `POST /campaigns`, `GET /campaigns`, `GET /campaigns/{id}`, `PUT /campaigns/{id}`, `DELETE /campaigns/{id}` (draft only)
+  - Lifecycle: `POST /campaigns/{id}/submit` (validates readiness), `POST /campaigns/{id}/pause`
+  - Stats: `GET /campaigns/{id}/stats` (lifetime totals + daily time series from `campaign_day_stats`)
+  - Creatives: `POST /campaigns/{id}/creatives`, `GET /campaigns/{id}/creatives`, `PUT /creatives/{id}`, `POST /campaigns/{id}/creatives/{id}/set-primary`
+  - Leads: `GET /leads` (all leads across vendor's campaigns)
+  - Billing: `GET /billing` (placeholder, free tier)
+  - Auth: `require_advertising_vendor` dependency — allows `is_advertising_vendor` or root admin
+
+- **`app/api/admin_campaigns.py`** — Admin campaign API router (18 routes at `/admin/ads/campaigns/*`)
+  - Review: `GET /review`, `GET /review/counts`, `PUT /{id}/approve`, `PUT /{id}/reject`, `PUT /{id}/request-changes`
+  - Creative review: `GET /review/creatives`, `PUT /review/creatives/{id}/approve`, `PUT /review/creatives/{id}/reject`
+  - Monitor: `GET /` (all campaigns), `PUT /{id}/pause`, `PUT /{id}/deactivate`
+  - Dashboard: `GET /revenue`, `GET /feedback`, `GET /fraud-signals`, `PUT /fraud-signals/{id}`
+  - Management: `GET /vendors`, `GET /config`, `PUT /config`
+  - Auth: `require_root_admin` on all endpoints
+
+- **`app/services/campaign_rollup_service.py`** — Campaign-centric daily rollup service
+  - `campaign_day_stats` rollup: groups by `campaign_id` (not `sponsored_vendor_id`), includes event counts, lead breakdowns, unique reach, hourly distributions, CTR
+  - `placement_day_stats` rollup: groups by placement type — platform-level reporting on which placements perform best
+  - Only processes events with `campaign_id` set (new platform events, ignores legacy)
+  - Enriches `vendor_id` from `ad_campaigns` collection
+  - `backfill_rollups()` for initial setup or recovery
+  - `compute_daily_rollup()` entry point runs both rollups
+
+### Changed
+
+- **`app/main.py`** — Registered new routers and integrated campaign rollup into nightly scheduler
+  - Added `vendor_campaigns_router` (Vendor Campaigns) and `admin_campaigns_router` (Admin Campaigns)
+  - Nightly scheduler now runs: legacy rollup → campaign rollup → expired campaign auto-completion
+  - Legacy `advertising_router` kept for backward compatibility (will be removed in Phase 5)
+
+### Architecture Notes
+
+- Vendor campaigns router (`/portal/ads/*`) is fully independent from planner auth — vendors sign up at `vendor.thespecialwedding.io` with `role: advertising_vendor`
+- Admin campaigns router (`/admin/ads/campaigns/*`) coexists with legacy `/admin/ads/*` router — no route conflicts because of the `/campaigns` prefix
+- Campaign rollup service coexists with legacy `ad_rollup_service.py` — both run nightly, each processing their own event subset
+- All new services follow the established pattern: `__init__(db)`, `_serialize()`, `_to_oid()`, async Motor operations
+
 ## [2.13.0] - 2026-03-18 — Trial & Subscription Lifecycle, Billing Paywall, Stripe Plan Sync
 
 ### Added

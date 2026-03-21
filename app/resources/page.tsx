@@ -27,6 +27,16 @@ const BLOG_CATEGORIES = ['All', 'Business', 'Workflow', 'Tools', 'Industry'];
 
 const blogPosts: BlogPost[] = [
   {
+    slug: 'introducing-the-special-wedding',
+    title: 'Introducing The Special Wedding: One Platform to Replace Your Entire Tool Stack',
+    excerpt:
+      'Stop jumping between 8+ tools. We built The Special Wedding to give professional wedding planners everything they need in one purpose-built platform — powered by AI.',
+    category: 'Industry',
+    readTime: '7 min',
+    date: 'March 19, 2026',
+    featured: true,
+  },
+  {
     slug: 'how-to-price-wedding-planning-services',
     title: 'How to Price Your Wedding Planning Services in 2026',
     excerpt:
@@ -34,7 +44,6 @@ const blogPosts: BlogPost[] = [
     category: 'Business',
     readTime: '8 min',
     date: 'March 12, 2026',
-    featured: true,
   },
   {
     slug: 'managing-200-guests',
@@ -166,52 +175,56 @@ const faqs: FAQ[] = [
 
 function BlogCard({ post }: { post: BlogPost }) {
   return (
-    <article className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition hover:border-wedding-rose/30">
-      {/* Color accent bar */}
-      <div className="h-1 bg-gradient-to-r from-wedding-rose/40 to-wedding-gold/20" />
-      <div className="p-6">
-        <span className="text-[10px] uppercase tracking-[0.3em] text-wedding-rose">
-          {post.category}
-        </span>
-        <h3 className="mt-2 text-base font-semibold text-white leading-snug group-hover:text-wedding-rose transition-colors">
-          {post.title}
-        </h3>
-        <p className="mt-2 text-sm text-slate-400 leading-relaxed line-clamp-3">
-          {post.excerpt}
-        </p>
-        <p className="mt-4 text-xs text-slate-500">
-          {post.readTime} read &middot; {post.date}
-        </p>
-      </div>
-    </article>
-  );
-}
-
-function FeaturedBlogCard({ post }: { post: BlogPost }) {
-  return (
-    <article className="group col-span-full overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition hover:border-wedding-rose/30">
-      <div className="grid md:grid-cols-[1.2fr_1fr]">
-        {/* Visual placeholder */}
-        <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center min-h-[220px] md:min-h-[280px]">
-          <div className="absolute inset-0 bg-gradient-to-br from-wedding-rose/10 via-transparent to-wedding-gold/5" />
-          <span className="relative text-5xl opacity-30">📊</span>
-        </div>
-        <div className="p-8 flex flex-col justify-center">
+    <Link href={`/resources/blog/${post.slug}`} className="block">
+      <article className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition hover:border-wedding-rose/30">
+        {/* Color accent bar */}
+        <div className="h-1 bg-gradient-to-r from-wedding-rose/40 to-wedding-gold/20" />
+        <div className="p-6">
           <span className="text-[10px] uppercase tracking-[0.3em] text-wedding-rose">
-            {post.category} &middot; Featured
+            {post.category}
           </span>
-          <h3 className="mt-3 text-xl font-semibold text-white leading-snug group-hover:text-wedding-rose transition-colors">
+          <h3 className="mt-2 text-base font-semibold text-white leading-snug group-hover:text-wedding-rose transition-colors">
             {post.title}
           </h3>
-          <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+          <p className="mt-2 text-sm text-slate-400 leading-relaxed line-clamp-3">
             {post.excerpt}
           </p>
           <p className="mt-4 text-xs text-slate-500">
             {post.readTime} read &middot; {post.date}
           </p>
         </div>
-      </div>
-    </article>
+      </article>
+    </Link>
+  );
+}
+
+function FeaturedBlogCard({ post }: { post: BlogPost }) {
+  return (
+    <Link href={`/resources/blog/${post.slug}`} className="block col-span-full">
+      <article className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition hover:border-wedding-rose/30">
+        <div className="grid md:grid-cols-[1.2fr_1fr]">
+          {/* Visual placeholder */}
+          <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center min-h-[220px] md:min-h-[280px]">
+            <div className="absolute inset-0 bg-gradient-to-br from-wedding-rose/10 via-transparent to-wedding-gold/5" />
+            <span className="relative text-5xl opacity-30">🚀</span>
+          </div>
+          <div className="p-8 flex flex-col justify-center">
+            <span className="text-[10px] uppercase tracking-[0.3em] text-wedding-rose">
+              {post.category} &middot; Featured
+            </span>
+            <h3 className="mt-3 text-xl font-semibold text-white leading-snug group-hover:text-wedding-rose transition-colors">
+              {post.title}
+            </h3>
+            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+              {post.excerpt}
+            </p>
+            <p className="mt-4 text-xs text-slate-500">
+              {post.readTime} read &middot; {post.date}
+            </p>
+          </div>
+        </div>
+      </article>
+    </Link>
   );
 }
 
