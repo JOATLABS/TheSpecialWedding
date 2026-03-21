@@ -183,6 +183,26 @@ ALLOWED_AD_TYPES = {
 
 MAX_AD_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 
+# Allowed types for blog images (same as ads)
+ALLOWED_BLOG_IMAGE_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+
+MAX_BLOG_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+# Get BLOG_MEDIA_DOMAIN from environment
+_raw_blog_media_domain = os.getenv("BLOG_MEDIA_DOMAIN")
+if not _raw_blog_media_domain:
+    logger.warning("BLOG_MEDIA_DOMAIN environment variable is not set — falling back to AD_MEDIA_DOMAIN for blog assets")
+    BLOG_MEDIA_DOMAIN = None  # Will be set after AD_MEDIA_DOMAIN is resolved
+else:
+    if _raw_blog_media_domain.startswith(('http://', 'https://')):
+        BLOG_MEDIA_DOMAIN = _raw_blog_media_domain.rstrip('/')
+    else:
+        BLOG_MEDIA_DOMAIN = f"https://{_raw_blog_media_domain}".rstrip('/')
+
 # Get AD_MEDIA_DOMAIN from environment
 _raw_ad_media_domain = os.getenv("AD_MEDIA_DOMAIN")
 if not _raw_ad_media_domain:
@@ -284,3 +304,78 @@ class AdUploadService:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')
             logger.error(f"Ad S3 list error ({error_code}): {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error listing ad files: {str(e)}")
+
+
+class BlogUploadService:
+    """
+    Handles file uploads for blog images (card images, og images, inline content images).
+    Uses S3_BLOG_BUCKET_NAME — shared R2 credentials, separate bucket.
+    Serves via BLOG_MEDIA_DOMAIN.
+    """
+
+    def __init__(self):
+        self.bucket_name = os.getenv("S3_BLOG_BUCKET_NAME")
+        if not self.bucket_name:
+            logger.warning("S3_BLOG_BUCKET_NAME not set — blog uploads will fail")
+        self.s3 = boto3.client(
+            "s3",
+            endpoint_url=os.getenv("S3_ENDPOINT_URL"),
+            aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
+            config=Config(signature_version='s3v4'),
+        )
+
+    def _get_cdn_domain(self):
+        """Resolve the CDN domain for blog assets."""
+        if BLOG_MEDIA_DOMAIN:
+            return BLOG_MEDIA_DOMAIN
+        if AD_MEDIA_DOMAIN:
+            return AD_MEDIA_DOMAIN
+        return MEDIA_DOMAIN
+
+    def create_presigned_upload_url(
+        self, filename: str, folder: str = "blog", content_type: str = "image/jpeg", expires_in: int = 300
+    ) -> dict:
+        """
+        Generate a presigned PUT URL for the blog bucket.
+        Key format: {folder}/{timestamp}_{filename}
+        Returns: { upload_url, key, cdn_url }
+        """
+        if content_type not in ALLOWED_BLOG_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File type '{content_type}' not allowed. Allowed: {', '.join(sorted(ALLOWED_BLOG_IMAGE_TYPES))}"
+            )
+
+        try:
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+            safe_filename = os.path.basename(filename)
+            key = f"{folder}/{timestamp}_{safe_filename}"
+
+            url = self.s3.generate_presigned_url(
+                ClientMethod="put_object",
+                Params={
+                    "Bucket": self.bucket_name,
+                    "Key": key,
+                    "ContentType": content_type,
+                },
+                ExpiresIn=expires_in,
+            )
+
+            cdn_domain = self._get_cdn_domain()
+            cdn_url = f"{cdn_domain}/{key}" if cdn_domain else key
+
+            return {"upload_url": url, "key": key, "cdn_url": cdn_url}
+        except ClientError as e:
+            logger.error(f"Blog presigned URL error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error creating blog upload URL: {str(e)}")
+
+    def delete_blog_file(self, key: str):
+        """Delete a blog image from the blog bucket."""
+        try:
+            self.s3.delete_object(Bucket=self.bucket_name, Key=key)
+            return {"message": "Blog file deleted successfully"}
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"Blog S3 delete error ({error_code}): {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error deleting blog file: {str(e)}")

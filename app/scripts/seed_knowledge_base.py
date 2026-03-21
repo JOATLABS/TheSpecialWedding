@@ -613,6 +613,8 @@ async def seed_knowledge_base(admin_email: str = "root@thespecialwedding.io", ad
             "feedback": [],
             "order": article_data.get("order", 0),
             "estimated_read_minutes": article_data.get("estimated_read_minutes", max(1, word_count // 200)),
+            "card_image": article_data.get("card_image", None),
+            "og_image": article_data.get("og_image", None),
             "created_at": now,
             "updated_at": now,
             "created_by": admin_email,

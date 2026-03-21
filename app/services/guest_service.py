@@ -3,6 +3,7 @@ from app.core.database import mongo
 from datetime import datetime, timezone
 from typing import Optional
 import logging
+from math import ceil
 from app.utils.token_generator import generate_token
 from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
 
@@ -71,7 +72,60 @@ class GuestService:
             {"$set": update_data}
         )
 
-    async def list_guests_by_wedding(self, wedding_id: str):
+    async def list_guests_by_wedding(self, wedding_id: str, page: int = 1, limit: int = 50):
+        """
+        Retrieve guests for a wedding with pagination.
+
+        Args:
+            wedding_id: The wedding ID to filter by
+            page: Page number (1-indexed), defaults to 1
+            limit: Number of guests per page, defaults to 50
+
+        Returns:
+            A dict containing:
+            - guests: List of guest documents
+            - total: Total number of guests for this wedding
+            - page: Current page number
+            - pages: Total number of pages
+            - limit: Guests per page
+        """
+        try:
+            # Count total documents
+            total = await self.collection.count_documents({"wedding_id": wedding_id})
+
+            # Calculate pagination
+            skip = (page - 1) * limit
+            pages = ceil(total / limit) if limit > 0 else 0
+
+            # Fetch paginated results
+            guests = await self.collection.find({"wedding_id": wedding_id}).skip(skip).limit(limit).to_list(length=limit)
+
+            # Normalize IDs
+            for guest in guests:
+                normalize_doc_id(guest)
+                guest.pop("_id", None)
+
+            return {
+                "guests": guests,
+                "total": total,
+                "page": page,
+                "pages": pages,
+                "limit": limit
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")
+
+    async def list_all_guests_by_wedding(self, wedding_id: str):
+        """
+        Retrieve all guests for a wedding without pagination.
+        Used for features like seating optimization that need the full guest list.
+
+        Args:
+            wedding_id: The wedding ID to filter by
+
+        Returns:
+            A list of all guest documents for the wedding
+        """
         try:
             guests = await self.collection.find({"wedding_id": wedding_id}).to_list(length=None)
             for guest in guests:

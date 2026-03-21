@@ -31,14 +31,31 @@ except ImportError:
 
 
 def _normalize_timestamp(value: Any) -> Optional[str]:
-    """Return an ISO formatted timestamp string with Z suffix for UTC indication."""
+    """Return an ISO formatted timestamp string with Z suffix for UTC indication.
+
+    Ensures the output never has both a UTC offset (+00:00) AND a Z suffix,
+    which would produce an invalid ISO 8601 string that JavaScript cannot parse.
+    """
     if isinstance(value, datetime):
-        # Add Z suffix to indicate UTC time (critical for correct frontend timezone conversion)
         iso_str = value.isoformat()
-        return iso_str if iso_str.endswith("Z") else iso_str + "Z"
+        # Replace +00:00 offset with Z (they mean the same thing, but JS
+        # rejects strings that have both, e.g. "...+00:00Z")
+        if iso_str.endswith("+00:00"):
+            return iso_str[:-6] + "Z"
+        if iso_str.endswith("Z"):
+            return iso_str
+        # No timezone info at all — assume UTC
+        return iso_str + "Z"
     if isinstance(value, str):
-        # Ensure existing strings have Z suffix if they look like UTC timestamps
-        if value and not value.endswith("Z") and "+" not in value and "-" not in value[-6:]:
+        if not value:
+            return None
+        # Fix the +00:00 → Z canonical form
+        if value.endswith("+00:00"):
+            return value[:-6] + "Z"
+        if value.endswith("Z"):
+            return value
+        # No offset marker — assume UTC
+        if "+" not in value and "-" not in value[-6:]:
             return value + "Z"
         return value
     return None
@@ -830,8 +847,8 @@ async def get_platform_health(
 
         # ==================== COMPILE RESPONSE ====================
 
-        # Use Z suffix to indicate UTC time (critical for correct frontend timezone conversion)
-        generated_at = now.isoformat() + "Z"
+        # Use _normalize_timestamp to safely produce a Z-suffixed ISO string
+        generated_at = _normalize_timestamp(now) or now.isoformat()
 
         return {
             "generated_at": generated_at,
@@ -1070,30 +1087,27 @@ async def save_metrics_snapshot(
 
 @router.get("/errors/recent")
 async def get_recent_errors(
+    page: int = Query(1, ge=1, le=10000, description="Page number"),
     limit: int = Query(50, ge=1, le=200, description="Number of errors per page"),
-    cursor: Optional[str] = Query(None, description="Cursor for pagination (last error_id from previous page)"),
-    direction: str = Query("next", description="Pagination direction: 'next' or 'prev'"),
     severity: Optional[str] = Query(None, description="Filter by severity: all, critical, warning"),
     acknowledged: Optional[bool] = Query(None, description="Filter by acknowledged status"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
-    Get recent errors with filtering and cursor-based pagination.
+    Get recent errors with filtering and page-based pagination.
 
-    Cursor-based pagination provides O(1) performance regardless of offset,
-    unlike skip() which degrades at high offsets.
+    Uses skip/limit pagination for reliable page navigation across
+    both the errors and audit_logs collections.
 
     Args:
+        page: Page number (1-indexed)
         limit: Number of errors per page (1-200)
-        cursor: The error_id from the last item of the previous page
-        direction: 'next' for older errors, 'prev' for newer errors
         severity: Filter by severity level
         acknowledged: Filter by acknowledged status
     """
-    # Validate query parameters
-    direction = validated_enum_filter(direction, ["next", "prev"]) or "next"
+    from math import ceil
+
     severity = validated_status_filter(severity, ["critical", "warning", "all"])
-    cursor = validated_string_filter(cursor, max_length=100)
     acknowledged = validated_boolean_filter(acknowledged)
 
     now = datetime.now(timezone.utc)
@@ -1119,9 +1133,8 @@ async def get_recent_errors(
             },
         ]
 
-    # Get total count for UI display
+    # Get total count for errors collection
     total_errors = 0
-    total_audit = 0
     try:
         total_errors = await mongo.db["errors"].count_documents(errors_query)
     except Exception as exc:
@@ -1137,7 +1150,8 @@ async def get_recent_errors(
     elif severity == "warning":
         audit_query["response_status"] = {"$gte": 400, "$lt": 500}
 
-    # Only count audit_logs if not filtering for acknowledged=True
+    # Count audit_logs if not filtering for acknowledged=True
+    total_audit = 0
     if acknowledged is not True:
         try:
             total_audit = await mongo.db["audit_logs"].count_documents(audit_query)
@@ -1145,10 +1159,13 @@ async def get_recent_errors(
             logger.warning("Failed to count audit_logs: %s", exc)
 
     total_count = total_errors + total_audit
+    total_pages = max(1, ceil(total_count / limit))
+    page = min(page, total_pages)  # Clamp page to valid range
+    skip = (page - 1) * limit
 
-    # Fetch errors with cursor-based pagination
+    # Fetch errors using skip/limit pagination
     errors_docs: List[Dict[str, Any]] = []
-    seen_ids = set()
+    seen_ids: set = set()
 
     def extend_errors(docs: Iterable[Dict[str, Any]], max_items: int):
         added = 0
@@ -1164,60 +1181,42 @@ async def get_recent_errors(
             errors_docs.append(doc)
             added += 1
 
+    # Determine how many items to pull from each collection based on skip offset
+    # Primary source: errors collection (sorted newest first)
+    # Fallback: audit_logs (for remaining slots after errors are exhausted)
+    errors_to_skip = min(skip, total_errors)
+    errors_to_fetch = min(limit, total_errors - errors_to_skip)
+
     try:
-        # Apply cursor-based pagination using _id range query
-        cursor_query = errors_query.copy()
-
-        if cursor:
-            # Find the cursor document to get its _id for range query
-            cursor_doc = None
-            if ObjectId.is_valid(cursor):
-                cursor_doc = await mongo.db["errors"].find_one({"_id": ObjectId(cursor)})
-            if not cursor_doc:
-                cursor_doc = await mongo.db["errors"].find_one({"error_id": cursor})
-
-            if cursor_doc and "_id" in cursor_doc:
-                cursor_id = cursor_doc["_id"]
-                # For descending sort (newest first):
-                # - "next" page: get items with _id < cursor_id (older)
-                # - "prev" page: get items with _id > cursor_id (newer)
-                if direction == "prev":
-                    cursor_query["_id"] = {"$gt": cursor_id}
-                    sort_direction = 1  # Ascending to get items just after cursor
-                else:
-                    cursor_query["_id"] = {"$lt": cursor_id}
-                    sort_direction = -1  # Descending (normal order)
-            else:
-                sort_direction = -1
-        else:
-            sort_direction = -1  # Default: newest first
-
-        # Fetch one extra to determine if there are more pages
-        fetch_limit = limit + 1
-        db_cursor = mongo.db["errors"].find(cursor_query).sort("_id", sort_direction).limit(fetch_limit)
-        fetched_docs = await db_cursor.to_list(length=fetch_limit)
-
-        # If going backwards, reverse to maintain consistent order
-        if direction == "prev" and cursor:
-            fetched_docs.reverse()
-
-        # Check if there are more results
-        has_more = len(fetched_docs) > limit
-        if has_more:
-            fetched_docs = fetched_docs[:limit]
-
-        extend_errors(fetched_docs, limit)
-
+        if errors_to_fetch > 0:
+            db_cursor = (
+                mongo.db["errors"]
+                .find(errors_query)
+                .sort("_id", -1)
+                .skip(errors_to_skip)
+                .limit(errors_to_fetch)
+            )
+            fetched_docs = await db_cursor.to_list(length=errors_to_fetch)
+            extend_errors(fetched_docs, errors_to_fetch)
     except Exception as exc:
-        logger.warning("Failed to query self-hosted errors collection: %s", exc)
+        logger.warning("Failed to query errors collection: %s", exc)
 
-    # Include audit_logs for remaining items if needed (only for first page without cursor)
-    include_audit_fallback = acknowledged is not True and len(errors_docs) < limit and not cursor
-    if include_audit_fallback:
-        remaining = limit - len(errors_docs)
-        if remaining > 0:
-            audit_cursor = mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(remaining)
+    # Fill remaining slots from audit_logs if needed
+    remaining = limit - len(errors_docs)
+    if remaining > 0 and acknowledged is not True:
+        # How many audit_logs to skip (offset into audit_logs space)
+        audit_offset = max(0, skip - total_errors)
+        try:
+            audit_cursor = (
+                mongo.db["audit_logs"]
+                .find(audit_query)
+                .sort("timestamp", -1)
+                .skip(audit_offset)
+                .limit(remaining)
+            )
             extend_errors(await audit_cursor.to_list(length=remaining), remaining)
+        except Exception as exc:
+            logger.warning("Failed to query audit_logs: %s", exc)
 
     errors_docs.sort(
         key=lambda doc: _coerce_datetime(doc.get("timestamp")) or datetime.min,
@@ -1225,27 +1224,14 @@ async def get_recent_errors(
     )
     normalized_errors = [_extract_error_summary(error) for error in errors_docs]
 
-    # Calculate cursors for next/prev navigation
-    next_cursor = None
-    prev_cursor = None
-
-    if normalized_errors:
-        # Next cursor: last item's error_id (for fetching older errors)
-        next_cursor = normalized_errors[-1].get("error_id") if has_more or (cursor and direction == "prev") else None
-        # Prev cursor: first item's error_id (for fetching newer errors)
-        prev_cursor = normalized_errors[0].get("error_id") if cursor else None
-
-    total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
-
     return {
         "errors": normalized_errors,
         "total": total_count,
+        "page": page,
+        "pages": total_pages,
         "limit": limit,
-        "total_pages": total_pages,
-        "has_next": next_cursor is not None,
-        "has_prev": prev_cursor is not None,
-        "next_cursor": next_cursor,
-        "prev_cursor": prev_cursor,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
         "filters": {
             "severity": severity,
             "acknowledged": acknowledged

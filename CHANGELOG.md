@@ -5,6 +5,162 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.0] - 2026-03-20 — Shared Pagination System for Admin Dashboard
+
+### Context
+
+The admin dashboard had ~25 pages with tables that either had no pagination at all (loading all records into the DOM), or had broken/inconsistent pagination implementations (some cursor-based, some client-side-only). Large datasets like platform errors (1000+ records) and guest lists were loading everything at once, causing slow renders and poor UX. The platform errors page was additionally stuck at 2 pages because the cursor lookup only searched the `errors` collection but not the `audit_logs` collection.
+
+### Added
+
+- **`app/admin/components/ui/glass/GlassPagination.tsx`** — New shared pagination component with two variants:
+  - `full`: Shows page numbers, first/last buttons, per-page dropdown, and "Showing X–Y of Z" summary
+  - `compact`: Minimal "Page X of Y" display with prev/next buttons for use as a top-of-table nav
+  - Defensive defaults on all numeric props (`totalItems = 0`, `currentPage = 1`, etc.) so the component never crashes on `undefined` values
+  - Optional `onPageChange` (called with `?.()` guard) so it can render safely even when callbacks aren't provided
+  - Glass-morphism styling consistent with the existing design system
+
+- **`app/admin/hooks/usePagination.ts`** — Shared pagination state hook providing:
+  - `currentPage`, `itemsPerPage`, `totalItems`, `totalPages` (computed)
+  - `setPage()`, `setItemsPerPage()`, `setTotalItems()`, `updateFromResponse()`
+  - `queryParams` (ready-to-use `{ page, limit }` object) and `skip` (for skip/limit APIs)
+  - Configurable `initialPage` and `initialItemsPerPage` (defaults to 50)
+
+### Changed
+
+- **`app/api/admin_platform_metrics.py`** — Replaced cursor-based pagination on `GET /errors/recent` with page-based (`page`, `limit` query params). Fixed `_normalize_timestamp()` which was producing `+00:00Z` (double timezone suffix) that JavaScript's `new Date()` rejected as Invalid Date. Backend now correctly splits pagination across both `errors` and `audit_logs` collections based on skip offset.
+
+- **`app/admin/platform/page.tsx`** — Rewrote errors tab pagination from cursor-based state (`cursorHistory`, `nextCursor`, `prevCursor`, etc.) to `usePagination` hook + `GlassPagination` component. Changed table to `table-fixed` layout with explicit column widths to prevent horizontal overflow. Shortened column labels ("Acknowledged" → "Ack'd").
+
+- **`app/services/guest_service.py`** + **`app/api/guest.py`** — Added `page`/`limit` params to `GET /guests`, replaced `to_list(length=None)` with skip/limit queries.
+
+- **`app/api/user_management.py`** + **`app/services/user_management_service.py`** — Added `page`, `limit`, `search` pagination to user listing endpoints.
+
+- **`app/api/wedding.py`** + **`app/services/wedding_service.py`** — Added `page`, `limit`, `search` pagination to wedding listing endpoints.
+
+- **`app/admin/guests/page.tsx`** — Server-side pagination with compact top nav + full bottom pagination.
+
+- **`app/admin/users/page.tsx`** — Server-side pagination with search, filter-reset-to-page-1 on input change.
+
+- **`app/admin/vendors/page.tsx`** — Server-side pagination integrated with existing search/category/preferred filters.
+
+- **`app/admin/weddings/page.tsx`** — Server-side pagination. Refactored client-side filtering from `useCallback` + `useEffect` (which caused infinite re-render loops) to a clean `useMemo` pattern with a separate filter-reset effect.
+
+- **`app/admin/support/page.tsx`** — Server-side pagination with inline page-reset in filter event handlers.
+
+- **`app/admin/planner/team/page.tsx`** — Server-side pagination with compact top + full bottom nav. Fixed incorrect `goToPage()` method calls (doesn't exist on the hook) to `setPage()`.
+
+- **`app/admin/planner/activity-log/page.tsx`** — Server-side pagination with compact top + full bottom nav.
+
+- **`app/admin/planner/billing/page.tsx`** — Client-side pagination for invoice history using `usePagination` with `Array.slice()`.
+
+### Fixed
+
+- **Infinite re-render loops on all paginated pages** — Every page that used `pagination` (the whole object) as a `useCallback` dependency caused infinite loops because `usePagination()` returns a new object reference on every render. Fixed by destructuring to specific primitive values (`pagination.currentPage`, `pagination.itemsPerPage`) in all dependency arrays.
+
+- **Secondary infinite loop from `updateFromResponse`** — All pages were calling `pagination.updateFromResponse({ total, page })` which set both `totalItems` AND `currentPage`. Setting `totalItems` changed `totalPages`, which caused `setPage` (useCallback depending on `totalPages`) to be recreated, triggering filter-reset effects that called `setPage(1)`, changing `currentPage`, which triggered fetch callbacks. Replaced all `updateFromResponse()` calls with `setTotalItems()` across 7 pages.
+
+- **Weddings page filter cascade loop** — `filterWeddings` was a `useCallback` depending on `allWeddings`. When fetch completed → `allWeddings` updated → `filterWeddings` recreated → effect fired → `pagination.setPage(1)` → `currentPage` changed → `fetchWeddings` triggered again. Fixed by converting to `useMemo` (pure computation, no side effects) with a separate `useEffect` that only resets page on actual filter input changes.
+
+- **GlassPagination crash on undefined props** — Three planner pages passed `pagination={pagination}` as a single object prop instead of individual props. Since `GlassPaginationProps` has no `pagination` prop, all numeric values were `undefined`, causing `.toLocaleString()` crash. Fixed all usages to pass individual props AND added defensive defaults in the component itself.
+
+- **Platform errors stuck at 2 pages** — Cursor-based pagination only searched the `errors` collection for the cursor document. When results spanned both `errors` and `audit_logs`, the cursor was never found and pagination broke. Replaced with page-based pagination.
+
+- **Blank timestamps on platform errors** — `_normalize_timestamp()` appended `Z` to timestamps that already had `+00:00`, producing `+00:00Z` which JavaScript rejects. Fixed to replace `+00:00` with `Z` instead of appending.
+
+- **Named vs default export mismatch** — Three planner pages used `import GlassPagination from ...` (default import) but the component uses `export function GlassPagination` (named export). Fixed all to `import { GlassPagination } from ...`.
+
+### Migration Notes
+
+- All paginated pages now default to 50 items per page with a per-page dropdown offering 10/25/50/100 options
+- The `usePagination` hook's `updateFromResponse()` method still exists but is no longer called by any page — all pages use `setTotalItems()` instead to avoid re-render loops
+- Backend pagination endpoints all follow the `?page=1&limit=50` pattern; the `usePagination` hook also exposes `skip` for APIs that use skip/limit
+- No database migrations required — all changes are frontend pagination state + backend query parameter handling
+
+## [2.16.0] - 2026-03-19 — Merge Business Analytics into SaaS Management + Fix Plan Breakdown Bugs
+
+### Context
+
+The admin dashboard had two separate pages for related data: "Business Analytics" (`/admin/metrics`) showed detailed platform metrics (user growth, subscription revenue, operational load), while "SaaS Management" (`/admin/saas`) had a basic Overview tab with just four metric cards and a plan distribution list. This split was confusing — the Business Analytics page had all the real data, but the SaaS Management Overview (the natural first stop) was too sparse to be useful.
+
+Additionally, the Business Analytics Plan Breakdown table had three data bugs: a missing third plan, hardcoded "N/A" for user counts, and a missing status in the expected list.
+
+### Fixed
+
+- **Missing plan in Plan Breakdown** — `_calculate_revenue_summary()` in `platform_metrics_service.py` only showed plans that had active/trial subscriptions. Plans with zero subscriptions (e.g. a newly created plan) were silently omitted. Added a second query that fetches all active plans from `subscription_plans` and backfills any missing ones with zeroed-out values. Applied to both the main aggregation pipeline and the fallback path.
+- **Hardcoded "N/A" for Active Users / Trial Users** — The frontend Plan Breakdown table had literal `<td>N/A</td>` instead of real data. The backend aggregation pipeline never counted users per plan. Added `active_users` and `trial_users` conditional counters to the `$group` stage, and updated the frontend to render `formatNumber(plan.active_users ?? 0)`.
+- **Missing `pending_checkout` status** — The `expected_statuses` list in `_compile_subscription_metrics()` didn't include `pending_checkout`, which exists in the database. Added it so the status always appears with a default of 0.
+
+### Changed
+
+- **`app/admin/saas/page.tsx`** — Replaced the basic Overview tab with the full Business Analytics dashboard:
+  - Added all Platform Metrics types (`PlatformMetricsResponse`, `TimeframeKey`, etc.) and helper functions (`formatCurrency`, `formatNumber`, `formatPercentage`)
+  - New state: `metrics`, `metricsTimeframe`, `metricsLoading` (replaces old `analyticsOverview` and `planBreakdown`)
+  - Replaced two API calls (`/saas/analytics/overview` + `/saas/analytics/revenue`) with a single `/saas/analytics/platform?timeframe=` call
+  - Added `fetchMetricsOnly()` for lightweight timeframe changes without re-fetching plans/planners
+  - Added `useMemo` hooks for `roleBreakdown` and `statusBreakdown`
+  - Overview tab now shows: User Growth (4 cards), Subscription & Revenue (3 cards + Plan Breakdown table), Operational Load (Weddings, Forms, Communications), and Recent Signups (expanded from 3 to 5 entries with active/inactive badges)
+  - Cleaned up unused `'planners'` from the tab type union
+  - Updated page header: "SAAS Admin Dashboard" → "SaaS Management" with description "Platform analytics, subscription plans, and configuration"
+
+- **`app/admin/metrics/page.tsx`** — Converted from the full Business Analytics page to a lightweight redirect (`router.replace('/admin/saas')`) so bookmarks, browser history, and stale links still work.
+
+- **`app/admin/components/Sidebar.tsx`** — Removed the "Business Analytics" nav item (`/admin/metrics`) from the admin sidebar. Removed unused `TrendingUp` import.
+
+- **`app/admin/components/AdminHeader.tsx`** — Consolidated duplicate header links: removed "Platform Management" and "Platform Metrics" entries, replaced with a single "SaaS Management" link to `/admin/saas`.
+
+- **`app/admin/page.tsx`** — Updated the "Analytics" quick action card on the root admin dashboard to link to `/admin/saas` instead of `/admin/metrics`.
+
+- **`app/services/platform_metrics_service.py`** — Backend fixes described in the Fixed section above. Both `_calculate_revenue_summary()` (main pipeline) and `_revenue_fallback()` now return `active_users` and `trial_users` per plan and backfill all active plans.
+
+### Migration Notes
+
+- `/admin/metrics` now redirects to `/admin/saas` — no dead links
+- The `/admin/support` page's API call to `/admin/metrics/dashboard` is a backend API endpoint (not a frontend route) and is unaffected
+- The Subscription Plans and Ad Platform tabs in SaaS Management are untouched
+- All backend API endpoints remain unchanged — no Python route changes needed for the frontend migration
+
+## [2.15.0] - 2026-03-19 — Advertising Campaign Platform Phase 3: Planner Interaction Flows
+
+### Context
+
+Phase 3 of the advertising platform rebuild. Phases 1-2 built the data models, vendor campaign service, admin moderation service, campaign rollup service, and all associated API routes. Phase 3 implements the two planner-facing interaction flows: "Add to Directory" and "Request Quote" — how planners engage with sponsored vendor cards in the rail.
+
+The old architecture required a planner to manually find and add vendors. In the new campaign platform, vendors advertise independently, and planners interact with sponsored cards that appear contextually. These interactions create attribution trails (ad_leads, ad_events) and feed the campaign analytics pipeline.
+
+### Added
+
+- **`app/services/planner_ad_interaction_service.py`** — Planner ad interaction service
+  - **Add to Directory flow** (roadmap 3.3): copies vendor info from active campaign into planner's `vendor_profiles` collection, tagged with `source: 'sponsored_ad'` and `source_campaign_id` for attribution. Creates `ad_lead` (type: `add_to_directory`, status: `converted`) and `ad_event` (type: `vendor_added_to_directory`). Increments campaign `lead_count` + `conversion_count`. Returns 409 if duplicate.
+  - **Request Quote flow** (roadmap 3.4): creates `ad_lead` (type: `quote_request`, status: `pending`) with message and optional `wedding_context` (date, location, guest_count, venue, budget_range). Sends branded HTML email to vendor via Resend email service with reply-to set to planner's email. Auto-adds vendor to directory if not already present. Gracefully handles email service failures.
+  - **Sponsored cards serving** (`get_sponsored_cards`): returns active campaigns enriched with primary creative, filtered to exclude vendors the planner already added, deduplicated by vendor_id, sorted by quality_score.
+  - **Directory status check**: quick lookup for frontend button state (Add to Directory vs. Already Added).
+
+- **`app/api/planner_ad_interactions.py`** — Planner ad interaction API router (4 routes at `/planner/ads/*`)
+  - `GET /sponsored-cards` — Get contextual sponsored vendor cards for the planner rail. Supports location, categories (comma-separated), and limit (1-10) query params.
+  - `POST /add-to-directory` (201) — Add vendor from campaign to planner's directory. Body: `{campaign_id, click_id?}`.
+  - `POST /request-quote` (201) — Send quote request to vendor. Body: `{campaign_id, message, wedding_id?, wedding_context?, click_id?, auto_add_to_directory?}`. Message required (1-2000 chars).
+  - `GET /directory-status` — Check if vendor already in planner's directory. Query: `campaign_id`.
+  - Auth: `require_planner_or_admin` dependency — allows `is_wedding_planner` or root admin.
+  - Request/response models: `AddToDirectoryRequest`, `RequestQuoteRequest`, `WeddingContext` (Pydantic).
+
+### Changed
+
+- **`app/main.py`** — Registered `planner_ad_interactions_router` (Planner Ad Interactions) between admin campaigns and vendor public routers.
+
+### Architecture Notes
+
+- Planner interaction flows operate on the NEW campaign-centric platform (`ad_campaigns`), NOT the old `sponsored_vendors` system
+- Attribution chain: planner sees sponsored card → clicks Add/Quote → `ad_event` + `ad_lead` created with `campaign_id` → campaign counters incremented → appears in vendor portal leads → appears in campaign rollup stats
+- VendorProfile entries created from campaigns are tagged with `source: 'sponsored_ad'`, `source_campaign_id`, `source_vendor_id`, `source_creative_id` for full attribution
+- Email service is optional (injected via constructor); if unavailable, quote requests still succeed and appear in vendor portal leads
+- Duplicate detection: planner cannot add the same campaign's vendor twice (keyed on `created_by` + `source_campaign_id`)
+
+### Tests Added
+
+- `tests/backend/test_planner_ad_interaction_service.py` — 33 async tests covering add-to-directory (11), request-quote (13), sponsored cards (6), directory status (3)
+- `tests/backend/test_planner_ad_interactions_api.py` — 44 tests covering all 4 routes, auth boundaries, request validation, service integration, error handling
+
 ## [2.14.0] - 2026-03-19 — Advertising Campaign Platform Phase 2: Vendor & Admin Backend
 
 ### Context

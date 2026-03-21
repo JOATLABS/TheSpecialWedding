@@ -8,6 +8,8 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatAdminTimestamp, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
   Users,
   UserPlus,
@@ -137,6 +139,8 @@ export default function AdminUsersPage() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<{ message: string; emailStatus?: string } | null>(null);
 
+  const pagination = usePagination({ initialItemsPerPage: 50 });
+
   // Access control - ROOT ADMIN only
   useEffect(() => {
     if (userProfile && !userProfile.is_root_admin) {
@@ -152,7 +156,7 @@ export default function AdminUsersPage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/users?role=wedding_planner`, {
+      const response = await fetch(`${baseUrl}/users?role=wedding_planner&page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -164,14 +168,15 @@ export default function AdminUsersPage() {
       }
 
       const data = await response.json();
-      setPlanners(Array.isArray(data) ? data : []);
+      setPlanners(data.users || data || []);
+      pagination.setTotalItems(data.total || (data.users || data || []).length);
     } catch (err) {
       console.error('Error fetching planners:', err);
       setError('Failed to load planners. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, pagination.currentPage, pagination.itemsPerPage]);
 
   const fetchTrialSettings = useCallback(async () => {
     try {
@@ -362,6 +367,12 @@ export default function AdminUsersPage() {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [actionMenuOpen]);
+
+  // Reset to page 1 when search or filter changes
+  useEffect(() => {
+    pagination.setPage(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, filterStatus]);
 
   const handleInvitePlanner = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -940,7 +951,17 @@ export default function AdminUsersPage() {
               </button>
             </div>
           ) : (
-            <div className="overflow-visible">
+            <div className="space-y-4">
+              <GlassPagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                totalItems={pagination.totalItems}
+                itemsPerPage={pagination.itemsPerPage}
+                onPageChange={pagination.setPage}
+                variant="compact"
+                itemLabel="users"
+              />
+              <div className="overflow-visible">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/10">
@@ -1139,6 +1160,7 @@ export default function AdminUsersPage() {
                 </tbody>
               </table>
             </div>
+            </div>
           )}
 
           {/* Table Footer */}
@@ -1154,6 +1176,17 @@ export default function AdminUsersPage() {
               </div>
             </div>
           )}
+
+          {/* Pagination */}
+          <GlassPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.setPage}
+            onItemsPerPageChange={pagination.setItemsPerPage}
+            itemLabel="users"
+          />
         </motion.div>
 
         {/* Invite Modal */}

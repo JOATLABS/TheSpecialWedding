@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 
 // ==================== INTERFACES ====================
 
@@ -128,6 +130,9 @@ export default function AdminGuestsPage() {
   const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
 
+  // Pagination state
+  const pagination = usePagination({ initialItemsPerPage: 50 });
+
   // Modal states
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
   const [addingGuest, setAddingGuest] = useState(false);
@@ -213,18 +218,22 @@ export default function AdminGuestsPage() {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-      // Fetch guests
+      // Fetch guests with pagination
       const guestsResponse = await fetch(
-        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
+        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}&page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
 
       let normalizedGuests: Guest[] = [];
       if (guestsResponse.ok) {
         const guestsData = await guestsResponse.json();
-        normalizedGuests = Array.isArray(guestsData) ? guestsData : [];
+        const guestData = guestsData.guests || guestsData || [];
+        normalizedGuests = Array.isArray(guestData) ? guestData : [];
+        setGuests(normalizedGuests);
+        pagination.setTotalItems(guestsData.total || normalizedGuests.length);
+      } else {
+        setGuests([]);
       }
-      setGuests(normalizedGuests);
 
       // Fetch RSVPs
       try {
@@ -266,7 +275,7 @@ export default function AdminGuestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedWedding, token]);
+  }, [selectedWedding, token, pagination.currentPage, pagination.itemsPerPage]);
 
   useEffect(() => {
     fetchWeddings();
@@ -441,6 +450,12 @@ export default function AdminGuestsPage() {
   };
 
   // ==================== FILTERING & SORTING ====================
+
+  // Reset pagination to page 1 when filters change
+  useEffect(() => {
+    pagination.setPage(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, activeTab, filterGroup, filterRole]);
 
   const filteredAndSortedGuests = useMemo(() => {
     let result = guests.filter(guest => {
@@ -1653,7 +1668,17 @@ export default function AdminGuestsPage() {
                   </div>
                 ) : viewMode === 'table' ? (
                   /* TABLE VIEW */
-                  <div className="overflow-x-auto">
+                  <div className="space-y-4">
+                    <GlassPagination
+                      currentPage={pagination.currentPage}
+                      totalPages={pagination.totalPages}
+                      totalItems={pagination.totalItems}
+                      itemsPerPage={pagination.itemsPerPage}
+                      onPageChange={pagination.setPage}
+                      variant="compact"
+                      itemLabel="guests"
+                    />
+                    <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50 dark:bg-slate-700">
                         <tr>
@@ -1901,6 +1926,16 @@ export default function AdminGuestsPage() {
                         })}
                       </tbody>
                     </table>
+                    </div>
+                    <GlassPagination
+                      currentPage={pagination.currentPage}
+                      totalPages={pagination.totalPages}
+                      totalItems={pagination.totalItems}
+                      itemsPerPage={pagination.itemsPerPage}
+                      onPageChange={pagination.setPage}
+                      onItemsPerPageChange={pagination.setItemsPerPage}
+                      itemLabel="guests"
+                    />
                   </div>
                 ) : (
                   /* CARD VIEW */

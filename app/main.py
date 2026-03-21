@@ -83,10 +83,12 @@ from app.api.vendor_contract_public import router as vendor_contract_public_rout
 from app.api.notification_stream import router as notification_stream_router
 from app.api.team_management import router as team_management_router
 from app.api.inbound_emails import router as inbound_emails_router
-from app.api.advertising import router as advertising_router
+
 from app.api.vendor_campaigns import router as vendor_campaigns_router
 from app.api.admin_campaigns import router as admin_campaigns_router
+from app.api.planner_ad_interactions import router as planner_ad_interactions_router
 from app.api.vendor_public import router as vendor_public_router
+from app.api.blog import router as blog_router
 
 # Setup logging
 logging.basicConfig(
@@ -144,12 +146,6 @@ async def _nightly_rollup_scheduler():
                 f"({wait_seconds / 3600:.1f}h from now)"
             )
             await asyncio.sleep(wait_seconds)
-
-            # Run the legacy rollup (sponsored_vendors -> ad_stats_daily)
-            from app.services.ad_rollup_service import AdRollupService
-            rollup_service = AdRollupService(mongo.db)
-            count = await rollup_service.compute_daily_rollup()
-            logger.info(f"Nightly ad rollup (legacy) complete: {count} stats documents upserted")
 
             # Run the campaign-centric rollup (ad_campaigns -> campaign_day_stats + placement_day_stats)
             from app.services.campaign_rollup_service import CampaignRollupService
@@ -235,6 +231,17 @@ async def lifespan(app: FastAPI):
                 logger.info("Knowledge Base already seeded, no new articles")
         except Exception as e:
             logger.warning(f"Knowledge Base seeding skipped: {e}")
+
+        # Seed Blog with launch articles (skips if already seeded)
+        try:
+            from app.scripts.seed_blog import seed_blog
+            blog_result = await seed_blog()
+            if blog_result["inserted"] > 0:
+                logger.info(f"Blog seeded: {blog_result['inserted']} articles added")
+            else:
+                logger.info("Blog already seeded, no new articles")
+        except Exception as e:
+            logger.warning(f"Blog seeding skipped: {e}")
 
         # Start SSE Redis pub/sub listener for cross-worker broadcasting
         from app.services.sse_manager import sse_manager
@@ -438,10 +445,12 @@ app.include_router(platform_metrics_router, tags=["Metrics"])  # Metrics ingesti
 app.include_router(contracts_router, tags=["Public Contracts"])  # Public contract viewing/signing
 app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
 app.include_router(scheduler_jobs_router, prefix="/scheduler", tags=["Scheduler"])  # Scheduled task processing
-app.include_router(advertising_router, tags=["Advertising"])  # Legacy vendor advertising (has own /admin/ads prefix)
+
 app.include_router(vendor_campaigns_router, tags=["Vendor Campaigns"])  # Vendor campaign portal (has own /portal/ads prefix)
 app.include_router(admin_campaigns_router, tags=["Admin Campaigns"])  # Admin campaign management (has own /admin/ads/campaigns prefix)
+app.include_router(planner_ad_interactions_router, tags=["Planner Ad Interactions"])  # Planner ad interaction flows (has own /planner/ads prefix)
 app.include_router(vendor_public_router, tags=["Public Vendors"])  # Public vendor profiles (has own /api/v1/vendors prefix)
+app.include_router(blog_router, tags=["Blog"])  # Public blog + admin blog endpoints (has own /api/v1/blog and /blog/admin prefixes)
 
 # Admin routes (authentication required)
 # Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes

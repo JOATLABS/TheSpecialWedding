@@ -32,6 +32,8 @@ export interface KBArticle {
   view_count: number;
   helpful_count: number;
   not_helpful_count: number;
+  card_image?: string;
+  og_image?: string;
   estimated_read_minutes: number;
   created_at: string;
   updated_at: string;

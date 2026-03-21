@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.models.wedding import WeddingModel
 from app.services.wedding_service import WeddingService
 from app.services.cascade_delete_service import cascade_delete_service
@@ -20,6 +20,8 @@ from app.services.sse_manager import sse_manager
 from app.core.database import mongo
 from datetime import datetime, timezone
 from bson import ObjectId
+from math import ceil
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,22 +31,27 @@ subscription_service = SubscriptionService()
 
 
 @router.get("/weddings", tags=["Admin"])
-async def list_weddings(current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+async def list_weddings(
+    page: int = Query(1, ge=1, le=10000),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+):
     """
-    List weddings - ROOT_ADMIN sees all, planners see only assigned.
+    List weddings with pagination - ROOT_ADMIN sees all, planners see only assigned.
     Team members with "assigned" access see only their assigned weddings.
     """
     if current_user.is_root_admin:
-        return await wedding_service.list_weddings_with_planner_info()
+        return await wedding_service.list_weddings_with_planner_info(page=page, limit=limit, search=search)
 
     # Get accessible wedding IDs for team members
     accessible_ids = get_accessible_wedding_ids(current_user)
     if accessible_ids is not None:
         # Team member with "assigned" access - filter by their assigned weddings
-        return await wedding_service.list_weddings_for_planner(current_user.email, accessible_ids=accessible_ids)
+        return await wedding_service.list_weddings_for_planner(current_user.email, accessible_ids=accessible_ids, page=page, limit=limit, search=search)
 
     # Planner owner or team member with "all" access
-    return await wedding_service.list_weddings_for_planner(current_user.email)
+    return await wedding_service.list_weddings_for_planner(current_user.email, page=page, limit=limit, search=search)
 
 
 @router.post("/weddings", tags=["Admin"])

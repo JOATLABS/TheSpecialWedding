@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 
 interface Wedding {
   _id: string;
@@ -88,6 +90,8 @@ export default function AdminWeddingsPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEventDetails, setShowEventDetails] = useState(false);
 
+  const pagination = usePagination({ initialItemsPerPage: 50 });
+
   // Wedding templates
   const weddingTemplates = [
     {
@@ -152,7 +156,7 @@ export default function AdminWeddingsPage() {
     try {
       const baseUrl = getApiBaseUrl();
       // Use authenticated planner endpoint to get assigned weddings
-      const endpoint = `${baseUrl}/admin/planner/weddings`;
+      const endpoint = `${baseUrl}/admin/planner/weddings?page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`;
       const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -164,8 +168,9 @@ export default function AdminWeddingsPage() {
         throw new Error('Failed to fetch weddings');
       }
       const data = await response.json();
-      const weddingList = Array.isArray(data) ? data : [];
+      const weddingList = data.weddings || data || [];
       setAllWeddings(weddingList);
+      pagination.setTotalItems(data.total || weddingList.length);
     } catch (err) {
       console.error('Error fetching weddings:', err);
       setError('Failed to load weddings');
@@ -173,7 +178,8 @@ export default function AdminWeddingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, pagination.currentPage, pagination.itemsPerPage]);
 
   const fetchPlanners = useCallback(async () => {
     try {
@@ -210,14 +216,19 @@ export default function AdminWeddingsPage() {
     }
   }, [fetchPlanners, fetchUserProfile, fetchWeddings, userProfile]);
 
-  const filterWeddings = useCallback(() => {
-    if (!userProfile) return;
+  // Reset to page 1 only when user changes filter inputs (not when data changes)
+  useEffect(() => {
+    pagination.setPage(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, statusFilter, dateFilter, filter]);
+
+  // Client-side filtering as a memo (no side effects, no loops)
+  const filteredWeddings = useMemo(() => {
+    if (!userProfile) return [];
 
     let filtered = [...allWeddings];
 
-    // Role-based filtering is handled by backend, but we can add client-side filters
     if (userProfile.is_root_admin) {
-      // Root admin can see all weddings and filter by assignment
       if (filter === 'assigned') {
         filtered = filtered.filter(w => w.assigned_planner_email);
       } else if (filter === 'unassigned') {
@@ -225,7 +236,6 @@ export default function AdminWeddingsPage() {
       }
     }
 
-    // Search filter
     if (searchTerm) {
       filtered = filtered.filter(w =>
         w.couple_names.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -234,12 +244,10 @@ export default function AdminWeddingsPage() {
       );
     }
 
-    // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(w => w.status === statusFilter);
     }
 
-    // Date filter
     const now = new Date();
     if (dateFilter !== 'all') {
       filtered = filtered.filter(w => {
@@ -259,12 +267,12 @@ export default function AdminWeddingsPage() {
       });
     }
 
-    setWeddings(filtered);
+    return filtered;
   }, [allWeddings, dateFilter, filter, searchTerm, statusFilter, userProfile]);
 
   useEffect(() => {
-    filterWeddings();
-  }, [filterWeddings]);
+    setWeddings(filteredWeddings);
+  }, [filteredWeddings]);
 
   // Auto-enable event details toggle when status is active or editing wedding with details
   useEffect(() => {
@@ -830,6 +838,21 @@ export default function AdminWeddingsPage() {
           </div>
         </div>
 
+        {/* Compact Pagination */}
+        {!loading && weddings.length > 0 && (
+          <div className="mb-4">
+            <GlassPagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={pagination.setPage}
+              variant="compact"
+              itemLabel="weddings"
+            />
+          </div>
+        )}
+
         {/* Weddings List */}
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -922,6 +945,21 @@ export default function AdminWeddingsPage() {
             </div>
           )}
         </div>
+
+        {/* Pagination */}
+        {!loading && weddings.length > 0 && (
+          <div className="mt-6">
+            <GlassPagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={pagination.setPage}
+              onItemsPerPageChange={pagination.setItemsPerPage}
+              itemLabel="weddings"
+            />
+          </div>
+        )}
       </div>
     </div>
   );

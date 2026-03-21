@@ -20,7 +20,6 @@ import {
   X,
   CreditCard,
   Layers,
-  TrendingUp,
   Server,
   Calendar,
   Image,
@@ -29,7 +28,9 @@ import {
   Mail,
   Megaphone,
   Trophy,
-  Target,
+
+  PlusCircle,
+  ExternalLink,
   type LucideIcon
 } from 'lucide-react';
 
@@ -45,20 +46,23 @@ interface NavItem {
   icon: LucideIcon;
   adminOnly?: boolean;
   plannerOnly?: boolean;
+  shortcut?: boolean;
+  external?: boolean;
 }
 
 // Navigation items for Root Admin/Developer (platform-level management only)
 const adminNavItems: NavItem[] = [
   { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { name: 'Business Analytics', href: '/admin/metrics', icon: TrendingUp },
   { name: 'Platform', href: '/admin/platform', icon: Server },
   { name: 'SaaS Management', href: '/admin/saas', icon: Layers },
   { name: 'Planners', href: '/admin/users', icon: Users },
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
-  // Advertising (Phase 1: admin-managed sponsored vendors + analytics)
-  { name: 'Advertising', href: '/admin/advertising', icon: Megaphone },
+  { name: 'Ad Platform', href: '/admin/ads', icon: Megaphone },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
+  // Shortcuts: quick access for ad platform workflows (after all main nav items)
+  { name: 'Create Vendor', href: '/portal/ads/campaigns/new', icon: PlusCircle, shortcut: true },
+  { name: 'Vendor Portal', href: '/portal/ads', icon: ExternalLink, shortcut: true, external: true },
 ];
 
 // Navigation items for Wedding Planners
@@ -217,33 +221,53 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" aria-label="Sidebar navigation menu">
-          {filteredNavItems.map((item) => {
+          {filteredNavItems.map((item, index) => {
             const Icon = item.icon;
-            const active = isActive(item.href);
+            const active = !item.shortcut && isActive(item.href);
+
+            // Show "Shortcuts" section label before first shortcut item
+            const isFirstShortcut = item.shortcut && (index === 0 || !filteredNavItems[index - 1]?.shortcut);
 
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => isMobile && setIsOpen(false)}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-xl
-                  transition-colors duration-200
-                  ${active
-                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }
-                `}
-                aria-current={active ? 'page' : undefined}
-                title={!isOpen ? item.name : undefined}
-              >
-                <Icon size={20} className={active ? 'text-primary-500' : ''} aria-hidden="true" />
-                {isOpen && (
-                  <span className="font-medium text-sm whitespace-nowrap overflow-hidden">
-                    {item.name}
-                  </span>
+              <React.Fragment key={item.name + item.href}>
+                {isFirstShortcut && isOpen && (
+                  <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    Shortcuts
+                  </p>
                 )}
-              </Link>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => isMobile && setIsOpen(false)}
+                  {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  className={`
+                    flex items-center gap-3 px-3 py-2.5 rounded-xl
+                    transition-colors duration-200
+                    ${item.shortcut
+                      ? 'text-wedding-gold hover:bg-amber-50 dark:hover:bg-amber-900/10'
+                      : active
+                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }
+                  `}
+                  aria-current={active ? 'page' : undefined}
+                  title={!isOpen ? item.name : undefined}
+                >
+                  <Icon size={20} className={item.shortcut ? 'text-wedding-gold' : active ? 'text-primary-500' : ''} aria-hidden="true" />
+                  {isOpen && (
+                    <>
+                      <span className="font-medium text-sm whitespace-nowrap overflow-hidden">
+                        {item.name}
+                      </span>
+                      {item.shortcut && (
+                        <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wide bg-wedding-gold text-slate-900 px-1.5 py-0.5 rounded">
+                          shortcut
+                        </span>
+                      )}
+                    </>
+                  )}
+                </Link>
+              </React.Fragment>
             );
           })}
         </nav>

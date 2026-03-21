@@ -8,6 +8,8 @@ import { Card } from '@/components/ui/Card';
 import { formatDateTime } from '@/utils/dateFormat';
 import { toast } from 'sonner';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
   Server,
   Database,
@@ -166,19 +168,12 @@ export default function PlatformInfrastructurePage() {
   const [allErrors, setAllErrors] = useState<ErrorSummary[]>([]);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [acknowledgedFilter, setAcknowledgedFilter] = useState<AcknowledgedFilter>('all');
-  const [errorLimit, setErrorLimit] = useState(50);
   const [loadingErrors, setLoadingErrors] = useState(false);
   const [acknowledgingIds, setAcknowledgingIds] = useState<Set<string>>(new Set());
   const [acknowledgingAll, setAcknowledgingAll] = useState(false);
 
-  // Cursor-based pagination state
-  const [totalErrors, setTotalErrors] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [hasNextPage, setHasNextPage] = useState(false);
-  const [hasPrevPage, setHasPrevPage] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [prevCursor, setPrevCursor] = useState<string | null>(null);
-  const [cursorHistory, setCursorHistory] = useState<string[]>([]);  // Track cursor history for "First" button
+  // Page-based pagination
+  const errorPagination = usePagination({ initialItemsPerPage: 50 });
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
@@ -220,7 +215,7 @@ export default function PlatformInfrastructurePage() {
     }
   }, []);
 
-  const fetchAllErrors = useCallback(async (cursor?: string | null, direction: 'next' | 'prev' = 'next') => {
+  const fetchAllErrors = useCallback(async () => {
     try {
       setLoadingErrors(true);
       const baseUrl = getApiBaseUrl();
@@ -229,9 +224,8 @@ export default function PlatformInfrastructurePage() {
       if (!token) return;
 
       const params = new URLSearchParams({
-        limit: errorLimit.toString(),
-        direction,
-        ...(cursor && { cursor }),
+        page: errorPagination.currentPage.toString(),
+        limit: errorPagination.itemsPerPage.toString(),
         ...(severityFilter !== 'all' && { severity: severityFilter }),
         ...(acknowledgedFilter !== 'all' && { acknowledged: acknowledgedFilter })
       });
@@ -246,19 +240,14 @@ export default function PlatformInfrastructurePage() {
       if (response.ok) {
         const data = await response.json();
         setAllErrors(data.errors || []);
-        setTotalErrors(data.total || 0);
-        setTotalPages(data.total_pages || 1);
-        setHasNextPage(data.has_next || false);
-        setHasPrevPage(data.has_prev || false);
-        setNextCursor(data.next_cursor || null);
-        setPrevCursor(data.prev_cursor || null);
+        errorPagination.setTotalItems(data.total || 0);
       }
     } catch (err) {
       console.error('Error fetching errors:', err);
     } finally {
       setLoadingErrors(false);
     }
-  }, [errorLimit, severityFilter, acknowledgedFilter]);
+  }, [errorPagination.currentPage, errorPagination.itemsPerPage, severityFilter, acknowledgedFilter]);
 
   useEffect(() => {
     fetchMetrics();
@@ -275,44 +264,10 @@ export default function PlatformInfrastructurePage() {
     }
   }, [activeTab, fetchAllErrors]);
 
-  // Reset cursor when filters change
+  // Reset to page 1 when filters change
   useEffect(() => {
-    setNextCursor(null);
-    setPrevCursor(null);
-    setCursorHistory([]);
-  }, [errorLimit, severityFilter, acknowledgedFilter]);
-
-  const handleNextPage = () => {
-    if (nextCursor && hasNextPage) {
-      // Save current first item's cursor to history for going back
-      if (allErrors.length > 0 && allErrors[0].error_id) {
-        setCursorHistory(prev => [...prev, allErrors[0].error_id]);
-      }
-      fetchAllErrors(nextCursor, 'next');
-    }
-  };
-
-  const handlePrevPage = () => {
-    if (cursorHistory.length > 0) {
-      // Go back using cursor history
-      const newHistory = [...cursorHistory];
-      const prevPageCursor = newHistory.pop();
-      setCursorHistory(newHistory);
-      // If we're at the beginning of history, fetch first page
-      if (newHistory.length === 0) {
-        fetchAllErrors(undefined, 'next');
-      } else {
-        fetchAllErrors(prevPageCursor, 'prev');
-      }
-    } else if (prevCursor) {
-      fetchAllErrors(prevCursor, 'prev');
-    }
-  };
-
-  const handleFirstPage = () => {
-    setCursorHistory([]);
-    fetchAllErrors(undefined, 'next');
-  };
+    errorPagination.setPage(1);
+  }, [severityFilter, acknowledgedFilter]);
 
   const handleAcknowledgeError = async (errorId: string) => {
     setAcknowledgingIds(prev => new Set(prev).add(errorId));
@@ -868,8 +823,8 @@ export default function PlatformInfrastructurePage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Limit</label>
                 <select
-                  value={errorLimit}
-                  onChange={(e) => setErrorLimit(Number(e.target.value))}
+                  value={errorPagination.itemsPerPage}
+                  onChange={(e) => errorPagination.setItemsPerPage(Number(e.target.value))}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 text-sm"
                 >
                   <option value={25}>25 per page</option>
@@ -899,10 +854,10 @@ export default function PlatformInfrastructurePage() {
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
                 {severityFilter !== 'all' || acknowledgedFilter !== 'all' ? 'Total Matching' : 'Total Errors (30d)'}
               </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{totalErrors}</p>
-              {totalPages > 1 && (
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{errorPagination.totalItems}</p>
+              {errorPagination.totalPages > 1 && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Showing {allErrors.length} of {totalErrors}
+                  Showing {allErrors.length} of {errorPagination.totalItems}
                 </p>
               )}
             </Card>
@@ -943,25 +898,34 @@ export default function PlatformInfrastructurePage() {
               </p>
             </Card>
           ) : (
-            <Card className="overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="space-y-4">
+              <GlassPagination
+                currentPage={errorPagination.currentPage}
+                totalPages={errorPagination.totalPages}
+                totalItems={errorPagination.totalItems}
+                itemsPerPage={errorPagination.itemsPerPage}
+                onPageChange={errorPagination.setPage}
+                variant="compact"
+                itemLabel="errors"
+              />
+              <Card className="overflow-hidden">
+                <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Severity</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Message</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                      <th className="w-[72px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Severity</th>
+                      <th className="w-[14%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Type</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Message</th>
+                      <th className="w-[18%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
+                      <th className="w-[110px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</th>
+                      <th className="w-[80px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                      <th className="w-[120px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700">
                     {allErrors.map((err) => (
                       <tr key={err.error_id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        <td className="px-3 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                             err.severity === 'critical'
                               ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                               : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
@@ -969,55 +933,55 @@ export default function PlatformInfrastructurePage() {
                             {err.severity}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{err.error_type}</p>
+                        <td className="px-3 py-3">
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={err.error_type}>{err.error_type}</p>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-3">
                           <p
-                            className="text-sm text-gray-700 dark:text-gray-300 max-w-md truncate cursor-help hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                            className="text-sm text-gray-700 dark:text-gray-300 truncate cursor-help hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
                             title={err.message}
                           >
                             {err.message}
                           </p>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3">
                           <p
-                            className="text-sm text-gray-500 dark:text-gray-400 font-mono max-w-xs truncate cursor-help"
+                            className="text-sm text-gray-500 dark:text-gray-400 font-mono truncate cursor-help"
                             title={err.endpoint || 'N/A'}
                           >
                             {err.endpoint || 'N/A'}
                           </p>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <td className="px-3 py-3">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                             {formatDateTime(err.timestamp, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                           </p>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3">
                           {err.acknowledged ? (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
-                              Acknowledged
+                            <span className="px-1.5 py-0.5 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
+                              Ack'd
                             </span>
                           ) : (
-                            <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
+                            <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
                               New
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
                           {!err.acknowledged && (
                             <button
                               onClick={() => handleAcknowledgeError(err.error_id)}
                               disabled={acknowledgingIds.has(err.error_id)}
-                              className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-sm font-medium mr-4"
+                              className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-xs font-medium mr-2"
                             >
                               {acknowledgingIds.has(err.error_id) && <Loader2 className="w-3 h-3 animate-spin" />}
-                              {acknowledgingIds.has(err.error_id) ? 'Saving...' : 'Acknowledge'}
+                              {acknowledgingIds.has(err.error_id) ? '...' : 'Ack'}
                             </button>
                           )}
                           <button
                             onClick={() => router.push(`/admin/platform/errors/${err.error_id}`)}
-                            className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-sm font-medium"
+                            className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-xs font-medium"
                           >
                             Details
                           </button>
@@ -1026,51 +990,22 @@ export default function PlatformInfrastructurePage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
             </Card>
+            </div>
           )}
 
           {/* Pagination Controls */}
-          {(hasNextPage || hasPrevPage || cursorHistory.length > 0) && (
-            <Card className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  Showing {allErrors.length} of {totalErrors} total errors
-                  {cursorHistory.length > 0 && (
-                    <span className="ml-2 text-gray-400">
-                      (Page {cursorHistory.length + 1})
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleFirstPage}
-                    disabled={cursorHistory.length === 0 || loadingErrors}
-                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    First
-                  </button>
-                  <button
-                    onClick={handlePrevPage}
-                    disabled={(cursorHistory.length === 0 && !hasPrevPage) || loadingErrors}
-                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-3 py-1 text-sm font-medium bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 rounded">
-                    {cursorHistory.length + 1}
-                  </span>
-                  <button
-                    onClick={handleNextPage}
-                    disabled={!hasNextPage || loadingErrors}
-                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </Card>
-          )}
+          <GlassPagination
+            currentPage={errorPagination.currentPage}
+            totalPages={errorPagination.totalPages}
+            totalItems={errorPagination.totalItems}
+            itemsPerPage={errorPagination.itemsPerPage}
+            isLoading={loadingErrors}
+            onPageChange={errorPagination.setPage}
+            onItemsPerPageChange={errorPagination.setItemsPerPage}
+            pageSizeOptions={[25, 50, 100, 200]}
+            itemLabel="errors"
+          />
         </div>
       )}
 

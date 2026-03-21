@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
   Users,
   UserPlus,
@@ -54,6 +56,7 @@ export default function TeamManagementPage() {
   const { token } = useAdmin();
   const baseUrl = getApiBaseUrl();
   const { confirm } = useConfirmDialog();
+  const pagination = usePagination({ initialItemsPerPage: 50 });
 
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [seatsInfo, setSeatsInfo] = useState<SeatsInfo | null>(null);
@@ -76,14 +79,18 @@ export default function TeamManagementPage() {
       };
 
       const [membersRes, seatsRes] = await Promise.all([
-        fetch(`${baseUrl}/admin/team/members`, { headers, cache: 'no-store' }),
+        fetch(`${baseUrl}/admin/team/members?skip=${pagination.skip}&limit=${pagination.itemsPerPage}`, { headers, cache: 'no-store' }),
         fetch(`${baseUrl}/admin/team/seats`, { headers, cache: 'no-store' }),
       ]);
 
       if (membersRes.ok) {
         const data = await membersRes.json();
         // API returns { members: [...], total, skip, limit }
-        setMembers(Array.isArray(data) ? data : data.members ?? []);
+        const membersList = Array.isArray(data) ? data : data.members ?? [];
+        setMembers(membersList);
+        if (data.total !== undefined) {
+          pagination.setTotalItems(data.total);
+        }
       }
 
       if (seatsRes.ok) {
@@ -96,7 +103,8 @@ export default function TeamManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, baseUrl]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, baseUrl, pagination.skip, pagination.itemsPerPage]);
 
   useEffect(() => {
     fetchData();
@@ -366,7 +374,10 @@ export default function TeamManagementPage() {
               {(['all', 'active', 'pending', 'deactivated'] as const).map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setStatusFilter(tab)}
+                  onClick={() => {
+                    setStatusFilter(tab);
+                    pagination.setPage(1);
+                  }}
                   data-testid={`tab-${tab}`}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${
                     statusFilter === tab
@@ -384,7 +395,10 @@ export default function TeamManagementPage() {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                pagination.setPage(1);
+              }}
               placeholder="Search members..."
               data-testid="member-search"
               className="bg-transparent border-none text-sm text-slate-200 placeholder:text-slate-600 outline-none w-48"
@@ -401,8 +415,18 @@ export default function TeamManagementPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <>
+            <GlassPagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={pagination.setPage}
+              variant="compact"
+              itemLabel="members"
+            />
+            <div className="overflow-x-auto">
+              <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-700/30">
                   <th className="text-left px-5 py-3 text-xs uppercase tracking-wider text-slate-500 font-medium">Member</th>
@@ -551,9 +575,21 @@ export default function TeamManagementPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
+
+      {/* Pagination */}
+      <GlassPagination
+        currentPage={pagination.currentPage}
+        totalPages={pagination.totalPages}
+        totalItems={pagination.totalItems}
+        itemsPerPage={pagination.itemsPerPage}
+        onPageChange={pagination.setPage}
+        onItemsPerPageChange={pagination.setItemsPerPage}
+        itemLabel="members"
+      />
 
       {/* Modals */}
       {showInviteModal && (

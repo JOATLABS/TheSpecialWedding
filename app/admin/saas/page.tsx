@@ -1,12 +1,19 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '../../components/ui/Card';
-import { formatDate } from '@/utils/dateFormat';
+import { formatDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
+import { toast } from 'sonner';
+import { Settings } from 'lucide-react';
+import {
+  getAdminConfig,
+  updateAdminConfig,
+  type PlatformConfig,
+} from '@/services/campaignAdvertisingApi';
 
 interface SubscriptionPlan {
  _id: string;
@@ -48,21 +55,94 @@ interface WeddingPlanner {
  timezone?: string;
 }
 
-interface AnalyticsOverview {
-  total_planners: number;
-  active_planners: number;
-  total_weddings: number;
-  active_plans: number;
-  monthly_revenue: number;
-  yearly_revenue: number;
-  projected_annual_revenue: number;
+// ---------- Platform Metrics types (merged from Business Analytics) ----------
+
+interface RoleBreakdown {
+  [role: string]: number;
 }
 
-interface PlanBreakdown {
-  plan_id: string;
-  plan_name: string;
-  active_users: number;
-  trial_users: number;
+interface PlatformMetricsResponse {
+  generated_at: string;
+  timeframe: string;
+  users: {
+    total: number;
+    active: number;
+    new_in_period: number;
+    growth_rate: number;
+    role_breakdown: RoleBreakdown;
+  };
+  subscriptions: {
+    total: number;
+    status_breakdown: {
+      trial: number;
+      active: number;
+      cancelled: number;
+      expired: number;
+      [status: string]: number;
+    };
+    active_plans: number;
+    monthly_recurring_revenue: number;
+    yearly_recurring_revenue: number;
+    projected_annual_revenue: number;
+    plan_breakdown: {
+      [planId: string]: {
+        name: string;
+        monthly_revenue: number;
+        annual_revenue: number;
+        active_users: number;
+        trial_users: number;
+      };
+    };
+  };
+  operations: {
+    weddings: {
+      total: number;
+      active: number;
+      upcoming: number;
+      created_in_period: number;
+      guest_total: number;
+      rsvp_total: number;
+    };
+    forms: {
+      total: number;
+      new_in_period: number;
+      responses_total: number;
+      responses_in_period: number;
+    };
+    communications: {
+      notifications_sent: number;
+      notifications_in_period: number;
+      email_logs_total: number;
+      emails_sent_in_period: number;
+      ai_events_total: number;
+      ai_events_in_period: number;
+    };
+  };
+}
+
+type TimeframeKey = '7d' | '30d' | '90d' | '1y';
+
+const TIMEFRAME_OPTIONS: Array<{ value: TimeframeKey; label: string }> = [
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: '90d', label: 'Last 90 Days' },
+  { value: '1y', label: 'Last 12 Months' },
+];
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function formatNumber(amount: number): string {
+  return new Intl.NumberFormat('en-US').format(amount);
+}
+
+function formatPercentage(value: number): string {
+  return `${value.toFixed(1)}%`;
 }
 
 /* Landing page content (hero, features, stats, theme, etc.) is now hardcoded
@@ -72,15 +152,17 @@ interface PlanBreakdown {
 const SaasAdminDashboard = () => {
  const router = useRouter();
  const { userProfile } = useAdmin();
- const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'planners'>('overview');
+ const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'ad-config'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
  const [loading, setLoading] = useState(true);
  const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
  const [error, setError] = useState<string | null>(null);
- const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
- const [planBreakdown, setPlanBreakdown] = useState<PlanBreakdown[]>([]);
+ // Platform metrics state (merged from Business Analytics)
+ const [metrics, setMetrics] = useState<PlatformMetricsResponse | null>(null);
+ const [metricsTimeframe, setMetricsTimeframe] = useState<TimeframeKey>('30d');
+ const [metricsLoading, setMetricsLoading] = useState(false);
 
   // ROOT_ADMIN access control - redirect non-root admins
   useEffect(() => {
@@ -130,20 +212,11 @@ const SaasAdminDashboard = () => {
         })) );
       }
 
-      // Fetch analytics overview for dashboard statistics
-      const analyticsResponse = await fetch(`${baseUrl}/saas/analytics/overview`, { headers });
-      if (analyticsResponse.ok) {
-        const analyticsData = await analyticsResponse.json();
-        setAnalyticsOverview(analyticsData);
-      }
-
-      // Fetch revenue breakdown for per-plan user counts
-      const revenueResponse = await fetch(`${baseUrl}/saas/analytics/revenue`, { headers });
-      if (revenueResponse.ok) {
-        const revenueData = await revenueResponse.json();
-        if (revenueData.plan_breakdown) {
-          setPlanBreakdown(revenueData.plan_breakdown);
-        }
+      // Fetch platform metrics for the Overview tab (replaces old analytics/overview + revenue calls)
+      const metricsResponse = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${metricsTimeframe}`, { headers });
+      if (metricsResponse.ok) {
+        const metricsData = await metricsResponse.json();
+        setMetrics(metricsData);
       }
     } catch (error) {
       console.error('Error fetching SaaS data:', error);
@@ -233,11 +306,54 @@ const SaasAdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [metricsTimeframe]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Refetch only platform metrics when timeframe changes (without re-fetching plans/planners)
+  const fetchMetricsOnly = useCallback(async (tf: TimeframeKey) => {
+    try {
+      setMetricsLoading(true);
+      const baseUrl = getApiBaseUrl();
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+      if (!token) return;
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+      const res = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${tf}`, { headers });
+      if (res.ok) {
+        setMetrics(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to refresh platform metrics', err);
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, []);
+
+  const handleTimeframeChange = useCallback((tf: TimeframeKey) => {
+    setMetricsTimeframe(tf);
+    fetchMetricsOnly(tf);
+  }, [fetchMetricsOnly]);
+
+  // Memoised derived data for the overview tab
+  const roleBreakdown = useMemo(() => {
+    if (!metrics) return [] as Array<{ role: string; count: number }>;
+    return Object.entries(metrics.users.role_breakdown)
+      .map(([role, count]) => ({ role, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [metrics]);
+
+  const statusBreakdown = useMemo(() => {
+    if (!metrics) return [] as Array<{ status: string; count: number }>;
+    return Object.entries(metrics.subscriptions.status_breakdown).map(([status, count]) => ({
+      status,
+      count,
+    }));
+  }, [metrics]);
 
  const handleCreatePlan = () => {
  setEditingPlan(null);
@@ -509,24 +625,25 @@ const SaasAdminDashboard = () => {
  return (
  <div className="space-y-6">
  <PageHeader
- title="SAAS Admin Dashboard"
- description="Manage your wedding planning platform"
+ title="SaaS Management"
+ description="Platform analytics, subscription plans, and configuration"
  />
 
  {/* Navigation Tabs */}
- <div className="border-b border-slate-200 dark:border-slate-700">
+ <div className="border-b border-gray-200 dark:border-gray-700">
  <nav className="flex space-x-8">
  {[
  { key: 'overview', label: 'Overview' },
- { key: 'plans', label: 'Subscription Plans' }
+ { key: 'plans', label: 'Subscription Plans' },
+ { key: 'ad-config', label: 'Ad Platform' }
  ].map((tab) => (
  <button
  key={tab.key}
  onClick={() => setActiveTab(tab.key as any)}
  className={`py-4 px-1 border-b-2 font-medium text-sm ${
  activeTab === tab.key
- ? 'border-blue-500 text-blue-600 dark:text-blue-400'
- : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300'
+ ? 'border-wedding-rose text-wedding-rose'
+ : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
  }`}
  >
  {tab.label}
@@ -539,108 +656,255 @@ const SaasAdminDashboard = () => {
  <div>
  {activeTab === 'overview' && (
  <div className="space-y-6">
- <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-blue-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-blue-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Planners</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{planners.length}</dd>
- </dl>
- </div>
- </div>
- </Card>
+   {/* Timeframe selector */}
+   <div className="flex items-center justify-between">
+     <p className="text-sm text-gray-500 dark:text-gray-400">
+       {metrics ? (
+         <>
+           Updated {formatDateTime(metrics.generated_at, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+           {' · '}
+           {TIMEFRAME_OPTIONS.find((o) => o.value === metrics.timeframe)?.label || metrics.timeframe}
+         </>
+       ) : 'Loading analytics…'}
+     </p>
+     <select
+       value={metricsTimeframe}
+       onChange={(e) => handleTimeframeChange(e.target.value as TimeframeKey)}
+       className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-sm font-medium text-slate-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+     >
+       {TIMEFRAME_OPTIONS.map((option) => (
+         <option key={option.value} value={option.value}>{option.label}</option>
+       ))}
+     </select>
+   </div>
 
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-green-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-green-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active Plans</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{plans.filter(p => p.is_active).length}</dd>
- </dl>
- </div>
- </div>
- </Card>
+   {metricsLoading && (
+     <div className="flex items-center justify-center py-4">
+       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+     </div>
+   )}
 
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-purple-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-purple-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Weddings</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{analyticsOverview?.total_weddings ?? 0}</dd>
- </dl>
- </div>
- </div>
- </Card>
+   {metrics && (
+     <>
+       {/* ── User Growth ── */}
+       <section className="space-y-4">
+         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Growth</h2>
+         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Accounts</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.total)}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Active Roles: {roleBreakdown.length}</p>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active This Period</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.active)}</p>
+             <p className="mt-1 text-xs text-green-600 dark:text-green-400">Growth {formatPercentage(metrics.users.growth_rate)}</p>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">New Accounts</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.new_in_period)}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Within selected timeframe</p>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Role Distribution</p>
+             <div className="mt-3 flex flex-wrap gap-2 text-xs">
+               {roleBreakdown.map(({ role, count }) => (
+                 <span key={role} className="rounded-full bg-gray-100 dark:bg-slate-700 px-3 py-1 text-gray-900 dark:text-white shadow-sm">
+                   {role.replace('_', ' ')} · {formatNumber(count)}
+                 </span>
+               ))}
+               {roleBreakdown.length === 0 && <span className="text-gray-500 dark:text-gray-400">No accounts recorded.</span>}
+             </div>
+           </Card>
+         </div>
+       </section>
 
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-yellow-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-yellow-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Monthly Revenue</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">${analyticsOverview?.monthly_revenue ?? 0}</dd>
- </dl>
- </div>
- </div>
- </Card>
- </div>
+       {/* ── Subscription & Revenue ── */}
+       <section className="space-y-4">
+         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Subscription &amp; Revenue</h2>
+         <div className="grid gap-6 lg:grid-cols-3">
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Subscriptions</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
+               {formatNumber(metrics.subscriptions.status_breakdown.active)}
+             </p>
+             <ul className="mt-3 space-y-1 text-sm text-gray-600 dark:text-gray-400">
+               {statusBreakdown.map(({ status, count }) => (
+                 <li key={status} className="flex justify-between">
+                   <span className="capitalize">{status.replace('_', ' ')}</span>
+                   <span>{formatNumber(count)}</span>
+                 </li>
+               ))}
+             </ul>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Recurring Revenue</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
+               {formatCurrency(metrics.subscriptions.monthly_recurring_revenue)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Annual Projection {formatCurrency(metrics.subscriptions.projected_annual_revenue)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Yearly Contracts {formatCurrency(metrics.subscriptions.yearly_recurring_revenue)}
+             </p>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Subscription Plans</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{metrics.subscriptions.active_plans}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Active plans available to assign</p>
+           </Card>
+         </div>
 
- <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
- <Card className="p-6">
- <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Recent Signups</h3>
- <div className="space-y-3">
- {planners.slice(0, 3).map((planner) => (
- <div key={planner.id} className="flex items-center justify-between">
- <div>
- <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{planner.companyName}</p>
- <p className="text-sm text-gray-500 dark:text-gray-400">{planner.email}</p>
- </div>
- <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
- Active
- </span>
- </div>
- ))}
- </div>
- </Card>
+         {/* Plan Breakdown table */}
+         <Card className="overflow-hidden">
+           <div className="border-b border-gray-200 dark:border-slate-700 px-6 py-4">
+             <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Plan Breakdown</h3>
+           </div>
+           <div className="overflow-x-auto">
+             <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+               <thead className="bg-gray-50 dark:bg-slate-700 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                 <tr>
+                   <th className="px-6 py-3">Plan</th>
+                   <th className="px-6 py-3">Active Users</th>
+                   <th className="px-6 py-3">Trial Users</th>
+                   <th className="px-6 py-3">MRR</th>
+                   <th className="px-6 py-3">ARR</th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-gray-200 dark:divide-slate-700 text-gray-700 dark:text-gray-300">
+                 {Object.keys(metrics.subscriptions.plan_breakdown).length === 0 && (
+                   <tr>
+                     <td className="px-6 py-4" colSpan={5}>
+                       No subscription plan activity recorded yet.
+                     </td>
+                   </tr>
+                 )}
+                 {Object.entries(metrics.subscriptions.plan_breakdown).map(([planId, plan]) => (
+                   <tr key={planId} className="hover:bg-gray-50 dark:hover:bg-slate-700">
+                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                       {plan.name || planId}
+                     </td>
+                     <td className="px-6 py-4">{formatNumber(plan.active_users ?? 0)}</td>
+                     <td className="px-6 py-4">{formatNumber(plan.trial_users ?? 0)}</td>
+                     <td className="px-6 py-4">{formatCurrency(plan.monthly_revenue)}</td>
+                     <td className="px-6 py-4">{formatCurrency(plan.annual_revenue)}</td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
+           </div>
+         </Card>
+       </section>
 
- <Card className="p-6">
- <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Plan Distribution</h3>
- <div className="space-y-3">
- {plans.map((plan) => (
- <div key={plan._id} className="flex items-center justify-between">
- <span className="text-sm text-gray-900 dark:text-gray-100">{plan.name}</span>
- <span className="text-sm text-gray-500 dark:text-gray-400">
- {(() => {
-  const breakdown = planBreakdown.find(b => b.plan_id === plan._id || b.plan_name === plan.name);
-  const count = breakdown ? breakdown.active_users + breakdown.trial_users : 0;
-  return `${count} user${count !== 1 ? 's' : ''}`;
-})()}
- </span>
- </div>
- ))}
- </div>
- </Card>
- </div>
+       {/* ── Operational Load ── */}
+       <section className="space-y-4">
+         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Operational Load</h2>
+         <div className="grid gap-6 lg:grid-cols-2">
+           <Card className="p-6">
+             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Wedding Projects</h3>
+             <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400">
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Total Weddings</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.total)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Active</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.active)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Upcoming</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.upcoming)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">New This Period</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.created_in_period)}</p>
+               </div>
+             </div>
+             <div className="mt-4 rounded-lg bg-gray-50 dark:bg-slate-700 px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+               <p>Guests managed: {formatNumber(metrics.operations.weddings.guest_total)}</p>
+               <p>RSVP records: {formatNumber(metrics.operations.weddings.rsvp_total)}</p>
+             </div>
+           </Card>
+
+           <Card className="p-6">
+             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Form Engagement</h3>
+             <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400">
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Active Forms</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.total)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">New Forms</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.new_in_period)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Responses</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.responses_total)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Responses This Period</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.responses_in_period)}</p>
+               </div>
+             </div>
+           </Card>
+         </div>
+
+         <Card className="p-6">
+           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Communication Volume</h3>
+           <div className="mt-4 grid gap-6 md:grid-cols-3 text-sm text-gray-600 dark:text-gray-400">
+             <div>
+               <p className="font-medium text-gray-900 dark:text-white">Notifications Sent</p>
+               <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.communications.notifications_sent)}</p>
+               <p className="text-xs text-gray-500 dark:text-gray-400">
+                 +{formatNumber(metrics.operations.communications.notifications_in_period)} this timeframe
+               </p>
+             </div>
+             <div>
+               <p className="font-medium text-gray-900 dark:text-white">Email Logs</p>
+               <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.communications.email_logs_total)}</p>
+               <p className="text-xs text-gray-500 dark:text-gray-400">
+                 {formatNumber(metrics.operations.communications.emails_sent_in_period)} successful deliveries
+               </p>
+             </div>
+             <div>
+               <p className="font-medium text-gray-900 dark:text-white">AI Automations</p>
+               <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.communications.ai_events_total)}</p>
+               <p className="text-xs text-gray-500 dark:text-gray-400">
+                 {formatNumber(metrics.operations.communications.ai_events_in_period)} requests this timeframe
+               </p>
+             </div>
+           </div>
+         </Card>
+       </section>
+
+       {/* ── Recent Signups (kept from original overview) ── */}
+       {planners.length > 0 && (
+         <section className="space-y-4">
+           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Signups</h2>
+           <Card className="p-6">
+             <div className="space-y-3">
+               {planners.slice(0, 5).map((planner) => (
+                 <div key={planner.id} className="flex items-center justify-between">
+                   <div>
+                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{planner.companyName}</p>
+                     <p className="text-sm text-gray-500 dark:text-gray-400">{planner.email}</p>
+                   </div>
+                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                     planner.is_active
+                       ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                       : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400'
+                   }`}>
+                     {planner.is_active ? 'Active' : 'Inactive'}
+                   </span>
+                 </div>
+               ))}
+             </div>
+           </Card>
+         </section>
+       )}
+     </>
+   )}
  </div>
  )}
 
@@ -742,6 +1006,9 @@ const SaasAdminDashboard = () => {
  </div>
  )}
 
+ {activeTab === 'ad-config' && (
+   <AdPlatformConfigTab />
+ )}
 
  </div>
 
@@ -1003,5 +1270,182 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  </div>
  );
 };
+
+// =============================================================================
+// Ad Platform Configuration Tab
+// =============================================================================
+
+function AdPlatformConfigTab() {
+  const [config, setConfig] = useState<PlatformConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editedConfig, setEditedConfig] = useState<Partial<PlatformConfig>>({});
+
+  const token = typeof window !== 'undefined'
+    ? (localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token') || '')
+    : '';
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await getAdminConfig(token);
+      setConfig(data);
+      setEditedConfig(data);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const updated = await updateAdminConfig(token, editedConfig);
+      setConfig(updated);
+      toast.success('Configuration saved');
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading ad platform config...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="text-center py-12 bg-gray-50 dark:bg-slate-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+        <Settings className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+        <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">No configuration</h3>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Ad platform configuration not available.</p>
+      </div>
+    );
+  }
+
+  const toggleField = (key: keyof PlatformConfig) => {
+    setEditedConfig((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const setNumberField = (key: keyof PlatformConfig, value: string) => {
+    const num = parseInt(value, 10);
+    if (!isNaN(num)) {
+      setEditedConfig((prev) => ({ ...prev, [key]: num }));
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Display Settings</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Max Sponsored Per Page</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Maximum number of sponsored ads shown per page</p>
+            </div>
+            <input
+              type="number"
+              value={editedConfig.max_sponsored_per_page ?? 3}
+              onChange={(e) => setNumberField('max_sponsored_per_page', e.target.value)}
+              className="w-20 text-sm text-center border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+              min={1}
+              max={10}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Show Sponsored Badge</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Display &ldquo;Sponsored&rdquo; badge on ad cards</p>
+            </div>
+            <button
+              onClick={() => toggleField('show_sponsored_badge')}
+              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.show_sponsored_badge ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.show_sponsored_badge ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Enable Tracking</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Track impressions, clicks, and conversions</p>
+            </div>
+            <button
+              onClick={() => toggleField('enable_tracking')}
+              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.enable_tracking ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.enable_tracking ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Review Settings</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Require Review</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">All campaigns must be reviewed before going live</p>
+            </div>
+            <button
+              onClick={() => toggleField('require_review')}
+              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.require_review ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.require_review ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Auto-Approve Returning Vendors</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Skip review for vendors with previously approved campaigns</p>
+            </div>
+            <button
+              onClick={() => toggleField('auto_approve_returning_vendors')}
+              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.auto_approve_returning_vendors ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.auto_approve_returning_vendors ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Review SLA (hours)</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Target time to review submitted campaigns</p>
+            </div>
+            <input
+              type="number"
+              value={editedConfig.review_sla_hours ?? 24}
+              onChange={(e) => setNumberField('review_sla_hours', e.target.value)}
+              className="w-20 text-sm text-center border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+              min={1}
+              max={168}
+            />
+          </div>
+        </div>
+      </Card>
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save Configuration'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default SaasAdminDashboard;

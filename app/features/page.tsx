@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import SaasNav from '../components/saas/SaasNav';
 
 /* ═══════════════════════════════════════════════════════════
    Feature data
@@ -112,6 +113,7 @@ const comparison: ComparisonRow[] = [
 export default function FeaturesPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-white">
+      <SaasNav />
       {/* ── Hero ── */}
       <section className="relative overflow-hidden">
         <div
@@ -269,24 +271,18 @@ export default function FeaturesPage() {
 
       {/* ── Footer ── */}
       <footer className="bg-slate-950 border-t border-white/5">
-        <div className="mx-auto max-w-6xl px-6 py-10">
-          <nav className="flex flex-wrap justify-center gap-x-8 gap-y-3 mb-8">
-            <Link href="/" className="text-sm text-slate-400 transition hover:text-white">Home</Link>
-            <Link href="/resources" className="text-sm text-slate-400 transition hover:text-white">Resources</Link>
-            <Link href="/vendors" className="text-sm text-slate-400 transition hover:text-white">Vendor directory</Link>
-            <Link href="/admin/login" className="text-sm text-slate-400 transition hover:text-white">Sign in</Link>
-            <a href="mailto:hello@thespecialwedding.io" className="text-sm text-slate-400 transition hover:text-white">Contact</a>
-          </nav>
-          <div className="h-px bg-white/5 mb-6" />
+        <div className="mx-auto max-w-6xl px-6 py-6">
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
             <p className="text-xs text-slate-500">© {new Date().getFullYear()} The Special Wedding. All rights reserved.</p>
-            <p className="text-xs text-slate-500">
-              Built by{' '}
-              <a href="https://joatlabs.dev" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition hover:text-white">
-                JOATLABS LLC
-              </a>
-              {' '}© 2026
-            </p>
+            <div className="flex items-center gap-4">
+              <a href="mailto:hello@thespecialwedding.io" className="text-xs text-slate-500 transition hover:text-slate-300">Contact</a>
+              <p className="text-xs text-slate-500">
+                Built by{' '}
+                <a href="https://joatlabs.dev" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition hover:text-white">
+                  JOATLABS LLC
+                </a>
+              </p>
+            </div>
           </div>
         </div>
       </footer>

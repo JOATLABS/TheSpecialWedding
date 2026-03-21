@@ -134,7 +134,7 @@ export const blogPosts = {
   },
   'how-to-price-wedding-planning-services': {
     title: 'How to Price Your Wedding Planning Services in 2026',
-    excerpt: 'Most planners underprice. Here's a framework for building tiered packages that reflect your value — plus how AI can validate your pricing against market data.',
+    excerpt: "Most planners underprice. Here's a framework for building tiered packages that reflect your value — plus how AI can validate your pricing against market data.",
     category: 'Business',
     date: '2026-03-12',
     readTime: 8,
@@ -654,7 +654,7 @@ export const blogPosts = {
           - <strong>No guest management:</strong> You can't import a guest list, track RSVPs, manage dietary needs, or assign seating. You'd need a separate tool for this (spreadsheet, AirTable, or specialty guest management software).
           - <strong>No timeline/day-of management:</strong> HoneyBook doesn't help you build parallel timelines or coordinate the day-of execution.
           - <strong>No vendor collaboration:</strong> You can invite clients to a portal, but you can't invite vendors (caterer, photographer, florist) and give them access to specific timelines or deliverables.
-          - <strong>Limited data:** Proposals, invoices, and calendar events—but not the deep event data wedding planners need.
+          - <strong>Limited data:</strong> Proposals, invoices, and calendar events—but not the deep event data wedding planners need.
         </p>
 
         <p>

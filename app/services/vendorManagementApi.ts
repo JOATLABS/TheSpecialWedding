@@ -234,9 +234,14 @@ export async function getVendorDirectory(
   if (params?.limit) queryParams.append('limit', String(params.limit));
 
   const url = `${API_BASE}/admin/directory?${queryParams.toString()}`;
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Vendor directory is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -452,9 +457,14 @@ export async function getContracts(
   if (params?.vendor_profile_id) queryParams.append('vendor_profile_id', params.vendor_profile_id);
   if (params?.status) queryParams.append('status', params.status);
 
-  const response = await fetch(`${API_BASE}/admin/contracts?${queryParams.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/admin/contracts?${queryParams.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Contracts endpoint is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
@@ -581,9 +591,14 @@ export async function getPaymentMilestones(
   if (params?.wedding_id) queryParams.append('wedding_id', params.wedding_id);
   if (params?.status) queryParams.append('status', params.status);
 
-  const response = await fetch(`${API_BASE}/admin/milestones?${queryParams.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/admin/milestones?${queryParams.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Payment milestones endpoint is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
@@ -633,9 +648,14 @@ export async function getVendorDashboard(
     ? `${API_BASE}/admin/dashboard?wedding_id=${weddingId}`
     : `${API_BASE}/admin/dashboard`;
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Vendor dashboard is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));

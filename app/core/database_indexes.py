@@ -1364,7 +1364,21 @@ async def create_campaign_platform_indexes():
     except Exception as e:
         logger.error(f"Error creating campaign ad_leads indexes: {str(e)}")
 
-    logger.info("All campaign platform indexes created/verified (21 total)")
+    # =========================================================================
+    # vendor_profiles — sponsored ad dedup index (Phase 3)
+    # =========================================================================
+    vendor_profiles = mongo.db["vendor_profiles"]
+
+    # Unique compound index for race-safe add-to-directory dedup
+    # Only applies to profiles created from sponsored ads (partial filter)
+    await vendor_profiles.create_index(
+        [("created_by", 1), ("source_campaign_id", 1)],
+        unique=True,
+        sparse=True,  # Only index docs where source_campaign_id exists
+        name="idx_sponsored_ad_dedup",
+    )
+
+    logger.info("All campaign platform indexes created/verified (22 total)")
     return True
 
 

@@ -18,6 +18,7 @@ from app.models.planner_metrics import (
 )
 from datetime import datetime
 from typing import Any, Optional, List
+from math import ceil
 import logging
 
 logger = logging.getLogger(__name__)
@@ -499,7 +500,8 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
 @router.get("/planner/activity-log", tags=["Wedding Planner"], response_model=ActivityLogResponse)
 async def get_activity_log(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of activities to return")
+    page: int = Query(default=1, ge=1, le=10000, description="Page number (1-indexed)"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of activities to return per page")
 ) -> ActivityLogResponse:
     """
     Get detailed activity log for wedding planner.
@@ -540,6 +542,12 @@ async def get_activity_log(
                 ]
             }
 
+        # Count total documents first for pagination metadata
+        total = await activity_logs_collection.count_documents(query)
+
+        # Calculate skip value for pagination
+        skip = (page - 1) * limit
+
         cursor = activity_logs_collection.find(
             query,
             {
@@ -551,11 +559,10 @@ async def get_activity_log(
                 "wedding_id": 1,
                 "metadata": 1,
             }
-        ).sort([("timestamp", -1), ("created_at", -1)]).limit(limit)
+        ).sort([("timestamp", -1), ("created_at", -1)]).skip(skip).limit(limit)
 
         # Activity results already bounded by .limit(limit) above
         activities_raw = await cursor.to_list(length=limit)
-        total = await activity_logs_collection.count_documents(query)
 
         activities: List[ActivityItemModel] = []
         for activity in activities_raw:
@@ -568,9 +575,15 @@ async def get_activity_log(
                 metadata=activity.get("metadata", {}),
             ))
 
+        # Calculate total pages
+        pages = ceil(total / limit) if total > 0 else 0
+
         return ActivityLogResponse(
             activities=activities,
-            total=total
+            total=total,
+            page=page,
+            limit=limit,
+            pages=pages
         )
 
     except HTTPException:

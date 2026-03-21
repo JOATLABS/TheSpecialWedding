@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import OnboardingModal from '../components/OnboardingModal';
-import { SponsoredVendorsRail } from '../vendors/components/SponsoredVendorsRail';
+import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
 
 interface Wedding {
  id: string;
@@ -727,7 +727,7 @@ export default function WeddingPlannerDashboard() {
  {/* Right Sidebar - Sponsored Vendors */}
  <div className="lg:col-span-1">
  <div className="sticky top-6">
- <SponsoredVendorsRail placement="dashboard_rail" />
+ <CampaignSponsoredRail />
  </div>
  </div>
  </div>

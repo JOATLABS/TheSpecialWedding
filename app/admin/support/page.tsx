@@ -5,6 +5,8 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import { Card } from '@/components/ui/Card';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
   MessageSquare,
   Clock,
@@ -21,6 +23,7 @@ import {
   Loader2
 } from 'lucide-react';
 import KnowledgeBase from '../components/kb/KnowledgeBase';
+import BlogManager from '../components/blog/BlogManager';
 
 interface SupportTicket {
   _id: string;
@@ -58,7 +61,7 @@ interface SupportMetrics {
 
 export default function SupportPage() {
   const { apiRequest, userProfile } = useAdmin();
-  const [activeTab, setActiveTab] = useState<'tickets' | 'metrics' | 'knowledge_base'>('tickets');
+  const [activeTab, setActiveTab] = useState<'tickets' | 'metrics' | 'knowledge_base' | 'blog'>('tickets');
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [metrics, setMetrics] = useState<SupportMetrics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +79,8 @@ export default function SupportPage() {
     priority: 'medium' as const
   });
 
+  const pagination = usePagination({ initialItemsPerPage: 50 });
+
   const isRootAdmin = userProfile?.is_root_admin;
 
   const fetchData = useCallback(async () => {
@@ -85,12 +90,15 @@ export default function SupportPage() {
 
       // Fetch support tickets
       try {
-        const ticketsResponse = await apiRequest<{ tickets: SupportTicket[] }>(
-          isRootAdmin ? '/admin/tickets' : '/admin/my-tickets',
+        const endpoint = isRootAdmin ? '/admin/tickets' : '/admin/my-tickets';
+        const url = `${endpoint}?page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`;
+        const ticketsResponse = await apiRequest<{ tickets: SupportTicket[], total?: number, page?: number }>(
+          url,
           'GET'
         );
         fetchedTickets = ticketsResponse?.tickets ?? [];
         setTickets(fetchedTickets);
+        pagination.setTotalItems(ticketsResponse?.total || fetchedTickets.length);
       } catch (error) {
         console.warn('Support tickets endpoint not available');
         setTickets([]);
@@ -125,7 +133,7 @@ export default function SupportPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiRequest, isRootAdmin]);
+  }, [apiRequest, isRootAdmin, pagination.currentPage, pagination.itemsPerPage]);
 
   useEffect(() => {
     fetchData();
@@ -294,7 +302,8 @@ export default function SupportPage() {
           {[
             { key: 'tickets', label: 'Support Tickets' },
             ...(isRootAdmin ? [{ key: 'metrics', label: 'Support Metrics' }] : []),
-            { key: 'knowledge_base', label: 'Knowledge Base' }
+            { key: 'knowledge_base', label: 'Knowledge Base' },
+            ...(isRootAdmin ? [{ key: 'blog', label: 'Blog' }] : []),
           ].map((tab) => (
             <button
               key={tab.key}
@@ -324,7 +333,10 @@ export default function SupportPage() {
                   type="text"
                   placeholder="Search tickets..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    pagination.setPage(1);
+                  }}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -332,7 +344,10 @@ export default function SupportPage() {
               {/* Status Filter */}
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  pagination.setPage(1);
+                }}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Statuses</option>
@@ -345,7 +360,10 @@ export default function SupportPage() {
               {/* Priority Filter */}
               <select
                 value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
+                onChange={(e) => {
+                  setPriorityFilter(e.target.value);
+                  pagination.setPage(1);
+                }}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Priorities</option>
@@ -356,6 +374,17 @@ export default function SupportPage() {
               </select>
             </div>
           </Card>
+
+          {/* Compact Pagination */}
+          <GlassPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.setPage}
+            variant="compact"
+            itemLabel="tickets"
+          />
 
           {/* Tickets Table */}
           <Card className="overflow-hidden">
@@ -454,6 +483,16 @@ export default function SupportPage() {
             </div>
           </Card>
 
+          <GlassPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.setPage}
+            onItemsPerPageChange={pagination.setItemsPerPage}
+            itemLabel="tickets"
+          />
+
           {filteredTickets.length === 0 && (
             <div className="text-center py-12">
               <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -539,6 +578,11 @@ export default function SupportPage() {
       {/* Knowledge Base Tab */}
       {activeTab === 'knowledge_base' && (
         <KnowledgeBase isRootAdmin={isRootAdmin || false} />
+      )}
+
+      {/* Blog Tab */}
+      {activeTab === 'blog' && isRootAdmin && (
+        <BlogManager />
       )}
 
       {/* Response Modal */}

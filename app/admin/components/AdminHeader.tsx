@@ -30,8 +30,7 @@ export default function AdminHeader() {
     if (userProfile.is_root_admin) {
       return [
         ...baseLinks,
-        { href: '/admin/saas', label: 'Platform Management', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/metrics', label: 'Platform Metrics', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/saas', label: 'SaaS Management', roles: ['ROOT_ADMIN'] },
         { href: '/admin/notifications', label: 'Notifications', roles: ['ROOT_ADMIN'] },
         { href: '/admin/support', label: 'Support', roles: ['ROOT_ADMIN'] },
       ];
@@ -50,7 +49,7 @@ export default function AdminHeader() {
       return [
         ...baseLinks,
         { href: '/admin/vendor', label: 'My Tasks', roles: ['vendor'] },
-        { href: '/admin/vendor/ads', label: 'Advertising', roles: ['vendor'] },
+        { href: '/portal/ads', label: 'Advertising', roles: ['vendor'] },
       ];
     }
 
