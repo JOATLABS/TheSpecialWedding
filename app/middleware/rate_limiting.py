@@ -60,7 +60,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/weddings/verify-guest-access",
             "/reset-password",
             "/forgot-password",
-            "/verify-email"
+            "/verify-email",
+            "/api/v1/vendors/signup",
+            "/api/v1/vendors/change-password",
         ]
         return any(auth_path in path for auth_path in auth_paths)
 
@@ -73,7 +75,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if "/admin/token" in path or "/admin/login" in path:
             return (5, 60)
         # Register endpoint: 3 attempts per minute
-        elif "/public/register" in path:
+        elif "/public/register" in path or "/api/v1/vendors/signup" in path:
             return (3, 60)
         # Password reset endpoints: 3 attempts per minute
         elif "/reset-password" in path or "/forgot-password" in path:

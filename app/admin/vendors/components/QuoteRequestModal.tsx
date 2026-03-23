@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Send, Calendar, MapPin, Users, DollarSign, Building2 } from 'lucide-react';
+import { X, Send, Calendar, MapPin, Users, DollarSign, Building2, Sparkles } from 'lucide-react';
 import {
   requestQuote,
+  draftQuote,
   type SponsoredCard,
   type WeddingContext,
 } from '@/services/campaignAdvertisingApi';
@@ -32,6 +33,8 @@ export function QuoteRequestModal({
   const [autoAdd, setAutoAdd] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [aiDrafted, setAiDrafted] = useState(false);
 
   const handleSubmit = async () => {
     if (!token || !message.trim()) {
@@ -55,6 +58,25 @@ export function QuoteRequestModal({
       toast.error(err.message || 'Failed to send quote request');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleAiDraft = async () => {
+    if (!token) return;
+    try {
+      setDrafting(true);
+      const result = await draftQuote(token, {
+        campaign_id: card.campaign_id,
+        wedding_context: Object.values(weddingContext).some(Boolean) ? weddingContext : undefined,
+      });
+      if (result.draft?.body) {
+        setMessage(result.draft.body);
+        setAiDrafted(true);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate AI draft');
+    } finally {
+      setDrafting(false);
     }
   };
 
@@ -179,9 +201,25 @@ export function QuoteRequestModal({
 
             {/* Message */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
-                Message
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Message
+                </label>
+                <button
+                  onClick={handleAiDraft}
+                  disabled={drafting}
+                  className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 transition-colors disabled:opacity-50"
+                >
+                  <Sparkles size={12} />
+                  {drafting ? 'Drafting...' : 'Suggest with AI'}
+                </button>
+              </div>
+              {aiDrafted && (
+                <div className="flex items-center gap-1.5 mb-1.5 px-2 py-1 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md">
+                  <Sparkles size={10} className="text-purple-500" />
+                  <span className="text-[10px] text-purple-600 dark:text-purple-400">AI-suggested draft — feel free to edit before sending</span>
+                </div>
+              )}
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}

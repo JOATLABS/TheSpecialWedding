@@ -58,6 +58,68 @@ async def get_vendor_sitemap_ids():
     return ids
 
 
+@router.get("/directory")
+async def list_public_vendors(
+    category: str = None,
+    location: str = None,
+    search: str = None,
+    limit: int = 24,
+    skip: int = 0,
+):
+    """
+    List active vendors for the public directory page. No auth required.
+    Returns only publicly-safe fields. Supports category, location, and search filters.
+    """
+    query = {"is_active": True}
+
+    if category:
+        query["service_category"] = category
+    if location:
+        query["$or"] = [
+            {"city": {"$regex": location, "$options": "i"}},
+            {"state": {"$regex": location, "$options": "i"}},
+            {"country": {"$regex": location, "$options": "i"}},
+        ]
+    if search:
+        search_conditions = [
+            {"business_name": {"$regex": search, "$options": "i"}},
+            {"service_description": {"$regex": search, "$options": "i"}},
+            {"service_category": {"$regex": search, "$options": "i"}},
+        ]
+        if "$or" in query:
+            query["$and"] = [{"$or": query.pop("$or")}, {"$or": search_conditions}]
+        else:
+            query["$or"] = search_conditions
+
+    limit = min(limit, 50)  # cap at 50
+
+    total = await mongo.db["vendor_profiles"].count_documents(query)
+    cursor = (
+        mongo.db["vendor_profiles"]
+        .find(query, PUBLIC_VENDOR_FIELDS)
+        .sort("weddings_count", -1)
+        .skip(skip)
+        .limit(limit)
+    )
+    vendors = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        vendors.append(doc)
+
+    # Get distinct categories for filter dropdown
+    categories = await mongo.db["vendor_profiles"].distinct(
+        "service_category", {"is_active": True}
+    )
+
+    return {
+        "vendors": vendors,
+        "total": total,
+        "categories": sorted([c for c in categories if c]),
+        "page": skip // limit + 1 if limit > 0 else 1,
+        "page_size": limit,
+    }
+
+
 @router.get("/{vendor_id}/public")
 async def get_public_vendor_profile(vendor_id: str):
     """

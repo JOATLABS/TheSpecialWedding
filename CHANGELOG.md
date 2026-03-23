@@ -5,6 +5,194 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.24.0] - 2026-03-23 — Couple Portal Sprint 6: Registry, FAQ, QR Code, Push Notifications & PWA
+
+### Context
+
+Sprint 6 builds out five features that were previously classified as P2 but had all backend infrastructure already in place. Registry and FAQ are full CRUD (couple and planner share the same data on the wedding model). QR code reuses the existing `generate_qr_code()` from guest export. Push notifications add couple-auth endpoints on top of the existing `WebPushService`. PWA adds manifest and service worker caching. SEO audit requirements (noindex, semantic HTML, ARIA labels, meta tags) baked into implementation.
+
+### Added
+
+- **Registry CRUD (Couple Portal)**
+  - `GET /couple/portal/registries` — List registries from wedding model
+  - `POST /couple/portal/registries` — Add registry item (syncs to wedding model)
+  - `PUT /couple/portal/registries/{index}` — Update registry item by index
+  - `DELETE /couple/portal/registries/{index}` — Delete registry item by index
+  - Registry tab in couple dashboard: responsive grid, color-coded buttons, add/edit/delete UI
+
+- **FAQ CRUD (Couple Portal)**
+  - `GET /couple/portal/faqs` — List FAQs from wedding model
+  - `POST /couple/portal/faqs` — Add FAQ item (syncs to wedding model)
+  - `PUT /couple/portal/faqs/{index}` — Update FAQ item by index
+  - `DELETE /couple/portal/faqs/{index}` — Delete FAQ item by index
+  - FAQ tab in couple dashboard: accordion-style cards, optional external links, add/edit/delete UI
+
+- **QR Code Widget**
+  - `GET /couple/portal/qr-code` — Generate QR code PNG for couple portal URL (reuses `guest_export_service.generate_qr_code()`)
+  - QR widget on Overview tab: generate + download PNG
+
+- **Push Notifications (Couple-Side)**
+  - `POST /couple/portal/push/subscribe` — Couple subscribes to browser push (couple auth)
+  - `DELETE /couple/portal/push/unsubscribe` — Couple unsubscribes from push
+  - `GET /couple/portal/push/status` — Check subscription status + VAPID key
+  - Push notification widget on Overview tab: enable/disable with real-time status
+
+- **PWA Support**
+  - `/public/manifest.json` — App manifest (name, icons, start URL, display standalone)
+  - Service worker caching: CacheFirst for static assets, NetworkFirst for HTML, StaleWhileRevalidate for images
+  - Service worker registration in couple dashboard
+  - Couple layout meta tags: `noindex`, `theme-color`, `apple-mobile-web-app` tags, viewport config
+
+### Changed
+
+- Extended `couple_portal.py` imports: `Response`, `guest_export_service`, `web_push_service`, `os`
+- Updated couple dashboard `TabType` union: added `'registry' | 'faq'`
+- Added `Gift`, `HelpCircle`, `QrCode`, `BellRing`, `Plus`, `Pencil`, `Trash2`, `ExternalLink`, `Download`, `BellOff` to lucide imports
+- Updated PRD: reclassified P2-2, P2-3, P2-5, P2-6, P2-7 as "Built (Sprint 6)"
+
+---
+
+## [2.23.0] - 2026-03-22 — Couple Portal Sprint 5: Note Replies & Meeting Scheduling
+
+### Context
+
+Sprint 5 completes all P1 features for the Couple Portal: threaded note replies (P1-6) and recurring meeting scheduling with Google Calendar integration (P1-2).
+
+### Added
+
+- **Threaded Note Replies (P1-6)**
+  - `POST /couple-portal/events/{event_index}/notes/{note_id}/reply` — Planner replies to event-level couple notes
+  - `POST /couple-portal/events/{event_index}/order-of-events/{item_id}/notes/{note_id}/reply` — Planner replies to item-level couple notes
+  - Replies stored with `reply_to` field in `EventNoteModel`, displayed threaded under parent notes
+  - Replying auto-marks parent note as "addressed"
+  - Planner NotesSection: reply button, inline reply input, threaded reply display with blue accent
+  - Couple dashboard: planner replies shown threaded below original notes on both event and item levels
+
+- **Recurring Meeting Scheduling (P1-2)**
+  - `POST /couple-portal/meetings` — Planner schedules meetings with Google Calendar sync
+  - `GET /couple-portal/meetings` — Planner lists meetings for a wedding
+  - `DELETE /couple-portal/meetings/{meeting_id}` — Cancel meeting (removes from Google Calendar)
+  - `GET /couple/portal/meetings` — Couple views upcoming meetings
+  - Meetings stored as planner tasks with `category="meeting"` — reuses existing `planner_tasks` collection
+  - Recurring support: weekly, biweekly, monthly presets with iCal RRULE generation
+  - Google Calendar sync via existing `google_calendar_service`
+  - Meetings tab in planner management page with scheduling form and meeting list
+  - Meetings tab in couple dashboard showing upcoming meetings
+
+### Changed
+
+- `EventNoteModel` — Added `reply_to` field for threading support
+- `TaskCategory` enum — Added `MEETING` category
+- PRD status updated to "Complete (Sprints 1-5 — all P0 and P1 features built)"
+
+## [2.22.0] - 2026-03-22 — Couple Portal Sprint 4: Archival, Form Templates, Error States, Polish
+
+### Context
+
+Sprint 4 focuses on wedding archival, reusable form templates, comprehensive error state handling for archived/revoked weddings, and mobile responsiveness polish.
+
+### Added
+
+- **Wedding Archival Flow**
+  - `POST /couple-portal/archive` — Planner triggers full wedding data snapshot (guests, RSVPs, budget, contracts, forms, updates, messages)
+  - `DELETE /couple-portal/archive` — Planner reverses archival, restores couple portal to active state
+  - Archive button with confirmation modal in planner management page
+  - Couples see read-only archived view with amber banner; write operations (messaging, forms, notes) blocked
+  - Reuses existing `archive_wedding_data()` service with messages extension
+
+- **Custom Form Templates**
+  - `POST /couple-portal/form-templates` — Save any form as a reusable custom template
+  - `GET /couple-portal/form-templates` — List all planner's saved templates
+  - `POST /couple-portal/form-templates/create-form` — Create new form from template for a wedding
+  - `DELETE /couple-portal/form-templates/{template_id}` — Delete saved template (with confirmation)
+  - Form Templates tab in planner management page with template cards, "Use Template" flow, delete
+
+- **Error State Handling**
+  - Archived wedding write-blocks on: `POST /couple/portal/messages`, form submission, event notes, item notes
+  - Consistent `403 Forbidden` with descriptive messages for archived wedding operations
+  - MessagesTab shows disabled state with archive icon when wedding is archived
+  - ObjectId validation on all Sprint 4 endpoints — returns `400 Bad Request` for invalid IDs
+
+- **Database Indexes** (`database_indexes.py`)
+  - `idx_custom_templates_planner` — Compound index `(planner_email, created_at DESC)` for template listing
+
+### Changed
+
+- **Mobile Responsiveness**
+  - Tab bar uses responsive padding (`px-2.5 sm:px-4`) and text size (`text-xs sm:text-sm`) for small screens
+  - Messages container uses viewport-relative height with min/max bounds
+  - Wedding selector + archive button stack vertically on mobile, row on desktop
+
+- **Planner Management Page**
+  - Added "Form Templates" tab to section navigation
+  - Archive button renders alongside wedding selector with `onArchived` callback for data refresh
+  - Template delete requires confirmation dialog
+
+### Security
+
+- ObjectId format validation on all archive and template endpoints prevents malformed ID exceptions
+- Wedding access checks (`check_wedding_access()`) on all planner endpoints
+- Archived wedding state checked before every couple write operation
+- Template ownership enforced — planners can only access/delete their own templates
+- Template saving strips wedding-specific settings to prevent data leakage
+
+---
+
+## [2.21.0] - 2026-03-22 — Couple Portal Sprint 3: Messaging, Password Reset, Email Digests
+
+### Context
+
+Sprint 3 completes the Couple Portal's communication layer with real-time couple↔planner messaging, a full password reset flow for couples, and planner-triggered email digest summaries.
+
+### Added
+
+- **Couple ↔ Planner Messaging**
+  - `POST /couple/portal/messages` — Couple sends a message to their planner
+  - `GET /couple/portal/messages` — Couple retrieves message history (cursor-based pagination)
+  - `GET /couple/portal/messages/unread-count` — Couple unread message count
+  - `POST /couple-portal/messages` — Planner sends a message to the couple
+  - `GET /couple-portal/messages` — Planner retrieves message history for a wedding
+  - `GET /couple-portal/messages/unread-count` — Planner unread message count
+  - Chat-style UI on both couple dashboard and planner management page
+  - Read receipts (eye icon) for messages read by the other party
+  - Real-time unread badge on Messages tab
+
+- **Couple Password Reset Flow**
+  - `POST /couple/forgot-password` — Request password reset email (anti-enumeration: consistent response)
+  - `GET /couple/reset-password/validate/{token}` — Validate reset token without consuming it
+  - `POST /couple/reset-password` — Atomic token consumption + password update via `find_one_and_update`
+  - Forgot password page (`app/couple/forgot-password/page.tsx`)
+  - Reset password page (`app/couple/reset-password/page.tsx`) with token validation, masked email display
+  - "Forgot your password?" link added to couple login page
+  - Branded HTML email template for reset link (matches invite email style)
+
+- **Email Notification Digest**
+  - `POST /couple-portal/send-digest` — Planner triggers digest email for a wedding's couple
+  - `generate_couple_digest()` — Aggregates unread messages, new updates, upcoming payments (14 days), pending forms
+  - `send_couple_digest_email()` — Branded HTML email with digest sections
+  - "Send Digest Email" button in planner messaging section
+
+- **Planner Notification Integration**
+  - New notification types: `couple_message`, `couple_note` registered in `NotificationType` Literal
+  - All couple actions notify planners via `planner_notification_service.create_notification()` (SSE + web push)
+  - Existing `/planner/activity-notifications` API filters by type — no duplicate endpoints needed
+
+- **Database Indexes** (`database_indexes.py`)
+  - `idx_couple_reset_token` — Sparse index on `couple_users.password_reset_token`
+  - `idx_messages_wedding_id` — Compound index `(wedding_id, _id DESC)` for message feed
+  - `idx_messages_unread_couple` / `idx_messages_unread_planner` — Targeted indexes for unread counts
+
+### Security
+
+- Password reset uses atomic `find_one_and_update` to prevent token reuse race conditions
+- Anti-enumeration on forgot-password: always returns identical response regardless of account existence
+- Reset tokens: 32 hex chars, 1-hour expiry, invalidated on use
+- Wedding existence validation before message insert
+- `check_wedding_access()` enforced on planner unread count endpoint
+- Read-mark operations execute before message fetch to prevent race conditions
+
+---
+
 ## [2.20.0] - 2026-03-22 — Couple Portal Sprint 2: Planner Management + Order of Events CRUD + Contract Review
 
 ### Context

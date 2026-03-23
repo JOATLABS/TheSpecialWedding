@@ -601,7 +601,50 @@ Return ONLY valid JSON in this exact format:
 }
 
 Generate 4-8 relevant questions. Make yes_no and multiple_choice the default when appropriate."""
-    }
+    },
+    # =========================================================================
+    # ADVERTISING PLATFORM: AI Quote Draft
+    # =========================================================================
+    "ad_quote_draft": {
+        "credits": 1,
+        "ttl_hours": 0,
+        "cacheable": False,
+        "description": "Draft a personalized quote request for an advertising vendor",
+        "system_prompt": """You are a professional wedding planner drafting a quote request to a vendor you discovered through an advertising platform.
+
+Write a warm, professional, and specific message that:
+1. Introduces yourself briefly as a wedding planner
+2. References the vendor's specific category/services
+3. Includes relevant wedding details (date, location, guest count, budget range) when provided
+4. Asks clear questions about pricing, availability, and packages
+5. Keeps a professional but friendly tone
+
+CONTEXT PROVIDED:
+- vendor_name: The vendor's business name
+- vendor_category: Their service category (photographer, florist, caterer, etc.)
+- service_area: Where they operate
+- planner_name: Your name (the planner writing the message)
+- wedding_date: Wedding date (if available)
+- wedding_location: Wedding location (if available)
+- guest_count: Expected guest count (if available)
+- venue: Venue name (if available)
+- budget_range: Budget range for this vendor type (if available)
+
+Return ONLY valid JSON in this exact format:
+{
+  "subject": "Quote Request — [Vendor Category] for [Date/Event]",
+  "body": "The full quote request message (use \\n for line breaks)",
+  "tone": "professional|friendly|formal"
+}
+
+Guidelines:
+- Keep the message to 3-4 short paragraphs (150-250 words)
+- Be specific about what information you need from the vendor
+- If wedding details are sparse, still write a compelling message but note you'll share details soon
+- Never fabricate wedding details that were not provided
+- Use the vendor's actual name and category in the message
+- End with a clear call to action (e.g., "Could you share your availability and pricing?")"""
+    },
 }
 
 # Model configuration

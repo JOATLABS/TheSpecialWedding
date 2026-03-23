@@ -613,24 +613,388 @@ class AdminCampaignService:
     async def list_vendor_accounts(
         self,
         status_filter: Optional[str] = None,
+        category_filter: Optional[str] = None,
+        location_filter: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        search: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: int = -1,
         limit: int = 50,
         skip: int = 0,
-    ) -> List[Dict[str, Any]]:
-        """List advertising vendor accounts."""
+    ) -> Dict[str, Any]:
+        """
+        List advertising vendor accounts with advanced filtering.
+
+        Filters:
+          - status: account status (pending_approval, active, suspended)
+          - category: vendor category (photographer, florist, etc.)
+          - location: text search on vendor_location
+          - date_from/date_to: created_at range (ISO date strings)
+          - search: text search on email or business_name
+        """
         query: Dict[str, Any] = {"role": "advertising_vendor"}
+
         if status_filter:
             query["vendor_account_status"] = status_filter
+        if category_filter:
+            query["vendor_category"] = category_filter
+        if location_filter:
+            query["vendor_location"] = {"$regex": location_filter, "$options": "i"}
+        if search:
+            query["$or"] = [
+                {"email": {"$regex": search, "$options": "i"}},
+                {"business_name": {"$regex": search, "$options": "i"}},
+            ]
+        if date_from or date_to:
+            date_range_q: Dict[str, Any] = {}
+            if date_from:
+                try:
+                    date_range_q["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid date_from format: {date_from}. Use ISO 8601 (e.g. 2026-01-01)",
+                    )
+            if date_to:
+                try:
+                    date_range_q["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid date_to format: {date_to}. Use ISO 8601 (e.g. 2026-12-31)",
+                    )
+            if date_range_q:
+                query["created_at"] = date_range_q
+
+        # Validate sort field
+        valid_sorts = {"created_at", "business_name", "total_impressions", "total_clicks", "total_leads"}
+        if sort_by not in valid_sorts:
+            sort_by = "created_at"
+
+        total = await self.users.count_documents(query)
 
         results = []
         async for doc in (
             self.users
             .find(query)
-            .sort("created_at", -1)
+            .sort(sort_by, sort_order)
             .skip(skip)
             .limit(limit)
         ):
             results.append(_serialize(doc))
-        return results
+
+        return {
+            "items": results,
+            "total": total,
+            "limit": limit,
+            "skip": skip,
+        }
+
+    # ─── Batch Vendor Stats (pipeline optimization) ──────────────
+
+    async def get_vendor_stats_batch(
+        self,
+        vendor_ids: List[str],
+        days: int = 30,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Compute stats for multiple vendors in a single aggregation pipeline
+        instead of N+1 individual queries.
+
+        Returns: { vendor_id: { impressions, clicks, leads, ctr, campaigns } }
+        """
+        if not vendor_ids:
+            return {}
+
+        period_start = datetime.now(timezone.utc) - timedelta(days=days)
+
+        # ── 1. Aggregate events by vendor_id ──
+        events_pipeline = [
+            {
+                "$match": {
+                    "created_at": {"$gte": period_start},
+                    "vendor_id": {"$in": vendor_ids},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$vendor_id",
+                    "impressions": {
+                        "$sum": {"$cond": [{"$eq": ["$event_type", "impression_served"]}, 1, 0]}
+                    },
+                    "clicks": {
+                        "$sum": {"$cond": [{"$eq": ["$event_type", "click"]}, 1, 0]}
+                    },
+                    "leads": {
+                        "$sum": {"$cond": [
+                            {"$in": ["$event_type", ["lead_created", "quote_requested"]]}, 1, 0
+                        ]}
+                    },
+                }
+            },
+        ]
+
+        stats: Dict[str, Dict[str, Any]] = {}
+        async for doc in self.ad_events.aggregate(events_pipeline):
+            vid = doc["_id"]
+            impressions = doc.get("impressions", 0)
+            clicks = doc.get("clicks", 0)
+            stats[vid] = {
+                "impressions": impressions,
+                "clicks": clicks,
+                "leads": doc.get("leads", 0),
+                "ctr": round(clicks / impressions * 100, 2) if impressions > 0 else 0.0,
+            }
+
+        # ── 2. Count campaigns per vendor ──
+        campaign_pipeline = [
+            {
+                "$match": {
+                    "vendor_id": {"$in": vendor_ids},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$vendor_id",
+                    "total_campaigns": {"$sum": 1},
+                    "active_campaigns": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "active"]}, 1, 0]}
+                    },
+                }
+            },
+        ]
+
+        async for doc in self.campaigns.aggregate(campaign_pipeline):
+            vid = doc["_id"]
+            if vid not in stats:
+                stats[vid] = {"impressions": 0, "clicks": 0, "leads": 0, "ctr": 0.0}
+            stats[vid]["total_campaigns"] = doc.get("total_campaigns", 0)
+            stats[vid]["active_campaigns"] = doc.get("active_campaigns", 0)
+
+        # Fill in defaults for vendors with no activity
+        for vid in vendor_ids:
+            if vid not in stats:
+                stats[vid] = {
+                    "impressions": 0, "clicks": 0, "leads": 0, "ctr": 0.0,
+                    "total_campaigns": 0, "active_campaigns": 0,
+                }
+
+        return stats
+
+    # ─── Event Query Engine (Elasticsearch-style) ────────────────
+
+    async def query_events(
+        self,
+        event_types: Optional[List[str]] = None,
+        campaign_id: Optional[str] = None,
+        vendor_id: Optional[str] = None,
+        planner_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: int = -1,
+        limit: int = 100,
+        skip: int = 0,
+        aggregate_by: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Flexible event search with filtering, sorting, pagination, and optional aggregation.
+
+        Supports Elasticsearch-style queries over the ad_events collection:
+        - Filter by event_type, campaign_id, vendor_id, planner_id, session_id
+        - Date range filtering
+        - Sorting by any field
+        - Pagination with total count
+        - Optional aggregation by a field (returns counts instead of raw docs)
+
+        Returns: { items: [...], total: int, aggregations?: {...} }
+        """
+        query: Dict[str, Any] = {}
+
+        if event_types:
+            query["event_type"] = {"$in": event_types}
+        if campaign_id:
+            query["campaign_id"] = campaign_id
+        if vendor_id:
+            query["vendor_id"] = vendor_id
+        if planner_id:
+            query["planner_id"] = planner_id
+        if session_id:
+            query["session_id"] = session_id
+
+        # Date range
+        if date_from or date_to:
+            date_range_q: Dict[str, Any] = {}
+            if date_from:
+                try:
+                    date_range_q["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid date_from format: {date_from}. Use ISO 8601 (e.g. 2026-01-01)",
+                    )
+            if date_to:
+                try:
+                    date_range_q["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid date_to format: {date_to}. Use ISO 8601 (e.g. 2026-12-31)",
+                    )
+            if date_range_q:
+                query["created_at"] = date_range_q
+
+        # If aggregation requested, return grouped counts
+        if aggregate_by and aggregate_by in {
+            "event_type", "campaign_id", "vendor_id", "planner_id", "placement"
+        }:
+            agg_pipeline = [
+                {"$match": query},
+                {"$group": {
+                    "_id": f"${aggregate_by}",
+                    "count": {"$sum": 1},
+                    "first_event": {"$min": "$created_at"},
+                    "last_event": {"$max": "$created_at"},
+                }},
+                {"$sort": {"count": -1}},
+                {"$limit": limit},
+            ]
+            aggregations = []
+            async for doc in self.ad_events.aggregate(agg_pipeline):
+                aggregations.append({
+                    "key": doc["_id"],
+                    "count": doc["count"],
+                    "first_event": doc.get("first_event", "").isoformat() if doc.get("first_event") else None,
+                    "last_event": doc.get("last_event", "").isoformat() if doc.get("last_event") else None,
+                })
+
+            return {
+                "aggregations": aggregations,
+                "aggregate_by": aggregate_by,
+                "total_buckets": len(aggregations),
+            }
+
+        # Standard query with pagination
+        total = await self.ad_events.count_documents(query)
+
+        # Validate sort field
+        valid_sorts = {"created_at", "event_type", "campaign_id", "vendor_id", "planner_id"}
+        if sort_by not in valid_sorts:
+            sort_by = "created_at"
+
+        items = []
+        async for doc in (
+            self.ad_events
+            .find(query)
+            .sort(sort_by, sort_order)
+            .skip(skip)
+            .limit(limit)
+        ):
+            items.append(_serialize(doc))
+
+        return {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "skip": skip,
+        }
+
+    # ─── Bulk Vendor Operations ──────────────────────────────────
+
+    async def bulk_create_vendor_accounts(
+        self,
+        vendors: List[Dict[str, Any]],
+        admin_email: str,
+    ) -> Dict[str, Any]:
+        """
+        Create multiple advertising vendor accounts in one operation.
+
+        Each vendor dict should have at minimum:
+            - email: str (unique, required)
+            - business_name: str (required)
+            - category: str (optional)
+            - location: str (optional)
+
+        Returns summary with created/failed/skipped counts and details.
+        """
+        now = datetime.now(timezone.utc)
+        created = []
+        failed = []
+        skipped = []
+
+        for i, vendor_data in enumerate(vendors):
+            email = vendor_data.get("email", "").strip().lower()
+            business_name = vendor_data.get("business_name", "").strip()
+
+            if not email or not business_name:
+                failed.append({
+                    "index": i,
+                    "email": email or "(missing)",
+                    "reason": "Missing required fields: email and business_name",
+                })
+                continue
+
+            # Check if vendor already exists
+            existing = await self.users.find_one({"email": email})
+            if existing:
+                skipped.append({
+                    "index": i,
+                    "email": email,
+                    "reason": "Vendor account already exists",
+                })
+                continue
+
+            try:
+                vendor_doc = {
+                    "email": email,
+                    "business_name": business_name,
+                    "role": "advertising_vendor",
+                    "vendor_account_status": "pending_approval",
+                    "vendor_category": vendor_data.get("category", ""),
+                    "vendor_location": vendor_data.get("location", ""),
+                    "vendor_phone": vendor_data.get("phone", ""),
+                    "vendor_website": vendor_data.get("website", ""),
+                    "created_at": now,
+                    "updated_at": now,
+                    "created_by": admin_email,
+                    "is_free_tier": vendor_data.get("is_free_tier", False),
+                    "total_campaigns": 0,
+                    "total_impressions": 0,
+                    "total_clicks": 0,
+                    "total_leads": 0,
+                }
+                result = await self.users.insert_one(vendor_doc)
+                vendor_doc["_id"] = str(result.inserted_id)
+                created.append({
+                    "index": i,
+                    "email": email,
+                    "business_name": business_name,
+                    "_id": vendor_doc["_id"],
+                })
+            except Exception as e:
+                failed.append({
+                    "index": i,
+                    "email": email,
+                    "reason": str(e),
+                })
+
+        logger.info(
+            f"Bulk vendor create by {admin_email}: "
+            f"{len(created)} created, {len(skipped)} skipped, {len(failed)} failed"
+        )
+        return {
+            "total_submitted": len(vendors),
+            "created": len(created),
+            "skipped": len(skipped),
+            "failed": len(failed),
+            "details": {
+                "created": created,
+                "skipped": skipped,
+                "failed": failed,
+            },
+        }
 
     # ─── Platform Config ──────────────────────────────────────────
 

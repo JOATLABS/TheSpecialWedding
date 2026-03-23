@@ -88,7 +88,10 @@ from app.api.inbound_emails import router as inbound_emails_router
 from app.api.vendor_campaigns import router as vendor_campaigns_router
 from app.api.admin_campaigns import router as admin_campaigns_router
 from app.api.planner_ad_interactions import router as planner_ad_interactions_router
+from app.api.admin_platform_config import router as admin_platform_config_router
+from app.api.planner_ad_preferences import router as planner_ad_preferences_router
 from app.api.vendor_public import router as vendor_public_router
+from app.api.vendor_signup import router as vendor_signup_router
 from app.api.blog import router as blog_router
 
 # Couple Portal routers
@@ -526,7 +529,10 @@ app.include_router(scheduler_jobs_router, prefix="/scheduler", tags=["Scheduler"
 app.include_router(vendor_campaigns_router, tags=["Vendor Campaigns"])  # Vendor campaign portal (has own /portal/ads prefix)
 app.include_router(admin_campaigns_router, tags=["Admin Campaigns"])  # Admin campaign management (has own /admin/ads/campaigns prefix)
 app.include_router(planner_ad_interactions_router, tags=["Planner Ad Interactions"])  # Planner ad interaction flows (has own /planner/ads prefix)
+app.include_router(admin_platform_config_router, tags=["Admin Platform Config"])  # Platform config, pipeline status, data export (has own /admin/ads/config prefix)
+app.include_router(planner_ad_preferences_router, tags=["Planner Ad Preferences"])  # Planner ad preferences (has own /planner/ads/preferences prefix)
 app.include_router(vendor_public_router, tags=["Public Vendors"])  # Public vendor profiles (has own /api/v1/vendors prefix)
+app.include_router(vendor_signup_router, tags=["Vendor Signup"])  # Vendor self-signup + onboarding (has own /api/v1/vendors prefix)
 app.include_router(blog_router, tags=["Blog"])  # Public blog + admin blog endpoints (has own /api/v1/blog and /blog/admin prefixes)
 
 # Couple Portal routes (public - couple auth is handled at route level)

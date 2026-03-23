@@ -31,6 +31,9 @@ class PlannerNotificationTypes:
     SUPPORT_TICKET_RESPONSE: Final[Literal["support_ticket_response"]] = "support_ticket_response"
     DELIVERY_FAILURE: Final[Literal["delivery_failure"]] = "delivery_failure"
     BULK_SEND_SUMMARY: Final[Literal["bulk_send_summary"]] = "bulk_send_summary"
+    # Sprint 3: Couple portal notification types
+    COUPLE_MESSAGE: Final[Literal["couple_message"]] = "couple_message"
+    COUPLE_NOTE: Final[Literal["couple_note"]] = "couple_note"
 
 
 NotificationType = Literal[
@@ -45,7 +48,9 @@ NotificationType = Literal[
     "system",
     "support_ticket_response",
     "delivery_failure",
-    "bulk_send_summary"
+    "bulk_send_summary",
+    "couple_message",
+    "couple_note",
 ]
 
 

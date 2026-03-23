@@ -18,6 +18,7 @@ class EventNoteModel(BaseModel):
     author_name: Optional[str] = Field(default=None, description="Display name of the author")
     text: str = Field(..., description="Note content")
     status: str = Field(default="pending", description="Note status: pending, seen, addressed")
+    reply_to: Optional[str] = Field(default=None, description="Parent note ID if this is a reply")
     created_at: Optional[str] = Field(default=None, description="ISO timestamp when the note was created")
 
 

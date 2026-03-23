@@ -2,8 +2,9 @@
 Couple Portal Service
 
 Aggregates wedding data for the couple's portal view.
+Sprint 3: Adds email digest generation for unread updates, messages, payments.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 from app.core.database import mongo
 from bson import ObjectId
@@ -419,6 +420,191 @@ class CouplePortalService:
         except Exception as e:
             logger.error(f"Error archiving wedding {wedding_id}: {e}")
             raise
+
+
+    # =========================================================================
+    # SPRINT 3: EMAIL DIGEST
+    # =========================================================================
+
+    async def generate_couple_digest(self, couple_email: str, wedding_id: str, since: datetime) -> Optional[Dict]:
+        """
+        Generate digest data for a couple: unread messages, new updates, upcoming payments.
+        Returns None if there's nothing new to report.
+        Used by a scheduled task or API trigger to send digest emails.
+        """
+        try:
+            # 1. Unread messages from planner
+            unread_messages = await mongo.db["couple_messages"].count_documents({
+                "wedding_id": wedding_id,
+                "sender_role": "planner",
+                "read_by_couple": False,
+            })
+
+            # 2. New updates since last digest
+            new_updates = []
+            async for update in mongo.db["couple_updates"].find({
+                "wedding_id": wedding_id,
+                "created_at": {"$gte": since},
+            }).sort("created_at", -1).limit(5):
+                new_updates.append({
+                    "title": update.get("title"),
+                    "content": update.get("content", "")[:150],
+                    "created_at": update.get("created_at").isoformat() if update.get("created_at") else None,
+                })
+
+            # 3. Upcoming payments (due in next 14 days)
+            upcoming_payments = []
+            contract = await mongo.db["contracts"].find_one({"wedding_id": wedding_id})
+            if contract:
+                now = datetime.now(timezone.utc)
+                cutoff = now + timedelta(days=14)
+                for p in contract.get("payments", []):
+                    if p.get("status") not in ("succeeded", "refunded"):
+                        due_date_str = p.get("due_date")
+                        if due_date_str:
+                            try:
+                                due_date = datetime.fromisoformat(due_date_str.replace("Z", "+00:00")) if isinstance(due_date_str, str) else due_date_str
+                                if now <= due_date <= cutoff:
+                                    upcoming_payments.append({
+                                        "name": p.get("name"),
+                                        "amount": p.get("amount"),
+                                        "due_date": due_date_str,
+                                    })
+                            except (ValueError, TypeError):
+                                pass
+
+            # 4. Pending forms
+            pending_forms_count = 0
+            form_ids = []
+            async for form in mongo.db["forms"].find({
+                "wedding_id": wedding_id,
+                "$or": [
+                    {"shared_with_couple": True},
+                    {"target_audience": "couple"},
+                    {"couple_email": couple_email},
+                ]
+            }):
+                form_ids.append(str(form["_id"]))
+
+            if form_ids:
+                submitted_ids = set()
+                async for sub in mongo.db["form_submissions"].find({
+                    "form_id": {"$in": form_ids},
+                    "submitted_by": couple_email,
+                }):
+                    submitted_ids.add(sub["form_id"])
+                pending_forms_count = len(form_ids) - len(submitted_ids)
+
+            # If nothing to report, return None
+            if unread_messages == 0 and len(new_updates) == 0 and len(upcoming_payments) == 0 and pending_forms_count == 0:
+                return None
+
+            return {
+                "unread_messages": unread_messages,
+                "new_updates": new_updates,
+                "new_updates_count": len(new_updates),
+                "upcoming_payments": upcoming_payments,
+                "pending_forms_count": pending_forms_count,
+            }
+        except Exception as e:
+            logger.error(f"Error generating couple digest for {couple_email}: {e}")
+            return None
+
+    async def send_couple_digest_email(self, couple_doc: dict, digest: Dict) -> bool:
+        """
+        Format and send a digest email to a couple.
+        Reuses the existing email_service (Resend) — no new email infra.
+        """
+        try:
+            from app.services.email_service import email_service
+            from app.core.settings import settings
+
+            frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
+            couple_name = couple_doc.get("partner1_name", "")
+            if couple_doc.get("partner2_name"):
+                couple_name = f"{couple_doc['partner1_name']} & {couple_doc['partner2_name']}"
+
+            # Build digest sections
+            sections_html = ""
+
+            if digest["unread_messages"] > 0:
+                sections_html += f"""
+                <div style="margin-bottom: 20px; padding: 16px; background: #f0f7ff; border-radius: 8px;">
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💬 {digest['unread_messages']} Unread Message{'s' if digest['unread_messages'] > 1 else ''}</h3>
+                    <p style="color: #555; margin: 0; font-size: 14px;">Your planner sent you a message. Check your portal to read it.</p>
+                </div>
+                """
+
+            if digest["new_updates_count"] > 0:
+                updates_list = ""
+                for update in digest["new_updates"]:
+                    updates_list += f'<li style="margin-bottom: 8px;"><strong>{update["title"]}</strong></li>'
+                sections_html += f"""
+                <div style="margin-bottom: 20px; padding: 16px; background: #f8f6f3; border-radius: 8px;">
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📋 {digest['new_updates_count']} New Update{'s' if digest['new_updates_count'] > 1 else ''}</h3>
+                    <ul style="color: #555; font-size: 14px; padding-left: 20px; margin: 0;">{updates_list}</ul>
+                </div>
+                """
+
+            if len(digest["upcoming_payments"]) > 0:
+                payment_list = ""
+                for p in digest["upcoming_payments"]:
+                    payment_list += f'<li style="margin-bottom: 8px;">{p["name"]}: ${p["amount"]:,.0f} due {p["due_date"]}</li>'
+                sections_html += f"""
+                <div style="margin-bottom: 20px; padding: 16px; background: #fff8e6; border-radius: 8px;">
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💰 Upcoming Payment{'s' if len(digest['upcoming_payments']) > 1 else ''}</h3>
+                    <ul style="color: #555; font-size: 14px; padding-left: 20px; margin: 0;">{payment_list}</ul>
+                </div>
+                """
+
+            if digest["pending_forms_count"] > 0:
+                sections_html += f"""
+                <div style="margin-bottom: 20px; padding: 16px; background: #f5f0eb; border-radius: 8px;">
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📝 {digest['pending_forms_count']} Form{'s' if digest['pending_forms_count'] > 1 else ''} Pending</h3>
+                    <p style="color: #555; margin: 0; font-size: 14px;">Your planner has forms waiting for your response.</p>
+                </div>
+                """
+
+            html_content = f"""
+            <div style="font-family: 'Georgia', serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #1e3a5f; font-size: 28px; margin-bottom: 8px;">Your Wedding Update</h1>
+                    <p style="color: #d4af37; font-size: 16px; letter-spacing: 2px;">THE SPECIAL WEDDING</p>
+                </div>
+
+                <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                    Hi {couple_name or 'there'}, here's what's new with your wedding:
+                </p>
+
+                {sections_html}
+
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{frontend_url}/couple/dashboard"
+                       style="background-color: #1e3a5f; color: white; padding: 14px 32px;
+                              text-decoration: none; border-radius: 6px; font-size: 16px;
+                              display: inline-block;">
+                        View Your Portal
+                    </a>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;" />
+
+                <p style="color: #999; font-size: 12px; text-align: center;">
+                    This is a summary digest from The Special Wedding portal.
+                </p>
+            </div>
+            """
+
+            await email_service.send_email(
+                to=couple_doc["email"],
+                subject=f"Wedding Portal Update — {couple_name or 'Your Wedding'}",
+                html=html_content,
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to send couple digest email to {couple_doc.get('email')}: {e}")
+            return False
 
 
 couple_portal_service = CouplePortalService()
