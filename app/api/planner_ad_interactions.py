@@ -72,7 +72,31 @@ def get_planner_ad_interaction_service() -> PlannerAdInteractionService:
         email_service = ResendEmailService(mongo.db)
     except Exception:
         logger.warning("Email service unavailable; quote emails will be skipped")
-    return PlannerAdInteractionService(mongo.db, email_service=email_service)
+
+    # Billing service — CPL charges on lead creation
+    billing_service = None
+    try:
+        from app.services.ad_billing_service import AdBillingService
+        from app.services.stripe_service import StripeService
+        stripe_svc = StripeService(mongo.db)
+        billing_service = AdBillingService(mongo.db, stripe_service=stripe_svc)
+    except Exception:
+        logger.warning("Ad billing service unavailable; CPL charges will be skipped")
+
+    # Fraud detection service — real-time click fraud checks
+    fraud_detection_service = None
+    try:
+        from app.services.ad_fraud_detection_service import AdFraudDetectionService
+        fraud_detection_service = AdFraudDetectionService(mongo.db)
+    except Exception:
+        logger.warning("Fraud detection service unavailable; fraud checks will be skipped")
+
+    return PlannerAdInteractionService(
+        mongo.db,
+        email_service=email_service,
+        billing_service=billing_service,
+        fraud_detection_service=fraud_detection_service,
+    )
 
 
 async def require_planner_or_admin(

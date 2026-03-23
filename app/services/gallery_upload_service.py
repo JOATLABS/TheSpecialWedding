@@ -330,8 +330,13 @@ class BlogUploadService:
         if BLOG_MEDIA_DOMAIN:
             return BLOG_MEDIA_DOMAIN
         if AD_MEDIA_DOMAIN:
+            logger.warning("BLOG_MEDIA_DOMAIN not set — falling back to AD_MEDIA_DOMAIN for blog assets")
             return AD_MEDIA_DOMAIN
-        return MEDIA_DOMAIN
+        if MEDIA_DOMAIN:
+            logger.warning("BLOG_MEDIA_DOMAIN not set — falling back to MEDIA_DOMAIN for blog assets")
+            return MEDIA_DOMAIN
+        logger.warning("No CDN domain configured for blog assets — URLs will use raw keys instead")
+        return None
 
     def create_presigned_upload_url(
         self, filename: str, folder: str = "blog", content_type: str = "image/jpeg", expires_in: int = 300

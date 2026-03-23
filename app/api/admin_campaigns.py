@@ -27,6 +27,8 @@ from app.services.admin_campaign_service import AdminCampaignService
 from app.models.advertising_campaign import (
     ReviewCampaignDecisionRequest,
     ReviewCreativeDecisionRequest,
+    SetFreeTierRequest,
+    UpdateCPLPricingRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,17 @@ router = APIRouter(prefix="/admin/ads/campaigns", tags=["Admin Campaigns"])
 async def get_admin_campaign_service() -> AdminCampaignService:
     """Get admin campaign service instance."""
     return AdminCampaignService(mongo.db)
+
+
+def get_ad_billing_service():
+    """Get ad billing service instance."""
+    from app.services.ad_billing_service import AdBillingService
+    try:
+        from app.services.stripe_service import StripeService
+        stripe_svc = StripeService(mongo.db)
+    except Exception:
+        stripe_svc = None
+    return AdBillingService(mongo.db, stripe_service=stripe_svc)
 
 
 # =============================================================================
@@ -374,4 +387,123 @@ async def update_platform_config(
     return await service.update_platform_config(
         admin_email=current_user.email,
         updates=updates,
+    )
+
+
+# =============================================================================
+# FREE TIER MANAGEMENT (Root Admin Only)
+# =============================================================================
+
+@router.put("/{campaign_id}/free-tier")
+async def set_campaign_free_tier(
+    campaign_id: str,
+    request: SetFreeTierRequest = Body(...),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Toggle free tier on a single campaign. Root admin only."""
+    billing_svc = get_ad_billing_service()
+    return await billing_svc.set_campaign_free_tier(
+        campaign_id=campaign_id,
+        is_free=request.is_free,
+        admin_email=current_user.email,
+    )
+
+
+@router.put("/vendors/{vendor_id}/free-tier")
+async def set_vendor_free_tier(
+    vendor_id: str,
+    request: SetFreeTierRequest = Body(...),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Toggle free tier for all campaigns from a vendor. Root admin only."""
+    billing_svc = get_ad_billing_service()
+    return await billing_svc.set_vendor_free_tier(
+        vendor_id=vendor_id,
+        is_free=request.is_free,
+        reason=request.reason,
+        granted_by=current_user.email,
+        expires_at=request.expires_at,
+    )
+
+
+@router.get("/vendors/{vendor_id}/free-tier")
+async def get_vendor_free_tier_status(
+    vendor_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Check if a vendor has free tier enabled."""
+    billing_svc = get_ad_billing_service()
+    status = await billing_svc.get_vendor_free_tier_status(vendor_id)
+    return status or {"vendor_id": vendor_id, "is_free": False}
+
+
+@router.get("/free-tier-vendors")
+async def list_free_tier_vendors(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """List all vendors with free tier enabled."""
+    billing_svc = get_ad_billing_service()
+    return await billing_svc.list_all_free_tier_vendors()
+
+
+# =============================================================================
+# CPL PRICING
+# =============================================================================
+
+@router.put("/{campaign_id}/cpl-pricing")
+async def update_campaign_cpl_pricing(
+    campaign_id: str,
+    request: UpdateCPLPricingRequest = Body(...),
+    service: AdminCampaignService = Depends(get_admin_campaign_service),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Update CPL pricing for a campaign. Root admin only."""
+    from bson import ObjectId
+    updates = {}
+    if request.cpl_quote_request is not None:
+        updates["cpl_quote_request"] = request.cpl_quote_request
+    if request.cpl_directory_add is not None:
+        updates["cpl_directory_add"] = request.cpl_directory_add
+    if not updates:
+        raise HTTPException(status_code=400, detail="No pricing fields provided")
+
+    from datetime import datetime, timezone
+    updates["updated_at"] = datetime.now(timezone.utc)
+
+    result = await service.campaigns.update_one(
+        {"_id": ObjectId(campaign_id)},
+        {"$set": updates},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return {"status": "updated", "campaign_id": campaign_id, **updates}
+
+
+# =============================================================================
+# BILLING REPORTS
+# =============================================================================
+
+@router.get("/{campaign_id}/billing")
+async def get_campaign_billing(
+    campaign_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """Get billing summary for a campaign."""
+    billing_svc = get_ad_billing_service()
+    return await billing_svc.get_campaign_billing_summary(campaign_id)
+
+
+@router.get("/{campaign_id}/lead-charges")
+async def get_campaign_lead_charges(
+    campaign_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    skip: int = Query(0, ge=0),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """List individual CPL charges for a campaign."""
+    billing_svc = get_ad_billing_service()
+    return await billing_svc.get_lead_charges(
+        campaign_id=campaign_id,
+        limit=limit,
+        skip=skip,
     )

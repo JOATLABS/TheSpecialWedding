@@ -5,6 +5,157 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.20.0] - 2026-03-22 — Couple Portal Sprint 2: Planner Management + Order of Events CRUD + Contract Review
+
+### Context
+
+Sprint 2 builds on the Phase 1 foundation by adding the planner-side management page, full CRUD for the order of events / run of show, collaborative notes between couples and planners, contract review in the couple portal, and couple access management.
+
+### Added
+
+- **Planner Management Page** (`app/admin/couple-portal/page.tsx`)
+  - Three-tab layout: Couples, Program / Run of Show, Couple Notes
+  - Couples tab: view all couple accounts, invite new couples, resend invitations, revoke/restore access
+  - Program tab: add/edit/delete order-of-events items per ceremony with time, duration, description
+  - Notes tab: consolidated view of all couple notes with pending/seen/addressed status management
+
+- **Order of Events CRUD API** (planner side)
+  - `POST /couple-portal/events/{event_index}/order-of-events` — Add program item
+  - `PUT /couple-portal/events/{event_index}/order-of-events/{item_id}` — Update item
+  - `PUT /couple-portal/events/{event_index}/order-of-events/reorder` — Reorder items (drag-and-drop)
+  - `DELETE /couple-portal/events/{event_index}/order-of-events/{item_id}` — Remove item
+  - Optimistic concurrency control via `updated_at` version check prevents data loss from concurrent edits
+
+- **Collaborative Notes API**
+  - `POST /couple/portal/events/{event_index}/notes` — Couple adds event-level note
+  - `POST /couple/portal/events/{event_index}/order-of-events/{item_id}/notes` — Couple adds item-level note
+  - `PATCH /couple-portal/events/{event_index}/notes/{note_id}` — Planner updates note status
+  - `PATCH /couple-portal/events/{event_index}/order-of-events/{item_id}/notes/{note_id}` — Planner updates item note status
+  - Automatic planner notification on new couple notes (via `planner_notifications` collection)
+
+- **Contract Review in Couple Portal**
+  - `GET /couple/portal/contracts` — Dedicated endpoint returning contract sections, payment schedule, and status
+  - `get_contract_for_couple()` — New service method in `CouplePortalService` (single DB query, no N+1)
+  - Contract tab in couple dashboard: package name, status timeline, sections (terms/scope), payment summary and schedule
+
+- **Couple Access Management**
+  - `PATCH /couple-portal/couples/{couple_id}/revoke` — Revoke couple's portal access
+  - `PATCH /couple-portal/couples/{couple_id}/restore` — Restore previously revoked access
+
+- **Enhanced Couple Dashboard**
+  - Timeline tab now shows expandable order of events with times, durations, and descriptions
+  - Inline note submission: couples can add notes to specific program items or general event notes
+  - Note status badges (pending/seen/addressed) visible to couples
+  - New Contract tab with full contract details, sections, and payment schedule
+
+### Security
+
+- All planner endpoints use `require_team_or_planner` + `enforce_team_permission('manage_contracts')` + `check_wedding_access()`
+- All couple endpoints use `require_couple_auth` dependency
+- Optimistic concurrency control on order-of-events writes (409 Conflict on stale data)
+
+---
+
+## [2.19.0] - 2026-03-22 — Couple Portal (Phase 1) + Order of Events with Collaborative Notes
+
+### Context
+
+The platform had a basic token-based payment portal for couples (`/portal/[token]`) but no way for couples to log in, view wedding updates, fill out forms, or communicate with their planner. Planners also had no way to share a detailed order of events / run of show for each ceremony, and couples had no mechanism to leave feedback on program items.
+
+### Added
+
+- **Couple Authentication System**
+  - `app/api/couple_auth.py` — Public auth endpoints: password setup from magic link, login (24-hour JWT), invite token verification, profile retrieval
+  - `app/api/couple_invite.py` — Planner-side invitation management: invite couple via email, resend invite, list all couples (requires planner auth with `manage_contracts` permission)
+  - `app/couple/login/page.tsx` — Couple login page with navy/gold wedding theme
+  - `app/couple/setup/page.tsx` — Magic link password setup page with token verification
+  - Couples stored in separate `couple_users` MongoDB collection (not the main `users` collection) for clean role separation
+
+- **Couple Portal Dashboard**
+  - `app/couple/dashboard/page.tsx` — Main dashboard with 5 tabs: Overview, Timeline, Payments, Forms, Updates
+  - `app/couple/layout.tsx` — Root layout with gradient background
+  - `app/couple/forms/[formId]/page.tsx` — Dynamic form filling page (text, email, phone, number, date, textarea, select, checkbox)
+  - Overview tab: stat cards, budget progress, venue/planner info, upcoming events
+  - Timeline tab: event cards with date, venue, attire, time details
+  - Payments tab: package summary, individual payment items with status badges
+  - Forms tab: shared forms list with pending/submitted status
+  - Updates tab: planner update feed with milestone cards (gold/rose gradient)
+
+- **Couple Portal Service Layer**
+  - `app/services/couple_portal_service.py` — Aggregates data from weddings, guests, budgets, contracts, forms, and updates collections. Exposes only safe data (guest totals, budget totals — no individual records). Includes `archive_wedding_data()` for wedding archival.
+
+- **Couple Portal API**
+  - `app/api/couple_portal.py` — Dashboard data, events, paginated updates, form submission with planner notification, form details with existing responses, planner update creation
+
+- **Order of Events / Run of Show**
+  - `OrderOfEventsItemModel` — New Pydantic model for individual program steps (title, description, time, duration, display order, notes)
+  - `EventNoteModel` — New Pydantic model for collaborative notes (author_role, text, status: pending/seen/addressed)
+  - `EventModel.order_of_events` — Detailed program steps within each ceremony (e.g., Grand Entrance → First Dance → Cake Cutting → Toasts)
+  - `EventModel.event_notes` — General event-level notes from planner or couple
+
+- **New MongoDB Collections**
+  - `couple_users` — Couple accounts with invite tokens, password hashes, wedding references
+  - `couple_updates` — Planner-to-couple update feed with milestone support
+  - `archived_weddings` — Complete wedding data snapshots for analytics after wedding completion
+
+- **Planner UI**
+  - Added "Couple Portal" nav item to `app/admin/components/Sidebar.tsx` with HeartHandshake icon
+
+- **Documentation**
+  - `docs/plans/couple/FEATURE_SCOPE_couple_portal.md` — Comprehensive feature spec (revised from original read-only scope)
+  - `docs/plans/couple/portal-mockups.html` — Visual mockups for all 8 portal screens
+
+### Changed
+
+- **`app/models/wedding.py`** — Extended `EventModel` with two new optional fields: `order_of_events` (List[OrderOfEventsItemModel], defaults to []) and `event_notes` (List[EventNoteModel], defaults to []). Added `EventNoteModel` and `OrderOfEventsItemModel` classes. Fully backward-compatible — existing events without these fields deserialize with empty lists.
+
+- **`app/types/wedding.ts`** — Added TypeScript interfaces `EventNote`, `OrderOfEventsItem` and extended `WeddingEvent` with optional `order_of_events` and `event_notes` fields.
+
+- **`app/main.py`** — Registered three new routers: `couple_auth_router` (public), `couple_portal_router` (public), `couple_invite_router` (admin prefix).
+
+### Backward Compatibility
+
+- All new fields on `EventModel` use `default_factory=list`, so existing MongoDB documents load without any migration
+- All existing consumers (weddings admin, guests page, RSVP form, landing page, couple dashboard) only access `type`, `date`, and `details` — unaffected by the new fields
+- TypeScript types use optional (`?`) for new fields — no frontend compilation impact
+- Verified with round-trip serialization tests against old documents, minimal documents, and new documents with full order-of-events data
+
+## [2.18.0] - 2026-03-22 — Customer Reviews Configuration for SaaS Management
+
+### Context
+
+The SaaS landing page displayed customer testimonials, but they were hardcoded in `app/page.tsx` with a `// TODO: Fetch testimonials from API when endpoint exists` comment. The admin SaaS management page had no way to manage these reviews — the original "SaaS Content" tab that would have covered this was removed for performance reasons, leaving a gap between what appeared on the landing page and what root admins could configure.
+
+### Added
+
+- **`app/api/testimonials.py`** — Dedicated testimonials CRUD API with six endpoints:
+  - `GET /saas/public/testimonials` — Public (no auth), returns active testimonials sorted by display order. Auto-seeds the collection with four default testimonials if empty.
+  - `GET /saas/testimonials` — Admin listing of all testimonials (active + hidden), ROOT_ADMIN only.
+  - `POST /saas/testimonials` — Create a new testimonial with name, company, role, quote, display order, and active flag.
+  - `PUT /saas/testimonials/{id}` — Partial update of any testimonial fields.
+  - `DELETE /saas/testimonials/{id}` — Permanent deletion.
+  - `PUT /saas/testimonials/{id}/toggle` — Toggle active/inactive status.
+
+- **Customer Reviews tab in `app/admin/saas/page.tsx`** — Fourth tab on the SaaS management page (alongside Overview, Subscription Plans, and Ad Platform):
+  - Card grid displaying each testimonial with name, role, company, quote preview, active/hidden badge, display order, and last-updated date.
+  - Inline Edit, Hide/Show, and Delete actions per card.
+  - Modal form for creating and editing testimonials with fields for name, role, company, quote text, display order, and active checkbox.
+  - Empty state with call-to-action when no testimonials exist.
+
+### Changed
+
+- **`app/page.tsx`** — Landing page now fetches testimonials from `GET /saas/public/testimonials` on mount via `useEffect`. Falls back to four hardcoded testimonials if the API is unreachable. Replaced two generic testimonials with four feature-rich testimonials covering the full platform (guest management, seating, budgets, contracts, AI pricing, vendor coordination, gallery, reminders, calendar sync, forms, wedding config, and knowledge base).
+
+- **`app/api/saas_config.py`** — Updated `_get_default_saas_config()` testimonials array to match the new four-testimonial set and added a sync comment pointing to `testimonials.py`.
+
+- **`app/main.py`** — Registered `testimonials_router` at `/saas` prefix.
+
+### Migration Notes
+
+- The `testimonials` MongoDB collection is auto-seeded on first read if empty — no manual migration required.
+- Existing `saas_config.testimonials` data (in the monolithic config blob) is no longer the source of truth for the landing page; the dedicated `testimonials` collection is authoritative.
+- The four default testimonials reference real platform features by name (seating orchestrator, contract canvas, forms canvas, etc.) to serve as both social proof and feature discovery.
+
 ## [2.17.0] - 2026-03-20 — Shared Pagination System for Admin Dashboard
 
 ### Context

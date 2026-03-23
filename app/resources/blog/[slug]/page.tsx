@@ -104,9 +104,35 @@ export default async function BlogPostPage({
       })
     : '';
 
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: article.title,
+    description: article.ogDescription,
+    datePublished: article.date || undefined,
+    author: {
+      '@type': article.authorName === 'The Special Wedding' ? 'Organization' : 'Person',
+      name: article.authorName,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: 'The Special Wedding',
+      url: 'https://thespecialwedding.io',
+    },
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `https://thespecialwedding.io/resources/blog/${slug}`,
+    },
+    ...(article.ogImage ? { image: article.ogImage } : {}),
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       <SaasNav />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
 
       {/* Article content */}
       <article className="max-w-3xl mx-auto px-6 pt-24 pb-16">
@@ -195,12 +221,18 @@ export async function generateMetadata({
     ? [{ url: article.ogImage, width: 1200, height: 630, alt: article.title }]
     : undefined;
 
+  const canonicalUrl = `https://thespecialwedding.io/resources/blog/${slug}`;
+
   return {
     title: `${article.title} | The Special Wedding Blog`,
     description: article.ogDescription,
+    alternates: {
+      canonical: canonicalUrl,
+    },
     openGraph: {
       title: article.title,
       description: article.ogDescription,
+      url: canonicalUrl,
       type: 'article',
       publishedTime: article.date,
       images: ogImages,

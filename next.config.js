@@ -21,6 +21,7 @@ const remotePatterns = [
   buildRemotePattern(process.env.S3_ENDPOINT_URL),
   buildRemotePattern(process.env.MEDIA_DOMAIN),
   buildRemotePattern(process.env.AD_MEDIA_DOMAIN),
+  buildRemotePattern(process.env.BLOG_MEDIA_DOMAIN),
 ].filter(Boolean)
 
 const nextConfig = {

@@ -126,12 +126,20 @@ def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _ensure_seeded() -> None:
-    """Insert default testimonials if the collection is empty."""
+    """Insert default testimonials if the collection is empty.
+
+    Uses per-document upserts keyed on ``name + company`` to avoid
+    duplicating seed data when concurrent requests both see an empty
+    collection (classic check-then-act race condition).
+    """
     count = await mongo.db[COLLECTION].count_documents({})
     if count == 0:
-        await mongo.db[COLLECTION].insert_many(
-            [dict(t) for t in DEFAULT_TESTIMONIALS]
-        )
+        for t in DEFAULT_TESTIMONIALS:
+            await mongo.db[COLLECTION].update_one(
+                {"name": t["name"], "company": t["company"]},
+                {"$setOnInsert": dict(t)},
+                upsert=True,
+            )
 
 
 # ── Public endpoint (no auth — consumed by landing page) ─────────────────────

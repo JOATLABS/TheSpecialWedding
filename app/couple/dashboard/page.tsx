@@ -9,7 +9,8 @@ import {
   Clock, MapPin, ChevronRight, LogOut, Loader2,
   CheckCircle, AlertCircle, XCircle, TrendingUp,
   Sparkles, Phone, Mail, Building2, Archive,
-  ClipboardList, Send
+  ClipboardList, Send, ChevronDown, ChevronUp,
+  MessageSquare, StickyNote, FileSignature, Eye
 } from 'lucide-react';
 
 // ============================================================================
@@ -24,10 +25,31 @@ interface EventDetail {
   timezone?: string;
 }
 
+interface EventNote {
+  id: string;
+  author_role: 'planner' | 'couple';
+  author_name?: string;
+  text: string;
+  status: 'pending' | 'seen' | 'addressed';
+  created_at?: string;
+}
+
+interface OrderItem {
+  id: string;
+  title: string;
+  description?: string;
+  time?: string;
+  duration_minutes?: number;
+  order: number;
+  notes: EventNote[];
+}
+
 interface WeddingEvent {
   type: string;
   date: string;
   details?: EventDetail;
+  order_of_events?: OrderItem[];
+  event_notes?: EventNote[];
 }
 
 interface PlannerInfo {
@@ -66,6 +88,30 @@ interface ContractInfo {
   status: string;
   package_name: string;
   signed_at?: string;
+  payments: Payment[];
+  summary: {
+    total_amount: number;
+    paid_amount: number;
+    remaining: number;
+  };
+}
+
+interface ContractSection {
+  title: string;
+  content: string;
+}
+
+interface ContractDetail {
+  id: string;
+  status: string;
+  package_name: string;
+  couple_name?: string;
+  couple_email?: string;
+  signed_at?: string;
+  created_at?: string;
+  sent_at?: string;
+  viewed_at?: string;
+  sections: ContractSection[];
   payments: Payment[];
   summary: {
     total_amount: number;
@@ -118,7 +164,7 @@ interface DashboardData {
   updates: UpdateItem[];
 }
 
-type TabType = 'overview' | 'timeline' | 'payments' | 'forms' | 'updates';
+type TabType = 'overview' | 'timeline' | 'payments' | 'contracts' | 'forms' | 'updates';
 
 // ============================================================================
 // HELPERS
@@ -250,6 +296,7 @@ export default function CoupleDashboardPage() {
     { key: 'overview', label: 'Overview', icon: <Heart className="w-4 h-4" /> },
     { key: 'timeline', label: 'Timeline', icon: <Calendar className="w-4 h-4" />, count: data.wedding?.events?.length },
     { key: 'payments', label: 'Payments', icon: <DollarSign className="w-4 h-4" />, count: data.contract?.payments?.length },
+    { key: 'contracts', label: 'Contract', icon: <FileSignature className="w-4 h-4" /> },
     { key: 'forms', label: 'Forms', icon: <ClipboardList className="w-4 h-4" />, count: data.forms?.filter(f => f.status === 'pending').length },
     { key: 'updates', label: 'Updates', icon: <Bell className="w-4 h-4" />, count: data.updates?.length },
   ];
@@ -332,8 +379,9 @@ export default function CoupleDashboardPage() {
       {/* Tab Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {activeTab === 'overview' && <OverviewTab data={data} />}
-        {activeTab === 'timeline' && <TimelineTab events={data.wedding?.events || []} timezone={data.wedding?.timezone} />}
+        {activeTab === 'timeline' && <TimelineTab events={data.wedding?.events || []} timezone={data.wedding?.timezone} onNoteAdded={fetchDashboard} />}
         {activeTab === 'payments' && <PaymentsTab contract={data.contract} />}
+        {activeTab === 'contracts' && <ContractTab />}
         {activeTab === 'forms' && <FormsTab forms={data.forms || []} />}
         {activeTab === 'updates' && <UpdatesTab updates={data.updates || []} />}
       </main>
@@ -461,7 +509,12 @@ function OverviewTab({ data }: { data: DashboardData }) {
   );
 }
 
-function TimelineTab({ events, timezone }: { events: WeddingEvent[]; timezone?: string }) {
+function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]; timezone?: string; onNoteAdded?: () => void }) {
+  const [expandedEvent, setExpandedEvent] = useState<number | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [noteTarget, setNoteTarget] = useState<{ eventIndex: number; itemId?: string } | null>(null);
+  const [submittingNote, setSubmittingNote] = useState(false);
+
   if (!events || events.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
@@ -471,42 +524,251 @@ function TimelineTab({ events, timezone }: { events: WeddingEvent[]; timezone?: 
     );
   }
 
+  const handleSubmitNote = async (eventIndex: number, itemId?: string) => {
+    if (!noteText.trim()) return;
+    const token = localStorage.getItem('couple_token');
+    if (!token) return;
+
+    setSubmittingNote(true);
+    try {
+      const url = itemId
+        ? `${getApiBaseUrl()}/couple/portal/events/${eventIndex}/order-of-events/${itemId}/notes`
+        : `${getApiBaseUrl()}/couple/portal/events/${eventIndex}/notes`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: noteText.trim() }),
+      });
+
+      if (res.ok) {
+        toast.success('Note sent to your planner');
+        setNoteText('');
+        setNoteTarget(null);
+        onNoteAdded?.();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to add note');
+      }
+    } catch {
+      toast.error('Failed to connect');
+    } finally {
+      setSubmittingNote(false);
+    }
+  };
+
+  const noteStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>;
+      case 'seen': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Seen</span>;
+      case 'addressed': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">Addressed</span>;
+      default: return null;
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {events.map((event, i) => (
-        <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="bg-gradient-to-r from-[#1e3a5f] to-[#2a4a6f] px-6 py-3">
-            <p className="text-[#d4af37] text-sm font-medium">{eventTypeLabel(event.type)}</p>
-          </div>
-          <div className="p-6">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="flex items-start gap-3">
-                <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{formatDate(event.date)}</p>
-                  {event.details?.time && <p className="text-sm text-gray-500">{event.details.time}</p>}
-                </div>
-              </div>
-              {event.details?.venue_name && (
+      {events.map((event, eventIdx) => {
+        const orderItems = (event.order_of_events || []).sort((a, b) => a.order - b.order);
+        const eventNotes = event.event_notes || [];
+        const isExpanded = expandedEvent === eventIdx;
+
+        return (
+          <div key={eventIdx} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* Event Header */}
+            <div className="bg-gradient-to-r from-[#1e3a5f] to-[#2a4a6f] px-6 py-3 flex items-center justify-between">
+              <p className="text-[#d4af37] text-sm font-medium">{eventTypeLabel(event.type)}</p>
+              {(orderItems.length > 0 || eventNotes.length > 0) && (
+                <button
+                  onClick={() => setExpandedEvent(isExpanded ? null : eventIdx)}
+                  className="text-white/70 hover:text-white text-xs flex items-center gap-1"
+                >
+                  {orderItems.length > 0 && `${orderItems.length} items`}
+                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              )}
+            </div>
+
+            {/* Event Info */}
+            <div className="p-6">
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                  <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{event.details.venue_name}</p>
-                    {event.details.location && <p className="text-sm text-gray-500">{event.details.location}</p>}
+                    <p className="text-sm font-medium text-gray-800">{formatDate(event.date)}</p>
+                    {event.details?.time && <p className="text-sm text-gray-500">{event.details.time}</p>}
                   </div>
+                </div>
+                {event.details?.venue_name && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{event.details.venue_name}</p>
+                      {event.details.location && <p className="text-sm text-gray-500">{event.details.location}</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {event.details?.attire && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600"><span className="font-medium">Attire:</span> {event.details.attire}</p>
                 </div>
               )}
             </div>
-            {event.details?.attire && (
-              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  <span className="font-medium">Attire:</span> {event.details.attire}
-                </p>
+
+            {/* Expanded: Order of Events + Notes */}
+            {isExpanded && (
+              <div className="border-t border-gray-100 px-6 py-4 space-y-4">
+                {/* Order of Events Items */}
+                {orderItems.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <Clock className="w-4 h-4" /> Run of Show
+                    </h4>
+                    <div className="space-y-2">
+                      {orderItems.map((item) => (
+                        <div key={item.id} className="p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            {item.time && (
+                              <span className="text-xs font-medium text-[#1e3a5f] bg-[#1e3a5f]/10 px-2 py-1 rounded min-w-[60px] text-center">
+                                {item.time}
+                              </span>
+                            )}
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-800">{item.title}</p>
+                              {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
+                              {item.duration_minutes && <p className="text-xs text-gray-400">{item.duration_minutes} minutes</p>}
+                            </div>
+                            <button
+                              onClick={() => setNoteTarget({ eventIndex: eventIdx, itemId: item.id })}
+                              className="text-gray-400 hover:text-[#1e3a5f] transition-colors p-1"
+                              title="Add a note"
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Item-level notes */}
+                          {item.notes.length > 0 && (
+                            <div className="mt-2 ml-[72px] space-y-1.5">
+                              {item.notes.map((note) => (
+                                <div key={note.id} className="flex items-start gap-2 text-xs">
+                                  <StickyNote className="w-3 h-3 text-amber-400 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <span className="text-gray-600">{note.text}</span>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      <span className="text-gray-400">{note.author_name || note.author_role}</span>
+                                      {noteStatusBadge(note.status)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Inline note form for this item */}
+                          {noteTarget?.eventIndex === eventIdx && noteTarget?.itemId === item.id && (
+                            <div className="mt-2 ml-[72px] flex gap-2">
+                              <input
+                                type="text"
+                                value={noteText}
+                                onChange={(e) => setNoteText(e.target.value)}
+                                placeholder="Add a note for your planner..."
+                                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs"
+                                autoFocus
+                                onKeyDown={(e) => e.key === 'Enter' && handleSubmitNote(eventIdx, item.id)}
+                              />
+                              <button
+                                onClick={() => handleSubmitNote(eventIdx, item.id)}
+                                disabled={submittingNote || !noteText.trim()}
+                                className="px-3 py-1.5 bg-[#1e3a5f] text-white rounded-lg text-xs disabled:opacity-50 flex items-center gap-1"
+                              >
+                                {submittingNote ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                              </button>
+                              <button
+                                onClick={() => { setNoteTarget(null); setNoteText(''); }}
+                                className="text-gray-400 hover:text-gray-600 text-xs"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Event-level notes */}
+                {eventNotes.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                      <StickyNote className="w-4 h-4" /> General Notes
+                    </h4>
+                    <div className="space-y-2">
+                      {eventNotes.map((note) => (
+                        <div key={note.id} className="p-3 bg-amber-50/50 border border-amber-100 rounded-lg">
+                          <p className="text-sm text-gray-700">{note.text}</p>
+                          <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+                            <span>{note.author_name || note.author_role}</span>
+                            {noteStatusBadge(note.status)}
+                            {note.created_at && (
+                              <span>· {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add general event note */}
+                {noteTarget?.eventIndex === eventIdx && !noteTarget?.itemId ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      placeholder="Add a general note for this event..."
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      autoFocus
+                      onKeyDown={(e) => e.key === 'Enter' && handleSubmitNote(eventIdx)}
+                    />
+                    <button
+                      onClick={() => handleSubmitNote(eventIdx)}
+                      disabled={submittingNote || !noteText.trim()}
+                      className="px-4 py-2 bg-[#1e3a5f] text-white rounded-lg text-sm disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {submittingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => { setNoteTarget(null); setNoteText(''); }} className="text-gray-400 hover:text-gray-600 text-sm">Cancel</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setNoteTarget({ eventIndex: eventIdx })}
+                    className="w-full py-2 border border-dashed border-gray-200 rounded-lg text-sm text-gray-400 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition-colors flex items-center justify-center gap-1"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    Add a Note
+                  </button>
+                )}
               </div>
             )}
+
+            {/* If there are items but not expanded, show a hint */}
+            {!isExpanded && orderItems.length > 0 && (
+              <button
+                onClick={() => setExpandedEvent(eventIdx)}
+                className="w-full border-t border-gray-100 px-6 py-2.5 text-sm text-[#1e3a5f] hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
+              >
+                <Clock className="w-4 h-4" />
+                View Run of Show ({orderItems.length} items)
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -605,6 +867,163 @@ function FormsTab({ forms }: { forms: FormItem[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ContractTab() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [contract, setContract] = useState<ContractDetail | null>(null);
+
+  useEffect(() => {
+    const fetchContract = async () => {
+      const token = localStorage.getItem('couple_token');
+      if (!token) return;
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/couple/portal/contracts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setContract(data.contract || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch contract', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchContract();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="text-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-[#1e3a5f] mx-auto" />
+      </div>
+    );
+  }
+
+  if (!contract) {
+    return (
+      <div className="text-center py-12 text-gray-400">
+        <FileSignature className="w-10 h-10 mx-auto mb-3 opacity-50" />
+        <p>No contract available yet</p>
+        <p className="text-sm mt-1">Your planner will share the contract when it is ready</p>
+      </div>
+    );
+  }
+
+  const contractStatusLabel = (status: string) => {
+    const labels: Record<string, { text: string; style: string }> = {
+      draft: { text: 'Draft', style: 'bg-gray-100 text-gray-600' },
+      sent: { text: 'Awaiting Signature', style: 'bg-amber-100 text-amber-700' },
+      viewed: { text: 'Viewed', style: 'bg-blue-100 text-blue-700' },
+      signed: { text: 'Signed', style: 'bg-green-100 text-green-700' },
+      active: { text: 'Active', style: 'bg-green-100 text-green-700' },
+      completed: { text: 'Completed', style: 'bg-emerald-100 text-emerald-700' },
+      cancelled: { text: 'Cancelled', style: 'bg-red-100 text-red-700' },
+    };
+    return labels[status] || { text: status, style: 'bg-gray-100 text-gray-600' };
+  };
+
+  const statusInfo = contractStatusLabel(contract.status);
+
+  return (
+    <div className="space-y-6">
+      {/* Contract Header */}
+      <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">{contract.package_name || 'Wedding Package'}</h3>
+            {contract.couple_name && <p className="text-sm text-gray-500 mt-0.5">{contract.couple_name}</p>}
+          </div>
+          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusInfo.style}`}>
+            {statusInfo.text}
+          </span>
+        </div>
+
+        {/* Key Dates */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          {contract.sent_at && (
+            <div>
+              <p className="text-gray-400 text-xs">Sent</p>
+              <p className="text-gray-700">{new Date(contract.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+            </div>
+          )}
+          {contract.viewed_at && (
+            <div>
+              <p className="text-gray-400 text-xs">Viewed</p>
+              <p className="text-gray-700">{new Date(contract.viewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+            </div>
+          )}
+          {contract.signed_at && (
+            <div>
+              <p className="text-gray-400 text-xs">Signed</p>
+              <p className="text-gray-700">{new Date(contract.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Payment Summary */}
+      {contract.summary && (
+        <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+          <h3 className="font-medium text-gray-800 mb-4">Payment Summary</h3>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-semibold text-gray-800">{formatCurrency(contract.summary.total_amount)}</div>
+              <div className="text-xs text-gray-500">Total</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-green-600">{formatCurrency(contract.summary.paid_amount)}</div>
+              <div className="text-xs text-gray-500">Paid</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-amber-600">{formatCurrency(contract.summary.remaining)}</div>
+              <div className="text-xs text-gray-500">Remaining</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contract Sections */}
+      {contract.sections && contract.sections.length > 0 && (
+        <div className="space-y-4">
+          {contract.sections.map((section, idx) => (
+            <div key={idx} className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+              <h3 className="font-medium text-gray-800 mb-3">{section.title}</h3>
+              <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{section.content}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Payment Schedule */}
+      {contract.payments && contract.payments.length > 0 && (
+        <div>
+          <h3 className="font-medium text-gray-800 mb-3">Payment Schedule</h3>
+          <div className="space-y-3">
+            {contract.payments.map((payment) => (
+              <div key={payment.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-800">{payment.name}</p>
+                  <p className="text-sm text-gray-500">
+                    Due: {payment.due_date ? new Date(payment.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-gray-800">{formatCurrency(payment.amount, payment.currency)}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${paymentStatusColor(payment.status)}`}>
+                    {payment.status === 'succeeded' ? 'Paid' : payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

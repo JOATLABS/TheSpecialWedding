@@ -71,6 +71,18 @@ class BidStrategy(str, Enum):
     AUTO = "auto"
 
 
+class BillingModel(str, Enum):
+    """How the vendor is charged for ad activity."""
+    CPL = "cpl"          # Cost per lead (quote request + directory add)
+    FREE = "free"        # No charge (root admin override)
+
+
+class LeadChargeType(str, Enum):
+    """Differentiates lead types for pricing."""
+    QUOTE_REQUEST = "quote_request"
+    ADD_TO_DIRECTORY = "add_to_directory"
+
+
 class FraudSignalType(str, Enum):
     """Types of fraud/anomaly signals."""
     UNUSUAL_TRAFFIC = "unusual_traffic"
@@ -199,7 +211,25 @@ class AdCampaign(MongoModel):
     start_date: Optional[datetime] = Field(None)
     end_date: Optional[datetime] = Field(None)
 
-    # ── Bidding (placeholder, always 0 for free tier) ──
+    # ── Billing model ──
+    billing_model: str = Field(
+        default="cpl",
+        description="Billing model: 'cpl' (cost per lead) or 'free' (no charge)"
+    )
+    is_free_tier: bool = Field(
+        default=False,
+        description="Campaign-level free tier override. Set by root admin only."
+    )
+    cpl_quote_request: float = Field(
+        default=10.0, ge=0,
+        description="Cost per quote_request lead in USD"
+    )
+    cpl_directory_add: float = Field(
+        default=3.0, ge=0,
+        description="Cost per add_to_directory lead in USD"
+    )
+
+    # ── Bidding (placeholder for auction engine) ──
     bid_amount: float = Field(default=0.0, ge=0)
     bid_strategy: BidStrategy = Field(default=BidStrategy.FIXED)
 
@@ -395,13 +425,16 @@ class AdFraudSignal(MongoModel):
 
 
 # =============================================================================
-# VENDOR AD BILLING (PLACEHOLDER)
+# VENDOR AD BILLING
 # =============================================================================
 
 class VendorAdBilling(MongoModel):
     """
-    Vendor spend tracking. Placeholder for free tier (all values $0).
-    When billing goes live, tracks spend per campaign per billing period.
+    Vendor spend tracking per campaign per billing period.
+
+    Each lead (quote_request or add_to_directory) creates a charge record.
+    Free-tier campaigns still create records with charge_amount=0 so the data
+    pipeline works identically — only actual Stripe charges are skipped.
     """
 
     vendor_id: str = Field(...)
@@ -409,15 +442,75 @@ class VendorAdBilling(MongoModel):
     billing_period_start: datetime = Field(...)
     billing_period_end: datetime = Field(...)
 
+    # ── Activity counters ──
     impressions: int = Field(default=0, ge=0)
     clicks: int = Field(default=0, ge=0)
     leads: int = Field(default=0, ge=0)
+    quote_request_leads: int = Field(default=0, ge=0)
+    directory_add_leads: int = Field(default=0, ge=0)
     conversions: int = Field(default=0, ge=0)
-    total_spend: float = Field(default=0.0, ge=0, description="Always 0 for free tier")
-    currency: str = Field(default="USD")
 
-    payment_status: str = Field(default="pending")
+    # ── Spend ──
+    total_spend: float = Field(default=0.0, ge=0, description="Total charges this period")
+    currency: str = Field(default="USD")
+    is_free_tier: bool = Field(default=False, description="True if campaign/vendor was free-tier at billing time")
+
+    # ── Stripe integration ──
+    payment_status: str = Field(default="pending", description="pending | invoiced | paid | failed | free")
     stripe_invoice_id: Optional[str] = Field(None)
+    stripe_customer_id: Optional[str] = Field(None)
+
+
+class AdLeadCharge(MongoModel):
+    """
+    Individual CPL charge record. One per lead event.
+
+    Created immediately when a lead occurs. For paid campaigns, triggers
+    Stripe invoice item creation. For free-tier campaigns, charge_amount=0
+    and stripe_invoice_item_id is null.
+    """
+
+    lead_id: str = Field(..., description="ObjectId ref to ad_leads")
+    campaign_id: str = Field(...)
+    vendor_id: str = Field(...)
+    lead_type: str = Field(..., description="quote_request or add_to_directory")
+    charge_amount: float = Field(default=0.0, ge=0, description="CPL amount in USD")
+    currency: str = Field(default="USD")
+    is_free_tier: bool = Field(default=False)
+
+    # ── Stripe ──
+    stripe_invoice_item_id: Optional[str] = Field(None)
+    stripe_customer_id: Optional[str] = Field(None)
+    charge_status: str = Field(default="pending", description="pending | charged | free | failed")
+
+    # ── Context ──
+    planner_id: Optional[str] = Field(None)
+    click_id: Optional[str] = Field(None)
+
+
+# =============================================================================
+# VENDOR FREE TIER CONFIG
+# =============================================================================
+
+class VendorFreeTierConfig(MongoModel):
+    """
+    Vendor-level free tier override. When enabled, ALL campaigns from
+    this vendor are free regardless of campaign-level settings.
+    Only root admin can create/modify these records.
+    """
+
+    vendor_id: str = Field(..., description="The advertising vendor user _id")
+    vendor_email: str = Field(default="", max_length=254)
+    vendor_name: str = Field(default="", max_length=200)
+    is_free: bool = Field(default=True)
+    reason: str = Field(
+        default="", max_length=500,
+        description="Why this vendor gets free tier (e.g., 'launch partner', 'promo')"
+    )
+    granted_by: str = Field(..., max_length=254, description="Root admin email who granted it")
+    expires_at: Optional[datetime] = Field(
+        None, description="Optional expiry. Null = permanent free tier."
+    )
 
 
 # =============================================================================
@@ -487,3 +580,16 @@ class ReviewCampaignDecisionRequest(MongoModel):
 class ReviewCreativeDecisionRequest(MongoModel):
     """Root admin request to review a creative."""
     review_notes: Optional[str] = Field(None, max_length=2000)
+
+
+class SetFreeTierRequest(MongoModel):
+    """Root admin request to toggle free tier on a campaign or vendor."""
+    is_free: bool = Field(...)
+    reason: str = Field(default="", max_length=500)
+    expires_at: Optional[datetime] = Field(None)
+
+
+class UpdateCPLPricingRequest(MongoModel):
+    """Root admin request to update CPL pricing on a campaign."""
+    cpl_quote_request: Optional[float] = Field(None, ge=0)
+    cpl_directory_add: Optional[float] = Field(None, ge=0)
